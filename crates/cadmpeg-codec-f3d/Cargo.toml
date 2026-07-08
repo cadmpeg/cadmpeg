@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-codec-f3d"
+description = "Codec for Autodesk Fusion 360 .f3d files: ZIP container, SAB stream framing, B-rep topology graph, analytic carriers, and inline cached NURBS."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cadmpeg-ir.workspace = true
+zip.workspace = true
+sha2.workspace = true
+thiserror.workspace = true

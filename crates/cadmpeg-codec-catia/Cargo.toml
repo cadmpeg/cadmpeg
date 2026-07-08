@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-codec-catia"
+description = "Decoder for Dassault Systèmes CATIA V5 .CATPart files: V5_CFV2 container enumeration, storage-variant detection, and direct standard, zero-entity, E5, and freeform carrier decoding."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cadmpeg-ir.workspace = true
+sha2.workspace = true

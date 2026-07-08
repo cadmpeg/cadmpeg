@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg"
+description = "cadmpeg: an open-source CAD transcoder (ffmpeg for CAD). Command-line front-end."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+default-run = "cadmpeg"
+
+[[bin]]
+name = "cadmpeg"
+path = "src/main.rs"
+
+[dependencies]
+cadmpeg-ir.workspace = true
+cadmpeg-codec-f3d.workspace = true
+cadmpeg-codec-sldprt.workspace = true
+cadmpeg-codec-catia.workspace = true
+cadmpeg-codec-creo.workspace = true
+cadmpeg-codec-nx.workspace = true
+cadmpeg-step.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true

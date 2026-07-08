@@ -1,0 +1,30 @@
+# Rust build artifacts
+/target
+**/*.rs.bk
+Cargo.lock.orig
+
+# cadmpeg scratch decode outputs at repo root
+/*.cadir.json
+
+# Private local corpus (golden testing; never committed — see corpus/README.md)
+corpus/private/
+
+# Fuzzing artifacts (the fuzz crate is workspace-excluded, so it has its own target/)
+/fuzz/target
+crates/cadmpeg-fuzz/target/
+crates/cadmpeg-fuzz/corpus/
+crates/cadmpeg-fuzz/artifacts/
+
+# macOS junk
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editor/IDE
+*.swp
+*.swo
+.idea/
+.vscode/
+.impeccable/
+*~

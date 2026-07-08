@@ -1,0 +1,351 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Fusion ACT entity table and change-version channel groups.
+
+use std::collections::BTreeMap;
+
+use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::design::{ActEntity, ActGuid, ActRootComponent};
+use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
+
+use crate::container::{self, role, ContainerScan};
+
+pub struct DecodedAct {
+    pub entities: Vec<ActEntity>,
+    pub guids: Vec<ActGuid>,
+    pub root_components: Vec<ActRootComponent>,
+}
+
+pub fn decode(reader: &mut dyn ReadSeek, scan: &ContainerScan) -> Result<DecodedAct, CodecError> {
+    let mut entities = Vec::new();
+    let mut guids = Vec::new();
+    let mut root_components = Vec::new();
+    for entry in scan.entries.iter().filter(|entry| {
+        entry.role == role::BULKSTREAM && entry.name.contains("FusionACTSegmentType")
+    }) {
+        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let (table, stream_guids) = decode_table(&bytes);
+        let groups = decode_channel_groups(&bytes);
+        root_components.extend(decode_root_components(&bytes, &entry.name));
+        let mut by_key: BTreeMap<(u32, String), ActEntity> = BTreeMap::new();
+        for item in table {
+            by_key.insert(
+                (item.record_index, item.entity_id.clone()),
+                ActEntity {
+                    record_index: item.record_index,
+                    entity_id: item.entity_id,
+                    in_table: true,
+                    channel_class_tag: None,
+                    channels: BTreeMap::new(),
+                    meta: meta(&entry.name, item.offset, "ACTTableEntry"),
+                },
+            );
+        }
+        for group in groups {
+            let key = (group.record_index, group.entity_id.clone());
+            let entity = by_key.entry(key).or_insert_with(|| ActEntity {
+                record_index: group.record_index,
+                entity_id: group.entity_id.clone(),
+                in_table: false,
+                channel_class_tag: None,
+                channels: BTreeMap::new(),
+                meta: meta(&entry.name, group.offset, "ACTChannelGroup"),
+            });
+            entity.channel_class_tag = Some(group.class_tag);
+            entity.channels = group.channels;
+        }
+        entities.extend(by_key.into_values());
+        guids.extend(
+            stream_guids
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, (guid, offset))| ActGuid {
+                    ordinal: ordinal as u32,
+                    guid,
+                    meta: meta(&entry.name, offset, "ACTGuid"),
+                }),
+        );
+    }
+    Ok(DecodedAct {
+        entities,
+        guids,
+        root_components,
+    })
+}
+
+fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
+    let mut out = Vec::new();
+    let mut position = 0usize;
+    while position + 4 <= bytes.len() {
+        let Some((class_tag, after_tag)) = lp_ascii(bytes, position) else {
+            position += 1;
+            continue;
+        };
+        if class_tag.len() != 3 || !class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
+            position += 1;
+            continue;
+        }
+        let Some(record_raw) = bytes.get(after_tag..after_tag + 4) else {
+            break;
+        };
+        if bytes.get(after_tag + 4..after_tag + 14) != Some(&[0; 10]) {
+            position += 1;
+            continue;
+        }
+        let cursor = after_tag + 14;
+        let Some((instance_root_record, cursor)) = marker_ref(bytes, cursor, 6) else {
+            position += 1;
+            continue;
+        };
+        let Some((entity_id, cursor)) = lp_utf16(bytes, cursor) else {
+            position += 1;
+            continue;
+        };
+        let Some((flag, cursor)) = marker_ref(bytes, cursor, 5) else {
+            position += 1;
+            continue;
+        };
+        if flag != 3 {
+            position += 1;
+            continue;
+        }
+        let Some((selector, cursor)) = marker_ref(bytes, cursor, 0) else {
+            position += 1;
+            continue;
+        };
+        if selector > 1 {
+            position += 1;
+            continue;
+        }
+        let Some((display_name, cursor)) = lp_utf16(bytes, cursor) else {
+            position += 1;
+            continue;
+        };
+        let mut components_marker = cursor;
+        while bytes.get(components_marker) == Some(&0) && components_marker - cursor < 8 {
+            components_marker += 1;
+        }
+        if components_marker == cursor {
+            position += 1;
+            continue;
+        }
+        let Some((components_root_record, end)) = marker_value(bytes, components_marker) else {
+            position += 1;
+            continue;
+        };
+        out.push(ActRootComponent {
+            record_index: u32::from_le_bytes(record_raw.try_into().unwrap()),
+            class_tag,
+            instance_root_record,
+            components_root_record,
+            registry_flag: selector,
+            entity_id,
+            display_name,
+            meta: meta(stream, position, "ACTRootComponent"),
+        });
+        position = end;
+    }
+    out
+}
+
+fn marker_ref(bytes: &[u8], position: usize, zero_count: usize) -> Option<(u32, usize)> {
+    if bytes.get(position) != Some(&1) {
+        return None;
+    }
+    let value = u32::from_le_bytes(bytes.get(position + 1..position + 5)?.try_into().ok()?);
+    let end = position + 5 + zero_count;
+    bytes
+        .get(position + 5..end)?
+        .iter()
+        .all(|byte| *byte == 0)
+        .then_some((value, end))
+}
+
+fn marker_value(bytes: &[u8], position: usize) -> Option<(u32, usize)> {
+    if bytes.get(position) != Some(&1) {
+        return None;
+    }
+    Some((
+        u32::from_le_bytes(bytes.get(position + 1..position + 5)?.try_into().ok()?),
+        position + 5,
+    ))
+}
+
+struct TableEntry {
+    record_index: u32,
+    entity_id: String,
+    offset: usize,
+}
+
+fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
+    let Some(name_at) = bytes.windows(8).position(|window| window == b"ACTTable") else {
+        return (Vec::new(), Vec::new());
+    };
+    let mut cursor = name_at + 8;
+    if bytes.get(cursor..cursor + 2) != Some(&[0, 0]) {
+        return (Vec::new(), Vec::new());
+    }
+    cursor += 2;
+    let Some(count_raw) = bytes.get(cursor..cursor + 4) else {
+        return (Vec::new(), Vec::new());
+    };
+    let count = u32::from_le_bytes(count_raw.try_into().unwrap()) as usize;
+    if count > 100_000 {
+        return (Vec::new(), Vec::new());
+    }
+    cursor += 4;
+    let mut indexed = Vec::with_capacity(count);
+    for _ in 0..count {
+        let offset = cursor;
+        if bytes.get(cursor) != Some(&1) {
+            return (Vec::new(), Vec::new());
+        }
+        let Some(index_raw) = bytes.get(cursor + 1..cursor + 5) else {
+            return (Vec::new(), Vec::new());
+        };
+        if bytes.get(cursor + 5..cursor + 11) != Some(&[0; 6]) {
+            return (Vec::new(), Vec::new());
+        }
+        let Some((entity_id, end)) = lp_utf16(bytes, cursor + 11) else {
+            return (Vec::new(), Vec::new());
+        };
+        indexed.push((
+            u32::from_le_bytes(index_raw.try_into().unwrap()),
+            entity_id,
+            offset,
+        ));
+        cursor = end;
+    }
+    let mut guids = Vec::new();
+    while cursor + 4 <= bytes.len() {
+        if let Some((guid, end)) = lp_utf16(bytes, cursor).filter(|(value, _)| is_guid(value)) {
+            guids.push((guid, cursor));
+            cursor = end;
+        } else {
+            cursor += 1;
+        }
+    }
+    let entries = indexed
+        .into_iter()
+        .map(|(record_index, entity_id, offset)| TableEntry {
+            record_index,
+            entity_id,
+            offset,
+        })
+        .collect();
+    (entries, guids)
+}
+
+struct ChannelGroup {
+    record_index: u32,
+    entity_id: String,
+    class_tag: String,
+    channels: BTreeMap<String, String>,
+    offset: usize,
+}
+
+fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
+    let mut out = Vec::new();
+    let mut position = 0usize;
+    while position + 4 <= bytes.len() {
+        let Some((class_tag, after_tag)) = lp_ascii(bytes, position) else {
+            position += 1;
+            continue;
+        };
+        if class_tag.len() != 3 || !class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
+            position += 1;
+            continue;
+        }
+        let Some(index_raw) = bytes.get(after_tag..after_tag + 4) else {
+            break;
+        };
+        if bytes.get(after_tag + 4..after_tag + 14) != Some(&[0; 10]) {
+            position += 1;
+            continue;
+        }
+        let Some(count_raw) = bytes.get(after_tag + 14..after_tag + 18) else {
+            break;
+        };
+        let count = u32::from_le_bytes(count_raw.try_into().unwrap()) as usize;
+        if !(1..=8).contains(&count) {
+            position += 1;
+            continue;
+        }
+        let mut cursor = after_tag + 18;
+        let mut channels = BTreeMap::new();
+        for _ in 0..count {
+            let Some((name, after_name)) = lp_ascii(bytes, cursor) else {
+                channels.clear();
+                break;
+            };
+            let Some((guid, after_guid)) = lp_utf16(bytes, after_name).filter(|(v, _)| is_guid(v))
+            else {
+                channels.clear();
+                break;
+            };
+            channels.insert(name, guid);
+            cursor = after_guid;
+        }
+        if !channels.is_empty() {
+            if let Some((entity_id, end)) = lp_utf16(bytes, cursor) {
+                out.push(ChannelGroup {
+                    record_index: u32::from_le_bytes(index_raw.try_into().unwrap()),
+                    entity_id,
+                    class_tag,
+                    channels,
+                    offset: position,
+                });
+                position = end;
+                continue;
+            }
+        }
+        position += 1;
+    }
+    out
+}
+
+fn lp_ascii(bytes: &[u8], position: usize) -> Option<(String, usize)> {
+    let length = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
+    if !(1..=128).contains(&length) {
+        return None;
+    }
+    let end = position.checked_add(4 + length)?;
+    let value = std::str::from_utf8(bytes.get(position + 4..end)?).ok()?;
+    Some((value.into(), end))
+}
+
+fn lp_utf16(bytes: &[u8], position: usize) -> Option<(String, usize)> {
+    let count = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
+    if count > 1024 {
+        return None;
+    }
+    let end = position.checked_add(4 + count.checked_mul(2)?)?;
+    let units = bytes
+        .get(position + 4..end)?
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes(pair.try_into().unwrap()))
+        .collect::<Vec<_>>();
+    Some((String::from_utf16(&units).ok()?, end))
+}
+
+fn is_guid(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        })
+}
+
+fn meta(stream: &str, offset: usize, tag: &str) -> EntityMeta {
+    EntityMeta {
+        provenance: Provenance {
+            format: "f3d".into(),
+            stream: stream.into(),
+            offset: offset as u64,
+            tag: Some(tag.into()),
+        },
+        exactness: Exactness::ByteExact,
+    }
+}

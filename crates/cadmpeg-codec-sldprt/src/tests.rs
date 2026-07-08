@@ -1,0 +1,2485 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Tests over synthetic byte fixtures. No real CAD file exists in this repo and
+//! none may be added, so every fixture is a hand-built `.sldprt` byte image that
+//! exercises a real decode path and fails if the code regresses.
+
+use std::io::{Cursor, Write};
+
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, Encoder};
+
+use crate::container::{self, role, MARKER};
+use crate::SldprtCodec;
+
+/// Nibble-swap a section name into its stored form (the swap is its own inverse,
+/// so the decoder recovers the original).
+fn swap_name(name: &str) -> Vec<u8> {
+    name.bytes().map(|b| b.rotate_left(4)).collect()
+}
+
+fn raw_deflate(data: &[u8]) -> Vec<u8> {
+    use flate2::write::DeflateEncoder;
+    use flate2::Compression;
+    let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
+    enc.write_all(data).unwrap();
+    enc.finish().unwrap()
+}
+
+fn crc32(data: &[u8]) -> u32 {
+    let mut h = crc32fast::Hasher::new();
+    h.update(data);
+    h.finalize()
+}
+
+/// Assemble one CRC-validated block frame carrying `payload`, named `section`.
+fn make_block(type_id: u32, section: &str, payload: &[u8]) -> Vec<u8> {
+    let comp = raw_deflate(payload);
+    let preamble = swap_name(section);
+    let mut b = Vec::new();
+    b.extend_from_slice(&MARKER);
+    b.extend_from_slice(&type_id.to_le_bytes());
+    b.extend_from_slice(&crc32(payload).to_le_bytes());
+    b.extend_from_slice(&(comp.len() as u32).to_le_bytes());
+    b.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    b.extend_from_slice(&(preamble.len() as u32).to_le_bytes());
+    b.extend_from_slice(&preamble);
+    b.extend_from_slice(&comp);
+    b
+}
+
+/// A cache-cell grid entry: the marker, the `2L / L/2 / L` size triple, a name
+/// length, and the nibble-swapped name.
+fn make_cache_cell(logical_len: u32, name: &str) -> Vec<u8> {
+    let swapped = swap_name(name);
+    let mut b = Vec::new();
+    b.extend_from_slice(&MARKER);
+    b.extend_from_slice(&0u32.to_le_bytes()); // +6 type_id
+    b.extend_from_slice(&(logical_len * 2).to_le_bytes()); // +10 2L
+    b.extend_from_slice(&(logical_len / 2).to_le_bytes()); // +14 L/2
+    b.extend_from_slice(&logical_len.to_le_bytes()); // +18 L
+    b.extend_from_slice(&(swapped.len() as u32).to_le_bytes()); // +22 name_len
+    b.extend_from_slice(&swapped);
+    b
+}
+
+/// A tail section-directory entry naming an OPC part.
+fn make_directory_entry(type_id: u32, size: u32, name: &str) -> Vec<u8> {
+    let swapped = swap_name(name);
+    let mut b = Vec::new();
+    b.extend_from_slice(&MARKER);
+    b.extend_from_slice(&type_id.to_le_bytes()); // +6
+    b.extend_from_slice(&0u32.to_le_bytes()); // +10 zero
+    b.extend_from_slice(&size.to_le_bytes()); // +14 size
+    b.extend_from_slice(&0u32.to_le_bytes()); // +18 zero
+    b.extend_from_slice(&(swapped.len() as u32).to_le_bytes()); // +22 name_len
+    b.extend_from_slice(&[0u8; 14]); // +26 descriptor
+    b.extend_from_slice(&swapped); // +40 name
+    b.extend_from_slice(&[0xe5, 0x4b, 0x57, 0x5b, 0x00, 0x00]); // trailer
+    b
+}
+
+/// A minimal Parasolid stream payload: `PS\0\0`, description, padding, a
+/// length-prefixed schema token, then the class-definition record `body`.
+fn parasolid_payload(description: &str, schema: &str) -> Vec<u8> {
+    parasolid_with_body(description, schema, &[0u8; 8])
+}
+
+fn parasolid_with_body(description: &str, schema: &str, body: &[u8]) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend_from_slice(&[b'P', b'S', 0x00, 0x00]);
+    b.extend_from_slice(&(description.len() as u16).to_be_bytes());
+    b.extend_from_slice(description.as_bytes());
+    b.extend_from_slice(&[0x00, 0x00]); // padding
+    b.push(schema.len() as u8);
+    b.extend_from_slice(schema.as_bytes());
+    b.extend_from_slice(body);
+    b
+}
+
+// ---- Parasolid record builders ----------------------------------------------
+//
+// Each helper emits one fixed-width record in the exact byte layout the decoder
+// parses (spec §5, §8.1), so the geometry test exercises the real record scanner
+// and chain walk rather than a mock.
+
+const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+
+fn be16(b: &mut Vec<u8>, v: u16) {
+    b.extend_from_slice(&v.to_be_bytes());
+}
+fn be32(b: &mut Vec<u8>, v: u32) {
+    b.extend_from_slice(&v.to_be_bytes());
+}
+fn bef64(b: &mut Vec<u8>, v: f64) {
+    b.extend_from_slice(&v.to_be_bytes());
+}
+
+/// A compact analytic plane carrier (tag `00 32`, 9 f64): origin, normal, refdir.
+fn plane_carrier(attr: u16, origin: [f64; 3], normal: [f64; 3], refdir: [f64; 3]) -> Vec<u8> {
+    let mut b = vec![0x00, 0x32];
+    be16(&mut b, attr);
+    be32(&mut b, 0); // ordinal
+    for _ in 0..5 {
+        be16(&mut b, 0); // refs[5]
+    }
+    b.push(0x2b); // marker
+    for v in origin.into_iter().chain(normal).chain(refdir) {
+        bef64(&mut b, v);
+    }
+    b
+}
+
+/// A compact analytic line carrier (tag `00 1e`, 6 f64): point, direction.
+fn line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8> {
+    let mut b = vec![0x00, 0x1e];
+    be16(&mut b, attr);
+    be32(&mut b, 0);
+    for _ in 0..5 {
+        be16(&mut b, 0);
+    }
+    b.push(0x2b);
+    for v in point.into_iter().chain(dir) {
+        bef64(&mut b, v);
+    }
+    b
+}
+
+fn prefixed_line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8> {
+    let mut b = vec![0x00, 0x1e];
+    be16(&mut b, attr);
+    be32(&mut b, 0);
+    for reference in [0u16, 0, 0, 0, 0] {
+        be16(&mut b, reference);
+        b.push(1);
+    }
+    b.push(0x2b);
+    for value in point.into_iter().chain(dir) {
+        bef64(&mut b, value);
+    }
+    b
+}
+
+fn cylinder_carrier(attr: u16, origin: [f64; 3], axis: [f64; 3], radius: f64) -> Vec<u8> {
+    let mut b = vec![0x00, 0x33];
+    be16(&mut b, attr);
+    be32(&mut b, 0);
+    for _ in 0..5 {
+        be16(&mut b, 0);
+    }
+    b.push(0x2b);
+    for value in origin
+        .into_iter()
+        .chain(axis)
+        .chain([radius, 1.0, 0.0, 0.0])
+    {
+        bef64(&mut b, value);
+    }
+    b
+}
+
+fn sphere_carrier(attr: u16, center: [f64; 3], radius: f64) -> Vec<u8> {
+    let mut b = vec![0x00, 0x35];
+    be16(&mut b, attr);
+    be32(&mut b, 0);
+    for _ in 0..5 {
+        be16(&mut b, 0);
+    }
+    b.push(0x2b);
+    for value in center
+        .into_iter()
+        .chain([radius, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0])
+    {
+        bef64(&mut b, value);
+    }
+    b
+}
+
+fn circle_carrier(attr: u16, center: [f64; 3], axis: [f64; 3], radius: f64) -> Vec<u8> {
+    let mut b = vec![0x00, 0x1f];
+    be16(&mut b, attr);
+    be32(&mut b, 0);
+    for _ in 0..5 {
+        be16(&mut b, 0);
+    }
+    b.push(0x2b);
+    for value in center
+        .into_iter()
+        .chain(axis)
+        .chain([1.0, 0.0, 0.0, radius])
+    {
+        bef64(&mut b, value);
+    }
+    b
+}
+
+fn closed_cylinder_body() -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend(cylinder_carrier(100, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0));
+    b.extend(circle_carrier(70, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0));
+    b.extend(circle_carrier(71, [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], 1.0));
+    b.extend(bridge(10, 20, 100));
+    let mut first = loop_head(20, 30, 10);
+    first[14..16].copy_from_slice(&21u16.to_be_bytes());
+    b.extend(first);
+    b.extend(loop_head(21, 31, 10));
+    b.extend(coedge(30, 20, 30, 50, 0, 40, false));
+    b.extend(coedge(31, 21, 31, 51, 0, 41, true));
+    b.extend(edge_use(40, 70));
+    b.extend(edge_use(41, 71));
+    b.extend(vertex_use(50, 60));
+    b.extend(vertex_use(51, 61));
+    b.extend(world_point(60, [-1.0, 0.0, 0.0]));
+    b.extend(world_point(61, [-1.0, 0.0, 1.0]));
+    b
+}
+
+fn sphere_patch_body() -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend(sphere_carrier(100, [0.0, 0.0, 0.0], 1.0));
+    b.extend(circle_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 1.0));
+    b.extend(circle_carrier(71, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 1.0));
+    b.extend(circle_carrier(72, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0));
+    b.extend(bridge(10, 20, 100));
+    b.extend(loop_head(20, 30, 10));
+    b.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    b.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    b.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    b.extend(edge_use(40, 70));
+    b.extend(edge_use(41, 71));
+    b.extend(edge_use(42, 72));
+    b.extend(vertex_use(50, 60));
+    b.extend(vertex_use(51, 61));
+    b.extend(vertex_use(52, 62));
+    b.extend(world_point(60, [1.0, 0.0, 0.0]));
+    b.extend(world_point(61, [0.0, 1.0, 0.0]));
+    b.extend(world_point(62, [0.0, 0.0, 1.0]));
+    b
+}
+
+fn f64_array(tag: u8, attr: u16, values: &[f64]) -> Vec<u8> {
+    let mut b = vec![0x00, tag, 0x2b];
+    be32(&mut b, values.len() as u32);
+    be16(&mut b, attr);
+    for value in values {
+        bef64(&mut b, *value);
+    }
+    b
+}
+
+fn u16_array(attr: u16, values: &[u16]) -> Vec<u8> {
+    let mut b = vec![0x00, 0x7f, 0x2b];
+    be32(&mut b, values.len() as u32);
+    be16(&mut b, attr);
+    for value in values {
+        be16(&mut b, *value);
+    }
+    b
+}
+
+fn nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
+    let control_attr = descriptor_attr + 1;
+    let mult_attr = descriptor_attr + 2;
+    let knot_attr = descriptor_attr + 3;
+    let mut b = vec![0x00, 0x86];
+    be16(&mut b, wrapper_attr);
+    be16(&mut b, descriptor_attr);
+    b.extend_from_slice(&[0u8; 8]);
+    b.extend_from_slice(&[0x00, 0x88]);
+    be16(&mut b, descriptor_attr);
+    be16(&mut b, 2);
+    be32(&mut b, 3);
+    be16(&mut b, 3);
+    be32(&mut b, 2);
+    b.push(0);
+    be32(&mut b, 0);
+    be16(&mut b, control_attr);
+    be16(&mut b, mult_attr);
+    be16(&mut b, knot_attr);
+    b.extend(f64_array(
+        0x2d,
+        control_attr,
+        &[0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 1.0, 0.0, 0.0],
+    ));
+    b.extend(u16_array(mult_attr, &[3, 3]));
+    b.extend(f64_array(0x80, knot_attr, &[0.0, 1.0]));
+    b
+}
+
+fn linear_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
+    let control_attr = descriptor_attr + 1;
+    let mult_attr = descriptor_attr + 2;
+    let knot_attr = descriptor_attr + 3;
+    let mut b = vec![0x00, 0x86];
+    be16(&mut b, wrapper_attr);
+    be16(&mut b, descriptor_attr);
+    b.extend_from_slice(&[0u8; 8]);
+    b.extend_from_slice(&[0x00, 0x88]);
+    be16(&mut b, descriptor_attr);
+    be16(&mut b, 1);
+    be32(&mut b, 2);
+    be16(&mut b, 3);
+    be32(&mut b, 2);
+    b.push(0);
+    be32(&mut b, 0);
+    be16(&mut b, control_attr);
+    be16(&mut b, mult_attr);
+    be16(&mut b, knot_attr);
+    b.extend(f64_array(
+        0x2d,
+        control_attr,
+        &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+    ));
+    b.extend(u16_array(mult_attr, &[2, 2]));
+    b.extend(f64_array(0x80, knot_attr, &[0.0, 1.0]));
+    b
+}
+
+fn nurbs_surface_carrier(wrapper_attr: u16, descriptor_attr: u16, bridge_attr: u16) -> Vec<u8> {
+    let control_attr = descriptor_attr + 1;
+    let u_mult_attr = descriptor_attr + 2;
+    let v_mult_attr = descriptor_attr + 3;
+    let u_knot_attr = descriptor_attr + 4;
+    let v_knot_attr = descriptor_attr + 5;
+    let mut b = vec![0x00, 0x7c];
+    be16(&mut b, wrapper_attr);
+    be32(&mut b, 1);
+    for reference in [0, bridge_attr, 0, 0, 0] {
+        be16(&mut b, reference);
+    }
+    b.push(0x2b);
+    be16(&mut b, descriptor_attr);
+    be16(&mut b, 0);
+    b.extend_from_slice(&[0x00, 0x7e]);
+    be16(&mut b, descriptor_attr);
+    b.extend_from_slice(&[0u8; 12]);
+    for reference in [
+        control_attr,
+        u_mult_attr,
+        v_mult_attr,
+        u_knot_attr,
+        v_knot_attr,
+    ] {
+        be16(&mut b, reference);
+    }
+    b.extend(f64_array(
+        0x2d,
+        control_attr,
+        &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5],
+    ));
+    b.extend(u16_array(u_mult_attr, &[2, 2]));
+    b.extend(u16_array(v_mult_attr, &[2, 2]));
+    b.extend(f64_array(0x80, u_knot_attr, &[0.0, 1.0]));
+    b.extend(f64_array(0x80, v_knot_attr, &[0.0, 1.0]));
+    b
+}
+
+/// Bridge `00 0e`: `refs[2]` = loop head, `refs[4]` = surface carrier.
+fn bridge(attr: u16, loop_attr: u16, surface_attr: u16) -> Vec<u8> {
+    let mut b = vec![0x00, 0x0e];
+    be16(&mut b, attr); // p+0
+    be32(&mut b, 0); // p+2 seq
+    be16(&mut b, 0); // p+6 ref0
+    b.extend_from_slice(&MAGIC); // p+8..16
+    let refs = [0u16, 0, loop_attr, 0, surface_attr];
+    for r in refs {
+        be16(&mut b, r); // p+16..26
+    }
+    b.push(0x2b); // p+26 marker
+    b.extend_from_slice(&[0u8; 10]); // p+27..37 tail
+    b
+}
+
+fn bridge_owned(attr: u16, loop_attr: u16, surface_attr: u16, owner: u16) -> Vec<u8> {
+    let mut b = bridge(attr, loop_attr, surface_attr);
+    b[8..10].copy_from_slice(&owner.to_be_bytes());
+    b
+}
+
+fn entity51(flags: u32, attr: u16, disc: u16, slots: &[u16]) -> Vec<u8> {
+    let mut b = vec![0x00, 0x51];
+    be32(&mut b, flags);
+    be16(&mut b, attr);
+    be32(&mut b, 1);
+    be16(&mut b, disc);
+    for slot in slots {
+        be16(&mut b, *slot);
+    }
+    b
+}
+
+fn count_entity51_family(payload: &[u8], flags: u32, disc: u16) -> usize {
+    payload
+        .windows(14)
+        .filter(|window| {
+            window[0..2] == [0x00, 0x51]
+                && u32::from_be_bytes(window[2..6].try_into().unwrap()) == flags
+                && u16::from_be_bytes(window[12..14].try_into().unwrap()) == disc
+        })
+        .count()
+}
+
+fn entity53_color(attr: u16, rgb: [f64; 3]) -> Vec<u8> {
+    let mut b = vec![0x00, 0x53];
+    be32(&mut b, 3);
+    be16(&mut b, attr);
+    for value in rgb {
+        bef64(&mut b, value);
+    }
+    b
+}
+
+/// Loop head `00 0f`: `refs[1]` = first coedge, `refs[2]` = owning bridge.
+fn loop_head(attr: u16, first_coedge: u16, bridge_attr: u16) -> Vec<u8> {
+    let mut b = vec![0x00, 0x0f];
+    be16(&mut b, attr); // p+0
+    be32(&mut b, 0); // p+2 seq
+    let refs = [0u16, first_coedge, bridge_attr, 0];
+    for r in refs {
+        be16(&mut b, r); // p+6..14
+    }
+    b
+}
+
+/// Coedge `00 11`: `refs[1]` owner loop, `refs[3]` next, `refs[4]` start
+/// vertex-use, `refs[5]` twin, `refs[6]` edge-use; marker is the local sense.
+#[allow(clippy::too_many_arguments)]
+fn coedge(
+    attr: u16,
+    owner_loop: u16,
+    next: u16,
+    start_vuse: u16,
+    twin: u16,
+    edge_use: u16,
+    reversed: bool,
+) -> Vec<u8> {
+    let mut b = vec![0x00, 0x11];
+    be16(&mut b, attr); // p+0
+    let refs = [0u16, owner_loop, 0, next, start_vuse, twin, edge_use, 0, 0];
+    for r in refs {
+        be16(&mut b, r); // p+2..20
+    }
+    b.push(if reversed { 0x2d } else { 0x2b }); // p+20 marker
+    b
+}
+
+fn tripled_coedge(
+    attr: u16,
+    owner_loop: u16,
+    next: u16,
+    start_vuse: u16,
+    edge_use: u16,
+) -> Vec<u8> {
+    let mut b = vec![0x00, 0x11];
+    be16(&mut b, attr);
+    for reference in [0, owner_loop, 0, next, start_vuse, 0, edge_use, 0, 0] {
+        be16(&mut b, reference);
+        b.push(1);
+    }
+    b.push(0x2b);
+    b
+}
+
+/// Edge-use `00 10`: `refs[3]` = support curve carrier (0 = none).
+fn edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
+    let mut b = vec![0x00, 0x10];
+    be16(&mut b, attr); // p+0
+    be32(&mut b, 0); // p+2 seq
+    be16(&mut b, 0); // p+6 ref0
+    b.extend_from_slice(&MAGIC); // p+8..16
+    let refs = [0u16, 0, 0, curve_attr, 0, 0];
+    for r in refs {
+        be16(&mut b, r); // p+16..28
+    }
+    b
+}
+
+fn prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
+    let mut b = vec![0x00, 0x10];
+    be16(&mut b, attr);
+    be32(&mut b, 0);
+    be16(&mut b, 0);
+    b.extend_from_slice(&[1, 0, 0]);
+    b.extend_from_slice(&MAGIC);
+    for reference in [0u16, 0, curve_attr] {
+        b.push(1);
+        be16(&mut b, reference);
+    }
+    b
+}
+
+/// Vertex-use `00 12`: `refs[4]` = world-point attr; magic at body+16.
+fn vertex_use(attr: u16, point_attr: u16) -> Vec<u8> {
+    let mut b = vec![0x00, 0x12];
+    be16(&mut b, attr); // p+0
+    be32(&mut b, 0); // p+2 seq
+    let refs = [0u16, 0, 0, 0, point_attr];
+    for r in refs {
+        be16(&mut b, r); // p+6..16
+    }
+    b.extend_from_slice(&MAGIC); // p+16..24
+    b
+}
+
+fn tripled_vertex_use(attr: u16, point_attr: u16) -> Vec<u8> {
+    let mut b = vec![0x00, 0x12];
+    be16(&mut b, attr);
+    be32(&mut b, 0);
+    for reference in [0u16, 0, 0, 0, point_attr] {
+        be16(&mut b, reference);
+        b.push(1);
+    }
+    b.extend_from_slice(&MAGIC);
+    b
+}
+
+/// World point `00 1d`: xyz f64 BE (metres) at body+14.
+fn world_point(attr: u16, xyz: [f64; 3]) -> Vec<u8> {
+    let mut b = vec![0x00, 0x1d];
+    be16(&mut b, attr); // p+0
+    be32(&mut b, 0); // p+2 seq
+    for _ in 0..4 {
+        be16(&mut b, 0); // p+6..14 refs[4]
+    }
+    for v in xyz {
+        bef64(&mut b, v); // p+14..38
+    }
+    b
+}
+
+fn tripled_world_point(attr: u16, xyz: [f64; 3]) -> Vec<u8> {
+    let mut b = vec![0x00, 0x1d];
+    be16(&mut b, attr);
+    be32(&mut b, 0);
+    for reference in [0u16, 0, 0, 0] {
+        be16(&mut b, reference);
+        b.push(1);
+    }
+    for value in xyz {
+        bef64(&mut b, value);
+    }
+    b
+}
+
+fn tripled_triangle_body() -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend(plane_carrier(
+        100,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    b.extend(bridge(10, 20, 100));
+    b.extend(loop_head(20, 30, 10));
+    b.extend(tripled_coedge(30, 20, 31, 50, 40));
+    b.extend(tripled_coedge(31, 20, 32, 51, 41));
+    b.extend(tripled_coedge(32, 20, 30, 52, 42));
+    b.extend(edge_use(40, 0));
+    b.extend(edge_use(41, 0));
+    b.extend(edge_use(42, 0));
+    b.extend(tripled_vertex_use(50, 60));
+    b.extend(tripled_vertex_use(51, 61));
+    b.extend(tripled_vertex_use(52, 62));
+    b.extend(tripled_world_point(60, [0.0, 0.0, 0.0]));
+    b.extend(tripled_world_point(61, [1.0, 0.0, 0.0]));
+    b.extend(tripled_world_point(62, [0.0, 1.0, 0.0]));
+    b
+}
+
+fn prefixed_edge_triangle_body() -> Vec<u8> {
+    let mut b = tripled_triangle_body();
+    b.extend(prefixed_line_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
+    b.extend(prefixed_edge_use(40, 70));
+    b
+}
+
+/// One triangular planar face: a plane carrier, a bridge, a loop, three coedges
+/// forming a closed ring, three edge-uses, three vertex-uses, and three points.
+fn triangle_body() -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend(plane_carrier(
+        100,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    b.extend(bridge(10, 20, 100));
+    b.extend(loop_head(20, 30, 10));
+    b.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    b.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    b.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    b.extend(edge_use(40, 0));
+    b.extend(edge_use(41, 0));
+    b.extend(edge_use(42, 0));
+    b.extend(vertex_use(50, 60));
+    b.extend(vertex_use(51, 61));
+    b.extend(vertex_use(52, 62));
+    b.extend(world_point(60, [0.0, 0.0, 0.0]));
+    b.extend(world_point(61, [1.0, 0.0, 0.0]));
+    b.extend(world_point(62, [0.0, 1.0, 0.0]));
+    b
+}
+
+fn triangle_body_with_overlapping_point() -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend(plane_carrier(
+        100,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    let mut face_bridge = bridge(10, 20, 100);
+    face_bridge.splice(31..31, world_point(60, [0.0, 0.0, 0.0]));
+    b.extend(face_bridge);
+    b.extend(loop_head(20, 30, 10));
+    b.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    b.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    b.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    b.extend(edge_use(40, 0));
+    b.extend(edge_use(41, 0));
+    b.extend(edge_use(42, 0));
+    b.extend(vertex_use(50, 60));
+    b.extend(vertex_use(51, 61));
+    b.extend(vertex_use(52, 62));
+    b.extend(world_point(61, [1.0, 0.0, 0.0]));
+    b.extend(world_point(62, [0.0, 1.0, 0.0]));
+    b
+}
+
+fn owned_triangle(base: u16, owner: u16, x: f64) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend(plane_carrier(
+        base + 100,
+        [x, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    b.extend(bridge_owned(base + 10, base + 20, base + 100, owner));
+    b.extend(loop_head(base + 20, base + 30, base + 10));
+    b.extend(coedge(
+        base + 30,
+        base + 20,
+        base + 31,
+        base + 50,
+        0,
+        base + 40,
+        false,
+    ));
+    b.extend(coedge(
+        base + 31,
+        base + 20,
+        base + 32,
+        base + 51,
+        0,
+        base + 41,
+        false,
+    ));
+    b.extend(coedge(
+        base + 32,
+        base + 20,
+        base + 30,
+        base + 52,
+        0,
+        base + 42,
+        false,
+    ));
+    b.extend(edge_use(base + 40, 0));
+    b.extend(edge_use(base + 41, 0));
+    b.extend(edge_use(base + 42, 0));
+    b.extend(vertex_use(base + 50, base + 60));
+    b.extend(vertex_use(base + 51, base + 61));
+    b.extend(vertex_use(base + 52, base + 62));
+    b.extend(world_point(base + 60, [x, 0.0, 0.0]));
+    b.extend(world_point(base + 61, [x + 1.0, 0.0, 0.0]));
+    b.extend(world_point(base + 62, [x, 1.0, 0.0]));
+    b
+}
+
+/// A `.sldprt` whose partition block carries `triangle_body`.
+fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
+    let mut f = outer_header();
+    f.extend_from_slice(&make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", body),
+    ));
+    f
+}
+
+fn sldprt_with_body_and_material(body: &[u8], name: &str, rgb: [u8; 3]) -> Vec<u8> {
+    let mut f = sldprt_with_body(body);
+    let mut material = b"moVisualProperties_c".to_vec();
+    material.extend_from_slice(&u32::from_le_bytes([rgb[0], rgb[1], rgb[2], 0]).to_le_bytes());
+    material.extend_from_slice(&0u32.to_le_bytes());
+    material.extend_from_slice(&0x00c0c0c0u32.to_le_bytes());
+    material.extend_from_slice(&[0xff, 0xfe, 0xff, 0x00]);
+    material.extend_from_slice(&[0xff, 0xfe, 0xff, name.len() as u8]);
+    for unit in name.encode_utf16() {
+        material.extend_from_slice(&unit.to_le_bytes());
+    }
+    f.extend(make_block(0x40, "SWObjects", &material));
+    f
+}
+
+fn display_list_payload() -> Vec<u8> {
+    fn descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(&item_size.to_le_bytes());
+        b.extend_from_slice(&kind.to_le_bytes());
+        b.extend_from_slice(&2u32.to_le_bytes());
+        b.extend_from_slice(&count.to_le_bytes());
+        b.extend_from_slice(data);
+        b
+    }
+    let mut b = b"uoTempBodyTessData_c".to_vec();
+    b.extend_from_slice(&[0u8; 8]);
+    b.extend_from_slice(b"uoTempFaceTessData_c");
+    b.extend_from_slice(&[0u8; 8]);
+    b.extend(descriptor(4, 8, 1, &3u32.to_le_bytes()));
+    let mut positions = Vec::new();
+    for value in [0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
+        positions.extend_from_slice(&value.to_le_bytes());
+    }
+    b.extend(descriptor(12, 100, 3, &positions));
+    b.extend(descriptor(12, 100, 3, &[0u8; 36]));
+    b.extend(descriptor(4, 8, 0, &[]));
+    b.extend(descriptor(4, 8, 1, &4u32.to_le_bytes()));
+    b.extend(descriptor(1, 8, 0, &[]));
+    b
+}
+
+fn sldprt_with_body_and_display_list(body: &[u8]) -> Vec<u8> {
+    let mut f = sldprt_with_body(body);
+    f.extend(make_block(
+        0x41,
+        "Contents/DisplayLists",
+        &display_list_payload(),
+    ));
+    f
+}
+
+fn sldprt_with_body_and_history(body: &[u8]) -> Vec<u8> {
+    let mut f = sldprt_with_body(body);
+    f.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords Name="Bracket"><Configuration Name="Default" Material="Steel" DisplayState="Shaded"/><Extrusion Name="Boss" Type="BossExtrude" id="7" Scope="Body1"><Dimension Name="Depth">12.5mm</Dimension><EquationDrivenCurve Name="Profile" id="8"/></Extrusion></Keywords>"#));
+    f
+}
+
+fn resolved_features_payload(codes: &[u32]) -> Vec<u8> {
+    let mut payload = b"sgPointHandle\0sgLineHandle\0sgArcHandle\0".to_vec();
+    for code in codes {
+        payload.extend_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
+        payload.extend_from_slice(&[0; 12]);
+        payload.extend_from_slice(&code.to_le_bytes());
+        payload.extend_from_slice(&[0x5a; 43]);
+    }
+    payload
+}
+
+fn sldprt_with_body_and_resolved_features(body: &[u8], codes: &[u32]) -> Vec<u8> {
+    let mut file = sldprt_with_body(body);
+    file.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload(codes),
+    ));
+    file
+}
+
+fn sldprt_with_body_and_envelope(body: &[u8]) -> Vec<u8> {
+    let mut f = sldprt_with_body(body);
+    let mut payload = b"moBBoxCenterData_c".to_vec();
+    payload.extend_from_slice(&1u32.to_le_bytes());
+    for value in [0.01f64, 0.02, -0.03, 0.04] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.extend_from_slice(b"moDefaultRefPlnData_c");
+    for value in [0.001f64, 0.002, 0.003, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.extend_from_slice(b"moPart_c");
+    let mut part = [0u8; 13];
+    part[0..4].copy_from_slice(&42u32.to_le_bytes());
+    part[8..12].copy_from_slice(&2026u32.to_le_bytes());
+    payload.extend_from_slice(&part);
+    payload.extend_from_slice(b"moConfigurationMgr_c");
+    let mut configuration = [0u8; 125];
+    configuration[66..70].copy_from_slice(&17u32.to_le_bytes());
+    configuration[107] = 3;
+    configuration[117..125].copy_from_slice(&132_537_600_000_000_000u64.to_le_bytes());
+    payload.extend_from_slice(&configuration);
+    f.extend(make_block(0x43, "SWObjects", &payload));
+    f.extend(make_block(
+        0x44,
+        "Units",
+        br#"<Metadata><Property Name="SW_UnitsLinear" Value="0"/></Metadata>"#,
+    ));
+    f
+}
+
+fn sldprt_with_partition_and_deltas(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
+    let mut f = outer_header();
+    f.extend_from_slice(&make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", partition),
+    ));
+    f.extend_from_slice(&make_block(
+        0x21,
+        "Contents/Config-0-Deltas",
+        &parasolid_with_body("deltas body", "SCH_SW_33103_11000", deltas),
+    ));
+    f
+}
+
+fn sldprt_with_colliding_sites() -> Vec<u8> {
+    let mut f = outer_header();
+    f.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body(
+            "partition body",
+            "SCH_SW_33103_11000",
+            &owned_triangle(0, 700, 0.0),
+        ),
+    ));
+    f.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body(
+            "partition body",
+            "SCH_SW_33103_11000",
+            &owned_triangle(0, 701, 10.0),
+        ),
+    ));
+    f
+}
+
+/// The 8-byte outer header (`file_id`, then big-endian `version == 4`).
+fn outer_header() -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend_from_slice(&0x0000_0001u32.to_le_bytes());
+    b.extend_from_slice(&0x0000_0004u32.to_be_bytes());
+    b
+}
+
+/// A synthetic `.sldprt`: header, a PNG-preview block, a Parasolid block, a
+/// cache cell, and a tail-directory entry.
+fn synthetic_sldprt() -> Vec<u8> {
+    let mut f = outer_header();
+    f.extend_from_slice(&make_block(
+        0x10,
+        "PreviewPNG",
+        &[0x89, b'P', b'N', b'G', 1, 2, 3, 4],
+    ));
+    f.extend_from_slice(&make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_payload("partition body", "SCH_SW_33103_11000"),
+    ));
+    f.extend_from_slice(&make_cache_cell(90, "Contents/DisplayLists"));
+    f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml"));
+    f
+}
+
+#[test]
+fn detect_high_on_marker_after_header() {
+    let f = synthetic_sldprt();
+    assert_eq!(SldprtCodec.detect(&f), Confidence::High);
+    // A marker inside the leading 8-byte header region does not count.
+    assert_eq!(
+        SldprtCodec.detect(b"\x00\x01\x02\x03 no marker here"),
+        Confidence::No
+    );
+}
+
+#[test]
+fn scan_classifies_blocks_cells_and_directory() {
+    let f = synthetic_sldprt();
+    let scan = container::scan_bytes(&f);
+    assert_eq!(scan.version, 0x0000_0004);
+    assert_eq!(scan.blocks.len(), 2);
+    assert_eq!(scan.cache_cells.len(), 1);
+    assert_eq!(scan.directory.len(), 1);
+
+    // Section names decode via nibble-swap; payload families are byte-derived.
+    let png = &scan.blocks[0];
+    assert_eq!(png.section.as_deref(), Some("PreviewPNG"));
+    assert_eq!(png.family, "png-preview");
+
+    let ps = &scan.blocks[1];
+    assert_eq!(ps.section.as_deref(), Some("Contents/Config-0-Partition"));
+    assert_eq!(ps.family, "parasolid");
+
+    assert_eq!(scan.cache_cells[0].name, "Contents/DisplayLists");
+    assert_eq!(scan.cache_cells[0].logical_len, 90);
+    assert_eq!(scan.directory[0].name, "[Content_Types].xml");
+}
+
+#[test]
+fn parasolid_stream_header_is_parsed() {
+    let f = synthetic_sldprt();
+    let scan = container::scan_bytes(&f);
+    let (block, header) = container::select_active_parasolid(&scan).expect("active parasolid");
+    assert_eq!(header.schema, "SCH_SW_33103_11000");
+    assert!(header.description.contains("partition"));
+    assert_eq!(block.family, "parasolid");
+    assert!(crate::parasolid::is_body_stream(&header));
+}
+
+#[test]
+fn parasolid_extracts_every_direct_stream_in_block() {
+    let mut payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
+    payload.extend(parasolid_with_body(
+        "deltas body",
+        "SCH_SW_33103_11000",
+        &world_point(60, [2.0, 0.0, 0.0]),
+    ));
+    let streams = crate::parasolid::extract_streams(&payload);
+    assert_eq!(streams.len(), 2);
+    assert!(crate::parasolid::stream_header(&streams[0])
+        .unwrap()
+        .description
+        .contains("partition"));
+    assert!(crate::parasolid::stream_header(&streams[1])
+        .unwrap()
+        .description
+        .contains("deltas"));
+}
+
+#[test]
+fn inspect_enumerates_every_structure() {
+    let f = synthetic_sldprt();
+    let mut cur = Cursor::new(f);
+    let summary = SldprtCodec.inspect(&mut cur).unwrap();
+    assert_eq!(summary.format, "sldprt");
+    assert_eq!(summary.container_kind, "sldprt-blocks");
+    assert_eq!(
+        summary
+            .entries
+            .iter()
+            .filter(|e| e.role == role::BLOCK)
+            .count(),
+        2
+    );
+    assert!(summary.entries.iter().any(|e| e.role == role::CACHE_CELL));
+    assert!(summary
+        .entries
+        .iter()
+        .any(|e| e.role == role::DIRECTORY_ENTRY));
+    assert!(summary
+        .notes
+        .iter()
+        .any(|n| n.contains("active Parasolid B-rep candidate")));
+}
+
+#[test]
+fn decode_without_geometry_falls_back_to_metadata() {
+    // The Parasolid block frames but carries no topology records, so decode must
+    // preserve it as an unknown passthrough and report geometry as not transferred.
+    let f = synthetic_sldprt();
+    let mut cur = Cursor::new(f);
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert!(!result.report.geometry_transferred);
+    assert_eq!(result.ir.unknowns.len(), 2);
+    assert!(result
+        .ir
+        .unknowns
+        .iter()
+        .any(|record| record.id.0 == "sldprt:source-image" && record.data.is_some()));
+    assert!(result
+        .ir
+        .unknowns
+        .iter()
+        .any(|record| record.id.0 != "sldprt:source-image" && record.sha256.len() == 64));
+    let source = result.ir.source.expect("source metadata");
+    assert_eq!(source.format, "sldprt");
+    assert_eq!(
+        source
+            .attributes
+            .get("parasolid_schema")
+            .map(String::as_str),
+        Some("SCH_SW_33103_11000")
+    );
+}
+
+#[test]
+fn retained_source_image_round_trips_byte_exactly() {
+    let source = sldprt_with_body(&triangle_body());
+    let mut cur = Cursor::new(source.clone());
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&result.ir, &mut encoded)
+        .unwrap();
+    assert_eq!(encoded, source);
+}
+
+#[test]
+fn encoder_writes_source_less_ir() {
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.bodies[0].name = None;
+    ir.faces.iter_mut().for_each(|face| face.name = None);
+    ir.edges.iter_mut().for_each(|edge| edge.param_range = None);
+
+    let mut encoded = Vec::new();
+    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    let scan = container::scan_bytes(&encoded);
+    assert_eq!(scan.blocks.len(), 1);
+    assert_eq!(scan.directory.len(), 1);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(decoded.ir.bodies.len(), 1);
+    assert_eq!(decoded.ir.faces.len(), 6);
+    assert_eq!(decoded.ir.edges.len(), 12);
+    assert_eq!(decoded.ir.vertices.len(), 8);
+}
+
+#[test]
+fn encoder_bakes_rigid_body_transform() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::transform::Transform;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.bodies[0].name = None;
+    ir.faces.iter_mut().for_each(|face| face.name = None);
+    ir.edges.iter_mut().for_each(|edge| edge.param_range = None);
+    let original_point = ir.points[0].position;
+    let original_normal = ir
+        .surfaces
+        .iter()
+        .find_map(|surface| match surface.geometry {
+            SurfaceGeometry::Plane { normal, .. } if normal.x == 1.0 => Some(normal),
+            _ => None,
+        })
+        .unwrap();
+    ir.bodies[0].transform = Some(Transform {
+        rows: [
+            [0.0, -1.0, 0.0, 10.0],
+            [1.0, 0.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 30.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    });
+    let expected_point = Point3::new(
+        -original_point.y + 10.0,
+        original_point.x + 20.0,
+        original_point.z + 30.0,
+    );
+    let expected_normal = Vector3::new(-original_normal.y, original_normal.x, original_normal.z);
+
+    let mut encoded = Vec::new();
+    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(decoded.ir.points.iter().any(|point| {
+        (point.position.x - expected_point.x).abs() < 1e-9
+            && (point.position.y - expected_point.y).abs() < 1e-9
+            && (point.position.z - expected_point.z).abs() < 1e-9
+    }));
+    assert!(decoded.ir.surfaces.iter().any(|surface| {
+        matches!(surface.geometry, SurfaceGeometry::Plane { normal, .. } if normal == expected_normal)
+    }));
+    assert!(decoded
+        .ir
+        .bodies
+        .iter()
+        .all(|body| body.transform.is_none()));
+}
+
+#[test]
+fn semantic_writer_regenerates_modified_planar_brep() {
+    let source = sldprt_with_body(&triangle_body());
+    let mut cur = Cursor::new(source);
+    let mut result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    result.ir.points[0].position.x += 1.0;
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&result.ir, &mut encoded)
+        .unwrap();
+    let mut regenerated = Cursor::new(encoded);
+    let decoded = SldprtCodec
+        .decode(&mut regenerated, &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded
+        .ir
+        .points
+        .iter()
+        .any(|point| point.position.x == 1.0));
+}
+
+#[test]
+fn semantic_writer_uses_schema_specific_face_families() {
+    let mut solid = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    solid.ir.points[0].position.z += 1.0;
+    let mut solid_bytes = Vec::new();
+    SldprtCodec
+        .write_preserved(&solid.ir, &mut solid_bytes)
+        .unwrap();
+    let solid_scan = container::scan(&mut Cursor::new(solid_bytes)).unwrap();
+    let solid_payload = &solid_scan.blocks[0].payload;
+    assert!(count_entity51_family(solid_payload, 2, 0x0013) >= 1);
+    assert!(count_entity51_family(solid_payload, 1, 0x0015) >= 1);
+
+    let mut sheet_body = Vec::new();
+    sheet_body.extend(entity51(2, 501, 0x0017, &[511, 701, 0, 0, 0, 0]));
+    sheet_body.extend(entity51(1, 511, 0x001d, &[701, 0, 0, 0, 0, 0]));
+    sheet_body.extend(owned_triangle(0, 701, 0.0));
+    let mut sheet = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&sheet_body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    sheet.ir.points[0].position.z += 1.0;
+    let mut sheet_bytes = Vec::new();
+    SldprtCodec
+        .write_preserved(&sheet.ir, &mut sheet_bytes)
+        .unwrap();
+    let sheet_scan = container::scan(&mut Cursor::new(sheet_bytes)).unwrap();
+    let sheet_payload = &sheet_scan.blocks[0].payload;
+    assert!(count_entity51_family(sheet_payload, 2, 0x0015) >= 1);
+    assert!(count_entity51_family(sheet_payload, 1, 0x001f) >= 1);
+}
+
+#[test]
+fn semantic_writer_preserves_outer_header() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source[..4].copy_from_slice(&0x1234_5678u32.to_le_bytes());
+    source[4..8].copy_from_slice(&7u32.to_be_bytes());
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    decoded.ir.points[0].position.z += 1.0;
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+
+    assert_eq!(
+        u32::from_le_bytes(encoded[..4].try_into().unwrap()),
+        0x1234_5678
+    );
+    assert_eq!(u32::from_be_bytes(encoded[4..8].try_into().unwrap()), 7);
+}
+
+#[test]
+fn semantic_writer_regenerates_modified_analytic_breps() {
+    for body in [closed_cylinder_body(), sphere_patch_body()] {
+        let source = sldprt_with_body(&body);
+        let mut cur = Cursor::new(source);
+        let mut result = SldprtCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .unwrap();
+        result.ir.points[0].position.x += 1.0;
+
+        let mut encoded = Vec::new();
+        SldprtCodec
+            .write_preserved(&result.ir, &mut encoded)
+            .unwrap();
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap();
+
+        assert_eq!(decoded.ir.faces.len(), result.ir.faces.len());
+        assert_eq!(decoded.ir.curves.len(), result.ir.curves.len());
+        assert_eq!(
+            decoded
+                .ir
+                .surfaces
+                .iter()
+                .map(|surface| &surface.geometry)
+                .collect::<Vec<_>>(),
+            result
+                .ir
+                .surfaces
+                .iter()
+                .map(|surface| &surface.geometry)
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn decode_builds_valid_topology_and_plane() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::math::Point3;
+
+    let f = sldprt_with_body(&triangle_body());
+    let mut cur = Cursor::new(f);
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.report.geometry_transferred);
+    assert_eq!(result.ir.bodies.len(), 1);
+    assert_eq!(result.ir.faces.len(), 1);
+    assert_eq!(result.ir.loops.len(), 1);
+    assert_eq!(result.ir.coedges.len(), 3);
+    assert_eq!(result.ir.edges.len(), 3);
+    assert_eq!(result.ir.surface_parameterizations.len(), 1);
+    assert_eq!(result.ir.surface_parameterizations[0].u_reference.x, 1.0);
+    assert_eq!(result.ir.vertices.len(), 3);
+    assert_eq!(result.ir.points.len(), 3);
+    assert_eq!(result.ir.surfaces.len(), 1);
+
+    // The plane decoded with its stored origin and unit normal.
+    match &result.ir.surfaces[0].geometry {
+        SurfaceGeometry::Plane { origin, normal } => {
+            assert_eq!(*origin, Point3::new(0.0, 0.0, 0.0));
+            assert_eq!(normal.z, 1.0);
+        }
+        other => panic!("expected plane, got {other:?}"),
+    }
+
+    // Coordinates converted metre → millimetre (×1000).
+    let xs: Vec<f64> = result.ir.points.iter().map(|p| p.position.x).collect();
+    assert!(xs.contains(&1000.0));
+
+    // The loop ring closes and every reference resolves.
+    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(report.is_ok(), "validation findings: {:?}", report.findings);
+    assert_eq!(result.ir.loops[0].coedges.len(), 3);
+    // Edges carry no analytic curve (their carriers were null), which is legal.
+    assert!(result.ir.edges.iter().all(|e| e.curve.is_none()));
+}
+
+#[test]
+fn decode_merges_partition_and_deltas_records() {
+    let body = triangle_body();
+    let split = body.len() / 2;
+    let f = sldprt_with_partition_and_deltas(&body[..split], &body[split..]);
+    let mut cur = Cursor::new(f);
+
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.report.geometry_transferred);
+    assert_eq!(result.ir.faces.len(), 1);
+    assert_eq!(result.ir.points.len(), 3);
+}
+
+#[test]
+fn decode_does_not_merge_colliding_configuration_sites() {
+    let mut cur = Cursor::new(sldprt_with_colliding_sites());
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.faces.len(), 1);
+    assert!(result.ir.points.iter().any(|point| point.position.x == 0.0));
+    assert!(!result
+        .ir
+        .points
+        .iter()
+        .any(|point| point.position.x == 10_000.0));
+}
+
+#[test]
+fn deltas_full_record_overrides_partition_record() {
+    let partition = triangle_body();
+    let deltas = world_point(60, [2.0, 0.0, 0.0]);
+    let f = sldprt_with_partition_and_deltas(&partition, &deltas);
+    let mut cur = Cursor::new(f);
+
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    let point = result
+        .ir
+        .points
+        .iter()
+        .find(|point| point.id.0.ends_with("#60"))
+        .expect("overridden point");
+
+    assert_eq!(point.position.x, 2000.0);
+}
+
+#[test]
+fn duplicate_face_uses_emit_one_face() {
+    let mut body = triangle_body();
+    let first_bridge = body
+        .windows(2)
+        .position(|w| w == [0x00, 0x0e])
+        .expect("bridge");
+    body[first_bridge + 8..first_bridge + 10].copy_from_slice(&700u16.to_be_bytes());
+    body.extend(bridge_owned(11, 20, 100, 700));
+    let f = sldprt_with_body(&body);
+    let mut cur = Cursor::new(f);
+
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.faces.len(), 1);
+}
+
+#[test]
+fn sheet_body_faces_are_retained_and_classified() {
+    let mut body = Vec::new();
+    body.extend(entity51(2, 500, 0x0017, &[510, 700, 0, 0, 0, 0]));
+    body.extend(entity51(2, 501, 0x0017, &[511, 701, 0, 0, 0, 0]));
+    body.extend(entity51(1, 510, 0x001b, &[700, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 511, 0x001d, &[701, 0, 0, 0, 0, 0]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    body.extend(owned_triangle(200, 701, 10.0));
+    let f = sldprt_with_body(&body);
+    let mut cur = Cursor::new(f);
+
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.bodies.len(), 2);
+    assert_eq!(result.ir.faces.len(), 2);
+    assert_eq!(
+        result
+            .ir
+            .bodies
+            .iter()
+            .filter(|body| body.kind == cadmpeg_ir::topology::BodyKind::Solid)
+            .count(),
+        1
+    );
+    assert_eq!(
+        result
+            .ir
+            .bodies
+            .iter()
+            .filter(|body| body.kind == cadmpeg_ir::topology::BodyKind::Sheet)
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn semantic_writer_preserves_sheet_body_classification() {
+    let mut body = Vec::new();
+    body.extend(entity51(2, 501, 0x0017, &[511, 701, 0, 0, 0, 0]));
+    body.extend(entity51(1, 511, 0x001d, &[701, 0, 0, 0, 0, 0]));
+    body.extend(owned_triangle(0, 701, 0.0));
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.points[0].position.z += 1.0;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(regenerated.ir.bodies.len(), 1);
+    assert_eq!(
+        regenerated.ir.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Sheet
+    );
+    assert_eq!(regenerated.ir.faces.len(), 1);
+    assert_eq!(
+        regenerated
+            .ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("parasolid_schema"))
+            .map(String::as_str),
+        Some("SCH_SW_32001_11000")
+    );
+}
+
+#[test]
+fn semantic_writer_rejects_invalid_ir_without_panicking() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.faces[0].surface = cadmpeg_ir::ids::SurfaceId("missing".into());
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_ir::codec::CodecError::Malformed(_)));
+}
+
+#[test]
+fn semantic_writer_rejects_unrepresented_typed_fields() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.edges[0].param_range = Some([0.0, 1.0]);
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+    ));
+}
+
+#[test]
+fn semantic_writer_converts_document_units_to_native_metres() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.units.length = cadmpeg_ir::units::LengthUnit::Inch;
+    decoded.ir.points[0].position.x = 2.0;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(regenerated
+        .ir
+        .points
+        .iter()
+        .any(|point| (point.position.x - 50.8).abs() < 1e-5));
+}
+
+#[test]
+fn closed_cylinder_gets_derived_seam() {
+    use cadmpeg_ir::geometry::CurveGeometry;
+    let f = sldprt_with_body(&closed_cylinder_body());
+    let mut cur = Cursor::new(f);
+
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.faces[0].loops.len(), 1);
+    assert_eq!(result.ir.loops[0].coedges.len(), 4);
+    assert_eq!(result.ir.pcurves.len(), 4);
+    assert!(result
+        .ir
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurve.is_some()));
+    assert_eq!(result.ir.edges.len(), 3);
+    assert!(result
+        .ir
+        .curves
+        .iter()
+        .any(|curve| matches!(curve.geometry, CurveGeometry::Line { .. })));
+}
+
+#[test]
+fn sphere_patch_gets_degenerate_meridian_seam() {
+    let mut cur = Cursor::new(sldprt_with_body(&sphere_patch_body()));
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.edges.len(), 4);
+    assert_eq!(result.ir.loops[0].coedges.len(), 4);
+    assert_eq!(result.ir.pcurves.len(), 3);
+    let seam = result
+        .ir
+        .edges
+        .iter()
+        .find(|edge| edge.meta.provenance.tag.as_deref() == Some("derived_sphere_seam"))
+        .expect("sphere seam");
+    assert_eq!(seam.start, seam.end);
+    let vertex = result
+        .ir
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == seam.start)
+        .unwrap();
+    let point = result
+        .ir
+        .points
+        .iter()
+        .find(|point| point.id == vertex.point)
+        .unwrap();
+    assert_eq!(
+        [point.position.x, point.position.y, point.position.z],
+        [0.0, 0.0, 1000.0]
+    );
+}
+
+#[test]
+fn decode_recovers_overlapping_topology_records() {
+    let f = sldprt_with_body(&triangle_body_with_overlapping_point());
+    let mut cur = Cursor::new(f);
+
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.points.len(), 3);
+    assert_eq!(result.ir.vertices.len(), 3);
+}
+
+#[test]
+fn decode_recovers_tripled_deltas_topology() {
+    let mut cur = Cursor::new(sldprt_with_body(&tripled_triangle_body()));
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.coedges.len(), 3);
+    assert_eq!(result.ir.points.len(), 3);
+    assert_eq!(result.ir.faces.len(), 1);
+}
+
+#[test]
+fn decode_resolves_prefixed_deltas_edge_curve() {
+    use cadmpeg_ir::geometry::CurveGeometry;
+    let mut cur = Cursor::new(sldprt_with_body(&prefixed_edge_triangle_body()));
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert!(result
+        .ir
+        .curves
+        .iter()
+        .any(|curve| matches!(curve.geometry, CurveGeometry::Line { .. })));
+}
+
+#[test]
+fn decode_preserves_explicit_body_membership() {
+    let mut body = Vec::new();
+    body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 501, 0x0017, &[701, 0, 0, 0, 0, 0]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    body.extend(owned_triangle(200, 701, 10.0));
+    let f = sldprt_with_body(&body);
+    let mut cur = Cursor::new(f);
+
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.bodies.len(), 2);
+    assert_eq!(result.ir.shells.len(), 2);
+    assert_eq!(result.ir.faces.len(), 2);
+    assert_eq!(result.ir.bodies[0].id.0, "sldprt:body#500");
+    assert_eq!(result.ir.bodies[1].id.0, "sldprt:body#501");
+}
+
+#[test]
+fn semantic_writer_preserves_multiple_body_ownership() {
+    let mut body = Vec::new();
+    body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 501, 0x0017, &[701, 0, 0, 0, 0, 0]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    body.extend(owned_triangle(200, 701, 0.0));
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.points[0].position.z += 1.0;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(regenerated.ir.bodies.len(), 2);
+    assert_eq!(regenerated.ir.lumps.len(), 2);
+    assert_eq!(regenerated.ir.shells.len(), 2);
+    assert!(regenerated
+        .ir
+        .shells
+        .iter()
+        .all(|shell| shell.faces.len() == 1));
+    assert!(regenerated.ir.lumps.iter().all(|lump| {
+        lump.meta.provenance.tag.as_deref() == Some("00_51_lump")
+            && lump.meta.exactness == cadmpeg_ir::provenance::Exactness::ByteExact
+    }));
+    assert!(regenerated.ir.shells.iter().all(|shell| {
+        shell.meta.provenance.tag.as_deref() == Some("00_51_shell")
+            && shell.meta.exactness == cadmpeg_ir::provenance::Exactness::ByteExact
+    }));
+}
+
+#[test]
+fn edge_uses_decoded_line_curve() {
+    use cadmpeg_ir::geometry::CurveGeometry;
+
+    // Point the first edge-use at a line carrier; the edge must gain a Line curve.
+    let mut body = Vec::new();
+    body.extend(plane_carrier(
+        100,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    body.extend(line_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
+    body.extend(bridge(10, 20, 100));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    body.extend(edge_use(40, 70)); // curve = line carrier 70
+    body.extend(edge_use(41, 0));
+    body.extend(edge_use(42, 0));
+    body.extend(vertex_use(50, 60));
+    body.extend(vertex_use(51, 61));
+    body.extend(vertex_use(52, 62));
+    body.extend(world_point(60, [0.0, 0.0, 0.0]));
+    body.extend(world_point(61, [1.0, 0.0, 0.0]));
+    body.extend(world_point(62, [0.0, 1.0, 0.0]));
+
+    let f = sldprt_with_body(&body);
+    let mut cur = Cursor::new(f);
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.curves.len(), 1);
+    match &result.ir.curves[0].geometry {
+        CurveGeometry::Line { direction, .. } => assert_eq!(direction.x, 1.0),
+        other => panic!("expected line, got {other:?}"),
+    }
+    assert_eq!(
+        result.ir.edges.iter().filter(|e| e.curve.is_some()).count(),
+        1
+    );
+    assert_eq!(result.ir.pcurves.len(), 1);
+    assert!(result
+        .ir
+        .coedges
+        .iter()
+        .any(|coedge| coedge.pcurve.is_some()));
+    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(report.is_ok(), "findings: {:?}", report.findings);
+}
+
+#[test]
+fn edge_uses_decode_nurbs_curve() {
+    use cadmpeg_ir::geometry::CurveGeometry;
+
+    let mut body = triangle_body();
+    body.extend(nurbs_curve_carrier(170, 171));
+    let edge = body
+        .windows(2)
+        .position(|w| w == [0x00, 0x10])
+        .expect("edge-use");
+    body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
+    let f = sldprt_with_body(&body);
+    let mut cur = Cursor::new(f);
+
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    let nurbs = result
+        .ir
+        .curves
+        .iter()
+        .find_map(|curve| match &curve.geometry {
+            CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+            _ => None,
+        })
+        .expect("NURBS curve");
+    assert_eq!(nurbs.degree, 2);
+    assert_eq!(nurbs.control_points.len(), 3);
+    assert_eq!(nurbs.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+}
+
+#[test]
+fn faces_decode_nurbs_surface() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let mut body = triangle_body();
+    body.extend(nurbs_surface_carrier(180, 181, 10));
+    let bridge = body
+        .windows(2)
+        .position(|w| w == [0x00, 0x0e])
+        .expect("bridge");
+    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+    let f = sldprt_with_body(&body);
+    let mut cur = Cursor::new(f);
+
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    let nurbs = result
+        .ir
+        .surfaces
+        .iter()
+        .find_map(|surface| match &surface.geometry {
+            SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+            _ => None,
+        })
+        .expect("NURBS surface");
+    assert_eq!((nurbs.u_degree, nurbs.v_degree), (1, 1));
+    assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
+    assert_eq!(nurbs.control_points.len(), 4);
+}
+
+#[test]
+fn semantic_writer_regenerates_modified_nurbs_carriers() {
+    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+
+    let mut body = triangle_body();
+    let bridge = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
+    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+    let edge = body.windows(2).position(|w| w == [0x00, 0x10]).unwrap();
+    body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
+    body.extend(nurbs_curve_carrier(170, 171));
+    body.extend(nurbs_surface_carrier(180, 181, 10));
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let CurveGeometry::Nurbs(curve) = &mut decoded.ir.curves[0].geometry else {
+        panic!("expected NURBS curve");
+    };
+    curve.control_points[1].y += 250.0;
+    let expected_curve = curve.clone();
+    let SurfaceGeometry::Nurbs(surface) = &mut decoded.ir.surfaces[0].geometry else {
+        panic!("expected NURBS surface");
+    };
+    surface.control_points[3].z += 500.0;
+    let expected_surface = surface.clone();
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(regenerated.ir.curves.iter().any(
+        |curve| matches!(&curve.geometry, CurveGeometry::Nurbs(value) if value == &expected_curve)
+    ));
+    assert!(regenerated.ir.surfaces.iter().any(
+        |surface| matches!(&surface.geometry, SurfaceGeometry::Nurbs(value) if value == &expected_surface)
+    ));
+}
+
+#[test]
+fn nurbs_boundary_curve_gets_isoparametric_pcurve() {
+    let mut body = triangle_body();
+    let bridge = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
+    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+    let edge = body.windows(2).position(|w| w == [0x00, 0x10]).unwrap();
+    body[edge + 24..edge + 26].copy_from_slice(&190u16.to_be_bytes());
+    body.extend(nurbs_surface_carrier(180, 181, 10));
+    body.extend(linear_nurbs_curve_carrier(190, 191));
+    let mut cur = Cursor::new(sldprt_with_body(&body));
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir.pcurves.iter().any(
+        |pcurve| pcurve.meta.provenance.tag.as_deref() == Some("derived_nurbs_boundary_pcurve")
+    ));
+}
+
+#[test]
+fn decode_transfers_body_material_color() {
+    let f = sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]);
+    let mut cur = Cursor::new(f);
+
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    let color = result.ir.bodies[0].color.expect("body color");
+    assert!((color.r - 32.0 / 255.0).abs() < 1e-6);
+    assert!((color.g - 64.0 / 255.0).abs() < 1e-6);
+    assert!((color.b - 128.0 / 255.0).abs() < 1e-6);
+    assert_eq!(result.ir.appearances.len(), 1);
+    assert_eq!(result.ir.appearance_bindings.len(), 1);
+    assert_eq!(result.ir.appearances[0].name.as_deref(), Some("Steel"));
+}
+
+#[test]
+fn semantic_writer_preserves_body_material() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_material(
+                &triangle_body(),
+                "Steel",
+                [32, 64, 128],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.points[0].position.z += 1.0;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(regenerated.ir.bodies[0].name.as_deref(), Some("Steel"));
+    let color = regenerated.ir.bodies[0].color.unwrap();
+    assert!((color.r - 32.0 / 255.0).abs() < 1e-6);
+    assert!((color.g - 64.0 / 255.0).abs() < 1e-6);
+    assert!((color.b - 128.0 / 255.0).abs() < 1e-6);
+    assert!(regenerated
+        .ir
+        .appearances
+        .iter()
+        .any(|appearance| appearance.name.as_deref() == Some("Steel")));
+}
+
+#[test]
+fn decode_binds_entity53_color_to_face() {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+    let mut body = Vec::new();
+    body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+    body.extend(entity53_color(900, [0.25, 0.5, 0.75]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    let mut cur = Cursor::new(sldprt_with_body(&body));
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    let binding = result
+        .ir
+        .appearance_bindings
+        .iter()
+        .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+        .expect("face binding");
+    let appearance = result
+        .ir
+        .appearances
+        .iter()
+        .find(|appearance| appearance.id == binding.appearance)
+        .unwrap();
+    let color = appearance.base_color.unwrap();
+    assert_eq!([color.r, color.g, color.b], [0.25, 0.5, 0.75]);
+}
+
+#[test]
+fn semantic_writer_preserves_face_appearance() {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+
+    let mut body = Vec::new();
+    body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+    body.extend(entity53_color(900, [0.25, 0.5, 0.75]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.points[0].position.z += 1.0;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let binding = regenerated
+        .ir
+        .appearance_bindings
+        .iter()
+        .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+        .expect("face binding");
+    let color = regenerated
+        .ir
+        .appearances
+        .iter()
+        .find(|appearance| appearance.id == binding.appearance)
+        .and_then(|appearance| appearance.base_color)
+        .unwrap();
+    assert_eq!([color.r, color.g, color.b], [0.25, 0.5, 0.75]);
+}
+
+#[test]
+fn decode_binds_adjacent_entity53_color_to_disc14_face() {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+    let mut body = Vec::new();
+    body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 700, 0x0014, &[0, 0, 0, 0, 0, 0]));
+    body.extend(entity53_color(901, [1.0, 0.125, 0.0]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    let mut cur = Cursor::new(sldprt_with_body(&body));
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    let binding = result
+        .ir
+        .appearance_bindings
+        .iter()
+        .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+        .expect("face binding");
+    let color = result
+        .ir
+        .appearances
+        .iter()
+        .find(|appearance| appearance.id == binding.appearance)
+        .unwrap()
+        .base_color
+        .unwrap();
+    assert_eq!([color.r, color.g, color.b], [1.0, 0.125, 0.0]);
+}
+
+#[test]
+fn decode_reports_display_list_geometry() {
+    let f = sldprt_with_body_and_display_list(&triangle_body());
+    let mut cur = Cursor::new(f);
+
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    let source = result.ir.source.expect("source metadata");
+
+    assert_eq!(
+        source
+            .attributes
+            .get("displaylist_vertices")
+            .map(String::as_str),
+        Some("3")
+    );
+    assert_eq!(
+        source
+            .attributes
+            .get("displaylist_triangles")
+            .map(String::as_str),
+        Some("1")
+    );
+    assert_eq!(result.ir.tessellations.len(), 1);
+    assert_eq!(result.ir.tessellations[0].vertices.len(), 3);
+    assert_eq!(result.ir.tessellations[0].vertices[1].x, 1000.0);
+    assert_eq!(result.ir.tessellations[0].triangles, vec![[0, 1, 2]]);
+    assert_eq!(result.ir.tessellations[0].strip_lengths, vec![3]);
+    assert_eq!(result.ir.tessellations[0].normals.len(), 3);
+    assert_eq!(result.ir.tessellations[0].channels.len(), 6);
+    assert!(result.ir.unknowns.iter().any(|record| {
+        record.meta.provenance.tag.as_deref() == Some("displaylist_tessellation")
+            && record.data.is_some()
+    }));
+}
+
+#[test]
+fn decode_extracts_parametric_history() {
+    let f = sldprt_with_body_and_history(&triangle_body());
+    let mut cur = Cursor::new(f);
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    let history = &result.ir.feature_histories[0];
+    assert_eq!(history.part_name.as_deref(), Some("Bracket"));
+    assert_eq!(history.configurations[0].material.as_deref(), Some("Steel"));
+    assert_eq!(history.features[0].kind, "BossExtrude");
+    assert_eq!(history.features[0].parameters["Depth"], "12.5mm");
+    assert_eq!(history.features[0].properties["Scope"], "Body1");
+    assert_eq!(history.features[1].parent_source_id.as_deref(), Some("7"));
+}
+
+#[test]
+fn semantic_writer_preserves_parametric_history() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.points[0].position.z += 1.0;
+    decoded.ir.feature_histories[0].features[0]
+        .parameters
+        .insert("Depth".into(), "15mm".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    let history = &regenerated.ir.feature_histories[0];
+    assert_eq!(history.part_name.as_deref(), Some("Bracket"));
+    assert_eq!(history.configurations[0].name, "Default");
+    assert_eq!(history.configurations[0].material.as_deref(), Some("Steel"));
+    assert_eq!(history.features.len(), 2);
+    assert_eq!(history.features[0].kind, "BossExtrude");
+    assert_eq!(history.features[0].parameters["Depth"], "15mm");
+    assert_eq!(history.features[1].parent_source_id.as_deref(), Some("7"));
+}
+
+#[test]
+fn semantic_writer_patches_resolved_feature_sketch_types() {
+    use cadmpeg_ir::history::SketchInputKind;
+
+    let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1, 2, 3, 9]);
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.feature_input_lanes.len(), 1);
+    let lane = &decoded.ir.feature_input_lanes[0];
+    assert_eq!(lane.configuration.as_deref(), Some("0"));
+    assert_eq!(lane.sketch_entities[0].kind, SketchInputKind::Point);
+    assert_eq!(lane.sketch_entities[1].kind, SketchInputKind::Curve);
+    assert_eq!(lane.sketch_entities[2].kind, SketchInputKind::Arc);
+    assert_eq!(
+        lane.sketch_entities[3].kind,
+        SketchInputKind::ConstrainedPoint
+    );
+    assert_eq!(lane.sketch_entities[4].kind, SketchInputKind::Native(9));
+    decoded.ir.feature_input_lanes[0].sketch_entities[1].kind = SketchInputKind::Native(5);
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let scan = container::scan(&mut Cursor::new(encoded.clone())).unwrap();
+    assert_eq!(
+        scan.blocks
+            .iter()
+            .filter(|block| block.section.as_deref() == Some("Contents/Config-0-ResolvedFeatures"))
+            .count(),
+        1
+    );
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        regenerated.ir.feature_input_lanes[0].sketch_entities[1].kind,
+        SketchInputKind::Native(5)
+    );
+}
+
+#[test]
+fn decode_extracts_document_envelope() {
+    use cadmpeg_ir::attributes::AttributeValue;
+    let mut cur = Cursor::new(sldprt_with_body_and_envelope(&triangle_body()));
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    let envelope = result
+        .ir
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "bounding_envelope")
+        .expect("envelope");
+    let AttributeValue::Vector(values) = &envelope.values[0] else {
+        panic!("vector")
+    };
+    assert_eq!(values, &[10.0, 20.0, -30.0, 40.0]);
+    let plane = result
+        .ir
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "default_reference_plane")
+        .expect("reference plane");
+    let AttributeValue::Vector(origin) = &plane.values[0] else {
+        panic!("origin")
+    };
+    let AttributeValue::Vector(frame) = &plane.values[1] else {
+        panic!("frame")
+    };
+    assert_eq!(origin, &[1.0, 2.0, 3.0]);
+    assert_eq!(frame[2], 1.0);
+    let part = result
+        .ir
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "part_record")
+        .unwrap();
+    assert_eq!(
+        part.values,
+        vec![AttributeValue::Integer(42), AttributeValue::Integer(2026)]
+    );
+    let configuration = result
+        .ir
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "configuration_manager")
+        .unwrap();
+    assert_eq!(configuration.values[1], AttributeValue::Integer(3));
+    let units = result
+        .ir
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "source_linear_unit_code")
+        .unwrap();
+    assert_eq!(units.values, vec![AttributeValue::Integer(0)]);
+}
+
+#[test]
+fn semantic_writer_preserves_document_metadata() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_envelope(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.points[0].position.z += 1.0;
+
+    let expected = decoded
+        .ir
+        .attributes
+        .iter()
+        .map(|attribute| (attribute.name.clone(), attribute.values.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let actual = regenerated
+        .ir
+        .attributes
+        .iter()
+        .map(|attribute| (attribute.name.clone(), attribute.values.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn semantic_writer_preserves_opaque_auxiliary_blocks() {
+    let payload = b"vendor-private\x00\x01\x02";
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x77, "Contents/CustomData", payload));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    decoded.ir.points[0].position.z += 1.0;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(regenerated.ir.unknowns.iter().any(|record| {
+        record.meta.provenance.stream == "Contents/CustomData"
+            && record.data.as_deref() == Some(payload.as_slice())
+    }));
+}
+
+#[test]
+fn semantic_writer_round_trips_all_supported_lanes_together() {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+
+    let mut body = Vec::new();
+    body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+    body.extend(entity53_color(900, [0.25, 0.5, 0.75]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    let mut source = sldprt_with_body_and_material(&body, "Steel", [32, 64, 128]);
+    source.extend(make_block(
+        0x41,
+        "Contents/DisplayLists",
+        &display_list_payload(),
+    ));
+    source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords Name="Bracket"><Configuration Name="Default" Material="Steel"/><Extrusion Name="Boss" Type="BossExtrude" id="7"><Dimension Name="Depth">12.5mm</Dimension></Extrusion></Keywords>"#));
+    source.extend(make_block(0x77, "Contents/CustomData", b"opaque-state"));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    decoded.ir.points[0].position.z += 2.0;
+    decoded.ir.tessellations[0].vertices[0].z = 125.0;
+    decoded.ir.feature_histories[0].features[0]
+        .parameters
+        .insert("Depth".into(), "20mm".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(regenerated.ir.bodies[0].name.as_deref(), Some("Steel"));
+    assert!(regenerated
+        .ir
+        .appearance_bindings
+        .iter()
+        .any(|binding| matches!(binding.target, AppearanceTarget::Face(_))));
+    assert_eq!(regenerated.ir.tessellations[0].vertices[0].z, 125.0);
+    assert_eq!(
+        regenerated.ir.feature_histories[0].features[0].parameters["Depth"],
+        "20mm"
+    );
+    assert!(regenerated.ir.unknowns.iter().any(|record| {
+        record.meta.provenance.stream == "Contents/CustomData"
+            && record.data.as_deref() == Some(b"opaque-state".as_slice())
+    }));
+
+    let written = regenerated
+        .ir
+        .unknowns
+        .iter()
+        .find(|record| record.id.0 == "sldprt:source-image")
+        .and_then(|record| record.data.as_ref())
+        .unwrap();
+    let scan = container::scan_bytes(written);
+    assert_eq!(scan.directory.len(), scan.blocks.len());
+    for block in &scan.blocks {
+        let section = block.section.as_deref().unwrap();
+        if section == "Contents/CustomData" {
+            assert_eq!(block.type_id, 0x77);
+        }
+        assert!(scan.directory.iter().any(|entry| {
+            entry.name == section && entry.size == block.uncomp_sz && entry.type_id == block.type_id
+        }));
+    }
+}
+
+#[test]
+fn face_on_untyped_surface_keeps_topology() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    // Bridge points refs[4] at an attr with no carrier; the face survives with an
+    // unknown-geometry surface and the loss is counted.
+    let mut body = Vec::new();
+    body.extend(bridge(10, 20, 999)); // 999 = no carrier
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    body.extend(edge_use(40, 0));
+    body.extend(edge_use(41, 0));
+    body.extend(edge_use(42, 0));
+    body.extend(vertex_use(50, 60));
+    body.extend(vertex_use(51, 61));
+    body.extend(vertex_use(52, 62));
+    body.extend(world_point(60, [0.0, 0.0, 0.0]));
+    body.extend(world_point(61, [1.0, 0.0, 0.0]));
+    body.extend(world_point(62, [0.0, 1.0, 0.0]));
+
+    let f = sldprt_with_body(&body);
+    let mut cur = Cursor::new(f);
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.faces.len(), 1);
+    assert!(matches!(
+        result.ir.surfaces[0].geometry,
+        SurfaceGeometry::Unknown { .. }
+    ));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|l| l.message.contains("does not type")));
+    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(report.is_ok(), "findings: {:?}", report.findings);
+}
+
+#[test]
+fn auxiliary_edit_retains_opaque_partition_payload() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let mut body = Vec::new();
+    body.extend(bridge(10, 20, 999));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    body.extend(edge_use(40, 0));
+    body.extend(edge_use(41, 0));
+    body.extend(edge_use(42, 0));
+    body.extend(vertex_use(50, 60));
+    body.extend(vertex_use(51, 61));
+    body.extend(vertex_use(52, 62));
+    body.extend(world_point(60, [0.0, 0.0, 0.0]));
+    body.extend(world_point(61, [1.0, 0.0, 0.0]));
+    body.extend(world_point(62, [0.0, 1.0, 0.0]));
+    let mut source = sldprt_with_body_and_history(&body);
+    source.extend(make_block(
+        0x66,
+        "Contents/Config-0-Deltas",
+        b"opaque-deltas",
+    ));
+    source.extend(make_block(
+        0x67,
+        "Contents/Config-0-GhostPartition",
+        b"opaque-ghost",
+    ));
+    source.extend(make_cache_cell(90, "Contents/Config-0-Partition"));
+    source.extend(make_cache_cell(100, "Contents/Keywords"));
+    let indexed = container::scan_bytes(&source);
+    let partition = indexed
+        .blocks
+        .iter()
+        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .unwrap();
+    let mut directory = make_directory_entry(
+        partition.type_id,
+        partition.uncomp_sz,
+        "Contents/Config-0-Partition",
+    );
+    directory[26] = 0xab;
+    let trailer = directory.len() - 6;
+    directory[trailer..trailer + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
+    source.extend(directory);
+    let source_scan = container::scan_bytes(&source);
+    let source_partition = source_scan
+        .blocks
+        .iter()
+        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .unwrap()
+        .payload
+        .clone();
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    decoded.ir.feature_histories[0].features[0]
+        .parameters
+        .insert("Depth".into(), "30mm".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let written_scan = container::scan_bytes(&encoded);
+    let written_partition = written_scan
+        .blocks
+        .iter()
+        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .unwrap();
+    assert_eq!(written_partition.payload, source_partition);
+    assert!(written_scan.blocks.iter().any(|block| {
+        block.section.as_deref() == Some("Contents/Config-0-Deltas")
+            && block.payload == b"opaque-deltas"
+    }));
+    assert_eq!(written_scan.cache_cells.len(), 1);
+    assert_eq!(
+        written_scan.cache_cells[0].name,
+        "Contents/Config-0-Partition"
+    );
+    assert_eq!(written_scan.cache_cells[0].logical_len, 90);
+    let partition_directory = written_scan
+        .directory
+        .iter()
+        .find(|entry| entry.name == "Contents/Config-0-Partition")
+        .unwrap();
+    assert_eq!(encoded[partition_directory.offset + 26], 0xab);
+    let trailer = partition_directory.offset + 40 + partition_directory.name.len();
+    assert_eq!(&encoded[trailer..trailer + 4], &[0x11, 0x22, 0x33, 0x44]);
+    assert!(written_scan.blocks.iter().any(|block| {
+        block.section.as_deref() == Some("Contents/Config-0-GhostPartition")
+            && block.payload == b"opaque-ghost"
+    }));
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        regenerated.ir.surfaces[0].geometry,
+        SurfaceGeometry::Unknown { .. }
+    ));
+    assert_eq!(
+        regenerated.ir.feature_histories[0].features[0].parameters["Depth"],
+        "30mm"
+    );
+}
+
+#[test]
+fn semantic_writer_preserves_display_list_geometry() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_display_list(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.points[0].position.z += 1.0;
+    decoded.ir.tessellations[0].vertices[0].z = 250.0;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(regenerated.ir.tessellations.len(), 1);
+    let mesh = &regenerated.ir.tessellations[0];
+    assert_eq!(mesh.vertices[0].z, 250.0);
+    assert_eq!(mesh.triangles, vec![[0, 1, 2]]);
+    assert_eq!(mesh.strip_lengths, vec![3]);
+    assert_eq!(mesh.channels.len(), 6);
+}
+
+#[test]
+fn compact_carrier_shapes_decode() {
+    use crate::brep::{parse_carrier, CarrierGeometry};
+    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+
+    // Cylinder (tag 00 33, 10 f64): origin, axis, radius, refdir.
+    let mut cyl = vec![0x00, 0x33];
+    be16(&mut cyl, 5);
+    be32(&mut cyl, 0);
+    for _ in 0..5 {
+        be16(&mut cyl, 0);
+    }
+    cyl.push(0x2b);
+    for v in [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.05, 1.0, 0.0, 0.0] {
+        bef64(&mut cyl, v);
+    }
+    match parse_carrier(&cyl, 0).unwrap().geometry {
+        CarrierGeometry::Surface(SurfaceGeometry::Cylinder { radius, axis, .. }) => {
+            assert_eq!(radius, 50.0); // 0.05 m ×1000
+            assert_eq!(axis.z, 1.0);
+        }
+        other => panic!("expected cylinder, got {other:?}"),
+    }
+
+    // Circle (tag 00 1f, 10 f64): radius is the tenth value.
+    let mut circ = vec![0x00, 0x1f];
+    be16(&mut circ, 6);
+    be32(&mut circ, 0);
+    for _ in 0..5 {
+        be16(&mut circ, 0);
+    }
+    circ.push(0x2d);
+    for v in [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.003] {
+        bef64(&mut circ, v);
+    }
+    match parse_carrier(&circ, 0).unwrap().geometry {
+        CarrierGeometry::Curve(CurveGeometry::Circle { radius, .. }) => assert_eq!(radius, 3.0),
+        other => panic!("expected circle, got {other:?}"),
+    }
+
+    // A bad marker (not 2b/2d) rejects the candidate.
+    let mut bad = cyl.clone();
+    bad[2 + 2 + 4 + 10] = 0x00; // clobber the marker byte
+    assert!(parse_carrier(&bad, 0).is_none());
+}

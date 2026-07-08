@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-codec-creo"
+description = "Decoder for PTC Creo Parametric / Pro-E .prt (PSB) files: #UGC:2 container framing, section-table enumeration, PSB primitive-token decoding, and honest structural loss reporting."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cadmpeg-ir.workspace = true
+sha2.workspace = true

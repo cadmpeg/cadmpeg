@@ -1,0 +1,726 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Fusion `.protein` appearance asset decoding.
+
+use std::collections::BTreeMap;
+use std::io::{Cursor, Read};
+
+use cadmpeg_ir::appearance::Appearance;
+use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
+use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::ids::{AppearanceId, BodyId};
+use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
+use cadmpeg_ir::topology::Color;
+
+use crate::container::{self, role, ContainerScan};
+
+const PAGE_SIZE: usize = 0x88;
+const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
+
+#[derive(Default)]
+pub struct DecodedMaterials {
+    pub appearances: Vec<Appearance>,
+    pub bindings: Vec<AppearanceBinding>,
+}
+
+pub fn decode(
+    reader: &mut dyn ReadSeek,
+    scan: &ContainerScan,
+) -> Result<DecodedMaterials, CodecError> {
+    decode_with_bodies(reader, scan, &std::collections::HashMap::new())
+}
+
+pub fn decode_with_bodies(
+    reader: &mut dyn ReadSeek,
+    scan: &ContainerScan,
+    body_keys: &std::collections::HashMap<BodyId, u64>,
+) -> Result<DecodedMaterials, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::PROTEIN)
+    {
+        let payload = container::decompress_entry(reader, &entry.name)?;
+        let Some(instance) = instance_properties(&payload) else {
+            continue;
+        };
+        let Some(logical) = dechunk(&instance) else {
+            continue;
+        };
+        let catalog = definition_catalog(&payload);
+        let mut appearances = decode_logical_records(&logical, &entry.name);
+        for appearance in &mut appearances {
+            if let Some(name) = appearance.name.as_deref() {
+                if let Some((schema, category)) = catalog.get(name) {
+                    appearance.schema = Some(schema.clone());
+                    appearance.category = category.clone();
+                }
+            }
+        }
+        out.extend(appearances);
+    }
+    out.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+    out.dedup_by(|a, b| a.id == b.id);
+    let assignments = decode_design_assignments(reader, scan)?;
+    let act_channels = decode_act_channels(reader, scan)?;
+    let object_types = decode_design_object_types(reader, scan)?;
+    for assignment in &assignments {
+        if !out.iter().any(|appearance| {
+            appearance.visual_guid.as_deref() == Some(&assignment.visual_guid)
+                || assignment.visual_preset.as_deref() == appearance.name.as_deref()
+        }) {
+            out.push(Appearance {
+                id: AppearanceId(format!("f3d:appearance:{}", assignment.visual_guid)),
+                name: assignment.visual_preset.clone(),
+                asset_guid: Some(assignment.visual_guid.clone()),
+                visual_guid: Some(assignment.visual_guid.clone()),
+                physical_token: assignment.physical_token.clone(),
+                schema: None,
+                category: None,
+                base_color: None,
+                properties: BTreeMap::new(),
+                meta: EntityMeta {
+                    provenance: Provenance {
+                        format: "f3d".into(),
+                        stream: assignment.stream.clone(),
+                        offset: assignment.offset as u64,
+                        tag: Some("design_material_assignment".into()),
+                    },
+                    exactness: Exactness::ByteExact,
+                },
+            });
+        }
+    }
+    for appearance in &mut out {
+        if let Some(assignment) = assignments
+            .iter()
+            .find(|assignment| appearance.visual_guid.as_deref() == Some(&assignment.visual_guid))
+        {
+            appearance.physical_token = assignment.physical_token.clone();
+        }
+    }
+    let bindings = bind_bodies(&out, &assignments, &act_channels, &object_types, body_keys);
+    Ok(DecodedMaterials {
+        appearances: out,
+        bindings,
+    })
+}
+
+#[derive(Debug)]
+struct DesignAssignment {
+    asm_body_key: u64,
+    entity_suffix: u64,
+    entity_id: String,
+    visual_guid: String,
+    physical_token: Option<String>,
+    visual_preset: Option<String>,
+    offset: usize,
+    stream: String,
+}
+
+fn decode_design_assignments(
+    reader: &mut dyn ReadSeek,
+    scan: &ContainerScan,
+) -> Result<Vec<DesignAssignment>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+    {
+        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let body_map = decode_body_map(&bytes);
+        let strings = lp_utf16_strings(&bytes);
+        for (index, (offset, value)) in strings.iter().enumerate() {
+            if !value.starts_with("PrismMaterial") || value.contains("_physmat_aspects") {
+                continue;
+            }
+            let entity_id = strings[..index]
+                .iter()
+                .rev()
+                .take(10)
+                .find_map(|(_, candidate)| entity_suffix(candidate).map(|_| candidate.clone()));
+            let Some(entity_id) = entity_id else {
+                continue;
+            };
+            let entity_suffix = entity_suffix(&entity_id).unwrap();
+            let Some(ba5e_index) = strings
+                .iter()
+                .enumerate()
+                .skip(index + 1)
+                .take(15)
+                .find_map(|(i, (_, candidate))| {
+                    (candidate == "BA5EE55E-9982-449B-9D66-9F036540E140").then_some(i)
+                })
+            else {
+                continue;
+            };
+            let Some((_, visual_guid)) = ba5e_index.checked_sub(1).and_then(|i| strings.get(i))
+            else {
+                continue;
+            };
+            if visual_guid.len() != 36 {
+                continue;
+            }
+            let visual_preset = strings
+                .get(ba5e_index + 1)
+                .map(|(_, value)| value.clone())
+                .filter(|value| value.starts_with("Prism-"));
+            if let Some((&asm_body_key, _)) = body_map
+                .iter()
+                .find(|(_, suffix)| **suffix == entity_suffix)
+            {
+                out.push(DesignAssignment {
+                    asm_body_key,
+                    entity_suffix,
+                    entity_id,
+                    visual_guid: visual_guid.clone(),
+                    physical_token: Some(value.clone()),
+                    visual_preset,
+                    offset: *offset,
+                    stream: entry.name.clone(),
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn bind_bodies(
+    appearances: &[Appearance],
+    assignments: &[DesignAssignment],
+    act_channels: &std::collections::HashMap<u64, BTreeMap<String, String>>,
+    object_types: &std::collections::HashMap<u64, String>,
+    body_keys: &std::collections::HashMap<BodyId, u64>,
+) -> Vec<AppearanceBinding> {
+    assignments
+        .iter()
+        .filter_map(|assignment| {
+            let body = body_keys.iter().find_map(|(body, key)| {
+                (*key == assignment.asm_body_key).then_some(body.clone())
+            })?;
+            let appearance = appearances.iter().find(|appearance| {
+                appearance.visual_guid.as_deref() == Some(&assignment.visual_guid)
+                    || assignment.visual_preset.as_deref() == appearance.name.as_deref()
+            })?;
+            Some(AppearanceBinding {
+                target: AppearanceTarget::Body(body),
+                appearance: appearance.id.clone(),
+                source_entity_id: Some(assignment.entity_id.clone()),
+                object_type: object_types.get(&assignment.entity_suffix).cloned(),
+                channels: act_channels
+                    .get(&assignment.entity_suffix)
+                    .cloned()
+                    .unwrap_or_default(),
+                meta: EntityMeta {
+                    provenance: Provenance {
+                        format: "f3d".into(),
+                        stream: assignment.stream.clone(),
+                        offset: assignment.offset as u64,
+                        tag: assignment.physical_token.clone(),
+                    },
+                    exactness: Exactness::ByteExact,
+                },
+            })
+        })
+        .collect()
+}
+
+fn decode_design_object_types(
+    reader: &mut dyn ReadSeek,
+    scan: &ContainerScan,
+) -> Result<std::collections::HashMap<u64, String>, CodecError> {
+    let mut out = std::collections::HashMap::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
+    {
+        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let mut position = 0usize;
+        while position + 8 <= bytes.len() {
+            let Some((object_type, after_type)) = lp_ascii(&bytes, position) else {
+                position += 1;
+                continue;
+            };
+            if !object_type.chars().all(char::is_alphabetic) {
+                position += 1;
+                continue;
+            }
+            let Some(count_bytes) = bytes.get(after_type..after_type + 4) else {
+                break;
+            };
+            let count = u32::from_le_bytes(count_bytes.try_into().unwrap()) as usize;
+            if count > 200 || after_type + 4 + count * 8 > bytes.len() {
+                position += 1;
+                continue;
+            }
+            for id_bytes in bytes[after_type + 4..after_type + 4 + count * 8].chunks_exact(8) {
+                out.insert(
+                    u64::from_le_bytes(id_bytes.try_into().unwrap()),
+                    object_type.clone(),
+                );
+            }
+            position = after_type + 4 + count * 8;
+        }
+    }
+    Ok(out)
+}
+
+fn decode_act_channels(
+    reader: &mut dyn ReadSeek,
+    scan: &ContainerScan,
+) -> Result<std::collections::HashMap<u64, BTreeMap<String, String>>, CodecError> {
+    let mut out = std::collections::HashMap::new();
+    for entry in scan.entries.iter().filter(|entry| {
+        entry.role == role::BULKSTREAM && entry.name.contains("FusionACTSegmentType")
+    }) {
+        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let mut position = 0usize;
+        while position + 4 <= bytes.len() {
+            let Some((tag, after_tag)) = lp_ascii(&bytes, position) else {
+                position += 1;
+                continue;
+            };
+            if tag.len() != 3 || !tag.bytes().all(|byte| byte.is_ascii_digit()) {
+                position += 1;
+                continue;
+            }
+            let Some(header) = bytes.get(after_tag..after_tag + 18) else {
+                break;
+            };
+            if header.get(4..14) != Some(&[0u8; 10]) {
+                position += 1;
+                continue;
+            }
+            let count = u32::from_le_bytes(header[14..18].try_into().unwrap()) as usize;
+            if !(1..=8).contains(&count) {
+                position += 1;
+                continue;
+            }
+            let mut cursor = after_tag + 18;
+            let mut channels = BTreeMap::new();
+            let mut valid = true;
+            for _ in 0..count {
+                let Some((name, after_name)) = lp_ascii(&bytes, cursor) else {
+                    valid = false;
+                    break;
+                };
+                let Some((guid, after_guid)) = lp_utf16(&bytes, after_name) else {
+                    valid = false;
+                    break;
+                };
+                if guid.len() != 36 {
+                    valid = false;
+                    break;
+                }
+                channels.insert(name, guid);
+                cursor = after_guid;
+            }
+            if valid {
+                if let Some((entity, end)) = lp_utf16(&bytes, cursor) {
+                    if let Some(suffix) = entity_suffix(&entity) {
+                        out.insert(suffix, channels);
+                    }
+                    position = end;
+                    continue;
+                }
+            }
+            position += 1;
+        }
+    }
+    Ok(out)
+}
+
+fn lp_ascii(bytes: &[u8], position: usize) -> Option<(String, usize)> {
+    let length = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
+    if !(1..=64).contains(&length) {
+        return None;
+    }
+    let end = position + 4 + length;
+    let raw = bytes.get(position + 4..end)?;
+    raw.iter()
+        .all(|byte| (0x20..0x7f).contains(byte))
+        .then(|| (String::from_utf8_lossy(raw).into_owned(), end))
+}
+
+fn lp_utf16(bytes: &[u8], position: usize) -> Option<(String, usize)> {
+    let length = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
+    if !(1..=64).contains(&length) {
+        return None;
+    }
+    let end = position + 4 + length * 2;
+    let units: Vec<u16> = bytes
+        .get(position + 4..end)?
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect();
+    Some((String::from_utf16(&units).ok()?, end))
+}
+
+fn entity_suffix(value: &str) -> Option<u64> {
+    let (_, suffix) = value.split_once('_')?;
+    suffix.parse().ok()
+}
+
+fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut offset = 0usize;
+    while offset + 4 <= bytes.len() {
+        let count = u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+        let byte_len = count.saturating_mul(2);
+        if (2..=256).contains(&count) && offset + 4 + byte_len <= bytes.len() {
+            let units: Vec<u16> = bytes[offset + 4..offset + 4 + byte_len]
+                .chunks_exact(2)
+                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                .collect();
+            if let Ok(value) = String::from_utf16(&units) {
+                if value.chars().all(|ch| !ch.is_control()) {
+                    out.push((offset, value));
+                    offset += 4 + byte_len;
+                    continue;
+                }
+            }
+        }
+        offset += 1;
+    }
+    out
+}
+
+fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, u64> {
+    let mut out = std::collections::HashMap::new();
+    let needle: Vec<u8> = "BREP.".encode_utf16().flat_map(u16::to_le_bytes).collect();
+    for offset in bytes
+        .windows(needle.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == needle).then_some(offset))
+    {
+        let block_end = match offset.checked_sub(16) {
+            Some(value) => value,
+            None => continue,
+        };
+        for count in 1usize..=64 {
+            let Some(count_pos) = block_end.checked_sub(count * 16 + 4) else {
+                break;
+            };
+            if u32::from_le_bytes(bytes[count_pos..count_pos + 4].try_into().unwrap()) as usize
+                != count
+            {
+                continue;
+            }
+            for pair in bytes[count_pos + 4..count_pos + 4 + count * 16].chunks_exact(16) {
+                out.insert(
+                    u64::from_le_bytes(pair[..8].try_into().unwrap()),
+                    u64::from_le_bytes(pair[8..].try_into().unwrap()),
+                );
+            }
+            break;
+        }
+    }
+    out
+}
+
+fn instance_properties(protein: &[u8]) -> Option<Vec<u8>> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(protein)).ok()?;
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).ok()?;
+        if file.name().ends_with("AssetData/InstanceProperties.bin") {
+            let mut bytes = Vec::with_capacity(file.size() as usize);
+            file.read_to_end(&mut bytes).ok()?;
+            return Some(bytes);
+        }
+    }
+    None
+}
+
+fn definition_catalog(
+    protein: &[u8],
+) -> std::collections::HashMap<String, (String, Option<String>)> {
+    let Some(bytes) = nested_entry(protein, "AssetData/DefinitionIteratorProperties.bin") else {
+        return std::collections::HashMap::new();
+    };
+    let marker = b"\x80\x00\x01\x00";
+    let starts: Vec<usize> = bytes
+        .windows(marker.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == marker).then_some(offset))
+        .collect();
+    let mut out = std::collections::HashMap::new();
+    for (index, start) in starts.iter().enumerate() {
+        let end = starts.get(index + 1).copied().unwrap_or(bytes.len());
+        let mut strings = Vec::new();
+        let mut position = *start + marker.len();
+        while position + 4 <= end && strings.len() < 8 {
+            let length =
+                u32::from_le_bytes(bytes[position..position + 4].try_into().unwrap()) as usize;
+            if (1..=200).contains(&length) && position + 4 + length <= end {
+                let raw = &bytes[position + 4..position + 4 + length];
+                if raw.iter().all(|byte| (0x20..=0x7e).contains(byte)) {
+                    strings.push(String::from_utf8_lossy(raw).into_owned());
+                    position += 4 + length;
+                    continue;
+                }
+            }
+            position += 1;
+        }
+        if strings
+            .first()
+            .is_some_and(|schema| schema.ends_with("Schema"))
+        {
+            if let Some(asset_id) = strings.get(1) {
+                out.insert(
+                    asset_id.clone(),
+                    (strings[0].clone(), strings.get(3).cloned()),
+                );
+            }
+        }
+    }
+    out
+}
+
+fn nested_entry(protein: &[u8], suffix: &str) -> Option<Vec<u8>> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(protein)).ok()?;
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).ok()?;
+        if file.name().ends_with(suffix) {
+            let mut bytes = Vec::with_capacity(file.size() as usize);
+            file.read_to_end(&mut bytes).ok()?;
+            return Some(bytes);
+        }
+    }
+    None
+}
+
+fn dechunk(bytes: &[u8]) -> Option<Vec<u8>> {
+    if bytes.len() < 16 + PAGE_SIZE
+        || u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?) as usize != PAGE_SIZE
+        || (bytes.len() - 16) % PAGE_SIZE != 0
+    {
+        return None;
+    }
+    let mut out = Vec::new();
+    for page in bytes[16..].chunks_exact(PAGE_SIZE) {
+        if page.get(4..8) == Some(RECORD_MARKER) {
+            out.extend_from_slice(&page[4..]);
+        } else if page.get(4..8) == Some(b"\x80\x00\x00\x00") {
+            out.extend_from_slice(&page[8..]);
+        } else if page.get(0..4) == Some(b"\xff\xff\xff\xff") {
+            let used = u16::from_le_bytes(page.get(4..6)?.try_into().ok()?) as usize;
+            out.extend_from_slice(page.get(8..8 + used)?);
+        } else {
+            return None;
+        }
+    }
+    Some(out)
+}
+
+fn decode_logical_records(bytes: &[u8], stream: &str) -> Vec<Appearance> {
+    let starts: Vec<usize> = bytes
+        .windows(RECORD_MARKER.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == RECORD_MARKER).then_some(offset))
+        .collect();
+    starts
+        .iter()
+        .enumerate()
+        .filter_map(|(index, start)| {
+            let end = starts.get(index + 1).copied().unwrap_or(bytes.len());
+            decode_record(&bytes[*start..end], stream, *start)
+        })
+        .collect()
+}
+
+fn decode_record(record: &[u8], stream: &str, offset: usize) -> Option<Appearance> {
+    if !record.starts_with(RECORD_MARKER) {
+        return None;
+    }
+    let mut position = RECORD_MARKER.len();
+    let schema = take_lp(record, &mut position)?;
+    let guid = take_lp(record, &mut position)?;
+    let base = take_lp(record, &mut position)?;
+    let _base_guid = take_lp(record, &mut position)?;
+    let color = match schema.as_str() {
+        "GenericSchema" => rgba(
+            record,
+            position + 112 + generic_connection_delta(record, position),
+        ),
+        "PrismOpaqueSchema" | "PrismMetalSchema" => rgba(record, position + 8),
+        "PrismTransparentSchema" => rgba(record, position + 121),
+        "PhysMatSchema"
+        | "StructuralMetalSchema"
+        | "StructuralPlasticSchema"
+        | "ThermalSolidSchema" => None,
+        _ => return None,
+    };
+    if color.is_none()
+        && !matches!(
+            schema.as_str(),
+            "PhysMatSchema"
+                | "StructuralMetalSchema"
+                | "StructuralPlasticSchema"
+                | "ThermalSolidSchema"
+        )
+    {
+        return None;
+    }
+    let mut properties = BTreeMap::new();
+    match schema.as_str() {
+        "GenericSchema" => {
+            let delta = generic_connection_delta(record, position);
+            insert_tagged_scalar(
+                &mut properties,
+                "reflectivity_at_0deg",
+                record,
+                position + 171 + delta,
+                0.0..=1.0,
+            );
+            insert_tagged_scalar(
+                &mut properties,
+                "refraction_index",
+                record,
+                position + 197 + delta,
+                1.0..=4.0,
+            );
+        }
+        "PrismOpaqueSchema" => {
+            if let Some(marker) = find(record, b"\x0e\x20\x00\x00", position) {
+                insert_scalar(
+                    &mut properties,
+                    "surface_roughness",
+                    record,
+                    marker + 4,
+                    0.0..=1.0,
+                );
+            }
+        }
+        "PrismTransparentSchema" => {
+            insert_scalar(
+                &mut properties,
+                "refraction_index",
+                record,
+                position + 169,
+                1.0..=4.0,
+            );
+        }
+        _ => {}
+    }
+    Some(Appearance {
+        id: AppearanceId(format!("f3d:appearance:{guid}")),
+        name: Some(base),
+        asset_guid: Some(guid.clone()),
+        visual_guid: (!matches!(
+            schema.as_str(),
+            "PhysMatSchema"
+                | "StructuralMetalSchema"
+                | "StructuralPlasticSchema"
+                | "ThermalSolidSchema"
+        ))
+        .then_some(guid),
+        physical_token: None,
+        schema: Some(schema.clone()),
+        category: None,
+        base_color: color,
+        properties,
+        meta: EntityMeta {
+            provenance: Provenance {
+                format: "f3d".into(),
+                stream: stream.into(),
+                offset: offset as u64,
+                tag: Some(schema),
+            },
+            exactness: Exactness::ByteExact,
+        },
+    })
+}
+
+fn generic_connection_delta(record: &[u8], value_block: usize) -> usize {
+    let slot = value_block + 102;
+    match record.get(slot) {
+        Some(0) => 0,
+        Some(1) if slot + 6 <= record.len() => {
+            let count = u32::from_le_bytes(record[slot + 2..slot + 6].try_into().unwrap()) as usize;
+            let mut position = slot + 6;
+            for _ in 0..count.min(8) {
+                let Some(length_bytes) = record.get(position..position + 4) else {
+                    return 0;
+                };
+                let length = u32::from_le_bytes(length_bytes.try_into().unwrap()) as usize;
+                position += 4;
+                if record.get(position..position + length).is_none() {
+                    return 0;
+                }
+                position += length;
+            }
+            position.saturating_sub(slot + 1)
+        }
+        _ => 0,
+    }
+}
+
+fn find(bytes: &[u8], needle: &[u8], start: usize) -> Option<usize> {
+    bytes
+        .get(start..)?
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .map(|offset| start + offset)
+}
+
+fn insert_scalar(
+    out: &mut BTreeMap<String, f64>,
+    name: &str,
+    bytes: &[u8],
+    offset: usize,
+    range: std::ops::RangeInclusive<f64>,
+) {
+    let Some(value) = bytes
+        .get(offset..offset + 8)
+        .map(|slice| f64::from_le_bytes(slice.try_into().unwrap()))
+    else {
+        return;
+    };
+    if value.is_finite() && range.contains(&value) {
+        out.insert(name.into(), value);
+    }
+}
+
+fn insert_tagged_scalar(
+    out: &mut BTreeMap<String, f64>,
+    name: &str,
+    bytes: &[u8],
+    offset: usize,
+    range: std::ops::RangeInclusive<f64>,
+) {
+    if bytes.get(offset..offset + 4) == Some(b"\x0c\x00\x00\x00") {
+        insert_scalar(out, name, bytes, offset + 4, range);
+    }
+}
+
+fn take_lp(bytes: &[u8], position: &mut usize) -> Option<String> {
+    let length = u32::from_le_bytes(bytes.get(*position..*position + 4)?.try_into().ok()?) as usize;
+    *position += 4;
+    let value = String::from_utf8(bytes.get(*position..*position + length)?.to_vec()).ok()?;
+    *position += length;
+    Some(value)
+}
+
+fn rgba(bytes: &[u8], offset: usize) -> Option<Color> {
+    let read = |at: usize| Some(f64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?));
+    let [r, g, b, a] = [
+        read(offset)?,
+        read(offset + 8)?,
+        read(offset + 16)?,
+        read(offset + 24)?,
+    ];
+    if ![r, g, b, a].iter().all(|value| value.is_finite())
+        || ![r, g, b].iter().all(|value| (0.0..=1.0).contains(value))
+        || (a - 1.0).abs() > 1e-3
+    {
+        return None;
+    }
+    Some(Color {
+        r: r as f32,
+        g: g as f32,
+        b: b as f32,
+        a: a as f32,
+    })
+}

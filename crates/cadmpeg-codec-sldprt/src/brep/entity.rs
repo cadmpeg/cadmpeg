@@ -1,0 +1,279 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Stream-scope entity records needed for body membership.
+
+use super::{u16_be, u32_be};
+use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::topology::Color;
+use std::collections::{HashMap, HashSet};
+
+#[derive(Debug, Clone)]
+pub struct BodyRecord {
+    pub attr: u16,
+    pub kind: BodyKind,
+    pub refs: Vec<u16>,
+    pub offset: usize,
+    pub lump: Option<(u16, usize)>,
+    pub shell: Option<(u16, usize)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FaceColor {
+    pub face_attr: u16,
+    pub color_attr: u16,
+    pub color: Color,
+    pub offset: usize,
+    pub target: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Facts {
+    pub bodies: Vec<BodyRecord>,
+    pub face_colors: Vec<FaceColor>,
+}
+
+#[derive(Debug, Clone)]
+struct EntityRecord {
+    attr: u16,
+    flags: u32,
+    seq: u32,
+    disc: u16,
+    refs: Vec<u16>,
+    offset: usize,
+}
+
+fn slot_count(disc: u16, flo: u8) -> usize {
+    match (disc, flo) {
+        (0x0018 | 0x0025 | 0x0020, 1) => 6,
+        (0x001d | 0x001e, 2) => 7,
+        (0x0020 | 0x0027 | 0x0024, 4) => 9,
+        _ => 6,
+    }
+}
+
+fn refs(body: &[u8], at: usize, count: usize) -> Option<Vec<u16>> {
+    if body.get(at) == Some(&1) {
+        let mut out = Vec::with_capacity(count);
+        let mut prefixed = true;
+        for index in 0..count {
+            let p = at + index * 3;
+            if body.get(p) != Some(&1) {
+                prefixed = false;
+                break;
+            }
+            out.push(u16_be(body, p + 1)?);
+        }
+        if prefixed && body.get(at + count * 3) == Some(&0) {
+            return Some(out);
+        }
+    }
+    (0..count)
+        .map(|index| u16_be(body, at + index * 2))
+        .collect()
+}
+
+fn scan_entities(body: &[u8]) -> Vec<EntityRecord> {
+    let mut out = Vec::new();
+    for off in 0..body.len().saturating_sub(25) {
+        if body.get(off..off + 2) != Some(&[0x00, 0x51]) {
+            continue;
+        }
+        let mut p = off + 2;
+        if body.get(p) == Some(&0xff) {
+            p += 1;
+        }
+        let Some(flags) = u32_be(body, p) else {
+            continue;
+        };
+        let Some(attr) = u16_be(body, p + 4) else {
+            continue;
+        };
+        let Some(seq) = u32_be(body, p + 6) else {
+            continue;
+        };
+        let Some(disc) = u16_be(body, p + 10) else {
+            continue;
+        };
+        let flo = (flags & 0xff) as u8;
+        if attr <= 1 || seq == 0 || !(1..=0x20).contains(&flo) {
+            continue;
+        }
+        let Some(refs) = refs(body, p + 12, slot_count(disc, flo)) else {
+            continue;
+        };
+        out.push(EntityRecord {
+            attr,
+            flags,
+            seq,
+            disc,
+            refs,
+            offset: off,
+        });
+    }
+    out
+}
+
+fn f64_be(body: &[u8], at: usize) -> Option<f64> {
+    body.get(at..at + 8)
+        .map(|bytes| f64::from_be_bytes(bytes.try_into().expect("eight-byte slice")))
+}
+
+fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {
+    if body.get(off..off + 2) != Some(&[0x00, 0x53]) {
+        return None;
+    }
+    let mut p = off + 2;
+    if body.get(p) == Some(&0xff) {
+        p += 1;
+    }
+    if u32_be(body, p)? & 0xff != 3 {
+        return None;
+    }
+    let attr = u16_be(body, p + 4)?;
+    let [r, g, b] = [
+        f64_be(body, p + 6)?,
+        f64_be(body, p + 14)?,
+        f64_be(body, p + 22)?,
+    ];
+    if attr <= 1
+        || ![r, g, b]
+            .iter()
+            .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
+    {
+        return None;
+    }
+    Some((
+        attr,
+        Color {
+            r: r as f32,
+            g: g as f32,
+            b: b as f32,
+            a: 1.0,
+        },
+        p + 30,
+    ))
+}
+
+pub fn scan(body: &[u8]) -> Facts {
+    let entities = scan_entities(body);
+    let mut colors = HashMap::new();
+    for off in 0..body.len().saturating_sub(31) {
+        if let Some((attr, color, _end)) = color_record(body, off) {
+            colors.insert(attr, (color, off));
+        }
+    }
+    let mut face_colors = HashMap::new();
+    for face in &entities {
+        if face.disc == 0x0015 || face.disc == 0x001f {
+            if let Some(color_attr) = face.refs.get(5).copied() {
+                if let Some((color, offset)) = colors.get(&color_attr) {
+                    face_colors.insert(
+                        face.attr,
+                        FaceColor {
+                            face_attr: face.attr,
+                            color_attr,
+                            color: *color,
+                            offset: *offset,
+                            target: None,
+                        },
+                    );
+                }
+            }
+        }
+        if face.disc == 0x0014 {
+            let at =
+                face.offset + 2 + usize::from(body.get(face.offset + 2) == Some(&0xff)) + 12 + 12;
+            if let Some((color_attr, color, _end)) = color_record(body, at) {
+                face_colors.insert(
+                    face.attr,
+                    FaceColor {
+                        face_attr: face.attr,
+                        color_attr,
+                        color,
+                        offset: at,
+                        target: None,
+                    },
+                );
+            }
+        }
+    }
+    Facts {
+        bodies: bodies(&entities),
+        face_colors: face_colors.into_values().collect(),
+    }
+}
+
+/// Decode explicit MANIFOLD_SOLID_BREP entity-51 records.
+fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
+    let mut by_attr = HashMap::new();
+    for record in entities {
+        if by_attr
+            .get(&record.attr)
+            .is_none_or(|current: &&EntityRecord| record.seq >= current.seq)
+        {
+            by_attr.insert(record.attr, record);
+        }
+    }
+    let mut out = Vec::new();
+    for root in by_attr.values().filter(|record| {
+        (record.flags == 2 || record.flags & 0xff00_0000 == 0xff00_0000) && record.disc == 0x0017
+    }) {
+        let sheet = root
+            .refs
+            .iter()
+            .filter_map(|reference| by_attr.get(reference))
+            .any(|record| record.disc == 0x001d);
+        let mut refs = HashSet::new();
+        let mut pending: Vec<u16> = root
+            .refs
+            .iter()
+            .copied()
+            .filter(|reference| *reference > 1)
+            .collect();
+        while let Some(reference) = pending.pop() {
+            if !refs.insert(reference) {
+                continue;
+            }
+            if let Some(record) = by_attr.get(&reference) {
+                pending.extend(
+                    record
+                        .refs
+                        .iter()
+                        .copied()
+                        .filter(|reference| *reference > 1),
+                );
+            }
+        }
+        let mut refs = refs.into_iter().collect::<Vec<_>>();
+        refs.sort_unstable();
+        out.push(BodyRecord {
+            attr: root.attr,
+            kind: if sheet {
+                BodyKind::Sheet
+            } else {
+                BodyKind::Solid
+            },
+            refs,
+            offset: root.offset,
+            lump: linked(&by_attr, root, 0x001b)
+                .and_then(|(attr, _)| linked(&by_attr, by_attr[&attr], 0x001f)),
+            shell: linked(&by_attr, root, 0x001b)
+                .and_then(|(attr, _)| linked(&by_attr, by_attr[&attr], 0x001f))
+                .and_then(|(attr, _)| linked(&by_attr, by_attr[&attr], 0x0021)),
+        });
+    }
+    out.sort_by_key(|record| record.attr);
+    out
+}
+
+fn linked(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    record: &EntityRecord,
+    disc: u16,
+) -> Option<(u16, usize)> {
+    record
+        .refs
+        .iter()
+        .filter_map(|reference| by_attr.get(reference))
+        .find(|target| target.disc == disc)
+        .map(|target| (target.attr, target.offset))
+}

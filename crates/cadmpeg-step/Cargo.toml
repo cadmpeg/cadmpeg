@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-step"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Pure-Rust ISO 10303-21 (STEP AP214) writer for the cadmpeg IR."
+
+[dependencies]
+cadmpeg-ir = { workspace = true }
+thiserror = { workspace = true }

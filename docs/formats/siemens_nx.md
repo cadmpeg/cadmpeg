@@ -1,0 +1,403 @@
+# Siemens NX `.prt` (SPLMSSTR + Parasolid): Format Specification
+
+> **License:** This document is released under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Attribute to the cadmpeg project.
+
+---
+
+## 1. Format overview
+
+`.prt` is the native part format of Siemens NX. NX uses the **SPLMSSTR** (Siemens PLM Software Master Storage) hierarchical name-to-stream container. Geometry uses zlib-compressed Parasolid neutral-binary streams.
+
+**Part and assembly storage.** A part stores geometry as Parasolid partition and deltas stream pairs. An assembly stores child part names and paths in `EXTREFSTREAM`.
+
+**Byte order and units (global):**
+
+- SPLMSSTR and UG_PART table fields are **little-endian**.
+- Parasolid neutral-binary payload fields are **big-endian**.
+- Parasolid geometric doubles are in **meters**; model geometry is conventionally millimeters (×1000).
+- The Parasolid null reference value is `1`.
+- Parasolid xmt indices are **stream-scoped**; the cross-stream merge key is `(stream_index, node_type, xmt_index)`.
+
+---
+
+## 2. SPLMSSTR container
+
+```text
+0x00..0x07   ASCII "SPLMSSTR"
+0x08         version tag, constant 0x06
+0x09..0x0b   file-specific uint24 LE (correlates with file complexity, not footer offset)
+0x0c..0x0f   constant 0x00000000
+0x10         constant 0x00
+0x11..0x16   FOOTER offset, 48-bit LE (points into the FOOTER region near EOF)
+0x19..0x1e   ASCII "HEADER"
+0x1f..       variable-length directory entries
+```
+
+Directory entry grammar (HEADER and FOOTER identical): `name_len:u32 LE` + ASCII path (`/Root/...`) + payload. File entries carry `file_offset:u64 LE, size:u64 LE`; directory/non-file entries carry 16 opaque bytes.
+
+FOOTER region at the 48-bit offset: ASCII `FOOTER`, then `entry_count:u32 LE`, then directory entries, then a 4-byte per-save fingerprint (unique per file version). The `/Root/` sentinel node carries UUID `611ec9b3-fa60-d111-8ad9-0800362fb302` across files.
+
+### 2.1 Stream inventory
+
+| Stream                       | Role                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------ |
+| `/Root/UG_PART/UG_PART`      | canonical part payload: OM sections + Parasolid partition/deltas/plain streams |
+| `/Root/FastLoad/RMFastLoad`  | fast-load object-id table → active-body membership (NX OM per-class form)      |
+| `/Root/FastLoad/JT`          | preview/JT mesh and metadata                                                   |
+| `/Root/*/ExternalReferences` | `EXTREFSTREAM`; child-part names, filesystem paths, occurrence handles         |
+| `/Root/part/attrs`           | `<UgAttributes>` UTF-8 XML key/value part metadata                             |
+| `/Root/qafmetadata`          | UTF-8 XML preview-folder metadata                                              |
+| `/Root/part/arrangements`    | (assemblies) UTF-8 XML arrangement config                                      |
+
+`part/attrs` carries flags such as `NX_MaterialMissingAssignments=TRUE`. JT and LWPA payloads are preview meshes.
+
+`EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + ASCII)`. The string table contains child `.prt` names and paths. The occurrence-handle to child-`.prt` binding is unresolved.
+
+Assembly `.prt` files contain no inline Parasolid partition, deltas, or plain cached-body streams. Their component geometry resides in the external child `.prt` files named by `EXTREFSTREAM`. Occurrence placement binds each external component instance.
+
+---
+
+## 3. Parasolid stream extraction
+
+Text-wrapped envelope:
+
+```text
+**PARASOLID ... **END_OF_HEADER <zlib payload>
+```
+
+The partition zlib stream is preceded by `c0 d1 f1 ed`. Small zlib streams use repeating `<u32 BE count> 0x02000002` marker pairs. The wrapper-header counts are segment or record counts.
+
+Inflated prologue text classifies each stream:
+
+| Prologue evidence                                   | Stream kind         |
+| --------------------------------------------------- | ------------------- |
+| contains `(partition)`                              | partition           |
+| contains `(deltas)`                                 | deltas              |
+| contains `TRANSMIT FILE created by` without subtype | plain (cached body) |
+| otherwise                                           | stream              |
+
+### 3.1 Neutral-binary encoding
+
+Inflated streams begin `PS 00 00`; the prologue contains a schema token `SCH_<version>` (for example, `SCH_3501171_35102_13006`). The third component (`13006`) is an NX-embedding constant.
+
+XMT index encoding:
+
+| Form        | Encoding                                                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------ |
+| Small index | `uint16` BE, 2 bytes                                                                             |
+| Large index | negative `int16` remainder + `uint16` quotient, 4 bytes; `raw = quotient*32767 + abs(remainder)` |
+
+**Record shift rules.** At logical offset `+2`, `0xff` can encode an envelope escape or begin a large-index xmt with a remainder beginning `ff`. Any xmt pointer slot can consume four bytes instead of two and shifts later fixed fields in the record. Effective record length is `fixed_length + escape_shift + record_start_large_index_shift`. Pointer-field large-index shifts change field positions without changing the record start length, except in families with a compact tail.
+
+### 3.2 Schema self-description
+
+The neutral-binary streams are partially self-describing. After `SCH_` the head carries a field dictionary for the stream-root wrapper class (the `00 ce` record). Node types absent from the base schema carry an inline class definition at first use:
+
+```text
+<type:u16 BE> <sig_len:u8> <signature> <name_len:u8> <name>
+```
+
+Signature alphabet: `C` = component/pointer (xmt ref), `I` = int, `D` = double, `A` = array ref, `Z` = terminator/compound. Inline definitions include type 38 `intersection_data` (`CCCCCCCCCCCA`), type 80 `legal_owners` (`CCCCCDI`), and type 100 `precision` (`CCCCCCCCCA`).
+
+The wrapper `00 ce` instance owns the stream BODY (`child`), attribute-definition list (`attdef_list`), preview-mesh references (`mesh`/`polyline`/`lattice`), and index-map arrays (`index_map`, `node_id_index_map`, `schema_embedding_map`).
+
+---
+
+## 4. Record framing
+
+### 4.1 Fixed record families
+
+Lengths are logical, before escape/large-index shifts. Every code matches the published XT Node-Types table.
+
+| Type | Name    | Length | Type | Name          | Length     |
+| ---: | ------- | -----: | ---: | ------------- | ---------- |
+|   12 | BODY    |     24 |   50 | PLANE         | 91         |
+|   13 | SHELL   |     24 |   51 | CYLINDER      | 99         |
+|   14 | FACE    |     39 |   52 | CONE          | 115        |
+|   15 | LOOP    |     16 |   53 | SPHERE        | 99         |
+|   16 | EDGE    |     32 |   54 | TORUS         | 107        |
+|   17 | FIN     |     23 |   56 | BLEND_SURF    | 66 + shift |
+|   18 | VERTEX  |     28 |   60 | OFFSET_SURF   | 39         |
+|   19 | REGION  |     16 |  124 | B_SURFACE     | 23         |
+|   29 | POINT   |     40 |  133 | TRIMMED_CURVE | 85 + shift |
+|   30 | LINE    |     67 |  134 | B_CURVE       | 23         |
+|   31 | CIRCLE  |     99 |  137 | SP_CURVE      | 33 + shift |
+|   32 | ELLIPSE |    107 |      |               |            |
+
+Types carrying `node_id:u32` place it at record offset `+4` (after shifts). FIN has no `node_id`. EDGE candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records.
+
+Type 38 is the XT `INTERSECTION` node. Delta-stream `0x5a` records use the `intersection_data` layout.
+
+### 4.2 Deltas-stream framing
+
+A deltas stream is a schema-framed incremental edit log paired with a partition. Both declare the same schema token. Records are not length-prefixed; they self-delimit by typed decode (valid record ends on a plausible next-record tag). Two record forms:
+
+**Full record:**
+
+```text
+type:u16 BE
+xmt:encoded_index
+node_id:u32 BE                   0-based delta-stream ordinal
+<type signature fields>          reference slot = encoded_xmt + status:u8
+```
+
+The status byte is `0x01` and frames each reference. The record form carries the merge operation.
+
+**Tombstone:** a compact 6-byte deletion `type:u16 BE  xmt:u16  00 01`. A whole-record tombstone has this complete form. In a full record, `xmt 01` is a reference and status byte. Tombstone xmts are plain high-range `u16` values (48300+).
+
+Tombstones occur only in the active body's deltas stream. They form descending contiguous xmt runs that can span topology, geometry, and attribute record types. Every sub-body merge is additive: its final face set is its partition face set. Only the active body's surviving-face set depends on resolving the tombstone-to-entity bridge.
+
+---
+
+## 5. Topology
+
+### 5.1 Ownership graph
+
+```text
+body → shell → [region] → face → loop → fin → edge → vertex → point
+                                    ↑ face → surface, edge → curve
+```
+
+**Common header** for analytic curve/surface types 30–32, 50–54: `attributes +8`, `owner +10`, `next +12`, `previous +14`, `group +16`, `sense +18`.
+
+Topology node layouts (logical offsets, pre-shift):
+
+| Type        | Fields                                                                                                                                                                                                                           |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BODY (12)   | `node_id +4`; owner of shells/faces/edges/vertices                                                                                                                                                                               |
+| SHELL (13)  | `node_id +4`, `attributes +8` (=1), `body_ref +10`, `next_shell +12` (=1), `first_face +14`, sentinels `+16/+18` (=1), `region_ref +20`, sentinel `+22` (=1)                                                                     |
+| FACE (14)   | `attributes +8`, `tolerance:f64 +10`, `next_face +18`, `prev_face +20`, `loop +22`, `shell +24`, `surface +26`, `sense +28`, `next_on_surface +29`, `prev_on_surface +31`, `next_front +33`, `prev_front +35`, `front_shell +37` |
+| LOOP (15)   | `attributes +8`, `fin +10`, `face +12`, `next_loop +14`                                                                                                                                                                          |
+| EDGE (16)   | `attributes +8`, `tolerance:f64 +10`, `fin +18`, `prev_edge +20`, `next_edge +22`, `curve +24`, `next_on_curve +26`, `prev_on_curve +28`, `owner +30`                                                                            |
+| FIN (17)    | `attributes +4`, `loop +6`, `forward_fin +8`, `backward_fin +10`, `vertex +12`, `other_fin +14`, `edge +16`, `curve +18`, `next_at_vertex +20`, `sense +22`                                                                      |
+| VERTEX (18) | `attributes +8`, `fin +10`, `prev_vertex +12`, `next_vertex +14`, `point +16`, `tolerance:f64 +18`, `owner +26`                                                                                                                  |
+| POINT (29)  | `attributes +8`, `owner +10`, `next +12`, `prev +14`, `xyz:3×f64 +16` (meters)                                                                                                                                                   |
+| REGION (19) | `node_id +4`; referenced by SHELL                                                                                                                                                                                                |
+
+A **body-shape SHELL** requires the four sentinel slots `= 1` and `body_ref`/`first_face`/`region_ref` to resolve in the ownership domain. FACE and EDGE `tolerance` decode as the sentinel `-3.14158e13` (`c2 bc 92 8f 99 6e 00 00`) or a finite model-scale value, giving an 8-byte alignment check. `FIN.curve` is non-null only on tolerant edges (tolerant-edge trims use TRIMMED_CURVE→SP_CURVE).
+
+### 5.2 Reference domains
+
+- Ordinary BREP references (`FACE.surface`, `EDGE.curve`, `FIN.curve`, `VERTEX.point`, BLEND_SURF/INTERSECTION support refs) resolve within the same stream.
+- Only BODY (12), SHELL (13), REGION (19) may resolve in the ownership domain `{partition, paired_deltas}`.
+
+### 5.3 Topology assembly
+
+| Entity   | Rule                                                                  |
+| -------- | --------------------------------------------------------------------- |
+| vertices | FIN-referenced VERTEX nodes; coordinates from same-stream POINT nodes |
+| edges    | one per EDGE node, with resolved curve when available                 |
+| loops    | walked from `LOOP.fin` through FIN forward/backward chains            |
+| faces    | one per FACE node, with resolved surface when available               |
+| bodies   | one per validated body-shape SHELL                                    |
+
+Body-shape SHELL validation: sentinel/ref predicate passes; `body_ref`→BODY in ownership domain; `first_face`→FACE in the SHELL's stream; the `FACE.next` walk closes at null with visited faces back-referencing the SHELL.
+
+**Periodic faces / closed edges.** Parasolid stores a periodic surface as one face. A full-circle/ellipse edge stores no trim interval or wrap-count field, references the bare CIRCLE/ELLIPSE, and signals a full revolution by start and end resolving to the same vertex. Its span is the analytic identity `[0, 2π]` in the curve's native radian parameterization. Do not unwrap it into a two-arc split. An EDGE with `curve == 1` (null ref) has valid vertices but no curve record; its geometry lives on the periodic surface. Do not synthesize a seam that changes loop winding or count.
+
+---
+
+## 6. Geometry carriers
+
+All geometric doubles are meters → ×1000 for mm. Directions and axes are unit vectors (not scaled); angular parameters are radians; linear curve parameters are meters of arc length.
+
+### 6.1 Analytic curves and surfaces
+
+Payload offsets are relative to the record's type tag, after the common header (§5.1).
+
+| Type          | Payload                                                                              |
+| ------------- | ------------------------------------------------------------------------------------ |
+| LINE (30)     | point `+19`, direction `+43`                                                         |
+| CIRCLE (31)   | center `+19`, normal `+43`, x_axis `+67`, radius `+91`                               |
+| ELLIPSE (32)  | center `+19`, normal `+43`, x_axis `+67`, major `+91`, minor `+99`                   |
+| PLANE (50)    | origin `+19`, normal `+43`, x_axis `+67`                                             |
+| CYLINDER (51) | origin `+19`, axis `+43`, radius `+67`, x_axis `+75`                                 |
+| CONE (52)     | origin `+19`, axis `+43`, radius `+67`, sin_half `+75`, cos_half `+83`, x_axis `+91` |
+| SPHERE (53)   | center `+19`, radius `+43`, axis `+51`, x_axis `+75`                                 |
+| TORUS (54)    | center `+19`, axis `+43`, major `+67`, minor `+75`, x_axis `+83`                     |
+
+Validity gates: CONE satisfies `sin_half² + cos_half² ≈ 1`; SPHERE has `radius > 0` and unit axis; a horn torus has `major == minor`.
+
+**OFFSET_SURF (60):** check byte `+19` (`V`/`I`/`U`), base surface ref `+21`, `offset_distance:f64 +23` (meters). Surface `P = base(u,v) + offset_distance · unit_normal(u,v)`. There is no scale field at `+31` (that position lands in the next record). For a B_SURFACE base, the unit normal comes from the rational quotient rule:
+
+```text
+Pu = (Au·W − A·Wu)/W²,  Pv = (Av·W − A·Wv)/W²,  normal = normalize(Pu × Pv)
+```
+
+### 6.2 B-spline carriers (B_SURFACE 124 / B_CURVE 134)
+
+B_SURFACE / B_CURVE are compact: header through sense `+18`, then `nurbs` ref `+19` and `data` ref `+21` (both large-index capable). The full NURBS resolves through support records:
+
+| Type | Tag    | Role                                                                                                                                                        |
+| ---: | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|  125 | `007d` | B-surface control-grid payload (`double_count` near `+91`, then values)                                                                                     |
+|  126 | `007e` | B-surface descriptor: `u_degree +6`, `v_degree +8`, `u_pole_count +12`, `v_pole_count +16`, forms `+18/+19`, distinct-knot counts `+20/+24`, mult/knot refs |
+|  127 | `007f` | multiplicity arrays (`alloc`, ref, `alloc × u16`)                                                                                                           |
+|  128 | `0080` | knot arrays (`alloc`, ref, `alloc × f64`)                                                                                                                   |
+|  135 | `0087` | B-curve control payload                                                                                                                                     |
+|  136 | `0088` | B-curve descriptor: `degree +4`, `pole_count +8`, `dimension +10` (2=UV, 3=XYZ), distinct-knot `+14`, form `+16`, mult/knot refs `+23/+25`                  |
+
+Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. Canonical multiplicities satisfy `sum(mults) = n_poles + degree + 1` in each direction. Pole-grid ordering is u-major.
+
+### 6.3 Procedural intersection curves (type 38 / `0x5a`)
+
+NX stores freeform edges and blend rails as construction relations with branch witnesses. A type-38 record has a compact header through sense `+18` and six support xmt references at `+19,+21,+23,+25,+27,+29`.
+
+| Ref | Role                                                                                       |
+| --- | ------------------------------------------------------------------------------------------ |
+| 0/1 | primary support surface + type-59 second-support bridge (order set by the `0x00cc` marker) |
+| 2   | `0x28` CHART_s seed/control polyline                                                       |
+| 3/4 | `0x29` term_use start / end endpoint                                                       |
+| 5   | `0x00cc` values-array (support UV parameters)                                              |
+
+For the `0x5a` delta twin the layout is fixed (primary = ref[0], bridge = ref[1]); for type-38 the primary/bridge assignment follows the `0x00cc` marker (marker-2 → primary ref[0]; marker-3 → primary ref[1]).
+
+**CHART_s (`0x28`):** branch selector and native-parameter certificate:
+
+```text
+00 28 [ff] count:u32 BE  xmt
+base_parameter:f64  base_scale:f64  chart_count:u32  chordal_error:f64  angular_error:f64
+parameter_error[2]:f64   (sentinel pair -31415800000000.0)
+count × Hvec              (Hvec block always starts at pre+52, pre = end of count+xmt)
+```
+
+Hvec form depends on the stream: partition streams use **`xyz3`** (`x,y,z` meters); deltas streams use **`ext11`** (`x,y,z, p3,p4,p5,p6, tx,ty,tz, t`), with a unit tangent and native `t`. The chart parameter is meter-scale: `t_{k+1} = t_k + chord_k · f_k`, with `t_0 = base_parameter` and chords in meters. `chordal_error` defines the verification tolerance for chart-hosted carriers. Intersection charts use `(base_parameter, base_scale) = (0.0, 1.0)`. Procedural-spine charts have `chart_count == count`, sentinel `parameter_error`, and finite non-zero `base_scale`.
+
+**term_use (`0x29`)** endpoints equal the first/last seed points exactly and are hard trim endpoints (`ref[3]` = start vertex point, `ref[4]` = end vertex point, meters). Three record forms occur for `0x28`/`0x29`/`0x00cc`: direct tagged, `0xff`-escaped, and descriptor-inline (payload follows the ASCII schema keyword + a fixed field-schema tail).
+
+**`0x00cc` values-array** packs support UV samples by marker byte:
+
+| Marker | Packing | Meaning                                                       |
+| -----: | ------- | ------------------------------------------------------------- |
+|    2/3 | `2·n`   | `(u,v)` on support 0                                          |
+|      4 | `4·n`   | `(u0,v0,u1,v1)`: first pair on support 0, second on support 1 |
+
+The value `-31415800000000.0` is a missing-parameter sentinel. Preserve the tuple position. Support-0 `(u,v)` values evaluate on the analytic surface to the curve's 3D points.
+
+```text
+cylinder: P = O_mm + (v·1000)·A + r_mm·(cos u · X + sin u · (A×X))
+plane:    P = O_mm + (u·1000)·X + (v·1000)·(N×X)
+torus:    Y = A×X;  P = C_mm + (R + r·cos v)·(cos u · X + sin u · Y) + r·sin v · A
+```
+
+**UV validation.** The first and last evaluated UV samples reproduce the term endpoints within `1e-6` mm.
+
+**Type-59 BLEND_BOUND (`0x003b`)** contains `boundary_index` (0/1) and `blend_surface_ref` to a BLEND_SURF construction surface. The `0xff` after the tag is an envelope escape. For participating support `A`, `B.support_refs[1 - boundary_index] == A`. `B.support_refs[boundary_index]` identifies the support that closes the blend rolling-ball law at the cap.
+
+### 6.4 TRIMMED_CURVE (133) and SP_CURVE (137)
+
+**TRIMMED_CURVE (133):** basis_curve ref `+19` (large-index capable → shifts later fields +2), `point_1 +21`, `point_2 +45`, `parm_1:f64 +69`, `parm_2:f64 +77`. The curve is `basis(t)` restricted to `[parm_1, parm_2]`; parameters are in the basis's native units: LINE uses meters of arc length from the stored point (×1000 for mm), CIRCLE uses radians, and B_CURVE uses knot units. Unscaled meter spans on a LINE basis place the trim interval 1000× too small.
+
+**SP_CURVE (137):** surface ref `+19`, b_curve ref `+21`, original ref `+23`, `tolerance_to_original:f64 +25` (after ref shifts). It represents a curve-on-surface: a 2D B-curve in the surface parameter space.
+
+### 6.5 Rolling-ball blend surface (BLEND_SURF 56)
+
+A BLEND_SURF FACE is a procedural canal or envelope surface. Record layout:
+
+```text
+compact header through sense +18
+subtype byte +19            (`0x52` / `R` = rolling-ball)
+support refs +20,+22,+24    (large-index capable): support 0, support 1, spine
+4 × f64                     values = (range[0], range[1], thumb_weight[0], thumb_weight[1])
+4 × xmt tail refs           `1` (null references)
+```
+
+`values[0:2]` are signed support offsets `range[2]` in meters. Their magnitude gives the rolling-ball radius `r = |range|`. `values[2:4]` are dimensionless `thumb_weight[2]`. Support reference 2 identifies the ball-centre spine. Spine families include:
+
+- **Offset-intersection spine:** a type-38 whose two supports are both OFFSET_SURF, with base refs and offsets mirroring the blend's supports and `range` (`O_i = base_i + range_i · oriented_normal_i`). Freeform (NURBS-offset) bases.
+- **Direct-supports spine:** a type-38 on the original analytic supports directly.
+- **Fixed-curve spine:** an ELLIPSE (type 32); ellipse non-circularity encodes plane draft angle (`major/minor = 1/cos(draft)`).
+- **Tool-body delta spine:** a `0x5a` INTERSECTION_DATA record with a real (non-sentinel) `geometric_owner`.
+
+**Canal law** `B(t,s)` uses the two supports, signed range, and the spine marker-4 UV chart:
+
+```text
+B(t,s) = C(t) + r · Rot_about_T(t)( s·α(t) ) · E0(t)
+  C(t)   = ball-centre spine = S0(u0,v0) + σ0·r·N0 = S1(u1,v1) + σ1·r·N1
+  Q_i(t) = contact rail on support i = S_i(u_i(t), v_i(t))
+  E_i(t) = (Q_i(t) − C(t)) / r        (unit; |Q_i − C| = r exactly)
+  T(t)   = unit spine tangent C'(t)/|C'(t)|
+  α(t)   = atan2((E0×E1)·T, E0·E1)    signed ball-arc angle, varying along the spine
+  rails:  B(t,0) = Q0(t),  B(t,1) = Q1(t)
+  normal: n(t,s) = (B(t,s) − C(t)) / r   (radial from ball centre; envelope-of-spheres, no differentiation)
+```
+
+`σ0, σ1 ∈ {+1,−1}` are the `range` signs, with `|range| = r`. The spine identity is `S0+σ0·r·N0 == S1+σ1·r·N1`. Rail incidence is `B(t,0)=Q0(t)`. At each rail, the canal normal equals the support surface normal.
+
+**Chained blend-on-blend** recurses into the support blend canal. Offsetting a constant-radius canal along its normal gives a canal with radius `r+δ`: `B(t,s; r+δ) = B(t,s; r) + δ·n(t,s)`. A spine uses one branch pair `(i0,i1)` for each polyline point.
+
+**Primitive reduction.** A constant-radius blend with a circular spine has torus parameters `major = circle radius`, `minor = r`. A line spine has cylinder radius `r`. Reduction requires `|range[0]| == |range[1]|` and a circular or linear spine with at least five points.
+
+---
+
+## 7. Metadata, history, and body composition
+
+### 7.1 NX object model (OM)
+
+UG_PART begins with a 12-byte row table of LE u32 triples pointing at OM sections and Parasolid wrapper headers. An OM section (signature `ff ff ff ff`, optionally prefixed `c0 d1 f1 ed`; BE-u32 size at `+8`) decomposes into preamble, type registry, field registry, object-id table, and entity records.
+
+**Externalized record boundaries.** Every OM section with an id-table carries, immediately before its `object_id_table`, a `(count+1)`-entry monotone `u32 LE` **entity_index** with `index[0] == 0`. OM entity records have no inline length prefix; lengths live in the entity_index:
+
+```text
+oid_end = object_id_table_off + 4 + count*4       # first entity record start
+base    = oid_end − entity_index[1]               # self-anchoring
+record i = bytes[base + index[i], base + index[i+1])
+object_id(i) = object_id_table[i]
+```
+
+The first record at `oid_end` begins with the NX root marker `04 01 0e "NX "` (for example, `NX 2027.3102`). The **type registry** stores `UGS::<class>` names and class-ID bytes. The **field registry** stores `m_*` member names such as `m_color` and `m_csys`.
+
+**Persistent-handle identity.** `0xe0`-prefixed 4-byte values are persistent handles forming a cross-stream bridge (RMFastLoad ↔ UG_PART OM ↔ EXTREFSTREAM). A second family uses `0xC0..0xCF` (4-bit tag plus 28-bit value) and occurs as `(e0-handle, c-ref)` pairs.
+
+### 7.2 Partition and deltas merge
+
+A complex part contains an active body and sub-bodies, each with its own partition/deltas pair and stream-local xmt namespace, plus optional plain cached tool bodies. The final solid is the load-time feature-history Boolean composition of those bodies. NX OM feature-history records encode operand binding and order.
+
+```text
+live = partition ∪ delta_full − tombstones
+```
+
+- A full record with `xmt ∈ partition` replaces that partition record. Paired streams share one xmt namespace.
+- A full record with `xmt ∉ partition` (high range) adds a new entity.
+- The deltas stream adds entities through explicit high-range records.
+
+BODY (`00 0c`, xmt=3) records delimit snapshots. `node_id` is a monotonic per-body revision counter.
+
+`RMFastLoad` supplies an object-id set for active-body selection. When those IDs share the Parasolid kernel-node-id space, select the body whose FACE, EDGE, and VERTEX kernel node IDs have dominant membership, subject to a sufficient hit fraction and dominant margin. This selection chooses a body only; it does not restrict faces, edges, loops, or vertices to that body's `FACE.next` chain.
+
+---
+
+## 8. Units and tolerances
+
+- Geometric doubles are meters; multiply by 1000 for mm. Applies to point coordinates, radii, offsets, tolerances, chart chords, TRIMMED_CURVE LINE parameters.
+- Do not scale unit axes/directions/normals, `thumb_weight`, angular parameters (radians), UV surface parameters, knot values, or ratios.
+- `chordal_error` defines the verification tolerance for chart-hosted procedural carriers.
+- Exactness certificates for procedural geometry are floor bounds `max(1e-12, 128·eps·scale)` mm; the relations are zero in exact arithmetic (S0==S1 spine identity, envelope-of-spheres normal).
+
+## 9. Additional record semantics
+
+### 9.1 `EXTREFSTREAM`
+
+An `EXTREFSTREAM` record region begins with `0x00`, followed by little-endian `(record_id, record_offset)` pairs terminated by `record_id == 0`. Each record at `record_offset` begins `01 00 00 00`, then `n:u16 BE`, `01`, four `u32 LE` ID slots, `01`, and a count-delimited persistent-handle set. The set contains `count - 1` ascending `e0 + handle:u32` entries, repeats the final handle, and ends with a closing byte equal to `count`. Locate the trailing string table by parsing `01 + count:u32 LE + count × (len:u16 LE + ASCII)` to the stream end; the nominal `16 + payload_size` boundary can fall inside a string record.
+
+### 9.2 Stream and deltas framing
+
+The `00 ce` stream-root schema declares `index_map`, `node_id_index_map`, and `schema_embedding_map`; each serializes as a null or empty array and supplies no tombstone bridge.
+
+A deltas-stream BODY record with type `00 0c` and xmt `3` delimits a body snapshot. Its `node_id` is a monotonic revision counter within that body sequence, and a reset begins another interleaved body sequence. Deltas streams encode null-node deletions as descending contiguous xmt runs that can span topology, geometry, and attribute record types.
+
+### 9.3 B-spline payloads
+
+A type-125 B-surface control payload stores a parameter-range block, a marker byte, a sense byte, `double_count:u32`, a large-index-capable `first_index`, and `double_count` doubles. An optional envelope escape before `double_count` shifts the remaining fields by one byte.
+
+A type-126 B-surface descriptor stores U and V degrees, pole counts, form codes, distinct-knot counts, multiplicity references, knot references, and a control-payload reference. It has short and large-index layouts.
+
+A type-135 B-curve control payload stores `double_count:u32`, `first_index`, and `double_count` doubles. Type 136 stores degree, pole count, dimension, distinct-knot count, form, control-data index, multiplicity reference, and knot reference.
+
+The B-spline form code does not determine whether a control grid is rational. The control-grid stride determines the representation: stride 3 stores xyz and stride 4 stores xyzw.
+
+### 9.4 Attributes and expressions
+
+Parasolid attribute definitions use a two-record catalog entry. `00 4f` contains `name_len:u32 BE`, `00 <class_id>`, and an ASCII class name. The following `00 50` contains `field_count:u32 BE`, the repeated class ID, and field-type records. The class ID is stream-local and follows declaration order. Type code `0x05` denotes a component/reference or string field, `0x06` a double field, and `0x00` a void or flag field.
+
+`hostglobalvariables` stores numeric expressions as length-prefixed ASCII records in the form `<handle:u8> 04 <len:u8> "(Number [units]) name: value; " 00`.

@@ -1,0 +1,338 @@
+// SPDX-License-Identifier: Apache-2.0
+//! PSB primitive encoding: compact integers, structural token bytes, and the
+//! 3-byte compact-float short form.
+//!
+//! This is the load-bearing, best-established layer of the format (spec §3). The
+//! decoders here are pure functions over a byte slice so they can be unit-tested
+//! against the spec's byte-exact worked examples. Higher layers (surface/curve
+//! namespaces, row bodies, world-coordinate tokens) are only partially
+//! characterized and are *not* decoded by this codec; see [`crate::decode`] for
+//! how those are reported as loss rather than fabricated.
+
+/// Structural token bytes (spec §3.2).
+pub mod token {
+    /// Named-record header: `e0 <type> <name>\0`.
+    pub const NAMED_RECORD: u8 = 0xe0;
+    /// Array opener: `f8 <count>`.
+    pub const ARRAY_OPEN: u8 = 0xf8;
+    /// Count-bounded scalar body: `f9 <ndim> <count>`.
+    pub const SCALAR_BODY: u8 = 0xf9;
+    /// Entity reference: `f7 <id>`.
+    pub const ENTITY_REF: u8 = 0xf7;
+    /// Array close.
+    pub const ARRAY_CLOSE: u8 = 0xfb;
+}
+
+/// One structurally framed PSB token. `offset` and `length` always refer to
+/// the original byte stream; unknown bytes remain explicit rather than being
+/// skipped, which makes the walker safe for provenance and cache building.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Token {
+    pub offset: usize,
+    pub length: usize,
+    pub kind: TokenKind,
+}
+
+/// Structural token kinds whose byte extent is known independent of the
+/// parent record grammar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TokenKind {
+    CompactInt,
+    ShortFloat,
+    WorldCoordinate,
+    NamedRecord,
+    EntityReference,
+    ArrayOpen,
+    ScalarBody,
+    ArrayClose,
+    CompoundOpen,
+    CompoundClose,
+    OtherStructural(u8),
+    Unknown(u8),
+    Truncated(u8),
+}
+
+/// Tokenize a PSB byte range using only byte-self-delimiting forms. Numeric
+/// row-body forms whose meaning depends on a parent grammar are deliberately
+/// left as compact/unknown tokens here.
+pub fn tokens(data: &[u8]) -> Vec<Token> {
+    let mut result = Vec::new();
+    let mut offset = 0;
+    while offset < data.len() {
+        let head = data[offset];
+        let (length, kind) = match head {
+            token::NAMED_RECORD => match data
+                .get(offset + 2..)
+                .and_then(|rest| rest.iter().position(|&b| b == 0))
+            {
+                Some(name_len) => (name_len + 3, TokenKind::NamedRecord),
+                None => (data.len() - offset, TokenKind::Truncated(head)),
+            },
+            token::ENTITY_REF => match reference_id(data, offset + 1) {
+                Ok((_, end)) => (end - offset, TokenKind::EntityReference),
+                Err(_) => (data.len() - offset, TokenKind::Truncated(head)),
+            },
+            token::ARRAY_OPEN => {
+                let (_, end) = compact_int(data, offset + 1);
+                if end == offset + 1 {
+                    (1, TokenKind::Truncated(head))
+                } else {
+                    (end - offset, TokenKind::ArrayOpen)
+                }
+            }
+            token::SCALAR_BODY if offset + 2 < data.len() => (3, TokenKind::ScalarBody),
+            token::SCALAR_BODY => (data.len() - offset, TokenKind::Truncated(head)),
+            token::ARRAY_CLOSE => (1, TokenKind::ArrayClose),
+            0xe2 => (1, TokenKind::CompoundOpen),
+            0xe3 => (1, TokenKind::CompoundClose),
+            0x29 | 0x2a | 0x2e | 0x2f | 0x42 | 0x43 | 0x47 | 0x48 => {
+                if offset + 3 <= data.len() {
+                    (3, TokenKind::ShortFloat)
+                } else {
+                    (data.len() - offset, TokenKind::Truncated(head))
+                }
+            }
+            0x46 | 0x2d if offset + 8 <= data.len() => (8, TokenKind::WorldCoordinate),
+            0x46 | 0x2d => (data.len() - offset, TokenKind::Truncated(head)),
+            0..=0xbf => {
+                let (_, end) = compact_int(data, offset);
+                (end - offset, TokenKind::CompactInt)
+            }
+            0xe1 | 0xe4 | 0xe5 | 0xe6 | 0xe8 | 0xf1 | 0xf2 | 0xf3 | 0xf5 | 0xf6 => {
+                (1, TokenKind::OtherStructural(head))
+            }
+            _ => (1, TokenKind::Unknown(head)),
+        };
+        result.push(Token {
+            offset,
+            length,
+            kind,
+        });
+        offset += length;
+    }
+    result
+}
+
+/// Decode a generic PSB compact integer at `offset` (spec §3.1).
+///
+/// - `0x00..=0x7f`: one-byte direct value.
+/// - `0x80..=0xbf XX`: two-byte big-endian `((head - 0x80) << 8) | XX`.
+/// - `0xc0..=0xff`: control/special range; on the generic lane this returns the
+///   raw byte as a one-byte value (callers that need the stricter reference-id
+///   grammar must reject this range themselves).
+///
+/// Returns `(value, new_offset)`; `new_offset == offset` signals end-of-buffer.
+pub fn compact_int(data: &[u8], offset: usize) -> (u32, usize) {
+    let Some(&b) = data.get(offset) else {
+        return (0, offset);
+    };
+    if b <= 0x7f {
+        (b as u32, offset + 1)
+    } else if (0x80..=0xbf).contains(&b) {
+        match data.get(offset + 1) {
+            Some(&lo) => ((((b - 0x80) as u32) << 8) | lo as u32, offset + 2),
+            None => (b as u32, offset + 1),
+        }
+    } else {
+        (b as u32, offset + 1)
+    }
+}
+
+/// Decode a canonical PSB entity-reference identifier. Unlike
+/// [`compact_int`], typed reference lanes reject control bytes and reject a
+/// two-byte representation for values that fit in one byte.
+pub fn reference_id(data: &[u8], offset: usize) -> Result<(u32, usize), &'static str> {
+    let Some(&head) = data.get(offset) else {
+        return Err("reference id is truncated");
+    };
+    match head {
+        0..=0x7f => Ok((head as u32, offset + 1)),
+        0x80..=0xbf => {
+            let Some(&tail) = data.get(offset + 1) else {
+                return Err("two-byte reference id is truncated");
+            };
+            let value = (((head - 0x80) as u32) << 8) | tail as u32;
+            if value < 0x80 {
+                return Err("reference id uses a non-canonical two-byte form");
+            }
+            Ok((value, offset + 2))
+        }
+        _ => Err("control byte cannot start a reference id"),
+    }
+}
+
+/// 3-byte short-form float prefix table (spec §3.3): `prefix -> (ieee_byte0,
+/// repeat_fill)`. Repeat-fill tokens fill the 6-byte IEEE tail with the third
+/// byte repeated; the others place the third byte then five zero bytes.
+///
+/// The pairs are `0x19` apart and encode sign/exponent mirror: `(0x29,0x42)`
+/// and `(0x2a,0x43)` are `3F/BF`; `(0x2e,0x47)` and `(0x2f,0x48)` are `40/C0`.
+const fn short_form_spec(prefix: u8) -> Option<(u8, bool)> {
+    match prefix {
+        0x29 => Some((0x3f, true)),
+        0x2a => Some((0x3f, false)),
+        0x2e => Some((0x40, true)),
+        0x2f => Some((0x40, false)),
+        0x42 => Some((0xbf, true)),
+        0x43 => Some((0xbf, false)),
+        0x47 => Some((0xc0, true)),
+        0x48 => Some((0xc0, false)),
+        _ => None,
+    }
+}
+
+/// True when `prefix` opens a 3-byte short-form float token.
+pub fn is_short_form_float(prefix: u8) -> bool {
+    short_form_spec(prefix).is_some()
+}
+
+/// Decode a 3-byte short-form float at `offset` (spec §3.3). Returns
+/// `Some((value, new_offset))` when the prefix is a known short-form opener and
+/// three bytes are available; `None` otherwise.
+///
+/// The token `<prefix> XX YY` reconstructs the IEEE-754 `double` whose bytes are
+/// `(byte0, XX, fill…)`, where `byte0` and the fill mode come from the prefix.
+/// Byte-exact against the spec's worked examples (e.g. `2f 43 00 = 38.0`,
+/// `29 eb 33 = 0.85`, `48 22 00 = -9.0`).
+pub fn short_form_float(data: &[u8], offset: usize) -> Option<(f64, usize)> {
+    let (byte0, repeat) = short_form_spec(*data.get(offset)?)?;
+    let xx = *data.get(offset + 1)?;
+    let yy = *data.get(offset + 2)?;
+    let mut ieee = [0u8; 8];
+    ieee[0] = byte0;
+    ieee[1] = xx;
+    if repeat {
+        for b in ieee.iter_mut().skip(2) {
+            *b = yy;
+        }
+    } else {
+        ieee[2] = yy;
+    }
+    Some((f64::from_be_bytes(ieee), offset + 3))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_int_one_byte() {
+        assert_eq!(compact_int(&[0x00], 0), (0, 1));
+        assert_eq!(compact_int(&[0x7f], 0), (127, 1));
+    }
+
+    #[test]
+    fn compact_int_two_byte() {
+        // (0x80 - 0x80) << 8 | 0x80 = 128
+        assert_eq!(compact_int(&[0x80, 0x80], 0), (128, 2));
+        // (0x81 - 0x80) << 8 | 0x02 = 258
+        assert_eq!(compact_int(&[0x81, 0x02], 0), (258, 2));
+    }
+
+    #[test]
+    fn compact_int_truncated_two_byte_is_raw() {
+        assert_eq!(compact_int(&[0x81], 0), (0x81, 1));
+    }
+
+    #[test]
+    fn compact_int_empty_is_noop() {
+        assert_eq!(compact_int(&[], 0), (0, 0));
+    }
+
+    #[test]
+    fn reference_ids_are_canonical_and_strict() {
+        assert_eq!(reference_id(&[0x7f], 0), Ok((127, 1)));
+        assert_eq!(reference_id(&[0x80, 0x80], 0), Ok((128, 2)));
+        assert!(reference_id(&[0x80, 0x7f], 0).is_err());
+        assert!(reference_id(&[0xc0], 0).is_err());
+        assert!(reference_id(&[0x81], 0).is_err());
+    }
+
+    #[test]
+    fn token_walker_preserves_boundaries_and_unknown_bytes() {
+        let payload = [
+            0xe0, 0x22, b'p', 0, // named record
+            0xf8, 0x81, 0x02, // array count 258
+            0x2f, 0x43, 0x00, // short float 38
+            0xf7, 0x80, 0x80, // canonical reference 128
+            0xcc, // unrecognized control byte
+        ];
+        assert_eq!(
+            tokens(&payload),
+            vec![
+                Token {
+                    offset: 0,
+                    length: 4,
+                    kind: TokenKind::NamedRecord
+                },
+                Token {
+                    offset: 4,
+                    length: 3,
+                    kind: TokenKind::ArrayOpen
+                },
+                Token {
+                    offset: 7,
+                    length: 3,
+                    kind: TokenKind::ShortFloat
+                },
+                Token {
+                    offset: 10,
+                    length: 3,
+                    kind: TokenKind::EntityReference
+                },
+                Token {
+                    offset: 13,
+                    length: 1,
+                    kind: TokenKind::Unknown(0xcc)
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn token_walker_marks_truncated_structural_tokens() {
+        assert_eq!(
+            tokens(&[token::NAMED_RECORD]),
+            vec![Token {
+                offset: 0,
+                length: 1,
+                kind: TokenKind::Truncated(token::NAMED_RECORD),
+            }]
+        );
+    }
+
+    /// Every worked example from spec §3.3, byte-exact.
+    #[test]
+    fn short_form_float_worked_examples() {
+        let cases: &[(&[u8], f64)] = &[
+            (&[0x2f, 0x43, 0x00], 38.0),
+            (&[0x2f, 0x20, 0x00], 8.0),
+            (&[0x48, 0x22, 0x00], -9.0),
+            (&[0x29, 0xeb, 0x33], 0.85),
+            (&[0x47, 0x25, 0xcc], -10.9),
+            (&[0x2a, 0xe8, 0x00], 0.75),
+            (&[0x2a, 0xf4, 0x00], 1.25),
+            (&[0x2e, 0x08, 0x00], 3.0),
+        ];
+        for (bytes, expected) in cases {
+            let (val, next) = short_form_float(bytes, 0).expect("known short form");
+            assert_eq!(next, 3);
+            assert!(
+                (val - expected).abs() < 1e-9,
+                "decoding {bytes:02x?}: got {val}, want {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn short_form_float_rejects_unknown_prefix() {
+        assert!(short_form_float(&[0x00, 0x00, 0x00], 0).is_none());
+        assert!(!is_short_form_float(0x00));
+        assert!(is_short_form_float(0x29));
+    }
+
+    #[test]
+    fn short_form_float_rejects_truncated() {
+        assert!(short_form_float(&[0x2f, 0x43], 0).is_none());
+    }
+}

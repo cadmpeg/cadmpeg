@@ -1,0 +1,64 @@
+# cadmpeg corpus manifest — annotated template
+#
+# Copy a [[file]] block per donated file. Every file in the public corpus must
+# be CC0-1.0 and authored by the donor. See corpus/README.md for the full
+# donation process and LEGAL.md for the clean-room rules this supports.
+#
+# The real manifest for the committed corpus lives alongside the files in this
+# directory (e.g. corpus/manifest.toml). This .example file is documentation
+# only and is never read by tooling.
+
+[[file]]
+# Required fields ----------------------------------------------------------
+
+# File name as committed in corpus/ (or the sharing location noted in the PR).
+filename = "bracket_single_body.f3d"
+
+# Format key. Match a directory under docs/formats/: f3d | sldprt | creo_prt
+# | siemens_nx (more as they are added).
+format = "f3d"
+
+# The application you authored the file in, and its exact version. Version
+# matters: container layouts and kernel encodings shift between releases.
+authoring_app = "Autodesk Fusion 360"
+authoring_app_version = "2.0.19426"
+
+# License dedication. Must be CC0-1.0 for the public corpus.
+license = "CC0-1.0"
+
+# SHA-256 of the exact bytes committed. Compute with:
+#   shasum -a 256 <file>   (macOS)   or   sha256sum <file>   (Linux)
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+# Optional fields ----------------------------------------------------------
+
+# One line on what this file is meant to exercise. Helps reviewers and future
+# decoder authors know why it is in the corpus.
+notes = "Minimal single prismatic body; smoke test for container + planar faces."
+
+# Expected topology counts, if you can read them off the authoring app. When
+# present, decoders can assert against these — turning the file into a golden
+# fixture. Omit any you do not know rather than guessing.
+[file.expected_topology]
+bodies = 1
+faces = 6
+edges = 12
+vertices = 8
+
+
+# --- Second file example: geometry-focused fixture -------------------------
+
+[[file]]
+filename = "fillet_study.sldprt"
+format = "sldprt"
+authoring_app = "SolidWorks"
+authoring_app_version = "2023 SP2.0"
+license = "CC0-1.0"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+notes = "Cylindrical + toroidal faces from a filleted edge; exercises analytic surface recovery."
+
+[file.expected_topology]
+bodies = 1
+faces = 9
+edges = 15
+vertices = 8

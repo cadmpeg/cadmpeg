@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-codec-sldprt"
+description = "Decoder for SolidWorks .sldprt files: block-framed container enumeration, embedded Parasolid stream location, and analytic B-rep topology/geometry decode."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cadmpeg-ir.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+flate2.workspace = true
+crc32fast.workspace = true
+roxmltree.workspace = true

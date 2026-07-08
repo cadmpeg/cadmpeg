@@ -1,0 +1,319 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-fuzz"
+version = "0.0.0"
+description = "Fuzz targets for cadmpeg binary CAD decoders"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+# Declare an independent workspace so this crate (excluded from the root
+# workspace) builds standalone under `cargo +nightly fuzz`.
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d" }
+cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt" }
+cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia" }
+cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo" }
+cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx" }
+cadmpeg-ir = { path = "../cadmpeg-ir" }
+cadmpeg-step = { path = "../cadmpeg-step" }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+flate2 = "1"
+crc32fast = "1"
+
+[[bin]]
+name = "generate_seeds"
+path = "src/bin/generate_seeds.rs"
+
+[[bin]]
+name = "generate_comprehensive_seeds"
+path = "src/bin/generate_comprehensive_seeds.rs"
+
+[[bin]]
+name = "f3d_container"
+path = "fuzz_targets/f3d_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sldprt_container"
+path = "fuzz_targets/sldprt_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_container"
+path = "fuzz_targets/catia_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "creo_container"
+path = "fuzz_targets/creo_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_container"
+path = "fuzz_targets/nx_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ir_from_json"
+path = "fuzz_targets/ir_from_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ir_validate"
+path = "fuzz_targets/ir_validate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "step_writer"
+path = "fuzz_targets/step_writer.rs"
+test = false
+doc = false
+bench = false
+
+# F3D sub-module targets
+[[bin]]
+name = "f3d_asm_header"
+path = "fuzz_targets/f3d_asm_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "f3d_sab_frame"
+path = "fuzz_targets/f3d_sab_frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "f3d_nurbs_surfaces"
+path = "fuzz_targets/f3d_nurbs_surfaces.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "f3d_nurbs_curves"
+path = "fuzz_targets/f3d_nurbs_curves.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "f3d_nurbs_pcurves"
+path = "fuzz_targets/f3d_nurbs_pcurves.rs"
+test = false
+doc = false
+bench = false
+
+# SolidWorks sub-module targets
+[[bin]]
+name = "sldprt_parasolid"
+path = "fuzz_targets/sldprt_parasolid.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sldprt_container_scan"
+path = "fuzz_targets/sldprt_container_scan.rs"
+test = false
+doc = false
+bench = false
+
+# CATIA sub-module targets
+[[bin]]
+name = "catia_geometry_vertices"
+path = "fuzz_targets/catia_geometry_vertices.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_geometry_surfaces"
+path = "fuzz_targets/catia_geometry_surfaces.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_a8_surfaces"
+path = "fuzz_targets/catia_a8_surfaces.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_a5_surfaces"
+path = "fuzz_targets/catia_a5_surfaces.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_b5"
+path = "fuzz_targets/catia_b5.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_e5"
+path = "fuzz_targets/catia_e5.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_zero_entity"
+path = "fuzz_targets/catia_zero_entity.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_container_dir"
+path = "fuzz_targets/catia_container_dir.rs"
+test = false
+doc = false
+bench = false
+
+# Creo sub-module targets
+[[bin]]
+name = "creo_psb_tokens"
+path = "fuzz_targets/creo_psb_tokens.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "creo_compact_int"
+path = "fuzz_targets/creo_compact_int.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "creo_short_form_float"
+path = "fuzz_targets/creo_short_form_float.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "creo_container_scan"
+path = "fuzz_targets/creo_container_scan.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "creo_surface_rows"
+path = "fuzz_targets/creo_surface_rows.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "creo_curve_prototypes"
+path = "fuzz_targets/creo_curve_prototypes.rs"
+test = false
+doc = false
+bench = false
+
+# NX sub-module targets
+[[bin]]
+name = "nx_parasolid"
+path = "fuzz_targets/nx_parasolid.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_geometry_points"
+path = "fuzz_targets/nx_geometry_points.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_geometry_surfaces"
+path = "fuzz_targets/nx_geometry_surfaces.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_geometry_curves"
+path = "fuzz_targets/nx_geometry_curves.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_nurbs_surfaces"
+path = "fuzz_targets/nx_nurbs_surfaces.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_nurbs_curves"
+path = "fuzz_targets/nx_nurbs_curves.rs"
+test = false
+doc = false
+bench = false
+
+# IR sub-module targets
+[[bin]]
+name = "ir_diff"
+path = "fuzz_targets/ir_diff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ir_canonical_roundtrip"
+path = "fuzz_targets/ir_canonical_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "step_writer_custom"
+path = "fuzz_targets/step_writer_custom.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "generate_all_seeds"
+path = "src/bin/generate_all_seeds.rs"
+
+[[bin]]
+name = "generate_submodule_seeds"
+path = "src/bin/generate_submodule_seeds.rs"
+
+[profile.release]
+debug = 1
