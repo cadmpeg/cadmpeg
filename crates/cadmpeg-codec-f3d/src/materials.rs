@@ -537,7 +537,7 @@ fn nested_entry(protein: &[u8], suffix: &str) -> Option<Vec<u8>> {
 fn dechunk(bytes: &[u8]) -> Option<Vec<u8>> {
     if bytes.len() < 16 + PAGE_SIZE
         || u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?) as usize != PAGE_SIZE
-        || (bytes.len() - 16) % PAGE_SIZE != 0
+        || !(bytes.len() - 16).is_multiple_of(PAGE_SIZE)
     {
         return None;
     }

@@ -405,7 +405,7 @@ fn surface_shape(
     let u_sum: usize = u_mult.iter().map(|v| *v as usize).sum();
     let v_sum: usize = v_mult.iter().map(|v| *v as usize).sum();
     for dimension in [4usize, 3] {
-        if control_len % dimension != 0 {
+        if !control_len.is_multiple_of(dimension) {
             continue;
         }
         let poles = control_len / dimension;

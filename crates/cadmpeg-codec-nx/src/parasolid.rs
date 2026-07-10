@@ -128,7 +128,7 @@ pub fn extract_streams(data: &[u8]) -> Vec<Stream> {
 /// predicate accepts every standards-conforming FLG byte rather than treating a
 /// compression level as a format discriminator.
 fn is_zlib_header(cmf: u8, flg: u8) -> bool {
-    cmf & 0x0f == 8 && cmf >> 4 <= 7 && u16::from_be_bytes([cmf, flg]) % 31 == 0
+    cmf & 0x0f == 8 && cmf >> 4 <= 7 && u16::from_be_bytes([cmf, flg]).is_multiple_of(31)
 }
 
 /// Inflate a zlib stream, tolerating trailing garbage after the compressed data
