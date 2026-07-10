@@ -57,7 +57,7 @@ cadmpeg records conversion loss during decode and export:
 
 - Decoding reports coverage: how much of the input was named and typed versus left as opaque bytes.
 - Each export produces a **loss report** stating what was carried across exactly, what was approximated (e.g. an analytic surface tessellated to a mesh), and what was dropped (e.g. parametric feature history when exporting to a geometry-only target).
-- The [fidelity ladder](format-support.md) (L0–L6) gives a shared vocabulary for how far a given format's decode reaches.
+- The [format support profiles](format-support.md) track read, write, and round-trip capability by semantic domain.
 
 Missing loss accounting is a defect.
 
@@ -71,11 +71,11 @@ cadmpeg is a Cargo workspace:
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`              | The CLI binary: `inspect`, `decode`, `validate`, `export`, `diff`, and the `convert` sugar. Orchestrates the pipeline; owns no format knowledge itself.                                 |
 | `cadmpeg-ir`           | The intermediate representation: the data model every decoder emits and every validator/exporter consumes. Includes exactness labeling and byte-provenance. See [cad-ir.md](cad-ir.md). |
-| `cadmpeg-codec-f3d`    | The `.f3d` codec: SAB framing, B-rep topology graph, analytic carriers, and inline cached NURBS. The most complete codec.                                                               |
-| `cadmpeg-codec-sldprt` | The `.sldprt` codec: CRC-validated block framing, active Parasolid partition, typed topology chain, analytic carriers.                                                                  |
-| `cadmpeg-codec-catia`  | The `.CATPart` codec: `V5_CFV2` container, five-variant detection, standard-nested vertex cloud and curved analytic carriers.                                                           |
-| `cadmpeg-codec-nx`     | The NX `.prt` codec: SPLMSSTR container, Parasolid stream extraction, analytic carriers, and topology reconstruction where the stream's records resolve.                                |
-| `cadmpeg-codec-creo`   | The Creo `.prt` codec: `#UGC:2` container, section enumeration, PSB token decoding. Structural only; no geometry by design.                                                             |
+| `cadmpeg-codec-f3d`    | The `.f3d` codec: SAB framing, partial B-rep topology, analytic and cached NURBS carriers, Design/ACT records, attributes, and appearance bindings.                                     |
+| `cadmpeg-codec-sldprt` | The `.sldprt` codec: CRC-validated framing, partial analytic/NURBS B-rep and semantic lanes, retained-source writing, native regeneration, and tessellation.                            |
+| `cadmpeg-codec-catia`  | The `.CATPart` codec: `V5_CFV2` and related layout detection, partial analytic/freeform carrier decode, and conditional standard-nested topology.                                       |
+| `cadmpeg-codec-nx`     | The NX `.prt` codec: SPLMSSTR extraction, analytic and NURBS carriers, supported trimmed curves, and conditional topology reconstruction.                                               |
+| `cadmpeg-codec-creo`   | The Creo `.prt` codec: `#UGC:2` sections, PSB token and prototype-structure decoding, opaque VisibGeom preservation, and derived ActDatums plane carriers.                              |
 | `cadmpeg-step`         | Pure-Rust STEP (AP214) writer: manifold B-rep with analytic and B-spline carriers, explicit loss report. No native dependencies.                                                        |
 | `cadmpeg-fuzz`         | Fuzz targets for the decoders. The decoders read untrusted binary input, so fuzzing is part of the core workflow.                                                                       |
 

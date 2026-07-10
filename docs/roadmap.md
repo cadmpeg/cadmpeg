@@ -21,7 +21,7 @@ Native write support alone does not establish complete format support. A complet
 
 A complete decode converts understood data into typed IR. Any remaining source data survives as a named opaque record with byte provenance. No source content disappears without a loss entry.
 
-The current L0-L6 ladder remains a compact status shorthand. Milestone 1 will replace or expand it so the highest level means cumulative semantic read and write support, not native writing in isolation.
+The [format support profiles](format-support.md) track each semantic domain across read, write, and round-trip capability. No single highest level substitutes for complete support.
 
 ## Fidelity contract
 
@@ -60,7 +60,7 @@ Build the evidence required to measure progress.
 
 - Populate the public corpus with contributor-authored CC0 `.sldprt` fixtures.
 - Cover controlled variations in geometry, topology, features, configurations, tessellation, appearance, and format versions.
-- Publish a multidimensional support profile for each codec instead of relying on one highest fidelity level.
+- Maintain a multidimensional support profile for each codec instead of relying on one highest fidelity level.
 - Publish the generated CAD IR JSON Schema and validate serialized artifacts against it.
 - Define semantic equality for IR documents independently of positional entity IDs.
 - Define geometric error measures for curves, surfaces, tessellation, and transformed assemblies.

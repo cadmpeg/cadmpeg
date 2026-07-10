@@ -1,64 +1,160 @@
-# Format support matrix
+# Format support
 
-This matrix rates what cadmpeg can decode and export on a shared fidelity ladder. When research coverage exceeds the in-repo codec, the matrix states both statuses.
+This document reports what the current repository can read, write, and round-trip. It separates semantic domains because container decoding, geometry, topology, design intent, presentation, and native writing progress independently.
 
-**Repository reality check:** the Rust workspace includes codecs for every researched format:
+No native format is complete. SolidWorks `.sldprt` has the broadest read/write path and is the [reference format](roadmap.md#reference-format-solidworks-sldprt) for full semantic support.
 
-- **`.f3d` B-rep:** topology graph, analytic and cached NURBS carriers, inline/reference pcurves, transforms, attributes, and material bindings.
-- **`.sldprt`:** analytic and NURBS B-rep, explicit body ownership, feature lanes, metadata, and native semantic writing.
-- **`.CATPart` carriers:** standard-nested vertex cloud plus curved analytic surfaces, no topology.
-- **NX `.prt` B-rep:** container, analytic carriers, and a reconstructed topology graph where the stream's records resolve.
-- **Creo `.prt` structure:** container plus PSB tokens, no transferred geometry.
+## Status terms
 
-The repository exports **STEP AP214** through a pure-Rust writer. "Research" means demonstrated outside this repository.
+- **None:** the repository does not implement the domain.
+- **Inspect:** cadmpeg identifies and reports the structure but does not transfer it into typed IR.
+- **Partial:** cadmpeg transfers a typed subset and reports or preserves the remainder.
+- **Complete:** the domain satisfies the public-fixture, byte-accounting, validation, round-trip, and fuzzing gates in the [roadmap](roadmap.md#progress-gates).
 
----
+No profile below uses **Complete** yet. The public corpus starts empty, so current claims rest on code, generated fixtures, and explicit loss paths.
 
-## The L0–L6 fidelity ladder
+Entity provenance is separate from domain status. `byte_exact`, `derived`, `inferred`, and `unknown` describe how one IR value was obtained; they do not imply complete format support.
 
-A format's status is the highest level it reaches with byte-derived confidence.
+## At a glance
 
-| Level  | Name                | What it means                                                                                                              |
-| ------ | ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| **L0** | Container           | The on-disk wrapper is decoded: streams, blocks, entity tables, sizes, offsets are enumerated. You can `inspect` the file. |
-| **L1** | Mesh                | Tessellated/faceted geometry is recovered (triangles, not analytic surfaces). Enough to visualize.                         |
-| **L2** | Analytic geometry   | Exact surfaces and curves are recovered (planes, cylinders, splines) rather than their tessellation.                       |
-| **L3** | Exact topology      | The B-rep graph is recovered: bodies, shells, faces, loops, coedges, edges, vertices, correctly connected.                 |
-| **L4** | Assemblies          | Multi-part structure, instances, and their placement transforms are recovered.                                             |
-| **L5** | Parametric features | Feature history / construction intent (sketches, extrudes, fillets as operations) is recovered.                            |
-| **L6** | Native write        | cadmpeg can _write_ the format back.                                                                                       |
+- **SolidWorks `.sldprt`:** partial semantic read, native write, and round-trip support.
+- **Fusion 360 `.f3d`:** partial B-rep, design-record, and appearance read support; no native write.
+- **Siemens NX `.prt`:** partial analytic, NURBS, trimmed-curve, and conditional topology read support; no native write.
+- **CATIA V5 `.CATPart`:** partial analytic and freeform carrier decode with conditional standard-nested topology; no native write.
+- **Creo Parametric `.prt`:** container and prototype-structure decode with derived datum-plane carriers; no placed model B-rep or native write.
+- **STEP AP214:** partial manifold B-rep export with explicit loss reporting.
 
-Export targets are rated on the same ladder for what they can _emit_.
+## SolidWorks `.sldprt`
 
----
+**Kernel:** Parasolid
 
-## Input format status
+**Role:** reference format for full semantic support
 
-| Format          | Ext        | Kernel                         | Reached                                                    | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| --------------- | ---------- | ------------------------------ | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Fusion 360      | `.f3d`     | ASM (ACIS-derived)             | **L3** (research) / **L3** (in-repo)                       | In-repo: the active SAB stream decodes into the full B-rep graph with analytic and cached NURBS carriers. Subtype references, inline/ref pcurves, signed radii, body transforms, linked attributes, Protein appearance assets, Design assignments, MetaStream entity ids, and ACT channels transfer into IR. See [`formats/f3d.md`](formats/f3d.md) and [`formats/f3d-open-items.md`](formats/f3d-open-items.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| SolidWorks      | `.sldprt`  | Parasolid                      | **L2–L3 partial; L6 partial**                              | In-repo: CRC-validated framing; analytic and NURBS carriers; explicit solid/sheet body ownership; derived periodic seams and pcurves; tessellation, appearance, metadata, configurations, and feature history. Unchanged files write byte-exactly. Source-less and modified typed IR regenerate native blocks and a section directory. Unsupported surface families and unresolved schema-33103 sheet classification remain open. See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`](formats/sldprt-open-items.md).                                                                                                                                                                                                                                                                                                                                     |
-| Creo Parametric | `.prt`     | Granite (PSB on disk)          | **L0** (research) / **L0** (in-repo)                       | In-repo: `#UGC:2` detection, section enumeration, ND/DEPDB layout identification, PSB compact-int and compact-float decoding, and VisibGeom surface/curve censuses. `geometry_transferred=false`: VisibGeom stores prototype geometry, so cadmpeg preserves it as unknown passthroughs rather than presenting it as placed model geometry. Research identifies the format as PSB, covers the container and prototype rows, and leaves per-instance geometry blocked by the unresolved 8-byte PSB float-token formula. See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-items.md`](formats/creo_prt-open-items.md).                                                                                                                                                                                                                                         |
-| Siemens NX      | `.prt`     | Parasolid (SPLMSSTR container) | **L2–L3 partial** (research) / **L2–L3 partial** (in-repo) | In-repo: the SPLMSSTR container decodes, embedded Parasolid streams are extracted and classified, and points plus analytic surfaces/curves decode as carriers validated against paired STEP exports. Where a stream's topology records resolve, the body→shell→face→loop→fin→edge→vertex graph is reconstructed and attached; a stream yielding no topology is a counted loss. Loss-reported gaps: untyped B-spline/blend records and assembly files as external dependencies. Research covers fixed record grammar, topology layouts, analytic carriers, and procedural rolling-ball blends. Open gates: tombstone-to-live-face selection, assembly/constraint records, freeform NURBS-offset blend spines, and NX object-model field serialization. See [`formats/siemens_nx.md`](formats/siemens_nx.md) and [`formats/siemens_nx-open-items.md`](formats/siemens_nx-open-items.md). |
-| CATIA V5        | `.CATPart` | CGM (proprietary, unpublished) | **L2–L3 partial** (research) / **L1–L2 partial** (in-repo) | In-repo: the `V5_CFV2` container and inner stream directory decode, all five storage variants are detected, and the standard-nested variant emits a vertex point cloud plus curved analytic surface carriers. Loss-reported gaps: no topology graph, located-but-undecoded plane carriers, and detect-only support for the other four variants. Research covers the container, five storage variants, analytic surfaces/curves, face meshes, and much of the topology. Open gates: endpoint incidence, orientation signs, persistent tags, and the consolidated-stream tag resolver. See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](formats/catia-open-items.md).                                                                                                                                                                                      |
+### Read profile
 
-Per-format specifications and open-item notes live in [`formats/`](formats/).
+- **Container and versions: Partial.** The codec validates CRC-framed blocks, enumerates cache cells and the tail directory, extracts active Parasolid partitions, and preserves the source image. Coverage across historical schemas remains incomplete.
+- **Geometry: Partial.** Analytic and NURBS surfaces and curves transfer into typed carriers. Offset, swept, blend, intersection, and other unsupported families remain opaque or produce unknown carriers.
+- **Topology: Partial.** The codec builds body, lump, shell, face, loop, coedge, edge, and vertex ownership for supported layouts. Periodic seams, orientation, and several pcurves are derived. Older body layouts, schema-specific sheet classification, deltas tombstones, and some multi-shell cases remain open.
+- **Tessellation: Partial.** Display-list geometry transfers into tessellation arenas and can be regenerated. Stable face-to-triangle ownership is not complete.
+- **Design intent: Partial.** Configuration names, feature-history metadata, and typed feature-input lanes transfer. The codec does not reconstruct a replayable SolidWorks feature tree or alternate-configuration solids.
+- **Product structure: None.** `.sldprt` part support does not include SolidWorks assembly documents or constraints.
+- **Presentation and metadata: Partial.** Base colors, appearance bindings, previews, SolidWorks XML metadata, units, and selected attributes transfer. Full appearance precedence and all embedded metadata stores remain open.
 
----
+### Write and round trip
 
-## Export target status
+- **Native write: Partial.** Unchanged IR with a retained source image writes byte for byte. Modified or source-less supported IR regenerates native blocks and a section directory.
+- **Semantic write limits:** one lump per body, one shell per lump, no explicit face names, no stored edge parameter ranges, no periodic NURBS carriers, and bounded appearance data.
+- **Round trip: Partial.** Byte-exact unchanged-file and semantic regeneration paths have generated-fixture tests. The public version and feature matrix remains to be built.
 
-| Target | Ext     | Level it can emit           | Status                                                                                                                                                                                                    |
-| ------ | ------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| STEP   | `.step` | L2–L3 (analytic + topology) | **Working (partial).** Pure-Rust AP214 writer (`cadmpeg-step`): manifold B-rep with analytic and B-spline carriers, explicit loss report for anything unrepresentable. No presentation/color mapping yet. |
+See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`](formats/sldprt-open-items.md).
 
----
+## Fusion 360 `.f3d`
 
-## How to read a status
+**Kernel:** ASM, derived from ACIS
 
-- **"decoded" / "mapped"**: byte-derived and reproducible against test files.
-- **"partial"**: some of the level is reached but a named gate blocks the rest.
-- **"planned"**: designed and on the roadmap, not implemented.
-- **"research"**: demonstrated in the research effort behind cadmpeg; not yet landed in this repository.
+### Read profile
 
-This matrix is conservative; if the code does not back up a claim here, open an issue.
+- **Container and versions: Partial.** The codec identifies the active ASM/SAB stream and decodes linked Protein, Design, MetaStream, and ACT records used by the active model. Several header and record flags remain unresolved.
+- **Geometry: Partial.** Analytic surfaces and curves, cached NURBS carriers, parameterizations, signed radii, and supported procedural definitions transfer. Law, taper, loft, skin, net, sweep, helix, variable-blend, and related families remain incomplete when no solved cache resolves.
+- **Topology: Partial.** Shell-reachable bodies, shells, faces, loops, coedges, edges, and vertices transfer. Unsupported surface records retain topology with unknown geometry; some procedural edges lack curve carriers and some explicit pcurves remain unresolved.
+- **Tessellation: None.** The codec does not transfer Fusion display meshes into the IR tessellation arena.
+- **Design intent: Partial.** ASM history states, Design assignments, sketch-side records, construction recipes, persistent references, MetaStream identities, and ACT channels transfer. They do not yet form a complete replayable Fusion feature history.
+- **Product structure: Partial.** Body transforms and root-component records transfer. Complete multi-component assembly structure and constraints do not.
+- **Presentation and metadata: Partial.** Linked source attributes, Protein appearance assets, material properties, and body bindings transfer. External material-library display names and some schema fields remain unresolved.
+
+### Write and round trip
+
+- **Native write: None.**
+- **Round trip: None.**
+
+See [`formats/f3d.md`](formats/f3d.md) and [`formats/f3d-open-items.md`](formats/f3d-open-items.md).
+
+## Siemens NX `.prt`
+
+**Kernel:** Parasolid in an SPLMSSTR container
+
+### Read profile
+
+- **Container and versions: Partial.** The codec decodes the SPLMSSTR directory and extracts and classifies embedded Parasolid partition, deltas, and related streams.
+- **Geometry: Partial.** Points, analytic surfaces and curves, typed B-spline surfaces and curves, and supported type-133 trimmed curves transfer into IR.
+- **Topology: Partial.** The body, shell, face, loop, fin, edge, and vertex graph attaches when fixed-record framing and references resolve. The active live-face set remains blocked on unresolved partition-to-deltas tombstones for other files.
+- **Tessellation: None.**
+- **Design intent: None.**
+- **Product structure: Inspect.** External part dependencies are detected and reported, but instances, placements, and constraints do not transfer as an assembly graph.
+- **Presentation and metadata: None.**
+
+### Write and round trip
+
+- **Native write: None.**
+- **Round trip: None.**
+
+Open geometry gates include rolling-ball and procedural blends, type-137 surface curves, freeform NURBS-offset blend spines, and other unsupported record families. Open structural gates include tombstone-to-live-face selection, assembly records, and NX object-model serialization.
+
+See [`formats/siemens_nx.md`](formats/siemens_nx.md) and [`formats/siemens_nx-open-items.md`](formats/siemens_nx-open-items.md).
+
+## CATIA V5 `.CATPart`
+
+**Kernel:** CGM
+
+### Read profile
+
+- **Container and versions: Partial.** The codec decodes `V5_CFV2` containers and distinguishes standard-nested, FBB-only, zero-entity, float-packed, E5, and inner-without-directory layouts.
+- **Geometry: Partial.** Standard-nested files transfer vertices, planes when their bridge records resolve, curved analytic surfaces, and supported edge curves. Other layouts transfer subsets of analytic or freeform carriers.
+- **Topology: Partial.** Standard-nested files can emit a connected body, shell, face, loop, coedge, edge, and vertex graph when trim, support, and endpoint assignment resolve. Other parsed topology families are not yet connected to the common IR.
+- **Tessellation: None.**
+- **Design intent: None.**
+- **Product structure: None.**
+- **Presentation and metadata: None.** Persistent tags, attributes, materials, and appearance bindings do not transfer.
+
+### Write and round trip
+
+- **Native write: None.**
+- **Round trip: None.**
+
+Open gates include endpoint incidence for additional variants, orientation signs, pcurve attachment, spline edge curves, persistent tags, attributes, and the consolidated-stream tag resolver.
+
+See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](formats/catia-open-items.md).
+
+## Creo Parametric `.prt`
+
+**Kernel:** Granite, serialized through PSB
+
+### Read profile
+
+- **Container and versions: Partial.** The codec detects `#UGC:2`, enumerates sections, identifies ND and DEPDB layouts, and decodes supported PSB compact integers and floats.
+- **Geometry: Partial.** ActDatums plane outlines transfer as derived plane carriers. VisibGeom surfaces and curves are counted and preserved as prototype records but do not transfer as placed model geometry.
+- **Topology: None.** Prototype surface rows, half-edges, and loops can be identified during scanning, but no placed body topology enters the IR.
+- **Tessellation: None.**
+- **Design intent: None.**
+- **Product structure: None.**
+- **Presentation and metadata: Partial.** Container attributes and geometry censuses transfer as source metadata; features, materials, and display data do not.
+
+`geometry_transferred` is true only when datum-plane carriers transfer. VisibGeom-only files report no transferred model geometry.
+
+### Write and round trip
+
+- **Native write: None.**
+- **Round trip: None.**
+
+The principal geometry gate is the unresolved general 8-byte PSB float-token formula needed to place prototype geometry in model space.
+
+See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-items.md`](formats/creo_prt-open-items.md).
+
+## STEP AP214 export
+
+The pure-Rust `cadmpeg-step` crate writes ISO 10303-21 AP214.
+
+- **Geometry: Partial.** Planes, cylinders, cones, spheres, tori, lines, circles, ellipses, and rational or non-rational B-spline carriers map to STEP entities.
+- **Topology: Partial.** Supported manifold bodies emit a full solid, shell, face, loop, edge, and vertex hierarchy. Faces with unknown surfaces and curveless edges are omitted with losses. Invalid solids are refused; non-identity body transforms are reported and coordinates remain in body-local space.
+- **Procedural geometry: Solved carriers only.** Source-native procedural definitions reduce to their analytic or NURBS carriers and produce an informational loss.
+- **Tessellation: None.**
+- **Product structure: None.**
+- **Design intent: None.** Feature histories, sketches, construction recipes, Design records, and ACT records are not represented.
+- **Presentation and metadata: None.** Colors, appearance assets, bindings, source attributes, and opaque records are not written.
+- **Loss reporting: Partial.** Export reports omitted, reduced, or normalized IR content. It does not yet expose the roadmap's full preserved, mapped, solved, and lost outcome model.
+
+## Maintaining these profiles
+
+Per-format specifications in [`formats/`](formats/) define byte semantics. Adjacent `*-open-items.md` files contain unresolved fields and structures.
+
+Support profiles describe repository behavior only. A profile changes when code and tests land, and every **Partial** domain must identify its remaining gates here or in the linked open-items document. Claims move to **Complete** only after satisfying the roadmap's public evidence and reliability gates.

@@ -52,15 +52,15 @@ STEP export is pure Rust and needs no external geometry kernel.
 
 The repository contains five native-format codecs:
 
-- **Fusion 360 `.f3d`:** L3 B-rep topology with analytic and NURBS geometry.
-- **SolidWorks `.sldprt`:** partial L2-L3 B-rep decode and partial native writing.
-- **Siemens NX `.prt`:** partial L2-L3 geometry and topology decode.
-- **CATIA V5 `.CATPart`:** partial L1-L2 mesh and analytic carrier decode.
-- **Creo `.prt`:** L0 container and PSB structure decode.
+- **Fusion 360 `.f3d`:** partial B-rep, design-record, and appearance decode.
+- **SolidWorks `.sldprt`:** partial semantic read, native write, and round-trip support.
+- **Siemens NX `.prt`:** partial analytic, NURBS, trimmed-curve, and topology decode.
+- **CATIA V5 `.CATPart`:** partial analytic and freeform decode with conditional B-rep topology.
+- **Creo `.prt`:** container and prototype-structure decode with derived datum-plane carriers.
 
 The pure-Rust STEP AP214 writer emits analytic and B-spline manifold B-rep geometry and reports anything it cannot represent.
 
-The [format support matrix](docs/format-support.md) is the authoritative fidelity breakdown. Per-format specifications in [`docs/formats/`](docs/formats/) define byte semantics; adjacent `*-open-items.md` files track unresolved fields and structures.
+The [format support profiles](docs/format-support.md) are the authoritative capability breakdown. Per-format specifications in [`docs/formats/`](docs/formats/) define byte semantics; adjacent `*-open-items.md` files track unresolved fields and structures.
 
 ## How it works
 
