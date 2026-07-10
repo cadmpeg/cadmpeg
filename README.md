@@ -21,7 +21,7 @@ Four rules shape the project:
 
 ## Quick start
 
-cadmpeg requires Rust 1.82 or later. Install it from source:
+cadmpeg requires Rust 1.85 or later. Install it from source:
 
 ```sh
 git clone https://github.com/cadmpeg/cadmpeg
