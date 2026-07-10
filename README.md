@@ -10,7 +10,7 @@ cadmpeg is early. End-to-end Fusion 360 `.f3d` to STEP path is about 70% complet
 
 ## Why cadmpeg
 
-Most native CAD formats are proprietary and sparsely documented. Neutral exports such as STEP make geometry portable, but they do not expose the native file nor preserve all design data. cadmpeg aims enable full interoperability.
+Most native CAD formats are proprietary and sparsely documented. Neutral exports such as STEP make geometry portable, but they do not expose the native file nor preserve all design data. cadmpeg aims to enable full interoperability.
 
 4 guiding principles:
 
