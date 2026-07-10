@@ -25,10 +25,11 @@
 //!   §1), reads the byte-backed `srf_array`/`crv_array` namespace counts (spec §4,
 //!   §5), and flags the JPEG thumbnail;
 //! - [`CreoCodec::decode`] performs an honest structural decode: it emits the
-//!   container facts and namespace census, preserves the PSB geometry sections as
+//!   container facts and namespace census, decodes datum planes as derived plane
+//!   carriers (`geometry_transferred` is true only when at least one transfers),
+//!   preserves the PSB geometry sections as
 //!   [`cadmpeg_ir::unknown::UnknownRecord`]s, and reports each gate as a counted
-//!   loss note. It never transfers geometry (`geometry_transferred = false`), and
-//!   never presents prototype geometry as per-instance geometry.
+//!   loss note. It never presents prototype geometry as per-instance geometry.
 //!
 //! The PSB primitive layer — compact integers, structural tokens, and the 3-byte
 //! compact-float short form (spec §3) — is decoded and unit-tested in [`psb`], and

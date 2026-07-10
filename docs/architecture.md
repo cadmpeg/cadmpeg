@@ -53,6 +53,7 @@ The [format support profiles](format-support.md) record read, write, and round-t
 
 Each input codec implements `Codec`:
 
+- `id() -> &'static str` names the codec for registry lookup and `--input-format`.
 - `detect(&[u8]) -> Confidence` identifies a format from a byte prefix.
 - `inspect(&mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>` enumerates container structure.
 - `decode(&mut dyn ReadSeek, &DecodeOptions) -> Result<DecodeResult, CodecError>` produces `CadIr` and `DecodeReport`.

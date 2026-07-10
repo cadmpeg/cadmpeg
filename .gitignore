@@ -5,6 +5,7 @@ Cargo.lock.orig
 
 # cadmpeg scratch decode outputs at repo root
 /*.cadir.json
+/.scratch*
 
 # Private local corpus (golden testing; never committed — see corpus/README.md)
 corpus/private/

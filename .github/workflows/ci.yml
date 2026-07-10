@@ -40,3 +40,82 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
+
+  # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
+  # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.
+  msrv:
+    name: MSRV check (1.82)
+    runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: "1.82"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install MSRV toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.82"
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check
+        run: cargo check --workspace
+
+  # CONTRIBUTING.md requires a DCO sign-off on every commit; this enforces it
+  # for pull requests.
+  dco:
+    name: DCO sign-off
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check Signed-off-by on every PR commit
+        run: |
+          missing=0
+          for sha in $(git rev-list ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}); do
+            if ! git log -1 --format=%B "$sha" | grep -q '^Signed-off-by: .\+ <.\+@.\+>'; then
+              echo "::error::Commit $sha lacks a Signed-off-by trailer (git commit -s)"
+              missing=1
+            fi
+          done
+          exit $missing
+
+  # Byte-level codecs are the code most likely to break across platforms.
+  cross-platform:
+    name: build / test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --workspace
+
+  # RustSec advisory scan of the dependency tree.
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Audit dependencies
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

@@ -41,6 +41,8 @@ Every arena is a flat JSON array. References use typed string IDs rather than ar
 | Change and history records   | `act_entities`, `act_guids`, `act_root_components`, `feature_histories`, `feature_input_lanes`, `asm_histories`                                           |
 | Presentation and source data | `tessellations`, `appearances`, `appearance_bindings`, `attributes`, `unknowns`                                                                           |
 
+The groups above are thematic. Canonical serialization order is the field order of the minimal document in the appendix; it differs from the grouping in places (`tessellations` serializes between `act_root_components` and `feature_histories`).
+
 All listed arenas are serialized by `CadIr`. Arenas added after the initial v0 fields deserialize to empty vectors when omitted.
 
 ## Topology

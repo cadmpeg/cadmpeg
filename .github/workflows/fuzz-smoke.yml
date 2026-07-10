@@ -31,3 +31,16 @@ jobs:
 
       - name: Build fuzz targets (no run)
         run: cargo fuzz build --fuzz-dir crates/cadmpeg-fuzz
+
+      - name: Run each fuzz target briefly
+        run: |
+          for t in $(cargo fuzz list --fuzz-dir crates/cadmpeg-fuzz); do
+            cargo fuzz run "$t" --fuzz-dir crates/cadmpeg-fuzz -- -max_total_time=60
+          done
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: crates/cadmpeg-fuzz/artifacts/
