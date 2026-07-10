@@ -18,6 +18,7 @@ fn main() {
     generate_creo_seeds();
     generate_nx_seeds();
     generate_ir_seeds();
+    generate_mutated_seeds();
     println!("All seeds generated.");
 }
 
@@ -32,9 +33,18 @@ fn generate_f3d_seeds() {
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty_zip", f3d::empty_zip()),
         ("bare_zip_with_txt", f3d::bare_zip_with_txt()),
-        ("synthetic_smbh_header_only", f3d::f3d_with_smbh(&f3d::synthetic_smbh())),
-        ("synthetic_geometry", f3d::f3d_with_smbh(&f3d::synthetic_geometry_smbh())),
-        ("synthetic_mixed", f3d::f3d_with_smbh(&f3d::synthetic_mixed_smbh())),
+        (
+            "synthetic_smbh_header_only",
+            f3d::f3d_with_smbh(&f3d::synthetic_smbh()),
+        ),
+        (
+            "synthetic_geometry",
+            f3d::f3d_with_smbh(&f3d::synthetic_geometry_smbh()),
+        ),
+        (
+            "synthetic_mixed",
+            f3d::f3d_with_smbh(&f3d::synthetic_mixed_smbh()),
+        ),
         ("full_f3d_with_smbh", f3d::synthetic_f3d(true)),
         ("full_f3d_smb_only", f3d::synthetic_f3d(false)),
         ("corrupt_zip_magic", f3d::corrupt_zip_magic()),
@@ -51,7 +61,10 @@ mod f3d {
     use super::*;
 
     pub fn empty_zip() -> Vec<u8> {
-        zip::ZipWriter::new(Cursor::new(Vec::new())).finish().unwrap().into_inner()
+        zip::ZipWriter::new(Cursor::new(Vec::new()))
+            .finish()
+            .unwrap()
+            .into_inner()
     }
 
     pub fn bare_zip_with_txt() -> Vec<u8> {
@@ -113,16 +126,29 @@ mod f3d {
         b
     }
 
-    fn t_ref(b: &mut Vec<u8>, v: i64) { b.push(0x0c); b.extend_from_slice(&v.to_le_bytes()); }
-    fn t_long(b: &mut Vec<u8>, v: i64) { b.push(0x04); b.extend_from_slice(&v.to_le_bytes()); }
-    fn t_dbl(b: &mut Vec<u8>, v: f64) { b.push(0x06); b.extend_from_slice(&v.to_le_bytes()); }
+    fn t_ref(b: &mut Vec<u8>, v: i64) {
+        b.push(0x0c);
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+    fn t_long(b: &mut Vec<u8>, v: i64) {
+        b.push(0x04);
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+    fn t_dbl(b: &mut Vec<u8>, v: f64) {
+        b.push(0x06);
+        b.extend_from_slice(&v.to_le_bytes());
+    }
     fn t_pos(b: &mut Vec<u8>, p: [f64; 3]) {
         b.push(0x13);
-        for c in p { b.extend_from_slice(&c.to_le_bytes()); }
+        for c in p {
+            b.extend_from_slice(&c.to_le_bytes());
+        }
     }
     fn t_vec(b: &mut Vec<u8>, p: [f64; 3]) {
         b.push(0x14);
-        for c in p { b.extend_from_slice(&c.to_le_bytes()); }
+        for c in p {
+            b.extend_from_slice(&c.to_le_bytes());
+        }
     }
     fn t_ident(b: &mut Vec<u8>, s: &str) {
         b.push(0x0d);
@@ -134,7 +160,9 @@ mod f3d {
         b.push(s.len() as u8);
         b.extend_from_slice(s.as_bytes());
     }
-    fn t_end(b: &mut Vec<u8>) { b.push(0x11); }
+    fn t_end(b: &mut Vec<u8>) {
+        b.push(0x11);
+    }
 
     pub fn synthetic_geometry_smbh() -> Vec<u8> {
         let mut r = Vec::new();
@@ -143,36 +171,61 @@ mod f3d {
         t_end(&mut r);
 
         t_ident(&mut r, "body");
-        t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-        t_ref(&mut r, 2); t_ref(&mut r, -1); t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, 2);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
         t_end(&mut r);
 
         t_ident(&mut r, "lump");
-        t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-        t_ref(&mut r, -1); t_ref(&mut r, 3); t_ref(&mut r, 1);
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, 3);
+        t_ref(&mut r, 1);
         t_end(&mut r);
 
         t_ident(&mut r, "shell");
-        t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-        t_ref(&mut r, -1); t_ref(&mut r, -1); t_ref(&mut r, 4);
-        t_ref(&mut r, -1); t_ref(&mut r, 2);
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, 4);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, 2);
         t_end(&mut r);
 
         t_ident(&mut r, "face");
-        t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-        t_ref(&mut r, -1); t_ref(&mut r, 5); t_ref(&mut r, 3);
-        t_ref(&mut r, -1); t_ref(&mut r, 6);
-        r.push(0x0b); r.push(0x0b);
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, 5);
+        t_ref(&mut r, 3);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, 6);
+        r.push(0x0b);
+        r.push(0x0b);
         t_end(&mut r);
 
         t_ident(&mut r, "loop");
-        t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-        t_ref(&mut r, -1); t_ref(&mut r, 7); t_ref(&mut r, 4);
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, 7);
+        t_ref(&mut r, 4);
         t_end(&mut r);
 
         t_subident(&mut r, "plane");
         t_ident(&mut r, "surface");
-        t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
         t_pos(&mut r, [0.0, 0.0, 0.0]);
         t_vec(&mut r, [0.0, 0.0, 1.0]);
         t_pos(&mut r, [1.0, 0.0, 0.0]);
@@ -182,20 +235,32 @@ mod f3d {
         let coedges = [(7i64, 8, 9, 10), (8, 9, 7, 11), (9, 7, 8, 12)];
         for (_id, next, prev, edge) in coedges {
             t_ident(&mut r, "coedge");
-            t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-            t_ref(&mut r, next); t_ref(&mut r, prev); t_ref(&mut r, -1);
-            t_ref(&mut r, edge); r.push(0x0b);
-            t_ref(&mut r, 5); t_long(&mut r, 0); t_ref(&mut r, -1);
+            t_ref(&mut r, -1);
+            t_long(&mut r, -1);
+            t_ref(&mut r, -1);
+            t_ref(&mut r, next);
+            t_ref(&mut r, prev);
+            t_ref(&mut r, -1);
+            t_ref(&mut r, edge);
+            r.push(0x0b);
+            t_ref(&mut r, 5);
+            t_long(&mut r, 0);
+            t_ref(&mut r, -1);
             t_end(&mut r);
         }
 
         let edges = [(10i64, 13, 14), (11, 14, 15), (12, 15, 13)];
         for (_id, start, end) in edges {
             t_ident(&mut r, "edge");
-            t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-            t_ref(&mut r, start); t_dbl(&mut r, 0.0);
-            t_ref(&mut r, end); t_dbl(&mut r, 1.0);
-            t_ref(&mut r, -1); t_ref(&mut r, -1);
+            t_ref(&mut r, -1);
+            t_long(&mut r, -1);
+            t_ref(&mut r, -1);
+            t_ref(&mut r, start);
+            t_dbl(&mut r, 0.0);
+            t_ref(&mut r, end);
+            t_dbl(&mut r, 1.0);
+            t_ref(&mut r, -1);
+            t_ref(&mut r, -1);
             r.push(0x0b);
             push_u8_string(&mut r, "unknown");
             t_end(&mut r);
@@ -204,15 +269,22 @@ mod f3d {
         let verts = [(13i64, 10, 16), (14, 11, 17), (15, 12, 18)];
         for (_id, edge, point) in verts {
             t_ident(&mut r, "vertex");
-            t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-            t_ref(&mut r, edge); t_long(&mut r, 0); t_ref(&mut r, point);
+            t_ref(&mut r, -1);
+            t_long(&mut r, -1);
+            t_ref(&mut r, -1);
+            t_ref(&mut r, edge);
+            t_long(&mut r, 0);
+            t_ref(&mut r, point);
             t_end(&mut r);
         }
 
         for p in [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
             t_ident(&mut r, "point");
-            t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-            t_pos(&mut r, p); t_long(&mut r, 1);
+            t_ref(&mut r, -1);
+            t_long(&mut r, -1);
+            t_ref(&mut r, -1);
+            t_pos(&mut r, p);
+            t_long(&mut r, 1);
             t_end(&mut r);
         }
 
@@ -229,27 +301,46 @@ mod f3d {
         t_end(&mut r);
 
         t_ident(&mut r, "body");
-        t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-        t_ref(&mut r, 2); t_ref(&mut r, -1); t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, 2);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
         t_end(&mut r);
 
         t_ident(&mut r, "lump");
-        t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-        t_ref(&mut r, -1); t_ref(&mut r, 3); t_ref(&mut r, 1);
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, 3);
+        t_ref(&mut r, 1);
         t_end(&mut r);
 
         t_ident(&mut r, "shell");
-        t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-        t_ref(&mut r, -1); t_ref(&mut r, -1); t_ref(&mut r, 4);
-        t_ref(&mut r, -1); t_ref(&mut r, 2);
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, 4);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, 2);
         t_end(&mut r);
 
         let face = |r: &mut Vec<u8>, next: i64, first_loop: i64, surface: i64| {
             t_ident(r, "face");
-            t_ref(r, -1); t_long(r, -1); t_ref(r, -1);
-            t_ref(r, next); t_ref(r, first_loop); t_ref(r, 3);
-            t_ref(r, -1); t_ref(r, surface);
-            r.push(0x0b); r.push(0x0b);
+            t_ref(r, -1);
+            t_long(r, -1);
+            t_ref(r, -1);
+            t_ref(r, next);
+            t_ref(r, first_loop);
+            t_ref(r, 3);
+            t_ref(r, -1);
+            t_ref(r, surface);
+            r.push(0x0b);
+            r.push(0x0b);
             t_end(r);
         };
         face(&mut r, 5, 6, 8);
@@ -257,8 +348,12 @@ mod f3d {
 
         let lp = |r: &mut Vec<u8>, first_coedge: i64, owner_face: i64| {
             t_ident(r, "loop");
-            t_ref(r, -1); t_long(r, -1); t_ref(r, -1);
-            t_ref(r, -1); t_ref(r, first_coedge); t_ref(r, owner_face);
+            t_ref(r, -1);
+            t_long(r, -1);
+            t_ref(r, -1);
+            t_ref(r, -1);
+            t_ref(r, first_coedge);
+            t_ref(r, owner_face);
             t_end(r);
         };
         lp(&mut r, 10, 4);
@@ -266,7 +361,9 @@ mod f3d {
 
         t_subident(&mut r, "plane");
         t_ident(&mut r, "surface");
-        t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
         t_pos(&mut r, [0.0, 0.0, 0.0]);
         t_vec(&mut r, [0.0, 0.0, 1.0]);
         t_pos(&mut r, [1.0, 0.0, 0.0]);
@@ -275,18 +372,32 @@ mod f3d {
 
         t_subident(&mut r, "spline");
         t_ident(&mut r, "surface");
-        t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
         t_dbl(&mut r, 0.0);
         r.push(0x0b);
         t_end(&mut r);
 
-        let ce = |r: &mut Vec<u8>, next: i64, prev: i64, partner: i64, edge: i64, rev: bool, owner: i64| {
+        let ce = |r: &mut Vec<u8>,
+                  next: i64,
+                  prev: i64,
+                  partner: i64,
+                  edge: i64,
+                  rev: bool,
+                  owner: i64| {
             t_ident(r, "coedge");
-            t_ref(r, -1); t_long(r, -1); t_ref(r, -1);
-            t_ref(r, next); t_ref(r, prev); t_ref(r, partner);
+            t_ref(r, -1);
+            t_long(r, -1);
+            t_ref(r, -1);
+            t_ref(r, next);
+            t_ref(r, prev);
+            t_ref(r, partner);
             t_ref(r, edge);
             r.push(if rev { 0x0a } else { 0x0b });
-            t_ref(r, owner); t_long(r, 0); t_ref(r, -1);
+            t_ref(r, owner);
+            t_long(r, 0);
+            t_ref(r, -1);
             t_end(r);
         };
         ce(&mut r, 11, 12, 13, 16, false, 6);
@@ -298,10 +409,15 @@ mod f3d {
 
         let edge = |r: &mut Vec<u8>, start: i64, end: i64| {
             t_ident(r, "edge");
-            t_ref(r, -1); t_long(r, -1); t_ref(r, -1);
-            t_ref(r, start); t_dbl(r, 0.0);
-            t_ref(r, end); t_dbl(r, 1.0);
-            t_ref(r, -1); t_ref(r, -1);
+            t_ref(r, -1);
+            t_long(r, -1);
+            t_ref(r, -1);
+            t_ref(r, start);
+            t_dbl(r, 0.0);
+            t_ref(r, end);
+            t_dbl(r, 1.0);
+            t_ref(r, -1);
+            t_ref(r, -1);
             r.push(0x0b);
             push_u8_string(r, "unknown");
             t_end(r);
@@ -314,8 +430,12 @@ mod f3d {
 
         let vert = |r: &mut Vec<u8>, owning_edge: i64, point: i64| {
             t_ident(r, "vertex");
-            t_ref(r, -1); t_long(r, -1); t_ref(r, -1);
-            t_ref(r, owning_edge); t_long(r, 0); t_ref(r, point);
+            t_ref(r, -1);
+            t_long(r, -1);
+            t_ref(r, -1);
+            t_ref(r, owning_edge);
+            t_long(r, 0);
+            t_ref(r, point);
             t_end(r);
         };
         vert(&mut r, 16, 25);
@@ -323,10 +443,18 @@ mod f3d {
         vert(&mut r, 17, 27);
         vert(&mut r, 19, 28);
 
-        for p in [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0]] {
+        for p in [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0],
+        ] {
             t_ident(&mut r, "point");
-            t_ref(&mut r, -1); t_long(&mut r, -1); t_ref(&mut r, -1);
-            t_pos(&mut r, p); t_long(&mut r, 1);
+            t_ref(&mut r, -1);
+            t_long(&mut r, -1);
+            t_ref(&mut r, -1);
+            t_pos(&mut r, p);
+            t_long(&mut r, 1);
             t_end(&mut r);
         }
 
@@ -341,7 +469,8 @@ mod f3d {
         let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         zip.start_file("Manifest.dat", stored).unwrap();
         zip.write_all(b"synthetic-manifest").unwrap();
-        zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored).unwrap();
+        zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
+            .unwrap();
         zip.write_all(smbh).unwrap();
         zip.finish().unwrap().into_inner()
     }
@@ -356,19 +485,26 @@ mod f3d {
         zip.write_all(b"synthetic-manifest").unwrap();
 
         if include_smbh {
-            zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smbh"), deflated).unwrap();
+            zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smbh"), deflated)
+                .unwrap();
             zip.write_all(&synthetic_smbh()).unwrap();
         }
 
         let mut smb = synthetic_smbh();
         smb.truncate(60);
-        zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smb"), stored).unwrap();
+        zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smb"), stored)
+            .unwrap();
         zip.write_all(&smb).unwrap();
 
-        zip.start_file(format!("{folder}/FusionDesignSegmentType1/BulkStream.dat"), stored).unwrap();
+        zip.start_file(
+            format!("{folder}/FusionDesignSegmentType1/BulkStream.dat"),
+            stored,
+        )
+        .unwrap();
         zip.write_all(b"design-bulk").unwrap();
 
-        zip.start_file(format!("{folder}/Previews/thumbnail.png"), stored).unwrap();
+        zip.start_file(format!("{folder}/Previews/thumbnail.png"), stored)
+            .unwrap();
         zip.write_all(b"\x89PNG").unwrap();
 
         zip.finish().unwrap().into_inner()
@@ -387,8 +523,14 @@ fn generate_sldprt_seeds() {
         ("empty", vec![]),
         ("just_header", sldprt::outer_header()),
         ("synthetic_sldprt", sldprt::synthetic_sldprt()),
-        ("with_triangle_body", sldprt::sldprt_with_body(&sldprt::triangle_body())),
-        ("with_cylinder", sldprt::sldprt_with_body(&sldprt::closed_cylinder_body())),
+        (
+            "with_triangle_body",
+            sldprt::sldprt_with_body(&sldprt::triangle_body()),
+        ),
+        (
+            "with_cylinder",
+            sldprt::sldprt_with_body(&sldprt::closed_cylinder_body()),
+        ),
     ];
 
     for (name, data) in seeds {
@@ -481,8 +623,16 @@ mod sldprt {
 
     pub fn synthetic_sldprt() -> Vec<u8> {
         let mut f = outer_header();
-        f.extend_from_slice(&make_block(0x10, "PreviewPNG", &[0x89, b'P', b'N', b'G', 1, 2, 3, 4]));
-        f.extend_from_slice(&make_block(0x20, "Contents/Config-0-Partition", &parasolid_payload("partition body", "SCH_SW_33103_11000")));
+        f.extend_from_slice(&make_block(
+            0x10,
+            "PreviewPNG",
+            &[0x89, b'P', b'N', b'G', 1, 2, 3, 4],
+        ));
+        f.extend_from_slice(&make_block(
+            0x20,
+            "Contents/Config-0-Partition",
+            &parasolid_payload("partition body", "SCH_SW_33103_11000"),
+        ));
         f.extend_from_slice(&make_cache_cell(90, "Contents/DisplayLists"));
         f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml"));
         f
@@ -490,21 +640,23 @@ mod sldprt {
 
     pub fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
         let mut f = outer_header();
-        f.extend_from_slice(&make_block(
-            0x20,
-            "Contents/Config-0-Partition",
-            &{
-                let mut p = parasolid_payload("partition body", "SCH_SW_33103_11000");
-                p.extend_from_slice(body);
-                p
-            },
-        ));
+        f.extend_from_slice(&make_block(0x20, "Contents/Config-0-Partition", &{
+            let mut p = parasolid_payload("partition body", "SCH_SW_33103_11000");
+            p.extend_from_slice(body);
+            p
+        }));
         f
     }
 
-    fn be16(b: &mut Vec<u8>, v: u16) { b.extend_from_slice(&v.to_be_bytes()); }
-    fn be32(b: &mut Vec<u8>, v: u32) { b.extend_from_slice(&v.to_be_bytes()); }
-    fn bef64(b: &mut Vec<u8>, v: f64) { b.extend_from_slice(&v.to_be_bytes()); }
+    fn be16(b: &mut Vec<u8>, v: u16) {
+        b.extend_from_slice(&v.to_be_bytes());
+    }
+    fn be32(b: &mut Vec<u8>, v: u32) {
+        b.extend_from_slice(&v.to_be_bytes());
+    }
+    fn bef64(b: &mut Vec<u8>, v: f64) {
+        b.extend_from_slice(&v.to_be_bytes());
+    }
 
     const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
@@ -512,9 +664,13 @@ mod sldprt {
         let mut b = vec![0x00, 0x32];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for _ in 0..5 { be16(&mut b, 0); }
+        for _ in 0..5 {
+            be16(&mut b, 0);
+        }
         b.push(0x2b);
-        for v in origin.into_iter().chain(normal).chain(refdir) { bef64(&mut b, v); }
+        for v in origin.into_iter().chain(normal).chain(refdir) {
+            bef64(&mut b, v);
+        }
         b
     }
 
@@ -522,9 +678,17 @@ mod sldprt {
         let mut b = vec![0x00, 0x33];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for _ in 0..5 { be16(&mut b, 0); }
+        for _ in 0..5 {
+            be16(&mut b, 0);
+        }
         b.push(0x2b);
-        for value in origin.into_iter().chain(axis).chain([radius, 1.0, 0.0, 0.0]) { bef64(&mut b, value); }
+        for value in origin
+            .into_iter()
+            .chain(axis)
+            .chain([radius, 1.0, 0.0, 0.0])
+        {
+            bef64(&mut b, value);
+        }
         b
     }
 
@@ -532,9 +696,17 @@ mod sldprt {
         let mut b = vec![0x00, 0x1f];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for _ in 0..5 { be16(&mut b, 0); }
+        for _ in 0..5 {
+            be16(&mut b, 0);
+        }
         b.push(0x2b);
-        for value in center.into_iter().chain(axis).chain([1.0, 0.0, 0.0, radius]) { bef64(&mut b, value); }
+        for value in center
+            .into_iter()
+            .chain(axis)
+            .chain([1.0, 0.0, 0.0, radius])
+        {
+            bef64(&mut b, value);
+        }
         b
     }
 
@@ -544,7 +716,9 @@ mod sldprt {
         be32(&mut b, 0);
         be16(&mut b, 0);
         b.extend_from_slice(&MAGIC);
-        for r in [0u16, 0, loop_attr, 0, surface_attr] { be16(&mut b, r); }
+        for r in [0u16, 0, loop_attr, 0, surface_attr] {
+            be16(&mut b, r);
+        }
         b.push(0x2b);
         b.extend_from_slice(&[0u8; 10]);
         b
@@ -554,14 +728,26 @@ mod sldprt {
         let mut b = vec![0x00, 0x0f];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for r in [0u16, first_coedge, bridge_attr, 0] { be16(&mut b, r); }
+        for r in [0u16, first_coedge, bridge_attr, 0] {
+            be16(&mut b, r);
+        }
         b
     }
 
-    fn coedge(attr: u16, owner_loop: u16, next: u16, start_vuse: u16, twin: u16, edge_use: u16, reversed: bool) -> Vec<u8> {
+    fn coedge(
+        attr: u16,
+        owner_loop: u16,
+        next: u16,
+        start_vuse: u16,
+        twin: u16,
+        edge_use: u16,
+        reversed: bool,
+    ) -> Vec<u8> {
         let mut b = vec![0x00, 0x11];
         be16(&mut b, attr);
-        for r in [0u16, owner_loop, 0, next, start_vuse, twin, edge_use, 0, 0] { be16(&mut b, r); }
+        for r in [0u16, owner_loop, 0, next, start_vuse, twin, edge_use, 0, 0] {
+            be16(&mut b, r);
+        }
         b.push(if reversed { 0x2d } else { 0x2b });
         b
     }
@@ -572,7 +758,9 @@ mod sldprt {
         be32(&mut b, 0);
         be16(&mut b, 0);
         b.extend_from_slice(&MAGIC);
-        for r in [0u16, 0, 0, curve_attr, 0, 0] { be16(&mut b, r); }
+        for r in [0u16, 0, 0, curve_attr, 0, 0] {
+            be16(&mut b, r);
+        }
         b
     }
 
@@ -580,7 +768,9 @@ mod sldprt {
         let mut b = vec![0x00, 0x12];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for r in [0u16, 0, 0, 0, point_attr] { be16(&mut b, r); }
+        for r in [0u16, 0, 0, 0, point_attr] {
+            be16(&mut b, r);
+        }
         b.extend_from_slice(&MAGIC);
         b
     }
@@ -589,14 +779,23 @@ mod sldprt {
         let mut b = vec![0x00, 0x1d];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for _ in 0..4 { be16(&mut b, 0); }
-        for v in xyz { bef64(&mut b, v); }
+        for _ in 0..4 {
+            be16(&mut b, 0);
+        }
+        for v in xyz {
+            bef64(&mut b, v);
+        }
         b
     }
 
     pub fn triangle_body() -> Vec<u8> {
         let mut b = Vec::new();
-        b.extend(plane_carrier(100, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]));
+        b.extend(plane_carrier(
+            100,
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ));
         b.extend(bridge(10, 20, 100));
         b.extend(loop_head(20, 30, 10));
         b.extend(coedge(30, 20, 31, 50, 0, 40, false));
@@ -665,9 +864,15 @@ mod catia {
         OUTER_MAGIC.to_vec()
     }
 
-    fn be32(v: u32) -> [u8; 4] { v.to_be_bytes() }
-    fn le_f32(v: f32) -> [u8; 4] { v.to_le_bytes() }
-    fn be_f32(v: f32) -> [u8; 4] { v.to_be_bytes() }
+    fn be32(v: u32) -> [u8; 4] {
+        v.to_be_bytes()
+    }
+    fn le_f32(v: f32) -> [u8; 4] {
+        v.to_le_bytes()
+    }
+    fn be_f32(v: f32) -> [u8; 4] {
+        v.to_be_bytes()
+    }
 
     fn main_stream() -> Vec<u8> {
         let mut b = Vec::new();
@@ -677,7 +882,9 @@ mod catia {
         b.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
         for xyz in [[0.0f32, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0]] {
             b.extend_from_slice(&[0x05, 0x08, 0x01]);
-            for v in xyz { b.extend_from_slice(&le_f32(v)); }
+            for v in xyz {
+                b.extend_from_slice(&le_f32(v));
+            }
         }
         b
     }
@@ -688,7 +895,9 @@ mod catia {
         b.push(0x00);
         b.push(0x1a);
         b.extend_from_slice(&[0x00, 0x33, 0x33]);
-        for v in [0.0f32, 0.0, 0.0, 0.0, 0.0, 5.0] { b.extend_from_slice(&be_f32(v)); }
+        for v in [0.0f32, 0.0, 0.0, 0.0, 0.0, 5.0] {
+            b.extend_from_slice(&be_f32(v));
+        }
         b
     }
 
@@ -844,7 +1053,9 @@ mod nx {
 
     const MAGIC: &[u8; 8] = b"SPLMSSTR";
 
-    fn be_f64(v: f64) -> [u8; 8] { v.to_be_bytes() }
+    fn be_f64(v: f64) -> [u8; 8] {
+        v.to_be_bytes()
+    }
 
     fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
         for (i, v) in xyz.iter().enumerate() {
@@ -866,7 +1077,9 @@ mod nx {
     fn partition_stream() -> Vec<u8> {
         let mut s = Vec::new();
         s.extend_from_slice(b"PS\x00\x00");
-        s.extend_from_slice(b"XX: TRANSMIT FILE (partition) created by modeller version 3400176\x00");
+        s.extend_from_slice(
+            b"XX: TRANSMIT FILE (partition) created by modeller version 3400176\x00",
+        );
         s.extend_from_slice(b"SCH_TEST_1_9999\x00");
 
         let mut pt = record(0x1d, 40);
@@ -954,7 +1167,10 @@ fn generate_ir_seeds() {
     fs::create_dir_all(dir).unwrap();
 
     let seeds: Vec<(&str, &str)> = vec![
-        ("empty_valid.json", r#"{"irVersion":"0","units":"mm","tolerances":{"resabs":1e-6,"resnor":1e-10},"bodies":[],"lumps":[],"shells":[],"faces":[],"loops":[],"coedges":[],"edges":[],"vertices":[],"points":[],"surfaces":[],"curves":[],"pcurves":[],"unknowns":[]}"#),
+        (
+            "empty_valid.json",
+            r#"{"irVersion":"0","units":"mm","tolerances":{"resabs":1e-6,"resnor":1e-10},"bodies":[],"lumps":[],"shells":[],"faces":[],"loops":[],"coedges":[],"edges":[],"vertices":[],"points":[],"surfaces":[],"curves":[],"pcurves":[],"unknowns":[]}"#,
+        ),
         ("minimal.json", r#"{}"#),
         ("truncated.json", "{"),
         ("garbage.json", "not json at all"),
@@ -963,5 +1179,68 @@ fn generate_ir_seeds() {
     for (name, data) in seeds {
         fs::write(dir.join(name), data).unwrap();
         println!("  ir/{} ({} bytes)", name, data.len());
+    }
+}
+
+// ============================================================================
+// Mutated seeds: deterministic corruptions of every structurally valid seed
+// ============================================================================
+
+const MUTANT_SUFFIXES: [&str; 3] = [".mut_trunc", ".mut_flip", ".mut_lenmax"];
+
+/// For each seed emitted above, write three deterministic corruptions:
+/// - `.mut_trunc`: cut at 50% length (mid-record truncation)
+/// - `.mut_flip`: invert the byte at 50% offset (payload corruption past the header)
+/// - `.mut_lenmax`: saturate 4 bytes at 25% offset to 0xFF (oversized count/length fields)
+///
+/// Mutants are derived only from files this run just wrote, never from other
+/// mutants, so regeneration is idempotent.
+fn generate_mutated_seeds() {
+    let dirs = [
+        "seeds/f3d_container",
+        "seeds/sldprt_container",
+        "seeds/catia_container",
+        "seeds/creo_container",
+        "seeds/nx_container",
+        "seeds/ir_from_json",
+    ];
+    for dir in dirs {
+        let mut entries: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| {
+                let name = p.file_name().unwrap().to_str().unwrap();
+                p.is_file() && !MUTANT_SUFFIXES.iter().any(|s| name.ends_with(s))
+            })
+            .collect();
+        entries.sort();
+        for path in entries {
+            let data = fs::read(&path).unwrap();
+            // Too small to have structure past the magic; corruptions would
+            // duplicate the existing bad-magic/truncation seeds.
+            if data.len() < 32 {
+                continue;
+            }
+            let name = path.file_name().unwrap().to_str().unwrap().to_string();
+
+            let mut trunc = data.clone();
+            trunc.truncate(data.len() / 2);
+
+            let mut flip = data.clone();
+            let mid = data.len() / 2;
+            flip[mid] = !flip[mid];
+
+            let mut lenmax = data.clone();
+            let off = data.len() / 4;
+            for b in &mut lenmax[off..(off + 4).min(data.len())] {
+                *b = 0xFF;
+            }
+
+            for (suffix, mutant) in MUTANT_SUFFIXES.iter().zip([trunc, flip, lenmax]) {
+                let out = path.with_file_name(format!("{name}{suffix}"));
+                fs::write(&out, &mutant).unwrap();
+                println!("  {} ({} bytes)", out.display(), mutant.len());
+            }
+        }
     }
 }
