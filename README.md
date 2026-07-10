@@ -67,7 +67,7 @@ wrote part.step (2125 entities)
 
 The repository contains five native-format codecs:
 
-- **`.f3d`:** partial B-rep, design-record, and appearance decode, plus selected native edits.
+- **Fusion 360 `.f3d`:** partial B-rep, design-record, and appearance decode, plus selected native edits.
 - **SolidWorks `.sldprt`:** partial semantic read, native write, and round-trip support.
 - **Siemens NX `.prt`:** partial analytic, NURBS, trimmed-curve, and topology decode.
 - **CATIA V5 `.CATPart`:** partial analytic and freeform decode with conditional B-rep topology.
