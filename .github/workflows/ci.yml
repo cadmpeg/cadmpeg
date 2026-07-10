@@ -44,10 +44,10 @@ jobs:
   # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
   # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.
   msrv:
-    name: MSRV check (1.85)
+    name: MSRV check (1.88)
     runs-on: ubuntu-latest
     env:
-      RUSTUP_TOOLCHAIN: "1.85"
+      RUSTUP_TOOLCHAIN: "1.88"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -55,7 +55,7 @@ jobs:
       - name: Install MSRV toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.85"
+          toolchain: "1.88"
 
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
