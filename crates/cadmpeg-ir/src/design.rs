@@ -190,6 +190,18 @@ pub enum SketchCurveGeometry {
         start_angle: f64,
         end_angle: f64,
     },
+    Nurbs {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        carrier_reference: Option<u64>,
+        subtype_class_tag: String,
+        subtype_record_index: u32,
+        degree: u32,
+        fit_tolerance: f64,
+        scalar_width: u32,
+        knots: Vec<f64>,
+        weights: Vec<f64>,
+        control_points: Vec<Point3>,
+    },
 }
 
 /// One member of the Design BulkStream `BodiesRoot` list.

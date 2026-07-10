@@ -20,6 +20,7 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
@@ -369,6 +370,26 @@ fn build_geometry_ir(
             },
         });
     }
+    let partition_id = UnknownId(format!("sldprt:block:{}", block.offset));
+    let opaque_surfaces = ir
+        .surfaces
+        .iter_mut()
+        .filter_map(|surface| match &mut surface.geometry {
+            SurfaceGeometry::Unknown { record } => {
+                *record = Some(partition_id.clone());
+                Some(surface.id.0.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if !opaque_surfaces.is_empty() {
+        let partition = ir
+            .unknowns
+            .iter_mut()
+            .find(|record| record.id == partition_id)
+            .expect("active partition block is retained");
+        partition.links.extend(opaque_surfaces);
+    }
     preserve_source_image(scan, &mut ir);
     set_semantic_hash(&mut ir);
     ir
@@ -404,10 +425,131 @@ fn source_meta(scan: &ContainerScan, block: &Block, header: &StreamHeader) -> So
         "parasolid_description".to_string(),
         header.description.clone(),
     );
+    add_preview_metadata(scan, &mut attributes);
+    add_solidworks_xml_metadata(scan, &mut attributes);
     SourceMeta {
         format: "sldprt".to_string(),
         attributes,
     }
+}
+
+fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
+    let mut png_index = 0;
+    let mut bmp_index = 0;
+    for block in &scan.blocks {
+        match block.family {
+            "png-preview" => {
+                let payload = &block.payload;
+                if payload.get(8..16) != Some(&[0, 0, 0, 13, b'I', b'H', b'D', b'R']) {
+                    continue;
+                }
+                let Some(width) = be_u32(payload, 16) else {
+                    continue;
+                };
+                let Some(height) = be_u32(payload, 20) else {
+                    continue;
+                };
+                let Some(fields) = payload.get(24..29) else {
+                    continue;
+                };
+                let prefix = format!("png_preview_{png_index}");
+                attributes.insert(format!("{prefix}_width"), width.to_string());
+                attributes.insert(format!("{prefix}_height"), height.to_string());
+                attributes.insert(format!("{prefix}_bit_depth"), fields[0].to_string());
+                attributes.insert(format!("{prefix}_color_type"), fields[1].to_string());
+                attributes.insert(format!("{prefix}_compression"), fields[2].to_string());
+                attributes.insert(format!("{prefix}_filter"), fields[3].to_string());
+                attributes.insert(format!("{prefix}_interlace"), fields[4].to_string());
+                png_index += 1;
+            }
+            "bmp-thumbnail" => {
+                let payload = &block.payload;
+                let (Some(width), Some(height), Some(image_size)) =
+                    (le_i32(payload, 8), le_i32(payload, 12), le_u32(payload, 24))
+                else {
+                    continue;
+                };
+                let (Some(planes), Some(bits_per_pixel), Some(compression)) = (
+                    le_u16(payload, 16),
+                    le_u16(payload, 18),
+                    le_u32(payload, 20),
+                ) else {
+                    continue;
+                };
+                let prefix = format!("bmp_thumbnail_{bmp_index}");
+                attributes.insert(format!("{prefix}_width"), width.to_string());
+                attributes.insert(format!("{prefix}_height"), height.to_string());
+                attributes.insert(format!("{prefix}_planes"), planes.to_string());
+                attributes.insert(format!("{prefix}_bit_count"), bits_per_pixel.to_string());
+                attributes.insert(format!("{prefix}_compression"), compression.to_string());
+                attributes.insert(format!("{prefix}_image_size"), image_size.to_string());
+                bmp_index += 1;
+            }
+            _ => {}
+        }
+    }
+    attributes.insert("png_preview_count".into(), png_index.to_string());
+    attributes.insert("bmp_thumbnail_count".into(), bmp_index.to_string());
+}
+
+fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
+    for block in &scan.blocks {
+        if block.family != "xml" || !block.payload.windows(12).any(|w| w == b"swSolidWorks") {
+            continue;
+        }
+        let Ok(text) = std::str::from_utf8(&block.payload) else {
+            continue;
+        };
+        let Ok(document) = roxmltree::Document::parse(text) else {
+            continue;
+        };
+        let root = document.root_element();
+        if root.tag_name().name() != "swSolidWorks" {
+            continue;
+        }
+        for (source, target) in [
+            ("swVersion", "sw_version"),
+            ("swCreationTime", "sw_creation_time_unix"),
+            ("swPath", "sw_path"),
+        ] {
+            if let Some(value) = root.attribute(source) {
+                attributes.insert(target.into(), value.into());
+            }
+        }
+        if let Some(model) = root.descendants().find(|node| node.has_tag_name("swModel")) {
+            if let Some(value) = model.attribute("swName") {
+                attributes.insert("sw_name".into(), value.into());
+            }
+            if let Some(value) = model.attribute("swConfigurationName") {
+                attributes.insert("sw_configuration_name".into(), value.into());
+            }
+        }
+        break;
+    }
+}
+
+fn le_u16(bytes: &[u8], offset: usize) -> Option<u16> {
+    Some(u16::from_le_bytes(
+        bytes.get(offset..offset + 2)?.try_into().ok()?,
+    ))
+}
+
+fn le_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+    Some(u32::from_le_bytes(
+        bytes.get(offset..offset + 4)?.try_into().ok()?,
+    ))
+}
+
+fn le_i32(bytes: &[u8], offset: usize) -> Option<i32> {
+    Some(i32::from_le_bytes(
+        bytes.get(offset..offset + 4)?.try_into().ok()?,
+    ))
+}
+
+fn be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+    Some(u32::from_be_bytes(
+        bytes.get(offset..offset + 4)?.try_into().ok()?,
+    ))
 }
 
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {

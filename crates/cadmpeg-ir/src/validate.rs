@@ -96,6 +96,84 @@ fn check_design_records(ir: &CadIr, findings: &mut Vec<Finding>) {
             });
         }
     }
+    for point in &ir.sketch_points {
+        if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
+            findings.push(Finding {
+                check: Check::Bounds,
+                severity: Severity::Error,
+                message: "sketch point contains a non-finite coordinate".into(),
+                entity: Some(point.record_index.to_string()),
+            });
+        }
+    }
+    for curve in &ir.sketch_curve_identities {
+        let valid = match &curve.geometry {
+            None => true,
+            Some(crate::design::SketchCurveGeometry::Line {
+                start,
+                end,
+                direction,
+                normal,
+            }) => {
+                [start.x, start.y, start.z, end.x, end.y, end.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    && (direction.norm() - 1.0).abs() <= 1.0e-9
+                    && (normal.norm() - 1.0).abs() <= 1.0e-9
+                    && ((end.x - start.x).powi(2)
+                        + (end.y - start.y).powi(2)
+                        + (end.z - start.z).powi(2))
+                    .sqrt()
+                        > 0.0
+            }
+            Some(crate::design::SketchCurveGeometry::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            }) => {
+                [
+                    center.x,
+                    center.y,
+                    center.z,
+                    *radius,
+                    *start_angle,
+                    *end_angle,
+                ]
+                .into_iter()
+                .all(f64::is_finite)
+                    && *radius > 0.0
+                    && (normal.norm() - 1.0).abs() <= 1.0e-9
+                    && (reference_direction.norm() - 1.0).abs() <= 1.0e-9
+            }
+            Some(crate::design::SketchCurveGeometry::Nurbs {
+                degree,
+                fit_tolerance,
+                knots,
+                weights,
+                control_points,
+                ..
+            }) => {
+                fit_tolerance.is_finite()
+                    && knots.len() == control_points.len() + *degree as usize + 1
+                    && (weights.is_empty() || weights.len() == control_points.len())
+                    && knots.windows(2).all(|pair| pair[0] <= pair[1])
+                    && weights
+                        .iter()
+                        .all(|weight| weight.is_finite() && *weight > 0.0)
+            }
+        };
+        if !valid {
+            findings.push(Finding {
+                check: Check::Bounds,
+                severity: Severity::Error,
+                message: "sketch curve contains an invalid exact geometry frame".into(),
+                entity: Some(curve.record_index.to_string()),
+            });
+        }
+    }
 }
 
 fn check_unknown_payloads(ir: &CadIr, findings: &mut Vec<Finding>) {

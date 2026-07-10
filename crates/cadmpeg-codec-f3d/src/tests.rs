@@ -1085,6 +1085,77 @@ fn generated_design_bulkstream() -> Vec<u8> {
         curve[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
     out.extend_from_slice(&curve);
+    let mut alternate_point = vec![0u8; 164];
+    alternate_point[0..4].copy_from_slice(&3u32.to_le_bytes());
+    alternate_point[4..7].copy_from_slice(b"362");
+    alternate_point[7..11].copy_from_slice(&700u32.to_le_bytes());
+    alternate_point[20] = 1;
+    alternate_point[21..25].copy_from_slice(&2u32.to_le_bytes());
+    alternate_point[25..29].copy_from_slice(&13u32.to_le_bytes());
+    alternate_point[29..42].copy_from_slice(b"EntityGenesis");
+    alternate_point[42..46].copy_from_slice(&23u32.to_le_bytes());
+    alternate_point[46..69].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    alternate_point[69..77].copy_from_slice(&9u64.to_le_bytes());
+    alternate_point[77..81].copy_from_slice(&6u32.to_le_bytes());
+    alternate_point[81..87].copy_from_slice(b"pt_tag");
+    alternate_point[87..91].copy_from_slice(&23u32.to_le_bytes());
+    alternate_point[91..114].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    alternate_point[114..122].copy_from_slice(&600u64.to_le_bytes());
+    alternate_point[122] = 1;
+    alternate_point[123..127].copy_from_slice(&701u32.to_le_bytes());
+    alternate_point[148..156].copy_from_slice(&(-4.0f64).to_le_bytes());
+    alternate_point[156..164].copy_from_slice(&5.0f64.to_le_bytes());
+    out.extend_from_slice(&alternate_point);
+
+    let mut alternate_curve = vec![0u8; 443];
+    alternate_curve[0..4].copy_from_slice(&3u32.to_le_bytes());
+    alternate_curve[4..7].copy_from_slice(b"363");
+    alternate_curve[7..11].copy_from_slice(&800u32.to_le_bytes());
+    alternate_curve[20] = 1;
+    alternate_curve[21..25].copy_from_slice(&3u32.to_le_bytes());
+    alternate_curve[25..29].copy_from_slice(&13u32.to_le_bytes());
+    alternate_curve[29..42].copy_from_slice(b"EntityGenesis");
+    alternate_curve[42..46].copy_from_slice(&23u32.to_le_bytes());
+    alternate_curve[46..69].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    alternate_curve[69..77].copy_from_slice(&10u64.to_le_bytes());
+    alternate_curve[77..81].copy_from_slice(&14u32.to_le_bytes());
+    alternate_curve[81..95].copy_from_slice(b"crv_primary_id");
+    alternate_curve[95..99].copy_from_slice(&23u32.to_le_bytes());
+    alternate_curve[99..122].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    alternate_curve[122..130].copy_from_slice(&700u64.to_le_bytes());
+    alternate_curve[130..134].copy_from_slice(&16u32.to_le_bytes());
+    alternate_curve[134..150].copy_from_slice(b"crv_secondary_id");
+    alternate_curve[150..154].copy_from_slice(&23u32.to_le_bytes());
+    alternate_curve[154..177].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    alternate_curve[177..185].copy_from_slice(&0u64.to_le_bytes());
+    alternate_curve[185..193].copy_from_slice(&42u64.to_le_bytes());
+    alternate_curve[193..197].copy_from_slice(&3u32.to_le_bytes());
+    alternate_curve[197..200].copy_from_slice(b"365");
+    alternate_curve[200..204].copy_from_slice(&800u32.to_le_bytes());
+    alternate_curve[273] = 1;
+    alternate_curve[275..279].copy_from_slice(&2u32.to_le_bytes());
+    alternate_curve[279..287].copy_from_slice(&1.0e-9f64.to_le_bytes());
+    alternate_curve[287..291].copy_from_slice(&6u32.to_le_bytes());
+    alternate_curve[291..295].copy_from_slice(&6u32.to_le_bytes());
+    alternate_curve[295..299].copy_from_slice(&8u32.to_le_bytes());
+    for (ordinal, knot) in [0.0f64, 0.0, 0.0, 1.0, 1.0, 1.0].into_iter().enumerate() {
+        let offset = 299 + ordinal * 8;
+        alternate_curve[offset..offset + 8].copy_from_slice(&knot.to_le_bytes());
+    }
+    alternate_curve[347..351].copy_from_slice(&0u32.to_le_bytes());
+    alternate_curve[351..355].copy_from_slice(&0u32.to_le_bytes());
+    alternate_curve[355..359].copy_from_slice(&8u32.to_le_bytes());
+    alternate_curve[359..363].copy_from_slice(&3u32.to_le_bytes());
+    alternate_curve[363..367].copy_from_slice(&3u32.to_le_bytes());
+    alternate_curve[367..371].copy_from_slice(&8u32.to_le_bytes());
+    for (ordinal, coordinate) in [0.0f64, 0.0, 0.0, 1.0, 2.0, 0.0, 3.0, 1.0, 0.0]
+        .into_iter()
+        .enumerate()
+    {
+        let offset = 371 + ordinal * 8;
+        alternate_curve[offset..offset + 8].copy_from_slice(&coordinate.to_le_bytes());
+    }
+    out.extend_from_slice(&alternate_curve);
     out.extend_from_slice(&10u32.to_le_bytes());
     out.extend_from_slice(b"BodiesRoot");
     out.extend_from_slice(&0u16.to_le_bytes());
@@ -1107,12 +1178,10 @@ fn generated_design_bulkstream() -> Vec<u8> {
     for value in [2i32, 0, -1, 1, -1] {
         out.extend_from_slice(&value.to_le_bytes());
     }
-    for (name, value) in [("pt_tag", 439u64)] {
-        out.extend_from_slice(name.as_bytes());
-        out.extend_from_slice(&23u32.to_le_bytes());
-        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
-        out.extend_from_slice(&value.to_le_bytes());
-    }
+    out.extend_from_slice(b"pt_tag");
+    out.extend_from_slice(&23u32.to_le_bytes());
+    out.extend_from_slice(b"IntrinsicMetaTypeuint64");
+    out.extend_from_slice(&439u64.to_le_bytes());
     out.extend_from_slice(b"EDGE_REFERENCE_LOST");
     out.extend_from_slice(&3u32.to_le_bytes());
     out.extend_from_slice(b"419");
@@ -2123,7 +2192,7 @@ fn decode_transfers_generated_protein_appearance() {
         Some("322")
     );
     assert_eq!(result.ir.construction_recipes[0].record_index, 123);
-    assert_eq!(result.ir.persistent_references.len(), 7);
+    assert_eq!(result.ir.persistent_references.len(), 10);
     assert!(result
         .ir
         .persistent_references
@@ -2176,16 +2245,28 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(result.ir.sketch_relations[0].return_members, [200, 100]);
     assert_eq!(result.ir.sketch_relations[0].owner_reference, 277);
     assert_eq!(result.ir.sketch_relations[0].raw_bytes.len(), 101);
-    assert_eq!(result.ir.sketch_points.len(), 4);
+    assert_eq!(result.ir.sketch_points.len(), 5);
     assert_eq!(result.ir.sketch_points[0].persistent_id, 500);
     assert_eq!(result.ir.sketch_points[0].coordinates.u, 12.5);
     assert_eq!(result.ir.sketch_points[0].coordinates.v, -25.0);
-    assert_eq!(result.ir.sketch_curve_identities.len(), 1);
+    assert_eq!(result.ir.sketch_points[4].persistent_id, 600);
+    assert_eq!(result.ir.sketch_points[4].coordinates.u, -40.0);
+    assert_eq!(result.ir.sketch_curve_identities.len(), 2);
     assert_eq!(result.ir.sketch_curve_identities[0].primary_id, 440);
     assert_eq!(result.ir.sketch_curve_identities[0].secondary_id, 0);
     assert!(matches!(
         result.ir.sketch_curve_identities[0].geometry,
         Some(cadmpeg_ir::design::SketchCurveGeometry::Arc { radius: 30.0, .. })
+    ));
+    assert!(matches!(
+        &result.ir.sketch_curve_identities[1].geometry,
+        Some(cadmpeg_ir::design::SketchCurveGeometry::Nurbs {
+            carrier_reference: Some(42),
+            degree: 2,
+            weights,
+            control_points,
+            ..
+        }) if weights.is_empty() && control_points.len() == 3
     ));
     assert_eq!(result.ir.design_body_members.len(), 2);
     assert_eq!(result.ir.design_body_members[0].entity_suffix, 985);

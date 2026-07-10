@@ -477,19 +477,8 @@ pub fn decode_sketch_points(
             let Some(record_index) = u32_at(&bytes, after_tag) else {
                 break;
             };
-            let payload = &bytes[at..at + 112];
-            if payload.get(20) != Some(&1)
-                || u32_at(payload, 21) != Some(1)
-                || u32_at(payload, 25) != Some(6)
-                || payload.get(29..35) != Some(b"pt_tag")
-                || u32_at(payload, 35) != Some(23)
-                || payload.get(39..62) != Some(b"IntrinsicMetaTypeuint64")
-                || payload.get(70) != Some(&1)
-            {
-                at += 1;
-                continue;
-            }
-            let (Some(x), Some(y)) = (f64_at(payload, 96), f64_at(payload, 104)) else {
+            let payload = &bytes[at..];
+            let Some((persistent_id, paired_reference, x, y)) = decode_sketch_point(payload) else {
                 at += 1;
                 continue;
             };
@@ -501,8 +490,8 @@ pub fn decode_sketch_points(
                 out.push(SketchPoint {
                     record_index,
                     class_tag,
-                    persistent_id: u64::from_le_bytes(payload[62..70].try_into().unwrap()),
-                    paired_reference: u32_at(payload, 71).unwrap(),
+                    persistent_id,
+                    paired_reference,
                     coordinates: Point2::new(x * 10.0, y * 10.0),
                     meta: EntityMeta {
                         provenance: Provenance {
@@ -519,6 +508,43 @@ pub fn decode_sketch_points(
         }
     }
     Ok(out)
+}
+
+fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64)> {
+    if let Some(point) = decode_sketch_point_variant(payload, 0, 1) {
+        return Some(point);
+    }
+    if u32_at(payload, 25) != Some(13)
+        || payload.get(29..42) != Some(b"EntityGenesis")
+        || u32_at(payload, 42) != Some(23)
+        || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
+    {
+        return None;
+    }
+    decode_sketch_point_variant(payload, 52, 2)
+}
+
+fn decode_sketch_point_variant(
+    payload: &[u8],
+    shift: usize,
+    property_count: u32,
+) -> Option<(u64, u32, f64, f64)> {
+    if payload.get(20) != Some(&1)
+        || u32_at(payload, 21) != Some(property_count)
+        || u32_at(payload, 25 + shift) != Some(6)
+        || payload.get(29 + shift..35 + shift) != Some(b"pt_tag")
+        || u32_at(payload, 35 + shift) != Some(23)
+        || payload.get(39 + shift..62 + shift) != Some(b"IntrinsicMetaTypeuint64")
+        || payload.get(70 + shift) != Some(&1)
+    {
+        return None;
+    }
+    Some((
+        u64::from_le_bytes(payload.get(62 + shift..70 + shift)?.try_into().ok()?),
+        u32_at(payload, 71 + shift)?,
+        f64_at(payload, 96 + shift)?,
+        f64_at(payload, 104 + shift)?,
+    ))
 }
 
 pub fn decode_sketch_curve_identities(
@@ -546,30 +572,24 @@ pub fn decode_sketch_curve_identities(
             let Some(record_index) = u32_at(&bytes, after_tag) else {
                 break;
             };
-            let payload = &bytes[at..at + 133];
-            if payload.get(20) != Some(&1)
-                || u32_at(payload, 21) != Some(2)
-                || u32_at(payload, 25) != Some(14)
-                || payload.get(29..43) != Some(b"crv_primary_id")
-                || u32_at(payload, 43) != Some(23)
-                || payload.get(47..70) != Some(b"IntrinsicMetaTypeuint64")
-                || u32_at(payload, 78) != Some(16)
-                || payload.get(82..98) != Some(b"crv_secondary_id")
-                || u32_at(payload, 98) != Some(23)
-                || payload.get(102..125) != Some(b"IntrinsicMetaTypeuint64")
-            {
+            let payload = &bytes[at..];
+            let Some((primary_id, secondary_id, geometry_shift)) =
+                decode_sketch_curve_identity(payload)
+            else {
                 at += 1;
                 continue;
-            }
+            };
             if emitted.insert(record_index) {
+                let geometry_payload = payload.get(geometry_shift..).unwrap();
                 out.push(SketchCurveIdentity {
                     record_index,
                     class_tag,
-                    primary_id: u64::from_le_bytes(payload[70..78].try_into().unwrap()),
-                    secondary_id: u64::from_le_bytes(payload[125..133].try_into().unwrap()),
-                    geometry: bytes.get(at..at + 229).and_then(|payload| {
-                        decode_circular_arc(payload).or_else(|| decode_line(payload))
-                    }),
+                    primary_id,
+                    secondary_id,
+                    geometry: decode_sketch_nurbs(geometry_payload)
+                        .or_else(|| decode_circular_arc(geometry_payload))
+                        .or_else(|| decode_line(geometry_payload))
+                        .or_else(|| decode_referenced_analytic(geometry_payload)),
                     meta: EntityMeta {
                         provenance: Provenance {
                             format: "f3d".into(),
@@ -587,6 +607,45 @@ pub fn decode_sketch_curve_identities(
     Ok(out)
 }
 
+fn decode_sketch_curve_identity(payload: &[u8]) -> Option<(u64, u64, usize)> {
+    if let Some((primary, secondary)) = decode_sketch_curve_identity_variant(payload, 0, 2) {
+        return Some((primary, secondary, 0));
+    }
+    if u32_at(payload, 25) != Some(13)
+        || payload.get(29..42) != Some(b"EntityGenesis")
+        || u32_at(payload, 42) != Some(23)
+        || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
+    {
+        return None;
+    }
+    decode_sketch_curve_identity_variant(payload, 52, 3)
+        .map(|(primary, secondary)| (primary, secondary, 52))
+}
+
+fn decode_sketch_curve_identity_variant(
+    payload: &[u8],
+    shift: usize,
+    property_count: u32,
+) -> Option<(u64, u64)> {
+    if payload.get(20) != Some(&1)
+        || u32_at(payload, 21) != Some(property_count)
+        || u32_at(payload, 25 + shift) != Some(14)
+        || payload.get(29 + shift..43 + shift) != Some(b"crv_primary_id")
+        || u32_at(payload, 43 + shift) != Some(23)
+        || payload.get(47 + shift..70 + shift) != Some(b"IntrinsicMetaTypeuint64")
+        || u32_at(payload, 78 + shift) != Some(16)
+        || payload.get(82 + shift..98 + shift) != Some(b"crv_secondary_id")
+        || u32_at(payload, 98 + shift) != Some(23)
+        || payload.get(102 + shift..125 + shift) != Some(b"IntrinsicMetaTypeuint64")
+    {
+        return None;
+    }
+    Some((
+        u64::from_le_bytes(payload.get(70 + shift..78 + shift)?.try_into().ok()?),
+        u64::from_le_bytes(payload.get(125 + shift..133 + shift)?.try_into().ok()?),
+    ))
+}
+
 fn decode_circular_arc(payload: &[u8]) -> Option<SketchCurveGeometry> {
     let values = (0..12)
         .map(|ordinal| f64_at(payload, 133 + ordinal * 8))
@@ -602,7 +661,7 @@ fn decode_circular_arc(payload: &[u8]) -> Option<SketchCurveGeometry> {
     if (normal.norm() - 1.0).abs() > 1.0e-9
         || (reference_direction.norm() - 1.0).abs() > 1.0e-9
         || dot.abs() > 1.0e-9
-        || !(values[9] > 0.0)
+        || values[9] <= 0.0
         || values[10].abs() > std::f64::consts::TAU + 1.0e-9
         || values[11].abs() > std::f64::consts::TAU + 1.0e-9
         || (values[11] - values[10]).abs() < 1.0e-12
@@ -619,6 +678,89 @@ fn decode_circular_arc(payload: &[u8]) -> Option<SketchCurveGeometry> {
     })
 }
 
+fn decode_referenced_analytic(payload: &[u8]) -> Option<SketchCurveGeometry> {
+    if payload.get(133) != Some(&1) || payload.get(138..144) != Some(&[0; 6]) {
+        return None;
+    }
+    let shifted = payload.get(11..)?;
+    decode_circular_arc(shifted).or_else(|| decode_line(shifted))
+}
+
+fn decode_sketch_nurbs(payload: &[u8]) -> Option<SketchCurveGeometry> {
+    let base = 133usize;
+    let prefix = payload.get(base..base + 8)?;
+    let carrier_reference =
+        (prefix != [0xff; 8]).then(|| u64::from_le_bytes(prefix.try_into().unwrap()));
+    if u32_at(payload, base + 8) != Some(3) || payload.get(base + 88) != Some(&1) {
+        return None;
+    }
+    let subtype_class_tag = std::str::from_utf8(payload.get(base + 12..base + 15)?)
+        .ok()?
+        .to_string();
+    if !subtype_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let degree = u32_at(payload, base + 90)?;
+    let fit_tolerance = f64_at(payload, base + 94)?;
+    let knot_count = usize::try_from(u32_at(payload, base + 102)?).ok()?;
+    if u32_at(payload, base + 106)? as usize != knot_count
+        || u32_at(payload, base + 110)? != 8
+        || knot_count > 100_000
+    {
+        return None;
+    }
+    let knots = read_f64s(payload, base + 114, knot_count)?;
+    let weights_at = base + 114 + knot_count * 8;
+    let weight_count = usize::try_from(u32_at(payload, weights_at)?).ok()?;
+    if u32_at(payload, weights_at + 4)? as usize != weight_count
+        || u32_at(payload, weights_at + 8)? != 8
+        || weight_count > 100_000
+    {
+        return None;
+    }
+    let weights = read_f64s(payload, weights_at + 12, weight_count)?;
+    let points_at = weights_at + 12 + weight_count * 8;
+    let point_count = usize::try_from(u32_at(payload, points_at)?).ok()?;
+    if (weight_count != 0 && point_count != weight_count)
+        || u32_at(payload, points_at + 4)? as usize != point_count
+        || u32_at(payload, points_at + 8)? != 8
+        || knot_count != point_count.checked_add(degree as usize + 1)?
+    {
+        return None;
+    }
+    let coordinates = read_f64s(payload, points_at + 12, point_count.checked_mul(3)?)?;
+    if knots.windows(2).any(|pair| pair[0] > pair[1])
+        || weights
+            .iter()
+            .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        || coordinates.iter().any(|value| !value.is_finite())
+        || !fit_tolerance.is_finite()
+    {
+        return None;
+    }
+    let control_points = coordinates
+        .chunks_exact(3)
+        .map(|point| Point3::new(point[0] * 10.0, point[1] * 10.0, point[2] * 10.0))
+        .collect();
+    Some(SketchCurveGeometry::Nurbs {
+        carrier_reference,
+        subtype_class_tag,
+        subtype_record_index: u32_at(payload, base + 15)?,
+        degree,
+        fit_tolerance: fit_tolerance * 10.0,
+        scalar_width: 8,
+        knots,
+        weights,
+        control_points,
+    })
+}
+
+fn read_f64s(bytes: &[u8], position: usize, count: usize) -> Option<Vec<f64>> {
+    (0..count)
+        .map(|ordinal| f64_at(bytes, position + ordinal * 8))
+        .collect()
+}
+
 fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     let values = (0..12)
         .map(|ordinal| f64_at(payload, 133 + ordinal * 8))
@@ -630,7 +772,7 @@ fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     let direction = Vector3::new(values[6], values[7], values[8]);
     let normal = Vector3::new(values[9], values[10], values[11]);
     let length = displacement.norm();
-    if !(length > 0.0) {
+    if length <= 0.0 {
         return None;
     }
     let parallel_error = Vector3::new(
@@ -961,75 +1103,4 @@ fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<String> {
         .iter()
         .all(u8::is_ascii_alphanumeric)
         .then(|| String::from_utf8_lossy(value).into_owned())
-}
-
-#[cfg(test)]
-mod diagnostics {
-    #[test]
-    #[ignore]
-    fn inspect_relation_operands() {
-        use std::{env, fs::File};
-        let mut file = File::open(env::var("F3D_INSPECT").unwrap()).unwrap();
-        let scan = crate::container::scan(&mut file).unwrap();
-        let entities = super::decode_entity_headers(&mut file, &scan).unwrap();
-        let roots = super::decode_record_headers(&mut file, &scan, &entities).unwrap();
-        let relations = super::decode_sketch_relations(&mut file, &scan, &roots).unwrap();
-        let indices = relations
-            .iter()
-            .flat_map(|r| r.members.iter().chain(&r.return_members))
-            .copied()
-            .collect::<Vec<_>>();
-        let operands = super::decode_related_record_headers(&mut file, &scan, &indices).unwrap();
-        let curves = super::decode_sketch_curve_identities(&mut file, &scan).unwrap();
-        for entry in scan.entries.iter().filter(|entry| {
-            entry.role == crate::container::role::BULKSTREAM && entry.name.contains("Design")
-        }) {
-            let bytes = crate::container::decompress_entry(&mut file, &entry.name).unwrap();
-            for record in operands.iter().take(8) {
-                let at = record.meta.provenance.offset as usize;
-                eprintln!(
-                    "OPERAND {} {} @{at} {:?}",
-                    record.record_index,
-                    record.class_tag,
-                    &bytes[at..(at + 160).min(bytes.len())]
-                );
-            }
-            if let Some(at) = bytes
-                .windows(14)
-                .position(|window| window == b"crv_primary_id")
-            {
-                let start = at.saturating_sub(48);
-                eprintln!(
-                    "CURVE @{at} {:?}",
-                    &bytes[start..(at + 240).min(bytes.len())]
-                );
-                let record = at - 29;
-                for offset in (133..245).step_by(8) {
-                    eprintln!("D {offset} {:?}", super::f64_at(&bytes[record..], offset));
-                }
-            }
-            if let Some(curve) = curves.iter().find(|curve| {
-                curve.geometry.is_none() && curve.meta.provenance.stream == entry.name
-            }) {
-                let at = curve.meta.provenance.offset as usize;
-                let next = curves
-                    .iter()
-                    .map(|other| other.meta.provenance.offset as usize)
-                    .filter(|offset| *offset > at)
-                    .min();
-                eprintln!(
-                    "NONARC {} @{at} next={next:?} delta={:?}",
-                    curve.record_index,
-                    next.map(|next| next - at)
-                );
-                eprintln!("RAW {:?}", &bytes[at + 133..(at + 420).min(bytes.len())]);
-                for (line, chunk) in bytes[at + 133..at + 293].chunks(16).enumerate() {
-                    eprintln!("S {:03} {:02x?}", line * 16, chunk);
-                }
-                for offset in (133..229).step_by(8) {
-                    eprintln!("N {offset} {:?}", super::f64_at(&bytes[at..], offset));
-                }
-            }
-        }
-    }
 }

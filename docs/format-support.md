@@ -5,7 +5,7 @@ This matrix rates what cadmpeg can decode and export on a shared fidelity ladder
 **Repository reality check:** the Rust workspace includes codecs for every researched format:
 
 - **`.f3d` B-rep:** topology graph, analytic and cached NURBS carriers, inline/reference pcurves, transforms, attributes, and material bindings.
-- **`.sldprt` analytic B-rep:** single synthetic shell, opaque B-splines.
+- **`.sldprt`:** analytic and NURBS B-rep, explicit body ownership, feature lanes, metadata, and native semantic writing.
 - **`.CATPart` carriers:** standard-nested vertex cloud plus curved analytic surfaces, no topology.
 - **NX `.prt` B-rep:** container, analytic carriers, and a reconstructed topology graph where the stream's records resolve.
 - **Creo `.prt` structure:** container plus PSB tokens, no transferred geometry.

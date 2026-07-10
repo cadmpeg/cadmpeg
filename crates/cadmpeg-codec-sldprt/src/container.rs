@@ -44,6 +44,8 @@ pub mod role {
 pub fn payload_family(payload: &[u8]) -> &'static str {
     if payload.starts_with(&[0x89, 0x50, 0x4e, 0x47]) {
         "png-preview"
+    } else if is_bmp_thumbnail(payload) {
+        "bmp-thumbnail"
     } else if payload.starts_with(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]) {
         "ole2"
     } else if contains(payload, b"uoTempBodyTessData_c")
@@ -62,6 +64,19 @@ pub fn payload_family(payload: &[u8]) -> &'static str {
     } else {
         "unknown"
     }
+}
+
+fn is_bmp_thumbnail(payload: &[u8]) -> bool {
+    let Some(header_size) = u32_le(payload, 4) else {
+        return false;
+    };
+    let Some(bits_per_pixel) = payload
+        .get(18..20)
+        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+    else {
+        return false;
+    };
+    header_size == 40 && matches!(bits_per_pixel, 1 | 4 | 8 | 16 | 24 | 32)
 }
 
 /// Byte offset of the `PS\0\0` Parasolid stream signature within a payload, if

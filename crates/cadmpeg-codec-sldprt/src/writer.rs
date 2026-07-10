@@ -46,9 +46,15 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         ));
     }
     let length_scale = ir.units.length.to_millimeters() / 1000.0;
-    let retain_native_brep = retained_partition.is_some();
+    let patched_partition = retained_partition
+        .is_none()
+        .then(|| crate::writer_patch::patch_partition(ir, length_scale))
+        .flatten();
+    let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
     let (partition_section, partition_payload) = if let Some(retained) = retained_partition {
         retained
+    } else if let Some(patched) = patched_partition {
+        patched
     } else {
         let schema_32001 = ir.bodies.iter().any(|body| body.kind == BodyKind::Sheet);
         let body = brep_body(ir, length_scale, schema_32001)?;
@@ -1134,7 +1140,7 @@ fn entity51(out: &mut Vec<u8>, flags: u32, attr: u16, disc: u16, refs: &[u16; 6]
     refs.iter().for_each(|reference| be16(out, *reference));
 }
 
-fn surface_values(
+pub(super) fn surface_values(
     geometry: &SurfaceGeometry,
     reference: cadmpeg_ir::math::Vector3,
     length_scale: f64,
@@ -1396,7 +1402,10 @@ fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16]) {
     values.iter().for_each(|value| be16(out, *value));
 }
 
-fn curve_values(geometry: &CurveGeometry, length_scale: f64) -> Result<(u8, Vec<f64>), CodecError> {
+pub(super) fn curve_values(
+    geometry: &CurveGeometry,
+    length_scale: f64,
+) -> Result<(u8, Vec<f64>), CodecError> {
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
         CurveGeometry::Line { origin, direction } => (
@@ -1463,7 +1472,7 @@ fn curve_values(geometry: &CurveGeometry, length_scale: f64) -> Result<(u8, Vec<
     Ok(result)
 }
 
-fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math::Vector3 {
+pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math::Vector3 {
     match geometry {
         SurfaceGeometry::Plane { normal, .. } => orthogonal(*normal),
         SurfaceGeometry::Cylinder { axis, .. }

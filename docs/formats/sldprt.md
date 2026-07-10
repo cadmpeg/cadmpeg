@@ -69,6 +69,7 @@ Payload kind is determined from **decompressed bytes**, not from `type_id`.
 | Signature at/near payload start                 | Family                      |
 | ----------------------------------------------- | --------------------------- |
 | `89 50 4e 47`                                   | PNG preview                 |
+| BITMAPINFOHEADER size 40 + valid bit depth      | BMP thumbnail               |
 | OLE2 compound-file header                       | OLE2                        |
 | `PS 00 00`                                      | plain Parasolid stream      |
 | Parasolid wrapper magic at offset 4             | wrapped Parasolid           |
@@ -78,7 +79,11 @@ Payload kind is determined from **decompressed bytes**, not from `type_id`.
 | `<?xml` / UTF-16LE BOM+XML / byte0 `86`+XML     | XML                         |
 | `unqlite`                                       | UnQLite database            |
 
+PNG preview dimensions and encoding fields are in `IHDR`. BMP thumbnail width, height, planes, bit depth, compression, and image size are in the 40-byte BITMAPINFOHEADER after the leading file-size word. The `swSolidWorks` XML root carries version, creation time, and path; its `swModel` child carries model and configuration names.
+
 The active `Contents/Config-0-Partition` block contains the analytic B-rep in partition and deltas streams. `Contents/Config-0-ResolvedFeatures` contains feature-input sketch profiles. `Config-0-GhostPartition`, `Contents/Definition`, and `Config-0-LWDATA` do not contain active body geometry.
+
+When a B-rep contains an opaque surface carrier, native writing retains the partition and patches byte-backed points and compact analytic carriers in place. This path requires identical topology and carrier kinds and unchanged NURBS payloads. Site-local deltas remain byte-identical; only records in the partition are patchable. Other geometry edits regenerate the partition.
 
 `ResolvedFeatures` sketch entities start with `ff ff 1f 00 03`. A little-endian u32 at marker +17 is the native entity type: `0` point, `1` curve, `2` arc, `3` constrained point; other values remain native codes. IR retains the complete block payload and marker offsets. Semantic writing patches typed codes into that payload and preserves all other bytes.
 

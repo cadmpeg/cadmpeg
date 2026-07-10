@@ -914,6 +914,59 @@ fn scan_classifies_blocks_cells_and_directory() {
 }
 
 #[test]
+fn decode_surfaces_preview_and_solidworks_xml_metadata() {
+    let mut png = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+    png.extend_from_slice(&13u32.to_be_bytes());
+    png.extend_from_slice(b"IHDR");
+    png.extend_from_slice(&640u32.to_be_bytes());
+    png.extend_from_slice(&480u32.to_be_bytes());
+    png.extend_from_slice(&[8, 6, 0, 0, 1]);
+    png.extend_from_slice(&0u32.to_be_bytes());
+
+    let mut bmp = vec![0; 28];
+    bmp[4..8].copy_from_slice(&40u32.to_le_bytes());
+    bmp[8..12].copy_from_slice(&320i32.to_le_bytes());
+    bmp[12..16].copy_from_slice(&(-200i32).to_le_bytes());
+    bmp[16..18].copy_from_slice(&1u16.to_le_bytes());
+    bmp[18..20].copy_from_slice(&8u16.to_le_bytes());
+    bmp[20..24].copy_from_slice(&1u32.to_le_bytes());
+    bmp[24..28].copy_from_slice(&12_345u32.to_le_bytes());
+
+    let xml = br#"<?xml version="1.0"?><swSolidWorks swVersion="34000" swCreationTime="1700000000" swPath="C:\part.SLDPRT"><swModel id="1" swName="Part" swConfigurationName="Default"/></swSolidWorks>"#;
+    let mut source = outer_header();
+    source.extend(make_block(0x10, "PreviewPNG", &png));
+    source.extend(make_block(0x11, "PreviewBMP", &bmp));
+    source.extend(make_block(0x12, "SolidWorksMetadata", xml));
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body(
+            "partition body",
+            "SCH_SW_33103_11000",
+            &owned_triangle(0, 700, 0.0),
+        ),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode metadata fixture");
+    let attributes = &decoded.ir.source.expect("source metadata").attributes;
+    assert_eq!(attributes["png_preview_count"], "1");
+    assert_eq!(attributes["png_preview_0_width"], "640");
+    assert_eq!(attributes["png_preview_0_height"], "480");
+    assert_eq!(attributes["png_preview_0_color_type"], "6");
+    assert_eq!(attributes["bmp_thumbnail_count"], "1");
+    assert_eq!(attributes["bmp_thumbnail_0_width"], "320");
+    assert_eq!(attributes["bmp_thumbnail_0_height"], "-200");
+    assert_eq!(attributes["bmp_thumbnail_0_compression"], "1");
+    assert_eq!(attributes["sw_version"], "34000");
+    assert_eq!(attributes["sw_creation_time_unix"], "1700000000");
+    assert_eq!(attributes["sw_path"], r"C:\part.SLDPRT");
+    assert_eq!(attributes["sw_name"], "Part");
+    assert_eq!(attributes["sw_configuration_name"], "Default");
+}
+
+#[test]
 fn parasolid_stream_header_is_parsed() {
     let f = synthetic_sldprt();
     let scan = container::scan_bytes(&f);
@@ -2290,10 +2343,19 @@ fn face_on_untyped_surface_keeps_topology() {
         .unwrap();
 
     assert_eq!(result.ir.faces.len(), 1);
-    assert!(matches!(
-        result.ir.surfaces[0].geometry,
-        SurfaceGeometry::Unknown { .. }
-    ));
+    let SurfaceGeometry::Unknown {
+        record: Some(record),
+    } = &result.ir.surfaces[0].geometry
+    else {
+        panic!("opaque surface has no replay record");
+    };
+    let retained = result
+        .ir
+        .unknowns
+        .iter()
+        .find(|unknown| unknown.id == *record)
+        .expect("opaque surface record");
+    assert!(retained.links.contains(&result.ir.surfaces[0].id.0));
     assert!(result
         .report
         .losses
@@ -2301,6 +2363,137 @@ fn face_on_untyped_surface_keeps_topology() {
         .any(|l| l.message.contains("does not type")));
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
+}
+
+#[test]
+fn native_patch_edits_points_without_dropping_untyped_surfaces() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let mut body = Vec::new();
+    body.extend(bridge(10, 20, 999));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    body.extend(edge_use(40, 0));
+    body.extend(edge_use(41, 0));
+    body.extend(edge_use(42, 0));
+    body.extend(vertex_use(50, 60));
+    body.extend(vertex_use(51, 61));
+    body.extend(vertex_use(52, 62));
+    body.extend(world_point(60, [0.0, 0.0, 0.0]));
+    body.extend(world_point(61, [1.0, 0.0, 0.0]));
+    body.extend(world_point(62, [0.0, 1.0, 0.0]));
+
+    let deltas = parasolid_with_body(
+        "deltas body",
+        "SCH_SW_33103_11000",
+        &line_carrier(800, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+    );
+    let mut source = sldprt_with_body(&body);
+    source.extend(make_block(0x21, "Contents/Config-0-Deltas", &deltas));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    decoded.ir.points[1].position.x = 1_250.0;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(regenerated.ir.points[1].position.x, 1_250.0);
+    assert!(matches!(
+        regenerated.ir.surfaces[0].geometry,
+        SurfaceGeometry::Unknown { .. }
+    ));
+    assert_eq!(regenerated.ir.faces.len(), 1);
+    let written = regenerated
+        .ir
+        .unknowns
+        .iter()
+        .find(|record| record.id.0 == "sldprt:source-image")
+        .and_then(|record| record.data.as_deref())
+        .unwrap();
+    let scan = container::scan_bytes(written);
+    assert!(scan.blocks.iter().any(|block| {
+        block.section.as_deref() == Some("Contents/Config-0-Deltas") && block.payload == deltas
+    }));
+}
+
+#[test]
+fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
+    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+
+    let mut body = triangle_body();
+    body.extend(line_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
+    body.extend(edge_use(40, 70));
+    body.extend(bridge(210, 220, 999));
+    body.extend(loop_head(220, 230, 210));
+    body.extend(coedge(230, 220, 231, 250, 0, 240, false));
+    body.extend(coedge(231, 220, 232, 251, 0, 241, false));
+    body.extend(coedge(232, 220, 230, 252, 0, 242, false));
+    body.extend(edge_use(240, 0));
+    body.extend(edge_use(241, 0));
+    body.extend(edge_use(242, 0));
+    body.extend(vertex_use(250, 260));
+    body.extend(vertex_use(251, 261));
+    body.extend(vertex_use(252, 262));
+    body.extend(world_point(260, [10.0, 0.0, 0.0]));
+    body.extend(world_point(261, [11.0, 0.0, 0.0]));
+    body.extend(world_point(262, [10.0, 1.0, 0.0]));
+
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plane = decoded
+        .ir
+        .surfaces
+        .iter_mut()
+        .find(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
+        .unwrap();
+    let SurfaceGeometry::Plane { origin, .. } = &mut plane.geometry else {
+        unreachable!()
+    };
+    origin.x = 25.0;
+    let line = decoded
+        .ir
+        .curves
+        .iter_mut()
+        .find(|curve| matches!(curve.geometry, CurveGeometry::Line { .. }))
+        .unwrap();
+    let CurveGeometry::Line { origin, .. } = &mut line.geometry else {
+        unreachable!()
+    };
+    origin.y = 12.0;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(regenerated.ir.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Plane { origin, .. } if origin.x == 25.0
+    )));
+    assert!(regenerated
+        .ir
+        .surfaces
+        .iter()
+        .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. })));
+    assert!(regenerated.ir.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Line { origin, .. } if origin.y == 12.0
+    )));
 }
 
 #[test]

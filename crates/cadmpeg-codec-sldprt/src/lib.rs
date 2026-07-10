@@ -42,6 +42,7 @@ pub mod parasolid;
 mod resolved_features;
 mod tessellation;
 mod writer;
+mod writer_patch;
 mod writer_transform;
 
 use cadmpeg_ir::codec::{

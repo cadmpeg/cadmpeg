@@ -307,6 +307,35 @@ test = false
 doc = false
 bench = false
 
+# Integration and robustness targets
+[[bin]]
+name = "step_geometry_degenerate"
+path = "fuzz_targets/step_geometry_degenerate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ir_validate_mutated"
+path = "fuzz_targets/ir_validate_mutated.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_pipeline_mutated"
+path = "fuzz_targets/decode_pipeline_mutated.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_e5_orientation"
+path = "fuzz_targets/catia_e5_orientation.rs"
+test = false
+doc = false
+bench = false
+
 [[bin]]
 name = "generate_all_seeds"
 path = "src/bin/generate_all_seeds.rs"

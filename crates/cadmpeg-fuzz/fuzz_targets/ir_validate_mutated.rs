@@ -44,20 +44,20 @@ fuzz_target!(|data: &[u8]| {
         1 => {
             // Create invalid cross-references
             if !ir.vertices.is_empty() {
-                ir.vertices[0].point = cadmpeg_ir::ids::PointId(999999);
+                ir.vertices[0].point = cadmpeg_ir::ids::PointId("nonexistent".to_string());
             }
         }
         2 => {
             // Break coedge ring topology
             if ir.coedges.len() >= 2 {
-                ir.coedges[0].next = ir.coedges[1].id;
-                ir.coedges[1].previous = ir.coedges[0].id;
+                ir.coedges[0].next = ir.coedges[1].id.clone();
+                ir.coedges[1].previous = ir.coedges[0].id.clone();
             }
         }
         3 => {
             // Create inconsistent edge references
             if !ir.edges.is_empty() && ir.vertices.is_empty() {
-                ir.edges[0].start = cadmpeg_ir::ids::VertexId(0);
+                ir.edges[0].start = cadmpeg_ir::ids::VertexId("nonexistent".to_string());
             }
         }
         4 => {
@@ -90,8 +90,8 @@ fuzz_target!(|data: &[u8]| {
         }
         8 => {
             // Mutate tolerances to invalid values
-            ir.tolerances.distance = -1.0;
-            ir.tolerances.angle = f64::NAN;
+            ir.tolerances.resabs = -1.0;
+            ir.tolerances.resnor = f64::NAN;
         }
         9 => {
             // Clear all geometry but keep topology
