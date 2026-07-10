@@ -71,7 +71,7 @@ pub mod unknown;
 
 /// Generate the JSON Schema for [`CadIr`] via `schemars`. Used by tooling and
 /// documentation to publish the IR contract.
-pub fn cadir_json_schema() -> schemars::schema::RootSchema {
+pub fn cadir_json_schema() -> schemars::Schema {
     schemars::schema_for!(CadIr)
 }
 
