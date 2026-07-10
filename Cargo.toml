@@ -41,7 +41,7 @@ sha2 = "0.10"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
-zip = { version = "2", default-features = false, features = ["deflate", "zstd"] }
+zip = { version = "8", default-features = false, features = ["deflate", "zstd"] }
 flate2 = "1"
 crc32fast = "1"
 roxmltree = "0.20"
