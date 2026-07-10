@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg"
-description = "cadmpeg: an open-source CAD transcoder (ffmpeg for CAD). Command-line front-end."
+description = "Inspect, convert, compare, and validate CAD files from the command line."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+documentation = "https://github.com/cadmpeg/cadmpeg#cli"
+keywords = ["cad", "converter", "step", "brep", "geometry"]
+categories = ["command-line-utilities", "encoding", "graphics"]
 default-run = "cadmpeg"
 
 [[bin]]

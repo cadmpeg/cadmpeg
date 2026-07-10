@@ -9,7 +9,7 @@ native CAD ── detect + inspect ──> container summary
      │
      └── detect + decode ──> CadIr ── validate ──> validation report
                                 │
-                                └── encode ──> .cadir.json | .step/.stp | .sldprt
+                                └── encode ──> .cadir.json | .step/.stp | .f3d | .sldprt
 ```
 
 - `inspect` detects a codec and calls its container inspection path. It reports streams, blocks, entries, sizes, and codec-defined attributes without decoding geometry.
@@ -31,7 +31,7 @@ Output and report files are written through a unique temporary file in the desti
 
 Source decoders return `DecodeReport`, including `geometry_transferred`, notes, and attributable `LossNote` entries. Validation propagates supplied decode losses unchanged.
 
-STEP export returns substantive export loss notes for IR data that STEP does not carry. CADIR and SLDPRT export command reports currently contain an empty export-loss list. CADIR is IR serialization; the SLDPRT encoder rejects unsupported inputs instead of producing a substantive loss report. Decode losses remain present in the command report when export or convert started from native CAD.
+STEP export returns substantive export loss notes for IR data that STEP does not carry. CADIR, F3D, and SLDPRT export command reports currently contain an empty export-loss list. CADIR is IR serialization; the native encoders reject unsupported inputs instead of producing a substantive loss report. Decode losses remain present in the command report when export or convert started from native CAD.
 
 The [format support profiles](format-support.md) record read, write, and round-trip capability by semantic domain.
 
@@ -41,7 +41,7 @@ The [format support profiles](format-support.md) record read, write, and round-t
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`              | CLI orchestration for `inspect`, `decode`, `validate`, `export`, `diff`, and `convert`; built-in codec registration; CADIR, STEP, and SLDPRT output dispatch.                                           |
 | `cadmpeg-ir`           | Layered version 1 IR model, canonical JSON, sparse provenance and exactness, native namespaces, structural diff, validation, codec traits, and report types.                                            |
-| `cadmpeg-codec-f3d`    | Fusion `.f3d` ZIP inspection; ASM/SAB B-rep, analytic and cached NURBS geometry, pcurves, transforms, attributes, appearances, Design/ACT records, and history decode.                                  |
+| `cadmpeg-codec-f3d`    | `.f3d` ZIP inspection; ASM/SAB B-rep, analytic and cached NURBS geometry, pcurves, transforms, attributes, appearances, Design/ACT records, history decode, retained-source replay, and selected native edits. |
 | `cadmpeg-codec-sldprt` | SLDPRT block, directory, and cache-cell inspection; Parasolid analytic/NURBS B-rep, pcurves, appearances, feature lanes, history, and tessellation decode; retained-source and semantic SLDPRT writing. |
 | `cadmpeg-codec-catia`  | CATIA V5 `V5_CFV2` layout inspection; standard, zero-entity, E5, and object-stream carrier decode; conditional standard-nested topology reconstruction.                                                 |
 | `cadmpeg-codec-nx`     | NX `SPLMSSTR` extraction; Parasolid analytic and NURBS carriers, supported trimmed-curve bindings, and conditional topology reconstruction.                                                             |

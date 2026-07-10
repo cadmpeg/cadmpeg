@@ -67,7 +67,7 @@ wrote part.step (2125 entities)
 
 The repository contains five native-format codecs:
 
-- **Fusion 360 `.f3d`:** partial B-rep, design-record, and appearance decode.
+- **Fusion 360 `.f3d`:** partial B-rep, design-record, and appearance decode, plus selected native edits.
 - **SolidWorks `.sldprt`:** partial semantic read, native write, and round-trip support.
 - **Siemens NX `.prt`:** partial analytic, NURBS, trimmed-curve, and topology decode.
 - **CATIA V5 `.CATPart`:** partial analytic and freeform decode with conditional B-rep topology.
@@ -101,7 +101,7 @@ cadmpeg convert  part.f3d -f step -o part.step
 cadmpeg diff     a.cadir.json b.cadir.json
 ```
 
-Output formats are `cadir`, `step`, and `sldprt`; `json` remains an alias for `cadir`. When `-f` is omitted, `export` and `convert` infer the format from `.cadir`, `.json`, `.step`, `.stp`, or `.sldprt` output paths. Use `--input-format` to bypass source-format detection.
+Output formats are `cadir`, `step`, `f3d`, and `sldprt`; `json` remains an alias for `cadir`. When `-f` is omitted, `export` and `convert` infer the format from `.cadir`, `.json`, `.step`, `.stp`, `.f3d`, or `.sldprt` output paths. Use `--input-format` to bypass source-format detection.
 
 Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 2`. This command-envelope version is independent of the CAD IR's `ir_version: "1"`.
 

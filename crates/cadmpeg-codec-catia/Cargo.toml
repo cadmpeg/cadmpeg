@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-catia"
-description = "Decoder for Dassault Systèmes CATIA V5 .CATPart files: V5_CFV2 container enumeration, storage-variant detection, and direct standard, zero-entity, E5, and freeform carrier decoding."
+description = "Read geometry and topology from .CATPart files."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/cadmpeg-codec-catia"
+keywords = ["cad", "catia", "catpart", "brep", "geometry"]
+categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
 cadmpeg-ir.workspace = true

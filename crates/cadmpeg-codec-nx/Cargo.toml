@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-nx"
-description = "Decoder for Siemens NX .prt files: SPLMSSTR container enumeration, embedded Parasolid neutral-binary stream extraction, and topology/analytic-geometry decode with explicit loss reporting."
+description = "Read Parasolid geometry and topology from NX .prt files."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/cadmpeg-codec-nx"
+keywords = ["cad", "siemens-nx", "parasolid", "prt", "geometry"]
+categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
 cadmpeg-ir.workspace = true
