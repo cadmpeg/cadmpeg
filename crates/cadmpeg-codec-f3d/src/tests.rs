@@ -1219,12 +1219,15 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     object.self_guid = "91111111-2222-3333-4444-555555555555".into();
     object.parent_guid = Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef".into());
     object.revision = 9;
-    let act_guid = &mut edited
+    let act_guid = edited
         .native
         .f3d
         .as_mut()
         .expect("F3D native namespace")
-        .act_guids[0];
+        .act_guids
+        .iter_mut()
+        .find(|guid| guid.guid == "eeeeeeee-1111-2222-3333-ffffffffffff")
+        .expect("generated standalone ACT GUID");
     assert!(act_guid.guid_offset > act_guid.byte_offset);
     act_guid.guid = "ffffffff-1111-2222-3333-444444444444".into();
     let act_root = &mut edited
@@ -1239,6 +1242,69 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     act_root.registry_flag = 0;
     act_root.entity_id = "0_4".into();
     act_root.display_name = "(Renamed)".into();
+    let act_entity = &mut edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .act_entities[0];
+    assert!(act_entity.table_entity_id_offset.is_some());
+    assert!(act_entity.channel_entity_id_offset.is_some());
+    act_entity.channels.insert(
+        "Appearance".into(),
+        "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
+    );
+    let binding = &mut edited.model.appearance_bindings[0];
+    binding.id = binding.id.replace("0_985", "0_986");
+    binding.source_entity_id = Some("0_986".into());
+    binding.channels.insert(
+        "Appearance".into(),
+        "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
+    );
+    let lost_edge = &mut edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .lost_edge_references[0];
+    assert!(lost_edge.class_tag_offset > lost_edge.byte_offset);
+    lost_edge.class_tag = "420".into();
+    lost_edge.record_index = 4_700;
+    let assignment = &mut edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .design_material_assignments[0];
+    assert!(assignment.entity_id_offset > 0);
+    assignment.entity_id = "0_986".into();
+    assignment.entity_suffix = 986;
+    assignment.physical_token = Some("PrismMaterial-019".into());
+    assignment.visual_preset = Some("Prism-002".into());
+    edited.model.appearances[0].physical_token = Some("PrismMaterial-019".into());
+    edited.model.appearances[0].base_color = Some(cadmpeg_ir::topology::Color {
+        r: 0.8,
+        g: 0.6,
+        b: 0.4,
+        a: 1.0,
+    });
+    edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .act_entities[0]
+        .entity_id = "0_986".into();
+    assert_eq!(
+        edited.native.f3d.as_ref().unwrap().act_entities[0].entity_id,
+        edited
+            .native
+            .f3d
+            .as_ref()
+            .unwrap()
+            .design_material_assignments[0]
+            .entity_id
+    );
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -1295,6 +1361,96 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(act_root.registry_flag, 0);
     assert_eq!(act_root.entity_id, "0_4");
     assert_eq!(act_root.display_name, "(Renamed)");
+    let act_entity = &f3d_native(&round_trip.ir).act_entities[0];
+    assert_eq!(act_entity.entity_id, "0_986");
+    assert_eq!(
+        act_entity.channels.get("Appearance").map(String::as_str),
+        Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
+    );
+    let binding = &round_trip.ir.model.appearance_bindings[0];
+    assert_eq!(binding.source_entity_id.as_deref(), Some("0_986"));
+    assert_eq!(
+        binding.channels.get("Appearance").map(String::as_str),
+        Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
+    );
+    let lost_edge = &f3d_native(&round_trip.ir).lost_edge_references[0];
+    assert_eq!(lost_edge.class_tag, "420");
+    assert_eq!(lost_edge.record_index, 4_700);
+    assert_eq!(
+        f3d_native(&round_trip.ir).design_material_assignments[0].entity_id,
+        "0_986"
+    );
+    assert_eq!(
+        f3d_native(&round_trip.ir).design_material_assignments[0]
+            .visual_preset
+            .as_deref(),
+        Some("Prism-002")
+    );
+    assert_eq!(
+        round_trip.ir.model.appearances[0].physical_token.as_deref(),
+        Some("PrismMaterial-019")
+    );
+    assert_eq!(
+        round_trip.ir.model.appearances[0].base_color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 0.8,
+            g: 0.6,
+            b: 0.4,
+            a: 1.0,
+        })
+    );
+}
+
+#[test]
+fn generated_f3d_rejects_act_binding_divergence() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated ACT decode");
+    let mut edited = decoded.ir;
+    edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .act_entities[0]
+        .channels
+        .insert(
+            "Appearance".into(),
+            "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
+        );
+
+    let error = F3dCodec
+        .write_preserved(&edited, &mut Vec::new())
+        .expect_err("divergent ACT and appearance binding must fail");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+    ));
+}
+
+#[test]
+fn generated_f3d_rejects_material_assignment_divergence() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated material decode");
+    let mut edited = decoded.ir;
+    edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .design_material_assignments[0]
+        .physical_token = Some("PrismMaterial-019".into());
+
+    let error = F3dCodec
+        .write_preserved(&edited, &mut Vec::new())
+        .expect_err("divergent assignment and appearance must fail");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+    ));
 }
 
 #[test]
@@ -1915,6 +2071,253 @@ fn asm_header_parses_documented_fields() {
 fn asm_header_absent_on_non_asm_bytes() {
     assert!(asm_header::parse(b"not an asm stream at all").is_none());
     assert!(!asm_header::has_asm_magic(b"PK\x03\x04"));
+}
+
+/// The `BinaryFile4` fixed header (spec §3): 15-byte magic, four little-endian
+/// u32 words (release, record count, entity count, flags), then the same
+/// tagged string/double sequence as `BinaryFile8`.
+fn bf4_header_prefix(flags: u32) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend_from_slice(b"ASM BinaryFile4");
+    b.extend_from_slice(&22700u32.to_le_bytes()); // ASM release word
+    b.extend_from_slice(&0u32.to_le_bytes()); // record count (unwritten)
+    b.extend_from_slice(&2u32.to_le_bytes()); // entity count
+    b.extend_from_slice(&flags.to_le_bytes());
+    push_u8_string(&mut b, "Autodesk Neutron");
+    push_u8_string(&mut b, "ASM 227.5.0.65535 NT");
+    push_u8_string(&mut b, "Mon Aug  8 02:39:24 2022");
+    push_tagged_f64(&mut b, 50.0); // scale
+    push_tagged_f64(&mut b, 1e-6); // resabs
+    push_tagged_f64(&mut b, 1e-10); // resnor
+    b
+}
+
+/// The minimal `BinaryFile4` active model slice: the planar-face graph of
+/// `synthetic_geometry_smbh` with 4-byte integer/ref fields, the ASM-227
+/// `lump` head for the body-subdivision record, and one edge resting on an
+/// ellipse arc whose stored range is negative.
+fn synthetic_geometry_bf4_smbh() -> Vec<u8> {
+    // Width-4 writers; the remaining tag writers are width-independent.
+    fn t_ref(b: &mut Vec<u8>, v: i32) {
+        b.push(0x0c);
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+    fn t_long(b: &mut Vec<u8>, v: i32) {
+        b.push(0x04);
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+
+    // Indices: 0 asmheader, 1 body, 2 lump, 3 shell, 4 face, 5 loop,
+    // 6 plane, 7/8/9 coedges, 10/11/12 edges, 13/14/15 vertices,
+    // 16/17/18 points, 19 ellipse.
+    let mut r = Vec::new();
+
+    // 0: asmheader
+    t_ident(&mut r, "asmheader");
+    push_u8_string(&mut r, "227.5.0.65535");
+    t_end(&mut r);
+
+    // 1: body  (chunk3 = first_lump)
+    t_ident(&mut r, "body");
+    t_ref(&mut r, -1); // 0 attrib
+    t_long(&mut r, 42); // 1 native ASM body key
+    t_ref(&mut r, -1); // 2 null
+    t_ref(&mut r, 2); // 3 first_lump
+    t_ref(&mut r, -1); // 4 wire
+    t_ref(&mut r, -1); // 5 transform
+    t_end(&mut r);
+
+    // 2: lump  (chunk4 = first_shell, chunk5 = owner_body)
+    t_ident(&mut r, "lump");
+    t_ref(&mut r, -1); // 0 next
+    t_long(&mut r, -1); // 1 history
+    t_ref(&mut r, -1); // 2 null
+    t_ref(&mut r, -1); // 3 null
+    t_ref(&mut r, 3); // 4 first_shell
+    t_ref(&mut r, 1); // 5 owner_body
+    t_end(&mut r);
+
+    // 3: shell  (chunk5 = first_face, chunk7 = owner_lump)
+    t_ident(&mut r, "shell");
+    t_ref(&mut r, -1); // 0 next
+    t_long(&mut r, -1); // 1 history
+    t_ref(&mut r, -1); // 2 null
+    t_ref(&mut r, -1); // 3 null
+    t_ref(&mut r, -1); // 4 null
+    t_ref(&mut r, 4); // 5 first_face
+    t_ref(&mut r, -1); // 6 wire
+    t_ref(&mut r, 2); // 7 owner_lump
+    t_end(&mut r);
+
+    // 4: face
+    t_ident(&mut r, "face");
+    t_ref(&mut r, -1); // 0 attrib
+    t_long(&mut r, -1); // 1 history
+    t_ref(&mut r, -1); // 2 null
+    t_ref(&mut r, -1); // 3 next_face
+    t_ref(&mut r, 5); // 4 first_loop
+    t_ref(&mut r, 3); // 5 owner_shell
+    t_ref(&mut r, -1); // 6 null
+    t_ref(&mut r, 6); // 7 surface
+    r.push(0x0b); // 8 sense = forward
+    r.push(0x0b); // 9 sides = single
+    t_end(&mut r);
+
+    // 5: loop
+    t_ident(&mut r, "loop");
+    t_ref(&mut r, -1); // 0 attrib
+    t_long(&mut r, -1); // 1 history
+    t_ref(&mut r, -1); // 2 null
+    t_ref(&mut r, -1); // 3 next_loop
+    t_ref(&mut r, 7); // 4 first_coedge
+    t_ref(&mut r, 4); // 5 owner_face
+    t_end(&mut r);
+
+    // 6: plane-surface
+    t_subident(&mut r, "plane");
+    t_ident(&mut r, "surface");
+    t_ref(&mut r, -1);
+    t_long(&mut r, -1);
+    t_ref(&mut r, -1);
+    t_pos(&mut r, [0.0, 0.0, 0.0]);
+    t_vec(&mut r, [0.0, 0.0, 1.0]);
+    t_vec(&mut r, [1.0, 0.0, 0.0]);
+    r.push(0x0b);
+    t_end(&mut r);
+
+    // 7/8/9: coedges forming the ring 7 -> 8 -> 9 -> 7
+    let coedges = [(8i32, 9, 10), (9, 7, 11), (7, 8, 12)];
+    for (next, prev, edge) in coedges {
+        t_ident(&mut r, "coedge");
+        t_ref(&mut r, -1); // 0 attrib
+        t_long(&mut r, -1); // 1 history
+        t_ref(&mut r, -1); // 2 null
+        t_ref(&mut r, next); // 3 next
+        t_ref(&mut r, prev); // 4 prev
+        t_ref(&mut r, -1); // 5 partner
+        t_ref(&mut r, edge); // 6 edge
+        r.push(0x0b); // 7 sense = forward
+        t_ref(&mut r, 5); // 8 owner_loop
+        t_long(&mut r, 0); // 9 reserved
+        t_ref(&mut r, -1); // 10 pcurve
+        t_end(&mut r);
+    }
+
+    // 10/11/12: edges. Edge 10 rests on the ellipse arc (19) with the stored
+    // ASM range [-π, -π/2]; edges 11/12 carry no curve.
+    let edges = [(13i32, 14, 19), (14, 15, -1), (15, 13, -1)];
+    for (start, end, curve) in edges {
+        t_ident(&mut r, "edge");
+        t_ref(&mut r, -1); // 0 attrib
+        t_long(&mut r, -1); // 1 history
+        t_ref(&mut r, -1); // 2 null
+        t_ref(&mut r, start); // 3 start_vertex
+        t_dbl(&mut r, -std::f64::consts::PI); // 4 t_start
+        t_ref(&mut r, end); // 5 end_vertex
+        t_dbl(&mut r, -std::f64::consts::FRAC_PI_2); // 6 t_end
+        t_ref(&mut r, -1); // 7 owner_coedge
+        t_ref(&mut r, curve); // 8 curve
+        r.push(0x0b); // 9 sense
+        push_u8_string(&mut r, "unknown"); // 10 continuity text
+        t_end(&mut r);
+    }
+
+    // 13/14/15: vertices
+    let verts = [(10i32, 16), (11, 17), (12, 18)];
+    for (edge, point) in verts {
+        t_ident(&mut r, "vertex");
+        t_ref(&mut r, -1); // 0 attrib
+        t_long(&mut r, -1); // 1 history
+        t_ref(&mut r, -1); // 2 null
+        t_ref(&mut r, edge); // 3 owning_edge
+        t_long(&mut r, 0); // 4 index_flag
+        t_ref(&mut r, point); // 5 point
+        t_end(&mut r);
+    }
+
+    // 16/17/18: points
+    let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    for p in points {
+        t_ident(&mut r, "point");
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_pos(&mut r, p);
+        t_long(&mut r, 1);
+        t_end(&mut r);
+    }
+
+    // 19: ellipse-curve (circle: ratio 1) carrying edge 10's arc.
+    t_subident(&mut r, "ellipse");
+    t_ident(&mut r, "curve");
+    t_ref(&mut r, -1); // attrib
+    t_long(&mut r, -1); // history
+    t_ref(&mut r, -1); // null
+    t_pos(&mut r, [0.5, 0.0, 0.0]); // center
+    t_vec(&mut r, [0.0, 0.0, 1.0]); // normal
+    t_vec(&mut r, [0.5, 0.0, 0.0]); // major axis (radius 0.5 cm)
+    t_dbl(&mut r, 1.0); // ratio
+    t_end(&mut r);
+
+    // History boundary.
+    t_ident(&mut r, "delta_state");
+
+    let mut out = bf4_header_prefix(5);
+    out.extend_from_slice(&r);
+    out
+}
+
+#[test]
+fn asm_header_parses_binaryfile4_fields() {
+    let bytes = bf4_header_prefix(5);
+    assert!(asm_header::has_asm_magic(&bytes));
+    let h = asm_header::parse(&bytes).expect("magic present");
+    assert_eq!(h.width, 4);
+    assert_eq!(h.release, Some(22700));
+    assert_eq!(h.record_count, Some(0));
+    assert_eq!(h.entity_count, Some(2));
+    assert_eq!(h.flags, Some(5));
+    assert_eq!(h.version_word, None);
+    assert_eq!(h.format_version, None);
+    assert_eq!(h.schema_version, None);
+    assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
+    assert_eq!(h.product_version.as_deref(), Some("ASM 227.5.0.65535 NT"));
+    assert_eq!(h.save_date.as_deref(), Some("Mon Aug  8 02:39:24 2022"));
+    assert_eq!(h.scale, Some(50.0));
+    assert_eq!(h.linear, Some(1e-6));
+    assert_eq!(h.angular, Some(1e-10));
+    // The record stream begins directly after the tolerance doubles.
+    assert_eq!(asm_header::record_stream_start(&bytes), Some(bytes.len()));
+}
+
+#[test]
+fn decodes_binaryfile4_geometry_with_lump_topology() {
+    let f3d = f3d_with_smbh(&synthetic_geometry_bf4_smbh());
+    let result = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.report.geometry_transferred);
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    // The ASM-227 `lump` head is emitted as the region record.
+    assert_eq!(result.ir.model.regions.len(), 1);
+    assert_eq!(result.ir.model.shells.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 3);
+    assert_eq!(result.ir.model.points.len(), 3);
+
+    // The circle arc's stored [-π, -π/2] range is shifted by the ratio-sign
+    // phase convention (+π/2) and wrapped into the canonical [0, τ] domain.
+    let arc = result
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.curve.is_some())
+        .expect("edge on the ellipse carrier");
+    let [start, end] = arc.param_range.expect("arc range");
+    assert!((start - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+    assert!((end - std::f64::consts::TAU).abs() < 1e-9);
 }
 
 #[test]

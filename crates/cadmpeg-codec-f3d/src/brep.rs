@@ -76,7 +76,6 @@ pub struct Brep {
     pub procedural_surfaces: Vec<ProceduralSurface>,
     /// Native procedural definitions for solved curve caches.
     pub procedural_curves: Vec<ProceduralCurve>,
-    /// Native analytic surface parameter frames.
     /// Typed sketch-curve provenance links.
     pub sketch_curve_links: Vec<SketchCurveLink>,
     /// Persistent design identifiers attached to solved entities.
@@ -772,6 +771,15 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             if (b - a).abs() >= std::f64::consts::TAU - 1.0e-12 {
                                 a = 0.0;
                                 b = std::f64::consts::TAU;
+                            } else {
+                                // Wrap the arc start into the canonical
+                                // `[0, τ)` domain, preserving the sweep.
+                                let sweep = b - a;
+                                a = a.rem_euclid(std::f64::consts::TAU);
+                                if std::f64::consts::TAU - a < 1.0e-9 {
+                                    a = 0.0;
+                                }
+                                b = a + sweep;
                             }
                         }
                     }
@@ -871,7 +879,9 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     free_vertices: Vec::new(),
                 });
             }
-            "region" => {
+            // ASM release 231 names this record `region`; release 227 streams
+            // carry the original ACIS head `lump`. Same layout in both.
+            "region" | "lump" => {
                 let Some(owner) = r.ref_at(5) else { continue };
                 let shells = shell_chain(r, &by_index);
                 out.regions.push(Region {
@@ -1002,7 +1012,16 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     let known_head = |h: &str| {
         matches!(
             h,
-            "body" | "region" | "shell" | "face" | "loop" | "coedge" | "edge" | "vertex" | "point"
+            "body"
+                | "region"
+                | "lump"
+                | "shell"
+                | "face"
+                | "loop"
+                | "coedge"
+                | "edge"
+                | "vertex"
+                | "point"
         ) || is_analytic_surface(h)
             || is_analytic_curve(h)
             || h == "asmheader"
@@ -1086,7 +1105,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 derived_fields,
             });
         }
-        let attribute_id = format!("f3d:attribute#{}", record.index);
+        let attribute_id = format!("f3d:brep:attribute#{}", record.index);
         if out
             .attributes
             .iter()
@@ -1209,10 +1228,7 @@ fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
         return None;
     };
     Some(SketchCurveLink {
-        id: format!(
-            "f3d:design:sketch-curve-link#{}:{sketch_curve_id}",
-            coedge.0
-        ),
+        id: format!("f3d:design:sketch-curve-link#{}", attribute_key(attribute)),
         coedge: coedge.clone(),
         sketch_curve_id: *sketch_curve_id,
         signed_reference: (*signed_reference != -1).then_some(*signed_reference),
@@ -1245,8 +1261,8 @@ fn persistent_design_links(attribute: &SourceAttribute) -> Vec<PersistentDesignL
         .enumerate()
         .map(|(ordinal, design_id)| PersistentDesignLink {
             id: format!(
-                "f3d:persistent-design-link:{:?}:{}:{ordinal}",
-                attribute.target, design_id
+                "f3d:design:persistent-design-link#{}:{ordinal}",
+                attribute_key(attribute)
             ),
             target: attribute.target.clone(),
             design_id,
@@ -1276,9 +1292,21 @@ fn collect_attributes(
     }
 }
 
+/// The numeric record-index key of an attribute id
+/// (`f3d:brep:attribute#<index>`), used to key records derived from that
+/// attribute.
+fn attribute_key(attribute: &SourceAttribute) -> &str {
+    attribute
+        .id
+        .0
+        .rsplit('#')
+        .next()
+        .unwrap_or(attribute.id.0.as_str())
+}
+
 fn source_attribute(record: &Record, target: AttributeTarget) -> SourceAttribute {
     SourceAttribute {
-        id: AttributeId(format!("f3d:attribute#{}", record.index)),
+        id: AttributeId(format!("f3d:brep:attribute#{}", record.index)),
         target,
         name: record.name.clone(),
         values: record.tokens.iter().map(attribute_value).collect(),

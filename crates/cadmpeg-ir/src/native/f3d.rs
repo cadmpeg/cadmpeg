@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::design::{
     ActEntity, ActGuid, ActRootComponent, ConstructionRecipe, DesignBodyMember, DesignEntityHeader,
-    DesignObject, DesignRecordHeader, LostEdgeReference, PersistentDesignLink, PersistentReference,
-    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
+    DesignMaterialAssignment, DesignObject, DesignRecordHeader, LostEdgeReference,
+    PersistentDesignLink, PersistentReference, SketchCurveIdentity, SketchCurveLink, SketchPoint,
+    SketchRelation,
 };
 use crate::history::AsmHistory;
 
@@ -24,6 +25,7 @@ macro_rules! f3d_arenas {
             design_entity_headers: DesignEntityHeader;
             design_record_headers: DesignRecordHeader;
             design_body_members: DesignBodyMember;
+            design_material_assignments: DesignMaterialAssignment;
             construction_recipes: ConstructionRecipe;
             persistent_design_links: PersistentDesignLink;
             persistent_references: PersistentReference;
@@ -74,6 +76,9 @@ pub struct F3dNative {
     /// `BodiesRoot` list members from the Design `BulkStream`.
     #[serde(default)]
     pub design_body_members: Vec<DesignBodyMember>,
+    /// Design entity-to-material assignment records.
+    #[serde(default)]
+    pub design_material_assignments: Vec<DesignMaterialAssignment>,
     /// Parametric regeneration recipes from the Design `BulkStream`.
     #[serde(default)]
     pub construction_recipes: Vec<ConstructionRecipe>,
@@ -114,6 +119,7 @@ impl Default for F3dNative {
             design_entity_headers: Vec::new(),
             design_record_headers: Vec::new(),
             design_body_members: Vec::new(),
+            design_material_assignments: Vec::new(),
             construction_recipes: Vec::new(),
             persistent_design_links: Vec::new(),
             persistent_references: Vec::new(),

@@ -94,7 +94,7 @@ Each `delta_state` body contains a BulletinBoard chain. A bulletin entry stores 
 
 ## 3. ASM binary header
 
-Streams begin with `ASM BinaryFile4<` or `ASM BinaryFile8<`. The digit selects the width of integer/ref tags (§4): `4` → tag + 4-byte LE signed; `8` → tag + low 32 bits + high 32 bits (consume the full 9-byte field). Fusion streams are `BinaryFile8`.
+Streams begin with `ASM BinaryFile8<` (16-byte magic) or `ASM BinaryFile4` (15-byte magic; there is no `<`). The digit selects the width of integer/ref tags (§4): `4` → tag + 4-byte LE signed; `8` → tag + low 32 bits + high 32 bits (consume the full 9-byte field). Fusion writes both widths; ASM-227-era streams are `BinaryFile4` and ASM-231-era streams are `BinaryFile8`.
 
 `BinaryFile8` header layout:
 
@@ -106,7 +106,21 @@ Streams begin with `ASM BinaryFile4<` or `ASM BinaryFile8<`. The digit selects t
 | `32..39` | big-endian u64 = `3` (constant: ASM binary format version)         |
 | `40..47` | big-endian u64 = `7` (ASM binary schema version)                   |
 
-Byte 47 is both the low byte of the schema-version word and the `0x07` tag of the first string. The remaining header is a sequence rather than a fixed-offset structure:
+Byte 47 is both the low byte of the schema-version word and the `0x07` tag of the first string.
+
+`BinaryFile4` header layout (the classic ACIS save header, little-endian):
+
+| Bytes    | Meaning                                                                                |
+| -------- | -------------------------------------------------------------------------------------- |
+| `0..15`  | magic `ASM BinaryFile4`                                                                |
+| `15..19` | little-endian u32 ASM release word (`22700` on ASM 227 streams)                        |
+| `19..23` | little-endian u32 record count (`0` when unwritten)                                    |
+| `23..27` | little-endian u32 entity count                                                         |
+| `27..31` | little-endian u32 flags; bit 0 is set iff the stream carries a history partition (§4a) |
+
+The string region begins at byte 31.
+
+In both widths the remaining header is a sequence rather than a fixed-offset structure:
 
 ```
 0x07 u8_len UTF8[product_family]
@@ -119,9 +133,9 @@ Byte 47 is both the low byte of the schema-version word and the `0x07` tag of th
 
 Header invariants:
 
-- The words at 24/32/40 are **big-endian**; the rest of the stream is little-endian.
+- The `BinaryFile8` words at 24/32/40 are **big-endian**; everything else in either width is little-endian.
 - Word @24 is a header version/save word, not a model-space quantity.
-- `scale`, `resabs`, and `resnor` are kernel metadata. `scale` is not a coordinate transform. Fusion `BinaryFile8` streams use `scale = 60.0`, `resabs = 1e-6`, and `resnor = 1e-10`; an ASM-229 `BinaryFile4` stream uses `scale = 90.0`.
+- `scale`, `resabs`, and `resnor` are kernel metadata. `scale` is not a coordinate transform. Fusion `BinaryFile8` streams use `scale = 60.0`, `resabs = 1e-6`, and `resnor = 1e-10`; ASM-227 `BinaryFile4` streams use `scale = 50.0` with the same tolerances; an ASM-229 `BinaryFile4` stream uses `scale = 90.0`.
 
 ---
 
@@ -172,7 +186,7 @@ Non-ASM (pure ACIS) and SpaceClaim SAB streams use version-gated padding absent 
 
 ## 5. Unit rules
 
-- Fusion `BinaryFile8` model-space lengths are stored in centimetres.
+- Fusion model-space lengths are stored in centimetres in both widths.
 - Model-space points, radii, length-bearing vectors, 3D control points, and length tolerances convert to millimetres by ×10.
 - Unit vectors, ratios, angles, knot parameters, non-length enums, homogeneous weights, and UV pcurve coordinates are dimensionless.
 - The header `scale` field is metadata, not a coordinate multiplier (§3).
@@ -202,7 +216,7 @@ Every `Entity` record begins with an `attrib` ref (chain head, `-1` if none) and
 
 ### 6.2 Fusion-ASM byte layouts (`BinaryFile8`, fixed sizes)
 
-All records of a given class are fixed-size on Fusion files. Offsets are record-relative from the leading `0x11`; ref/int chunks are 9 bytes.
+All records of a given class are fixed-size on Fusion files. Offsets are record-relative from the leading `0x11`; ref/int chunks are 9 bytes. On `BinaryFile4` streams ref/int chunks are 5 bytes and the offsets scale accordingly.
 
 **Body (61 B):** `chunk[1]` (@+16, i64) is `history / body flags`, the **`asm_body_key`** joined to the design-side body map (§8). `chunk[3]` @+34 = first_lump, `chunk[4]` @+43 = first_wire or `-1`, `chunk[5]` @+52 = transform or `-1`.
 

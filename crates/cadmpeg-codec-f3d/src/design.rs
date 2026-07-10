@@ -155,10 +155,13 @@ pub fn decode_lost_edge_references(
             };
             out.push(LostEdgeReference {
                 id: format!("f3d:{}:lost-edge-reference#{offset}", entry.name),
+                byte_offset: offset as u64,
+                class_tag_offset: (payload + 4) as u64,
                 class_tag: String::from_utf8_lossy(class_tag).into_owned(),
                 record_index: u32::from_le_bytes(index.try_into().expect(
                     "invariant: index is a 4-byte slice from bytes.get(range) of length 4",
                 )),
+                record_index_offset: (payload + 7) as u64,
             });
         }
     }

@@ -2,11 +2,12 @@
 //! Fusion `.protein` appearance asset decoding.
 
 use std::collections::BTreeMap;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Write};
 
 use cadmpeg_ir::appearance::Appearance;
 use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::design::DesignMaterialAssignment;
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
 use cadmpeg_ir::topology::Color;
 
@@ -14,6 +15,121 @@ use crate::container::{self, role, ContainerScan};
 
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
+
+pub(crate) fn patch_protein_base_colors(
+    protein: &[u8],
+    edits: &BTreeMap<String, Color>,
+) -> Result<Vec<u8>, CodecError> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
+        CodecError::Malformed(format!("cannot open nested Protein ZIP: {error}"))
+    })?;
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let mut patched = std::collections::BTreeSet::new();
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|error| {
+            CodecError::Malformed(format!("cannot read nested Protein entry: {error}"))
+        })?;
+        let name = entry.name().to_owned();
+        let options =
+            zip::write::SimpleFileOptions::default().compression_method(entry.compression());
+        let mut bytes = Vec::with_capacity(entry.size() as usize);
+        entry.read_to_end(&mut bytes)?;
+        if name.ends_with("AssetData/InstanceProperties.bin") {
+            patch_instance_colors(&mut bytes, edits, &mut patched)?;
+        }
+        zip.start_file(name, options).map_err(|error| {
+            CodecError::Malformed(format!("cannot write nested Protein entry: {error}"))
+        })?;
+        zip.write_all(&bytes)?;
+    }
+    if patched.len() != edits.len() {
+        return Err(CodecError::NotImplemented(
+            "one or more edited F3D appearances have no writable Protein color carrier".into(),
+        ));
+    }
+    Ok(zip
+        .finish()
+        .map_err(|error| CodecError::Malformed(format!("cannot finish Protein ZIP: {error}")))?
+        .into_inner())
+}
+
+fn patch_instance_colors(
+    bytes: &mut [u8],
+    edits: &BTreeMap<String, Color>,
+    patched: &mut std::collections::BTreeSet<String>,
+) -> Result<(), CodecError> {
+    let logical = dechunk(bytes).ok_or_else(|| {
+        CodecError::Malformed("cannot map Protein InstanceProperties pages".into())
+    })?;
+    let starts = logical
+        .windows(RECORD_MARKER.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == RECORD_MARKER).then_some(offset))
+        .collect::<Vec<_>>();
+    for start in starts {
+        let record = &logical[start..];
+        let mut position = RECORD_MARKER.len();
+        let schema = take_lp(record, &mut position).ok_or_else(|| {
+            CodecError::Malformed("Protein appearance schema is truncated".into())
+        })?;
+        let guid = take_lp(record, &mut position)
+            .ok_or_else(|| CodecError::Malformed("Protein appearance GUID is truncated".into()))?;
+        let _ = take_lp(record, &mut position);
+        let _ = take_lp(record, &mut position);
+        let Some(color) = edits.get(&guid) else {
+            continue;
+        };
+        let relative = match schema.as_str() {
+            "GenericSchema" => position + 112 + generic_connection_delta(record, position),
+            "PrismOpaqueSchema" | "PrismMetalSchema" => position + 8,
+            "PrismTransparentSchema" => position + 121,
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "Protein schema {schema} has no writable color carrier"
+                )))
+            }
+        };
+        for (ordinal, value) in [color.r, color.g, color.b, color.a].into_iter().enumerate() {
+            let logical_offset = start + relative + ordinal * 8;
+            for byte in 0..8 {
+                let physical =
+                    logical_to_physical(bytes, logical_offset + byte).ok_or_else(|| {
+                        CodecError::Malformed(
+                            "Protein color offset is outside paged storage".into(),
+                        )
+                    })?;
+                bytes[physical] = f64::from(value).to_le_bytes()[byte];
+            }
+        }
+        patched.insert(guid);
+    }
+    Ok(())
+}
+
+fn logical_to_physical(bytes: &[u8], logical_offset: usize) -> Option<usize> {
+    let mut logical_start = 0usize;
+    for (index, page) in bytes.get(16..)?.chunks_exact(PAGE_SIZE).enumerate() {
+        let (physical_in_page, length) = if page.get(4..8) == Some(RECORD_MARKER) {
+            (4, PAGE_SIZE - 4)
+        } else if page.get(4..8) == Some(b"\x80\x00\x00\x00") {
+            (8, PAGE_SIZE - 8)
+        } else if page.get(0..4) == Some(b"\xff\xff\xff\xff") {
+            (
+                8,
+                u16::from_le_bytes(page.get(4..6)?.try_into().ok()?) as usize,
+            )
+        } else {
+            return None;
+        };
+        if logical_offset < logical_start + length {
+            return Some(
+                16 + index * PAGE_SIZE + physical_in_page + logical_offset - logical_start,
+            );
+        }
+        logical_start += length;
+    }
+    None
+}
 
 /// Decoded appearance assets and body bindings from a single `decode` pass:
 /// the merged `.protein`/design/ACT appearance records ([`Appearance`]) and
@@ -109,20 +225,10 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
     })
 }
 
-#[derive(Debug)]
-struct DesignAssignment {
-    asm_body_key: u64,
-    entity_suffix: u64,
-    entity_id: String,
-    visual_guid: String,
-    physical_token: Option<String>,
-    visual_preset: Option<String>,
-}
-
-fn decode_design_assignments(
+pub(crate) fn decode_design_assignments(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
-) -> Result<Vec<DesignAssignment>, CodecError> {
+) -> Result<Vec<DesignMaterialAssignment>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -136,15 +242,15 @@ fn decode_design_assignments(
             if !value.starts_with("PrismMaterial") || value.contains("_physmat_aspects") {
                 continue;
             }
-            let entity_id = strings[..index]
+            let entity_field = strings[..index]
                 .iter()
                 .rev()
                 .take(10)
-                .find_map(|(_, candidate)| entity_suffix(candidate).map(|_| candidate.clone()));
-            let Some(entity_id) = entity_id else {
+                .find(|(_, candidate)| entity_suffix(candidate).is_some());
+            let Some((entity_offset, entity_id)) = entity_field else {
                 continue;
             };
-            let entity_suffix = entity_suffix(&entity_id).expect(
+            let entity_suffix = entity_suffix(entity_id).expect(
                 "invariant: entity_id was selected because entity_suffix(entity_id) is Some",
             );
             let Some(ba5e_index) = strings
@@ -158,28 +264,35 @@ fn decode_design_assignments(
             else {
                 continue;
             };
-            let Some((_, visual_guid)) = ba5e_index.checked_sub(1).and_then(|i| strings.get(i))
+            let Some((visual_guid_offset, visual_guid)) =
+                ba5e_index.checked_sub(1).and_then(|i| strings.get(i))
             else {
                 continue;
             };
             if visual_guid.len() != 36 {
                 continue;
             }
-            let visual_preset = strings
+            let visual_preset_field = strings
                 .get(ba5e_index + 1)
-                .map(|(_, value)| value.clone())
-                .filter(|value| value.starts_with("Prism-"));
-            if let Some((&asm_body_key, _)) = body_map
+                .filter(|(_, value)| value.starts_with("Prism-"));
+            if let Some((&asm_body_key, &(_, suffix_offset))) = body_map
                 .iter()
-                .find(|(_, suffix)| **suffix == entity_suffix)
+                .find(|(_, (suffix, _))| *suffix == entity_suffix)
             {
-                out.push(DesignAssignment {
+                out.push(DesignMaterialAssignment {
+                    id: format!("f3d:{}:material-assignment#{entity_offset}", entry.name),
                     asm_body_key,
                     entity_suffix,
-                    entity_id,
+                    entity_suffix_offset: suffix_offset as u64,
+                    entity_id: entity_id.clone(),
+                    entity_id_offset: (*entity_offset + 4) as u64,
                     visual_guid: visual_guid.clone(),
+                    visual_guid_offset: (*visual_guid_offset + 4) as u64,
                     physical_token: Some(value.clone()),
-                    visual_preset,
+                    physical_token_offset: Some((strings[index].0 + 4) as u64),
+                    visual_preset: visual_preset_field.map(|(_, value)| value.clone()),
+                    visual_preset_offset: visual_preset_field
+                        .map(|(offset, _)| (*offset + 4) as u64),
                 });
             }
         }
@@ -189,7 +302,7 @@ fn decode_design_assignments(
 
 fn bind_bodies<S: std::hash::BuildHasher>(
     appearances: &[Appearance],
-    assignments: &[DesignAssignment],
+    assignments: &[DesignMaterialAssignment],
     act_channels: &std::collections::HashMap<u64, BTreeMap<String, String>>,
     object_types: &std::collections::HashMap<u64, String>,
     body_keys: &std::collections::HashMap<BodyId, u64, S>,
@@ -397,7 +510,7 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
     out
 }
 
-fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, u64> {
+fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize)> {
     let mut out = std::collections::HashMap::new();
     let needle: Vec<u8> = "BREP.".encode_utf16().flat_map(u16::to_le_bytes).collect();
     for offset in bytes
@@ -421,17 +534,23 @@ fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, u64> {
             {
                 continue;
             }
-            for pair in bytes[count_pos + 4..count_pos + 4 + count * 16].chunks_exact(16) {
+            for (index, pair) in bytes[count_pos + 4..count_pos + 4 + count * 16]
+                .chunks_exact(16)
+                .enumerate()
+            {
                 out.insert(
                     u64::from_le_bytes(
                         pair[..8]
                             .try_into()
                             .expect("invariant: pair is a 16-byte slice, so pair[..8] is 8 bytes"),
                     ),
-                    u64::from_le_bytes(
-                        pair[8..]
-                            .try_into()
-                            .expect("invariant: pair is a 16-byte slice, so pair[8..] is 8 bytes"),
+                    (
+                        u64::from_le_bytes(
+                            pair[8..].try_into().expect(
+                                "invariant: pair is a 16-byte slice, so pair[8..] is 8 bytes",
+                            ),
+                        ),
+                        count_pos + 4 + index * 16 + 8,
                     ),
                 );
             }

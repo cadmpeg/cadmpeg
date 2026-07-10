@@ -15,6 +15,9 @@ This document records F3D semantics that the format specification does not yet d
 - The authoritative B-rep entry relation among multiple `.smb` or `.smbh` entries is unresolved. Filename extension, archive order, face count, and the relative size of the history partition do not define that relation.
 - The relation between `.smb` and `.smbh` stream forms, including the presence of a history partition, is unresolved.
 - The per-file-varying ASM header word at offset 24 has no assigned semantic meaning.
+- The `BinaryFile4` header flags word: bits above bit 0 have no assigned semantic meaning (bit 2 is set on both observed stream forms).
+- The `BinaryFile4` release word encodes the ASM major release ×100 (`22700` on ASM 227.5 streams); whether the minor release is ever encoded is unresolved.
+- The `BinaryFile4` entity-count word's counting rule (which records it counts) is unresolved.
 - The semantic meaning of `design_record_header_flag` is unspecified. Its relationship to UI visibility and explicit appearance assignment is unresolved.
 - The semantic role of the second `0x01`-marker u32 in an ACT counter/registry record is unresolved.
 - The terminating-group framing of multi-token `generic_tag_attrib_def` records is unresolved.

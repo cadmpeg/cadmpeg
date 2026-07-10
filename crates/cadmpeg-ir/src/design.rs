@@ -121,10 +121,49 @@ pub struct PersistentReference {
 pub struct LostEdgeReference {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Byte offset of the `EDGE_REFERENCE_LOST` marker in its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Byte offset of the three-byte class tag.
+    pub class_tag_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag of the unresolved record.
     pub class_tag: String,
     /// Source `BulkStream` record index of the unresolved edge selection.
     pub record_index: u32,
+    /// Byte offset of `record_index`.
+    pub record_index_offset: u64,
+}
+
+/// One Design `BulkStream` material assignment joining a design entity to visual assets.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignMaterialAssignment {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// ASM body key resolved through the Design body map.
+    pub asm_body_key: u64,
+    /// Numeric suffix of `entity_id`.
+    pub entity_suffix: u64,
+    /// Byte offset of the body-map entity suffix.
+    pub entity_suffix_offset: u64,
+    /// UTF-16 design-entity id.
+    pub entity_id: String,
+    /// Byte offset of the UTF-16 entity-id code units.
+    pub entity_id_offset: u64,
+    /// Visual asset GUID.
+    pub visual_guid: String,
+    /// Byte offset of the UTF-16 visual-GUID code units.
+    pub visual_guid_offset: u64,
+    /// Physical-material token, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physical_token: Option<String>,
+    /// Byte offset of the UTF-16 physical token, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physical_token_offset: Option<u64>,
+    /// Visual preset name, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visual_preset: Option<String>,
+    /// Byte offset of the UTF-16 preset name, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visual_preset_offset: Option<u64>,
 }
 
 /// Design `MetaStream` object class.

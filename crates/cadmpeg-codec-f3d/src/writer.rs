@@ -5,7 +5,10 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecError, DecodeOptions};
-use cadmpeg_ir::design::{ActGuid, ActRootComponent, SketchCurveGeometry};
+use cadmpeg_ir::design::{
+    ActEntity, ActGuid, ActRootComponent, DesignMaterialAssignment, LostEdgeReference,
+    SketchCurveGeometry,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::history::{
@@ -61,8 +64,13 @@ pub fn write_semantic(
     let body_member_edits = validate_body_member_edits(&baseline.ir, target)?;
     let entity_header_edits = validate_entity_header_edits(&baseline.ir, target)?;
     let design_object_edits = validate_design_object_edits(&baseline.ir, target)?;
+    let lost_edge_edits = validate_lost_edge_edits(&baseline.ir, target)?;
+    let material_assignment_edits = validate_material_assignment_edits(&baseline.ir, target)?;
+    let protein_color_edits = validate_material_assignment_appearances(&baseline.ir, target)?;
     let act_guid_edits = validate_act_guid_edits(&baseline.ir, target)?;
     let act_root_edits = validate_act_root_edits(&baseline.ir, target)?;
+    let act_entity_edits = validate_act_entity_edits(&baseline.ir, target)?;
+    validate_act_appearance_bindings(&baseline.ir, target)?;
     let body_transform_edits =
         validate_body_transform_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
     let mut entity_color_edits =
@@ -108,6 +116,14 @@ pub fn write_semantic(
         .model
         .coedges
         .clone_from(&target.model.coedges);
+    supported_target
+        .model
+        .appearance_bindings
+        .clone_from(&target.model.appearance_bindings);
+    supported_target
+        .model
+        .appearances
+        .clone_from(&target.model.appearances);
     if let (Some(supported), Some(target_native)) = (
         supported_target.native.f3d.as_mut(),
         target.native.f3d.as_ref(),
@@ -136,10 +152,19 @@ pub fn write_semantic(
         supported
             .design_objects
             .clone_from(&target_native.design_objects);
+        supported
+            .lost_edge_references
+            .clone_from(&target_native.lost_edge_references);
+        supported
+            .design_material_assignments
+            .clone_from(&target_native.design_material_assignments);
         supported.act_guids.clone_from(&target_native.act_guids);
         supported
             .act_root_components
             .clone_from(&target_native.act_root_components);
+        supported
+            .act_entities
+            .clone_from(&target_native.act_entities);
         supported
             .asm_histories
             .clone_from(&target_native.asm_histories);
@@ -318,6 +343,9 @@ pub fn write_semantic(
                 patch_history_states(&mut bytes, edits)?;
             }
         } else {
+            if name.ends_with(".protein") && !protein_color_edits.is_empty() {
+                bytes = crate::materials::patch_protein_base_colors(&bytes, &protein_color_edits)?;
+            }
             if let Some(edits) = sketch_point_edits.get(&name) {
                 patch_sketch_points(&mut bytes, edits)?;
             }
@@ -342,11 +370,20 @@ pub fn write_semantic(
             if let Some(edits) = design_object_edits.get(&name) {
                 patch_design_objects(&mut bytes, edits)?;
             }
+            if let Some(edits) = lost_edge_edits.get(&name) {
+                patch_lost_edge_references(&mut bytes, edits)?;
+            }
+            if let Some(edits) = material_assignment_edits.get(&name) {
+                patch_material_assignments(&mut bytes, edits)?;
+            }
             if let Some(edits) = act_guid_edits.get(&name) {
                 patch_act_guids(&mut bytes, edits)?;
             }
             if let Some(edits) = act_root_edits.get(&name) {
                 patch_act_roots(&mut bytes, edits)?;
+            }
+            if let Some(edits) = act_entity_edits.get(&name) {
+                patch_act_entities(&mut bytes, edits)?;
             }
         }
         zip.start_file(name, options)
@@ -364,7 +401,545 @@ pub fn write_semantic(
 type SketchPointEdit = (u64, u32, cadmpeg_ir::math::Point2);
 type PersistentReferenceEdit = (u64, u32, u64);
 type BodyMemberEdit = (u64, u64, u16);
+
+fn validate_material_assignment_appearances(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<String, Color>, CodecError> {
+    let baseline_appearances = baseline
+        .model
+        .appearances
+        .iter()
+        .map(|appearance| (appearance.id.as_str(), appearance))
+        .collect::<BTreeMap<_, _>>();
+    let target_appearances = target
+        .model
+        .appearances
+        .iter()
+        .map(|appearance| (appearance.id.as_str(), appearance))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_appearances.keys().ne(target_appearances.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D material regeneration requires the unchanged appearance-id set".into(),
+        ));
+    }
+    let target_assignments = target
+        .native
+        .f3d
+        .as_ref()
+        .map(|native| &native.design_material_assignments[..])
+        .unwrap_or_default();
+    let baseline_assignments = baseline
+        .native
+        .f3d
+        .as_ref()
+        .map(|native| &native.design_material_assignments[..])
+        .unwrap_or_default();
+    let mut color_edits = BTreeMap::new();
+    for (id, before) in baseline_appearances {
+        let after = target_appearances[id];
+        let mut normalized = after.clone();
+        normalized.physical_token.clone_from(&before.physical_token);
+        normalized.base_color = before.base_color;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D appearance edit changes fields outside physical token or Protein base color: {id}"
+            )));
+        }
+        if after.base_color != before.base_color {
+            let color = after.base_color.ok_or_else(|| {
+                CodecError::NotImplemented(format!("cannot remove F3D appearance color: {id}"))
+            })?;
+            if before.base_color.is_none()
+                || ![color.r, color.g, color.b, color.a]
+                    .into_iter()
+                    .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
+                || color.a != 1.0
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Protein color {id} must replace an existing opaque finite RGBA color"
+                )));
+            }
+            let guid = after.visual_guid.clone().ok_or_else(|| {
+                CodecError::NotImplemented(format!("F3D appearance {id} has no visual GUID"))
+            })?;
+            color_edits.insert(guid, color);
+        }
+        if after.physical_token == before.physical_token {
+            continue;
+        }
+        let synchronized = target_assignments.iter().any(|assignment| {
+            after.visual_guid.as_deref() == Some(assignment.visual_guid.as_str())
+                && after.physical_token == assignment.physical_token
+        });
+        if !synchronized {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D appearance {id} changed without a synchronized material assignment"
+            )));
+        }
+    }
+    for before in baseline_assignments {
+        let Some(after) = target_assignments
+            .iter()
+            .find(|assignment| assignment.id == before.id)
+        else {
+            continue;
+        };
+        if after.physical_token != before.physical_token
+            && !target.model.appearances.iter().any(|appearance| {
+                appearance.visual_guid.as_deref() == Some(after.visual_guid.as_str())
+                    && appearance.physical_token == after.physical_token
+            })
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D material assignment {} changed without its appearance physical token",
+                before.id
+            )));
+        }
+    }
+    Ok(color_edits)
+}
+
+fn validate_material_assignment_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<String, Vec<DesignMaterialAssignment>>, CodecError> {
+    let baseline = baseline
+        .native
+        .f3d
+        .as_ref()
+        .map(|native| &native.design_material_assignments[..])
+        .unwrap_or_default();
+    let target = target
+        .native
+        .f3d
+        .as_ref()
+        .map(|native| &native.design_material_assignments[..])
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|assignment| (assignment.id.as_str(), assignment))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target
+        .iter()
+        .map(|assignment| (assignment.id.as_str(), assignment))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D material-assignment regeneration requires the unchanged assignment-id set".into(),
+        ));
+    }
+    let mut edits: BTreeMap<String, Vec<DesignMaterialAssignment>> = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.entity_id.clone_from(&before.entity_id);
+        normalized.entity_suffix = before.entity_suffix;
+        normalized.visual_guid.clone_from(&before.visual_guid);
+        normalized.physical_token.clone_from(&before.physical_token);
+        normalized.visual_preset.clone_from(&before.visual_preset);
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D material-assignment edit changes fields outside writable strings: {id}"
+            )));
+        }
+        if after == before {
+            continue;
+        }
+        let suffix = after
+            .entity_id
+            .rsplit_once('_')
+            .and_then(|(_, suffix)| suffix.parse::<u64>().ok())
+            .ok_or_else(|| CodecError::Malformed(format!("invalid assignment entity id: {id}")))?;
+        if suffix != after.entity_suffix {
+            return Err(CodecError::Malformed(format!(
+                "F3D assignment entity id and suffix disagree: {id}"
+            )));
+        }
+        validate_utf16_replacement(id, &before.entity_id, &after.entity_id)?;
+        validate_utf16_replacement(id, &before.visual_guid, &after.visual_guid)?;
+        validate_optional_utf16_replacement(
+            id,
+            before.physical_token.as_deref(),
+            after.physical_token.as_deref(),
+        )?;
+        validate_optional_utf16_replacement(
+            id,
+            before.visual_preset.as_deref(),
+            after.visual_preset.as_deref(),
+        )?;
+        edits
+            .entry(native_stream(id, ":material-assignment#")?)
+            .or_default()
+            .push(after.clone());
+    }
+    Ok(edits)
+}
+
+fn validate_utf16_replacement(id: &str, before: &str, after: &str) -> Result<(), CodecError> {
+    if before.encode_utf16().count() != after.encode_utf16().count() {
+        return Err(CodecError::NotImplemented(format!(
+            "F3D native string {id} must retain its UTF-16 length"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_optional_utf16_replacement(
+    id: &str,
+    before: Option<&str>,
+    after: Option<&str>,
+) -> Result<(), CodecError> {
+    match (before, after) {
+        (Some(before), Some(after)) => validate_utf16_replacement(id, before, after),
+        (None, None) => Ok(()),
+        _ => Err(CodecError::NotImplemented(format!(
+            "cannot add or remove F3D native string carrier: {id}"
+        ))),
+    }
+}
+
+fn patch_material_assignments(
+    bytes: &mut [u8],
+    edits: &[DesignMaterialAssignment],
+) -> Result<(), CodecError> {
+    for assignment in edits {
+        let suffix_start = usize::try_from(assignment.entity_suffix_offset).map_err(|_| {
+            CodecError::Malformed("material-assignment suffix offset exceeds address space".into())
+        })?;
+        bytes
+            .get_mut(suffix_start..suffix_start + 8)
+            .ok_or_else(|| CodecError::Malformed("material-assignment suffix is truncated".into()))?
+            .copy_from_slice(&assignment.entity_suffix.to_le_bytes());
+        patch_utf16_if_changed(
+            bytes,
+            assignment.entity_id_offset,
+            &assignment.entity_id,
+            "material-assignment entity id",
+        )?;
+        patch_utf16_if_changed(
+            bytes,
+            assignment.visual_guid_offset,
+            &assignment.visual_guid,
+            "material-assignment visual GUID",
+        )?;
+        if let (Some(offset), Some(value)) = (
+            assignment.physical_token_offset,
+            assignment.physical_token.as_deref(),
+        ) {
+            patch_utf16_if_changed(bytes, offset, value, "material-assignment physical token")?;
+        }
+        if let (Some(offset), Some(value)) = (
+            assignment.visual_preset_offset,
+            assignment.visual_preset.as_deref(),
+        ) {
+            patch_utf16_if_changed(bytes, offset, value, "material-assignment visual preset")?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_lost_edge_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<String, Vec<LostEdgeReference>>, CodecError> {
+    let baseline = baseline
+        .native
+        .f3d
+        .as_ref()
+        .map(|native| &native.lost_edge_references[..])
+        .unwrap_or_default();
+    let target = target
+        .native
+        .f3d
+        .as_ref()
+        .map(|native| &native.lost_edge_references[..])
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|reference| (reference.id.as_str(), reference))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target
+        .iter()
+        .map(|reference| (reference.id.as_str(), reference))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D lost-edge regeneration requires the unchanged reference-id set".into(),
+        ));
+    }
+    let mut edits: BTreeMap<String, Vec<LostEdgeReference>> = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.class_tag.clone_from(&before.class_tag);
+        normalized.record_index = before.record_index;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D lost-edge edit changes fields outside its fixed payload: {id}"
+            )));
+        }
+        if after == before {
+            continue;
+        }
+        if after.class_tag.len() != 3 || !after.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D lost-edge class tag must contain three digits: {id}"
+            )));
+        }
+        edits
+            .entry(native_stream(id, ":lost-edge-reference#")?)
+            .or_default()
+            .push(after.clone());
+    }
+    Ok(edits)
+}
+
+fn patch_lost_edge_references(
+    bytes: &mut [u8],
+    edits: &[LostEdgeReference],
+) -> Result<(), CodecError> {
+    for reference in edits {
+        patch_bytes_at(
+            bytes,
+            reference.class_tag_offset,
+            reference.class_tag.as_bytes(),
+            "lost-edge class tag",
+        )?;
+        patch_u32_at(
+            bytes,
+            reference.record_index_offset,
+            reference.record_index,
+            "lost-edge record index",
+        )?;
+    }
+    Ok(())
+}
 type ActGuidEdit = (u64, Vec<u8>);
+
+fn validate_act_appearance_bindings(baseline: &CadIr, target: &CadIr) -> Result<(), CodecError> {
+    let baseline_entities = baseline
+        .native
+        .f3d
+        .as_ref()
+        .map(|native| &native.act_entities[..])
+        .unwrap_or_default();
+    let target_entities = target
+        .native
+        .f3d
+        .as_ref()
+        .map(|native| &native.act_entities[..])
+        .unwrap_or_default();
+    if baseline.model.appearance_bindings.len() != target.model.appearance_bindings.len() {
+        return Err(CodecError::NotImplemented(
+            "F3D ACT regeneration requires the unchanged appearance-binding count".into(),
+        ));
+    }
+    for before in &baseline.model.appearance_bindings {
+        let after = target
+            .model
+            .appearance_bindings
+            .iter()
+            .find(|binding| {
+                binding.target == before.target && binding.appearance == before.appearance
+            })
+            .ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "F3D appearance binding target or appearance changed: {}",
+                    before.id
+                ))
+            })?;
+        let mut normalized = after.clone();
+        normalized.id.clone_from(&before.id);
+        normalized
+            .source_entity_id
+            .clone_from(&before.source_entity_id);
+        normalized.channels.clone_from(&before.channels);
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D appearance binding edit changes fields outside its derived identity, source, or channels: {}",
+                before.id
+            )));
+        }
+        if after == before {
+            continue;
+        }
+        let before_entity = baseline_entities.iter().find(|entity| {
+            before.source_entity_id.as_deref() == Some(entity.entity_id.as_str())
+                && before.channels == entity.channels
+        });
+        let after_entity = before_entity.and_then(|before_entity| {
+            target_entities
+                .iter()
+                .find(|entity| entity.id == before_entity.id && after.channels == entity.channels)
+        });
+        if before_entity.is_none() || after_entity.is_none() {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D appearance binding {} must remain synchronized with one ACT entity",
+                before.id
+            )));
+        }
+        if after.source_entity_id != before.source_entity_id
+            && after
+                .source_entity_id
+                .as_deref()
+                .is_none_or(|source| !after.id.contains(source))
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D appearance binding id does not contain its changed source entity: {}",
+                after.id
+            )));
+        }
+    }
+    for (before, after) in baseline_entities.iter().zip(target_entities) {
+        let derived_binding = baseline.model.appearance_bindings.iter().any(|binding| {
+            binding.source_entity_id.as_deref() == Some(before.entity_id.as_str())
+                && binding.channels == before.channels
+        });
+        let assignment_synchronized = target
+            .native
+            .f3d
+            .as_ref()
+            .into_iter()
+            .flat_map(|native| &native.design_material_assignments)
+            .any(|assignment| assignment.entity_id == after.entity_id);
+        if before.entity_id != after.entity_id && derived_binding && !assignment_synchronized {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D ACT entity {} changed without its material-assignment carrier",
+                before.id
+            )));
+        }
+        let synchronized = baseline
+            .model
+            .appearance_bindings
+            .iter()
+            .any(|before_binding| {
+                before_binding.source_entity_id.as_deref() == Some(before.entity_id.as_str())
+                    && target.model.appearance_bindings.iter().any(|binding| {
+                        binding.target == before_binding.target
+                            && binding.appearance == before_binding.appearance
+                            && binding.source_entity_id.as_deref() == Some(after.entity_id.as_str())
+                            && binding.channels == after.channels
+                    })
+            });
+        if (before.entity_id != after.entity_id || before.channels != after.channels)
+            && derived_binding
+            && !synchronized
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D ACT entity {} changed without a synchronized appearance binding",
+                before.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_act_entity_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<String, Vec<ActEntity>>, CodecError> {
+    let baseline = baseline
+        .native
+        .f3d
+        .as_ref()
+        .map(|native| &native.act_entities[..])
+        .unwrap_or_default();
+    let target = target
+        .native
+        .f3d
+        .as_ref()
+        .map(|native| &native.act_entities[..])
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|entity| (entity.id.as_str(), entity))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target
+        .iter()
+        .map(|entity| (entity.id.as_str(), entity))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D ACT entity regeneration requires the unchanged entity-id set".into(),
+        ));
+    }
+    let mut edits: BTreeMap<String, Vec<ActEntity>> = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.entity_id.clone_from(&before.entity_id);
+        normalized.channels.clone_from(&before.channels);
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D ACT entity edit changes fields other than entity_id or channel GUIDs: {id}"
+            )));
+        }
+        if after == before {
+            continue;
+        }
+        if after.entity_id.encode_utf16().count() != before.entity_id.encode_utf16().count() {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D ACT entity id {id} must retain its UTF-16 length"
+            )));
+        }
+        if after.channels.keys().ne(before.channels.keys())
+            || after.channels.keys().ne(after.channel_guid_offsets.keys())
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D ACT entity {id} must retain its channel set and offsets"
+            )));
+        }
+        for (name, guid) in &after.channels {
+            let before_guid = &before.channels[name];
+            if guid.encode_utf16().count() != before_guid.encode_utf16().count()
+                || !canonical_guid(guid)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D ACT channel {name} on {id} must be a same-length canonical GUID"
+                )));
+            }
+        }
+        edits
+            .entry(native_stream(id, ":act-entity#")?)
+            .or_default()
+            .push(after.clone());
+    }
+    Ok(edits)
+}
+
+fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Result<(), CodecError> {
+    for entity in edits {
+        let encoded_id = entity
+            .entity_id
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        for offset in [
+            entity.table_entity_id_offset,
+            entity.channel_entity_id_offset,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            patch_bytes_at(bytes, offset, &encoded_id, "ACT entity id")?;
+        }
+        for (name, guid) in &entity.channels {
+            let encoded = guid
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes)
+                .collect::<Vec<_>>();
+            patch_bytes_at(
+                bytes,
+                entity.channel_guid_offsets[name],
+                &encoded,
+                "ACT channel GUID",
+            )?;
+        }
+    }
+    Ok(())
+}
 
 fn validate_act_guid_edits(
     baseline: &CadIr,

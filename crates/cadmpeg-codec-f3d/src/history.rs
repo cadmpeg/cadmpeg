@@ -15,8 +15,9 @@ const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
 /// framed between it and the next `delta_state`. `stream` is the source ZIP
 /// entry name, recorded in each decoded item's provenance. Returns `None` when
 /// `bytes` carries no `delta_state` record (the stream is a construction
-/// snapshot with no history tail) or a malformed history body.
-pub fn decode(bytes: &[u8], stream: &str) -> Option<AsmHistory> {
+/// snapshot with no history tail) or a malformed history body. `width` is the
+/// stream's integer/ref width (4 for `BinaryFile4`, 8 for `BinaryFile8`).
+pub fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHistory> {
     let mut delta_offsets = Vec::new();
     let mut search = 0usize;
     while let Some(relative) = bytes[search..]
@@ -30,27 +31,28 @@ pub fn decode(bytes: &[u8], stream: &str) -> Option<AsmHistory> {
     let mut states = Vec::new();
     for (ordinal, &offset) in delta_offsets.iter().enumerate() {
         let mut position = offset + DELTA.len();
-        let state_id = take_i64(bytes, &mut position, 0x04)?;
-        let version_flag = take_i64(bytes, &mut position, 0x04)?;
-        let state_flag = take_i64(bytes, &mut position, 0x04)?;
-        let previous = take_i64(bytes, &mut position, 0x0c)?;
-        let next = take_i64(bytes, &mut position, 0x0c)?;
-        let node_index = take_i64(bytes, &mut position, 0x0c)?;
-        let partner = take_i64(bytes, &mut position, 0x0c)?;
-        let owner_ref = take_i64(bytes, &mut position, 0x0c)?;
+        let state_id = take_int(bytes, &mut position, 0x04, width)?;
+        let version_flag = take_int(bytes, &mut position, 0x04, width)?;
+        let state_flag = take_int(bytes, &mut position, 0x04, width)?;
+        let previous = take_int(bytes, &mut position, 0x0c, width)?;
+        let next = take_int(bytes, &mut position, 0x0c, width)?;
+        let node_index = take_int(bytes, &mut position, 0x0c, width)?;
+        let partner = take_int(bytes, &mut position, 0x0c, width)?;
+        let owner_ref = take_int(bytes, &mut position, 0x0c, width)?;
         if bytes.get(position) != Some(&0x0b) {
             continue;
         }
         let (bulletin_boards, body_end) =
-            decode_bulletin_boards(bytes, position + 1, stream, offset)?;
+            decode_bulletin_boards(bytes, position + 1, stream, offset, width)?;
         let records = decode_history_records(
             bytes,
             body_end,
             delta_offsets.get(ordinal + 1).copied(),
             stream,
+            width,
         );
         states.push(AsmDeltaState {
-            id: format!("f3d:{stream}:asm-delta-state#{offset}"),
+            id: format!("f3d:{stream}:asm-delta-state#{offset:010}"),
             byte_offset: offset as u64,
             state_id,
             version_flag,
@@ -72,11 +74,11 @@ pub fn decode(bytes: &[u8], stream: &str) -> Option<AsmHistory> {
         .windows(PREAMBLE.len())
         .position(|window| window == PREAMBLE);
     let (stream_size, high_water_mark) = preamble_offset
-        .and_then(|offset| decode_preamble(bytes, offset + PREAMBLE.len()))
+        .and_then(|offset| decode_preamble(bytes, offset + PREAMBLE.len(), width))
         .map_or((None, None), |(size, high)| (Some(size), Some(high)));
     let offset = preamble_offset.unwrap_or(0);
     Some(AsmHistory {
-        id: format!("f3d:{stream}:asm-history#{offset}"),
+        id: format!("f3d:{stream}:asm-history#{offset:010}"),
         byte_offset: offset as u64,
         stream_size,
         high_water_mark,
@@ -89,6 +91,7 @@ fn decode_bulletin_boards(
     mut position: usize,
     stream: &str,
     state_offset: usize,
+    width: usize,
 ) -> Option<(Vec<AsmBulletinBoard>, usize)> {
     if bytes.get(position) == Some(&0x11) {
         return Some((Vec::new(), position));
@@ -96,21 +99,21 @@ fn decode_bulletin_boards(
     let mut boards = Vec::new();
     loop {
         let board_offset = position;
-        let present = take_i64(bytes, &mut position, 0x04)?;
+        let present = take_int(bytes, &mut position, 0x04, width)?;
         if present == 0 {
             break;
         }
-        let owner_ref = take_i64(bytes, &mut position, 0x0c)?;
-        let number = take_i64(bytes, &mut position, 0x04)?;
+        let owner_ref = take_int(bytes, &mut position, 0x0c, width)?;
+        let number = take_int(bytes, &mut position, 0x04, width)?;
         let mut changes = Vec::new();
         loop {
             let change_offset = position;
-            let present = take_i64(bytes, &mut position, 0x04)?;
+            let present = take_int(bytes, &mut position, 0x04, width)?;
             if present == 0 {
                 break;
             }
-            let old = take_i64(bytes, &mut position, 0x0c)?;
-            let new = take_i64(bytes, &mut position, 0x0c)?;
+            let old = take_int(bytes, &mut position, 0x0c, width)?;
+            let new = take_int(bytes, &mut position, 0x0c, width)?;
             let kind = match (old >= 0, new >= 0) {
                 (false, true) => AsmEntityChangeKind::Insert,
                 (true, false) => AsmEntityChangeKind::Delete,
@@ -119,7 +122,7 @@ fn decode_bulletin_boards(
             };
             changes.push(AsmEntityChange {
                 id: format!(
-                    "f3d:asm-entity-change:{stream}:{state_offset}:{}:{}",
+                    "f3d:{stream}:asm-entity-change#{state_offset:010}:{:06}:{:06}",
                     boards.len(),
                     changes.len()
                 ),
@@ -131,7 +134,7 @@ fn decode_bulletin_boards(
         }
         boards.push(AsmBulletinBoard {
             id: format!(
-                "f3d:asm-bulletin-board:{stream}:{state_offset}:{}",
+                "f3d:{stream}:asm-bulletin-board#{state_offset:010}:{:06}",
                 boards.len()
             ),
             byte_offset: board_offset as u64,
@@ -148,24 +151,25 @@ fn decode_history_records(
     state_end: usize,
     next_delta: Option<usize>,
     stream: &str,
+    width: usize,
 ) -> Vec<AsmHistoryRecord> {
     let start = state_end + usize::from(bytes.get(state_end) == Some(&0x11));
     let limit = next_delta.map_or(bytes.len(), |offset| offset + 1);
     if start >= limit {
         return Vec::new();
     }
-    match crate::sab::frame(bytes, start, limit, 8) {
+    match crate::sab::frame(bytes, start, limit, width) {
         Ok(records) => records
             .into_iter()
             .map(|record| AsmHistoryRecord {
-                id: format!("f3d:{stream}:asm-history-record#{}", record.offset),
+                id: format!("f3d:{stream}:asm-history-record#{:010}", record.offset),
                 index: record.index as u64,
                 name: record.name,
                 raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
             })
             .collect(),
         Err(_) => vec![AsmHistoryRecord {
-            id: format!("f3d:{stream}:asm-history-record#{start}"),
+            id: format!("f3d:{stream}:asm-history-record#{start:010}"),
             index: 0,
             name: "opaque_history_payload".into(),
             raw_bytes: bytes[start..limit].to_vec(),
@@ -173,19 +177,26 @@ fn decode_history_records(
     }
 }
 
-fn decode_preamble(bytes: &[u8], mut position: usize) -> Option<(i64, i64)> {
-    let size = take_i64(bytes, &mut position, 0x04)?;
-    let duplicate = take_i64(bytes, &mut position, 0x04)?;
-    let zero = take_i64(bytes, &mut position, 0x04)?;
-    let high_water = take_i64(bytes, &mut position, 0x04)?;
+fn decode_preamble(bytes: &[u8], mut position: usize, width: usize) -> Option<(i64, i64)> {
+    let size = take_int(bytes, &mut position, 0x04, width)?;
+    let duplicate = take_int(bytes, &mut position, 0x04, width)?;
+    let zero = take_int(bytes, &mut position, 0x04, width)?;
+    let high_water = take_int(bytes, &mut position, 0x04, width)?;
     (size == duplicate && zero == 0).then_some((size, high_water))
 }
 
-fn take_i64(bytes: &[u8], position: &mut usize, tag: u8) -> Option<i64> {
+/// Read a tagged little-endian signed integer of the stream's ref width (4 or
+/// 8 bytes) and advance past it.
+fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option<i64> {
     if bytes.get(*position) != Some(&tag) {
         return None;
     }
-    let value = i64::from_le_bytes(bytes.get(*position + 1..*position + 9)?.try_into().ok()?);
-    *position += 9;
+    let slice = bytes.get(*position + 1..*position + 1 + width)?;
+    let value = match width {
+        8 => i64::from_le_bytes(slice.try_into().ok()?),
+        4 => i64::from(i32::from_le_bytes(slice.try_into().ok()?)),
+        _ => return None,
+    };
+    *position += 1 + width;
     Some(value)
 }

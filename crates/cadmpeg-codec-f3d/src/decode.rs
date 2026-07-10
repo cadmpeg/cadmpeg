@@ -9,9 +9,9 @@
 //! graph, analytic/cached NURBS carriers, pcurves, attributes, transforms, and
 //! Protein/Design appearances ([`crate::brep`], [`crate::materials`]). Remaining
 //! unsupported records are accounted for in the [`DecodeReport`]. When the stream is not a
-//! decodable `BinaryFile8` SAB, or framing fails, decode falls back to the
-//! container-metadata IR (active BREP preserved as an [`UnknownRecord`]) and
-//! says so.
+//! decodable `BinaryFile4`/`BinaryFile8` SAB, or framing fails, decode falls
+//! back to the container-metadata IR (active BREP preserved as an
+//! [`UnknownRecord`]) and says so.
 
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
@@ -70,6 +70,11 @@ pub fn decode(
                 .f3d
                 .get_or_insert_with(F3dNative::default)
                 .lost_edge_references = crate::design::decode_lost_edge_references(reader, &scan)?;
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .design_material_assignments =
+                crate::materials::decode_design_assignments(reader, &scan)?;
             ir.native
                 .f3d
                 .get_or_insert_with(F3dNative::default)
@@ -198,6 +203,10 @@ pub fn decode(
         .f3d
         .get_or_insert_with(F3dNative::default)
         .lost_edge_references = crate::design::decode_lost_edge_references(reader, &scan)?;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .design_material_assignments = crate::materials::decode_design_assignments(reader, &scan)?;
     ir.native
         .f3d
         .get_or_insert_with(F3dNative::default)
@@ -354,6 +363,9 @@ fn populate_annotations(
         for entity in &native.design_body_members {
             note(&entity.id, "BodiesRoot");
         }
+        for entity in &native.design_material_assignments {
+            note(&entity.id, "material_assignment");
+        }
         for entity in &native.sketch_relations {
             note(&entity.id, "sketch_relation");
         }
@@ -436,8 +448,9 @@ fn decode_asm_history(
     reader: &mut dyn ReadSeek,
     active: &BrepFacts,
 ) -> Result<Option<cadmpeg_ir::history::AsmHistory>, CodecError> {
+    let width = active.header.as_ref().map_or(8, |h| usize::from(h.width));
     let bytes = container::decompress_entry(reader, &active.name)?;
-    Ok(crate::history::decode(&bytes, &active.name))
+    Ok(crate::history::decode(&bytes, &active.name, width))
 }
 
 fn extend_related_design_records(
@@ -480,16 +493,15 @@ fn extend_related_design_records(
 }
 
 /// Frame and decode the active BREP's SAB stream. Returns `None` when the stream
-/// is not a decodable `BinaryFile8` SAB, or frames but yields no geometry
-/// (leaving the caller to fall back to the container-metadata IR).
+/// is not a decodable `BinaryFile4`/`BinaryFile8` SAB, or frames but yields no
+/// geometry (leaving the caller to fall back to the container-metadata IR).
 fn try_decode_brep(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     active: &BrepFacts,
 ) -> Result<Option<(Brep, DecodeReport)>, CodecError> {
-    // Only the documented BinaryFile8 record layout is decoded.
     let width = active.header.as_ref().map_or(0, |h| h.width);
-    if width != 8 {
+    if width != 4 && width != 8 {
         return Ok(None);
     }
 
@@ -499,7 +511,7 @@ fn try_decode_brep(
     };
     let limit = active.delta_state_offset.unwrap_or(bytes.len());
 
-    let records = match sab::frame(&bytes, start, limit, 8) {
+    let records = match sab::frame(&bytes, start, limit, usize::from(width)) {
         Ok(r) if !r.is_empty() => r,
         _ => return Ok(None),
     };
@@ -772,8 +784,8 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             severity: Severity::Blocking,
             message: format!(
                 "ASM BREP geometry was not transferred: the active stream is not a decodable \
-                 BinaryFile8 SAB (or its framing failed). {brep_count} BREP stream(s) were located \
-                 and their headers read, but no surfaces, curves, or points were produced."
+                 BinaryFile4/BinaryFile8 SAB (or its framing failed). {brep_count} BREP stream(s) \
+                 were located, but no surfaces, curves, or points were produced."
             ),
             provenance: None,
         },
