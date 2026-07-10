@@ -186,32 +186,40 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
     match rec.head.as_str() {
         "plane" => {
             let normal = *c.vectors.first()?;
-            let u_axis = *c.vectors.get(1)?;
+            let normal = unit(normal);
+            let u_axis = c
+                .vectors
+                .get(1)
+                .map_or_else(|| deterministic_ref_direction(normal), |axis| unit(*axis));
             Some((
                 SurfaceGeometry::Plane {
                     origin: scale_point(origin),
-                    normal: unit(normal),
-                    u_axis: Some(unit(u_axis)),
+                    normal,
+                    u_axis: Some(u_axis),
                 },
                 false,
             ))
         }
         "cone" => {
             let axis = *c.vectors.first()?;
-            let major = *c.vectors.get(1)?;
+            let axis = unit(axis);
+            let major = c.vectors.get(1).copied();
             // Doubles are (ratio, sine, cosine, r1). `ratio` (minor/major of an
             // elliptical cone) is not modeled by the IR's circular cone carrier;
             // all corpus cones are circular (ratio 1). `sine` selects cylinder
             // vs cone; `r1` is the explicit base radius.
             let sine = *c.doubles.get(1).unwrap_or(&0.0);
             let r1 = c.doubles.get(3).copied();
-            let radius = r1.map_or_else(|| norm3(major) * LEN_TO_MM, |r| r * LEN_TO_MM);
+            let radius = r1
+                .map(|r| r * LEN_TO_MM)
+                .or_else(|| major.map(|vector| norm3(vector) * LEN_TO_MM))?;
+            let ref_direction = major.map_or_else(|| deterministic_ref_direction(axis), unit);
             if sine.abs() <= f64::EPSILON {
                 Some((
                     SurfaceGeometry::Cylinder {
                         origin: scale_point(origin),
-                        axis: unit(axis),
-                        ref_direction: Some(unit(major)),
+                        axis,
+                        ref_direction: Some(ref_direction),
                         radius,
                     },
                     false,
@@ -220,8 +228,8 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
                 Some((
                     SurfaceGeometry::Cone {
                         origin: scale_point(origin),
-                        axis: unit(axis),
-                        ref_direction: Some(unit(major)),
+                        axis,
+                        ref_direction: Some(ref_direction),
                         radius,
                         half_angle: sine.abs().asin(),
                     },
@@ -231,13 +239,21 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         }
         "sphere" => {
             let signed = *c.doubles.first()?;
-            let equator = *c.vectors.first()?;
-            let polar_axis = *c.vectors.get(1)?;
+            let polar_axis = c.vectors.get(1).or_else(|| c.vectors.first()).copied()?;
+            let polar_axis = unit(polar_axis);
+            let equator = c
+                .vectors
+                .first()
+                .filter(|_| c.vectors.len() > 1)
+                .map_or_else(
+                    || deterministic_ref_direction(polar_axis),
+                    |direction| unit(*direction),
+                );
             Some((
                 SurfaceGeometry::Sphere {
                     center: scale_point(origin),
-                    axis: Some(unit(polar_axis)),
-                    ref_direction: Some(unit(equator)),
+                    axis: Some(polar_axis),
+                    ref_direction: Some(equator),
                     radius: signed * LEN_TO_MM,
                 },
                 false,
@@ -245,14 +261,18 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         }
         "torus" => {
             let axis = *c.vectors.first()?;
-            let ref_direction = *c.vectors.get(1)?;
+            let axis = unit(axis);
+            let ref_direction = c.vectors.get(1).map_or_else(
+                || deterministic_ref_direction(axis),
+                |direction| unit(*direction),
+            );
             let major = *c.doubles.first()?;
             let minor = *c.doubles.get(1)?;
             Some((
                 SurfaceGeometry::Torus {
                     center: scale_point(origin),
-                    axis: unit(axis),
-                    ref_direction: Some(unit(ref_direction)),
+                    axis,
+                    ref_direction: Some(ref_direction),
                     major_radius: major * LEN_TO_MM,
                     minor_radius: minor * LEN_TO_MM,
                 },
@@ -268,6 +288,34 @@ fn cross(a: Vector3, b: Vector3) -> Vector3 {
         a.y * b.z - a.z * b.y,
         a.z * b.x - a.x * b.z,
         a.x * b.y - a.y * b.x,
+    )
+}
+
+fn deterministic_ref_direction(axis: Vector3) -> Vector3 {
+    let candidates = [
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+    ];
+    let basis = candidates
+        .into_iter()
+        .min_by(|a, b| {
+            let a_dot = (a.x * axis.x + a.y * axis.y + a.z * axis.z).abs();
+            let b_dot = (b.x * axis.x + b.y * axis.y + b.z * axis.z).abs();
+            a_dot.total_cmp(&b_dot)
+        })
+        .expect("fixed candidate set is non-empty");
+    let dot = basis.x * axis.x + basis.y * axis.y + basis.z * axis.z;
+    let projected = Vector3::new(
+        basis.x - dot * axis.x,
+        basis.y - dot * axis.y,
+        basis.z - dot * axis.z,
+    );
+    let length = projected.norm();
+    Vector3::new(
+        projected.x / length,
+        projected.y / length,
+        projected.z / length,
     )
 }
 
@@ -723,7 +771,23 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
             }
             let curve = r.ref_at(8).filter(|c| kept_curves.contains(c));
             let param_range = match (double_at(r, 4), double_at(r, 6)) {
-                (Some(a), Some(b)) => Some([a, b]),
+                (Some(mut a), Some(mut b)) => {
+                    if let Some(curve_record) = curve.and_then(|curve| by_index.get(&curve)) {
+                        if curve_record.head == "ellipse" {
+                            let carrier = collect_carrier(curve_record);
+                            let ratio = carrier.doubles.first().copied().unwrap_or(1.0);
+                            if ratio > 0.0 {
+                                a += std::f64::consts::FRAC_PI_2;
+                                b += std::f64::consts::FRAC_PI_2;
+                            }
+                            if (b - a).abs() >= std::f64::consts::TAU - 1.0e-12 {
+                                a = 0.0;
+                                b = std::f64::consts::TAU;
+                            }
+                        }
+                    }
+                    Some([a, b])
+                }
                 _ => None,
             };
             out.edges.push(Edge {
@@ -761,7 +825,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 next: CoedgeId(id(next)),
                 previous: CoedgeId(id(prev)),
                 partner: partner.map(|p| CoedgeId(id(p))),
-                radial_next: None,
+                radial_next: partner.map(|p| CoedgeId(id(p))),
                 sense: sense_at(r, 7),
                 pcurve: r
                     .ref_at(10)

@@ -14,6 +14,7 @@ use flate2::Compression;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::provenance::Exactness;
 
 use crate::container;
 use crate::parasolid::{self, StreamKind};
@@ -337,6 +338,19 @@ fn topology_part_prt() -> Vec<u8> {
     prt_with_partition(&topology_partition_stream())
 }
 
+fn topology_with_missing_tolerances() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    for (tag, xmt, offset) in [(14, 4, 10), (16, 8, 10), (18, 10, 18)] {
+        let marker = [0, tag, 0, xmt];
+        let record = stream
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("topology record");
+        put_f64(&mut stream, record + offset, -31_415_800_000_000.0);
+    }
+    stream
+}
+
 fn prt_with_partition(stream: &[u8]) -> Vec<u8> {
     let mut f = single_part_prt();
     let compressed = zlib_compress(stream);
@@ -558,6 +572,10 @@ fn decode_emits_connected_primitive_brep() {
     assert_eq!(result.ir.vertices[0].tolerance, Some(0.1));
     assert_eq!(result.ir.edges[0].tolerance, Some(0.3));
     assert_eq!(result.ir.faces[0].tolerance, Some(0.2));
+    assert_eq!(
+        result.ir.coedges[0].radial_next.as_ref(),
+        Some(&result.ir.coedges[0].id)
+    );
     assert!(result
         .report
         .losses
@@ -576,6 +594,65 @@ fn decode_emits_topology_when_record_xmt_uses_extended_encoding() {
     assert_eq!(result.ir.edges.len(), 1);
     assert_eq!(result.ir.vertices.len(), 1);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_maps_parasolid_tolerance_sentinel_to_none() {
+    let stream = topology_with_missing_tolerances();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.vertices[0].tolerance, None);
+    assert_eq!(result.ir.edges[0].tolerance, None);
+    assert_eq!(result.ir.faces[0].tolerance, None);
+}
+
+#[test]
+fn decode_dual_writes_inline_entity_metadata_to_annotations() {
+    let mut cur = Cursor::new(topology_part_prt());
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let ir = &result.ir;
+
+    macro_rules! assert_arena_annotations {
+        ($arena:expr) => {
+            for entity in $arena {
+                let provenance = ir
+                    .annotations
+                    .provenance
+                    .get(&entity.id.to_string())
+                    .expect("annotation provenance");
+                assert_eq!(
+                    ir.annotations.streams[provenance.stream as usize],
+                    format!(
+                        "{}:{}",
+                        entity.meta.provenance.format, entity.meta.provenance.stream
+                    )
+                );
+                assert_eq!(provenance.offset, entity.meta.provenance.offset);
+                assert_eq!(provenance.tag, entity.meta.provenance.tag);
+                let exactness = ir
+                    .annotations
+                    .exactness
+                    .get(&entity.id.to_string())
+                    .map(|note| note.entity)
+                    .unwrap_or(Exactness::ByteExact);
+                assert_eq!(exactness, entity.meta.exactness);
+            }
+        };
+    }
+
+    assert_arena_annotations!(&ir.bodies);
+    assert_arena_annotations!(&ir.lumps);
+    assert_arena_annotations!(&ir.shells);
+    assert_arena_annotations!(&ir.faces);
+    assert_arena_annotations!(&ir.loops);
+    assert_arena_annotations!(&ir.coedges);
+    assert_arena_annotations!(&ir.edges);
+    assert_arena_annotations!(&ir.vertices);
+    assert_arena_annotations!(&ir.points);
+    assert_arena_annotations!(&ir.surfaces);
+    assert_arena_annotations!(&ir.curves);
+    assert_arena_annotations!(&ir.unknowns);
 }
 
 #[test]

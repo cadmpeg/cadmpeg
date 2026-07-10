@@ -9,10 +9,55 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::provenance::{EntityMeta, Exactness};
 
 use crate::variant::Variant;
 use crate::CatiaCodec;
+
+fn assert_annotation_matches_meta(ir: &CadIr, id: &str, meta: &EntityMeta) {
+    let provenance = &ir.annotations.provenance[id];
+    assert_eq!(
+        ir.annotations.streams[provenance.stream as usize],
+        format!("{}:{}", meta.provenance.format, meta.provenance.stream)
+    );
+    assert_eq!(provenance.offset, meta.provenance.offset);
+    assert_eq!(provenance.tag, meta.provenance.tag);
+    assert_eq!(
+        ir.annotations
+            .exactness
+            .get(id)
+            .map_or(Exactness::ByteExact, |note| note.entity),
+        meta.exactness
+    );
+}
+
+fn assert_annotations_reconstruct_inline_meta(ir: &CadIr) {
+    let mut entity_count = 0;
+    macro_rules! check {
+        ($entities:expr) => {
+            for entity in $entities {
+                entity_count += 1;
+                assert_annotation_matches_meta(ir, &entity.id.0, &entity.meta);
+            }
+        };
+    }
+
+    check!(&ir.bodies);
+    check!(&ir.lumps);
+    check!(&ir.shells);
+    check!(&ir.faces);
+    check!(&ir.loops);
+    check!(&ir.coedges);
+    check!(&ir.edges);
+    check!(&ir.vertices);
+    check!(&ir.points);
+    check!(&ir.surfaces);
+    check!(&ir.curves);
+    check!(&ir.unknowns);
+    assert_eq!(ir.annotations.provenance.len(), entity_count);
+}
 
 fn standard_quad_topology_stream() -> Vec<u8> {
     let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 10, 0, 0, 0, 10];
@@ -1652,4 +1697,33 @@ fn container_only_stops_before_geometry() {
     // The reconstructed BREP stream is preserved as an unknown passthrough.
     assert_eq!(result.ir.unknowns.len(), 1);
     assert_eq!(result.ir.unknowns[0].sha256.len(), 64);
+}
+
+#[test]
+fn every_decode_path_dual_writes_inline_meta_to_annotations() {
+    let fixtures = [
+        standard_catpart(),
+        fbb_only_catpart(),
+        zero_entity_catpart(),
+        zero_entity_cylinder_catpart(),
+        e5_catpart(),
+        a8_catpart(),
+        inner_no_directory_a8_catpart(),
+    ];
+    for fixture in fixtures {
+        let decoded = CatiaCodec
+            .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
+            .unwrap();
+        assert_annotations_reconstruct_inline_meta(&decoded.ir);
+    }
+
+    let container_only = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart()),
+            &DecodeOptions {
+                container_only: true,
+            },
+        )
+        .unwrap();
+    assert_annotations_reconstruct_inline_meta(&container_only.ir);
 }

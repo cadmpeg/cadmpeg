@@ -9,6 +9,8 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::provenance::EntityMeta;
 
 use crate::container::{self, role, Layout};
 use crate::{decode, CreoCodec};
@@ -48,6 +50,18 @@ fn visibgeom_payload(srf: u8, crv: u8) -> Vec<u8> {
 
 fn jpeg_payload() -> Vec<u8> {
     vec![0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]
+}
+
+fn assert_annotation_matches_meta(ir: &CadIr, id: &str, meta: &EntityMeta) {
+    let provenance = &ir.annotations.provenance[id];
+    assert_eq!(
+        ir.annotations.streams[provenance.stream as usize],
+        format!("{}:{}", meta.provenance.format, meta.provenance.stream)
+    );
+    assert_eq!(provenance.offset, meta.provenance.offset);
+    assert_eq!(provenance.tag, meta.provenance.tag);
+    assert_eq!(ir.annotations.exactness[id].entity, meta.exactness);
+    assert!(ir.annotations.exactness[id].fields.is_empty());
 }
 
 #[test]
@@ -173,6 +187,44 @@ fn decode_transfers_exact_datum_plane_carrier() {
     let result = decode::decode(&mut reader, &DecodeOptions::default()).unwrap();
     assert!(result.report.geometry_transferred);
     assert_eq!(result.ir.surfaces.len(), 1);
+}
+
+#[test]
+fn decode_annotations_match_every_emitted_entity_meta() {
+    let mut datum = vec![4, 0x22, 1, 1, 0, 0];
+    datum.extend([0x0f; 4]);
+    for value in [2.0_f64, 0.0, 3.0, -2.0, 0.0, -3.0] {
+        if value == 0.0 {
+            datum.push(0x0f);
+        } else {
+            let mut bytes = value.to_be_bytes();
+            bytes[0] = if value.is_sign_negative() { 0x2d } else { 0x46 };
+            datum.extend(bytes);
+        }
+    }
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", visibgeom_payload(1, 0)),
+            ("NovisGeom", vec![0xaa, 0xbb]),
+            ("ActDatums", datum),
+        ],
+    );
+    let mut reader = Cursor::new(data);
+    let result = decode::decode(&mut reader, &DecodeOptions::default()).expect("decode");
+
+    assert_eq!(result.ir.unknowns.len(), 3);
+    assert_eq!(result.ir.surfaces.len(), 1);
+    for unknown in &result.ir.unknowns {
+        assert_annotation_matches_meta(&result.ir, unknown.id.as_str(), &unknown.meta);
+    }
+    for surface in &result.ir.surfaces {
+        assert_annotation_matches_meta(&result.ir, surface.id.as_str(), &surface.meta);
+    }
+    assert_eq!(
+        result.ir.annotations.provenance.len(),
+        result.ir.unknowns.len() + result.ir.surfaces.len()
+    );
 }
 
 #[test]

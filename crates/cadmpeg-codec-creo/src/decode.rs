@@ -29,6 +29,7 @@ use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::AnnotationBuilder;
 
 use crate::container::{self, role, ContainerScan};
 
@@ -48,32 +49,47 @@ pub fn decode(
 /// preserved verbatim as unknown passthrough records.
 fn build_ir(scan: &ContainerScan) -> CadIr {
     let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
 
     for section in scan.sections.iter().filter(|s| s.role == role::GEOMETRY) {
         let end = (section.offset + section.length).min(scan.data.len());
         let bytes = &scan.data[section.offset..end];
+        let id = UnknownId(format!("creo:{}@{}", section.name, section.offset));
+        let meta = EntityMeta {
+            provenance: Provenance {
+                format: "creo".to_string(),
+                stream: section.name.clone(),
+                offset: section.offset as u64,
+                tag: Some("psb_geometry_section".to_string()),
+            },
+            exactness: Exactness::Unknown,
+        };
+        annotate(&mut annotations, &id, &meta);
         ir.unknowns.push(UnknownRecord {
-            id: UnknownId(format!("creo:{}@{}", section.name, section.offset)),
+            id,
             offset: section.offset as u64,
             byte_len: bytes.len() as u64,
             sha256: sha256_hex(bytes),
             data: Some(bytes.to_vec()),
             links: Vec::new(),
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "creo".to_string(),
-                    stream: section.name.clone(),
-                    offset: section.offset as u64,
-                    tag: Some("psb_geometry_section".to_string()),
-                },
-                exactness: Exactness::Unknown,
-            },
+            meta,
         });
     }
     for plane in &scan.datum_planes {
+        let id = SurfaceId(format!("creo:datum-plane#{}", plane.id));
+        let meta = EntityMeta {
+            provenance: Provenance {
+                format: "creo".to_string(),
+                stream: "ActDatums".to_string(),
+                offset: plane.offset_in_payload as u64,
+                tag: Some("datum_plane_outline".to_string()),
+            },
+            exactness: Exactness::Derived,
+        };
+        annotate(&mut annotations, &id, &meta);
         ir.surfaces.push(Surface {
-            id: SurfaceId(format!("creo:datum-plane#{}", plane.id)),
+            id,
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(
                     plane.normal[0] * plane.offset,
@@ -83,18 +99,21 @@ fn build_ir(scan: &ContainerScan) -> CadIr {
                 normal: Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
                 u_axis: None,
             },
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "creo".to_string(),
-                    stream: "ActDatums".to_string(),
-                    offset: plane.offset_in_payload as u64,
-                    tag: Some("datum_plane_outline".to_string()),
-                },
-                exactness: Exactness::Derived,
-            },
+            meta,
         });
     }
+    ir.annotations = annotations.build();
     ir
+}
+
+fn annotate(annotations: &mut AnnotationBuilder, id: impl std::fmt::Display, meta: &EntityMeta) {
+    let provenance = &meta.provenance;
+    let stream = annotations.stream(format!("{}:{}", provenance.format, provenance.stream));
+    let note = annotations.note(id.to_string(), stream, provenance.offset);
+    if let Some(tag) = &provenance.tag {
+        note.tag(tag);
+    }
+    annotations.exactness(id, meta.exactness);
 }
 
 fn source_meta(scan: &ContainerScan) -> SourceMeta {

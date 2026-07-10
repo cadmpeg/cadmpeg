@@ -27,6 +27,7 @@ use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Lump, Point, Sense, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::AnnotationBuilder;
 use sha2::{Digest, Sha256};
 
 use crate::container::{self, ContainerScan};
@@ -42,26 +43,35 @@ pub fn decode(
     let scan = container::scan(reader)?;
 
     if options.container_only {
-        let ir = build_metadata_ir(&scan);
+        let ir = with_annotations(build_metadata_ir(&scan));
         let report = build_container_report(&scan, true);
         return Ok(DecodeResult { ir, report });
     }
 
     if matches!(scan.variant, Variant::StandardNested | Variant::FbbOnly) {
         if let Some((ir, report)) = try_decode_standard(&scan) {
-            return Ok(DecodeResult { ir, report });
+            return Ok(DecodeResult {
+                ir: with_annotations(ir),
+                report,
+            });
         }
     }
 
     if scan.variant == Variant::ZeroEntity {
         if let Some((ir, report)) = try_decode_zero_entity(&scan) {
-            return Ok(DecodeResult { ir, report });
+            return Ok(DecodeResult {
+                ir: with_annotations(ir),
+                report,
+            });
         }
     }
 
     if scan.variant == Variant::E5Stream {
         if let Some((ir, report)) = try_decode_e5(&scan) {
-            return Ok(DecodeResult { ir, report });
+            return Ok(DecodeResult {
+                ir: with_annotations(ir),
+                report,
+            });
         }
     }
 
@@ -70,13 +80,53 @@ pub fn decode(
         Variant::FloatPackedInnerNoFbb | Variant::FbbOnly | Variant::InnerNoDirectory
     ) {
         if let Some((ir, report)) = try_decode_freeform_surfaces(&scan) {
-            return Ok(DecodeResult { ir, report });
+            return Ok(DecodeResult {
+                ir: with_annotations(ir),
+                report,
+            });
         }
     }
 
-    let ir = build_metadata_ir(&scan);
+    let ir = with_annotations(build_metadata_ir(&scan));
     let report = build_container_report(&scan, false);
     Ok(DecodeResult { ir, report })
+}
+
+fn with_annotations(mut ir: CadIr) -> CadIr {
+    let mut annotations = AnnotationBuilder::new();
+
+    macro_rules! annotate {
+        ($entities:expr) => {
+            for entity in $entities {
+                let meta = &entity.meta;
+                let stream = annotations.stream(format!(
+                    "{}:{}",
+                    meta.provenance.format, meta.provenance.stream
+                ));
+                let note = annotations.note(&entity.id, stream, meta.provenance.offset);
+                if let Some(tag) = &meta.provenance.tag {
+                    note.tag(tag);
+                }
+                annotations.exactness(&entity.id, meta.exactness);
+            }
+        };
+    }
+
+    annotate!(&ir.bodies);
+    annotate!(&ir.lumps);
+    annotate!(&ir.shells);
+    annotate!(&ir.faces);
+    annotate!(&ir.loops);
+    annotate!(&ir.coedges);
+    annotate!(&ir.edges);
+    annotate!(&ir.vertices);
+    annotate!(&ir.points);
+    annotate!(&ir.surfaces);
+    annotate!(&ir.curves);
+    annotate!(&ir.unknowns);
+
+    ir.annotations = annotations.build();
+    ir
 }
 
 /// Decode directly framed analytic carriers in the zero-entity record stream.

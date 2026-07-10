@@ -15,6 +15,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{Curve, Surface};
@@ -257,6 +258,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         return None;
     }
 
+    dual_write_annotations(&mut ir);
     let report = build_geometry_report(scan, &counts, !ir.faces.is_empty());
     Some((ir, report))
 }
@@ -442,6 +444,7 @@ fn emit_topology(
             .cloned()
             .unwrap_or_else(|| id.clone());
         let partner = fin_ids.get(&refs[4]).cloned();
+        let radial_next = partner.clone().unwrap_or_else(|| id.clone());
         ir.coedges.push(Coedge {
             id: id.clone(),
             owner_loop: loop_id.clone(),
@@ -449,7 +452,7 @@ fn emit_topology(
             next,
             previous,
             partner,
-            radial_next: None,
+            radial_next: Some(radial_next),
             sense: sense(node.byte_at(22)),
             pcurve: None,
             meta: byte_exact(stream_name, node.pos as u64, "fin"),
@@ -661,6 +664,7 @@ fn build_metadata_ir(scan: &Scan) -> CadIr {
             ir.unknowns.push(unknown_stream(si, stream));
         }
     }
+    dual_write_annotations(&mut ir);
     ir
 }
 
@@ -761,6 +765,49 @@ fn byte_exact(stream: &str, offset: u64, tag: &str) -> EntityMeta {
         },
         exactness: Exactness::ByteExact,
     }
+}
+
+fn dual_write_annotations(ir: &mut CadIr) {
+    let mut builder = AnnotationBuilder::new();
+
+    macro_rules! annotate_arena {
+        ($arena:expr) => {
+            for entity in $arena {
+                annotate_entity(&mut builder, &entity.id, &entity.meta);
+            }
+        };
+    }
+
+    annotate_arena!(&ir.bodies);
+    annotate_arena!(&ir.lumps);
+    annotate_arena!(&ir.shells);
+    annotate_arena!(&ir.faces);
+    annotate_arena!(&ir.loops);
+    annotate_arena!(&ir.coedges);
+    annotate_arena!(&ir.edges);
+    annotate_arena!(&ir.vertices);
+    annotate_arena!(&ir.points);
+    annotate_arena!(&ir.surfaces);
+    annotate_arena!(&ir.curves);
+    annotate_arena!(&ir.unknowns);
+
+    ir.annotations = builder.build();
+}
+
+fn annotate_entity(
+    builder: &mut AnnotationBuilder,
+    id: &impl std::fmt::Display,
+    meta: &EntityMeta,
+) {
+    let stream = builder.stream(format!(
+        "{}:{}",
+        meta.provenance.format, meta.provenance.stream
+    ));
+    let note = builder.note(id, stream, meta.provenance.offset);
+    if let Some(tag) = &meta.provenance.tag {
+        note.tag(tag);
+    }
+    builder.exactness(id, meta.exactness);
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

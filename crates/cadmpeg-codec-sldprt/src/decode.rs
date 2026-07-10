@@ -17,6 +17,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -391,8 +392,88 @@ fn build_geometry_ir(
         partition.links.extend(opaque_surfaces);
     }
     preserve_source_image(scan, &mut ir);
+    populate_annotations(&mut ir);
     set_semantic_hash(&mut ir);
     ir
+}
+
+fn annotate(annotations: &mut AnnotationBuilder, id: impl std::fmt::Display, meta: &EntityMeta) {
+    let stream = annotations.stream(format!(
+        "{}:{}",
+        meta.provenance.format, meta.provenance.stream
+    ));
+    let note = annotations.note(&id, stream, meta.provenance.offset);
+    if let Some(tag) = &meta.provenance.tag {
+        note.tag(tag);
+    }
+    annotations.exactness(id, meta.exactness);
+}
+
+fn populate_annotations(ir: &mut CadIr) {
+    let mut annotations = AnnotationBuilder::new();
+
+    macro_rules! annotate_arena {
+        ($arena:expr) => {
+            for entity in $arena {
+                annotate(&mut annotations, &entity.id, &entity.meta);
+            }
+        };
+    }
+
+    annotate_arena!(&ir.bodies);
+    annotate_arena!(&ir.lumps);
+    annotate_arena!(&ir.shells);
+    annotate_arena!(&ir.faces);
+    annotate_arena!(&ir.loops);
+    annotate_arena!(&ir.coedges);
+    annotate_arena!(&ir.edges);
+    annotate_arena!(&ir.vertices);
+    annotate_arena!(&ir.points);
+    annotate_arena!(&ir.surfaces);
+    annotate_arena!(&ir.curves);
+    annotate_arena!(&ir.pcurves);
+    annotate_arena!(&ir.attributes);
+    annotate_arena!(&ir.appearances);
+    annotate_arena!(&ir.tessellations);
+    annotate_arena!(&ir.feature_input_lanes);
+    annotate_arena!(&ir.unknowns);
+
+    for frame in &ir.surface_parameterizations {
+        annotate(
+            &mut annotations,
+            format!("{}:parameterization", frame.surface),
+            &frame.meta,
+        );
+    }
+    for (index, binding) in ir.appearance_bindings.iter().enumerate() {
+        annotate(
+            &mut annotations,
+            format!("sldprt:appearance-binding#{index}"),
+            &binding.meta,
+        );
+    }
+    for (history_index, history) in ir.feature_histories.iter().enumerate() {
+        let history_id = format!("sldprt:feature-history#{history_index}");
+        annotate(&mut annotations, &history_id, &history.meta);
+        for feature in &history.features {
+            annotate(
+                &mut annotations,
+                format!("{history_id}:feature#{}", feature.ordinal),
+                &feature.meta,
+            );
+        }
+    }
+    for lane in &ir.feature_input_lanes {
+        for entity in &lane.sketch_entities {
+            annotate(
+                &mut annotations,
+                format!("{}:sketch-entity#{}", lane.id, entity.ordinal),
+                &entity.meta,
+            );
+        }
+    }
+
+    ir.annotations = annotations.build();
 }
 
 fn source_meta(scan: &ContainerScan, block: &Block, header: &StreamHeader) -> SourceMeta {
@@ -686,6 +767,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> CadIr {
         attributes,
     });
     preserve_source_image(scan, &mut ir);
+    populate_annotations(&mut ir);
     set_semantic_hash(&mut ir);
     ir
 }
@@ -743,6 +825,7 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
     normalized.feature_input_lanes.clear();
     normalized.asm_histories.clear();
     normalized.attributes.clear();
+    normalized.annotations = Annotations::default();
     normalized.unknowns.clear();
     sha256_hex(
         normalized

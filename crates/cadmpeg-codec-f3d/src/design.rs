@@ -890,11 +890,15 @@ fn parse_sketch_relation(payload: &[u8]) -> Option<(Vec<u32>, u32, u32, Vec<u32>
     for _ in 0..member_count {
         let (value, end) = marked_u32(payload, cursor)?;
         members.push(value);
-        cursor = next_marker(payload, end)?;
+        cursor = next_reference_marker(payload, end)?;
     }
     let (owner_reference, end) = marked_u32(payload, cursor)?;
-    cursor = next_marker(payload, end)?;
-    let (state, end) = marked_u32(payload, cursor)?;
+    cursor = next_nonzero(payload, end)?;
+    let (state, end) = if payload.get(cursor) == Some(&1) {
+        marked_u32(payload, cursor)?
+    } else {
+        (u32_at(payload, cursor)?, cursor + 4)
+    };
     cursor = next_nonzero(payload, end)?;
     let return_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
     if return_count > 64 {
@@ -903,12 +907,12 @@ fn parse_sketch_relation(payload: &[u8]) -> Option<(Vec<u32>, u32, u32, Vec<u32>
     cursor += 4;
     let mut return_members = Vec::with_capacity(return_count);
     for ordinal in 0..return_count {
-        cursor = next_marker(payload, cursor)?;
+        cursor = next_reference_marker(payload, cursor)?;
         let (value, end) = marked_u32(payload, cursor)?;
         return_members.push(value);
         cursor = end;
         if ordinal + 1 < return_count {
-            cursor = next_marker(payload, cursor)?;
+            cursor = next_reference_marker(payload, cursor)?;
         }
     }
     Some((members, owner_reference, state, return_members))
@@ -918,11 +922,17 @@ fn marked_u32(bytes: &[u8], position: usize) -> Option<(u32, usize)> {
     (bytes.get(position) == Some(&1)).then_some((u32_at(bytes, position + 1)?, position + 5))
 }
 
-fn next_marker(bytes: &[u8], mut position: usize) -> Option<usize> {
-    while bytes.get(position) == Some(&0) {
+fn next_reference_marker(bytes: &[u8], mut position: usize) -> Option<usize> {
+    while position + 5 <= bytes.len() {
+        if bytes.get(position) == Some(&1) {
+            let reference = u32_at(bytes, position + 1)?;
+            if reference <= 10_000_000 {
+                return Some(position);
+            }
+        }
         position += 1;
     }
-    (bytes.get(position) == Some(&1)).then_some(position)
+    None
 }
 
 fn next_nonzero(bytes: &[u8], mut position: usize) -> Option<usize> {
@@ -1200,4 +1210,59 @@ fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<String> {
         .iter()
         .all(u8::is_ascii_alphanumeric)
         .then(|| String::from_utf8_lossy(value).into_owned())
+}
+
+#[cfg(test)]
+mod diagnostics {
+    #[test]
+    #[ignore]
+    fn inspect_dimension_constraint_names() {
+        use std::{env, fs::File};
+        let mut file = File::open(env::var("F3D_INSPECT").unwrap()).unwrap();
+        let scan = crate::container::scan(&mut file).unwrap();
+        let entities = super::decode_entity_headers(&mut file, &scan).unwrap();
+        let records = super::decode_record_headers(&mut file, &scan, &entities).unwrap();
+        let relations = super::decode_sketch_relations(&mut file, &scan, &records).unwrap();
+        eprintln!(
+            "RELATIONS records={} decoded={}",
+            records.len(),
+            relations.len()
+        );
+        for entry in scan.entries.iter().filter(|entry| {
+            entry.role == crate::container::role::BULKSTREAM && entry.name.contains("Design")
+        }) {
+            let bytes = crate::container::decompress_entry(&mut file, &entry.name).unwrap();
+            if let Some(record) = records.iter().find(|record| {
+                record.class_tag == "272"
+                    && !relations
+                        .iter()
+                        .any(|relation| relation.record_index == record.record_index)
+            }) {
+                let at = record.meta.provenance.offset as usize;
+                eprintln!("REJECT {} {} @{at}", record.record_index, record.class_tag);
+                eprintln!(
+                    "PARSE {:?}",
+                    super::parse_sketch_relation(&bytes[at..at + 101])
+                );
+                for (line, chunk) in bytes[at..(at + 180).min(bytes.len())]
+                    .chunks(16)
+                    .enumerate()
+                {
+                    eprintln!("R {:03} {:02x?}", line * 16, chunk);
+                }
+            }
+            let mut position = 0usize;
+            while position + 4 <= bytes.len() {
+                if let Some((value, end)) = super::lp_ascii(&bytes, position) {
+                    let lower = value.to_ascii_lowercase();
+                    if lower.contains("dimension") || lower.contains("constraint") {
+                        eprintln!("NAME @{position} {value}");
+                    }
+                    position = end;
+                } else {
+                    position += 1;
+                }
+            }
+        }
+    }
 }

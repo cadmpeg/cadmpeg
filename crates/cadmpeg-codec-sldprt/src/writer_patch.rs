@@ -270,7 +270,16 @@ fn patch_surfaces(
         match (&surface.geometry, &baseline.geometry) {
             (SurfaceGeometry::Unknown { .. }, SurfaceGeometry::Unknown { .. }) => continue,
             (SurfaceGeometry::Nurbs(new), SurfaceGeometry::Nurbs(old)) if new == old => continue,
-            (SurfaceGeometry::Nurbs(_), SurfaceGeometry::Nurbs(_)) => return None,
+            (SurfaceGeometry::Nurbs(new), SurfaceGeometry::Nurbs(old)) => {
+                crate::brep::patch_nurbs_surface(
+                    payload.get_mut(body_start..)?,
+                    baseline.meta.provenance.offset as usize,
+                    old,
+                    new,
+                    scale,
+                )?;
+                continue;
+            }
             _ if surface.geometry == baseline.geometry => continue,
             _ => {}
         }
@@ -310,7 +319,16 @@ fn patch_curves(
         let baseline = old[&curve.id];
         match (&curve.geometry, &baseline.geometry) {
             (CurveGeometry::Nurbs(new), CurveGeometry::Nurbs(old)) if new == old => continue,
-            (CurveGeometry::Nurbs(_), CurveGeometry::Nurbs(_)) => return None,
+            (CurveGeometry::Nurbs(new), CurveGeometry::Nurbs(old)) => {
+                crate::brep::patch_nurbs_curve(
+                    payload.get_mut(body_start..)?,
+                    baseline.meta.provenance.offset as usize,
+                    old,
+                    new,
+                    scale,
+                )?;
+                continue;
+            }
             _ if curve.geometry == baseline.geometry => continue,
             _ => {}
         }

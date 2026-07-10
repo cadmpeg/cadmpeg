@@ -396,8 +396,8 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                     edge: EdgeId(id_edge(edge_attr)),
                     next: CoedgeId(id_coedge(next)),
                     previous: CoedgeId(id_coedge(prev)),
+                    radial_next: partner.clone(),
                     partner,
-                    radial_next: None,
                     sense: sense_of(ce.marker.unwrap_or(0x2b)),
                     pcurve: None,
                     meta: meta(ce.offset, "00_11", Exactness::ByteExact),
@@ -454,9 +454,13 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                 if c.single_sample {
                     out.stats.single_sample_carriers += 1;
                 }
+                let mut geometry = geo.clone();
+                if let Some((_, u_reference, v_reference)) = c.frame {
+                    fold_surface_frame(&mut geometry, u_reference, v_reference);
+                }
                 out.surfaces.push(Surface {
                     id: SurfaceId(id_surf(f.bridge_attr)),
-                    geometry: geo.clone(),
+                    geometry,
                     meta: meta(c.offset, "compact_surface", Exactness::ByteExact),
                 });
                 if let Some((origin, u_reference, v_reference)) = c.frame {
@@ -602,6 +606,21 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
     }
 
     out
+}
+
+fn fold_surface_frame(
+    geometry: &mut SurfaceGeometry,
+    u_reference: cadmpeg_ir::math::Vector3,
+    _v_reference: cadmpeg_ir::math::Vector3,
+) {
+    match geometry {
+        SurfaceGeometry::Plane { u_axis, .. } => *u_axis = Some(u_reference),
+        SurfaceGeometry::Cylinder { ref_direction, .. }
+        | SurfaceGeometry::Cone { ref_direction, .. }
+        | SurfaceGeometry::Torus { ref_direction, .. } => *ref_direction = Some(u_reference),
+        SurfaceGeometry::Sphere { ref_direction, .. } => *ref_direction = Some(u_reference),
+        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
+    }
 }
 
 fn derive_planar_pcurves(out: &mut Brep, stream: &str) {
@@ -1312,7 +1331,7 @@ fn synthesize_cylinder_seams(out: &mut Brep, stream: &str) {
             next: circle_b.clone(),
             previous: circle_a.clone(),
             partner: Some(seam_b.clone()),
-            radial_next: None,
+            radial_next: Some(seam_b.clone()),
             sense: Sense::Forward,
             pcurve: None,
             meta: derived("derived_periodic_seam"),
@@ -1324,7 +1343,7 @@ fn synthesize_cylinder_seams(out: &mut Brep, stream: &str) {
             next: circle_a.clone(),
             previous: circle_b.clone(),
             partner: Some(seam_a.clone()),
-            radial_next: None,
+            radial_next: Some(seam_a.clone()),
             sense: Sense::Reversed,
             pcurve: None,
             meta: derived("derived_periodic_seam"),

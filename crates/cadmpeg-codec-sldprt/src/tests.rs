@@ -1063,6 +1063,12 @@ fn retained_source_image_round_trips_byte_exactly() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
+    assert!(!result.ir.annotations.provenance.is_empty());
+    for coedge in &result.ir.coedges {
+        if let Some(partner) = &coedge.partner {
+            assert_eq!(coedge.radial_next.as_ref(), Some(partner));
+        }
+    }
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved(&result.ir, &mut encoded)
@@ -1825,8 +1831,8 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
     let mut body = triangle_body();
-    let bridge = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
-    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+    let bridge_offset = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
+    body[bridge_offset + 26..bridge_offset + 28].copy_from_slice(&180u16.to_be_bytes());
     let edge = body.windows(2).position(|w| w == [0x00, 0x10]).unwrap();
     body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
     body.extend(nurbs_curve_carrier(170, 171));
@@ -1862,6 +1868,85 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
     assert!(regenerated.ir.surfaces.iter().any(
         |surface| matches!(&surface.geometry, SurfaceGeometry::Nurbs(value) if value == &expected_surface)
     ));
+}
+
+#[test]
+fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
+    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+
+    let mut body = triangle_body();
+    let bridge_offset = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
+    body[bridge_offset + 26..bridge_offset + 28].copy_from_slice(&180u16.to_be_bytes());
+    let edge = body.windows(2).position(|w| w == [0x00, 0x10]).unwrap();
+    body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
+    body.extend(nurbs_curve_carrier(170, 171));
+    body.extend(nurbs_surface_carrier(180, 181, 10));
+    body.extend(bridge(210, 220, 999));
+    body.extend(loop_head(220, 230, 210));
+    body.extend(coedge(230, 220, 231, 250, 0, 240, false));
+    body.extend(coedge(231, 220, 232, 251, 0, 241, false));
+    body.extend(coedge(232, 220, 230, 252, 0, 242, false));
+    body.extend(edge_use(240, 0));
+    body.extend(edge_use(241, 0));
+    body.extend(edge_use(242, 0));
+    body.extend(vertex_use(250, 260));
+    body.extend(vertex_use(251, 261));
+    body.extend(vertex_use(252, 262));
+    body.extend(world_point(260, [10.0, 0.0, 0.0]));
+    body.extend(world_point(261, [11.0, 0.0, 0.0]));
+    body.extend(world_point(262, [10.0, 1.0, 0.0]));
+
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let curve = decoded
+        .ir
+        .curves
+        .iter_mut()
+        .find_map(|curve| match &mut curve.geometry {
+            CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+            _ => None,
+        })
+        .unwrap();
+    curve.control_points[1].y = 1_500.0;
+    curve.knots[3..].fill(2.0);
+    let expected_curve = curve.clone();
+    let surface = decoded
+        .ir
+        .surfaces
+        .iter_mut()
+        .find_map(|surface| match &mut surface.geometry {
+            SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+            _ => None,
+        })
+        .unwrap();
+    surface.control_points[3].z = 750.0;
+    surface.u_knots[2..].fill(2.0);
+    surface.v_knots[2..].fill(3.0);
+    let expected_surface = surface.clone();
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(regenerated.ir.curves.iter().any(
+        |curve| matches!(&curve.geometry, CurveGeometry::Nurbs(value) if value == &expected_curve)
+    ));
+    assert!(regenerated.ir.surfaces.iter().any(
+        |surface| matches!(&surface.geometry, SurfaceGeometry::Nurbs(value) if value == &expected_surface)
+    ));
+    assert!(regenerated
+        .ir
+        .surfaces
+        .iter()
+        .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. })));
 }
 
 #[test]
@@ -2581,9 +2666,14 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let brep_hash = crate::decode::brep_semantic_hash(&decoded.ir);
+    let semantic_hash = crate::decode::semantic_hash(&decoded.ir);
     decoded.ir.feature_histories[0].features[0]
         .parameters
         .insert("Depth".into(), "30mm".into());
+    decoded.ir.annotations.exactness.clear();
+    assert_eq!(crate::decode::brep_semantic_hash(&decoded.ir), brep_hash);
+    assert_ne!(crate::decode::semantic_hash(&decoded.ir), semantic_hash);
 
     let mut encoded = Vec::new();
     SldprtCodec

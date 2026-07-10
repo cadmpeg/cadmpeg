@@ -13,9 +13,11 @@
 //! container-metadata IR (active BREP preserved as an [`UnknownRecord`]) and
 //! says so.
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::ids::UnknownId;
+use cadmpeg_ir::native::F3dNative;
 use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::{Tolerances, Units};
@@ -33,7 +35,8 @@ pub fn decode(
     let scan = container::scan(reader)?;
 
     if options.container_only {
-        let ir = build_metadata_ir(&scan);
+        let mut ir = build_metadata_ir(&scan);
+        finalize_dual_write(&mut ir);
         let report = build_container_report(&scan, true);
         return Ok(DecodeResult { ir, report });
     }
@@ -98,6 +101,7 @@ pub fn decode(
                         .retain(|loss| loss.category != LossCategory::Material);
                 }
             }
+            finalize_dual_write(&mut ir);
             return Ok(DecodeResult { ir, report });
         }
     }
@@ -130,7 +134,227 @@ pub fn decode(
     ir.appearances = decoded_materials.appearances;
     ir.appearance_bindings = decoded_materials.bindings;
     let report = build_container_report(&scan, false);
+    finalize_dual_write(&mut ir);
     Ok(DecodeResult { ir, report })
+}
+
+fn finalize_dual_write(ir: &mut CadIr) {
+    ir.native.f3d = Some(F3dNative {
+        act_entities: ir.act_entities.clone(),
+        act_guids: ir.act_guids.clone(),
+        act_root_components: ir.act_root_components.clone(),
+        design_objects: ir.design_objects.clone(),
+        design_entity_headers: ir.design_entity_headers.clone(),
+        design_record_headers: ir.design_record_headers.clone(),
+        design_body_members: ir.design_body_members.clone(),
+        construction_recipes: ir.construction_recipes.clone(),
+        persistent_design_links: ir.persistent_design_links.clone(),
+        persistent_references: ir.persistent_references.clone(),
+        sketch_curve_links: ir.sketch_curve_links.clone(),
+        sketch_relations: ir.sketch_relations.clone(),
+        sketch_points: ir.sketch_points.clone(),
+        sketch_curve_identities: ir.sketch_curve_identities.clone(),
+        lost_edge_references: ir.lost_edge_references.clone(),
+        asm_histories: ir.asm_histories.clone(),
+        ..F3dNative::default()
+    });
+
+    let mut annotations = AnnotationBuilder::new();
+    macro_rules! annotate {
+        ($arena:expr, $key:expr) => {
+            for entity in $arena {
+                let key = ($key)(entity);
+                let stream = annotations.stream(entity.meta.provenance.stream.clone());
+                let note = annotations.note(key.clone(), stream, entity.meta.provenance.offset);
+                if let Some(tag) = &entity.meta.provenance.tag {
+                    note.tag(tag.clone());
+                }
+                annotations.exactness(key, entity.meta.exactness);
+            }
+        };
+    }
+
+    annotate!(&ir.bodies, |e: &cadmpeg_ir::topology::Body| e.id.0.clone());
+    annotate!(&ir.lumps, |e: &cadmpeg_ir::topology::Lump| e.id.0.clone());
+    annotate!(&ir.shells, |e: &cadmpeg_ir::topology::Shell| e.id.0.clone());
+    annotate!(&ir.faces, |e: &cadmpeg_ir::topology::Face| e.id.0.clone());
+    annotate!(&ir.loops, |e: &cadmpeg_ir::topology::Loop| e.id.0.clone());
+    annotate!(&ir.coedges, |e: &cadmpeg_ir::topology::Coedge| e
+        .id
+        .0
+        .clone());
+    annotate!(&ir.edges, |e: &cadmpeg_ir::topology::Edge| e.id.0.clone());
+    annotate!(&ir.vertices, |e: &cadmpeg_ir::topology::Vertex| e
+        .id
+        .0
+        .clone());
+    annotate!(&ir.points, |e: &cadmpeg_ir::topology::Point| e.id.0.clone());
+    annotate!(&ir.surfaces, |e: &cadmpeg_ir::geometry::Surface| e
+        .id
+        .0
+        .clone());
+    annotate!(&ir.curves, |e: &cadmpeg_ir::geometry::Curve| e.id.0.clone());
+    annotate!(&ir.pcurves, |e: &cadmpeg_ir::geometry::Pcurve| e
+        .id
+        .0
+        .clone());
+    annotate!(
+        &ir.surface_parameterizations,
+        |e: &cadmpeg_ir::geometry::SurfaceParameterization| e.surface.0.clone()
+    );
+    annotate!(
+        &ir.procedural_surfaces,
+        |e: &cadmpeg_ir::geometry::ProceduralSurface| e.surface.0.clone()
+    );
+    annotate!(
+        &ir.procedural_curves,
+        |e: &cadmpeg_ir::geometry::ProceduralCurve| e.curve.0.clone()
+    );
+    annotate!(
+        &ir.sketch_curve_links,
+        |e: &cadmpeg_ir::design::SketchCurveLink| {
+            format!("{}:{}", e.coedge.0, e.sketch_curve_id)
+        }
+    );
+    annotate!(
+        &ir.persistent_design_links,
+        |e: &cadmpeg_ir::design::PersistentDesignLink| {
+            format!("{:?}:{}:{}", e.target, e.design_id, e.ordinal)
+        }
+    );
+    annotate!(
+        &ir.construction_recipes,
+        |e: &cadmpeg_ir::design::ConstructionRecipe| {
+            format!("{:?}:{:?}:{}", e.kind, e.design_id, e.recipe_index)
+        }
+    );
+    annotate!(
+        &ir.persistent_references,
+        |e: &cadmpeg_ir::design::PersistentReference| {
+            format!("{:?}:{}", e.kind, e.meta.provenance.offset)
+        }
+    );
+    annotate!(
+        &ir.lost_edge_references,
+        |e: &cadmpeg_ir::design::LostEdgeReference| {
+            format!("{}:{}", e.class_tag, e.record_index)
+        }
+    );
+    annotate!(
+        &ir.design_objects,
+        |e: &cadmpeg_ir::design::DesignObject| e.self_guid.clone()
+    );
+    annotate!(
+        &ir.design_entity_headers,
+        |e: &cadmpeg_ir::design::DesignEntityHeader| { format!("{}:{}", e.class_tag, e.entity_id) }
+    );
+    annotate!(
+        &ir.design_record_headers,
+        |e: &cadmpeg_ir::design::DesignRecordHeader| {
+            format!("{}:{}", e.record_index, e.class_tag)
+        }
+    );
+    annotate!(
+        &ir.sketch_relations,
+        |e: &cadmpeg_ir::design::SketchRelation| e.record_index.to_string()
+    );
+    annotate!(&ir.sketch_points, |e: &cadmpeg_ir::design::SketchPoint| e
+        .record_index
+        .to_string());
+    annotate!(
+        &ir.sketch_curve_identities,
+        |e: &cadmpeg_ir::design::SketchCurveIdentity| e.record_index.to_string()
+    );
+    annotate!(
+        &ir.design_body_members,
+        |e: &cadmpeg_ir::design::DesignBodyMember| e.entity_suffix.to_string()
+    );
+    annotate!(&ir.act_entities, |e: &cadmpeg_ir::design::ActEntity| {
+        format!("{}:{}", e.record_index, e.entity_id)
+    });
+    annotate!(&ir.act_guids, |e: &cadmpeg_ir::design::ActGuid| {
+        format!("{}:{}", e.ordinal, e.guid)
+    });
+    annotate!(
+        &ir.act_root_components,
+        |e: &cadmpeg_ir::design::ActRootComponent| {
+            format!("{}:{}", e.record_index, e.entity_id)
+        }
+    );
+    annotate!(&ir.asm_histories, |e: &cadmpeg_ir::history::AsmHistory| {
+        format!("{}:{}", e.meta.provenance.stream, e.meta.provenance.offset)
+    });
+    annotate!(&ir.appearances, |e: &cadmpeg_ir::appearance::Appearance| e
+        .id
+        .0
+        .clone());
+    annotate!(
+        &ir.appearance_bindings,
+        |e: &cadmpeg_ir::appearance::AppearanceBinding| {
+            format!("{:?}:{}", e.target, e.appearance.0)
+        }
+    );
+    annotate!(
+        &ir.attributes,
+        |e: &cadmpeg_ir::attributes::SourceAttribute| e.id.0.clone()
+    );
+    annotate!(&ir.unknowns, |e: &cadmpeg_ir::unknown::UnknownRecord| e
+        .id
+        .0
+        .clone());
+
+    for edge in &ir.edges {
+        if edge.param_range.is_some()
+            && edge
+                .curve
+                .as_ref()
+                .and_then(|curve| ir.curves.iter().find(|candidate| candidate.id == *curve))
+                .is_some_and(|curve| {
+                    matches!(
+                        curve.geometry,
+                        cadmpeg_ir::geometry::CurveGeometry::Circle { .. }
+                            | cadmpeg_ir::geometry::CurveGeometry::Ellipse { .. }
+                    )
+                })
+        {
+            annotations.derived(&edge.id.0, "param_range");
+        }
+    }
+    for surface in &ir.surfaces {
+        let source_frame = ir
+            .surface_parameterizations
+            .iter()
+            .any(|frame| frame.surface == surface.id);
+        if !source_frame {
+            match surface.geometry {
+                cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+                    u_axis: Some(_), ..
+                } => {
+                    annotations.derived(&surface.id.0, "geometry.u_axis");
+                }
+                cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+                    ref_direction: Some(_),
+                    ..
+                }
+                | cadmpeg_ir::geometry::SurfaceGeometry::Cone {
+                    ref_direction: Some(_),
+                    ..
+                }
+                | cadmpeg_ir::geometry::SurfaceGeometry::Sphere {
+                    ref_direction: Some(_),
+                    ..
+                }
+                | cadmpeg_ir::geometry::SurfaceGeometry::Torus {
+                    ref_direction: Some(_),
+                    ..
+                } => {
+                    annotations.derived(&surface.id.0, "geometry.ref_direction");
+                }
+                _ => {}
+            }
+        }
+    }
+    ir.annotations = annotations.build();
 }
 
 fn decode_asm_history(

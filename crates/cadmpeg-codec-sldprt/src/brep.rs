@@ -31,6 +31,7 @@ mod topology;
 pub(crate) const LEN_TO_MM: f64 = 1000.0;
 
 pub use self::graph::{decode, decode_bodies, Brep, Stats};
+pub(crate) use self::spline::{patch_nurbs_curve, patch_nurbs_surface};
 
 mod graph;
 

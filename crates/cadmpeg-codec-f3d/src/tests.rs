@@ -120,6 +120,26 @@ fn t_end(b: &mut Vec<u8>) {
     b.push(0x11);
 }
 
+fn assert_f3d_native_parity(ir: &cadmpeg_ir::document::CadIr) {
+    let native = ir.native.f3d.as_ref().expect("F3D native namespace");
+    assert_eq!(native.act_entities, ir.act_entities);
+    assert_eq!(native.act_guids, ir.act_guids);
+    assert_eq!(native.act_root_components, ir.act_root_components);
+    assert_eq!(native.design_objects, ir.design_objects);
+    assert_eq!(native.design_entity_headers, ir.design_entity_headers);
+    assert_eq!(native.design_record_headers, ir.design_record_headers);
+    assert_eq!(native.design_body_members, ir.design_body_members);
+    assert_eq!(native.construction_recipes, ir.construction_recipes);
+    assert_eq!(native.persistent_design_links, ir.persistent_design_links);
+    assert_eq!(native.persistent_references, ir.persistent_references);
+    assert_eq!(native.sketch_curve_links, ir.sketch_curve_links);
+    assert_eq!(native.sketch_relations, ir.sketch_relations);
+    assert_eq!(native.sketch_points, ir.sketch_points);
+    assert_eq!(native.sketch_curve_identities, ir.sketch_curve_identities);
+    assert_eq!(native.lost_edge_references, ir.lost_edge_references);
+    assert_eq!(native.asm_histories, ir.asm_histories);
+}
+
 /// Assemble the active slice: header prefix + records + `delta_state` boundary.
 /// `RecordTable` indices are the order below, starting at 0 (`asmheader`).
 fn synthetic_geometry_smbh() -> Vec<u8> {
@@ -1443,7 +1463,7 @@ fn decode_yields_metadata_and_honest_report() {
     // and source metadata was captured.
     assert_eq!(result.ir.unknowns.len(), 1);
     assert_eq!(result.ir.unknowns[0].sha256.len(), 64);
-    let source = result.ir.source.expect("source metadata");
+    let source = result.ir.source.as_ref().expect("source metadata");
     assert_eq!(source.format, "f3d");
     assert_eq!(
         source.attributes.get("product_family").map(String::as_str),
@@ -1451,6 +1471,12 @@ fn decode_yields_metadata_and_honest_report() {
     );
     // resabs/resnor were carried into tolerances.
     assert_eq!(result.ir.tolerances.resabs, 1e-6);
+    assert_f3d_native_parity(&result.ir);
+    assert!(result
+        .ir
+        .annotations
+        .provenance
+        .contains_key(&result.ir.unknowns[0].id.0));
 }
 
 #[test]
@@ -1537,6 +1563,12 @@ fn decode_builds_valid_topology_and_geometry() {
     assert_eq!(result.ir.points.len(), 3);
     assert_eq!(result.ir.surfaces.len(), 1);
     assert_eq!(result.ir.surface_parameterizations.len(), 1);
+    assert_f3d_native_parity(&result.ir);
+    assert!(result
+        .ir
+        .annotations
+        .provenance
+        .contains_key(&result.ir.bodies[0].id.0));
 
     // The plane decoded with its stored origin and complete parameter frame.
     match &result.ir.surfaces[0].geometry {
