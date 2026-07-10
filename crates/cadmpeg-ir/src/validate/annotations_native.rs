@@ -247,12 +247,47 @@ pub(super) fn check_feature_input_lanes(ir: &CadIr, findings: &mut Vec<Finding>)
     }
 }
 
-pub(super) fn check_annotations(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let Ok(value) = serde_json::to_value(ir) else {
+/// Every JSON object carrying a string `id` field in the serialized IR, keyed
+/// by that id. First occurrence in document order wins on duplicates
+/// (duplicates are flagged separately by the identity checks).
+pub(super) type EntityIndex<'a> = HashMap<&'a str, &'a serde_json::Value>;
+
+/// Build the [`EntityIndex`] for a serialized IR in one traversal.
+pub(super) fn build_entity_index(value: &serde_json::Value) -> EntityIndex<'_> {
+    let mut index = HashMap::new();
+    collect_entity_values(value, &mut index);
+    index
+}
+
+fn collect_entity_values<'a>(value: &'a serde_json::Value, index: &mut EntityIndex<'a>) {
+    match value {
+        serde_json::Value::Object(object) => {
+            if let Some(id) = object.get("id").and_then(serde_json::Value::as_str) {
+                index.entry(id).or_insert(value);
+            }
+            for child in object.values() {
+                collect_entity_values(child, index);
+            }
+        }
+        serde_json::Value::Array(array) => {
+            for child in array {
+                collect_entity_values(child, index);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub(super) fn check_annotations(
+    ir: &CadIr,
+    index: Option<&EntityIndex<'_>>,
+    findings: &mut Vec<Finding>,
+) {
+    let Some(index) = index else {
         return;
     };
     for (id, provenance) in &ir.annotations.provenance {
-        if find_entity_value(&value, id).is_none() {
+        if !index.contains_key(id.as_str()) {
             annotation_finding(
                 findings,
                 Severity::Error,
@@ -270,7 +305,7 @@ pub(super) fn check_annotations(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for (id, note) in &ir.annotations.exactness {
-        let Some(entity) = find_entity_value(&value, id) else {
+        let Some(entity) = index.get(id.as_str()) else {
             annotation_finding(
                 findings,
                 Severity::Error,
@@ -301,23 +336,6 @@ fn annotation_finding(findings: &mut Vec<Finding>, severity: Severity, id: &str,
     });
 }
 
-fn find_entity_value<'a>(value: &'a serde_json::Value, id: &str) -> Option<&'a serde_json::Value> {
-    match value {
-        serde_json::Value::Object(object) => {
-            if object.get("id").and_then(serde_json::Value::as_str) == Some(id) {
-                return Some(value);
-            }
-            object
-                .values()
-                .find_map(|child| find_entity_value(child, id))
-        }
-        serde_json::Value::Array(array) => {
-            array.iter().find_map(|child| find_entity_value(child, id))
-        }
-        _ => None,
-    }
-}
-
 fn field_path_resolves(mut value: &serde_json::Value, path: &str) -> bool {
     for component in path.split('.') {
         match value {
@@ -342,7 +360,11 @@ fn field_path_resolves(mut value: &serde_json::Value, path: &str) -> bool {
     true
 }
 
-pub(super) fn check_native_links(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_native_links(
+    ir: &CadIr,
+    index: Option<&EntityIndex<'_>>,
+    findings: &mut Vec<Finding>,
+) {
     let mut native_ids = Vec::new();
     collect_native_ids(ir, &mut native_ids);
     let native_ids = native_ids
@@ -362,10 +384,12 @@ pub(super) fn check_native_links(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
 
-    let all_ids = all_entity_ids(ir);
+    let Some(index) = index else {
+        return;
+    };
     for record in &ir.unknowns {
         for target in &record.links {
-            if !all_ids.contains(target) {
+            if !index.contains_key(target.as_str()) {
                 findings.push(Finding {
                     check: Check::NativeLinks,
                     severity: Severity::Error,
@@ -374,33 +398,5 @@ pub(super) fn check_native_links(ir: &CadIr, findings: &mut Vec<Finding>) {
                 });
             }
         }
-    }
-}
-
-pub(super) fn all_entity_ids(ir: &CadIr) -> HashSet<String> {
-    let Ok(value) = serde_json::to_value(ir) else {
-        return HashSet::new();
-    };
-    let mut owned = Vec::new();
-    collect_json_ids(&value, &mut owned);
-    owned.into_iter().collect()
-}
-
-fn collect_json_ids(value: &serde_json::Value, ids: &mut Vec<String>) {
-    match value {
-        serde_json::Value::Object(object) => {
-            if let Some(id) = object.get("id").and_then(serde_json::Value::as_str) {
-                ids.push(id.to_owned());
-            }
-            for child in object.values() {
-                collect_json_ids(child, ids);
-            }
-        }
-        serde_json::Value::Array(array) => {
-            for child in array {
-                collect_json_ids(child, ids);
-            }
-        }
-        _ => {}
     }
 }
