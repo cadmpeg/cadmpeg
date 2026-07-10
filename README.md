@@ -10,16 +10,13 @@ cadmpeg is early. End-to-end Fusion 360 `.f3d` to STEP path is about 70% complet
 
 ## Why cadmpeg
 
-Most native CAD formats are proprietary and sparsely documented. Neutral exports such as STEP make geometry portable, but they do not expose the native file nor preserve all design data. cadmpeg aims to enable full interoperability.
+Most native CAD formats are proprietary and sparsely documented. Neutral exports such as STEP make geometry portable but drop design data and hide the native file.
 
-4 guiding principles:
+Every cadmpeg decoder writes to one documented IR. Validators, exporters, and downstream tools build against that single interface. IR values record the byte offsets they came from, inferred values are marked inferred, and whatever a decoder or exporter cannot carry through it reports as loss.
 
-- **Common IR.** Every decoder targets the same documented representation. Validators, exporters, and downstream tools build on one interface.
-- **Byte traceability.** Decoders distinguish byte-derived values from derived or inferred values. IR values record source offsets where available.
-- **Loss accounting.** Decoders and STEP export report unsupported or reduced content.
-- **Clean-room inputs.** Format knowledge comes from CAD files contributors may legally possess and public information, without vendor SDKs, decompiled binaries, or confidential material. See [LEGAL.md](LEGAL.md).
+Format knowledge comes from CAD files contributors may legally possess and from public documentation. Vendor SDKs, decompiled binaries, and confidential material are off limits ([LEGAL.md](LEGAL.md)).
 
-The grand vision is cadmpeg supporting high fidelity conversions between all CAD formats, including parametric design history, across versions and vendors. Impossible to perfectly convert but the idea is to get as close as possible.
+The grand vision is high fidelity conversion between all CAD formats, including parametric design history, across versions and vendors. Impossible to perfectly convert but the idea is to get as close as possible.
 
 ## Quick start
 
