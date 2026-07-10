@@ -1,0 +1,25 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist'
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.32.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "powershell", "homebrew"]
+# GitHub repo the Homebrew formula is pushed to on release. Requires the
+# HOMEBREW_TAP_TOKEN repository secret (a token with write access to the tap).
+tap = "cadmpeg/homebrew-tap"
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Whether to install an updater program
+install-updater = false
+# Publish the workspace crates to crates.io in the same tag-triggered run
+# (via .github/workflows/publish-crates.yml), so release binaries and
+# published crate versions never drift. Requires the CARGO_REGISTRY_TOKEN
+# repository secret.
+publish-jobs = ["homebrew", "./publish-crates"]

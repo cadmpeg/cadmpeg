@@ -1,0 +1,33 @@
+# Publishes the workspace crates to crates.io. Invoked by the dist-generated
+# release workflow (dist-workspace.toml `publish-jobs = ["./publish-crates"]`)
+# after all release artifacts build successfully, so a failed binary build
+# never leaves half a release on crates.io.
+name: Publish crates
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+    secrets:
+      CARGO_REGISTRY_TOKEN:
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish workspace to crates.io
+        # `cargo publish --workspace` (stable since 1.90) publishes the member
+        # crates in dependency order. cadmpeg-fuzz is not a workspace member,
+        # so it is never published.
+        run: cargo publish --workspace --no-verify --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

@@ -31,6 +31,24 @@ cd cadmpeg
 cargo install --path crates/cadmpeg
 ```
 
+Prebuilt binaries are also available. Homebrew (macOS):
+
+```sh
+brew install cadmpeg/tap/cadmpeg
+```
+
+Installer script (macOS, Linux):
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/cadmpeg/cadmpeg/releases/latest/download/cadmpeg-installer.sh | sh
+```
+
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/cadmpeg/cadmpeg/releases/latest/download/cadmpeg-installer.ps1 | iex"
+```
+
 Run an end-to-end smoke test without a native CAD file:
 
 ```sh
