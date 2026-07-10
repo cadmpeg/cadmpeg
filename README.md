@@ -2,26 +2,28 @@
 
 **One open pipeline for native CAD.**
 
-cadmpeg aims to do for CAD files what FFmpeg does for media: provide one open toolchain for reading, inspecting, converting, and building on native formats. It decodes vendor files into a documented intermediate representation (IR), validates the result, and exports neutral formats. Decode and STEP export report what could not be represented.
+cadmpeg aims to do for CAD files what FFmpeg does for media: provide one open toolchain for reading, inspecting, converting, and building on all CAD formats. It decodes vendor files into a documented intermediate representation (IR), validates the result, and exports neutral formats.
 
-cadmpeg is early. The repository implements an end-to-end Fusion 360 `.f3d` to STEP path, while codecs for SolidWorks, CATIA, NX, and Creo provide partial support across different semantic domains. The long-term goal is one inspectable pipeline for every major CAD format, giving users control of their CAD data and other tools a common foundation to build on.
+cadmpeg is early. End-to-end Fusion 360 `.f3d` to STEP path is about 70% complete, while codecs for SolidWorks, CATIA, NX, and Creo are in much earlier stages. Long-term goal is one inspectable pipeline for every major CAD format.
 
 [Try it](#quick-start) · [Format support](docs/format-support.md) · [Donate a test file](corpus/README.md) · [Contribute](CONTRIBUTING.md)
 
 ## Why cadmpeg
 
-Most native CAD formats are proprietary and sparsely documented. Neutral exports such as STEP make geometry portable, but they do not expose the native file or preserve all design data. cadmpeg reads the native bytes directly so users and tools can inspect what was decoded, what was inferred, and what could not be represented.
+Most native CAD formats are proprietary and sparsely documented. Neutral exports such as STEP make geometry portable, but they do not expose the native file nor preserve all design data. cadmpeg aims enable full interoperability.
 
-Four rules shape the project:
+4 guiding principles:
 
 - **Common IR.** Every decoder targets the same documented representation. Validators, exporters, and downstream tools build on one interface.
 - **Byte traceability.** Decoders distinguish byte-derived values from derived or inferred values. IR values record source offsets where available.
-- **Loss accounting.** Decoders and STEP export report unsupported or reduced content instead of dropping it silently.
+- **Loss accounting.** Decoders and STEP export report unsupported or reduced content.
 - **Clean-room inputs.** Format knowledge comes from CAD files contributors may legally possess and public information, without vendor SDKs, decompiled binaries, or confidential material. See [LEGAL.md](LEGAL.md).
+
+The grand vision is cadmpeg supporting high fidelity conversions between all CAD formats, including parametric design history, across versions and vendors. Impossible to perfectly convert but the idea is to get as close as possible.
 
 ## Quick start
 
-cadmpeg requires Rust 1.88 or later. Install it from source:
+cadmpeg requires Rust 1.88 or later:
 
 ```sh
 git clone https://github.com/cadmpeg/cadmpeg
@@ -67,15 +69,15 @@ The pure-Rust STEP AP214 writer emits supported analytic and B-spline B-rep geom
 
 The [format support profiles](docs/format-support.md) are the authoritative capability breakdown. Per-format specifications in [`docs/formats/`](docs/formats/) define byte semantics; adjacent `*-open-items.md` files track unresolved fields and structures.
 
-## How it works
+## Pipeline
 
 ```text
 input file ──▶ container decoder ──▶ format decoder ──▶ IR ──▶ validator ──▶ exporter ──▶ output + reports
 ```
 
-The IR connects the pipeline. Decoders produce it, validators check it, and exporters consume it. It serializes to JSON, making a native decode available for inspection and independent tooling.
+The IR connects the pipeline. Decoders produce it, validators check it, and exporters consume it. Version 1 serializes a format-neutral model, sparse source annotations, independently versioned native namespaces, and opaque records as canonical JSON.
 
-- [CAD IR](docs/cad-ir.md) defines the representation and its guarantees.
+- [CAD IR version 1](docs/cad-ir.md) defines byte semantics, canonical units and parameterization, identity, topology, annotations, native opacity, and versioning.
 - [Architecture](docs/architecture.md) describes the pipeline, codec interface, and crate map.
 - [Format support](docs/format-support.md) records current capability by format.
 - [Roadmap](docs/roadmap.md) defines milestones and contributor entry points.
@@ -91,19 +93,13 @@ cadmpeg convert  part.f3d -f step -o part.step
 cadmpeg diff     a.cadir.json b.cadir.json
 ```
 
-`convert` runs decode, validation, and export. `export` writes an IR directly without validating it first. Decode reports coverage and losses; STEP export reports IR content it could not carry.
-
 Output formats are `cadir`, `step`, and `sldprt`; `json` remains an alias for `cadir`. When `-f` is omitted, `export` and `convert` infer the format from `.cadir`, `.json`, `.step`, `.stp`, or `.sldprt` output paths. Use `--input-format` to bypass source-format detection.
 
-Artifact-producing commands write only the artifact to stdout and send diagnostics to stderr. `--report <path>` writes a machine-readable JSON report containing `schema_version: 1`, command details, losses, and decode, validation, or export results where applicable. Existing output and report files require `--force`.
-
-Exit status 0 means success, 1 means a semantic failure or structural difference, and 2 means an operational error. `convert` refuses invalid IR unless `--allow-invalid` is passed and refuses geometry exports with no transferred geometry unless `--allow-empty` is passed.
-
-`diff` compares units, tolerances, and every IR arena. Entity arenas use stable IDs; record arenas use deterministic composite keys. Vector position is not entity identity.
+Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 2`. This command-envelope version is independent of the CAD IR's `ir_version: "1"`.
 
 ## Contributing
 
-Public test files are the most immediate need. The corpus starts empty because the files used to develop the decoders cannot be redistributed. If you can author a CAD file and dedicate it to the public domain under CC0, [donate it to the corpus](corpus/README.md) to give cadmpeg reproducible public coverage.
+Public test files are the most immediate need. If you can author a CAD file and dedicate it to the public domain under CC0, [donate it to the corpus](corpus/README.md) it would be greatly appreciated!
 
 Code and format contributions are also welcome:
 
@@ -121,6 +117,8 @@ From the repository root:
 cargo build --workspace
 cargo test --workspace
 ```
+
+AI-assisted contributions are welcome but please keep them concise and review the output before submission. The same clean-room rules in LEGAL.md apply, don't paste vendor SDK knowledge through a model.
 
 ## Licensing
 
