@@ -460,8 +460,14 @@ pub fn decode_sketch_relations(
             let Some(payload) = bytes.get(at..at + 101) else {
                 continue;
             };
-            let Some((members, auxiliary_references, owner_reference, state, return_members)) =
-                parse_sketch_relation(payload, &owners)
+            let Some((
+                members,
+                auxiliary_references,
+                owner_reference,
+                state,
+                state_offset,
+                return_members,
+            )) = parse_sketch_relation(payload, &owners)
             else {
                 continue;
             };
@@ -470,6 +476,8 @@ pub fn decode_sketch_relations(
                 id: format!("f3d:{}:sketch-relation#{}", entry.name, record.record_index),
                 record_index: record.record_index,
                 class_tag: record.class_tag.clone(),
+                byte_offset: record.byte_offset,
+                state_offset: state_offset as u32,
                 owner_reference,
                 auxiliary_references,
                 members,
@@ -484,7 +492,7 @@ pub fn decode_sketch_relations(
     Ok(out)
 }
 
-fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>, u32) {
+pub(crate) fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>, u32) {
     let definitions = [
         (0x0000_0001, SketchConstraintKind::Coincident),
         (0x0000_0002, SketchConstraintKind::Colinear),
@@ -543,7 +551,8 @@ pub fn decode_sketch_points(
                 break;
             };
             let payload = &bytes[at..];
-            let Some((persistent_id, paired_reference, x, y)) = decode_sketch_point(payload) else {
+            let Some((persistent_id, paired_reference, x, y, shift)) = decode_sketch_point(payload)
+            else {
                 at += 1;
                 continue;
             };
@@ -556,9 +565,12 @@ pub fn decode_sketch_points(
                     id: format!("f3d:{}:sketch-point#{at}", entry.name),
                     record_index,
                     class_tag,
+                    byte_offset: at as u64,
+                    coordinate_offset: (96 + shift) as u32,
                     persistent_id,
                     paired_reference,
                     coordinates: Point2::new(x * 10.0, y * 10.0),
+                    raw_bytes: payload[..112 + shift].to_vec(),
                 });
             }
             at += 112;
@@ -567,9 +579,9 @@ pub fn decode_sketch_points(
     Ok(out)
 }
 
-fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64)> {
+fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64, usize)> {
     if let Some(point) = decode_sketch_point_variant(payload, 0, 1) {
-        return Some(point);
+        return Some((point.0, point.1, point.2, point.3, 0));
     }
     if u32_at(payload, 25) != Some(13)
         || payload.get(29..42) != Some(b"EntityGenesis")
@@ -579,6 +591,7 @@ fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64)> {
         return None;
     }
     decode_sketch_point_variant(payload, 52, 2)
+        .map(|point| (point.0, point.1, point.2, point.3, 52))
 }
 
 fn decode_sketch_point_variant(
@@ -649,6 +662,8 @@ pub fn decode_sketch_curve_identities(
                     id: format!("f3d:{}:sketch-curve-identity#{at}", entry.name),
                     record_index,
                     class_tag,
+                    byte_offset: at as u64,
+                    geometry_offset: (133 + geometry_shift) as u32,
                     primary_id,
                     secondary_id,
                     geometry: decode_sketch_nurbs(geometry_payload)
@@ -863,7 +878,7 @@ fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     })
 }
 
-type ParsedSketchRelation = (Vec<u32>, Vec<u32>, u32, u32, Vec<u32>);
+type ParsedSketchRelation = (Vec<u32>, Vec<u32>, u32, u32, usize, Vec<u32>);
 
 fn parse_sketch_relation(
     payload: &[u8],
@@ -893,6 +908,7 @@ fn parse_sketch_relation(
         cursor = next_reference_marker(payload, end)?;
     };
     cursor = next_nonzero(payload, end)?;
+    let state_offset = cursor + usize::from(payload.get(cursor) == Some(&1));
     let (state, end) = if payload.get(cursor) == Some(&1) {
         marked_u32(payload, cursor)?
     } else {
@@ -919,6 +935,7 @@ fn parse_sketch_relation(
         auxiliary_references,
         owner_reference,
         state,
+        state_offset,
         return_members,
     ))
 }

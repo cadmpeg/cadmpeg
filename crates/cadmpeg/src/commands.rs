@@ -384,6 +384,7 @@ fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format
 enum ExportResult {
     Cadir { total_entities: usize },
     Step(StepReport),
+    F3d { total_entities: usize },
     Sldprt { total_entities: usize },
 }
 
@@ -400,7 +401,7 @@ impl ExportResult {
                 "total_entities": report.total_entities,
                 "losses": report.losses,
             }),
-            Self::Sldprt { total_entities } => serde_json::json!({
+            Self::F3d { total_entities } | Self::Sldprt { total_entities } => serde_json::json!({
                 "format": format.name(),
                 "total_entities": total_entities,
                 "losses": [],
@@ -423,8 +424,27 @@ fn export_ir(
             Ok(ExportResult::Cadir { total_entities })
         }
         Format::Step => run_step_export(ir, out, input, force),
+        Format::F3d => run_f3d_export(ir, out, input, force),
         Format::Sldprt => run_sldprt_export(ir, out, input, force),
     }
+}
+
+fn run_f3d_export(
+    ir: &CadIr,
+    out: Option<&Path>,
+    input: &Path,
+    force: bool,
+) -> Result<ExportResult> {
+    use cadmpeg_ir::Encoder;
+    let mut bytes = Vec::new();
+    cadmpeg_codec_f3d::F3dCodec.encode(ir, &mut bytes)?;
+    if let Some(path) = out {
+        write_output(input, path, &bytes, force)?;
+    } else {
+        io::stdout().write_all(&bytes)?;
+    }
+    let total_entities = validate(ir, Vec::new()).entity_counts.values().sum();
+    Ok(ExportResult::F3d { total_entities })
 }
 
 fn run_sldprt_export(

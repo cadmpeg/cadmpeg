@@ -42,10 +42,14 @@ pub mod history;
 pub mod materials;
 pub mod nurbs;
 pub mod sab;
+mod writer;
 
 use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
+    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder, ReadSeek,
 };
+use cadmpeg_ir::document::CadIr;
+use sha2::{Digest, Sha256};
+use std::io::Write;
 
 /// The ZIP local-file-header magic.
 const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
@@ -53,6 +57,44 @@ const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 /// The Fusion 360 `.f3d` container codec.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct F3dCodec;
+
+impl F3dCodec {
+    /// Replay an unchanged decoded F3D archive byte-for-byte.
+    pub fn write_preserved(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+        let expected = ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("semantic_sha256"))
+            .ok_or_else(|| CodecError::NotImplemented("IR has no F3D semantic baseline".into()))?;
+        let record = ir
+            .unknowns
+            .iter()
+            .find(|record| record.id.0 == "f3d:file:source-image#0")
+            .ok_or_else(|| {
+                CodecError::NotImplemented("IR has no retained F3D source image".into())
+            })?;
+        let data = record.data.as_ref().ok_or_else(|| {
+            CodecError::Malformed("retained F3D source image has no bytes".into())
+        })?;
+        let hash = Sha256::digest(data)
+            .iter()
+            .fold(String::new(), |mut output, byte| {
+                use std::fmt::Write as _;
+                let _ = write!(output, "{byte:02x}");
+                output
+            });
+        if data.len() as u64 != record.byte_len || hash != record.sha256 {
+            return Err(CodecError::Malformed(
+                "retained F3D source image failed integrity validation".into(),
+            ));
+        }
+        if decode::semantic_hash(ir) != *expected {
+            return writer::write_semantic(ir, data, writer);
+        }
+        writer.write_all(data)?;
+        Ok(())
+    }
+}
 
 impl Codec for F3dCodec {
     fn id(&self) -> &'static str {
@@ -87,6 +129,16 @@ impl Codec for F3dCodec {
         options: &DecodeOptions,
     ) -> Result<DecodeResult, CodecError> {
         decode::decode(reader, options)
+    }
+}
+
+impl Encoder for F3dCodec {
+    fn id(&self) -> &'static str {
+        "f3d"
+    }
+
+    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+        self.write_preserved(ir, writer)
     }
 }
 
