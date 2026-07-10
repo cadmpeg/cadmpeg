@@ -25,9 +25,77 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Publish workspace to crates.io
-        # `cargo publish --workspace` (stable since 1.90) publishes the member
-        # crates in dependency order. cadmpeg-fuzz is not a workspace member,
-        # so it is never published.
-        run: cargo publish --workspace --no-verify --locked
+        shell: bash
+        # `cargo publish --workspace` (stable since 1.90) publishes member
+        # crates in dependency order. Before each attempt, already-published
+        # versions are excluded so a rerun resumes instead of failing. A
+        # registry rate limit can occur after several first-time crate
+        # publications; wait through its ten-minute window and resume once.
+        run: |
+          set -euo pipefail
+
+          crates=(
+            cadmpeg-ir
+            cadmpeg-codec-catia
+            cadmpeg-codec-creo
+            cadmpeg-codec-f3d
+            cadmpeg-codec-nx
+            cadmpeg-codec-sldprt
+            cadmpeg-step
+            cadmpeg
+          )
+          version="${GITHUB_REF_NAME#v}"
+          manifest_version="$(
+            cargo metadata --no-deps --format-version 1 |
+              jq --raw-output '.packages[] | select(.name == "cadmpeg-ir") | .version'
+          )"
+
+          if [[ "${manifest_version}" != "${version}" ]]; then
+            echo "Tag ${version} does not match workspace version ${manifest_version}." >&2
+            exit 1
+          fi
+
+          for attempt in 1 2 3; do
+            publish_args=(publish --workspace --locked)
+            remaining=0
+
+            for crate in "${crates[@]}"; do
+              if curl --fail --silent --retry 3 --retry-delay 2 \
+                --output /dev/null \
+                "https://crates.io/api/v1/crates/${crate}/${version}"
+              then
+                publish_args+=(--exclude "${crate}")
+              else
+                remaining=$((remaining + 1))
+              fi
+            done
+
+            if [[ "${remaining}" -eq 0 ]]; then
+              echo "All workspace crates are already published at ${version}."
+              exit 0
+            fi
+
+            set +e
+            output="$(cargo "${publish_args[@]}" 2>&1)"
+            status=$?
+            set -e
+            printf '%s\n' "${output}"
+
+            if [[ "${status}" -eq 0 ]]; then
+              exit 0
+            fi
+
+            if [[ "${output}" != *"429 Too Many Requests"* ]]; then
+              exit "${status}"
+            fi
+
+            if [[ "${attempt}" -lt 3 ]]; then
+              echo "crates.io rate-limited publication; resuming in 10 minutes."
+              sleep 600
+            fi
+          done
+
+          echo "crates.io remained rate-limited after three attempts." >&2
+          exit 1
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-f3d"
-description = "Codec for Autodesk Fusion 360 .f3d files: ZIP container, SAB stream framing, B-rep topology graph, analytic carriers, and inline cached NURBS."
+description = "Decode Autodesk Fusion 360 .f3d files into cadmpeg's provenance-aware CAD IR with explicit loss reporting."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/cadmpeg-codec-f3d"
+keywords = ["cad", "fusion-360", "f3d", "brep", "geometry"]
+categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
 cadmpeg-ir.workspace = true

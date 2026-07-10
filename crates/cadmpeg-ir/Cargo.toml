@@ -8,6 +8,10 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/cadmpeg-ir"
+keywords = ["cad", "brep", "geometry", "transcoding", "provenance"]
+categories = ["data-structures", "encoding", "graphics"]
 
 [dependencies]
 serde.workspace = true

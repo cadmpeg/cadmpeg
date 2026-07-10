@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-sldprt"
-description = "Decoder for SolidWorks .sldprt files: block-framed container enumeration, embedded Parasolid stream location, and analytic B-rep topology/geometry decode."
+description = "Read and write supported SolidWorks .sldprt content through cadmpeg's provenance-aware CAD IR."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/cadmpeg-codec-sldprt"
+keywords = ["cad", "solidworks", "sldprt", "parasolid", "geometry"]
+categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
 cadmpeg-ir.workspace = true
