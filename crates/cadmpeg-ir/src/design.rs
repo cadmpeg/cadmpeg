@@ -206,6 +206,10 @@ pub struct SketchRelation {
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this relation's type.
     pub class_tag: String,
+    /// Byte offset of this record within its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Byte offset of the constraint mask relative to the record start.
+    pub state_offset: u32,
     /// Record index of the sketch entity container that owns this relation.
     pub owner_reference: u32,
     /// Nullable or role-specific references stored before the owner reference.
@@ -274,6 +278,10 @@ pub struct SketchPoint {
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
     pub class_tag: String,
+    /// Byte offset of this record within its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Byte offset of the first coordinate relative to the record start.
+    pub coordinate_offset: u32,
     /// Persistent Fusion identifier for this sketch point, stable across regeneration.
     pub persistent_id: u64,
     /// Record index of a paired/companion record (e.g. the owning sketch curve),
@@ -281,6 +289,10 @@ pub struct SketchPoint {
     pub paired_reference: u32,
     /// Sketch coordinates in millimetres.
     pub coordinates: Point2,
+    /// Complete source record bytes for native replay and rewrite.
+    #[serde(with = "crate::bytes")]
+    #[schemars(with = "String")]
+    pub raw_bytes: Vec<u8>,
 }
 
 /// Persistent identity pair attached to one source sketch-curve record.
@@ -292,6 +304,10 @@ pub struct SketchCurveIdentity {
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
     pub class_tag: String,
+    /// Byte offset of this record within its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Byte offset of the fixed analytic geometry payload relative to the record start.
+    pub geometry_offset: u32,
     /// Primary persistent identifier of the source sketch curve.
     pub primary_id: u64,
     /// Secondary persistent identifier of the source sketch curve (e.g. its

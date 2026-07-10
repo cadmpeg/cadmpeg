@@ -824,6 +824,231 @@ fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
+#[test]
+fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+
+    let mut replayed = Vec::new();
+    F3dCodec
+        .write_preserved(&decoded.ir, &mut replayed)
+        .unwrap();
+    assert_eq!(replayed, source);
+
+    let mut point_edited = decoded.ir.clone();
+    point_edited.model.points[0].position.x += 12.5;
+    let cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    } = &mut point_edited.model.surfaces[0].geometry
+    else {
+        panic!("generated carrier must be a plane")
+    };
+    origin.z += 25.0;
+    *normal = cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0);
+    *u_axis = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&point_edited, &mut regenerated)
+        .unwrap();
+    assert_ne!(regenerated, source);
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        round_trip.ir.model.points[0].position,
+        point_edited.model.points[0].position
+    );
+    assert_eq!(
+        round_trip.ir.model.surfaces[0].geometry,
+        point_edited.model.surfaces[0].geometry
+    );
+
+    let mut modified = decoded.ir;
+    modified.model.bodies[0].name = Some("edited".into());
+    let error = F3dCodec
+        .write_preserved(&modified, &mut Vec::new())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+    ));
+}
+
+#[test]
+fn generated_f3d_rewrites_native_sketch_point_coordinates() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut edited = decoded.ir;
+    let point = &mut edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .sketch_points[0];
+    point.coordinates.u += 12.5;
+    point.coordinates.v -= 7.5;
+    let expected = point.coordinates;
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("native sketch-point regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    assert_eq!(
+        round_trip
+            .ir
+            .native
+            .f3d
+            .as_ref()
+            .expect("F3D native namespace")
+            .sketch_points[0]
+            .coordinates,
+        expected
+    );
+}
+
+#[test]
+fn generated_f3d_rewrites_native_sketch_arc_geometry() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut edited = decoded.ir;
+    let curve = &mut edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .sketch_curve_identities[0];
+    let Some(cadmpeg_ir::design::SketchCurveGeometry::Arc {
+        center,
+        radius,
+        start_angle,
+        end_angle,
+        ..
+    }) = &mut curve.geometry
+    else {
+        panic!("generated sketch curve must be an arc")
+    };
+    center.x += 20.0;
+    *radius = 35.0;
+    *start_angle = 0.25;
+    *end_angle = 2.75;
+    let expected = curve.geometry.clone();
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("native sketch-arc regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    assert_eq!(
+        round_trip
+            .ir
+            .native
+            .f3d
+            .as_ref()
+            .expect("F3D native namespace")
+            .sketch_curve_identities[0]
+            .geometry,
+        expected
+    );
+}
+
+#[test]
+fn generated_f3d_rewrites_native_sketch_constraint_mask() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut edited = decoded.ir;
+    let relation = &mut edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .sketch_relations[0];
+    relation.state = 0x40;
+    relation.constraint_kinds = vec![cadmpeg_ir::design::SketchConstraintKind::Horizontal];
+    relation.unknown_constraint_bits = 0;
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("native sketch-constraint regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    let relation = &round_trip
+        .ir
+        .native
+        .f3d
+        .as_ref()
+        .expect("F3D native namespace")
+        .sketch_relations[0];
+    assert_eq!(relation.state, 0x40);
+    assert_eq!(
+        relation.constraint_kinds,
+        [cadmpeg_ir::design::SketchConstraintKind::Horizontal]
+    );
+    assert_eq!(relation.unknown_constraint_bits, 0);
+}
+
+#[test]
+fn generated_f3d_rewrites_native_sketch_nurbs_values() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut edited = decoded.ir;
+    let curve = &mut edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .sketch_curve_identities[1];
+    let Some(cadmpeg_ir::design::SketchCurveGeometry::Nurbs {
+        fit_tolerance,
+        control_points,
+        ..
+    }) = &mut curve.geometry
+    else {
+        panic!("generated sketch curve must be NURBS")
+    };
+    *fit_tolerance = 0.125;
+    control_points[1].x += 15.0;
+    control_points[1].y -= 5.0;
+    let expected = curve.geometry.clone();
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("native sketch-NURBS regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    assert_eq!(
+        round_trip
+            .ir
+            .native
+            .f3d
+            .as_ref()
+            .expect("F3D native namespace")
+            .sketch_curve_identities[1]
+            .geometry,
+        expected
+    );
+}
+
 fn f3d_with_smbh_and_protein(smbh: &[u8]) -> Vec<u8> {
     let mut nested = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
@@ -1467,8 +1692,17 @@ fn decode_yields_metadata_and_honest_report() {
 
     // But the active BREP is preserved as an unknown passthrough with a hash,
     // and source metadata was captured.
-    assert_eq!(result.ir.unknowns.len(), 1);
-    assert_eq!(result.ir.unknowns[0].sha256.len(), 64);
+    assert_eq!(result.ir.unknowns.len(), 2);
+    assert!(result
+        .ir
+        .unknowns
+        .iter()
+        .all(|record| record.sha256.len() == 64));
+    assert!(result
+        .ir
+        .unknowns
+        .iter()
+        .any(|record| record.id.0 == "f3d:file:source-image#0"));
     let source = result.ir.source.as_ref().expect("source metadata");
     assert_eq!(source.format, "f3d");
     assert_eq!(

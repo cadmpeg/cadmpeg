@@ -294,6 +294,30 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
     Ok(out)
 }
 
+/// Byte offsets of payload tokens with `tag` inside one framed record.
+pub(crate) fn payload_token_offsets(
+    bytes: &[u8],
+    record: &Record,
+    ref_width: usize,
+    tag: u8,
+) -> Result<Vec<usize>, FrameError> {
+    let end = record.offset + record.len;
+    let mut position = record.offset;
+    let mut offsets = Vec::new();
+    while position < end {
+        let token_offset = position;
+        let (token, next) = lex(bytes, position, ref_width)?;
+        if bytes[token_offset] == tag && matches!(&token, Lexed::Value(_)) {
+            offsets.push(token_offset);
+        }
+        position = next;
+        if matches!(&token, Lexed::Terminator) {
+            break;
+        }
+    }
+    Ok(offsets)
+}
+
 /// Frame the active slice `bytes[start..limit]` into the `RecordTable`.
 ///
 /// `ref_width` is the stream's reference width (8 for `BinaryFile8`). Framing

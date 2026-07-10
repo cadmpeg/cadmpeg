@@ -8,7 +8,7 @@
 //! stream; that is the geometry layer, honestly stubbed in [`crate::decode`].
 
 use std::collections::BTreeMap;
-use std::io::Read;
+use std::io::{Cursor, Read, SeekFrom};
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 use sha2::{Digest, Sha256};
@@ -124,6 +124,8 @@ pub struct BrepFacts {
 /// The full result of reading a `.f3d` container: the entry list plus decoded
 /// BREP facts. Shared by `inspect` and `decode`.
 pub struct ContainerScan {
+    /// Complete source archive retained for byte-exact native replay.
+    pub source_image: Vec<u8>,
     /// Enumerated entries with classification.
     pub entries: Vec<ContainerEntry>,
     /// Decoded BREP stream facts, in archive order.
@@ -134,7 +136,11 @@ pub struct ContainerScan {
 
 /// Read and classify every entry, decoding ASM headers for BREP streams.
 pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
-    let mut archive = zip::ZipArchive::new(reader)
+    reader.seek(SeekFrom::Start(0))?;
+    let mut source_image = Vec::new();
+    reader.read_to_end(&mut source_image)?;
+    reader.seek(SeekFrom::Start(0))?;
+    let mut archive = zip::ZipArchive::new(Cursor::new(&source_image))
         .map_err(|e| CodecError::Malformed(format!("not a readable ZIP: {e}")))?;
 
     let mut entries = Vec::with_capacity(archive.len());
@@ -222,6 +228,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
     }
 
     Ok(ContainerScan {
+        source_image,
         entries,
         breps,
         asset_folder,

@@ -29,6 +29,7 @@ enum Format {
     #[value(alias = "json")]
     Cadir,
     Step,
+    F3d,
     Sldprt,
 }
 
@@ -37,13 +38,14 @@ impl Format {
         match extension.to_ascii_lowercase().as_str() {
             "cadir" | "json" => Some(Self::Cadir),
             "step" | "stp" => Some(Self::Step),
+            "f3d" => Some(Self::F3d),
             "sldprt" => Some(Self::Sldprt),
             _ => None,
         }
     }
 
     fn is_geometry_export(self) -> bool {
-        matches!(self, Self::Step | Self::Sldprt)
+        matches!(self, Self::Step | Self::F3d | Self::Sldprt)
     }
 
     fn from_path(path: Option<&std::path::Path>) -> Option<Self> {
@@ -56,6 +58,7 @@ impl Format {
         match self {
             Self::Cadir => "cadir",
             Self::Step => "step",
+            Self::F3d => "f3d",
             Self::Sldprt => "sldprt",
         }
     }

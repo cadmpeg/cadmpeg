@@ -766,6 +766,8 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
             id: "f3d:test:sketch-relation#0".into(),
             record_index: 0,
             class_tag: "001".into(),
+            byte_offset: 0,
+            state_offset: 0,
             owner_reference: 0,
             auxiliary_references: Vec::new(),
             members: Vec::new(),

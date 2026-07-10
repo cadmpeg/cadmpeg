@@ -36,6 +36,7 @@ pub fn decode(
     if options.container_only {
         let mut ir = build_metadata_ir(&scan);
         populate_annotations(&mut ir, &scan, None);
+        preserve_source_image(&scan, &mut ir);
         let report = build_container_report(&scan, true);
         return Ok(DecodeResult::new(ir, report));
     }
@@ -169,6 +170,7 @@ pub fn decode(
                 }
             }
             populate_annotations(&mut ir, &scan, Some((&active.name, &annotation_records)));
+            preserve_source_image(&scan, &mut ir);
             return Ok(DecodeResult::new(ir, report));
         }
     }
@@ -257,8 +259,54 @@ pub fn decode(
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
     populate_annotations(&mut ir, &scan, None);
+    preserve_source_image(&scan, &mut ir);
     let report = build_container_report(&scan, false);
     Ok(DecodeResult::new(ir, report))
+}
+
+fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) {
+    let id = "f3d:file:source-image#0";
+    ir.unknowns.retain(|record| record.id.0 != id);
+    ir.unknowns.push(UnknownRecord {
+        id: UnknownId(id.into()),
+        offset: 0,
+        byte_len: scan.source_image.len() as u64,
+        sha256: sha256_hex(&scan.source_image),
+        data: Some(scan.source_image.clone()),
+        links: Vec::new(),
+    });
+    let hash = semantic_hash(ir);
+    if let Some(source) = &mut ir.source {
+        source.attributes.insert("semantic_sha256".into(), hash);
+    }
+}
+
+pub(crate) fn semantic_hash(ir: &CadIr) -> String {
+    let mut normalized = ir.clone();
+    if let Some(source) = &mut normalized.source {
+        source.attributes.remove("semantic_sha256");
+    }
+    normalized
+        .unknowns
+        .retain(|record| record.id.0 != "f3d:file:source-image#0");
+    sha256_hex(
+        normalized
+            .to_canonical_json()
+            .expect("CadIr serialization")
+            .as_bytes(),
+    )
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+
+    Sha256::digest(bytes)
+        .iter()
+        .fold(String::new(), |mut output, byte| {
+            use std::fmt::Write as _;
+            let _ = write!(output, "{byte:02x}");
+            output
+        })
 }
 
 fn populate_annotations(
