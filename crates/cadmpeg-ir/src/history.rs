@@ -147,6 +147,8 @@ impl SketchInputKind {
 pub struct AsmHistory {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Byte offset of the `history_stream` identifier, or zero when no preamble exists.
+    pub byte_offset: u64,
     /// Declared byte length of the ASM history stream from its preamble, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_size: Option<i64>,
@@ -162,6 +164,8 @@ pub struct AsmHistory {
 pub struct AsmDeltaState {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Byte offset of the leading `END` token immediately before this `delta_state` record.
+    pub byte_offset: u64,
     /// Construction-state id; the head node's `state_id` equals the history
     /// stream preamble's first field.
     pub state_id: i64,
@@ -210,6 +214,8 @@ pub struct AsmHistoryRecord {
 pub struct AsmBulletinBoard {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Byte offset of this board's leading presence token.
+    pub byte_offset: u64,
     /// Reference to the entity or container this bulletin board is attached to.
     pub owner_ref: i64,
     /// Sequential bulletin-board number within its owning state.
@@ -223,6 +229,8 @@ pub struct AsmBulletinBoard {
 pub struct AsmEntityChange {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Byte offset of this change's leading presence token.
+    pub byte_offset: u64,
     /// Whether this bulletin records an entity insert, delete, or update.
     pub kind: AsmEntityChangeKind,
     /// Reference to the entity revision before the change; `None` on insert.

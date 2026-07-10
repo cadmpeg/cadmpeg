@@ -341,6 +341,78 @@ fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let limit = crate::asm_header::first_delta_state_offset(&bytes).expect("history boundary");
+    let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let body = &records[1];
+    let transform_ref =
+        crate::sab::payload_token_offsets(&bytes, body, 8, 0x0c).expect("body reference tokens")[4];
+    bytes[transform_ref + 1..transform_ref + 9].copy_from_slice(&19i64.to_le_bytes());
+
+    let mut transform = Vec::new();
+    t_ident(&mut transform, "transform");
+    for vector in [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 2.0, 3.0],
+    ] {
+        t_vec(&mut transform, vector);
+    }
+    t_dbl(&mut transform, 1.0);
+    t_end(&mut transform);
+    bytes.splice(limit..limit, transform);
+    bytes
+}
+
+fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let limit = crate::asm_header::first_delta_state_offset(&bytes).expect("history boundary");
+    let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let body = &records[1];
+    let attribute_ref =
+        crate::sab::payload_token_offsets(&bytes, body, 8, 0x0c).expect("body reference tokens")[0];
+    bytes[attribute_ref + 1..attribute_ref + 9].copy_from_slice(&19i64.to_le_bytes());
+
+    let mut attribute = Vec::new();
+    t_subident(&mut attribute, "rgb_color");
+    t_subident(&mut attribute, "st");
+    t_ident(&mut attribute, "attrib");
+    t_ref(&mut attribute, -1);
+    t_dbl(&mut attribute, 0.1);
+    t_dbl(&mut attribute, 0.2);
+    t_dbl(&mut attribute, 0.3);
+    t_end(&mut attribute);
+    bytes.splice(limit..limit, attribute);
+    bytes
+}
+
+fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let limit = crate::asm_header::first_delta_state_offset(&bytes).expect("history boundary");
+    let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let face = &records[4];
+    let attribute_ref =
+        crate::sab::payload_token_offsets(&bytes, face, 8, 0x0c).expect("face reference tokens")[0];
+    bytes[attribute_ref + 1..attribute_ref + 9].copy_from_slice(&19i64.to_le_bytes());
+
+    let mut attribute = Vec::new();
+    t_subident(&mut attribute, "rgb_color");
+    t_subident(&mut attribute, "st");
+    t_ident(&mut attribute, "attrib");
+    t_ref(&mut attribute, -1);
+    t_dbl(&mut attribute, 0.15);
+    t_dbl(&mut attribute, 0.25);
+    t_dbl(&mut attribute, 0.35);
+    t_end(&mut attribute);
+    bytes.splice(limit..limit, attribute);
+    bytes
+}
+
 /// Add a generated inline 2D `nubs` pcurve to the first coedge of the base
 /// topology fixture. The new record is appended at `RecordTable` index 19.
 fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
@@ -1049,6 +1121,283 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
     );
 }
 
+#[test]
+fn generated_f3d_rewrites_body_transform() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_transform_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut edited = decoded.ir;
+    let transform = edited.model.bodies[0]
+        .transform
+        .as_mut()
+        .expect("generated body transform");
+    transform.rows[0][3] = 125.0;
+    transform.rows[1][3] = -75.0;
+    transform.rows[2][3] = 50.0;
+    transform.rows[3][3] = 2.0;
+    let expected = *transform;
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("body-transform regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    assert_eq!(round_trip.ir.model.bodies[0].transform, Some(expected));
+}
+
+#[test]
+fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated Design decode");
+    let mut edited = decoded.ir;
+    let reference = edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .persistent_references
+        .iter_mut()
+        .find(|reference| reference.value == 439)
+        .expect("generated persistent reference");
+    assert!(reference.byte_offset > 0);
+    assert!(reference.value_offset > 0);
+    reference.value = 9_001;
+    let recipe = &mut edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .construction_recipes[0];
+    assert!(recipe.byte_offset > 0);
+    assert!(recipe.record_index_offset.is_some());
+    assert!(recipe.design_id_offset.is_some());
+    recipe.record_index = 777;
+    recipe.design_id = Some("333".into());
+    let member = edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .design_body_members
+        .iter_mut()
+        .find(|member| member.entity_suffix == 985)
+        .expect("generated body member");
+    assert!(member.byte_offset > 0);
+    member.entity_suffix = 12_345;
+    member.flags = 7;
+    let header = edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .design_entity_headers
+        .iter_mut()
+        .find(|header| header.object_kind == Some(cadmpeg_ir::design::DesignObjectKind::Sketch))
+        .expect("generated sketch entity header");
+    assert!(header.byte_offset > 0);
+    assert!(header.record_reference_offset.is_some());
+    assert_eq!(header.reference_offsets.len(), 2);
+    header.record_reference = Some(585);
+    header.reference_indices.swap(0, 1);
+    let object = edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .design_objects
+        .iter_mut()
+        .find(|object| object.kind == cadmpeg_ir::design::DesignObjectKind::Body)
+        .expect("generated body design object");
+    assert!(object.byte_offset < object.revision_offset);
+    assert_eq!(object.entity_id_offsets.len(), 1);
+    object.entity_ids[0] = 986;
+    object.self_guid = "91111111-2222-3333-4444-555555555555".into();
+    object.parent_guid = Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef".into());
+    object.revision = 9;
+    let act_guid = &mut edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .act_guids[0];
+    assert!(act_guid.guid_offset > act_guid.byte_offset);
+    act_guid.guid = "ffffffff-1111-2222-3333-444444444444".into();
+    let act_root = &mut edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .act_root_components[0];
+    act_root.record_index = 70;
+    act_root.instance_root_record = 71;
+    act_root.components_root_record = 72;
+    act_root.registry_flag = 0;
+    act_root.entity_id = "0_4".into();
+    act_root.display_name = "(Renamed)".into();
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("persistent-reference regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated Design decode");
+    assert!(f3d_native(&round_trip.ir)
+        .persistent_references
+        .iter()
+        .any(|reference| reference.value == 9_001));
+    assert_eq!(
+        f3d_native(&round_trip.ir).construction_recipes[0].record_index,
+        777
+    );
+    assert_eq!(
+        f3d_native(&round_trip.ir).construction_recipes[0]
+            .design_id
+            .as_deref(),
+        Some("333")
+    );
+    assert!(f3d_native(&round_trip.ir)
+        .design_body_members
+        .iter()
+        .any(|member| member.entity_suffix == 12_345 && member.flags == 7));
+    let header = f3d_native(&round_trip.ir)
+        .design_entity_headers
+        .iter()
+        .find(|header| header.object_kind == Some(cadmpeg_ir::design::DesignObjectKind::Sketch))
+        .expect("round-trip sketch entity header");
+    assert_eq!(header.record_reference, Some(585));
+    assert_eq!(header.reference_indices, [44, 33]);
+    let object = f3d_native(&round_trip.ir)
+        .design_objects
+        .iter()
+        .find(|object| object.kind == cadmpeg_ir::design::DesignObjectKind::Body)
+        .expect("round-trip body design object");
+    assert_eq!(object.entity_ids, [986]);
+    assert_eq!(object.self_guid, "91111111-2222-3333-4444-555555555555");
+    assert_eq!(
+        object.parent_guid.as_deref(),
+        Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef")
+    );
+    assert_eq!(object.revision, 9);
+    assert!(f3d_native(&round_trip.ir)
+        .act_guids
+        .iter()
+        .any(|guid| guid.guid == "ffffffff-1111-2222-3333-444444444444"));
+    let act_root = &f3d_native(&round_trip.ir).act_root_components[0];
+    assert_eq!(act_root.record_index, 70);
+    assert_eq!(act_root.instance_root_record, 71);
+    assert_eq!(act_root.components_root_record, 72);
+    assert_eq!(act_root.registry_flag, 0);
+    assert_eq!(act_root.entity_id, "0_4");
+    assert_eq!(act_root.display_name, "(Renamed)");
+}
+
+#[test]
+fn generated_f3d_rewrites_body_rgb_color() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_body_color_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut edited = decoded.ir;
+    let expected = cadmpeg_ir::topology::Color {
+        r: 0.7,
+        g: 0.4,
+        b: 0.2,
+        a: 1.0,
+    };
+    edited.model.bodies[0].color = Some(expected);
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("body-color regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    assert_eq!(round_trip.ir.model.bodies[0].color, Some(expected));
+}
+
+#[test]
+fn generated_f3d_rewrites_face_rgb_color_and_sense() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_face_color_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut edited = decoded.ir;
+    let expected = cadmpeg_ir::topology::Color {
+        r: 0.6,
+        g: 0.3,
+        b: 0.9,
+        a: 1.0,
+    };
+    edited.model.faces[0].color = Some(expected);
+    edited.model.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("face-color regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    assert_eq!(round_trip.ir.model.faces[0].color, Some(expected));
+    assert_eq!(
+        round_trip.ir.model.faces[0].sense,
+        cadmpeg_ir::topology::Sense::Reversed
+    );
+}
+
+#[test]
+fn generated_f3d_rewrites_edge_parameter_range() {
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut edited = decoded.ir;
+    edited.model.edges[0].param_range = Some([-2.5, 4.75]);
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("edge-range regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    assert_eq!(round_trip.ir.model.edges[0].param_range, Some([-2.5, 4.75]));
+}
+
+#[test]
+fn generated_f3d_rewrites_face_and_coedge_sense() {
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut edited = decoded.ir;
+    edited.model.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
+    edited.model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("orientation regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    assert_eq!(
+        round_trip.ir.model.faces[0].sense,
+        cadmpeg_ir::topology::Sense::Reversed
+    );
+    assert_eq!(
+        round_trip.ir.model.coedges[0].sense,
+        cadmpeg_ir::topology::Sense::Reversed
+    );
+}
+
 fn f3d_with_smbh_and_protein(smbh: &[u8]) -> Vec<u8> {
     let mut nested = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
@@ -1605,6 +1954,77 @@ fn decode_retains_generated_asm_history_graph() {
     assert_eq!(history.states[1].previous_ref, Some(0));
     assert_eq!(history.states[1].next_ref, None);
     assert!(result.report.geometry_transferred);
+}
+
+#[test]
+fn generated_f3d_rewrites_fixed_delta_state_header() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated history decode");
+    let mut edited = decoded.ir;
+    let history = &mut edited
+        .native
+        .f3d
+        .as_mut()
+        .expect("F3D native namespace")
+        .asm_histories[0];
+    assert!(history.byte_offset > 0);
+    assert!(history.states[0].byte_offset > 0);
+    history.stream_size = Some(8);
+    history.high_water_mark = Some(120);
+    history.states[0].state_id = 8;
+    history.states[0].version_flag = 4;
+    history.states[0].state_flag = 6;
+    history.states[0].previous_ref = Some(12);
+    history.states[0].next_ref = Some(14);
+    history.states[0].node_index = 16;
+    history.states[0].partner_ref = Some(18);
+    history.states[0].owner_ref = 20;
+    let board = &mut history.states[0].bulletin_boards[0];
+    assert!(board.byte_offset > 0);
+    board.owner_ref = 22;
+    board.number = 24;
+    assert!(board.changes[0].byte_offset > 0);
+    board.changes[0].kind = cadmpeg_ir::history::AsmEntityChangeKind::Delete;
+    board.changes[0].old_ref = Some(26);
+    board.changes[0].new_ref = None;
+    board.changes[1].new_ref = Some(28);
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("delta-state owner regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated history decode");
+    let state = &f3d_native(&round_trip.ir).asm_histories[0].states[0];
+    assert_eq!(
+        f3d_native(&round_trip.ir).asm_histories[0].stream_size,
+        Some(8)
+    );
+    assert_eq!(
+        f3d_native(&round_trip.ir).asm_histories[0].high_water_mark,
+        Some(120)
+    );
+    assert_eq!(state.state_id, 8);
+    assert_eq!(state.version_flag, 4);
+    assert_eq!(state.state_flag, 6);
+    assert_eq!(state.previous_ref, Some(12));
+    assert_eq!(state.next_ref, Some(14));
+    assert_eq!(state.node_index, 16);
+    assert_eq!(state.partner_ref, Some(18));
+    assert_eq!(state.owner_ref, 20);
+    let board = &state.bulletin_boards[0];
+    assert_eq!(board.owner_ref, 22);
+    assert_eq!(board.number, 24);
+    assert_eq!(
+        board.changes[0].kind,
+        cadmpeg_ir::history::AsmEntityChangeKind::Delete
+    );
+    assert_eq!(board.changes[0].old_ref, Some(26));
+    assert_eq!(board.changes[0].new_ref, None);
+    assert_eq!(board.changes[1].new_ref, Some(28));
 }
 
 #[test]

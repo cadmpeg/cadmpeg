@@ -51,6 +51,7 @@ pub fn decode(bytes: &[u8], stream: &str) -> Option<AsmHistory> {
         );
         states.push(AsmDeltaState {
             id: format!("f3d:{stream}:asm-delta-state#{offset}"),
+            byte_offset: offset as u64,
             state_id,
             version_flag,
             state_flag,
@@ -76,6 +77,7 @@ pub fn decode(bytes: &[u8], stream: &str) -> Option<AsmHistory> {
     let offset = preamble_offset.unwrap_or(0);
     Some(AsmHistory {
         id: format!("f3d:{stream}:asm-history#{offset}"),
+        byte_offset: offset as u64,
         stream_size,
         high_water_mark,
         states,
@@ -93,6 +95,7 @@ fn decode_bulletin_boards(
     }
     let mut boards = Vec::new();
     loop {
+        let board_offset = position;
         let present = take_i64(bytes, &mut position, 0x04)?;
         if present == 0 {
             break;
@@ -101,6 +104,7 @@ fn decode_bulletin_boards(
         let number = take_i64(bytes, &mut position, 0x04)?;
         let mut changes = Vec::new();
         loop {
+            let change_offset = position;
             let present = take_i64(bytes, &mut position, 0x04)?;
             if present == 0 {
                 break;
@@ -119,6 +123,7 @@ fn decode_bulletin_boards(
                     boards.len(),
                     changes.len()
                 ),
+                byte_offset: change_offset as u64,
                 kind,
                 old_ref: (old >= 0).then_some(old),
                 new_ref: (new >= 0).then_some(new),
@@ -129,6 +134,7 @@ fn decode_bulletin_boards(
                 "f3d:asm-bulletin-board:{stream}:{state_offset}:{}",
                 boards.len()
             ),
+            byte_offset: board_offset as u64,
             owner_ref,
             number,
             changes,

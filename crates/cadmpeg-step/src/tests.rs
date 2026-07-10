@@ -532,6 +532,7 @@ fn parametric_history_reduction_is_reported() {
         .asm_histories
         .push(cadmpeg_ir::history::AsmHistory {
             id: "asm-history-0".into(),
+            byte_offset: 0,
             stream_size: Some(0),
             high_water_mark: Some(0),
             states: Vec::new(),

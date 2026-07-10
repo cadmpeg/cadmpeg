@@ -187,6 +187,8 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
     right.native.f3d = Some(F3dNative {
         act_guids: vec![crate::design::ActGuid {
             id: "f3d:test:act-guid#0".into(),
+            byte_offset: 0,
+            guid_offset: 4,
             ordinal: 0,
             guid: "00000000-0000-0000-0000-000000000000".into(),
         }],

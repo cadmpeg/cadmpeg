@@ -32,10 +32,15 @@ pub fn decode(reader: &mut dyn ReadSeek, scan: &ContainerScan) -> Result<Decoded
                 ActEntity {
                     id: format!("f3d:{}:act-entity#{}", entry.name, item.record_index),
                     record_index: item.record_index,
+                    table_record_index_offset: Some(item.record_index_offset as u64),
+                    channel_record_index_offset: None,
                     entity_id: item.entity_id,
+                    table_entity_id_offset: Some(item.entity_id_offset as u64),
+                    channel_entity_id_offset: None,
                     in_table: true,
                     channel_class_tag: None,
                     channels: BTreeMap::new(),
+                    channel_guid_offsets: BTreeMap::new(),
                 },
             );
         }
@@ -44,13 +49,21 @@ pub fn decode(reader: &mut dyn ReadSeek, scan: &ContainerScan) -> Result<Decoded
             let entity = by_key.entry(key).or_insert_with(|| ActEntity {
                 id: format!("f3d:{}:act-entity#{}", entry.name, group.record_index),
                 record_index: group.record_index,
+                table_record_index_offset: None,
+                channel_record_index_offset: Some(group.record_index_offset as u64),
                 entity_id: group.entity_id.clone(),
+                table_entity_id_offset: None,
+                channel_entity_id_offset: Some(group.entity_id_offset as u64),
                 in_table: false,
                 channel_class_tag: None,
                 channels: BTreeMap::new(),
+                channel_guid_offsets: BTreeMap::new(),
             });
             entity.channel_class_tag = Some(group.class_tag);
             entity.channels = group.channels;
+            entity.channel_record_index_offset = Some(group.record_index_offset as u64);
+            entity.channel_entity_id_offset = Some(group.entity_id_offset as u64);
+            entity.channel_guid_offsets = group.guid_offsets;
         }
         entities.extend(by_key.into_values());
         guids.extend(
@@ -59,6 +72,8 @@ pub fn decode(reader: &mut dyn ReadSeek, scan: &ContainerScan) -> Result<Decoded
                 .enumerate()
                 .map(|(ordinal, (guid, offset))| ActGuid {
                     id: format!("f3d:{}:act-guid#{offset}", entry.name),
+                    byte_offset: offset as u64,
+                    guid_offset: (offset + 4) as u64,
                     ordinal: ordinal as u32,
                     guid,
                 }),
@@ -91,10 +106,12 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
             continue;
         }
         let cursor = after_tag + 14;
+        let instance_root_record_offset = cursor + 1;
         let Some((instance_root_record, cursor)) = marker_ref(bytes, cursor, 6) else {
             position += 1;
             continue;
         };
+        let entity_id_offset = cursor + 4;
         let Some((entity_id, cursor)) = lp_utf16(bytes, cursor) else {
             position += 1;
             continue;
@@ -107,6 +124,7 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
             position += 1;
             continue;
         }
+        let registry_flag_offset = cursor + 1;
         let Some((selector, cursor)) = marker_ref(bytes, cursor, 0) else {
             position += 1;
             continue;
@@ -115,6 +133,7 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
             position += 1;
             continue;
         }
+        let display_name_offset = cursor + 4;
         let Some((display_name, cursor)) = lp_utf16(bytes, cursor) else {
             position += 1;
             continue;
@@ -133,15 +152,22 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
         };
         out.push(ActRootComponent {
             id: format!("f3d:{stream}:act-root-component#{position}"),
+            byte_offset: position as u64,
             record_index: u32::from_le_bytes(record_raw.try_into().expect(
                 "invariant: record_raw is a 4-byte slice from bytes.get(range) of length 4",
             )),
+            record_index_offset: after_tag as u64,
             class_tag,
             instance_root_record,
+            instance_root_record_offset: instance_root_record_offset as u64,
             components_root_record,
+            components_root_record_offset: (components_marker + 1) as u64,
             registry_flag: selector,
+            registry_flag_offset: registry_flag_offset as u64,
             entity_id,
+            entity_id_offset: entity_id_offset as u64,
             display_name,
+            display_name_offset: display_name_offset as u64,
         });
         position = end;
     }
@@ -173,7 +199,9 @@ fn marker_value(bytes: &[u8], position: usize) -> Option<(u32, usize)> {
 
 struct TableEntry {
     record_index: u32,
+    record_index_offset: usize,
     entity_id: String,
+    entity_id_offset: usize,
 }
 
 fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
@@ -208,6 +236,7 @@ fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
         if bytes.get(cursor + 5..cursor + 11) != Some(&[0; 6]) {
             return (Vec::new(), Vec::new());
         }
+        let entity_id_offset = cursor + 15;
         let Some((entity_id, end)) = lp_utf16(bytes, cursor + 11) else {
             return (Vec::new(), Vec::new());
         };
@@ -215,7 +244,9 @@ fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
             u32::from_le_bytes(index_raw.try_into().expect(
                 "invariant: index_raw is a 4-byte slice from bytes.get(range) of length 4",
             )),
+            cursor + 1,
             entity_id,
+            entity_id_offset,
         ));
         cursor = end;
     }
@@ -230,19 +261,26 @@ fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
     }
     let entries = indexed
         .into_iter()
-        .map(|(record_index, entity_id)| TableEntry {
-            record_index,
-            entity_id,
-        })
+        .map(
+            |(record_index, record_index_offset, entity_id, entity_id_offset)| TableEntry {
+                record_index,
+                record_index_offset,
+                entity_id,
+                entity_id_offset,
+            },
+        )
         .collect();
     (entries, guids)
 }
 
 struct ChannelGroup {
     record_index: u32,
+    record_index_offset: usize,
     entity_id: String,
+    entity_id_offset: usize,
     class_tag: String,
     channels: BTreeMap<String, String>,
+    guid_offsets: BTreeMap<String, u64>,
 }
 
 fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
@@ -278,6 +316,7 @@ fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
         }
         let mut cursor = after_tag + 18;
         let mut channels = BTreeMap::new();
+        let mut guid_offsets = BTreeMap::new();
         for _ in 0..count {
             let Some((name, after_name)) = lp_ascii(bytes, cursor) else {
                 channels.clear();
@@ -289,6 +328,14 @@ fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
                 break;
             };
             channels.insert(name, guid);
+            guid_offsets.insert(
+                channels
+                    .last_key_value()
+                    .expect("inserted channel")
+                    .0
+                    .clone(),
+                (after_name + 4) as u64,
+            );
             cursor = after_guid;
         }
         if !channels.is_empty() {
@@ -297,9 +344,12 @@ fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
                     record_index: u32::from_le_bytes(index_raw.try_into().expect(
                         "invariant: index_raw is a 4-byte slice from bytes.get(range) of length 4",
                     )),
+                    record_index_offset: after_tag,
                     entity_id,
+                    entity_id_offset: cursor + 4,
                     class_tag,
                     channels,
+                    guid_offsets,
                 });
                 position = end;
                 continue;

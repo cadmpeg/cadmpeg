@@ -66,12 +66,23 @@ pub enum ConstructionRecipeKind {
 pub struct ConstructionRecipe {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Byte offset of this recipe's family marker in its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Byte offset of `record_index` in the Design `BulkStream`, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record_index_offset: Option<u64>,
     /// Topology kind this recipe regenerates on replay.
     pub kind: ConstructionRecipeKind,
     /// Design entity id of the body this recipe is keyed to, if the source record
     /// carried a `generic_tag_attrib_def` construction id; `None` for body-less recipes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub design_id: Option<String>,
+    /// Byte offset of `design_id` in the Design `BulkStream`, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design_id_offset: Option<u64>,
+    /// Whether `design_id` is stored as a binary little-endian u32 rather than ASCII.
+    #[serde(default)]
+    pub design_id_binary_u32: bool,
     /// Position of this recipe in the `BulkStream` recipe sequence, in source order.
     pub recipe_index: u32,
     /// Source `BulkStream` record index this recipe was decoded from.
@@ -95,6 +106,10 @@ pub enum PersistentReferenceKind {
 pub struct PersistentReference {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Byte offset of the persistent-reference field name in its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Byte offset of the u64 value relative to `byte_offset`.
+    pub value_offset: u32,
     /// Whether this reference identifies a persistent point or one end of a curve.
     pub kind: PersistentReferenceKind,
     /// Raw persistent point/curve identifier as stored in the `Design` construction stream.
@@ -141,19 +156,30 @@ pub enum DesignObjectKind {
 pub struct DesignObject {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Byte offset of this object record in its Design `MetaStream`.
+    pub byte_offset: u64,
     /// ASCII type name of this `MetaStream` object record.
     pub kind: DesignObjectKind,
     /// Design-entity ids owned by this object, in source `MetaStream` order; a count
     /// rather than a fixed-arity id list, so length varies per record.
     pub entity_ids: Vec<u64>,
+    /// Byte offsets parallel to `entity_ids`.
+    pub entity_id_offsets: Vec<u64>,
     /// This object's own GUID.
     pub self_guid: String,
+    /// Byte offset of the self-GUID bytes in the Design `MetaStream`.
+    pub self_guid_offset: u64,
     /// GUID of the owning object, when the source record carried a secondary GUID
     /// after the zero-run delimiter; `None` for root-level objects.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_guid: Option<String>,
+    /// Byte offset of the parent-GUID bytes, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_guid_offset: Option<u64>,
     /// Trailing record-revision counter from the `MetaStream` record.
     pub revision: u32,
+    /// Byte offset of `revision` in the Design `MetaStream`.
+    pub revision_offset: u64,
 }
 
 /// Self-validating entity-bound header in the Design `BulkStream`.
@@ -161,6 +187,8 @@ pub struct DesignObject {
 pub struct DesignEntityHeader {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Byte offset of this entity header in its Design `BulkStream`.
+    pub byte_offset: u64,
     /// Numeric suffix of the owning design-entity id (e.g. the `N` in `Body:N`).
     pub entity_suffix: u64,
     /// Full UTF-16LE-decoded design-entity id string for this header.
@@ -176,12 +204,18 @@ pub struct DesignEntityHeader {
     /// Index of an associated `BulkStream` record, when the header carries one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record_reference: Option<u32>,
+    /// Byte offset of `record_reference` in the Design `BulkStream`, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record_reference_offset: Option<u64>,
     /// Declared count of reference entries the header claims to own, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declared_reference_count: Option<u32>,
     /// Padded record-reference run owned by a sketch entity container.
     #[serde(default)]
     pub reference_indices: Vec<u32>,
+    /// Byte offsets parallel to `reference_indices`.
+    #[serde(default)]
+    pub reference_offsets: Vec<u64>,
 }
 
 /// One indexed record header in the recursive Design `BulkStream` tree.
@@ -380,6 +414,8 @@ pub enum SketchCurveGeometry {
 pub struct DesignBodyMember {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Byte offset of this member's leading presence byte in its Design `BulkStream`.
+    pub byte_offset: u64,
     /// Numeric suffix of this body's design-entity id.
     pub entity_suffix: u64,
     /// Source per-member flag word from the `BodiesRoot` list entry.
@@ -393,8 +429,20 @@ pub struct ActEntity {
     pub id: String,
     /// Index of this entity's `ACTTable` entry within the ACT `BulkStream`.
     pub record_index: u32,
+    /// Byte offset of the table-entry record index, when this entity is in `ACTTable`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_record_index_offset: Option<u64>,
+    /// Byte offset of the channel-group record index, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_record_index_offset: Option<u64>,
     /// UTF-16LE-decoded design-entity id this table entry tracks.
     pub entity_id: String,
+    /// Byte offset of the table-entry UTF-16 entity-id code units, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_entity_id_offset: Option<u64>,
+    /// Byte offset of the channel-group UTF-16 entity-id code units, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_entity_id_offset: Option<u64>,
     /// Whether this entity is currently present in the `ACTTable`, as opposed to
     /// referenced only by a channel-group record.
     pub in_table: bool,
@@ -406,6 +454,9 @@ pub struct ActEntity {
     /// change-version handle, not a visibility or suppression flag.
     #[serde(default)]
     pub channels: BTreeMap<String, String>,
+    /// Byte offsets of UTF-16 GUID code units, keyed parallel to `channels`.
+    #[serde(default)]
+    pub channel_guid_offsets: BTreeMap<String, u64>,
 }
 
 /// One GUID in the ordered ACT stream-wide asset/change-version pool.
@@ -413,6 +464,10 @@ pub struct ActEntity {
 pub struct ActGuid {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Byte offset of this GUID's UTF-16 length prefix in the ACT `BulkStream`.
+    pub byte_offset: u64,
+    /// Byte offset of the UTF-16 GUID code units in the ACT `BulkStream`.
+    pub guid_offset: u64,
     /// Position of this GUID in the pool, in source stream order; pool position does
     /// not assign one GUID to a single `ACTTable` entry.
     pub ordinal: u32,
@@ -425,18 +480,32 @@ pub struct ActGuid {
 pub struct ActRootComponent {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Byte offset of this record in the ACT `BulkStream`.
+    pub byte_offset: u64,
     /// Index of this record within the ACT `BulkStream`.
     pub record_index: u32,
+    /// Byte offset of `record_index`.
+    pub record_index_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
     pub class_tag: String,
     /// Record index of the instance registry root.
     pub instance_root_record: u32,
+    /// Byte offset of `instance_root_record`.
+    pub instance_root_record_offset: u64,
     /// Record index of the components registry root.
     pub components_root_record: u32,
+    /// Byte offset of `components_root_record`.
+    pub components_root_record_offset: u64,
     /// Source counter/registry flag; 0 and 1 are both valid.
     pub registry_flag: u32,
+    /// Byte offset of `registry_flag`.
+    pub registry_flag_offset: u64,
     /// UTF-16LE-decoded design-entity id of the document root entity.
     pub entity_id: String,
+    /// Byte offset of the UTF-16 `entity_id` code units.
+    pub entity_id_offset: u64,
     /// Document display name as stored alongside this root-component link.
     pub display_name: String,
+    /// Byte offset of the UTF-16 `display_name` code units.
+    pub display_name_offset: u64,
 }

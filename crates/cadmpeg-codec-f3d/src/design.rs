@@ -96,6 +96,8 @@ pub fn decode_persistent_references(
                 };
                 out.push(PersistentReference {
                     id: format!("f3d:{}:persistent-reference#{offset}", entry.name),
+                    byte_offset: offset as u64,
+                    value_offset: (value_offset - offset) as u32,
                     kind,
                     value: u64::from_le_bytes(raw.try_into().expect(
                         "invariant: raw is an 8-byte slice from bytes.get(range) of length 8",
@@ -211,6 +213,9 @@ pub fn decode_objects(
                             .expect("invariant: chunks_exact(8) yields 8-byte slices"),
                     )
                 })
+                .collect::<Vec<_>>();
+            let entity_id_offsets = (0..entity_ids.len())
+                .map(|index| (after_name + 4 + index * 8) as u64)
                 .collect();
             let Some((self_guid, after_self)) =
                 lp_ascii(&bytes, ids_end).filter(|(guid, _)| is_guid(guid))
@@ -222,9 +227,11 @@ pub fn decode_objects(
             while bytes.get(tail) == Some(&0) {
                 tail += 1;
             }
-            let (parent_guid, revision_offset) = lp_ascii(&bytes, tail)
+            let (parent_guid, parent_guid_offset, revision_offset) = lp_ascii(&bytes, tail)
                 .filter(|(guid, _)| is_guid(guid))
-                .map_or((None, tail), |(guid, end)| (Some(guid), end));
+                .map_or((None, None, tail), |(guid, end)| {
+                    (Some(guid), Some((tail + 4) as u64), end)
+                });
             let Some(revision_raw) = bytes.get(revision_offset..revision_offset + 4) else {
                 offset += 1;
                 continue;
@@ -238,11 +245,16 @@ pub fn decode_objects(
             }
             out.push(DesignObject {
                 id: format!("f3d:{}:design-object#{offset}", entry.name),
+                byte_offset: offset as u64,
                 kind,
                 entity_ids,
+                entity_id_offsets,
                 self_guid,
+                self_guid_offset: (ids_end + 4) as u64,
                 parent_guid,
+                parent_guid_offset,
                 revision,
+                revision_offset: revision_offset as u64,
             });
             offset = revision_offset + 4;
         }
@@ -314,32 +326,46 @@ pub fn decode_entity_headers(
                 continue;
             }
             let object_kind = object_kinds.get(&entity_suffix).copied();
-            let (record_reference, declared_reference_count, reference_indices, record_end) =
-                if object_kind == Some(DesignObjectKind::Sketch) {
-                    decode_reference_list(&bytes, end).map_or_else(
-                        || (None, None, Vec::new(), end),
-                        |list| {
-                            (
-                                Some(list.record_reference),
-                                Some(list.declared_count),
-                                list.references,
-                                list.end,
-                            )
-                        },
-                    )
-                } else {
-                    (None, None, Vec::new(), end)
-                };
+            let (
+                record_reference,
+                record_reference_offset,
+                declared_reference_count,
+                reference_indices,
+                reference_offsets,
+                record_end,
+            ) = if object_kind == Some(DesignObjectKind::Sketch) {
+                decode_reference_list(&bytes, end).map_or_else(
+                    || (None, None, None, Vec::new(), Vec::new(), end),
+                    |list| {
+                        (
+                            Some(list.record_reference),
+                            Some(list.record_reference_offset as u64),
+                            Some(list.declared_count),
+                            list.references,
+                            list.reference_offsets
+                                .into_iter()
+                                .map(|offset| offset as u64)
+                                .collect(),
+                            list.end,
+                        )
+                    },
+                )
+            } else {
+                (None, None, None, Vec::new(), Vec::new(), end)
+            };
             out.push(DesignEntityHeader {
                 id: format!("f3d:{}:design-entity-header#{start}", entry.name),
+                byte_offset: start as u64,
                 entity_suffix,
                 entity_id,
                 class_tag: String::from_utf8_lossy(class_tag).into_owned(),
                 optional_slot_present,
                 object_kind,
                 record_reference,
+                record_reference_offset,
                 declared_reference_count,
                 reference_indices,
+                reference_offsets,
             });
             offset = record_end;
         }
@@ -978,8 +1004,10 @@ fn f64_at(bytes: &[u8], position: usize) -> Option<f64> {
 
 struct SketchReferenceList {
     record_reference: u32,
+    record_reference_offset: usize,
     declared_count: u32,
     references: Vec<u32>,
+    reference_offsets: Vec<usize>,
     end: usize,
 }
 
@@ -993,16 +1021,20 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
         u32::from_le_bytes(bytes.get(position + 9..position + 13)?.try_into().ok()?);
     let mut cursor = position + 13;
     let mut references = Vec::new();
+    let mut reference_offsets = Vec::new();
     while bytes.get(cursor) == Some(&1) && bytes.get(cursor + 5..cursor + 11) == Some(&[0; 6]) {
         references.push(u32::from_le_bytes(
             bytes.get(cursor + 1..cursor + 5)?.try_into().ok()?,
         ));
+        reference_offsets.push(cursor + 1);
         cursor += 11;
     }
     (references.len() == declared_count as usize).then_some(SketchReferenceList {
         record_reference,
+        record_reference_offset: position,
         declared_count,
         references,
+        reference_offsets,
         end: cursor,
     })
 }
@@ -1064,6 +1096,7 @@ pub fn decode_body_members(
             };
             decoded.push(DesignBodyMember {
                 id: format!("f3d:{}:design-body-member#{cursor}", entry.name),
+                byte_offset: cursor as u64,
                 entity_suffix: u64::from_le_bytes(id_raw.try_into().expect(
                     "invariant: id_raw is an 8-byte slice from bytes.get(range) of length 8",
                 )),
@@ -1152,13 +1185,14 @@ fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) 
             {
                 continue;
             }
-            let design_id = recipe_design_id(bytes, offset, name);
+            let design_id_field = recipe_design_id(bytes, offset, name);
+            let design_id = design_id_field.as_ref().map(|field| field.0.clone());
             let key = (kind, design_id.clone());
             let counter = counters.entry(key).or_default();
             let recipe_index = *counter;
             *counter += 1;
-            let record_index = offset
-                .checked_sub(16)
+            let record_index_offset = offset.checked_sub(16);
+            let record_index = record_index_offset
                 .and_then(|at| bytes.get(at..at + 4))
                 .map(|raw| {
                     i32::from_le_bytes(
@@ -1169,8 +1203,12 @@ fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) 
                 .unwrap_or_default();
             out.push(ConstructionRecipe {
                 id: format!("f3d:{stream}:construction-recipe#{offset}"),
+                byte_offset: offset as u64,
+                record_index_offset: record_index_offset.map(|offset| offset as u64),
                 kind,
                 design_id,
+                design_id_offset: design_id_field.as_ref().map(|field| field.1 as u64),
+                design_id_binary_u32: design_id_field.is_some_and(|field| field.2),
                 recipe_index,
                 record_index,
             });
@@ -1179,28 +1217,32 @@ fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) 
     out.sort_by_key(|recipe| recipe.record_index);
 }
 
-fn recipe_design_id(bytes: &[u8], offset: usize, name: &[u8]) -> Option<String> {
+fn recipe_design_id(bytes: &[u8], offset: usize, name: &[u8]) -> Option<(String, usize, bool)> {
     let pre = offset.checked_sub(27)?;
-    if let Some(id) = ascii_id_at(bytes, pre) {
-        return Some(id);
+    if let Some((id, value_offset)) = ascii_id_at(bytes, pre) {
+        return Some((id, value_offset, false));
     }
     if offset >= 23 {
         let candidate = bytes.get(offset - 23..offset - 20)?;
         if candidate.iter().all(u8::is_ascii_digit) {
-            return Some(String::from_utf8_lossy(candidate).into_owned());
+            return Some((
+                String::from_utf8_lossy(candidate).into_owned(),
+                offset - 23,
+                false,
+            ));
         }
     }
     if name == b"bounded_face_recipe_data" && offset >= 16 {
         let id = u32::from_le_bytes(bytes[offset - 16..offset - 12].try_into().ok()?);
         let zeros = bytes.get(offset - 12..offset - 4)?;
         if (100..100_000).contains(&id) && zeros.iter().all(|byte| *byte == 0) {
-            return Some(id.to_string());
+            return Some((id.to_string(), offset - 16, true));
         }
     }
-    ascii_id_at(bytes, offset + name.len() + 8)
+    ascii_id_at(bytes, offset + name.len() + 8).map(|(id, value_offset)| (id, value_offset, false))
 }
 
-fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<String> {
+fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<(String, usize)> {
     let length = usize::try_from(u32::from_le_bytes(
         bytes
             .get(length_offset..length_offset + 4)?
@@ -1212,8 +1254,10 @@ fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<String> {
         return None;
     }
     let value = bytes.get(length_offset + 4..length_offset + 4 + length)?;
-    value
-        .iter()
-        .all(u8::is_ascii_alphanumeric)
-        .then(|| String::from_utf8_lossy(value).into_owned())
+    value.iter().all(u8::is_ascii_alphanumeric).then(|| {
+        (
+            String::from_utf8_lossy(value).into_owned(),
+            length_offset + 4,
+        )
+    })
 }
