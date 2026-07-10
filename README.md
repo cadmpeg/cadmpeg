@@ -23,13 +23,19 @@ The grand vision is cadmpeg supporting high fidelity conversions between all CAD
 
 ## Quick start
 
-cadmpeg requires Rust 1.88 or later:
+Install a prebuilt binary (macOS, Linux, Windows):
 
 ```sh
-git clone https://github.com/cadmpeg/cadmpeg
-cd cadmpeg
-cargo install --path crates/cadmpeg
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/cadmpeg/cadmpeg/releases/latest/download/cadmpeg-installer.sh | sh
 ```
+
+On Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/cadmpeg/cadmpeg/releases/latest/download/cadmpeg-installer.ps1 | iex"
+```
+
+Or with a Rust toolchain (1.88 or later): `cargo install cadmpeg`, or build from a clone with `cargo install --path crates/cadmpeg`.
 
 Run an end-to-end smoke test without a native CAD file:
 
