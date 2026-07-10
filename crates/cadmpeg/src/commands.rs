@@ -167,19 +167,29 @@ pub fn validate_cmd(
     Ok(())
 }
 
+pub struct ExportSettings {
+    pub force: bool,
+    pub report: Option<PathBuf>,
+    pub allow_empty: bool,
+    pub forced_input: Option<ForcedInput>,
+}
+
 pub fn export(
     registry: &Registry,
     path: &Path,
     format: Option<Format>,
     out: Option<PathBuf>,
-    force: bool,
-    report_path: Option<PathBuf>,
-    allow_empty: bool,
-    forced: Option<ForcedInput>,
+    settings: ExportSettings,
     args: &DecodeArgs,
 ) -> Result<()> {
+    let ExportSettings {
+        force,
+        report: report_path,
+        allow_empty,
+        forced_input,
+    } = settings;
     let format = resolve_format(format, out.as_deref())?;
-    let loaded = loader::load_ir(registry, path, &args.options(), forced)?;
+    let loaded = loader::load_ir(registry, path, &args.options(), forced_input)?;
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
         eprintln!("note: export skips IR validation; use `convert` to validate");

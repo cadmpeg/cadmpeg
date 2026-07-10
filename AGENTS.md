@@ -3,3 +3,4 @@
 - Specs contain byte semantics and invariants only. Put genuine unknowns in `docs/formats/*-open-items.md`.
 - Do not treat finite evidence as an unknown. Do not put research history, project status, implementation bugs, or export behavior in specs.
 - When moving code, update callers to import from the owning module. Do not retain old paths through top-level or orchestration re-exports.
+- Before committing, run the CI gate locally: `cargo fmt --all --check && cargo clippy --workspace -- -D warnings && cargo test --workspace`. Clippy warnings fail CI.

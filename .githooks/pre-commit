@@ -1,0 +1,13 @@
+#!/bin/sh
+# Mirrors the CI gate in .github/workflows/ci.yml.
+# Skip with: git commit --no-verify
+set -e
+
+echo "pre-commit: cargo fmt --all --check"
+cargo fmt --all --check
+
+echo "pre-commit: cargo clippy --workspace -- -D warnings"
+cargo clippy --workspace -- -D warnings
+
+echo "pre-commit: cargo build --workspace"
+cargo build --workspace

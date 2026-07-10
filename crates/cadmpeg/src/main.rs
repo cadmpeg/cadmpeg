@@ -255,10 +255,12 @@ fn main() -> ExitCode {
             &input,
             format,
             output,
-            force,
-            report,
-            allow_empty,
-            input_args.forced(),
+            commands::ExportSettings {
+                force,
+                report,
+                allow_empty,
+                forced_input: input_args.forced(),
+            },
             &decode,
         )
         .map(|_| ExitCode::SUCCESS),
