@@ -98,6 +98,14 @@ pub struct DecodeResult {
     pub report: DecodeReport,
 }
 
+impl DecodeResult {
+    /// Build a decode result after canonicalizing every document arena.
+    pub fn new(mut ir: CadIr, report: DecodeReport) -> Self {
+        ir.finalize();
+        Self { ir, report }
+    }
+}
+
 /// Errors a codec can raise.
 #[derive(Debug, thiserror::Error)]
 pub enum CodecError {

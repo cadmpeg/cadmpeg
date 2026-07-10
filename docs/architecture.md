@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD containers through format codecs into `CadIr`, then optionally validates and encodes that IR. [cad-ir.md](cad-ir.md) defines the IR. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
+cadmpeg routes native CAD containers through format codecs into `CadIr`, then optionally validates and encodes that IR. [cad-ir.md](cad-ir.md) defines IR version 1, including canonical units and parameterization, identity, topology, annotations, and native-namespace contracts. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
 
 ## Pipeline
 
@@ -17,13 +17,13 @@ native CAD ── detect + inspect ──> container summary
 - `validate` reads or decodes an input and checks IR invariants.
 - `export` reads or decodes an input and writes CADIR, STEP, or SLDPRT without validation.
 - `convert` performs load/decode, validation, and export. Validation errors stop export unless `--allow-invalid` is set.
-- `diff` reads or decodes two inputs and compares units, tolerances, and every registered arena. Entities are matched by each arena's stable key: entity-ID arenas use their IDs, while record arenas use deterministic composite keys. Vector position is not entity identity.
+- `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, annotations, native namespaces, and opaque records. ID-bearing records are matched by globally unique IDs. Vector position is not entity identity.
 
-CADIR input bypasses codec detection and parses directly into `CadIr`. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
+CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 1. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
 
 ## CLI stream and exit contract
 
-`decode`, `export`, and `convert` reserve stdout for the output artifact; diagnostics use stderr. `--report <path>` writes a versioned machine-readable command report, including semantic refusal paths. `inspect`, `validate`, and `diff` report on stdout and accept `--json`. Status 0 means success, status 1 means semantic failure or a non-empty diff, and status 2 means operational failure.
+`decode`, `export`, and `convert` reserve stdout for the output artifact; diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 2`, including semantic refusal paths. JSON output from `inspect`, `validate`, and `diff` uses the same CLI schema version. This envelope version is independent of `CadIr.ir_version`. Status 0 means success, status 1 means semantic failure or a non-empty diff, and status 2 means operational failure.
 
 Output and report files are written through a unique temporary file in the destination directory and then persisted. Existing files require `--force`. An output path resolving to the input is rejected.
 
@@ -40,7 +40,7 @@ The [format support profiles](format-support.md) record read, write, and round-t
 | Crate                  | Responsibility                                                                                                                                                                                          |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`              | CLI orchestration for `inspect`, `decode`, `validate`, `export`, `diff`, and `convert`; built-in codec registration; CADIR, STEP, and SLDPRT output dispatch.                                           |
-| `cadmpeg-ir`           | Versioned IR model, canonical JSON, provenance and exactness, native namespaces, structural diff, validation, codec traits, and report types.                                                           |
+| `cadmpeg-ir`           | Layered version 1 IR model, canonical JSON, sparse provenance and exactness, native namespaces, structural diff, validation, codec traits, and report types.                                            |
 | `cadmpeg-codec-f3d`    | Fusion `.f3d` ZIP inspection; ASM/SAB B-rep, analytic and cached NURBS geometry, pcurves, transforms, attributes, appearances, Design/ACT records, and history decode.                                  |
 | `cadmpeg-codec-sldprt` | SLDPRT block, directory, and cache-cell inspection; Parasolid analytic/NURBS B-rep, pcurves, appearances, feature lanes, history, and tessellation decode; retained-source and semantic SLDPRT writing. |
 | `cadmpeg-codec-catia`  | CATIA V5 `V5_CFV2` layout inspection; standard, zero-entity, E5, and object-stream carrier decode; conditional standard-nested topology reconstruction.                                                 |

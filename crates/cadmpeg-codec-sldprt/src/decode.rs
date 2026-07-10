@@ -17,16 +17,16 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::Exactness;
 
 use crate::brep::{self, Brep};
 use crate::container::{self, Block, ContainerScan};
@@ -48,7 +48,7 @@ pub fn decode(
     if options.container_only {
         let ir = build_metadata_ir(&scan);
         let report = build_container_report(&scan, true);
-        return Ok(DecodeResult { ir, report });
+        return Ok(DecodeResult::new(ir, report));
     }
 
     let streams = active_body_streams(&scan);
@@ -60,13 +60,13 @@ pub fn decode(
                 &streams[selected].header,
                 decoded,
             );
-            return Ok(DecodeResult { ir, report });
+            return Ok(DecodeResult::new(ir, report));
         }
     }
 
     let ir = build_metadata_ir(&scan);
     let report = build_container_report(&scan, false);
-    Ok(DecodeResult { ir, report })
+    Ok(DecodeResult::new(ir, report))
 }
 
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream
@@ -186,28 +186,53 @@ fn build_geometry_ir(
         }
     }
     ir.source = Some(source_meta(scan, block, header));
-    ir.feature_histories = crate::history::histories(scan);
-    ir.feature_input_lanes = crate::resolved_features::lanes(scan);
-    ir.attributes = crate::metadata::attributes(scan);
+    ir.annotations = std::mem::take(&mut brep.annotations);
+    let histories = crate::history::histories(scan, &mut ir.annotations);
+    let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
+    let attributes = crate::metadata::attributes(scan, &mut ir.annotations);
+    ir.native
+        .sldprt
+        .get_or_insert_with(cadmpeg_ir::SldprtNative::default)
+        .feature_histories = histories;
+    ir.native
+        .sldprt
+        .get_or_insert_with(cadmpeg_ir::SldprtNative::default)
+        .feature_input_lanes = lanes;
+    ir.model.attributes = attributes;
 
-    ir.bodies = brep.bodies;
-    ir.lumps = brep.lumps;
-    ir.shells = brep.shells;
-    ir.faces = brep.faces;
-    ir.loops = brep.loops;
-    ir.coedges = brep.coedges;
-    ir.edges = brep.edges;
-    ir.vertices = brep.vertices;
-    ir.points = brep.points;
-    ir.surfaces = brep.surfaces;
-    ir.surface_parameterizations = brep.surface_parameterizations;
-    ir.curves = brep.curves;
-    ir.pcurves = brep.pcurves;
+    ir.model.bodies = brep.bodies;
+    ir.model.regions = brep.regions;
+    ir.model.shells = brep.shells;
+    ir.model.faces = brep.faces;
+    ir.model.loops = brep.loops;
+    ir.model.coedges = brep.coedges;
+    ir.model.edges = brep.edges;
+    ir.model.vertices = brep.vertices;
+    ir.model.points = brep.points;
+    ir.model.surfaces = brep.surfaces;
+    ir.model.curves = brep.curves;
+    ir.model.pcurves = brep.pcurves;
     ir.unknowns = brep.unknowns;
     for face_color in brep.face_colors {
-        let id = AppearanceId(format!("sldprt:entity53#{}", face_color.color_attr));
-        if !ir.appearances.iter().any(|appearance| appearance.id == id) {
-            ir.appearances.push(Appearance {
+        let id = AppearanceId(format!(
+            "sldprt:appearance:entity53#{}",
+            face_color.color_attr
+        ));
+        crate::annotations::note(
+            &mut ir.annotations,
+            id.0.clone(),
+            header.description.clone(),
+            face_color.offset as u64,
+            "00_53_color",
+            Exactness::ByteExact,
+        );
+        if !ir
+            .model
+            .appearances
+            .iter()
+            .any(|appearance| appearance.id == id)
+        {
+            ir.model.appearances.push(Appearance {
                 id: id.clone(),
                 name: None,
                 asset_guid: None,
@@ -217,39 +242,34 @@ fn build_geometry_ir(
                 category: None,
                 base_color: Some(face_color.color),
                 properties: BTreeMap::new(),
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "sldprt".into(),
-                        stream: header.description.clone(),
-                        offset: face_color.offset as u64,
-                        tag: Some("00_53_color".into()),
-                    },
-                    exactness: Exactness::ByteExact,
-                },
             });
         }
         if let Some(target) = face_color.target {
-            ir.appearance_bindings.push(AppearanceBinding {
+            ir.model.appearance_bindings.push(AppearanceBinding {
+                id: format!(
+                    "sldprt:appearance:binding#face:{}:{}",
+                    face_color.face_attr, face_color.color_attr
+                ),
                 target: AppearanceTarget::Face(cadmpeg_ir::ids::FaceId(target)),
                 appearance: id,
                 source_entity_id: Some(face_color.face_attr.to_string()),
                 object_type: Some("Face".into()),
                 channels: BTreeMap::new(),
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "sldprt".into(),
-                        stream: header.description.clone(),
-                        offset: face_color.offset as u64,
-                        tag: Some("face_color_binding".into()),
-                    },
-                    exactness: Exactness::ByteExact,
-                },
             });
         }
     }
     for (index, material) in materials.into_iter().enumerate() {
-        let id = AppearanceId(format!("sldprt:appearance#{index}"));
-        ir.appearances.push(Appearance {
+        let id = AppearanceId(format!("sldprt:appearance:material#{index}"));
+        let material_stream = format!("block@{}", material.block_offset);
+        crate::annotations::note(
+            &mut ir.annotations,
+            id.0.clone(),
+            material_stream.clone(),
+            material.record_offset as u64,
+            "moVisualProperties_c",
+            Exactness::ByteExact,
+        );
+        ir.model.appearances.push(Appearance {
             id: id.clone(),
             name: Some(material.name),
             asset_guid: None,
@@ -259,33 +279,16 @@ fn build_geometry_ir(
             category: None,
             base_color: Some(material.color),
             properties: BTreeMap::new(),
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "sldprt".to_string(),
-                    stream: format!("block@{}", material.block_offset),
-                    offset: material.record_offset as u64,
-                    tag: Some("moVisualProperties_c".to_string()),
-                },
-                exactness: Exactness::ByteExact,
-            },
         });
         if index == 0 {
-            for body in &ir.bodies {
-                ir.appearance_bindings.push(AppearanceBinding {
+            for (body_index, body) in ir.model.bodies.iter().enumerate() {
+                ir.model.appearance_bindings.push(AppearanceBinding {
+                    id: format!("sldprt:appearance:binding#body:{body_index}:{index}"),
                     target: AppearanceTarget::Body(body.id.clone()),
                     appearance: id.clone(),
                     source_entity_id: None,
                     object_type: Some("Body".to_string()),
                     channels: BTreeMap::new(),
-                    meta: EntityMeta {
-                        provenance: Provenance {
-                            format: "sldprt".to_string(),
-                            stream: format!("block@{}", material.block_offset),
-                            offset: material.record_offset as u64,
-                            tag: Some("body_visual_property".to_string()),
-                        },
-                        exactness: Exactness::Inferred,
-                    },
                 });
             }
         }
@@ -299,80 +302,83 @@ fn build_geometry_ir(
             .into_iter()
             .enumerate()
         {
-            ir.tessellations
+            let id = format!("sldprt:displaylist:record#{}:{index}", display.offset);
+            let display_stream = display
+                .section
+                .clone()
+                .unwrap_or_else(|| format!("block@{}", display.offset));
+            crate::annotations::note(
+                &mut ir.annotations,
+                id.clone(),
+                display_stream,
+                0,
+                "displaylist_tessellation",
+                Exactness::ByteExact,
+            );
+            ir.model
+                .tessellations
                 .push(cadmpeg_ir::tessellation::Tessellation {
-                    id: format!("sldprt:displaylist:{}:{index}", display.offset),
+                    id,
                     vertices: mesh.vertices,
                     triangles: mesh.triangles,
                     strip_lengths: mesh.strip_lengths,
                     normals: mesh.normals,
                     channels: mesh.channels,
-                    meta: EntityMeta {
-                        provenance: Provenance {
-                            format: "sldprt".to_string(),
-                            stream: display
-                                .section
-                                .clone()
-                                .unwrap_or_else(|| format!("block@{}", display.offset)),
-                            offset: 0,
-                            tag: Some("displaylist_tessellation".to_string()),
-                        },
-                        exactness: Exactness::ByteExact,
-                    },
                 });
         }
+        let display_id = format!("sldprt:displaylist:record#{}", display.offset);
+        crate::annotations::note(
+            &mut ir.annotations,
+            display_id.clone(),
+            display
+                .section
+                .clone()
+                .unwrap_or_else(|| format!("block@{}", display.offset)),
+            0,
+            "displaylist_tessellation",
+            Exactness::Unknown,
+        );
         ir.unknowns.push(UnknownRecord {
-            id: UnknownId(format!("sldprt:displaylist:{}", display.offset)),
+            id: UnknownId(display_id),
             offset: display.offset as u64,
             byte_len: display.uncomp_sz as u64,
             sha256: sha256_hex(&display.payload),
             data: Some(display.payload.clone()),
             links: Vec::new(),
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "sldprt".to_string(),
-                    stream: display
-                        .section
-                        .clone()
-                        .unwrap_or_else(|| format!("block@{}", display.offset)),
-                    offset: 0,
-                    tag: Some("displaylist_tessellation".to_string()),
-                },
-                exactness: Exactness::Unknown,
-            },
         });
     }
     for source_block in &scan.blocks {
         if ir
             .unknowns
             .iter()
-            .any(|record| record.id.0 == format!("sldprt:block:{}", source_block.offset))
+            .any(|record| record.id.0 == format!("sldprt:file:block#{}", source_block.offset))
         {
             continue;
         }
+        let id = format!("sldprt:file:block#{}", source_block.offset);
+        crate::annotations::note(
+            &mut ir.annotations,
+            id.clone(),
+            source_block
+                .section
+                .clone()
+                .unwrap_or_else(|| format!("block@{}", source_block.offset)),
+            source_block.offset as u64,
+            source_block.family,
+            Exactness::ByteExact,
+        );
         ir.unknowns.push(UnknownRecord {
-            id: UnknownId(format!("sldprt:block:{}", source_block.offset)),
+            id: UnknownId(id),
             offset: 0,
             byte_len: source_block.payload.len() as u64,
             sha256: sha256_hex(&source_block.payload),
             data: Some(source_block.payload.clone()),
             links: Vec::new(),
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "sldprt".into(),
-                    stream: source_block
-                        .section
-                        .clone()
-                        .unwrap_or_else(|| format!("block@{}", source_block.offset)),
-                    offset: source_block.offset as u64,
-                    tag: Some(source_block.family.to_string()),
-                },
-                exactness: Exactness::ByteExact,
-            },
         });
     }
-    let partition_id = UnknownId(format!("sldprt:block:{}", block.offset));
+    let partition_id = UnknownId(format!("sldprt:file:block#{}", block.offset));
     let opaque_surfaces = ir
+        .model
         .surfaces
         .iter_mut()
         .filter_map(|surface| match &mut surface.geometry {
@@ -383,97 +389,30 @@ fn build_geometry_ir(
             _ => None,
         })
         .collect::<Vec<_>>();
-    if !opaque_surfaces.is_empty() {
+    let opaque_curves = ir
+        .model
+        .curves
+        .iter_mut()
+        .filter_map(|curve| match &mut curve.geometry {
+            cadmpeg_ir::geometry::CurveGeometry::Unknown { record } => {
+                *record = Some(partition_id.clone());
+                Some(curve.id.0.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if !opaque_surfaces.is_empty() || !opaque_curves.is_empty() {
         let partition = ir
             .unknowns
             .iter_mut()
             .find(|record| record.id == partition_id)
             .expect("active partition block is retained");
         partition.links.extend(opaque_surfaces);
+        partition.links.extend(opaque_curves);
     }
     preserve_source_image(scan, &mut ir);
-    populate_annotations(&mut ir);
     set_semantic_hash(&mut ir);
     ir
-}
-
-fn annotate(annotations: &mut AnnotationBuilder, id: impl std::fmt::Display, meta: &EntityMeta) {
-    let stream = annotations.stream(format!(
-        "{}:{}",
-        meta.provenance.format, meta.provenance.stream
-    ));
-    let note = annotations.note(&id, stream, meta.provenance.offset);
-    if let Some(tag) = &meta.provenance.tag {
-        note.tag(tag);
-    }
-    annotations.exactness(id, meta.exactness);
-}
-
-fn populate_annotations(ir: &mut CadIr) {
-    let mut annotations = AnnotationBuilder::new();
-
-    macro_rules! annotate_arena {
-        ($arena:expr) => {
-            for entity in $arena {
-                annotate(&mut annotations, &entity.id, &entity.meta);
-            }
-        };
-    }
-
-    annotate_arena!(&ir.bodies);
-    annotate_arena!(&ir.lumps);
-    annotate_arena!(&ir.shells);
-    annotate_arena!(&ir.faces);
-    annotate_arena!(&ir.loops);
-    annotate_arena!(&ir.coedges);
-    annotate_arena!(&ir.edges);
-    annotate_arena!(&ir.vertices);
-    annotate_arena!(&ir.points);
-    annotate_arena!(&ir.surfaces);
-    annotate_arena!(&ir.curves);
-    annotate_arena!(&ir.pcurves);
-    annotate_arena!(&ir.attributes);
-    annotate_arena!(&ir.appearances);
-    annotate_arena!(&ir.tessellations);
-    annotate_arena!(&ir.feature_input_lanes);
-    annotate_arena!(&ir.unknowns);
-
-    for frame in &ir.surface_parameterizations {
-        annotate(
-            &mut annotations,
-            format!("{}:parameterization", frame.surface),
-            &frame.meta,
-        );
-    }
-    for (index, binding) in ir.appearance_bindings.iter().enumerate() {
-        annotate(
-            &mut annotations,
-            format!("sldprt:appearance-binding#{index}"),
-            &binding.meta,
-        );
-    }
-    for (history_index, history) in ir.feature_histories.iter().enumerate() {
-        let history_id = format!("sldprt:feature-history#{history_index}");
-        annotate(&mut annotations, &history_id, &history.meta);
-        for feature in &history.features {
-            annotate(
-                &mut annotations,
-                format!("{history_id}:feature#{}", feature.ordinal),
-                &feature.meta,
-            );
-        }
-    }
-    for lane in &ir.feature_input_lanes {
-        for entity in &lane.sketch_entities {
-            annotate(
-                &mut annotations,
-                format!("{}:sketch-entity#{}", lane.id, entity.ordinal),
-                &entity.meta,
-            );
-        }
-    }
-
-    ir.annotations = annotations.build();
 }
 
 fn source_meta(scan: &ContainerScan, block: &Block, header: &StreamHeader) -> SourceMeta {
@@ -657,8 +596,8 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
-                "{} edge(s) reference a support curve this codec does not type; the edge was emitted with \
-                 its vertices but no attributed curve carrier.",
+                "{} edge(s) reference an untyped support curve; topology references an opaque \
+                 curve carrier linked to the retained partition.",
                 s.unknown_curve_edges
             ),
             provenance: None,
@@ -682,7 +621,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         losses.push(LossNote {
             category: LossCategory::Topology,
             severity: Severity::Warning,
-            message: "No body record was available; one body/lump/shell hierarchy was derived."
+            message: "No body record was available; one body/region/shell hierarchy was derived."
                 .to_string(),
             provenance: None,
         });
@@ -721,9 +660,18 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
 
 fn build_metadata_ir(scan: &ContainerScan) -> CadIr {
     let mut ir = CadIr::empty(Units::default());
-    ir.feature_histories = crate::history::histories(scan);
-    ir.feature_input_lanes = crate::resolved_features::lanes(scan);
-    ir.attributes = crate::metadata::attributes(scan);
+    let histories = crate::history::histories(scan, &mut ir.annotations);
+    let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
+    let model_attributes = crate::metadata::attributes(scan, &mut ir.annotations);
+    ir.native
+        .sldprt
+        .get_or_insert_with(cadmpeg_ir::SldprtNative::default)
+        .feature_histories = histories;
+    ir.native
+        .sldprt
+        .get_or_insert_with(cadmpeg_ir::SldprtNative::default)
+        .feature_input_lanes = lanes;
+    ir.model.attributes = model_attributes;
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "outer_version".to_string(),
@@ -740,25 +688,25 @@ fn build_metadata_ir(scan: &ContainerScan) -> CadIr {
                 .unwrap_or_else(|| format!("block@{}", block.offset)),
         );
         attributes.insert("parasolid_schema".to_string(), header.schema.clone());
+        let id = format!("sldprt:file:block#{}", block.offset);
+        crate::annotations::note(
+            &mut ir.annotations,
+            id.clone(),
+            block
+                .section
+                .clone()
+                .unwrap_or_else(|| format!("block@{}", block.offset)),
+            0,
+            "parasolid_stream",
+            Exactness::Unknown,
+        );
         ir.unknowns.push(UnknownRecord {
-            id: UnknownId(format!("sldprt:{}", block.offset)),
+            id: UnknownId(id),
             offset: block.offset as u64,
             byte_len: block.uncomp_sz as u64,
             sha256: sha256_hex(&block.payload),
             data: Some(block.payload.clone()),
             links: Vec::new(),
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "sldprt".to_string(),
-                    stream: block
-                        .section
-                        .clone()
-                        .unwrap_or_else(|| format!("block@{}", block.offset)),
-                    offset: 0,
-                    tag: Some("parasolid_stream".to_string()),
-                },
-                exactness: Exactness::Unknown,
-            },
         });
     }
 
@@ -767,7 +715,6 @@ fn build_metadata_ir(scan: &ContainerScan) -> CadIr {
         attributes,
     });
     preserve_source_image(scan, &mut ir);
-    populate_annotations(&mut ir);
     set_semantic_hash(&mut ir);
     ir
 }
@@ -790,11 +737,12 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
 
     let mut normalized = ir.clone();
     normalized.source = None;
-    normalized.bodies.iter_mut().for_each(|body| {
+    normalized.model.bodies.iter_mut().for_each(|body| {
         body.name = None;
         body.color = None;
     });
     let face_appearances = normalized
+        .model
         .appearance_bindings
         .iter()
         .filter_map(|binding| {
@@ -803,28 +751,16 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
         })
         .collect::<std::collections::HashSet<_>>();
     normalized
+        .model
         .appearance_bindings
         .retain(|binding| matches!(binding.target, AppearanceTarget::Face(_)));
     normalized
+        .model
         .appearances
         .retain(|appearance| face_appearances.contains(&appearance.id));
-    normalized.sketch_curve_links.clear();
-    normalized.persistent_design_links.clear();
-    normalized.construction_recipes.clear();
-    normalized.persistent_references.clear();
-    normalized.lost_edge_references.clear();
-    normalized.design_objects.clear();
-    normalized.design_entity_headers.clear();
-    normalized.design_record_headers.clear();
-    normalized.design_body_members.clear();
-    normalized.act_entities.clear();
-    normalized.act_guids.clear();
-    normalized.act_root_components.clear();
-    normalized.tessellations.clear();
-    normalized.feature_histories.clear();
-    normalized.feature_input_lanes.clear();
-    normalized.asm_histories.clear();
-    normalized.attributes.clear();
+    normalized.model.tessellations.clear();
+    normalized.native = cadmpeg_ir::Native::default();
+    normalized.model.attributes.clear();
     normalized.annotations = Annotations::default();
     normalized.unknowns.clear();
     sha256_hex(
@@ -842,7 +778,7 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
     }
     normalized
         .unknowns
-        .retain(|record| record.id.0 != "sldprt:source-image");
+        .retain(|record| record.id.0 != "sldprt:file:source-image#0");
     sha256_hex(
         normalized
             .to_canonical_json()
@@ -852,22 +788,21 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
 }
 
 fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) {
+    crate::annotations::note(
+        &mut ir.annotations,
+        "sldprt:file:source-image#0",
+        "source",
+        0,
+        "source_image",
+        Exactness::ByteExact,
+    );
     ir.unknowns.push(UnknownRecord {
-        id: UnknownId("sldprt:source-image".into()),
+        id: UnknownId("sldprt:file:source-image#0".into()),
         offset: 0,
         byte_len: scan.source_image.len() as u64,
         sha256: sha256_hex(&scan.source_image),
         data: Some(scan.source_image.clone()),
         links: Vec::new(),
-        meta: EntityMeta {
-            provenance: Provenance {
-                format: "sldprt".into(),
-                stream: "file".into(),
-                offset: 0,
-                tag: Some("source_image".into()),
-            },
-            exactness: Exactness::ByteExact,
-        },
     });
 }
 
@@ -895,9 +830,10 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         LossNote {
             category: LossCategory::Topology,
             severity: Severity::Blocking,
-            message: "B-rep topology graph (body/lump/shell/face/loop/coedge/edge/vertex) was not \
+            message:
+                "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
                       built for this file."
-                .to_string(),
+                    .to_string(),
             provenance: None,
         },
         LossNote {

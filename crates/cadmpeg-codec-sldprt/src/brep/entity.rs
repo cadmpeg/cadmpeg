@@ -12,7 +12,7 @@ pub struct BodyRecord {
     pub kind: BodyKind,
     pub refs: Vec<u16>,
     pub offset: usize,
-    pub lump: Option<(u16, usize)>,
+    pub region: Option<(u16, usize)>,
     pub shell: Option<(u16, usize)>,
 }
 
@@ -254,7 +254,7 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
             },
             refs,
             offset: root.offset,
-            lump: linked(&by_attr, root, 0x001b)
+            region: linked(&by_attr, root, 0x001b)
                 .and_then(|(attr, _)| linked(&by_attr, by_attr[&attr], 0x001f)),
             shell: linked(&by_attr, root, 0x001b)
                 .and_then(|(attr, _)| linked(&by_attr, by_attr[&attr], 0x001f))

@@ -10,7 +10,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::provenance::EntityMeta;
+use cadmpeg_ir::Exactness;
 
 use crate::container::{self, role, Layout};
 use crate::{decode, CreoCodec};
@@ -52,15 +52,19 @@ fn jpeg_payload() -> Vec<u8> {
     vec![0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]
 }
 
-fn assert_annotation_matches_meta(ir: &CadIr, id: &str, meta: &EntityMeta) {
+fn assert_annotation(
+    ir: &CadIr,
+    id: &str,
+    stream: &str,
+    offset: u64,
+    tag: &str,
+    exactness: Exactness,
+) {
     let provenance = &ir.annotations.provenance[id];
-    assert_eq!(
-        ir.annotations.streams[provenance.stream as usize],
-        format!("{}:{}", meta.provenance.format, meta.provenance.stream)
-    );
-    assert_eq!(provenance.offset, meta.provenance.offset);
-    assert_eq!(provenance.tag, meta.provenance.tag);
-    assert_eq!(ir.annotations.exactness[id].entity, meta.exactness);
+    assert_eq!(ir.annotations.streams[provenance.stream as usize], stream);
+    assert_eq!(provenance.offset, offset);
+    assert_eq!(provenance.tag.as_deref(), Some(tag));
+    assert_eq!(ir.annotations.exactness[id].entity, exactness);
     assert!(ir.annotations.exactness[id].fields.is_empty());
 }
 
@@ -186,11 +190,11 @@ fn decode_transfers_exact_datum_plane_carrier() {
     let mut reader = Cursor::new(build_prt("c", &[("ActDatums", datum)]));
     let result = decode::decode(&mut reader, &DecodeOptions::default()).unwrap();
     assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.surfaces.len(), 1);
+    assert_eq!(result.ir.model.surfaces.len(), 1);
 }
 
 #[test]
-fn decode_annotations_match_every_emitted_entity_meta() {
+fn decode_annotations_cover_every_emitted_entity() {
     let mut datum = vec![4, 0x22, 1, 1, 0, 0];
     datum.extend([0x0f; 4]);
     for value in [2.0_f64, 0.0, 3.0, -2.0, 0.0, -3.0] {
@@ -210,21 +214,42 @@ fn decode_annotations_match_every_emitted_entity_meta() {
             ("ActDatums", datum),
         ],
     );
+    let datum_offset = container::scan_bytes(data.clone()).datum_planes[0].offset_in_payload as u64;
     let mut reader = Cursor::new(data);
     let result = decode::decode(&mut reader, &DecodeOptions::default()).expect("decode");
 
     assert_eq!(result.ir.unknowns.len(), 3);
-    assert_eq!(result.ir.surfaces.len(), 1);
+    assert_eq!(result.ir.model.surfaces.len(), 1);
     for unknown in &result.ir.unknowns {
-        assert_annotation_matches_meta(&result.ir, unknown.id.as_str(), &unknown.meta);
+        let section_name = unknown
+            .id
+            .as_str()
+            .strip_prefix("creo:")
+            .and_then(|suffix| suffix.split_once(":section#"))
+            .map(|(name, _)| name)
+            .expect("unknown id contains its source section");
+        assert_annotation(
+            &result.ir,
+            unknown.id.as_str(),
+            &format!("creo:{section_name}"),
+            unknown.offset,
+            "psb_geometry_section",
+            Exactness::Unknown,
+        );
     }
-    for surface in &result.ir.surfaces {
-        assert_annotation_matches_meta(&result.ir, surface.id.as_str(), &surface.meta);
+    for surface in &result.ir.model.surfaces {
+        assert_annotation(
+            &result.ir,
+            surface.id.as_str(),
+            "creo:ActDatums",
+            datum_offset,
+            "datum_plane_outline",
+            Exactness::Derived,
+        );
     }
-    assert_eq!(
-        result.ir.annotations.provenance.len(),
-        result.ir.unknowns.len() + result.ir.surfaces.len()
-    );
+    let emitted_entity_count = result.ir.unknowns.len() + result.ir.model.surfaces.len();
+    assert_eq!(result.ir.annotations.provenance.len(), emitted_entity_count);
+    assert_eq!(result.ir.annotations.exactness.len(), emitted_entity_count);
 }
 
 #[test]
@@ -296,9 +321,9 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
         .iter()
         .any(|u| u.id.0.contains("NovisGeom")));
     // No geometry arenas populated.
-    assert!(result.ir.surfaces.is_empty());
-    assert!(result.ir.points.is_empty());
-    assert!(result.ir.faces.is_empty());
+    assert!(result.ir.model.surfaces.is_empty());
+    assert!(result.ir.model.points.is_empty());
+    assert!(result.ir.model.faces.is_empty());
     // Source attributes carry the census.
     let source = result.ir.source.as_ref().expect("source");
     assert_eq!(

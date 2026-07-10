@@ -8,9 +8,8 @@ use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::provenance::EntityMeta;
 use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
 
@@ -40,70 +39,62 @@ fn emit_curve_only(g: &CurveGeometry) -> String {
 /// must omit that edge and record a loss.
 fn edgeless_doc() -> CadIr {
     use cadmpeg_ir::ids::{
-        BodyId, CoedgeId, EdgeId, FaceId, LoopId, LumpId, PointId, ShellId, SurfaceId, VertexId,
+        BodyId, CoedgeId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId, VertexId,
     };
-    use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Lump, Point, Sense, Shell, Vertex};
-    let m = EntityMeta::synthetic;
+    use cadmpeg_ir::topology::{
+        Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+    };
     let mut ir = CadIr::empty(Units::default());
-    ir.points.push(Point {
+    ir.model.points.push(Point {
         id: PointId("p0".into()),
         position: Point3::new(0.0, 0.0, 0.0),
-        meta: m(),
     });
-    ir.points.push(Point {
+    ir.model.points.push(Point {
         id: PointId("p1".into()),
         position: Point3::new(1.0, 0.0, 0.0),
-        meta: m(),
     });
-    ir.vertices.push(Vertex {
+    ir.model.vertices.push(Vertex {
         id: VertexId("v0".into()),
         point: PointId("p0".into()),
         tolerance: None,
-        meta: m(),
     });
-    ir.vertices.push(Vertex {
+    ir.model.vertices.push(Vertex {
         id: VertexId("v1".into()),
         point: PointId("p1".into()),
         tolerance: None,
-        meta: m(),
     });
-    ir.edges.push(Edge {
+    ir.model.edges.push(Edge {
         id: EdgeId("e0".into()),
         curve: None,
         start: VertexId("v0".into()),
         end: VertexId("v1".into()),
         param_range: None,
         tolerance: None,
-        meta: m(),
     });
-    ir.surfaces.push(Surface {
+    ir.model.surfaces.push(Surface {
         id: SurfaceId("s0".into()),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: None,
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
         },
-        meta: m(),
     });
-    ir.coedges.push(Coedge {
+    ir.model.coedges.push(Coedge {
         id: CoedgeId("ce0".into()),
         owner_loop: LoopId("lp0".into()),
         edge: EdgeId("e0".into()),
         next: CoedgeId("ce0".into()),
         previous: CoedgeId("ce0".into()),
-        partner: None,
-        radial_next: None,
+        radial_next: CoedgeId("ce0".into()),
         sense: Sense::Forward,
         pcurve: None,
-        meta: m(),
     });
-    ir.loops.push(Loop {
+    ir.model.loops.push(Loop {
         id: LoopId("lp0".into()),
         face: FaceId("f0".into()),
         coedges: vec![CoedgeId("ce0".into())],
-        meta: m(),
     });
-    ir.faces.push(Face {
+    ir.model.faces.push(Face {
         id: FaceId("f0".into()),
         shell: ShellId("sh0".into()),
         surface: SurfaceId("s0".into()),
@@ -112,30 +103,26 @@ fn edgeless_doc() -> CadIr {
         name: None,
         color: None,
         tolerance: None,
-        meta: m(),
     });
-    ir.shells.push(Shell {
+    ir.model.shells.push(Shell {
         id: ShellId("sh0".into()),
-        lump: LumpId("l0".into()),
+        region: RegionId("l0".into()),
         faces: vec![FaceId("f0".into())],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
-        meta: m(),
     });
-    ir.lumps.push(Lump {
-        id: LumpId("l0".into()),
+    ir.model.regions.push(Region {
+        id: RegionId("l0".into()),
         body: BodyId("b0".into()),
         shells: vec![ShellId("sh0".into())],
-        meta: m(),
     });
-    ir.bodies.push(Body {
+    ir.model.bodies.push(Body {
         id: BodyId("b0".into()),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
-        lumps: vec![LumpId("l0".into())],
+        regions: vec![RegionId("l0".into())],
         transform: None,
         name: None,
         color: None,
-        meta: m(),
     });
     ir
 }
@@ -258,15 +245,14 @@ fn buf_line_count(buf: &[u8]) -> usize {
 /// interning of shared points/directions.
 fn cylinder_surface_doc() -> CadIr {
     let mut ir = CadIr::empty(Units::default());
-    ir.surfaces.push(Surface {
+    ir.model.surfaces.push(Surface {
         id: SurfaceId("cyl".into()),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: None,
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
             radius: 5.0,
         },
-        meta: EntityMeta::synthetic(),
     });
     ir
 }
@@ -279,7 +265,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
             SurfaceGeometry::Cylinder {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: None,
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
                 radius: 5.0,
             },
             "CYLINDRICAL_SURFACE",
@@ -288,7 +274,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
             SurfaceGeometry::Cone {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: None,
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
                 radius: 2.0,
                 half_angle: 0.5,
             },
@@ -297,8 +283,8 @@ fn analytic_surfaces_map_to_their_step_entities() {
         (
             SurfaceGeometry::Sphere {
                 center: Point3::new(1.0, 2.0, 3.0),
-                axis: None,
-                ref_direction: None,
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
                 radius: 4.0,
             },
             "SPHERICAL_SURFACE",
@@ -307,7 +293,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
             SurfaceGeometry::Torus {
                 center: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: None,
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
                 major_radius: 3.0,
                 minor_radius: 1.0,
             },
@@ -316,14 +302,13 @@ fn analytic_surfaces_map_to_their_step_entities() {
     ];
     for (geom, kw) in cases {
         let mut ir = CadIr::empty(Units::default());
-        ir.surfaces.push(Surface {
+        ir.model.surfaces.push(Surface {
             id: SurfaceId("s".into()),
             geometry: geom,
-            meta: EntityMeta::synthetic(),
         });
         // Surfaces alone aren't reachable from a shell, so they won't be emitted
         // by the topology walk; emit directly via the geometry module instead.
-        let s = emit_surface_only(&ir.surfaces[0].geometry);
+        let s = emit_surface_only(&ir.model.surfaces[0].geometry);
         assert!(s.contains(kw), "missing {kw} in {s}");
     }
 }
@@ -332,8 +317,8 @@ fn analytic_surfaces_map_to_their_step_entities() {
 fn analytic_surface_placements_preserve_orientation() {
     let geometry = SurfaceGeometry::Sphere {
         center: Point3::new(1.0, 2.0, 3.0),
-        axis: Some(Vector3::new(0.0, 1.0, 0.0)),
-        ref_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+        axis: Vector3::new(0.0, 1.0, 0.0),
+        ref_direction: Vector3::new(0.0, 0.0, 1.0),
         radius: 4.0,
     };
     let s = emit_surface_only(&geometry);
@@ -425,14 +410,12 @@ fn nurbs_surface_grid_orientation_is_u_major() {
 }
 
 #[test]
-fn inch_document_uses_conversion_based_unit() {
-    let mut ir = unit_cube();
-    ir.units = Units {
-        length: LengthUnit::Inch,
-    };
+fn v1_document_uses_canonical_millimeter_unit() {
+    let ir = unit_cube();
+    assert_eq!(ir.units.length, LengthUnit::Millimeter);
     let s = export(&ir);
-    assert!(s.contains("CONVERSION_BASED_UNIT('INCH'"));
-    assert!(s.contains("LENGTH_MEASURE(0.0254)"));
+    assert!(s.contains("SI_UNIT(.MILLI.,.METRE.)"));
+    assert!(!s.contains("CONVERSION_BASED_UNIT"));
 }
 
 #[test]
@@ -457,13 +440,12 @@ fn edge_without_curve_is_reported_and_omitted() {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
         },
-        meta: EntityMeta::synthetic(),
     };
     let _ = curve; // silence unused import path
     assert!(report
         .losses
         .iter()
-        .any(|l| l.message.contains("edge(s) have no attributed 3D curve")));
+        .any(|l| l.message.contains("edge(s) have no typed 3D curve")));
 }
 
 #[test]
@@ -472,8 +454,8 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
     // cannot become an ADVANCED_FACE, so the writer must skip it and record one
     // aggregated, counted loss — the remaining five faces still export.
     let mut ir = unit_cube();
-    let target = ir.faces[0].surface.0.clone();
-    for s in &mut ir.surfaces {
+    let target = ir.model.faces[0].surface.0.clone();
+    for s in &mut ir.model.surfaces {
         if s.id.0 == target {
             s.geometry = SurfaceGeometry::Unknown { record: None };
         }
@@ -504,10 +486,10 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
 #[test]
 fn signed_analytic_radius_normalization_is_reported() {
     let mut ir = unit_cube();
-    ir.surfaces[0].geometry = SurfaceGeometry::Sphere {
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
         center: Point3::new(0.0, 0.0, 0.0),
-        axis: None,
-        ref_direction: None,
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
         radius: -2.0,
     };
 
@@ -523,12 +505,15 @@ fn signed_analytic_radius_normalization_is_reported() {
 #[test]
 fn procedural_construction_reduction_is_reported() {
     let mut ir = unit_cube();
-    ir.procedural_curves
+    ir.model
+        .procedural_curves
         .push(cadmpeg_ir::geometry::ProceduralCurve {
-            curve: ir.curves[0].id.clone(),
-            native_kind: "generated_int_cur".into(),
+            id: ProceduralCurveId("generated_int_cur".into()),
+            curve: ir.model.curves[0].id.clone(),
+            definition: cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+                supports: [None, None],
+            },
             cache_fit_tolerance: Some(0.01),
-            meta: EntityMeta::synthetic(),
         });
 
     let mut buf = Vec::new();
@@ -541,12 +526,16 @@ fn procedural_construction_reduction_is_reported() {
 #[test]
 fn parametric_history_reduction_is_reported() {
     let mut ir = unit_cube();
-    ir.asm_histories.push(cadmpeg_ir::history::AsmHistory {
-        stream_size: Some(0),
-        high_water_mark: Some(0),
-        states: Vec::new(),
-        meta: EntityMeta::synthetic(),
-    });
+    ir.native
+        .f3d
+        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default)
+        .asm_histories
+        .push(cadmpeg_ir::history::AsmHistory {
+            id: "asm-history-0".into(),
+            stream_size: Some(0),
+            high_water_mark: Some(0),
+            states: Vec::new(),
+        });
 
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();

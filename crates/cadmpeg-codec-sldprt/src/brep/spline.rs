@@ -201,6 +201,7 @@ fn homogeneous_poles(points: &[Point3], weights: Option<&[f64]>, scale: f64) -> 
     Some(out)
 }
 
+/// Patch retained curve pole and knot arrays without changing their storage shape.
 pub(crate) fn patch_nurbs_curve(
     bytes: &mut [u8],
     wrapper_offset: usize,
@@ -240,6 +241,7 @@ pub(crate) fn patch_nurbs_curve(
     patch_f64_array(bytes, 0x80, descriptor.knot_attr, &new_unique)
 }
 
+/// Patch retained surface pole and knot arrays without changing their storage shape.
 pub(crate) fn patch_nurbs_surface(
     bytes: &mut [u8],
     wrapper_offset: usize,
@@ -397,6 +399,7 @@ fn surface_refs(bytes: &[u8], arrays: &Arrays) -> HashMap<u16, [u16; 5]> {
     out
 }
 
+#[allow(clippy::manual_is_multiple_of)] // `is_multiple_of` exceeds the workspace MSRV.
 fn surface_shape(
     control_len: usize,
     u_mult: &[u16],

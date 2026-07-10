@@ -41,34 +41,6 @@ pub fn placement(e: &mut Emitter, origin: Point3, axis: Vector3, ref_dir: Vector
     e.emit("AXIS2_PLACEMENT_3D", &format!("'',{o},{a},{r}"))
 }
 
-/// An arbitrary unit vector orthogonal to `axis`, used as the local +X for
-/// analytic surfaces/curves whose IR form fixes only an axis. The specific
-/// choice is immaterial to the surface's geometry.
-fn orthogonal(axis: Vector3) -> Vector3 {
-    let n = axis.norm();
-    let a = if n > 0.0 {
-        Vector3::new(axis.x / n, axis.y / n, axis.z / n)
-    } else {
-        Vector3::new(0.0, 0.0, 1.0)
-    };
-    // Pick a seed axis least aligned with `a`, then Gram-Schmidt it.
-    let seed = if a.x.abs() <= a.y.abs() && a.x.abs() <= a.z.abs() {
-        Vector3::new(1.0, 0.0, 0.0)
-    } else if a.y.abs() <= a.z.abs() {
-        Vector3::new(0.0, 1.0, 0.0)
-    } else {
-        Vector3::new(0.0, 0.0, 1.0)
-    };
-    let d = seed.x * a.x + seed.y * a.y + seed.z * a.z;
-    let r = Vector3::new(seed.x - d * a.x, seed.y - d * a.y, seed.z - d * a.z);
-    let rn = r.norm();
-    if rn > 0.0 {
-        Vector3::new(r.x / rn, r.y / rn, r.z / rn)
-    } else {
-        Vector3::new(1.0, 0.0, 0.0)
-    }
-}
-
 /// Emit an analytic or NURBS surface carrier, returning its reference.
 pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
     match g {
@@ -77,8 +49,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
             normal,
             u_axis,
         } => {
-            let ref_dir = u_axis.unwrap_or_else(|| orthogonal(*normal));
-            let pl = placement(e, *origin, *normal, ref_dir);
+            let pl = placement(e, *origin, *normal, *u_axis);
             e.emit("PLANE", &format!("'',{pl}"))
         }
         SurfaceGeometry::Cylinder {
@@ -87,8 +58,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
             ref_direction,
             radius,
         } => {
-            let ref_dir = ref_direction.unwrap_or_else(|| orthogonal(*axis));
-            let pl = placement(e, *origin, *axis, ref_dir);
+            let pl = placement(e, *origin, *axis, *ref_direction);
             e.emit("CYLINDRICAL_SURFACE", &format!("'',{pl},{}", real(*radius)))
         }
         SurfaceGeometry::Cone {
@@ -98,8 +68,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
             radius,
             half_angle,
         } => {
-            let ref_dir = ref_direction.unwrap_or_else(|| orthogonal(*axis));
-            let pl = placement(e, *origin, *axis, ref_dir);
+            let pl = placement(e, *origin, *axis, *ref_direction);
             e.emit(
                 "CONICAL_SURFACE",
                 &format!("'',{pl},{},{}", real(*radius), real(*half_angle)),
@@ -111,9 +80,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
             ref_direction,
             radius,
         } => {
-            let axis = axis.unwrap_or(Vector3::new(0.0, 0.0, 1.0));
-            let ref_dir = ref_direction.unwrap_or_else(|| orthogonal(axis));
-            let pl = placement(e, *center, axis, ref_dir);
+            let pl = placement(e, *center, *axis, *ref_direction);
             e.emit(
                 "SPHERICAL_SURFACE",
                 &format!("'',{pl},{}", real(radius.abs())),
@@ -126,8 +93,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
             major_radius,
             minor_radius,
         } => {
-            let ref_dir = ref_direction.unwrap_or_else(|| orthogonal(*axis));
-            let pl = placement(e, *center, *axis, ref_dir);
+            let pl = placement(e, *center, *axis, *ref_direction);
             e.emit(
                 "TOROIDAL_SURFACE",
                 &format!(
@@ -162,9 +128,10 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
         CurveGeometry::Circle {
             center,
             axis,
+            ref_direction,
             radius,
         } => {
-            let pl = placement(e, *center, *axis, orthogonal(*axis));
+            let pl = placement(e, *center, *axis, *ref_direction);
             e.emit("CIRCLE", &format!("'',{pl},{}", real(*radius)))
         }
         CurveGeometry::Ellipse {
@@ -203,6 +170,9 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
             )
         }
         CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
+        CurveGeometry::Unknown { .. } => {
+            unreachable!("unknown curves are filtered before emission")
+        }
     }
 }
 

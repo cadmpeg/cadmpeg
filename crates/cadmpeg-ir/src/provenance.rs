@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Provenance and exactness metadata carried by every IR entity.
+//! Provenance and exactness value types.
 //!
 //! The whole point of the IR is to preserve *where each fact came from* and
 //! *how much we trust it*, so that a downstream export can report loss honestly
-//! rather than silently normalizing. Every entity embeds an [`EntityMeta`].
+//! rather than silently normalizing. IR v1 stores these facts in document-wide
+//! annotation tables.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -26,19 +27,6 @@ pub struct Provenance {
     pub tag: Option<String>,
 }
 
-impl Provenance {
-    /// Provenance for IR that was constructed in memory rather than decoded from
-    /// a file (tests, fixtures, and the documentation's worked example).
-    pub fn synthetic() -> Self {
-        Provenance {
-            format: "synthetic".to_string(),
-            stream: String::new(),
-            offset: 0,
-            tag: None,
-        }
-    }
-}
-
 /// How faithfully an entity reflects the source bytes.
 ///
 /// This is the honesty knob. A plane whose coefficients were read verbatim is
@@ -58,24 +46,4 @@ pub enum Exactness {
     Inferred,
     /// Origin or trustworthiness could not be established.
     Unknown,
-}
-
-/// The provenance bundle embedded in every IR entity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct EntityMeta {
-    /// Where the entity came from.
-    pub provenance: Provenance,
-    /// How faithfully it reflects the source.
-    pub exactness: Exactness,
-}
-
-impl EntityMeta {
-    /// Metadata for an in-memory (non-decoded) entity: synthetic provenance,
-    /// [`Exactness::Inferred`].
-    pub fn synthetic() -> Self {
-        EntityMeta {
-            provenance: Provenance::synthetic(),
-            exactness: Exactness::Inferred,
-        }
-    }
 }

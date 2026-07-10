@@ -8,13 +8,14 @@
 
 use std::collections::HashMap;
 
+use crate::annotations::AnnotationBuilder;
 use crate::document::CadIr;
-use crate::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use crate::geometry::{derive_reference_direction, Curve, CurveGeometry, Surface, SurfaceGeometry};
 use crate::ids::{CoedgeId, CurveId, EdgeId, PointId, SurfaceId, VertexId};
 use crate::math::{Point3, Vector3};
-use crate::provenance::EntityMeta;
+use crate::provenance::Exactness;
 use crate::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Lump, Point, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use crate::units::Units;
 
@@ -30,7 +31,6 @@ type FaceDef = (
 /// A `10 mm` axis-aligned cube spanning the origin to `(10, 10, 10)`.
 pub fn unit_cube() -> CadIr {
     let s = 10.0_f64;
-    let meta = EntityMeta::synthetic;
 
     let corners = [
         (0.0, 0.0, 0.0),
@@ -107,16 +107,14 @@ pub fn unit_cube() -> CadIr {
 
     // Points + vertices.
     for (i, (x, y, z)) in corners.iter().enumerate() {
-        ir.points.push(Point {
-            id: PointId(format!("p{i}")),
+        ir.model.points.push(Point {
+            id: PointId(format!("synthetic:cube:point#{i}")),
             position: Point3::new(*x, *y, *z),
-            meta: meta(),
         });
-        ir.vertices.push(Vertex {
-            id: VertexId(format!("v{i}")),
-            point: PointId(format!("p{i}")),
+        ir.model.vertices.push(Vertex {
+            id: VertexId(format!("synthetic:cube:vertex#{i}")),
+            point: PointId(format!("synthetic:cube:point#{i}")),
             tolerance: None,
-            meta: meta(),
         });
     }
 
@@ -127,60 +125,57 @@ pub fn unit_cube() -> CadIr {
         let dir = Vector3::new(bx - ax, by - ay, bz - az);
         let len = dir.norm();
         let unit = Vector3::new(dir.x / len, dir.y / len, dir.z / len);
-        ir.curves.push(Curve {
-            id: CurveId(format!("crv_e{i}")),
+        ir.model.curves.push(Curve {
+            id: CurveId(format!("synthetic:cube:curve#{i}")),
             geometry: CurveGeometry::Line {
                 origin: Point3::new(ax, ay, az),
                 direction: unit,
             },
-            meta: meta(),
         });
-        ir.edges.push(Edge {
-            id: EdgeId(format!("e{i}")),
-            curve: Some(CurveId(format!("crv_e{i}"))),
-            start: VertexId(format!("v{a}")),
-            end: VertexId(format!("v{b}")),
+        ir.model.edges.push(Edge {
+            id: EdgeId(format!("synthetic:cube:edge#{i}")),
+            curve: Some(CurveId(format!("synthetic:cube:curve#{i}"))),
+            start: VertexId(format!("synthetic:cube:vertex#{a}")),
+            end: VertexId(format!("synthetic:cube:vertex#{b}")),
             param_range: Some([0.0, len]),
             tolerance: None,
-            meta: meta(),
         });
     }
 
     // Faces, surfaces, loops, coedges.
     let mut edge_to_coedges: HashMap<usize, Vec<String>> = HashMap::new();
     for (name, normal, origin, ring) in &face_defs {
-        let surf_id = format!("srf_{name}");
-        ir.surfaces.push(Surface {
+        let surf_id = format!("synthetic:cube:surface#{name}");
+        ir.model.surfaces.push(Surface {
             id: SurfaceId(surf_id.clone()),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(origin.0, origin.1, origin.2),
                 normal: Vector3::new(normal.0, normal.1, normal.2),
-                u_axis: None,
+                u_axis: derive_reference_direction(Vector3::new(normal.0, normal.1, normal.2)),
             },
-            meta: meta(),
         });
 
-        let loop_id = format!("lp_{name}");
-        let coedge_ids: Vec<String> = (0..ring.len()).map(|i| format!("ce_{name}_{i}")).collect();
+        let loop_id = format!("synthetic:cube:loop#{name}");
+        let coedge_ids: Vec<String> = (0..ring.len())
+            .map(|i| format!("synthetic:cube:coedge#{name}:{i}"))
+            .collect();
 
         for (i, (edge_index, forward)) in ring.iter().enumerate() {
             let next = &coedge_ids[(i + 1) % ring.len()];
             let prev = &coedge_ids[(i + ring.len() - 1) % ring.len()];
-            ir.coedges.push(Coedge {
+            ir.model.coedges.push(Coedge {
                 id: CoedgeId(coedge_ids[i].clone()),
                 owner_loop: loop_id.clone().into(),
-                edge: EdgeId(format!("e{edge_index}")),
+                edge: EdgeId(format!("synthetic:cube:edge#{edge_index}")),
                 next: CoedgeId(next.clone()),
                 previous: CoedgeId(prev.clone()),
-                partner: None, // filled in below
-                radial_next: None,
+                radial_next: CoedgeId(coedge_ids[i].clone()),
                 sense: if *forward {
                     Sense::Forward
                 } else {
                     Sense::Reversed
                 },
                 pcurve: None,
-                meta: meta(),
             });
             edge_to_coedges
                 .entry(*edge_index)
@@ -188,22 +183,20 @@ pub fn unit_cube() -> CadIr {
                 .push(coedge_ids[i].clone());
         }
 
-        ir.loops.push(Loop {
+        ir.model.loops.push(Loop {
             id: loop_id.clone().into(),
-            face: format!("f_{name}").into(),
+            face: format!("synthetic:cube:face#{name}").into(),
             coedges: coedge_ids.iter().map(|c| CoedgeId(c.clone())).collect(),
-            meta: meta(),
         });
-        ir.faces.push(Face {
-            id: format!("f_{name}").into(),
-            shell: "shell0".into(),
+        ir.model.faces.push(Face {
+            id: format!("synthetic:cube:face#{name}").into(),
+            shell: "synthetic:cube:shell#0".into(),
             surface: SurfaceId(surf_id),
             sense: Sense::Forward,
             loops: vec![loop_id.into()],
             name: Some(format!("{name} face")),
             color: None,
             tolerance: None,
-            meta: meta(),
         });
     }
 
@@ -213,39 +206,116 @@ pub fn unit_cube() -> CadIr {
         .filter(|v| v.len() == 2)
         .flat_map(|v| [(v[0].clone(), v[1].clone()), (v[1].clone(), v[0].clone())])
         .collect();
-    for ce in &mut ir.coedges {
+    for ce in &mut ir.model.coedges {
         if let Some(p) = partner_of.get(&ce.id.0) {
-            ce.partner = Some(CoedgeId(p.clone()));
+            ce.radial_next = CoedgeId(p.clone());
         }
     }
 
-    // Shell, lump, body.
-    ir.shells.push(Shell {
-        id: "shell0".into(),
-        lump: "lump0".into(),
+    // Shell, region, body.
+    ir.model.shells.push(Shell {
+        id: "synthetic:cube:shell#0".into(),
+        region: "synthetic:cube:region#0".into(),
         faces: face_defs
             .iter()
-            .map(|(name, ..)| format!("f_{name}").into())
+            .map(|(name, ..)| format!("synthetic:cube:face#{name}").into())
             .collect(),
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
-        meta: meta(),
     });
-    ir.lumps.push(Lump {
-        id: "lump0".into(),
-        body: "body0".into(),
-        shells: vec!["shell0".into()],
-        meta: meta(),
+    ir.model.regions.push(Region {
+        id: "synthetic:cube:region#0".into(),
+        body: "synthetic:cube:body#0".into(),
+        shells: vec!["synthetic:cube:shell#0".into()],
     });
-    ir.bodies.push(Body {
-        id: "body0".into(),
+    ir.model.bodies.push(Body {
+        id: "synthetic:cube:body#0".into(),
         kind: BodyKind::Solid,
-        lumps: vec!["lump0".into()],
+        regions: vec!["synthetic:cube:region#0".into()],
         transform: None,
         name: Some("unit cube".into()),
         color: None,
-        meta: meta(),
     });
 
+    let mut annotations = AnnotationBuilder::new();
+    let synthetic = annotations.stream("synthetic:");
+    for id in ir.model.points.iter().map(|entity| entity.id.to_string()) {
+        annotations.note(&id, synthetic, 0);
+        annotations.exactness(id, Exactness::Inferred);
+    }
+    for id in ir.model.vertices.iter().map(|entity| entity.id.to_string()) {
+        annotations.note(&id, synthetic, 0);
+        annotations.exactness(id, Exactness::Inferred);
+    }
+    for id in ir.model.curves.iter().map(|entity| entity.id.to_string()) {
+        annotations.note(&id, synthetic, 0);
+        annotations.exactness(id, Exactness::Inferred);
+    }
+    for id in ir.model.edges.iter().map(|entity| entity.id.to_string()) {
+        annotations.note(&id, synthetic, 0);
+        annotations.exactness(id, Exactness::Inferred);
+    }
+    for id in ir.model.surfaces.iter().map(|entity| entity.id.to_string()) {
+        annotations.note(&id, synthetic, 0);
+        annotations.exactness(id, Exactness::Inferred);
+    }
+    for id in ir.model.coedges.iter().map(|entity| entity.id.to_string()) {
+        annotations.note(&id, synthetic, 0);
+        annotations.exactness(id, Exactness::Inferred);
+    }
+    for id in ir.model.loops.iter().map(|entity| entity.id.to_string()) {
+        annotations.note(&id, synthetic, 0);
+        annotations.exactness(id, Exactness::Inferred);
+    }
+    for id in ir.model.faces.iter().map(|entity| entity.id.to_string()) {
+        annotations.note(&id, synthetic, 0);
+        annotations.exactness(id, Exactness::Inferred);
+    }
+    for id in ir.model.shells.iter().map(|entity| entity.id.to_string()) {
+        annotations.note(&id, synthetic, 0);
+        annotations.exactness(id, Exactness::Inferred);
+    }
+    for id in ir.model.regions.iter().map(|entity| entity.id.to_string()) {
+        annotations.note(&id, synthetic, 0);
+        annotations.exactness(id, Exactness::Inferred);
+    }
+    for id in ir.model.bodies.iter().map(|entity| entity.id.to_string()) {
+        annotations.note(&id, synthetic, 0);
+        annotations.exactness(id, Exactness::Inferred);
+    }
+    ir.annotations = annotations.build();
+    ir.finalize();
+
     ir
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provenance::Exactness;
+
+    #[test]
+    fn unit_cube_annotates_every_entity() {
+        let ir = unit_cube();
+        let entity_count = ir.model.points.len()
+            + ir.model.vertices.len()
+            + ir.model.curves.len()
+            + ir.model.edges.len()
+            + ir.model.surfaces.len()
+            + ir.model.coedges.len()
+            + ir.model.loops.len()
+            + ir.model.faces.len()
+            + ir.model.shells.len()
+            + ir.model.regions.len()
+            + ir.model.bodies.len();
+
+        assert_eq!(ir.annotations.streams, ["synthetic:"]);
+        assert_eq!(ir.annotations.provenance.len(), entity_count);
+        assert_eq!(ir.annotations.exactness.len(), entity_count);
+        assert!(ir
+            .annotations
+            .exactness
+            .values()
+            .all(|note| note.entity == Exactness::Inferred && note.fields.is_empty()));
+    }
 }

@@ -206,7 +206,7 @@ fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Plane {
         origin: mm_point(origin),
         normal: vec3(normal),
-        u_axis: Some(vec3(x_axis)),
+        u_axis: vec3(x_axis),
     })
 }
 
@@ -221,7 +221,7 @@ fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Cylinder {
         origin: mm_point(origin),
         axis: vec3(axis),
-        ref_direction: Some(vec3(x_axis)),
+        ref_direction: vec3(x_axis),
         radius: radius * 1000.0,
     })
 }
@@ -248,7 +248,7 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Cone {
         origin: mm_point(origin),
         axis: vec3(axis),
-        ref_direction: Some(vec3(x_axis)),
+        ref_direction: vec3(x_axis),
         radius: radius * 1000.0,
         half_angle: sin_half.abs().atan2(cos_half.abs()),
     })
@@ -264,8 +264,8 @@ fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     }
     Some(SurfaceGeometry::Sphere {
         center: mm_point(center),
-        axis: Some(vec3(axis)),
-        ref_direction: Some(vec3(x_axis)),
+        axis: vec3(axis),
+        ref_direction: vec3(x_axis),
         radius: radius * 1000.0,
     })
 }
@@ -289,7 +289,7 @@ fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Torus {
         center: mm_point(center),
         axis: vec3(axis),
-        ref_direction: Some(vec3(x_axis)),
+        ref_direction: vec3(x_axis),
         major_radius: major * 1000.0,
         minor_radius: minor * 1000.0,
     })
@@ -320,6 +320,7 @@ fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
     Some(CurveGeometry::Circle {
         center: mm_point(center),
         axis: vec3(normal),
+        ref_direction: vec3(x_axis),
         radius: radius * 1000.0,
     })
 }

@@ -5,7 +5,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{AttributeId, BodyId, CoedgeId, EdgeId, FaceId, VertexId};
-use crate::provenance::EntityMeta;
 
 /// An entity which owns a source attribute.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -55,6 +54,4 @@ pub struct SourceAttribute {
     /// Ordered typed values carried by this attribute; length and types are
     /// source-defined and vary per attribute name.
     pub values: Vec<AttributeValue>,
-    /// Provenance metadata for this attribute record.
-    pub meta: EntityMeta,
 }

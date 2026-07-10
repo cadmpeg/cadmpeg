@@ -223,6 +223,7 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<(CarrierGeometry, bool)> {
         tag::CIRCLE => CarrierGeometry::Curve(CurveGeometry::Circle {
             center: scale_point(&v[0..3]),
             axis: unit(&v[3..6]),
+            ref_direction: unit(&v[6..9]),
             radius: v[9] * LEN_TO_MM,
         }),
         tag::ELLIPSE => CarrierGeometry::Curve(CurveGeometry::Ellipse {
@@ -235,12 +236,12 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<(CarrierGeometry, bool)> {
         tag::PLANE => CarrierGeometry::Surface(SurfaceGeometry::Plane {
             origin: scale_point(&v[0..3]),
             normal: unit(&v[3..6]),
-            u_axis: Some(unit(&v[6..9])),
+            u_axis: unit(&v[6..9]),
         }),
         tag::CYLINDER => CarrierGeometry::Surface(SurfaceGeometry::Cylinder {
             origin: scale_point(&v[0..3]),
             axis: unit(&v[3..6]),
-            ref_direction: Some(unit(&v[7..10])),
+            ref_direction: unit(&v[7..10]),
             radius: v[6] * LEN_TO_MM,
         }),
         tag::CONE => {
@@ -251,7 +252,7 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<(CarrierGeometry, bool)> {
                 CarrierGeometry::Surface(SurfaceGeometry::Cone {
                     origin: scale_point(&v[0..3]),
                     axis: unit(&v[3..6]),
-                    ref_direction: Some(unit(&v[9..12])),
+                    ref_direction: unit(&v[9..12]),
                     radius: v[6] * LEN_TO_MM,
                     half_angle: sin.abs().clamp(0.0, 1.0).asin(),
                 }),
@@ -260,8 +261,8 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<(CarrierGeometry, bool)> {
         }
         tag::SPHERE => CarrierGeometry::Surface(SurfaceGeometry::Sphere {
             center: scale_point(&v[0..3]),
-            axis: Some(unit(&v[4..7])),
-            ref_direction: Some(unit(&v[7..10])),
+            axis: unit(&v[4..7]),
+            ref_direction: unit(&v[7..10]),
             radius: v[3] * LEN_TO_MM,
         }),
         tag::TORUS => {
@@ -269,7 +270,7 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<(CarrierGeometry, bool)> {
                 CarrierGeometry::Surface(SurfaceGeometry::Torus {
                     center: scale_point(&v[0..3]),
                     axis: unit(&v[3..6]),
-                    ref_direction: Some(unit(&v[8..11])),
+                    ref_direction: unit(&v[8..11]),
                     major_radius: v[6] * LEN_TO_MM,
                     minor_radius: v[7] * LEN_TO_MM,
                 }),

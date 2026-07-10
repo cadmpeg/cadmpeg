@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parametric construction history.
 
-use crate::provenance::EntityMeta;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -10,6 +9,8 @@ use std::collections::BTreeMap;
 /// material and property overrides.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Configuration {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Source configuration name.
     pub name: String,
     /// Material assigned in this configuration, when overridden; `None` when the
@@ -24,6 +25,8 @@ pub struct Configuration {
 /// One parametric construction-history feature (e.g. an extrude or fillet operation).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Feature {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Native identifier of this feature, when the source assigned one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,
@@ -47,13 +50,13 @@ pub struct Feature {
     /// Source custom-property name/value pairs local to this feature.
     #[serde(default)]
     pub properties: BTreeMap<String, String>,
-    /// Provenance metadata for this feature record.
-    pub meta: EntityMeta,
 }
 
 /// The full parametric construction-history timeline for a part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FeatureHistory {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Source part display name, when recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub part_name: Option<String>,
@@ -63,8 +66,6 @@ pub struct FeatureHistory {
     /// Ordered construction-history features, in regeneration order.
     #[serde(default)]
     pub features: Vec<Feature>,
-    /// Provenance metadata for this history record.
-    pub meta: EntityMeta,
 }
 
 /// Native feature-input stream retained for parametric replay and rewrite.
@@ -78,25 +79,25 @@ pub struct FeatureInputLane {
     pub configuration: Option<String>,
     /// Complete native feature-input byte stream, retained undecoded for
     /// parametric replay and native rewrite.
+    #[serde(with = "crate::bytes")]
+    #[schemars(with = "String")]
     pub native_payload: Vec<u8>,
     /// Typed sketch-entity markers located within `native_payload`.
     #[serde(default)]
     pub sketch_entities: Vec<SketchInputEntity>,
-    /// Provenance metadata for this input-lane record.
-    pub meta: EntityMeta,
 }
 
 /// One typed sketch-entity marker inside a native feature-input stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchInputEntity {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Position of this marker within the owning `FeatureInputLane`, in stream order.
     pub ordinal: u32,
     /// Byte offset of this marker within `FeatureInputLane::native_payload`.
     pub offset: u64,
     /// Sketch-entity kind this marker identifies.
     pub kind: SketchInputKind,
-    /// Provenance metadata for this marker record.
-    pub meta: EntityMeta,
 }
 
 /// Kind of sketch entity referenced by a native feature-input marker.
@@ -144,6 +145,8 @@ impl SketchInputKind {
 /// ASM construction-history container and its linked delta states.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AsmHistory {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Declared byte length of the ASM history stream from its preamble, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_size: Option<i64>,
@@ -152,13 +155,13 @@ pub struct AsmHistory {
     pub high_water_mark: Option<i64>,
     /// Linked `delta_state` nodes forming the construction-state chain.
     pub states: Vec<AsmDeltaState>,
-    /// Provenance metadata for this history record.
-    pub meta: EntityMeta,
 }
 
 /// One byte-framed ASM `delta_state` node.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AsmDeltaState {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Construction-state id; the head node's `state_id` equals the history
     /// stream preamble's first field.
     pub state_id: i64,
@@ -185,26 +188,28 @@ pub struct AsmDeltaState {
     /// State-local SAB entity revisions referenced by the bulletins.
     #[serde(default)]
     pub records: Vec<AsmHistoryRecord>,
-    /// Provenance metadata for this delta-state record.
-    pub meta: EntityMeta,
 }
 
 /// One state-local SAB record retained byte-for-byte for replay and native write.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AsmHistoryRecord {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Index of this record within its owning `delta_state`'s local record table.
     pub index: u64,
     /// Source class/record-type name.
     pub name: String,
     /// Complete undecoded source record bytes, retained for native replay/write.
+    #[serde(with = "crate::bytes")]
+    #[schemars(with = "String")]
     pub raw_bytes: Vec<u8>,
-    /// Provenance metadata for this record.
-    pub meta: EntityMeta,
 }
 
 /// One `BulletinBoard` in an ASM construction state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AsmBulletinBoard {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Reference to the entity or container this bulletin board is attached to.
     pub owner_ref: i64,
     /// Sequential bulletin-board number within its owning state.
@@ -216,6 +221,8 @@ pub struct AsmBulletinBoard {
 /// Entity revision pair carried by a `BulletinBoard`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AsmEntityChange {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Whether this bulletin records an entity insert, delete, or update.
     pub kind: AsmEntityChangeKind,
     /// Reference to the entity revision before the change; `None` on insert.

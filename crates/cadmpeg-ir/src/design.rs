@@ -8,11 +8,12 @@ use std::collections::BTreeMap;
 use crate::attributes::AttributeTarget;
 use crate::ids::CoedgeId;
 use crate::math::{Point2, Point3, Vector3};
-use crate::provenance::EntityMeta;
 
 /// Provenance link from a solved B-rep coedge to its source sketch curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchCurveLink {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Solved B-rep coedge this link provenances back to a sketch curve.
     pub coedge: CoedgeId,
     /// Numeric design-entity id of the source sketch-curve record.
@@ -26,13 +27,13 @@ pub struct SketchCurveLink {
     pub role: i64,
     /// Source closure/continuity tag of the sketch curve at this link.
     pub closure: i64,
-    /// Provenance metadata for this link record.
-    pub meta: EntityMeta,
 }
 
 /// Persistent Fusion design identifier attached to a solved B-rep entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PersistentDesignLink {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Solved B-rep entity this persistent Fusion design id is attached to.
     pub target: AttributeTarget,
     /// Fusion persistent design-entity id string, stable across regeneration.
@@ -42,8 +43,6 @@ pub struct PersistentDesignLink {
     /// Whether this is the active persistent id for `target`, as opposed to a
     /// superseded historical id retained for provenance.
     pub is_current: bool,
-    /// Provenance metadata for this link record.
-    pub meta: EntityMeta,
 }
 
 /// Design `BulkStream` regeneration-recipe family.
@@ -65,6 +64,8 @@ pub enum ConstructionRecipeKind {
 /// One source-framed parametric regeneration recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ConstructionRecipe {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Topology kind this recipe regenerates on replay.
     pub kind: ConstructionRecipeKind,
     /// Design entity id of the body this recipe is keyed to, if the source record
@@ -75,8 +76,6 @@ pub struct ConstructionRecipe {
     pub recipe_index: u32,
     /// Source `BulkStream` record index this recipe was decoded from.
     pub record_index: i32,
-    /// Provenance metadata for this recipe record.
-    pub meta: EntityMeta,
 }
 
 /// Persistent-reference channel in the Design construction stream.
@@ -94,23 +93,23 @@ pub enum PersistentReferenceKind {
 /// One byte-stored persistent point or curve identifier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PersistentReference {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Whether this reference identifies a persistent point or one end of a curve.
     pub kind: PersistentReferenceKind,
     /// Raw persistent point/curve identifier as stored in the `Design` construction stream.
     pub value: u64,
-    /// Provenance metadata for this reference record.
-    pub meta: EntityMeta,
 }
 
 /// A construction-history edge selection that Fusion could not re-resolve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LostEdgeReference {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Source per-file dynamic three-digit ASCII class tag of the unresolved record.
     pub class_tag: String,
     /// Source `BulkStream` record index of the unresolved edge selection.
     pub record_index: u32,
-    /// Provenance metadata for this reference record.
-    pub meta: EntityMeta,
 }
 
 /// Design `MetaStream` object class.
@@ -140,6 +139,8 @@ pub enum DesignObjectKind {
 /// One GUID-owned object-table record from the Design `MetaStream`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignObject {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// ASCII type name of this `MetaStream` object record.
     pub kind: DesignObjectKind,
     /// Design-entity ids owned by this object, in source `MetaStream` order; a count
@@ -153,13 +154,13 @@ pub struct DesignObject {
     pub parent_guid: Option<String>,
     /// Trailing record-revision counter from the `MetaStream` record.
     pub revision: u32,
-    /// Provenance metadata for this object record.
-    pub meta: EntityMeta,
 }
 
 /// Self-validating entity-bound header in the Design `BulkStream`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignEntityHeader {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Numeric suffix of the owning design-entity id (e.g. the `N` in `Body:N`).
     pub entity_suffix: u64,
     /// Full UTF-16LE-decoded design-entity id string for this header.
@@ -181,47 +182,94 @@ pub struct DesignEntityHeader {
     /// Padded record-reference run owned by a sketch entity container.
     #[serde(default)]
     pub reference_indices: Vec<u32>,
-    /// Provenance metadata for this header record.
-    pub meta: EntityMeta,
 }
 
 /// One indexed record header in the recursive Design `BulkStream` tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignRecordHeader {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Index of this record within the recursive `BulkStream` tree.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
     pub class_tag: String,
-    /// Provenance metadata for this header record.
-    pub meta: EntityMeta,
+    /// Byte offset of this header within its Design `BulkStream`.
+    pub byte_offset: u64,
 }
 
-/// Bidirectional two-member relation owned by a sketch container.
+/// Counted constraint relation owned by a sketch container.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchRelation {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Index of this relation record within the `BulkStream` tree.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this relation's type.
     pub class_tag: String,
     /// Record index of the sketch entity container that owns this relation.
     pub owner_reference: u32,
+    /// Nullable or role-specific references stored before the owner reference.
+    #[serde(default)]
+    pub auxiliary_references: Vec<u32>,
     /// Record indices of the entities related by this relation.
     pub members: Vec<u32>,
-    /// Source relation state word (e.g. active/suppressed); interpretation is
-    /// class-tag-dependent and not further decoded.
+    /// Source sketch-constraint bitmask.
     pub state: u32,
+    /// Constraint kinds selected by `state`.
+    #[serde(default)]
+    pub constraint_kinds: Vec<SketchConstraintKind>,
+    /// Bits in `state` outside the defined constraint mask.
+    pub unknown_constraint_bits: u32,
     /// Record indices of entities returned or affected by this relation, distinct
     /// from `members`.
     pub return_members: Vec<u32>,
     /// Complete 101-byte source record for native replay/write.
+    #[serde(with = "crate::bytes")]
+    #[schemars(with = "String")]
     pub raw_bytes: Vec<u8>,
-    /// Provenance metadata for this relation record.
-    pub meta: EntityMeta,
+}
+
+/// One bit in a Fusion sketch-constraint state mask.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchConstraintKind {
+    /// Points or endpoints occupy the same position.
+    Coincident,
+    /// Two line-bearing entities lie on one infinite line.
+    Colinear,
+    /// Circular entities share a center.
+    Concentric,
+    /// Line-bearing entities have parallel directions.
+    Parallel,
+    /// Line-bearing entities meet at a right angle.
+    Perpendicular,
+    /// An entity is horizontal in sketch coordinates.
+    Horizontal,
+    /// An entity is vertical in sketch coordinates.
+    Vertical,
+    /// Two entities share a tangent direction at contact.
+    Tangent,
+    /// Two entities share curvature at contact.
+    Curvature,
+    /// Entities are symmetric about an axis.
+    Symmetry,
+    /// Entities have equal size.
+    Equal,
+    /// A point lies at an entity midpoint.
+    Midpoint,
+    /// Entities participate in a polygon relation.
+    Polygon,
+    /// Entities participate in a circular pattern.
+    CircularPattern,
+    /// Entities participate in a rectangular pattern.
+    RectangularPattern,
 }
 
 /// One persistent 2D point in a Fusion sketch coordinate system.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchPoint {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Index of this point record within the `BulkStream` tree.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
@@ -233,13 +281,13 @@ pub struct SketchPoint {
     pub paired_reference: u32,
     /// Sketch coordinates in millimetres.
     pub coordinates: Point2,
-    /// Provenance metadata for this point record.
-    pub meta: EntityMeta,
 }
 
 /// Persistent identity pair attached to one source sketch-curve record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchCurveIdentity {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Index of this identity record within the `BulkStream` tree.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
@@ -253,8 +301,6 @@ pub struct SketchCurveIdentity {
     /// decoder recovered one; `None` when the geometry subtype was not decoded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geometry: Option<SketchCurveGeometry>,
-    /// Provenance metadata for this identity record.
-    pub meta: EntityMeta,
 }
 
 /// Exact analytic geometry carried by a source sketch-curve record.
@@ -316,17 +362,19 @@ pub enum SketchCurveGeometry {
 /// One member of the Design `BulkStream` `BodiesRoot` list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignBodyMember {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Numeric suffix of this body's design-entity id.
     pub entity_suffix: u64,
     /// Source per-member flag word from the `BodiesRoot` list entry.
     pub flags: u16,
-    /// Provenance metadata for this member record.
-    pub meta: EntityMeta,
 }
 
 /// One entity in the Fusion ACT change-tracking table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ActEntity {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Index of this entity's `ACTTable` entry within the ACT `BulkStream`.
     pub record_index: u32,
     /// UTF-16LE-decoded design-entity id this table entry tracks.
@@ -342,25 +390,25 @@ pub struct ActEntity {
     /// change-version handle, not a visibility or suppression flag.
     #[serde(default)]
     pub channels: BTreeMap<String, String>,
-    /// Provenance metadata for this entity record.
-    pub meta: EntityMeta,
 }
 
 /// One GUID in the ordered ACT stream-wide asset/change-version pool.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ActGuid {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Position of this GUID in the pool, in source stream order; pool position does
     /// not assign one GUID to a single `ACTTable` entry.
     pub ordinal: u32,
     /// The pooled GUID string.
     pub guid: String,
-    /// Provenance metadata for this GUID record.
-    pub meta: EntityMeta,
 }
 
 /// ACT link from the document root entity to the instance/component registries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ActRootComponent {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
     /// Index of this record within the ACT `BulkStream`.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
@@ -375,6 +423,4 @@ pub struct ActRootComponent {
     pub entity_id: String,
     /// Document display name as stored alongside this root-component link.
     pub display_name: String,
-    /// Provenance metadata for this link record.
-    pub meta: EntityMeta,
 }

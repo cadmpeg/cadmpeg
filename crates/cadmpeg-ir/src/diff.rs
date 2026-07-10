@@ -7,6 +7,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::annotations::{ExactnessNote, Provenance};
 use crate::CadIr;
 
 /// A modified entity and its differing top-level fields.
@@ -32,6 +33,29 @@ pub struct ArenaDiff {
     pub modified: Vec<ModifiedEntity>,
 }
 
+/// Changes within the sparse document annotation tables.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct AnnotationDiff {
+    /// `(left, right)` interned stream tables, present only when they differ.
+    pub stream_change: Option<(Vec<String>, Vec<String>)>,
+    /// Provenance entries keyed by entity id.
+    pub provenance: ArenaDiff,
+    /// Exactness entries keyed by entity id.
+    pub exactness: ArenaDiff,
+}
+
+impl AnnotationDiff {
+    fn is_empty(&self) -> bool {
+        self.stream_change.is_none()
+            && self.provenance.added.is_empty()
+            && self.provenance.removed.is_empty()
+            && self.provenance.modified.is_empty()
+            && self.exactness.added.is_empty()
+            && self.exactness.removed.is_empty()
+            && self.exactness.modified.is_empty()
+    }
+}
+
 /// Structural changes between two IR documents.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct IrDiff {
@@ -39,6 +63,8 @@ pub struct IrDiff {
     pub unit_change: Option<(crate::units::Units, crate::units::Units)>,
     /// `(left, right)` tolerances, present only when the two documents' tolerances differ.
     pub tolerance_change: Option<(crate::units::Tolerances, crate::units::Tolerances)>,
+    /// Changes to annotation streams, provenance, and exactness.
+    pub annotations: AnnotationDiff,
     /// Per-arena diffs, one entry per arena compared.
     pub per_arena: Vec<ArenaDiff>,
 }
@@ -48,6 +74,7 @@ impl IrDiff {
     pub fn is_empty(&self) -> bool {
         self.unit_change.is_none()
             && self.tolerance_change.is_none()
+            && self.annotations.is_empty()
             && self.per_arena.iter().all(|arena| {
                 arena.added.is_empty() && arena.removed.is_empty() && arena.modified.is_empty()
             })
@@ -67,6 +94,84 @@ fn differing_fields<T: Serialize>(left: &T, right: &T) -> Vec<String> {
         .filter(|key| left.get(*key) != right.get(*key))
         .cloned()
         .collect()
+}
+
+fn map_arena<T, F>(
+    kind: &'static str,
+    left: &BTreeMap<String, T>,
+    right: &BTreeMap<String, T>,
+    fields: F,
+) -> ArenaDiff
+where
+    T: PartialEq,
+    F: Fn(&T, &T) -> Vec<String>,
+{
+    let removed = left
+        .keys()
+        .filter(|id| !right.contains_key(*id))
+        .cloned()
+        .collect();
+    let added = right
+        .keys()
+        .filter(|id| !left.contains_key(*id))
+        .cloned()
+        .collect();
+    let modified = left
+        .iter()
+        .filter_map(|(id, before)| {
+            let after = right.get(id)?;
+            (before != after).then(|| ModifiedEntity {
+                id: id.clone(),
+                fields: fields(before, after),
+            })
+        })
+        .collect();
+    ArenaDiff {
+        kind,
+        added,
+        removed,
+        modified,
+    }
+}
+
+fn exactness_fields(left: &ExactnessNote, right: &ExactnessNote) -> Vec<String> {
+    let mut fields = Vec::new();
+    if left.entity != right.entity {
+        fields.push("entity".to_string());
+    }
+    fields.extend(
+        left.fields
+            .keys()
+            .chain(right.fields.keys())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .filter(|field| left.fields.get(*field) != right.fields.get(*field))
+            .map(|field| format!("fields.{field}")),
+    );
+    fields
+}
+
+fn annotation_diff(left: &CadIr, right: &CadIr) -> AnnotationDiff {
+    AnnotationDiff {
+        stream_change: (left.annotations.streams != right.annotations.streams).then(|| {
+            (
+                left.annotations.streams.clone(),
+                right.annotations.streams.clone(),
+            )
+        }),
+        provenance: map_arena(
+            "annotations.provenance",
+            &left.annotations.provenance,
+            &right.annotations.provenance,
+            differing_fields::<Provenance>,
+        ),
+        exactness: map_arena(
+            "annotations.exactness",
+            &left.annotations.exactness,
+            &right.annotations.exactness,
+            exactness_fields,
+        ),
+    }
 }
 
 fn arena<T, F>(kind: &'static str, left: &[T], right: &[T], id: F) -> ArenaDiff
@@ -109,8 +214,8 @@ macro_rules! define_diff_arenas {
         fn diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
             vec![$(arena(
                 stringify!($field),
-                &left.$field,
-                &right.$field,
+                &left.model.$field,
+                &right.model.$field,
                 $key,
             )),*]
         }
@@ -118,16 +223,222 @@ macro_rules! define_diff_arenas {
 }
 crate::document::arena_registry!(define_diff_arenas);
 
+fn optional_arena<T, F>(
+    kind: &'static str,
+    left: Option<&[T]>,
+    right: Option<&[T]>,
+    id: F,
+) -> ArenaDiff
+where
+    T: PartialEq + Serialize,
+    F: Fn(&T) -> String,
+{
+    arena(
+        kind,
+        left.unwrap_or_default(),
+        right.unwrap_or_default(),
+        id,
+    )
+}
+
+fn native_diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
+    let mut diffs = Vec::new();
+    macro_rules! push_f3d {
+        ($field:ident) => {
+            diffs.push(optional_arena(
+                concat!("native.f3d.", stringify!($field)),
+                left.native
+                    .f3d
+                    .as_ref()
+                    .map(|native| native.$field.as_slice()),
+                right
+                    .native
+                    .f3d
+                    .as_ref()
+                    .map(|native| native.$field.as_slice()),
+                |record| record.id.clone(),
+            ));
+        };
+    }
+    push_f3d!(act_entities);
+    push_f3d!(act_guids);
+    push_f3d!(act_root_components);
+    push_f3d!(design_objects);
+    push_f3d!(design_entity_headers);
+    push_f3d!(design_record_headers);
+    push_f3d!(design_body_members);
+    push_f3d!(construction_recipes);
+    push_f3d!(persistent_design_links);
+    push_f3d!(persistent_references);
+    push_f3d!(sketch_curve_links);
+    push_f3d!(sketch_relations);
+    push_f3d!(sketch_points);
+    push_f3d!(sketch_curve_identities);
+    push_f3d!(lost_edge_references);
+    push_f3d!(asm_histories);
+    diffs.push(optional_arena(
+        "native.sldprt.feature_histories",
+        left.native
+            .sldprt
+            .as_ref()
+            .map(|native| native.feature_histories.as_slice()),
+        right
+            .native
+            .sldprt
+            .as_ref()
+            .map(|native| native.feature_histories.as_slice()),
+        |record| record.id.clone(),
+    ));
+    diffs.push(optional_arena(
+        "native.sldprt.feature_input_lanes",
+        left.native
+            .sldprt
+            .as_ref()
+            .map(|native| native.feature_input_lanes.as_slice()),
+        right
+            .native
+            .sldprt
+            .as_ref()
+            .map(|native| native.feature_input_lanes.as_slice()),
+        |record| record.id.clone(),
+    ));
+    let left_states = left
+        .native
+        .f3d
+        .iter()
+        .flat_map(|native| &native.asm_histories)
+        .flat_map(|history| &history.states)
+        .collect::<Vec<_>>();
+    let right_states = right
+        .native
+        .f3d
+        .iter()
+        .flat_map(|native| &native.asm_histories)
+        .flat_map(|history| &history.states)
+        .collect::<Vec<_>>();
+    diffs.push(arena(
+        "native.f3d.asm_delta_states",
+        &left_states,
+        &right_states,
+        |record| record.id.clone(),
+    ));
+    let left_boards = left_states
+        .iter()
+        .flat_map(|state| &state.bulletin_boards)
+        .collect::<Vec<_>>();
+    let right_boards = right_states
+        .iter()
+        .flat_map(|state| &state.bulletin_boards)
+        .collect::<Vec<_>>();
+    diffs.push(arena(
+        "native.f3d.asm_bulletin_boards",
+        &left_boards,
+        &right_boards,
+        |record| record.id.clone(),
+    ));
+    let left_changes = left_boards
+        .iter()
+        .flat_map(|board| &board.changes)
+        .collect::<Vec<_>>();
+    let right_changes = right_boards
+        .iter()
+        .flat_map(|board| &board.changes)
+        .collect::<Vec<_>>();
+    diffs.push(arena(
+        "native.f3d.asm_entity_changes",
+        &left_changes,
+        &right_changes,
+        |record| record.id.clone(),
+    ));
+    let left_records = left_states
+        .iter()
+        .flat_map(|state| &state.records)
+        .collect::<Vec<_>>();
+    let right_records = right_states
+        .iter()
+        .flat_map(|state| &state.records)
+        .collect::<Vec<_>>();
+    diffs.push(arena(
+        "native.f3d.asm_history_records",
+        &left_records,
+        &right_records,
+        |record| record.id.clone(),
+    ));
+    let left_configurations = left
+        .native
+        .sldprt
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .flat_map(|history| &history.configurations)
+        .collect::<Vec<_>>();
+    let right_configurations = right
+        .native
+        .sldprt
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .flat_map(|history| &history.configurations)
+        .collect::<Vec<_>>();
+    diffs.push(arena(
+        "native.sldprt.configurations",
+        &left_configurations,
+        &right_configurations,
+        |record| record.id.clone(),
+    ));
+    let left_features = left
+        .native
+        .sldprt
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .flat_map(|history| &history.features)
+        .collect::<Vec<_>>();
+    let right_features = right
+        .native
+        .sldprt
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .flat_map(|history| &history.features)
+        .collect::<Vec<_>>();
+    diffs.push(arena(
+        "native.sldprt.features",
+        &left_features,
+        &right_features,
+        |record| record.id.clone(),
+    ));
+    let left_sketch_entities = left
+        .native
+        .sldprt
+        .iter()
+        .flat_map(|native| &native.feature_input_lanes)
+        .flat_map(|lane| &lane.sketch_entities)
+        .collect::<Vec<_>>();
+    let right_sketch_entities = right
+        .native
+        .sldprt
+        .iter()
+        .flat_map(|native| &native.feature_input_lanes)
+        .flat_map(|lane| &lane.sketch_entities)
+        .collect::<Vec<_>>();
+    diffs.push(arena(
+        "native.sldprt.sketch_input_entities",
+        &left_sketch_entities,
+        &right_sketch_entities,
+        |record| record.id.clone(),
+    ));
+    diffs
+}
+
 /// Compare units, tolerances, and every entity arena by stable entity ID.
 pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
     let unit_change =
         (left.units != right.units).then(|| (left.units.clone(), right.units.clone()));
     let tolerance_change =
         (left.tolerances != right.tolerances).then_some((left.tolerances, right.tolerances));
-    let per_arena = diff_arenas(left, right);
+    let mut per_arena = diff_arenas(left, right);
+    per_arena.extend(native_diff_arenas(left, right));
     IrDiff {
         unit_change,
         tolerance_change,
+        annotations: annotation_diff(left, right),
         per_arena,
     }
 }
@@ -136,15 +447,18 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::diff;
+    use crate::annotations::{ExactnessNote, Provenance};
     use crate::examples::unit_cube;
+    use crate::provenance::Exactness;
+    use std::collections::BTreeMap;
 
     #[test]
     fn detects_changes_in_all_document_dimensions() {
         let left = unit_cube();
         let mut right = left.clone();
-        right.points[0].position.x += 1.0;
-        right.loops.pop();
-        right.coedges.pop();
+        right.model.points[0].position.x += 1.0;
+        right.model.loops.pop();
+        right.model.coedges.pop();
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());
@@ -184,5 +498,72 @@ mod tests {
     fn identical_documents_have_empty_diff() {
         let ir = unit_cube();
         assert!(diff(&ir, &ir).is_empty());
+    }
+
+    #[test]
+    fn reports_provenance_offset_tag_and_stream_changes() {
+        let mut left = unit_cube();
+        let mut right = left.clone();
+        let id = left.model.points[0].id.0.clone();
+        left.annotations.streams = vec!["left-stream".to_string()];
+        right.annotations.streams = vec!["unused-stream".to_string(), "right-stream".to_string()];
+        left.annotations.provenance.insert(
+            id.clone(),
+            Provenance {
+                stream: 0,
+                offset: 10,
+                tag: Some("left-tag".to_string()),
+            },
+        );
+        right.annotations.provenance.insert(
+            id.clone(),
+            Provenance {
+                stream: 1,
+                offset: 20,
+                tag: Some("right-tag".to_string()),
+            },
+        );
+
+        let result = diff(&left, &right);
+        assert_eq!(
+            result.annotations.stream_change,
+            Some((
+                vec!["left-stream".to_string()],
+                vec!["unused-stream".to_string(), "right-stream".to_string()]
+            ))
+        );
+        assert_eq!(result.annotations.provenance.modified[0].id, id);
+        assert_eq!(
+            result.annotations.provenance.modified[0].fields,
+            ["offset", "stream", "tag"]
+        );
+    }
+
+    #[test]
+    fn reports_field_exactness_changes_by_entity_id() {
+        let mut left = unit_cube();
+        let mut right = left.clone();
+        let id = left.model.points[0].id.0.clone();
+        left.annotations.exactness.insert(
+            id.clone(),
+            ExactnessNote {
+                entity: Exactness::Inferred,
+                fields: BTreeMap::from([("position.x".to_string(), Exactness::Derived)]),
+            },
+        );
+        right.annotations.exactness.insert(
+            id.clone(),
+            ExactnessNote {
+                entity: Exactness::Unknown,
+                fields: BTreeMap::from([("position.x".to_string(), Exactness::ByteExact)]),
+            },
+        );
+
+        let result = diff(&left, &right);
+        assert_eq!(result.annotations.exactness.modified[0].id, id);
+        assert_eq!(
+            result.annotations.exactness.modified[0].fields,
+            ["entity", "fields.position.x"]
+        );
     }
 }

@@ -31,3 +31,13 @@ impl Default for SldprtNative {
         }
     }
 }
+
+impl SldprtNative {
+    /// Sort every native arena by its normative record identity.
+    pub(crate) fn finalize(&mut self) {
+        self.feature_histories
+            .sort_by(|left, right| left.id.cmp(&right.id));
+        self.feature_input_lanes
+            .sort_by(|left, right| left.id.cmp(&right.id));
+    }
+}

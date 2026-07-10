@@ -46,11 +46,11 @@ id_type!(
     BodyId
 );
 id_type!(
-    /// Identifies a [`crate::topology::Lump`] — a connected region of a body.
-    LumpId
+    /// Identifies a [`crate::topology::Region`] — a connected region of a body.
+    RegionId
 );
 id_type!(
-    /// Identifies a [`crate::topology::Shell`] — an oriented boundary of a lump.
+    /// Identifies a [`crate::topology::Shell`] — an oriented boundary of a region.
     ShellId
 );
 id_type!(
@@ -86,11 +86,11 @@ id_type!(
     PcurveId
 );
 id_type!(
-    /// Identifies a [`crate::geometry::ProceduralSurfaceV1`] construction.
+    /// Identifies a [`crate::geometry::ProceduralSurface`] construction.
     ProceduralSurfaceId
 );
 id_type!(
-    /// Identifies a [`crate::geometry::ProceduralCurveV1`] construction.
+    /// Identifies a [`crate::geometry::ProceduralCurve`] construction.
     ProceduralCurveId
 );
 id_type!(

@@ -16,18 +16,19 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry, SurfaceParameterization,
+    Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, LumpId, PcurveId, PointId, ShellId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Lump, Point, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::Exactness;
 
 use super::entity;
 use super::topology::{self, Record};
@@ -37,12 +38,14 @@ use crate::parasolid::StreamHeader;
 /// The decoded B-rep graph plus loss accounting.
 #[derive(Default)]
 pub struct Brep {
+    /// Source locations for decoded entities.
+    pub annotations: Annotations,
     /// Top-level bodies grouped by disc17 UUID membership or single-shell
     /// face-use rings, per §6.
     pub bodies: Vec<Body>,
     /// Solid regions / sheet regions owned by each body.
-    pub lumps: Vec<Lump>,
-    /// Shells owned by each lump.
+    pub regions: Vec<Region>,
+    /// Shells owned by each region.
     pub shells: Vec<Shell>,
     /// Faces reached through `00 0e` bridges and their canonical face
     /// records.
@@ -62,8 +65,6 @@ pub struct Brep {
     /// Support surfaces: compact analytic carriers or `00 7c`/`00 7e`
     /// B-spline surface carriers.
     pub surfaces: Vec<Surface>,
-    /// Per-face UV parameterization of each face's surface.
-    pub surface_parameterizations: Vec<SurfaceParameterization>,
     /// Support curves: compact analytic carriers or `00 86`/`00 88`
     /// B-spline curve carriers.
     pub curves: Vec<Curve>,
@@ -95,28 +96,28 @@ pub struct Stats {
 }
 
 fn id_face(a: u16) -> String {
-    format!("sldprt:face#{a}")
+    format!("sldprt:brep:face#{a}")
 }
 fn id_surf(a: u16) -> String {
-    format!("sldprt:surf#{a}")
+    format!("sldprt:brep:surf#{a}")
 }
 fn id_loop(a: u16) -> String {
-    format!("sldprt:loop#{a}")
+    format!("sldprt:brep:loop#{a}")
 }
 fn id_coedge(a: u16) -> String {
-    format!("sldprt:coedge#{a}")
+    format!("sldprt:brep:coedge#{a}")
 }
 fn id_edge(a: u16) -> String {
-    format!("sldprt:edge#{a}")
+    format!("sldprt:brep:edge#{a}")
 }
 fn id_curve(a: u16) -> String {
-    format!("sldprt:curve#{a}")
+    format!("sldprt:brep:curve#{a}")
 }
 fn id_vertex(a: u16) -> String {
-    format!("sldprt:vertex#{a}")
+    format!("sldprt:brep:vertex#{a}")
 }
 fn id_point(a: u16) -> String {
-    format!("sldprt:point#{a}")
+    format!("sldprt:brep:point#{a}")
 }
 
 /// One face-use's decoded loops: ordered coedge rings, keyed by loop attr.
@@ -199,20 +200,12 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
         face_colors: entity_facts.face_colors,
         ..Brep::default()
     };
+    let mut annotations = AnnotationBuilder::new();
+    let source_stream = annotations.stream(stream);
     out.stats.synthetic_body_grouping = body_records.is_empty();
     if t.bridges.is_empty() {
         return out;
     }
-
-    let meta = |offset: usize, tag: &str, exact: Exactness| EntityMeta {
-        provenance: Provenance {
-            format: "sldprt".to_string(),
-            stream: stream.to_string(),
-            offset: offset as u64,
-            tag: Some(tag.to_string()),
-        },
-        exactness: exact,
-    };
 
     // Walk every face-use bridge to collect its ordered loop/coedge structure.
     let mut faces: Vec<WalkedFace> = t.bridges.values().map(|b| walk_face(b, &t)).collect();
@@ -277,11 +270,13 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
     point_attrs.sort_unstable();
     for a in point_attrs {
         let rec = &t.points[&a];
+        annotations
+            .note(id_point(a), source_stream, rec.offset as u64)
+            .tag("00_1d");
         let [x, y, z] = rec.xyz_m.unwrap_or([0.0, 0.0, 0.0]);
         out.points.push(Point {
             id: PointId(id_point(a)),
             position: cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
-            meta: meta(rec.offset, "00_1d", Exactness::ByteExact),
         });
     }
 
@@ -291,11 +286,13 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
     for a in vuse_attrs {
         let rec = &t.vertex_uses[&a];
         let point_attr = *rec.refs.get(4).unwrap_or(&0);
+        annotations
+            .note(id_vertex(a), source_stream, rec.offset as u64)
+            .tag("00_12");
         out.vertices.push(Vertex {
             id: VertexId(id_vertex(a)),
             point: PointId(id_point(point_attr)),
             tolerance: None,
-            meta: meta(rec.offset, "00_12", Exactness::ByteExact),
         });
     }
 
@@ -315,14 +312,31 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             match carriers.get(&curve_attr).map(|c| &c.geometry) {
                 Some(CarrierGeometry::Curve(_)) => {
                     if emitted_curves.insert(curve_attr) {
-                        emit_curve(&mut out, &carriers[&curve_attr], &meta);
+                        emit_curve(&mut out, &carriers[&curve_attr]);
                     }
                     curve = Some(CurveId(id_curve(curve_attr)));
                 }
-                _ => out.stats.unknown_curve_edges += 1,
+                _ => {
+                    if emitted_curves.insert(curve_attr) {
+                        let offset = eu.map_or(0, |record| record.offset);
+                        annotations
+                            .note(id_curve(curve_attr), source_stream, offset as u64)
+                            .tag("unknown_curve");
+                        annotations.exactness(id_curve(curve_attr), Exactness::Unknown);
+                        out.curves.push(Curve {
+                            id: CurveId(id_curve(curve_attr)),
+                            geometry: CurveGeometry::Unknown { record: None },
+                        });
+                    }
+                    curve = Some(CurveId(id_curve(curve_attr)));
+                    out.stats.unknown_curve_edges += 1;
+                }
             }
         }
         let off = eu.map_or(0, |r| r.offset);
+        annotations
+            .note(id_edge(e), source_stream, off as u64)
+            .tag("00_10");
         out.edges.push(Edge {
             id: EdgeId(id_edge(e)),
             curve,
@@ -330,7 +344,6 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             end: VertexId(id_vertex(end_v)),
             param_range: None,
             tolerance: None,
-            meta: meta(off, "00_10", Exactness::ByteExact),
         });
     }
     let edge_set: HashSet<u16> = out
@@ -390,17 +403,18 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                     .filter(|tw| tw.refs.get(5) == Some(&ce_attr))
                     .filter(|_| emitted_coedges.contains(&twin))
                     .map(|_| CoedgeId(id_coedge(twin)));
+                annotations
+                    .note(id_coedge(ce_attr), source_stream, ce.offset as u64)
+                    .tag("00_11");
                 out.coedges.push(Coedge {
                     id: CoedgeId(id_coedge(ce_attr)),
                     owner_loop: LoopId(id_loop(*loop_attr)),
                     edge: EdgeId(id_edge(edge_attr)),
                     next: CoedgeId(id_coedge(next)),
                     previous: CoedgeId(id_coedge(prev)),
-                    radial_next: partner.clone(),
-                    partner,
+                    radial_next: partner.unwrap_or_else(|| CoedgeId(id_coedge(ce_attr))),
                     sense: sense_of(ce.marker.unwrap_or(0x2b)),
                     pcurve: None,
-                    meta: meta(ce.offset, "00_11", Exactness::ByteExact),
                 });
             }
         }
@@ -414,11 +428,13 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             }
             let coedges: Vec<CoedgeId> = ring.iter().map(|a| CoedgeId(id_coedge(*a))).collect();
             let off = t.loops.get(loop_attr).map_or(0, |r| r.offset);
+            annotations
+                .note(id_loop(*loop_attr), source_stream, off as u64)
+                .tag("00_0f");
             out.loops.push(Loop {
                 id: LoopId(id_loop(*loop_attr)),
                 face: FaceId(id_face(f.bridge_attr)),
                 coedges,
-                meta: meta(off, "00_0f", Exactness::ByteExact),
             });
         }
     }
@@ -454,34 +470,34 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                 if c.single_sample {
                     out.stats.single_sample_carriers += 1;
                 }
+                annotations
+                    .note(id_surf(f.bridge_attr), source_stream, c.offset as u64)
+                    .tag("compact_surface");
                 let mut geometry = geo.clone();
                 if let Some((_, u_reference, v_reference)) = c.frame {
                     fold_surface_frame(&mut geometry, u_reference, v_reference);
+                    annotate_surface_frame(&mut annotations, id_surf(f.bridge_attr), &geometry);
                 }
                 out.surfaces.push(Surface {
                     id: SurfaceId(id_surf(f.bridge_attr)),
                     geometry,
-                    meta: meta(c.offset, "compact_surface", Exactness::ByteExact),
                 });
-                if let Some((origin, u_reference, v_reference)) = c.frame {
-                    out.surface_parameterizations.push(SurfaceParameterization {
-                        surface: SurfaceId(id_surf(f.bridge_attr)),
-                        origin,
-                        u_reference,
-                        v_reference,
-                        meta: meta(c.offset, "compact_surface_frame", Exactness::ByteExact),
-                    });
-                }
             }
             _ => {
                 out.stats.unknown_surface_faces += 1;
+                annotations
+                    .note(id_surf(f.bridge_attr), source_stream, surf_off as u64)
+                    .tag("unknown_surface");
+                annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
                 out.surfaces.push(Surface {
                     id: SurfaceId(id_surf(f.bridge_attr)),
                     geometry: SurfaceGeometry::Unknown { record: None },
-                    meta: meta(surf_off, "unknown_surface", Exactness::Unknown),
                 });
             }
         }
+        annotations
+            .note(id_face(f.bridge_attr), source_stream, surf_off as u64)
+            .tag("00_0e");
         out.faces.push(Face {
             id: FaceId(id_face(f.bridge_attr)),
             shell: ShellId(
@@ -492,11 +508,11 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                     .map_or_else(
                         || {
                             format!(
-                                "sldprt:shell#{}",
+                                "sldprt:brep:shell#{}",
                                 bridge_group.get(&f.bridge_attr).copied().unwrap_or(0)
                             )
                         },
-                        |(attr, _)| format!("sldprt:shell#{attr}"),
+                        |(attr, _)| format!("sldprt:brep:shell#{attr}"),
                     ),
             ),
             surface: SurfaceId(id_surf(f.bridge_attr)),
@@ -514,7 +530,6 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                 })
                 .map(|entry| entry.color),
             tolerance: None,
-            meta: meta(surf_off, "00_0e", Exactness::ByteExact),
         });
     }
     for appearance in &mut out.face_colors {
@@ -529,40 +544,31 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             .map(|face| id_face(face.bridge_attr));
     }
     solve_face_orientation(&mut out);
-    synthesize_cylinder_seams(&mut out, stream);
-    synthesize_sphere_seams(&mut out, stream);
-    derive_planar_pcurves(&mut out, stream);
-    derive_cylindrical_pcurves(&mut out, stream);
-    derive_spherical_pcurves(&mut out, stream);
-    derive_nurbs_boundary_pcurves(&mut out, stream);
+    synthesize_cylinder_seams(&mut out, &mut annotations, source_stream);
+    synthesize_sphere_seams(&mut out, &mut annotations, source_stream);
+    derive_planar_pcurves(&mut out, &mut annotations, source_stream);
+    derive_cylindrical_pcurves(&mut out, &mut annotations, source_stream);
+    derive_spherical_pcurves(&mut out, &mut annotations, source_stream);
+    derive_nurbs_boundary_pcurves(&mut out, &mut annotations, source_stream);
 
     if out.faces.is_empty() {
         return Brep::default();
     }
 
     let group_count = body_records.len().max(1);
-    let synth = || EntityMeta {
-        provenance: Provenance {
-            format: "sldprt".to_string(),
-            stream: stream.to_string(),
-            offset: 0,
-            tag: Some("synthetic_grouping".to_string()),
-        },
-        exactness: Exactness::Derived,
-    };
     for group in 0..group_count {
         let body_record = body_records.get(group);
         let body_id = body_record.map_or_else(
-            || "sldprt:body#0".to_string(),
-            |r| format!("sldprt:body#{}", r.attr),
+            || "sldprt:brep:body#0".to_string(),
+            |r| format!("sldprt:brep:body#{}", r.attr),
         );
-        let lump_id = body_record.and_then(|record| record.lump).map_or_else(
-            || format!("sldprt:lump#{group}"),
-            |(attr, _)| format!("sldprt:lump#{attr}"),
+        let region_id = body_record.and_then(|record| record.region).map_or_else(
+            || format!("sldprt:brep:region#{group}"),
+            |(attr, _)| format!("sldprt:brep:region#{attr}"),
         );
         let shell_id = body_record.and_then(|record| record.shell).map_or_else(
-            || format!("sldprt:shell#{group}"),
-            |(attr, _)| format!("sldprt:shell#{attr}"),
+            || format!("sldprt:brep:shell#{group}"),
+            |(attr, _)| format!("sldprt:brep:shell#{attr}"),
         );
         let faces = out
             .faces
@@ -570,60 +576,158 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             .filter(|face| face.shell.0 == shell_id)
             .map(|face| face.id.clone())
             .collect();
+        let mut annotate_group = |id: &str, source: Option<(usize, &str)>| {
+            let (offset, tag, exactness) = source.map_or(
+                (0, "synthetic_grouping", Exactness::Derived),
+                |(offset, tag)| (offset, tag, Exactness::ByteExact),
+            );
+            annotations.note(id, source_stream, offset as u64).tag(tag);
+            annotations.exactness(id, exactness);
+        };
+        annotate_group(
+            &shell_id,
+            body_record
+                .and_then(|record| record.shell)
+                .map(|(_, offset)| (offset, "00_51_shell")),
+        );
+        annotate_group(
+            &region_id,
+            body_record
+                .and_then(|record| record.region)
+                .map(|(_, offset)| (offset, "00_51_region")),
+        );
+        annotate_group(
+            &body_id,
+            body_record.map(|record| (record.offset, "00_51_body")),
+        );
         out.shells.push(Shell {
             id: ShellId(shell_id.clone()),
-            lump: LumpId(lump_id.clone()),
+            region: RegionId(region_id.clone()),
             faces,
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
-            meta: body_record
-                .and_then(|record| record.shell)
-                .map_or_else(synth, |(_, offset)| {
-                    meta(offset, "00_51_shell", Exactness::ByteExact)
-                }),
         });
-        out.lumps.push(Lump {
-            id: LumpId(lump_id.clone()),
+        out.regions.push(Region {
+            id: RegionId(region_id.clone()),
             body: BodyId(body_id.clone()),
             shells: vec![ShellId(shell_id)],
-            meta: body_record
-                .and_then(|record| record.lump)
-                .map_or_else(synth, |(_, offset)| {
-                    meta(offset, "00_51_lump", Exactness::ByteExact)
-                }),
         });
         out.bodies.push(Body {
             id: BodyId(body_id),
             kind: body_record.map_or(BodyKind::Solid, |record| record.kind),
-            lumps: vec![LumpId(lump_id)],
+            regions: vec![RegionId(region_id)],
             transform: None,
             name: None,
             color: None,
-            meta: body_record.map_or_else(synth, |r| {
-                meta(r.offset, "00_51_body", Exactness::ByteExact)
-            }),
         });
     }
 
+    for curve in &out.curves {
+        let Some(attr) = curve
+            .id
+            .0
+            .strip_prefix("sldprt:brep:curve#")
+            .and_then(|value| value.parse::<u16>().ok())
+        else {
+            continue;
+        };
+        if let Some(carrier) = carriers.get(&attr) {
+            annotations
+                .note(&curve.id, source_stream, carrier.offset as u64)
+                .tag("compact_curve");
+            if matches!(curve.geometry, CurveGeometry::Unknown { .. }) {
+                annotations.exactness(&curve.id, Exactness::Unknown);
+            }
+        }
+    }
+    out.bodies.sort_by(|a, b| a.id.cmp(&b.id));
+    out.regions.sort_by(|a, b| a.id.cmp(&b.id));
+    out.shells.sort_by(|a, b| a.id.cmp(&b.id));
+    out.faces.sort_by(|a, b| a.id.cmp(&b.id));
+    out.loops.sort_by(|a, b| a.id.cmp(&b.id));
+    out.coedges.sort_by(|a, b| a.id.cmp(&b.id));
+    out.edges.sort_by(|a, b| a.id.cmp(&b.id));
+    out.vertices.sort_by(|a, b| a.id.cmp(&b.id));
+    out.points.sort_by(|a, b| a.id.cmp(&b.id));
+    out.surfaces.sort_by(|a, b| a.id.cmp(&b.id));
+    out.curves.sort_by(|a, b| a.id.cmp(&b.id));
+    out.pcurves.sort_by(|a, b| a.id.cmp(&b.id));
+    out.annotations = annotations.build();
+    let retained_ids = out
+        .bodies
+        .iter()
+        .map(|entity| entity.id.0.as_str())
+        .chain(out.regions.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.shells.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.faces.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.loops.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.coedges.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.edges.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.vertices.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.points.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.surfaces.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.curves.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.pcurves.iter().map(|entity| entity.id.0.as_str()))
+        .collect::<HashSet<_>>();
+    out.annotations
+        .provenance
+        .retain(|id, _| retained_ids.contains(id.as_str()));
+    out.annotations
+        .exactness
+        .retain(|id, _| retained_ids.contains(id.as_str()));
     out
 }
 
 fn fold_surface_frame(
     geometry: &mut SurfaceGeometry,
     u_reference: cadmpeg_ir::math::Vector3,
-    _v_reference: cadmpeg_ir::math::Vector3,
+    v_reference: cadmpeg_ir::math::Vector3,
 ) {
     match geometry {
-        SurfaceGeometry::Plane { u_axis, .. } => *u_axis = Some(u_reference),
+        SurfaceGeometry::Plane { u_axis, .. } => *u_axis = u_reference,
         SurfaceGeometry::Cylinder { ref_direction, .. }
         | SurfaceGeometry::Cone { ref_direction, .. }
-        | SurfaceGeometry::Torus { ref_direction, .. } => *ref_direction = Some(u_reference),
-        SurfaceGeometry::Sphere { ref_direction, .. } => *ref_direction = Some(u_reference),
+        | SurfaceGeometry::Torus { ref_direction, .. } => *ref_direction = u_reference,
+        SurfaceGeometry::Sphere {
+            axis,
+            ref_direction,
+            ..
+        } => {
+            *axis = v_reference;
+            *ref_direction = u_reference;
+        }
         SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
     }
 }
 
-fn derive_planar_pcurves(out: &mut Brep, stream: &str) {
+fn annotate_surface_frame(
+    annotations: &mut AnnotationBuilder,
+    id: String,
+    geometry: &SurfaceGeometry,
+) {
+    match geometry {
+        SurfaceGeometry::Plane { .. } => {
+            annotations.derived(id, "geometry.u_axis");
+        }
+        SurfaceGeometry::Cylinder { .. }
+        | SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Torus { .. } => {
+            annotations.derived(id, "geometry.ref_direction");
+        }
+        SurfaceGeometry::Sphere { .. } => {
+            annotations
+                .derived(&id, "geometry.axis")
+                .derived(id, "geometry.ref_direction");
+        }
+        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
+    }
+}
+
+fn derive_planar_pcurves(
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+) {
     let loop_faces: HashMap<_, _> = out
         .loops
         .iter()
@@ -647,13 +751,19 @@ fn derive_planar_pcurves(out: &mut Brep, stream: &str) {
         if !matches!(surface.geometry, SurfaceGeometry::Plane { .. }) {
             continue;
         }
-        let Some(frame) = out
-            .surface_parameterizations
-            .iter()
-            .find(|frame| frame.surface == face.surface)
+        let SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis: u_reference,
+        } = surface.geometry
         else {
             continue;
         };
+        let v_reference = cadmpeg_ir::math::Vector3::new(
+            normal.y * u_reference.z - normal.z * u_reference.y,
+            normal.z * u_reference.x - normal.x * u_reference.z,
+            normal.x * u_reference.y - normal.y * u_reference.x,
+        );
         let Some(edge) = out.edges.iter().find(|edge| edge.id == coedge.edge) else {
             continue;
         };
@@ -675,18 +785,10 @@ fn derive_planar_pcurves(out: &mut Brep, stream: &str) {
             continue;
         };
         let uv = |point: cadmpeg_ir::math::Point3| {
-            let d = [
-                point.x - frame.origin.x,
-                point.y - frame.origin.y,
-                point.z - frame.origin.z,
-            ];
+            let d = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
             cadmpeg_ir::math::Point2::new(
-                d[0] * frame.u_reference.x
-                    + d[1] * frame.u_reference.y
-                    + d[2] * frame.u_reference.z,
-                d[0] * frame.v_reference.x
-                    + d[1] * frame.v_reference.y
-                    + d[2] * frame.v_reference.z,
+                d[0] * u_reference.x + d[1] * u_reference.y + d[2] * u_reference.z,
+                d[0] * v_reference.x + d[1] * v_reference.y + d[2] * v_reference.z,
             )
         };
         let start = uv(start);
@@ -697,7 +799,7 @@ fn derive_planar_pcurves(out: &mut Brep, stream: &str) {
             continue;
         }
         let id = PcurveId(format!(
-            "sldprt:pcurve#{}",
+            "sldprt:brep:pcurve#{}",
             coedge.id.0.rsplit('#').next().unwrap_or("0")
         ));
         let pcurve = Pcurve {
@@ -706,27 +808,26 @@ fn derive_planar_pcurves(out: &mut Brep, stream: &str) {
                 origin: start,
                 direction: cadmpeg_ir::math::Point2::new(du / norm, dv / norm),
             },
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "sldprt".into(),
-                    stream: stream.into(),
-                    offset: 0,
-                    tag: Some("derived_planar_pcurve".into()),
-                },
-                exactness: Exactness::Derived,
-            },
         };
         derived.push((coedge.id.clone(), id, pcurve));
     }
     for (coedge_id, id, pcurve) in derived {
         if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == coedge_id) {
-            coedge.pcurve = Some(id);
+            coedge.pcurve = Some(id.clone());
         }
+        annotations
+            .note(&id, source_stream, 0)
+            .tag("derived_planar_pcurve");
+        annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
 }
 
-fn derive_cylindrical_pcurves(out: &mut Brep, stream: &str) {
+fn derive_cylindrical_pcurves(
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+) {
     let loop_faces: HashMap<_, _> = out
         .loops
         .iter()
@@ -760,16 +861,9 @@ fn derive_cylindrical_pcurves(out: &mut Brep, stream: &str) {
         let SurfaceGeometry::Cylinder {
             origin,
             axis,
+            ref_direction: u_reference,
             radius,
-            ..
         } = &surface.geometry
-        else {
-            continue;
-        };
-        let Some(frame) = out
-            .surface_parameterizations
-            .iter()
-            .find(|frame| frame.surface == face.surface)
         else {
             continue;
         };
@@ -784,9 +878,9 @@ fn derive_cylindrical_pcurves(out: &mut Brep, stream: &str) {
             continue;
         };
         let cross = cadmpeg_ir::math::Vector3::new(
-            axis.y * frame.u_reference.z - axis.z * frame.u_reference.y,
-            axis.z * frame.u_reference.x - axis.x * frame.u_reference.z,
-            axis.x * frame.u_reference.y - axis.y * frame.u_reference.x,
+            axis.y * u_reference.z - axis.z * u_reference.y,
+            axis.z * u_reference.x - axis.x * u_reference.z,
+            axis.x * u_reference.y - axis.y * u_reference.x,
         );
         let dot = |a: [f64; 3], b: cadmpeg_ir::math::Vector3| a[0] * b.x + a[1] * b.y + a[2] * b.z;
         let geometry = match &curve.geometry {
@@ -794,6 +888,7 @@ fn derive_cylindrical_pcurves(out: &mut Brep, stream: &str) {
                 center,
                 axis: circle_axis,
                 radius: circle_radius,
+                ..
             } if (circle_radius.abs() - radius.abs()).abs() < 1e-6
                 && (circle_axis.x * axis.x + circle_axis.y * axis.y + circle_axis.z * axis.z)
                     .abs()
@@ -834,7 +929,7 @@ fn derive_cylindrical_pcurves(out: &mut Brep, stream: &str) {
                 let d = [start.x - origin.x, start.y - origin.y, start.z - origin.z];
                 let v = dot(d, *axis);
                 let radial = [d[0] - v * axis.x, d[1] - v * axis.y, d[2] - v * axis.z];
-                let u = dot(radial, cross).atan2(dot(radial, frame.u_reference));
+                let u = dot(radial, cross).atan2(dot(radial, *u_reference));
                 PcurveGeometry::Line {
                     origin: cadmpeg_ir::math::Point2::new(u, v),
                     direction: cadmpeg_ir::math::Point2::new(
@@ -850,36 +945,28 @@ fn derive_cylindrical_pcurves(out: &mut Brep, stream: &str) {
             _ => continue,
         };
         let id = PcurveId(format!(
-            "sldprt:pcurve#cylinder:{}",
+            "sldprt:brep:pcurve#cylinder:{}",
             coedge.id.0.rsplit('#').next().unwrap_or("0")
         ));
-        derived.push((
-            coedge.id.clone(),
-            id.clone(),
-            Pcurve {
-                id,
-                geometry,
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "sldprt".into(),
-                        stream: stream.into(),
-                        offset: 0,
-                        tag: Some("derived_cylindrical_pcurve".into()),
-                    },
-                    exactness: Exactness::Derived,
-                },
-            },
-        ));
+        derived.push((coedge.id.clone(), id.clone(), Pcurve { id, geometry }));
     }
     for (coedge_id, id, pcurve) in derived {
         if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == coedge_id) {
-            coedge.pcurve = Some(id);
+            coedge.pcurve = Some(id.clone());
         }
+        annotations
+            .note(&id, source_stream, 0)
+            .tag("derived_cylindrical_pcurve");
+        annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
 }
 
-fn derive_spherical_pcurves(out: &mut Brep, stream: &str) {
+fn derive_spherical_pcurves(
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+) {
     let loop_faces: HashMap<_, _> = out
         .loops
         .iter()
@@ -905,16 +992,10 @@ fn derive_spherical_pcurves(out: &mut Brep, stream: &str) {
         };
         let SurfaceGeometry::Sphere {
             center: sphere_center,
+            axis: v_reference,
+            ref_direction: u_reference,
             radius,
-            ..
         } = &surface.geometry
-        else {
-            continue;
-        };
-        let Some(frame) = out
-            .surface_parameterizations
-            .iter()
-            .find(|frame| frame.surface == face.surface)
         else {
             continue;
         };
@@ -925,6 +1006,7 @@ fn derive_spherical_pcurves(out: &mut Brep, stream: &str) {
             center,
             axis,
             radius: circle_radius,
+            ..
         }) = edge
             .curve
             .as_ref()
@@ -933,18 +1015,14 @@ fn derive_spherical_pcurves(out: &mut Brep, stream: &str) {
         else {
             continue;
         };
-        let axis_dot = axis.x * frame.v_reference.x
-            + axis.y * frame.v_reference.y
-            + axis.z * frame.v_reference.z;
+        let axis_dot = axis.x * v_reference.x + axis.y * v_reference.y + axis.z * v_reference.z;
         let geometry = if axis_dot.abs() > 1.0 - 1e-9 {
             let d = [
                 center.x - sphere_center.x,
                 center.y - sphere_center.y,
                 center.z - sphere_center.z,
             ];
-            let height = d[0] * frame.v_reference.x
-                + d[1] * frame.v_reference.y
-                + d[2] * frame.v_reference.z;
+            let height = d[0] * v_reference.x + d[1] * v_reference.y + d[2] * v_reference.z;
             if ((radius * radius - height * height).max(0.0).sqrt() - circle_radius.abs()).abs()
                 > 1e-6
             {
@@ -959,22 +1037,17 @@ fn derive_spherical_pcurves(out: &mut Brep, stream: &str) {
             }
         } else if axis_dot.abs() < 1e-9 && (circle_radius.abs() - radius.abs()).abs() < 1e-6 {
             let equator = cadmpeg_ir::math::Vector3::new(
-                axis.y * frame.v_reference.z - axis.z * frame.v_reference.y,
-                axis.z * frame.v_reference.x - axis.x * frame.v_reference.z,
-                axis.x * frame.v_reference.y - axis.y * frame.v_reference.x,
+                axis.y * v_reference.z - axis.z * v_reference.y,
+                axis.z * v_reference.x - axis.x * v_reference.z,
+                axis.x * v_reference.y - axis.y * v_reference.x,
             );
             let tangent = cadmpeg_ir::math::Vector3::new(
-                frame.v_reference.y * frame.u_reference.z
-                    - frame.v_reference.z * frame.u_reference.y,
-                frame.v_reference.z * frame.u_reference.x
-                    - frame.v_reference.x * frame.u_reference.z,
-                frame.v_reference.x * frame.u_reference.y
-                    - frame.v_reference.y * frame.u_reference.x,
+                v_reference.y * u_reference.z - v_reference.z * u_reference.y,
+                v_reference.z * u_reference.x - v_reference.x * u_reference.z,
+                v_reference.x * u_reference.y - v_reference.y * u_reference.x,
             );
             let u = (equator.x * tangent.x + equator.y * tangent.y + equator.z * tangent.z).atan2(
-                equator.x * frame.u_reference.x
-                    + equator.y * frame.u_reference.y
-                    + equator.z * frame.u_reference.z,
+                equator.x * u_reference.x + equator.y * u_reference.y + equator.z * u_reference.z,
             );
             PcurveGeometry::Line {
                 origin: cadmpeg_ir::math::Point2::new(u, 0.0),
@@ -984,36 +1057,28 @@ fn derive_spherical_pcurves(out: &mut Brep, stream: &str) {
             continue;
         };
         let id = PcurveId(format!(
-            "sldprt:pcurve#sphere:{}",
+            "sldprt:brep:pcurve#sphere:{}",
             coedge.id.0.rsplit('#').next().unwrap_or("0")
         ));
-        derived.push((
-            coedge.id.clone(),
-            id.clone(),
-            Pcurve {
-                id,
-                geometry,
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "sldprt".into(),
-                        stream: stream.into(),
-                        offset: 0,
-                        tag: Some("derived_spherical_pcurve".into()),
-                    },
-                    exactness: Exactness::Derived,
-                },
-            },
-        ));
+        derived.push((coedge.id.clone(), id.clone(), Pcurve { id, geometry }));
     }
     for (coedge_id, id, pcurve) in derived {
         if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == coedge_id) {
-            coedge.pcurve = Some(id);
+            coedge.pcurve = Some(id.clone());
         }
+        annotations
+            .note(&id, source_stream, 0)
+            .tag("derived_spherical_pcurve");
+        annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
 }
 
-fn derive_nurbs_boundary_pcurves(out: &mut Brep, stream: &str) {
+fn derive_nurbs_boundary_pcurves(
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+) {
     let loop_faces: HashMap<_, _> = out
         .loops
         .iter()
@@ -1116,31 +1181,19 @@ fn derive_nurbs_boundary_pcurves(out: &mut Brep, stream: &str) {
             continue;
         };
         let id = PcurveId(format!(
-            "sldprt:pcurve#nurbs-boundary:{}",
+            "sldprt:brep:pcurve#nurbs-boundary:{}",
             coedge.id.0.rsplit('#').next().unwrap_or("0")
         ));
-        derived.push((
-            coedge.id.clone(),
-            id.clone(),
-            Pcurve {
-                id,
-                geometry,
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "sldprt".into(),
-                        stream: stream.into(),
-                        offset: 0,
-                        tag: Some("derived_nurbs_boundary_pcurve".into()),
-                    },
-                    exactness: Exactness::Derived,
-                },
-            },
-        ));
+        derived.push((coedge.id.clone(), id.clone(), Pcurve { id, geometry }));
     }
     for (coedge_id, id, pcurve) in derived {
         if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == coedge_id) {
-            coedge.pcurve = Some(id);
+            coedge.pcurve = Some(id.clone());
         }
+        annotations
+            .note(&id, source_stream, 0)
+            .tag("derived_nurbs_boundary_pcurve");
+        annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
 }
@@ -1204,7 +1257,11 @@ fn solve_face_orientation(out: &mut Brep) {
     }
 }
 
-fn synthesize_cylinder_seams(out: &mut Brep, stream: &str) {
+fn synthesize_cylinder_seams(
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+) {
     let mut candidates = Vec::new();
     for face in &out.faces {
         let Some(surface) = out
@@ -1259,15 +1316,6 @@ fn synthesize_cylinder_seams(out: &mut Brep, stream: &str) {
         }
     }
 
-    let derived = |tag: &str| EntityMeta {
-        provenance: Provenance {
-            format: "sldprt".into(),
-            stream: stream.into(),
-            offset: 0,
-            tag: Some(tag.into()),
-        },
-        exactness: Exactness::Derived,
-    };
     let mut removed = HashSet::new();
     for (face_id, loop_a, loop_b, circle_a, circle_b, vertex_a, vertex_b) in candidates {
         let point_for = |vertex: &Vertex| {
@@ -1303,17 +1351,22 @@ fn synthesize_cylinder_seams(out: &mut Brep, stream: &str) {
             direction.z / norm,
         );
         let suffix = face_id.0.rsplit('#').next().unwrap_or("0");
-        let curve_id = CurveId(format!("sldprt:curve#seam:{suffix}"));
-        let edge_id = EdgeId(format!("sldprt:edge#seam:{suffix}"));
-        let seam_a = CoedgeId(format!("sldprt:coedge#seam:{suffix}:0"));
-        let seam_b = CoedgeId(format!("sldprt:coedge#seam:{suffix}:1"));
+        let curve_id = CurveId(format!("sldprt:brep:curve#seam:{suffix}"));
+        let edge_id = EdgeId(format!("sldprt:brep:edge#seam:{suffix}"));
+        let seam_a = CoedgeId(format!("sldprt:brep:coedge#seam:{suffix}:0"));
+        let seam_b = CoedgeId(format!("sldprt:brep:coedge#seam:{suffix}:1"));
+        for id in [&curve_id.0, &edge_id.0, &seam_a.0, &seam_b.0] {
+            annotations
+                .note(id, source_stream, 0)
+                .tag("derived_periodic_seam");
+            annotations.exactness(id, Exactness::Derived);
+        }
         out.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Line {
                 origin: pa,
                 direction,
             },
-            meta: derived("derived_periodic_seam"),
         });
         out.edges.push(Edge {
             id: edge_id.clone(),
@@ -1322,7 +1375,6 @@ fn synthesize_cylinder_seams(out: &mut Brep, stream: &str) {
             end: vertex_b,
             param_range: Some([0.0, norm]),
             tolerance: None,
-            meta: derived("derived_periodic_seam"),
         });
         out.coedges.push(Coedge {
             id: seam_a.clone(),
@@ -1330,11 +1382,9 @@ fn synthesize_cylinder_seams(out: &mut Brep, stream: &str) {
             edge: edge_id.clone(),
             next: circle_b.clone(),
             previous: circle_a.clone(),
-            partner: Some(seam_b.clone()),
-            radial_next: Some(seam_b.clone()),
+            radial_next: seam_b.clone(),
             sense: Sense::Forward,
             pcurve: None,
-            meta: derived("derived_periodic_seam"),
         });
         out.coedges.push(Coedge {
             id: seam_b.clone(),
@@ -1342,11 +1392,9 @@ fn synthesize_cylinder_seams(out: &mut Brep, stream: &str) {
             edge: edge_id,
             next: circle_a.clone(),
             previous: circle_b.clone(),
-            partner: Some(seam_a.clone()),
-            radial_next: Some(seam_a.clone()),
+            radial_next: seam_a.clone(),
             sense: Sense::Reversed,
             pcurve: None,
-            meta: derived("derived_periodic_seam"),
         });
         let ring = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
         for (index, id) in ring.iter().enumerate() {
@@ -1367,7 +1415,11 @@ fn synthesize_cylinder_seams(out: &mut Brep, stream: &str) {
     out.loops.retain(|lp| !removed.contains(&lp.id));
 }
 
-fn synthesize_sphere_seams(out: &mut Brep, stream: &str) {
+fn synthesize_sphere_seams(
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+) {
     let mut candidates = Vec::new();
     for face in &out.faces {
         let Some(surface) = out
@@ -1402,11 +1454,7 @@ fn synthesize_sphere_seams(out: &mut Brep, stream: &str) {
                     })
                 })
         });
-        let Some(frame) = out
-            .surface_parameterizations
-            .iter()
-            .find(|frame| frame.surface == face.surface)
-        else {
+        let SurfaceGeometry::Sphere { axis, .. } = surface.geometry else {
             continue;
         };
         if all_circles {
@@ -1416,25 +1464,22 @@ fn synthesize_sphere_seams(out: &mut Brep, stream: &str) {
                 lp.coedges.clone(),
                 center,
                 radius,
-                frame.v_reference,
+                axis,
             ));
         }
     }
-    let derived = |tag: &str| EntityMeta {
-        provenance: Provenance {
-            format: "sldprt".into(),
-            stream: stream.into(),
-            offset: 0,
-            tag: Some(tag.into()),
-        },
-        exactness: Exactness::Derived,
-    };
     for (face, loop_id, mut ring, center, radius, axis) in candidates {
         let suffix = face.0.rsplit('#').next().unwrap_or("0");
-        let point_id = PointId(format!("sldprt:point#sphere-seam:{suffix}"));
-        let vertex_id = VertexId(format!("sldprt:vertex#sphere-seam:{suffix}"));
-        let edge_id = EdgeId(format!("sldprt:edge#sphere-seam:{suffix}"));
-        let coedge_id = CoedgeId(format!("sldprt:coedge#sphere-seam:{suffix}"));
+        let point_id = PointId(format!("sldprt:brep:point#sphere-seam:{suffix}"));
+        let vertex_id = VertexId(format!("sldprt:brep:vertex#sphere-seam:{suffix}"));
+        let edge_id = EdgeId(format!("sldprt:brep:edge#sphere-seam:{suffix}"));
+        let coedge_id = CoedgeId(format!("sldprt:brep:coedge#sphere-seam:{suffix}"));
+        for id in [&point_id.0, &vertex_id.0, &edge_id.0, &coedge_id.0] {
+            annotations
+                .note(id, source_stream, 0)
+                .tag("derived_sphere_seam");
+            annotations.exactness(id, Exactness::Derived);
+        }
         out.points.push(Point {
             id: point_id.clone(),
             position: cadmpeg_ir::math::Point3::new(
@@ -1442,13 +1487,11 @@ fn synthesize_sphere_seams(out: &mut Brep, stream: &str) {
                 center.y + radius * axis.y,
                 center.z + radius * axis.z,
             ),
-            meta: derived("derived_sphere_seam"),
         });
         out.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
             tolerance: None,
-            meta: derived("derived_sphere_seam"),
         });
         out.edges.push(Edge {
             id: edge_id.clone(),
@@ -1457,20 +1500,17 @@ fn synthesize_sphere_seams(out: &mut Brep, stream: &str) {
             end: vertex_id,
             param_range: None,
             tolerance: None,
-            meta: derived("derived_sphere_seam"),
         });
         ring.push(coedge_id.clone());
         out.coedges.push(Coedge {
-            id: coedge_id,
+            id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
             next: ring[0].clone(),
             previous: ring[2].clone(),
-            partner: None,
-            radial_next: None,
+            radial_next: coedge_id.clone(),
             sense: Sense::Forward,
             pcurve: None,
-            meta: derived("derived_sphere_seam"),
         });
         for (index, id) in ring.iter().enumerate() {
             if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == *id) {
@@ -1484,16 +1524,11 @@ fn synthesize_sphere_seams(out: &mut Brep, stream: &str) {
     }
 }
 
-fn emit_curve(
-    out: &mut Brep,
-    carrier: &Carrier,
-    meta: &impl Fn(usize, &str, Exactness) -> EntityMeta,
-) {
+fn emit_curve(out: &mut Brep, carrier: &Carrier) {
     if let CarrierGeometry::Curve(geo) = &carrier.geometry {
         out.curves.push(Curve {
             id: CurveId(id_curve(carrier.attr)),
             geometry: geo.clone(),
-            meta: meta(carrier.offset, "compact_curve", Exactness::ByteExact),
         });
     }
 }

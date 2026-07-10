@@ -7,10 +7,10 @@ use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::design::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignEntityHeader, DesignObject,
     DesignObjectKind, DesignRecordHeader, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchRelation,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 
 use crate::container::{self, role, ContainerScan};
 
@@ -95,24 +95,16 @@ pub fn decode_persistent_references(
                     continue;
                 };
                 out.push(PersistentReference {
+                    id: format!("f3d:{}:persistent-reference#{offset}", entry.name),
                     kind,
                     value: u64::from_le_bytes(raw.try_into().expect(
                         "invariant: raw is an 8-byte slice from bytes.get(range) of length 8",
                     )),
-                    meta: EntityMeta {
-                        provenance: Provenance {
-                            format: "f3d".into(),
-                            stream: entry.name.clone(),
-                            offset: offset as u64,
-                            tag: Some(String::from_utf8_lossy(name).into_owned()),
-                        },
-                        exactness: Exactness::ByteExact,
-                    },
                 });
             }
         }
     }
-    out.sort_by_key(|reference| reference.meta.provenance.offset);
+    out.sort_by_key(|reference| reference.value);
     Ok(out)
 }
 
@@ -160,19 +152,11 @@ pub fn decode_lost_edge_references(
                 continue;
             };
             out.push(LostEdgeReference {
+                id: format!("f3d:{}:lost-edge-reference#{offset}", entry.name),
                 class_tag: String::from_utf8_lossy(class_tag).into_owned(),
                 record_index: u32::from_le_bytes(index.try_into().expect(
                     "invariant: index is a 4-byte slice from bytes.get(range) of length 4",
                 )),
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "f3d".into(),
-                        stream: entry.name.clone(),
-                        offset: offset as u64,
-                        tag: Some("EDGE_REFERENCE_LOST".into()),
-                    },
-                    exactness: Exactness::ByteExact,
-                },
             });
         }
     }
@@ -253,20 +237,12 @@ pub fn decode_objects(
                 continue;
             }
             out.push(DesignObject {
+                id: format!("f3d:{}:design-object#{offset}", entry.name),
                 kind,
                 entity_ids,
                 self_guid,
                 parent_guid,
                 revision,
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "f3d".into(),
-                        stream: entry.name.clone(),
-                        offset: offset as u64,
-                        tag: Some(name),
-                    },
-                    exactness: Exactness::ByteExact,
-                },
             });
             offset = revision_offset + 4;
         }
@@ -355,6 +331,7 @@ pub fn decode_entity_headers(
                     (None, None, Vec::new(), end)
                 };
             out.push(DesignEntityHeader {
+                id: format!("f3d:{}:design-entity-header#{start}", entry.name),
                 entity_suffix,
                 entity_id,
                 class_tag: String::from_utf8_lossy(class_tag).into_owned(),
@@ -363,15 +340,6 @@ pub fn decode_entity_headers(
                 record_reference,
                 declared_reference_count,
                 reference_indices,
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "f3d".into(),
-                        stream: entry.name.clone(),
-                        offset: start as u64,
-                        tag: Some("design_entity_header".into()),
-                    },
-                    exactness: Exactness::ByteExact,
-                },
             });
             offset = record_end;
         }
@@ -447,23 +415,19 @@ fn decode_headers_for_indices(
             );
             if wanted.contains(&record_index) && emitted.insert(record_index) {
                 out.push(DesignRecordHeader {
+                    id: format!("f3d:{}:design-record-header#{position}", entry.name),
                     record_index,
                     class_tag,
-                    meta: EntityMeta {
-                        provenance: Provenance {
-                            format: "f3d".into(),
-                            stream: entry.name.clone(),
-                            offset: position as u64,
-                            tag: Some("design_record_header".into()),
-                        },
-                        exactness: Exactness::ByteExact,
-                    },
+                    byte_offset: position as u64,
                 });
             }
-            position = after_tag + 4;
+            // Headers are located in an otherwise heterogeneous stream. Keep
+            // the scan byte-aligned so a plausible length-prefixed string in
+            // an enclosing payload cannot skip a real nested header.
+            position += 1;
         }
     }
-    out.sort_by_key(|record| record.meta.provenance.offset);
+    out.sort_by_key(|record| record.record_index);
     Ok(out)
 }
 
@@ -475,40 +439,78 @@ pub fn decode_sketch_relations(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
+    entities: &[DesignEntityHeader],
 ) -> Result<Vec<SketchRelation>, CodecError> {
     let mut out = Vec::new();
+    let owners = entities
+        .iter()
+        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Sketch))
+        .map(|entity| entity.entity_suffix as u32)
+        .collect::<std::collections::HashSet<_>>();
     for entry in scan
         .entries
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
         let bytes = container::decompress_entry(reader, &entry.name)?;
-        for record in records
-            .iter()
-            .filter(|record| record.meta.provenance.stream == entry.name)
-        {
-            let at = record.meta.provenance.offset as usize;
+        for record in records {
+            let Ok(at) = usize::try_from(record.byte_offset) else {
+                continue;
+            };
             let Some(payload) = bytes.get(at..at + 101) else {
                 continue;
             };
-            let Some((members, owner_reference, state, return_members)) =
-                parse_sketch_relation(payload)
+            let Some((members, auxiliary_references, owner_reference, state, return_members)) =
+                parse_sketch_relation(payload, &owners)
             else {
                 continue;
             };
+            let (constraint_kinds, unknown_constraint_bits) = decode_constraint_kinds(state);
             out.push(SketchRelation {
+                id: format!("f3d:{}:sketch-relation#{}", entry.name, record.record_index),
                 record_index: record.record_index,
                 class_tag: record.class_tag.clone(),
                 owner_reference,
+                auxiliary_references,
                 members,
                 state,
+                constraint_kinds,
+                unknown_constraint_bits,
                 return_members,
                 raw_bytes: payload.to_vec(),
-                meta: record.meta.clone(),
             });
         }
     }
     Ok(out)
+}
+
+fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>, u32) {
+    let definitions = [
+        (0x0000_0001, SketchConstraintKind::Coincident),
+        (0x0000_0002, SketchConstraintKind::Colinear),
+        (0x0000_0004, SketchConstraintKind::Concentric),
+        (0x0000_0010, SketchConstraintKind::Parallel),
+        (0x0000_0020, SketchConstraintKind::Perpendicular),
+        (0x0000_0040, SketchConstraintKind::Horizontal),
+        (0x0000_0080, SketchConstraintKind::Vertical),
+        (0x0000_0100, SketchConstraintKind::Tangent),
+        (0x0000_0200, SketchConstraintKind::Curvature),
+        (0x0000_0400, SketchConstraintKind::Symmetry),
+        (0x0000_0800, SketchConstraintKind::Equal),
+        (0x0000_1000, SketchConstraintKind::Midpoint),
+        (0x0000_2000, SketchConstraintKind::Polygon),
+        (0x1000_0000, SketchConstraintKind::CircularPattern),
+        (0x2000_0000, SketchConstraintKind::RectangularPattern),
+    ];
+    let mut kinds = Vec::new();
+    let mut recognized = 0u32;
+    for (bit, kind) in definitions {
+        if state & bit != 0 {
+            kinds.push(kind);
+            recognized |= bit;
+        }
+    }
+    (kinds, state & !recognized)
 }
 
 /// Decode every sketch-point record (spec §8.1, `pt_tag`) from each design
@@ -551,20 +553,12 @@ pub fn decode_sketch_points(
             }
             if emitted.insert(record_index) {
                 out.push(SketchPoint {
+                    id: format!("f3d:{}:sketch-point#{at}", entry.name),
                     record_index,
                     class_tag,
                     persistent_id,
                     paired_reference,
                     coordinates: Point2::new(x * 10.0, y * 10.0),
-                    meta: EntityMeta {
-                        provenance: Provenance {
-                            format: "f3d".into(),
-                            stream: entry.name.clone(),
-                            offset: at as u64,
-                            tag: Some("sketch_point".into()),
-                        },
-                        exactness: Exactness::ByteExact,
-                    },
                 });
             }
             at += 112;
@@ -652,6 +646,7 @@ pub fn decode_sketch_curve_identities(
                     .get(geometry_shift..)
                     .expect("invariant: geometry_shift (0 or 52) is <= payload.len() (checked >= 133 by the at + 133 <= bytes.len() loop guard)");
                 out.push(SketchCurveIdentity {
+                    id: format!("f3d:{}:sketch-curve-identity#{at}", entry.name),
                     record_index,
                     class_tag,
                     primary_id,
@@ -660,15 +655,6 @@ pub fn decode_sketch_curve_identities(
                         .or_else(|| decode_circular_arc(geometry_payload))
                         .or_else(|| decode_line(geometry_payload))
                         .or_else(|| decode_referenced_analytic(geometry_payload)),
-                    meta: EntityMeta {
-                        provenance: Provenance {
-                            format: "f3d".into(),
-                            stream: entry.name.clone(),
-                            offset: at as u64,
-                            tag: Some("sketch_curve_identity".into()),
-                        },
-                        exactness: Exactness::ByteExact,
-                    },
                 });
             }
             at += 133;
@@ -877,7 +863,12 @@ fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     })
 }
 
-fn parse_sketch_relation(payload: &[u8]) -> Option<(Vec<u32>, u32, u32, Vec<u32>)> {
+type ParsedSketchRelation = (Vec<u32>, Vec<u32>, u32, u32, Vec<u32>);
+
+fn parse_sketch_relation(
+    payload: &[u8],
+    owners: &std::collections::HashSet<u32>,
+) -> Option<ParsedSketchRelation> {
     if payload.get(19) != Some(&1) {
         return None;
     }
@@ -892,7 +883,15 @@ fn parse_sketch_relation(payload: &[u8]) -> Option<(Vec<u32>, u32, u32, Vec<u32>
         members.push(value);
         cursor = next_reference_marker(payload, end)?;
     }
-    let (owner_reference, end) = marked_u32(payload, cursor)?;
+    let mut auxiliary_references = Vec::new();
+    let (owner_reference, end) = loop {
+        let (reference, end) = marked_u32(payload, cursor)?;
+        if owners.contains(&reference) {
+            break (reference, end);
+        }
+        auxiliary_references.push(reference);
+        cursor = next_reference_marker(payload, end)?;
+    };
     cursor = next_nonzero(payload, end)?;
     let (state, end) = if payload.get(cursor) == Some(&1) {
         marked_u32(payload, cursor)?
@@ -915,7 +914,13 @@ fn parse_sketch_relation(payload: &[u8]) -> Option<(Vec<u32>, u32, u32, Vec<u32>
             cursor = next_reference_marker(payload, cursor)?;
         }
     }
-    Some((members, owner_reference, state, return_members))
+    Some((
+        members,
+        auxiliary_references,
+        owner_reference,
+        state,
+        return_members,
+    ))
 }
 
 fn marked_u32(bytes: &[u8], position: usize) -> Option<(u32, usize)> {
@@ -1041,21 +1046,13 @@ pub fn decode_body_members(
                 break;
             };
             decoded.push(DesignBodyMember {
+                id: format!("f3d:{}:design-body-member#{cursor}", entry.name),
                 entity_suffix: u64::from_le_bytes(id_raw.try_into().expect(
                     "invariant: id_raw is an 8-byte slice from bytes.get(range) of length 8",
                 )),
                 flags: u16::from_le_bytes(flags_raw.try_into().expect(
                     "invariant: flags_raw is a 2-byte slice from bytes.get(range) of length 2",
                 )),
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "f3d".into(),
-                        stream: entry.name.clone(),
-                        offset: cursor as u64,
-                        tag: Some("BodiesRoot.member".into()),
-                    },
-                    exactness: Exactness::ByteExact,
-                },
             });
             cursor += 11;
         }
@@ -1154,23 +1151,15 @@ fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) 
                 })
                 .unwrap_or_default();
             out.push(ConstructionRecipe {
+                id: format!("f3d:{stream}:construction-recipe#{offset}"),
                 kind,
                 design_id,
                 recipe_index,
                 record_index,
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "f3d".into(),
-                        stream: stream.into(),
-                        offset: offset as u64,
-                        tag: Some(String::from_utf8_lossy(name).into_owned()),
-                    },
-                    exactness: Exactness::ByteExact,
-                },
             });
         }
     }
-    out.sort_by_key(|recipe| recipe.meta.provenance.offset);
+    out.sort_by_key(|recipe| recipe.record_index);
 }
 
 fn recipe_design_id(bytes: &[u8], offset: usize, name: &[u8]) -> Option<String> {
@@ -1210,59 +1199,4 @@ fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<String> {
         .iter()
         .all(u8::is_ascii_alphanumeric)
         .then(|| String::from_utf8_lossy(value).into_owned())
-}
-
-#[cfg(test)]
-mod diagnostics {
-    #[test]
-    #[ignore]
-    fn inspect_dimension_constraint_names() {
-        use std::{env, fs::File};
-        let mut file = File::open(env::var("F3D_INSPECT").unwrap()).unwrap();
-        let scan = crate::container::scan(&mut file).unwrap();
-        let entities = super::decode_entity_headers(&mut file, &scan).unwrap();
-        let records = super::decode_record_headers(&mut file, &scan, &entities).unwrap();
-        let relations = super::decode_sketch_relations(&mut file, &scan, &records).unwrap();
-        eprintln!(
-            "RELATIONS records={} decoded={}",
-            records.len(),
-            relations.len()
-        );
-        for entry in scan.entries.iter().filter(|entry| {
-            entry.role == crate::container::role::BULKSTREAM && entry.name.contains("Design")
-        }) {
-            let bytes = crate::container::decompress_entry(&mut file, &entry.name).unwrap();
-            if let Some(record) = records.iter().find(|record| {
-                record.class_tag == "272"
-                    && !relations
-                        .iter()
-                        .any(|relation| relation.record_index == record.record_index)
-            }) {
-                let at = record.meta.provenance.offset as usize;
-                eprintln!("REJECT {} {} @{at}", record.record_index, record.class_tag);
-                eprintln!(
-                    "PARSE {:?}",
-                    super::parse_sketch_relation(&bytes[at..at + 101])
-                );
-                for (line, chunk) in bytes[at..(at + 180).min(bytes.len())]
-                    .chunks(16)
-                    .enumerate()
-                {
-                    eprintln!("R {:03} {:02x?}", line * 16, chunk);
-                }
-            }
-            let mut position = 0usize;
-            while position + 4 <= bytes.len() {
-                if let Some((value, end)) = super::lp_ascii(&bytes, position) {
-                    let lower = value.to_ascii_lowercase();
-                    if lower.contains("dimension") || lower.contains("constraint") {
-                        eprintln!("NAME @{position} {value}");
-                    }
-                    position = end;
-                } else {
-                    position += 1;
-                }
-            }
-        }
-    }
 }

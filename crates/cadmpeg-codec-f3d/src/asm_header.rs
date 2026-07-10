@@ -34,9 +34,9 @@ pub struct AsmHeader {
     /// multiplier — spec §5).
     pub scale: Option<f64>,
     /// Absolute distance tolerance `resabs`.
-    pub resabs: Option<f64>,
+    pub linear: Option<f64>,
     /// Normal tolerance `resnor`.
-    pub resnor: Option<f64>,
+    pub angular: Option<f64>,
 }
 
 /// The ASM magic prefix common to both widths.
@@ -75,8 +75,8 @@ pub fn parse(bytes: &[u8]) -> Option<AsmHeader> {
         product_version: None,
         save_date: None,
         scale: None,
-        resabs: None,
-        resnor: None,
+        linear: None,
+        angular: None,
     };
 
     // Only the BinaryFile8 layout is documented; do not fabricate fields for
@@ -120,8 +120,8 @@ pub fn parse(bytes: &[u8]) -> Option<AsmHeader> {
     header.save_date = it.next();
     let mut dit = doubles.into_iter();
     header.scale = dit.next();
-    header.resabs = dit.next();
-    header.resnor = dit.next();
+    header.linear = dit.next();
+    header.angular = dit.next();
 
     Some(header)
 }

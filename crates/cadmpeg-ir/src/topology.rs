@@ -2,17 +2,16 @@
 //! The B-rep topology graph.
 //!
 //! Layout follows the ASM/ACIS hierarchy documented in the f3d topology spec:
-//! `body → lump → shell → face → loop → coedge → edge → vertex`, with geometry
+//! `body → region → shell → face → loop → coedge → edge → vertex`, with geometry
 //! attached by reference (`face → surface`, `edge → curve`, `coedge → pcurve`,
 //! `vertex → point`). Entities are stored in flat arenas on
 //! [`crate::document::CadIr`] and refer to each other by id.
 
 use crate::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, LumpId, PcurveId, PointId, ShellId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
 use crate::math::Point3;
-use crate::provenance::EntityMeta;
 use crate::transform::Transform;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -65,8 +64,8 @@ pub struct Body {
     /// The dimensional kind of topology contained by the body.
     #[serde(default)]
     pub kind: BodyKind,
-    /// Constituent lumps.
-    pub lumps: Vec<LumpId>,
+    /// Constituent regions.
+    pub regions: Vec<RegionId>,
     /// Optional world placement of the body's geometry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<Transform>,
@@ -76,30 +75,26 @@ pub struct Body {
     /// Optional display color.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<Color>,
-    /// Provenance/exactness metadata.
-    pub meta: EntityMeta,
 }
 
 /// A connected region of a body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct Lump {
+pub struct Region {
     /// Arena id.
-    pub id: LumpId,
+    pub id: RegionId,
     /// Owning body.
     pub body: BodyId,
     /// Boundary shells (typically one outer, plus voids).
     pub shells: Vec<ShellId>,
-    /// Provenance/exactness metadata.
-    pub meta: EntityMeta,
 }
 
-/// An oriented boundary of a lump.
+/// An oriented boundary of a region.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Shell {
     /// Arena id.
     pub id: ShellId,
-    /// Owning lump.
-    pub lump: LumpId,
+    /// Owning region.
+    pub region: RegionId,
     /// Faces of the shell.
     pub faces: Vec<FaceId>,
     /// Edges belonging directly to a wire shell.
@@ -108,8 +103,6 @@ pub struct Shell {
     /// Vertices belonging directly to a shell and not bounding an edge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub free_vertices: Vec<VertexId>,
-    /// Provenance/exactness metadata.
-    pub meta: EntityMeta,
 }
 
 /// A face: a bounded region of a surface.
@@ -134,8 +127,6 @@ pub struct Face {
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tolerance: Option<f64>,
-    /// Provenance/exactness metadata.
-    pub meta: EntityMeta,
 }
 
 /// A closed boundary loop of a face, expressed as an ordered ring of coedges.
@@ -149,12 +140,10 @@ pub struct Loop {
     pub face: FaceId,
     /// Coedges in ring order.
     pub coedges: Vec<CoedgeId>,
-    /// Provenance/exactness metadata.
-    pub meta: EntityMeta,
 }
 
 /// A coedge: one side of an edge as used by a particular loop. Each edge is
-/// shared by exactly two coedges (its `partner`), one per adjacent face.
+/// participates in a closed radial ring around its edge.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Coedge {
     /// Arena id.
@@ -167,20 +156,13 @@ pub struct Coedge {
     pub next: CoedgeId,
     /// Previous coedge in the loop ring.
     pub previous: CoedgeId,
-    /// The coedge on the adjacent face sharing this edge, if the model is
-    /// manifold at this edge.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub partner: Option<CoedgeId>,
-    /// Next coedge around the edge for non-manifold radial adjacency.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub radial_next: Option<CoedgeId>,
+    /// Next coedge around the edge; self-reference denotes a laminar boundary.
+    pub radial_next: CoedgeId,
     /// Direction relative to the edge curve.
     pub sense: Sense,
     /// Optional parameter-space image of this coedge on the face surface.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcurve: Option<PcurveId>,
-    /// Provenance/exactness metadata.
-    pub meta: EntityMeta,
 }
 
 /// An edge: a bounded segment of a 3D curve between two vertices.
@@ -202,8 +184,6 @@ pub struct Edge {
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tolerance: Option<f64>,
-    /// Provenance/exactness metadata.
-    pub meta: EntityMeta,
 }
 
 /// A vertex: a topological point referencing a position carrier.
@@ -216,8 +196,6 @@ pub struct Vertex {
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tolerance: Option<f64>,
-    /// Provenance/exactness metadata.
-    pub meta: EntityMeta,
 }
 
 /// A position carrier for a vertex.
@@ -227,6 +205,4 @@ pub struct Point {
     pub id: PointId,
     /// Coordinates in the document's length unit.
     pub position: Point3,
-    /// Provenance/exactness metadata.
-    pub meta: EntityMeta,
 }

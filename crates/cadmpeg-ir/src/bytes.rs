@@ -57,3 +57,30 @@ where
 
     deserializer.deserialize_str(Base64Visitor)
 }
+
+/// Serde adapter for optional byte vectors.
+pub mod option {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    /// Serialize optional bytes as an optional base64 string.
+    pub fn serialize<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match bytes {
+            Some(value) => serializer.serialize_some(&STANDARD.encode(value)),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    /// Deserialize an optional base64 string.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<String>::deserialize(deserializer)?
+            .map(|value| STANDARD.decode(value).map_err(serde::de::Error::custom))
+            .transpose()
+    }
+}

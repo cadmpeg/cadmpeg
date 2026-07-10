@@ -14,6 +14,40 @@ use crate::history::AsmHistory;
 /// Current schema version for the Fusion 360 native namespace.
 pub const F3D_NATIVE_VERSION: u32 = 1;
 
+macro_rules! f3d_arenas {
+    ($macro:ident) => {
+        $macro! {
+            act_entities: ActEntity;
+            act_guids: ActGuid;
+            act_root_components: ActRootComponent;
+            design_objects: DesignObject;
+            design_entity_headers: DesignEntityHeader;
+            design_record_headers: DesignRecordHeader;
+            design_body_members: DesignBodyMember;
+            construction_recipes: ConstructionRecipe;
+            persistent_design_links: PersistentDesignLink;
+            persistent_references: PersistentReference;
+            sketch_curve_links: SketchCurveLink;
+            sketch_relations: SketchRelation;
+            sketch_points: SketchPoint;
+            sketch_curve_identities: SketchCurveIdentity;
+            lost_edge_references: LostEdgeReference;
+            asm_histories: AsmHistory;
+        }
+    };
+}
+
+macro_rules! sort_f3d_arenas {
+    ($($field:ident: $ty:ty;)*) => {
+        impl F3dNative {
+            /// Sort every native arena by its normative record identity.
+            pub(crate) fn finalize(&mut self) {
+                $(self.$field.sort_by(|left, right| left.id.cmp(&right.id));)*
+            }
+        }
+    };
+}
+
 /// Fusion 360 records retained outside the format-neutral model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct F3dNative {
@@ -92,3 +126,5 @@ impl Default for F3dNative {
         }
     }
 }
+
+f3d_arenas!(sort_f3d_arenas);

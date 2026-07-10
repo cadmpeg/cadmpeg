@@ -1039,12 +1039,12 @@ fn decode_without_geometry_falls_back_to_metadata() {
         .ir
         .unknowns
         .iter()
-        .any(|record| record.id.0 == "sldprt:source-image" && record.data.is_some()));
+        .any(|record| record.id.0 == "sldprt:file:source-image#0" && record.data.is_some()));
     assert!(result
         .ir
         .unknowns
         .iter()
-        .any(|record| record.id.0 != "sldprt:source-image" && record.sha256.len() == 64));
+        .any(|record| record.id.0 != "sldprt:file:source-image#0" && record.sha256.len() == 64));
     let source = result.ir.source.expect("source metadata");
     assert_eq!(source.format, "sldprt");
     assert_eq!(
@@ -1064,10 +1064,13 @@ fn retained_source_image_round_trips_byte_exactly() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(!result.ir.annotations.provenance.is_empty());
-    for coedge in &result.ir.coedges {
-        if let Some(partner) = &coedge.partner {
-            assert_eq!(coedge.radial_next.as_ref(), Some(partner));
-        }
+    for coedge in &result.ir.model.coedges {
+        assert!(result
+            .ir
+            .model
+            .coedges
+            .iter()
+            .any(|candidate| candidate.id == coedge.radial_next));
     }
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1079,9 +1082,12 @@ fn retained_source_image_round_trips_byte_exactly() {
 #[test]
 fn encoder_writes_source_less_ir() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    ir.bodies[0].name = None;
-    ir.faces.iter_mut().for_each(|face| face.name = None);
-    ir.edges.iter_mut().for_each(|edge| edge.param_range = None);
+    ir.model.bodies[0].name = None;
+    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    ir.model
+        .edges
+        .iter_mut()
+        .for_each(|edge| edge.param_range = None);
 
     let mut encoded = Vec::new();
     SldprtCodec.encode(&ir, &mut encoded).unwrap();
@@ -1092,10 +1098,10 @@ fn encoder_writes_source_less_ir() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(decoded.ir.bodies.len(), 1);
-    assert_eq!(decoded.ir.faces.len(), 6);
-    assert_eq!(decoded.ir.edges.len(), 12);
-    assert_eq!(decoded.ir.vertices.len(), 8);
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.faces.len(), 6);
+    assert_eq!(decoded.ir.model.edges.len(), 12);
+    assert_eq!(decoded.ir.model.vertices.len(), 8);
 }
 
 #[test]
@@ -1105,11 +1111,15 @@ fn encoder_bakes_rigid_body_transform() {
     use cadmpeg_ir::transform::Transform;
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    ir.bodies[0].name = None;
-    ir.faces.iter_mut().for_each(|face| face.name = None);
-    ir.edges.iter_mut().for_each(|edge| edge.param_range = None);
-    let original_point = ir.points[0].position;
+    ir.model.bodies[0].name = None;
+    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    ir.model
+        .edges
+        .iter_mut()
+        .for_each(|edge| edge.param_range = None);
+    let original_point = ir.model.points[0].position;
     let original_normal = ir
+        .model
         .surfaces
         .iter()
         .find_map(|surface| match surface.geometry {
@@ -1117,7 +1127,7 @@ fn encoder_bakes_rigid_body_transform() {
             _ => None,
         })
         .unwrap();
-    ir.bodies[0].transform = Some(Transform {
+    ir.model.bodies[0].transform = Some(Transform {
         rows: [
             [0.0, -1.0, 0.0, 10.0],
             [1.0, 0.0, 0.0, 20.0],
@@ -1138,16 +1148,17 @@ fn encoder_bakes_rigid_body_transform() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(decoded.ir.points.iter().any(|point| {
+    assert!(decoded.ir.model.points.iter().any(|point| {
         (point.position.x - expected_point.x).abs() < 1e-9
             && (point.position.y - expected_point.y).abs() < 1e-9
             && (point.position.z - expected_point.z).abs() < 1e-9
     }));
-    assert!(decoded.ir.surfaces.iter().any(|surface| {
+    assert!(decoded.ir.model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Plane { normal, .. } if normal == expected_normal)
     }));
     assert!(decoded
         .ir
+        .model
         .bodies
         .iter()
         .all(|body| body.transform.is_none()));
@@ -1160,7 +1171,7 @@ fn semantic_writer_regenerates_modified_planar_brep() {
     let mut result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    result.ir.points[0].position.x += 1.0;
+    result.ir.model.points[0].position.x += 1.0;
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved(&result.ir, &mut encoded)
@@ -1171,6 +1182,7 @@ fn semantic_writer_regenerates_modified_planar_brep() {
         .unwrap();
     assert!(decoded
         .ir
+        .model
         .points
         .iter()
         .any(|point| point.position.x == 1.0));
@@ -1184,7 +1196,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    solid.ir.points[0].position.z += 1.0;
+    solid.ir.model.points[0].position.z += 1.0;
     let mut solid_bytes = Vec::new();
     SldprtCodec
         .write_preserved(&solid.ir, &mut solid_bytes)
@@ -1204,7 +1216,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    sheet.ir.points[0].position.z += 1.0;
+    sheet.ir.model.points[0].position.z += 1.0;
     let mut sheet_bytes = Vec::new();
     SldprtCodec
         .write_preserved(&sheet.ir, &mut sheet_bytes)
@@ -1223,7 +1235,7 @@ fn semantic_writer_preserves_outer_header() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    decoded.ir.points[0].position.z += 1.0;
+    decoded.ir.model.points[0].position.z += 1.0;
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved(&decoded.ir, &mut encoded)
@@ -1244,7 +1256,7 @@ fn semantic_writer_regenerates_modified_analytic_breps() {
         let mut result = SldprtCodec
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap();
-        result.ir.points[0].position.x += 1.0;
+        result.ir.model.points[0].position.x += 1.0;
 
         let mut encoded = Vec::new();
         SldprtCodec
@@ -1254,17 +1266,19 @@ fn semantic_writer_regenerates_modified_analytic_breps() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
 
-        assert_eq!(decoded.ir.faces.len(), result.ir.faces.len());
-        assert_eq!(decoded.ir.curves.len(), result.ir.curves.len());
+        assert_eq!(decoded.ir.model.faces.len(), result.ir.model.faces.len());
+        assert_eq!(decoded.ir.model.curves.len(), result.ir.model.curves.len());
         assert_eq!(
             decoded
                 .ir
+                .model
                 .surfaces
                 .iter()
                 .map(|surface| &surface.geometry)
                 .collect::<Vec<_>>(),
             result
                 .ir
+                .model
                 .surfaces
                 .iter()
                 .map(|surface| &surface.geometry)
@@ -1285,36 +1299,45 @@ fn decode_builds_valid_topology_and_plane() {
         .unwrap();
 
     assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.bodies.len(), 1);
-    assert_eq!(result.ir.faces.len(), 1);
-    assert_eq!(result.ir.loops.len(), 1);
-    assert_eq!(result.ir.coedges.len(), 3);
-    assert_eq!(result.ir.edges.len(), 3);
-    assert_eq!(result.ir.surface_parameterizations.len(), 1);
-    assert_eq!(result.ir.surface_parameterizations[0].u_reference.x, 1.0);
-    assert_eq!(result.ir.vertices.len(), 3);
-    assert_eq!(result.ir.points.len(), 3);
-    assert_eq!(result.ir.surfaces.len(), 1);
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 3);
+    assert_eq!(result.ir.model.edges.len(), 3);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir.model.points.len(), 3);
+    assert_eq!(result.ir.model.surfaces.len(), 1);
 
     // The plane decoded with its stored origin and unit normal.
-    match &result.ir.surfaces[0].geometry {
-        SurfaceGeometry::Plane { origin, normal, .. } => {
+    match &result.ir.model.surfaces[0].geometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
             assert_eq!(*origin, Point3::new(0.0, 0.0, 0.0));
             assert_eq!(normal.z, 1.0);
+            assert_eq!(u_axis.x, 1.0);
         }
         other => panic!("expected plane, got {other:?}"),
     }
 
     // Coordinates converted metre → millimetre (×1000).
-    let xs: Vec<f64> = result.ir.points.iter().map(|p| p.position.x).collect();
+    let xs: Vec<f64> = result
+        .ir
+        .model
+        .points
+        .iter()
+        .map(|p| p.position.x)
+        .collect();
     assert!(xs.contains(&1000.0));
 
     // The loop ring closes and every reference resolves.
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
-    assert_eq!(result.ir.loops[0].coedges.len(), 3);
+    assert_eq!(result.ir.model.loops[0].coedges.len(), 3);
     // Edges carry no analytic curve (their carriers were null), which is legal.
-    assert!(result.ir.edges.iter().all(|e| e.curve.is_none()));
+    assert!(result.ir.model.edges.iter().all(|e| e.curve.is_none()));
 }
 
 #[test]
@@ -1329,8 +1352,8 @@ fn decode_merges_partition_and_deltas_records() {
         .unwrap();
 
     assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.faces.len(), 1);
-    assert_eq!(result.ir.points.len(), 3);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.points.len(), 3);
 }
 
 #[test]
@@ -1339,10 +1362,16 @@ fn decode_does_not_merge_colliding_configuration_sites() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.faces.len(), 1);
-    assert!(result.ir.points.iter().any(|point| point.position.x == 0.0));
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert!(result
+        .ir
+        .model
+        .points
+        .iter()
+        .any(|point| point.position.x == 0.0));
     assert!(!result
         .ir
+        .model
         .points
         .iter()
         .any(|point| point.position.x == 10_000.0));
@@ -1360,6 +1389,7 @@ fn deltas_full_record_overrides_partition_record() {
         .unwrap();
     let point = result
         .ir
+        .model
         .points
         .iter()
         .find(|point| point.id.0.ends_with("#60"))
@@ -1384,7 +1414,7 @@ fn duplicate_face_uses_emit_one_face() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.faces.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
 }
 
 #[test]
@@ -1403,11 +1433,12 @@ fn sheet_body_faces_are_retained_and_classified() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.bodies.len(), 2);
-    assert_eq!(result.ir.faces.len(), 2);
+    assert_eq!(result.ir.model.bodies.len(), 2);
+    assert_eq!(result.ir.model.faces.len(), 2);
     assert_eq!(
         result
             .ir
+            .model
             .bodies
             .iter()
             .filter(|body| body.kind == cadmpeg_ir::topology::BodyKind::Solid)
@@ -1417,6 +1448,7 @@ fn sheet_body_faces_are_retained_and_classified() {
     assert_eq!(
         result
             .ir
+            .model
             .bodies
             .iter()
             .filter(|body| body.kind == cadmpeg_ir::topology::BodyKind::Sheet)
@@ -1437,7 +1469,9 @@ fn semantic_writer_preserves_sheet_body_classification() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.points[0].position.z += 1.0;
+    decoded.ir.model.points[0].position.z += 1.0;
+    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1447,12 +1481,12 @@ fn semantic_writer_preserves_sheet_body_classification() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir.bodies.len(), 1);
+    assert_eq!(regenerated.ir.model.bodies.len(), 1);
     assert_eq!(
-        regenerated.ir.bodies[0].kind,
+        regenerated.ir.model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
     );
-    assert_eq!(regenerated.ir.faces.len(), 1);
+    assert_eq!(regenerated.ir.model.faces.len(), 1);
     assert_eq!(
         regenerated
             .ir
@@ -1472,7 +1506,7 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.faces[0].surface = cadmpeg_ir::ids::SurfaceId("missing".into());
+    decoded.ir.model.faces[0].surface = cadmpeg_ir::ids::SurfaceId("missing".into());
     let error = SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap_err();
@@ -1487,7 +1521,7 @@ fn semantic_writer_rejects_unrepresented_typed_fields() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.edges[0].param_range = Some([0.0, 1.0]);
+    decoded.ir.model.edges[0].param_range = Some([0.0, 1.0]);
     let error = SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap_err();
@@ -1524,15 +1558,14 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
 }
 
 #[test]
-fn semantic_writer_converts_document_units_to_native_metres() {
+fn semantic_writer_converts_millimetres_to_native_metres() {
     let mut decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.units.length = cadmpeg_ir::units::LengthUnit::Inch;
-    decoded.ir.points[0].position.x = 2.0;
+    decoded.ir.model.points[0].position.x = 50.8;
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1544,6 +1577,7 @@ fn semantic_writer_converts_document_units_to_native_metres() {
 
     assert!(regenerated
         .ir
+        .model
         .points
         .iter()
         .any(|point| (point.position.x - 50.8).abs() < 1e-5));
@@ -1559,17 +1593,19 @@ fn closed_cylinder_gets_derived_seam() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.faces[0].loops.len(), 1);
-    assert_eq!(result.ir.loops[0].coedges.len(), 4);
-    assert_eq!(result.ir.pcurves.len(), 4);
+    assert_eq!(result.ir.model.faces[0].loops.len(), 1);
+    assert_eq!(result.ir.model.loops[0].coedges.len(), 4);
+    assert_eq!(result.ir.model.pcurves.len(), 4);
     assert!(result
         .ir
+        .model
         .coedges
         .iter()
         .all(|coedge| coedge.pcurve.is_some()));
-    assert_eq!(result.ir.edges.len(), 3);
+    assert_eq!(result.ir.model.edges.len(), 3);
     assert!(result
         .ir
+        .model
         .curves
         .iter()
         .any(|curve| matches!(curve.geometry, CurveGeometry::Line { .. })));
@@ -1581,24 +1617,35 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.edges.len(), 4);
-    assert_eq!(result.ir.loops[0].coedges.len(), 4);
-    assert_eq!(result.ir.pcurves.len(), 3);
+    assert_eq!(result.ir.model.edges.len(), 4);
+    assert_eq!(result.ir.model.loops[0].coedges.len(), 4);
+    assert_eq!(result.ir.model.pcurves.len(), 3);
     let seam = result
         .ir
+        .model
         .edges
         .iter()
-        .find(|edge| edge.meta.provenance.tag.as_deref() == Some("derived_sphere_seam"))
+        .find(|edge| {
+            result
+                .ir
+                .annotations
+                .provenance
+                .get(&edge.id.0)
+                .and_then(|note| note.tag.as_deref())
+                == Some("derived_sphere_seam")
+        })
         .expect("sphere seam");
     assert_eq!(seam.start, seam.end);
     let vertex = result
         .ir
+        .model
         .vertices
         .iter()
         .find(|vertex| vertex.id == seam.start)
         .unwrap();
     let point = result
         .ir
+        .model
         .points
         .iter()
         .find(|point| point.id == vertex.point)
@@ -1618,8 +1665,8 @@ fn decode_recovers_overlapping_topology_records() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.points.len(), 3);
-    assert_eq!(result.ir.vertices.len(), 3);
+    assert_eq!(result.ir.model.points.len(), 3);
+    assert_eq!(result.ir.model.vertices.len(), 3);
 }
 
 #[test]
@@ -1628,9 +1675,9 @@ fn decode_recovers_tripled_deltas_topology() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.coedges.len(), 3);
-    assert_eq!(result.ir.points.len(), 3);
-    assert_eq!(result.ir.faces.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 3);
+    assert_eq!(result.ir.model.points.len(), 3);
+    assert_eq!(result.ir.model.faces.len(), 1);
 }
 
 #[test]
@@ -1642,6 +1689,7 @@ fn decode_resolves_prefixed_deltas_edge_curve() {
         .unwrap();
     assert!(result
         .ir
+        .model
         .curves
         .iter()
         .any(|curve| matches!(curve.geometry, CurveGeometry::Line { .. })));
@@ -1661,11 +1709,11 @@ fn decode_preserves_explicit_body_membership() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.bodies.len(), 2);
-    assert_eq!(result.ir.shells.len(), 2);
-    assert_eq!(result.ir.faces.len(), 2);
-    assert_eq!(result.ir.bodies[0].id.0, "sldprt:body#500");
-    assert_eq!(result.ir.bodies[1].id.0, "sldprt:body#501");
+    assert_eq!(result.ir.model.bodies.len(), 2);
+    assert_eq!(result.ir.model.shells.len(), 2);
+    assert_eq!(result.ir.model.faces.len(), 2);
+    assert_eq!(result.ir.model.bodies[0].id.0, "sldprt:brep:body#500");
+    assert_eq!(result.ir.model.bodies[1].id.0, "sldprt:brep:body#501");
 }
 
 #[test]
@@ -1681,7 +1729,7 @@ fn semantic_writer_preserves_multiple_body_ownership() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.points[0].position.z += 1.0;
+    decoded.ir.model.points[0].position.z += 1.0;
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1691,21 +1739,30 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir.bodies.len(), 2);
-    assert_eq!(regenerated.ir.lumps.len(), 2);
-    assert_eq!(regenerated.ir.shells.len(), 2);
+    assert_eq!(regenerated.ir.model.bodies.len(), 2);
+    assert_eq!(regenerated.ir.model.regions.len(), 2);
+    assert_eq!(regenerated.ir.model.shells.len(), 2);
     assert!(regenerated
         .ir
+        .model
         .shells
         .iter()
         .all(|shell| shell.faces.len() == 1));
-    assert!(regenerated.ir.lumps.iter().all(|lump| {
-        lump.meta.provenance.tag.as_deref() == Some("00_51_lump")
-            && lump.meta.exactness == cadmpeg_ir::provenance::Exactness::ByteExact
+    assert!(regenerated.ir.model.regions.iter().all(|region| {
+        regenerated.ir.annotations.provenance[&region.id.0]
+            .tag
+            .as_deref()
+            == Some("synthetic_grouping")
+            && regenerated.ir.annotations.exactness[&region.id.0].entity
+                == cadmpeg_ir::Exactness::Derived
     }));
-    assert!(regenerated.ir.shells.iter().all(|shell| {
-        shell.meta.provenance.tag.as_deref() == Some("00_51_shell")
-            && shell.meta.exactness == cadmpeg_ir::provenance::Exactness::ByteExact
+    assert!(regenerated.ir.model.shells.iter().all(|shell| {
+        regenerated.ir.annotations.provenance[&shell.id.0]
+            .tag
+            .as_deref()
+            == Some("synthetic_grouping")
+            && regenerated.ir.annotations.exactness[&shell.id.0].entity
+                == cadmpeg_ir::Exactness::Derived
     }));
 }
 
@@ -1743,18 +1800,25 @@ fn edge_uses_decoded_line_curve() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.curves.len(), 1);
-    match &result.ir.curves[0].geometry {
+    assert_eq!(result.ir.model.curves.len(), 1);
+    match &result.ir.model.curves[0].geometry {
         CurveGeometry::Line { direction, .. } => assert_eq!(direction.x, 1.0),
         other => panic!("expected line, got {other:?}"),
     }
     assert_eq!(
-        result.ir.edges.iter().filter(|e| e.curve.is_some()).count(),
+        result
+            .ir
+            .model
+            .edges
+            .iter()
+            .filter(|e| e.curve.is_some())
+            .count(),
         1
     );
-    assert_eq!(result.ir.pcurves.len(), 1);
+    assert_eq!(result.ir.model.pcurves.len(), 1);
     assert!(result
         .ir
+        .model
         .coedges
         .iter()
         .any(|coedge| coedge.pcurve.is_some()));
@@ -1782,6 +1846,7 @@ fn edge_uses_decode_nurbs_curve() {
 
     let nurbs = result
         .ir
+        .model
         .curves
         .iter()
         .find_map(|curve| match &curve.geometry {
@@ -1814,6 +1879,7 @@ fn faces_decode_nurbs_surface() {
 
     let nurbs = result
         .ir
+        .model
         .surfaces
         .iter()
         .find_map(|surface| match &surface.geometry {
@@ -1843,12 +1909,12 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let CurveGeometry::Nurbs(curve) = &mut decoded.ir.curves[0].geometry else {
+    let CurveGeometry::Nurbs(curve) = &mut decoded.ir.model.curves[0].geometry else {
         panic!("expected NURBS curve");
     };
     curve.control_points[1].y += 250.0;
     let expected_curve = curve.clone();
-    let SurfaceGeometry::Nurbs(surface) = &mut decoded.ir.surfaces[0].geometry else {
+    let SurfaceGeometry::Nurbs(surface) = &mut decoded.ir.model.surfaces[0].geometry else {
         panic!("expected NURBS surface");
     };
     surface.control_points[3].z += 500.0;
@@ -1862,10 +1928,10 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated.ir.curves.iter().any(
+    assert!(regenerated.ir.model.curves.iter().any(
         |curve| matches!(&curve.geometry, CurveGeometry::Nurbs(value) if value == &expected_curve)
     ));
-    assert!(regenerated.ir.surfaces.iter().any(
+    assert!(regenerated.ir.model.surfaces.iter().any(
         |surface| matches!(&surface.geometry, SurfaceGeometry::Nurbs(value) if value == &expected_surface)
     ));
 }
@@ -1904,6 +1970,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
         .unwrap();
     let curve = decoded
         .ir
+        .model
         .curves
         .iter_mut()
         .find_map(|curve| match &mut curve.geometry {
@@ -1916,6 +1983,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
     let expected_curve = curve.clone();
     let surface = decoded
         .ir
+        .model
         .surfaces
         .iter_mut()
         .find_map(|surface| match &mut surface.geometry {
@@ -1936,14 +2004,15 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated.ir.curves.iter().any(
+    assert!(regenerated.ir.model.curves.iter().any(
         |curve| matches!(&curve.geometry, CurveGeometry::Nurbs(value) if value == &expected_curve)
     ));
-    assert!(regenerated.ir.surfaces.iter().any(
+    assert!(regenerated.ir.model.surfaces.iter().any(
         |surface| matches!(&surface.geometry, SurfaceGeometry::Nurbs(value) if value == &expected_surface)
     ));
     assert!(regenerated
         .ir
+        .model
         .surfaces
         .iter()
         .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. })));
@@ -1962,9 +2031,15 @@ fn nurbs_boundary_curve_gets_isoparametric_pcurve() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir.pcurves.iter().any(
-        |pcurve| pcurve.meta.provenance.tag.as_deref() == Some("derived_nurbs_boundary_pcurve")
-    ));
+    assert!(result.ir.model.pcurves.iter().any(|pcurve| {
+        result
+            .ir
+            .annotations
+            .provenance
+            .get(&pcurve.id.0)
+            .and_then(|note| note.tag.as_deref())
+            == Some("derived_nurbs_boundary_pcurve")
+    }));
 }
 
 #[test]
@@ -1976,13 +2051,16 @@ fn decode_transfers_body_material_color() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    let color = result.ir.bodies[0].color.expect("body color");
+    let color = result.ir.model.bodies[0].color.expect("body color");
     assert!((color.r - 32.0 / 255.0).abs() < 1e-6);
     assert!((color.g - 64.0 / 255.0).abs() < 1e-6);
     assert!((color.b - 128.0 / 255.0).abs() < 1e-6);
-    assert_eq!(result.ir.appearances.len(), 1);
-    assert_eq!(result.ir.appearance_bindings.len(), 1);
-    assert_eq!(result.ir.appearances[0].name.as_deref(), Some("Steel"));
+    assert_eq!(result.ir.model.appearances.len(), 1);
+    assert_eq!(result.ir.model.appearance_bindings.len(), 1);
+    assert_eq!(
+        result.ir.model.appearances[0].name.as_deref(),
+        Some("Steel")
+    );
 }
 
 #[test]
@@ -1997,7 +2075,9 @@ fn semantic_writer_preserves_body_material() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.points[0].position.z += 1.0;
+    decoded.ir.model.points[0].position.z += 1.0;
+    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -2007,13 +2087,17 @@ fn semantic_writer_preserves_body_material() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir.bodies[0].name.as_deref(), Some("Steel"));
-    let color = regenerated.ir.bodies[0].color.unwrap();
+    assert_eq!(
+        regenerated.ir.model.bodies[0].name.as_deref(),
+        Some("Steel")
+    );
+    let color = regenerated.ir.model.bodies[0].color.unwrap();
     assert!((color.r - 32.0 / 255.0).abs() < 1e-6);
     assert!((color.g - 64.0 / 255.0).abs() < 1e-6);
     assert!((color.b - 128.0 / 255.0).abs() < 1e-6);
     assert!(regenerated
         .ir
+        .model
         .appearances
         .iter()
         .any(|appearance| appearance.name.as_deref() == Some("Steel")));
@@ -2033,12 +2117,14 @@ fn decode_binds_entity53_color_to_face() {
         .unwrap();
     let binding = result
         .ir
+        .model
         .appearance_bindings
         .iter()
         .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
         .expect("face binding");
     let appearance = result
         .ir
+        .model
         .appearances
         .iter()
         .find(|appearance| appearance.id == binding.appearance)
@@ -2062,7 +2148,7 @@ fn semantic_writer_preserves_face_appearance() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.points[0].position.z += 1.0;
+    decoded.ir.model.points[0].position.z += 1.0;
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -2073,12 +2159,14 @@ fn semantic_writer_preserves_face_appearance() {
         .unwrap();
     let binding = regenerated
         .ir
+        .model
         .appearance_bindings
         .iter()
         .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
         .expect("face binding");
     let color = regenerated
         .ir
+        .model
         .appearances
         .iter()
         .find(|appearance| appearance.id == binding.appearance)
@@ -2101,12 +2189,14 @@ fn decode_binds_adjacent_entity53_color_to_disc14_face() {
         .unwrap();
     let binding = result
         .ir
+        .model
         .appearance_bindings
         .iter()
         .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
         .expect("face binding");
     let color = result
         .ir
+        .model
         .appearances
         .iter()
         .find(|appearance| appearance.id == binding.appearance)
@@ -2140,15 +2230,21 @@ fn decode_reports_display_list_geometry() {
             .map(String::as_str),
         Some("1")
     );
-    assert_eq!(result.ir.tessellations.len(), 1);
-    assert_eq!(result.ir.tessellations[0].vertices.len(), 3);
-    assert_eq!(result.ir.tessellations[0].vertices[1].x, 1000.0);
-    assert_eq!(result.ir.tessellations[0].triangles, vec![[0, 1, 2]]);
-    assert_eq!(result.ir.tessellations[0].strip_lengths, vec![3]);
-    assert_eq!(result.ir.tessellations[0].normals.len(), 3);
-    assert_eq!(result.ir.tessellations[0].channels.len(), 6);
+    assert_eq!(result.ir.model.tessellations.len(), 1);
+    assert_eq!(result.ir.model.tessellations[0].vertices.len(), 3);
+    assert_eq!(result.ir.model.tessellations[0].vertices[1].x, 1000.0);
+    assert_eq!(result.ir.model.tessellations[0].triangles, vec![[0, 1, 2]]);
+    assert_eq!(result.ir.model.tessellations[0].strip_lengths, vec![3]);
+    assert_eq!(result.ir.model.tessellations[0].normals.len(), 3);
+    assert_eq!(result.ir.model.tessellations[0].channels.len(), 6);
     assert!(result.ir.unknowns.iter().any(|record| {
-        record.meta.provenance.tag.as_deref() == Some("displaylist_tessellation")
+        result
+            .ir
+            .annotations
+            .provenance
+            .get(&record.id.0)
+            .and_then(|note| note.tag.as_deref())
+            == Some("displaylist_tessellation")
             && record.data.is_some()
     }));
 }
@@ -2160,7 +2256,7 @@ fn decode_extracts_parametric_history() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    let history = &result.ir.feature_histories[0];
+    let history = &result.ir.native.sldprt.as_ref().unwrap().feature_histories[0];
     assert_eq!(history.part_name.as_deref(), Some("Bracket"));
     assert_eq!(history.configurations[0].material.as_deref(), Some("Steel"));
     assert_eq!(history.features[0].kind, "BossExtrude");
@@ -2177,8 +2273,8 @@ fn semantic_writer_preserves_parametric_history() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.points[0].position.z += 1.0;
-    decoded.ir.feature_histories[0].features[0]
+    decoded.ir.model.points[0].position.z += 1.0;
+    decoded.ir.native.sldprt.as_mut().unwrap().feature_histories[0].features[0]
         .parameters
         .insert("Depth".into(), "15mm".into());
 
@@ -2190,7 +2286,13 @@ fn semantic_writer_preserves_parametric_history() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    let history = &regenerated.ir.feature_histories[0];
+    let history = &regenerated
+        .ir
+        .native
+        .sldprt
+        .as_ref()
+        .unwrap()
+        .feature_histories[0];
     assert_eq!(history.part_name.as_deref(), Some("Bracket"));
     assert_eq!(history.configurations[0].name, "Default");
     assert_eq!(history.configurations[0].material.as_deref(), Some("Steel"));
@@ -2208,18 +2310,48 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.feature_input_lanes.len(), 1);
-    let lane = &decoded.ir.feature_input_lanes[0];
-    assert_eq!(lane.configuration.as_deref(), Some("0"));
-    assert_eq!(lane.sketch_entities[0].kind, SketchInputKind::Point);
-    assert_eq!(lane.sketch_entities[1].kind, SketchInputKind::Curve);
-    assert_eq!(lane.sketch_entities[2].kind, SketchInputKind::Arc);
     assert_eq!(
-        lane.sketch_entities[3].kind,
-        SketchInputKind::ConstrainedPoint
+        decoded
+            .ir
+            .native
+            .sldprt
+            .as_ref()
+            .unwrap()
+            .feature_input_lanes
+            .len(),
+        1
     );
-    assert_eq!(lane.sketch_entities[4].kind, SketchInputKind::Native(9));
-    decoded.ir.feature_input_lanes[0].sketch_entities[1].kind = SketchInputKind::Native(5);
+    let lane = &decoded
+        .ir
+        .native
+        .sldprt
+        .as_ref()
+        .unwrap()
+        .feature_input_lanes[0];
+    assert_eq!(lane.configuration.as_deref(), Some("0"));
+    let by_ordinal = |ordinal| {
+        lane.sketch_entities
+            .iter()
+            .find(|entity| entity.ordinal == ordinal)
+            .unwrap()
+    };
+    assert_eq!(by_ordinal(0).kind, SketchInputKind::Point);
+    assert_eq!(by_ordinal(1).kind, SketchInputKind::Curve);
+    assert_eq!(by_ordinal(2).kind, SketchInputKind::Arc);
+    assert_eq!(by_ordinal(3).kind, SketchInputKind::ConstrainedPoint);
+    assert_eq!(by_ordinal(4).kind, SketchInputKind::Native(9));
+    decoded
+        .ir
+        .native
+        .sldprt
+        .as_mut()
+        .unwrap()
+        .feature_input_lanes[0]
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.ordinal == 1)
+        .unwrap()
+        .kind = SketchInputKind::Native(5);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -2237,7 +2369,18 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        regenerated.ir.feature_input_lanes[0].sketch_entities[1].kind,
+        regenerated
+            .ir
+            .native
+            .sldprt
+            .as_ref()
+            .unwrap()
+            .feature_input_lanes[0]
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.ordinal == 1)
+            .unwrap()
+            .kind,
         SketchInputKind::Native(5)
     );
 }
@@ -2251,6 +2394,7 @@ fn decode_extracts_document_envelope() {
         .unwrap();
     let envelope = result
         .ir
+        .model
         .attributes
         .iter()
         .find(|attribute| attribute.name == "bounding_envelope")
@@ -2261,6 +2405,7 @@ fn decode_extracts_document_envelope() {
     assert_eq!(values, &[10.0, 20.0, -30.0, 40.0]);
     let plane = result
         .ir
+        .model
         .attributes
         .iter()
         .find(|attribute| attribute.name == "default_reference_plane")
@@ -2275,6 +2420,7 @@ fn decode_extracts_document_envelope() {
     assert_eq!(frame[2], 1.0);
     let part = result
         .ir
+        .model
         .attributes
         .iter()
         .find(|attribute| attribute.name == "part_record")
@@ -2285,6 +2431,7 @@ fn decode_extracts_document_envelope() {
     );
     let configuration = result
         .ir
+        .model
         .attributes
         .iter()
         .find(|attribute| attribute.name == "configuration_manager")
@@ -2292,6 +2439,7 @@ fn decode_extracts_document_envelope() {
     assert_eq!(configuration.values[1], AttributeValue::Integer(3));
     let units = result
         .ir
+        .model
         .attributes
         .iter()
         .find(|attribute| attribute.name == "source_linear_unit_code")
@@ -2307,10 +2455,11 @@ fn semantic_writer_preserves_document_metadata() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.points[0].position.z += 1.0;
+    decoded.ir.model.points[0].position.z += 1.0;
 
     let expected = decoded
         .ir
+        .model
         .attributes
         .iter()
         .map(|attribute| (attribute.name.clone(), attribute.values.clone()))
@@ -2324,6 +2473,7 @@ fn semantic_writer_preserves_document_metadata() {
         .unwrap();
     let actual = regenerated
         .ir
+        .model
         .attributes
         .iter()
         .map(|attribute| (attribute.name.clone(), attribute.values.clone()))
@@ -2340,7 +2490,7 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    decoded.ir.points[0].position.z += 1.0;
+    decoded.ir.model.points[0].position.z += 1.0;
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -2351,7 +2501,13 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
         .unwrap();
 
     assert!(regenerated.ir.unknowns.iter().any(|record| {
-        record.meta.provenance.stream == "Contents/CustomData"
+        regenerated
+            .ir
+            .annotations
+            .provenance
+            .get(&record.id.0)
+            .and_then(|note| regenerated.ir.annotations.streams.get(note.stream as usize))
+            .is_some_and(|stream| stream == "Contents/CustomData")
             && record.data.as_deref() == Some(payload.as_slice())
     }));
 }
@@ -2376,9 +2532,9 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    decoded.ir.points[0].position.z += 2.0;
-    decoded.ir.tessellations[0].vertices[0].z = 125.0;
-    decoded.ir.feature_histories[0].features[0]
+    decoded.ir.model.points[0].position.z += 2.0;
+    decoded.ir.model.tessellations[0].vertices[0].z = 125.0;
+    decoded.ir.native.sldprt.as_mut().unwrap().feature_histories[0].features[0]
         .parameters
         .insert("Depth".into(), "20mm".into());
 
@@ -2390,19 +2546,37 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir.bodies[0].name.as_deref(), Some("Steel"));
+    assert_eq!(
+        regenerated.ir.model.bodies[0].name.as_deref(),
+        Some("Steel")
+    );
     assert!(regenerated
         .ir
+        .model
         .appearance_bindings
         .iter()
         .any(|binding| matches!(binding.target, AppearanceTarget::Face(_))));
-    assert_eq!(regenerated.ir.tessellations[0].vertices[0].z, 125.0);
+    assert_eq!(regenerated.ir.model.tessellations[0].vertices[0].z, 125.0);
     assert_eq!(
-        regenerated.ir.feature_histories[0].features[0].parameters["Depth"],
+        regenerated
+            .ir
+            .native
+            .sldprt
+            .as_ref()
+            .unwrap()
+            .feature_histories[0]
+            .features[0]
+            .parameters["Depth"],
         "20mm"
     );
     assert!(regenerated.ir.unknowns.iter().any(|record| {
-        record.meta.provenance.stream == "Contents/CustomData"
+        regenerated
+            .ir
+            .annotations
+            .provenance
+            .get(&record.id.0)
+            .and_then(|note| regenerated.ir.annotations.streams.get(note.stream as usize))
+            .is_some_and(|stream| stream == "Contents/CustomData")
             && record.data.as_deref() == Some(b"opaque-state".as_slice())
     }));
 
@@ -2410,7 +2584,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .ir
         .unknowns
         .iter()
-        .find(|record| record.id.0 == "sldprt:source-image")
+        .find(|record| record.id.0 == "sldprt:file:source-image#0")
         .and_then(|record| record.data.as_ref())
         .unwrap();
     let scan = container::scan_bytes(written);
@@ -2454,10 +2628,10 @@ fn face_on_untyped_surface_keeps_topology() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.faces.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
     let SurfaceGeometry::Unknown {
         record: Some(record),
-    } = &result.ir.surfaces[0].geometry
+    } = &result.ir.model.surfaces[0].geometry
     else {
         panic!("opaque surface has no replay record");
     };
@@ -2467,7 +2641,7 @@ fn face_on_untyped_surface_keeps_topology() {
         .iter()
         .find(|unknown| unknown.id == *record)
         .expect("opaque surface record");
-    assert!(retained.links.contains(&result.ir.surfaces[0].id.0));
+    assert!(retained.links.contains(&result.ir.model.surfaces[0].id.0));
     assert!(result
         .report
         .losses
@@ -2475,6 +2649,62 @@ fn face_on_untyped_surface_keeps_topology() {
         .any(|l| l.message.contains("does not type")));
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
+}
+
+#[test]
+fn opaque_curve_is_retained_and_does_not_block_point_edits() {
+    use cadmpeg_ir::geometry::CurveGeometry;
+
+    let mut body = triangle_body();
+    body.extend(edge_use(40, 999));
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let curve_id = decoded.ir.model.edges[0]
+        .curve
+        .as_ref()
+        .expect("opaque edge curve");
+    let curve = decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *curve_id)
+        .expect("opaque curve carrier");
+    let CurveGeometry::Unknown {
+        record: Some(record),
+    } = &curve.geometry
+    else {
+        panic!("opaque curve has no replay record");
+    };
+    let retained = decoded
+        .ir
+        .unknowns
+        .iter()
+        .find(|unknown| unknown.id == *record)
+        .expect("opaque curve record");
+    assert!(retained.links.contains(&curve.id.0));
+
+    decoded.ir.model.points[1].position.x = 1_500.0;
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(regenerated.ir.model.points[1].position.x, 1_500.0);
+    assert!(regenerated
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. })));
 }
 
 #[test]
@@ -2507,7 +2737,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    decoded.ir.points[1].position.x = 1_250.0;
+    decoded.ir.model.points[1].position.x = 1_250.0;
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -2517,23 +2747,62 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir.points[1].position.x, 1_250.0);
+    assert_eq!(regenerated.ir.model.points[1].position.x, 1_250.0);
     assert!(matches!(
-        regenerated.ir.surfaces[0].geometry,
+        regenerated.ir.model.surfaces[0].geometry,
         SurfaceGeometry::Unknown { .. }
     ));
-    assert_eq!(regenerated.ir.faces.len(), 1);
+    assert_eq!(regenerated.ir.model.faces.len(), 1);
     let written = regenerated
         .ir
         .unknowns
         .iter()
-        .find(|record| record.id.0 == "sldprt:source-image")
+        .find(|record| record.id.0 == "sldprt:file:source-image#0")
         .and_then(|record| record.data.as_deref())
         .unwrap();
     let scan = container::scan_bytes(written);
     assert!(scan.blocks.iter().any(|block| {
         block.section.as_deref() == Some("Contents/Config-0-Deltas") && block.payload == deltas
     }));
+}
+
+#[test]
+fn native_patch_requires_point_provenance_annotation() {
+    let mut body = Vec::new();
+    body.extend(bridge(10, 20, 999));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    body.extend(edge_use(40, 0));
+    body.extend(edge_use(41, 0));
+    body.extend(edge_use(42, 0));
+    body.extend(vertex_use(50, 60));
+    body.extend(vertex_use(51, 61));
+    body.extend(vertex_use(52, 62));
+    body.extend(world_point(60, [0.0, 0.0, 0.0]));
+    body.extend(world_point(61, [1.0, 0.0, 0.0]));
+    body.extend(world_point(62, [0.0, 1.0, 0.0]));
+
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let point_id = decoded.ir.model.points[1].id.0.clone();
+    assert!(decoded.ir.annotations.provenance.contains_key(&point_id));
+    decoded.ir.model.points[1].position.x = 1_250.0;
+    decoded.ir.annotations.provenance.remove(&point_id);
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::Malformed(message)
+            if message.contains("requires provenance annotation") && message.contains(&point_id)
+    ));
 }
 
 #[test]
@@ -2566,6 +2835,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         .unwrap();
     let plane = decoded
         .ir
+        .model
         .surfaces
         .iter_mut()
         .find(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
@@ -2576,6 +2846,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
     origin.x = 25.0;
     let line = decoded
         .ir
+        .model
         .curves
         .iter_mut()
         .find(|curve| matches!(curve.geometry, CurveGeometry::Line { .. }))
@@ -2593,16 +2864,17 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated.ir.surfaces.iter().any(|surface| matches!(
+    assert!(regenerated.ir.model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Plane { origin, .. } if origin.x == 25.0
     )));
     assert!(regenerated
         .ir
+        .model
         .surfaces
         .iter()
         .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. })));
-    assert!(regenerated.ir.curves.iter().any(|curve| matches!(
+    assert!(regenerated.ir.model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Line { origin, .. } if origin.y == 12.0
     )));
@@ -2668,7 +2940,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .unwrap();
     let brep_hash = crate::decode::brep_semantic_hash(&decoded.ir);
     let semantic_hash = crate::decode::semantic_hash(&decoded.ir);
-    decoded.ir.feature_histories[0].features[0]
+    decoded.ir.native.sldprt.as_mut().unwrap().feature_histories[0].features[0]
         .parameters
         .insert("Depth".into(), "30mm".into());
     decoded.ir.annotations.exactness.clear();
@@ -2712,11 +2984,19 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir.surfaces[0].geometry,
+        regenerated.ir.model.surfaces[0].geometry,
         SurfaceGeometry::Unknown { .. }
     ));
     assert_eq!(
-        regenerated.ir.feature_histories[0].features[0].parameters["Depth"],
+        regenerated
+            .ir
+            .native
+            .sldprt
+            .as_ref()
+            .unwrap()
+            .feature_histories[0]
+            .features[0]
+            .parameters["Depth"],
         "30mm"
     );
 }
@@ -2729,8 +3009,8 @@ fn semantic_writer_preserves_display_list_geometry() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.points[0].position.z += 1.0;
-    decoded.ir.tessellations[0].vertices[0].z = 250.0;
+    decoded.ir.model.points[0].position.z += 1.0;
+    decoded.ir.model.tessellations[0].vertices[0].z = 250.0;
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -2740,8 +3020,8 @@ fn semantic_writer_preserves_display_list_geometry() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir.tessellations.len(), 1);
-    let mesh = &regenerated.ir.tessellations[0];
+    assert_eq!(regenerated.ir.model.tessellations.len(), 1);
+    let mesh = &regenerated.ir.model.tessellations[0];
     assert_eq!(mesh.vertices[0].z, 250.0);
     assert_eq!(mesh.triangles, vec![[0, 1, 2]]);
     assert_eq!(mesh.strip_lengths, vec![3]);

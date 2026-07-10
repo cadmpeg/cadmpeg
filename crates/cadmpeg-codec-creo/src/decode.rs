@@ -25,11 +25,11 @@ use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::Exactness;
 
 use crate::container::{self, role, ContainerScan};
 
@@ -42,7 +42,7 @@ pub fn decode(
 
     let ir = build_ir(&scan);
     let report = build_report(&scan, options.container_only);
-    Ok(DecodeResult { ir, report })
+    Ok(DecodeResult::new(ir, report))
 }
 
 /// Build the metadata IR: source attributes plus the PSB geometry sections
@@ -55,17 +55,15 @@ fn build_ir(scan: &ContainerScan) -> CadIr {
     for section in scan.sections.iter().filter(|s| s.role == role::GEOMETRY) {
         let end = (section.offset + section.length).min(scan.data.len());
         let bytes = &scan.data[section.offset..end];
-        let id = UnknownId(format!("creo:{}@{}", section.name, section.offset));
-        let meta = EntityMeta {
-            provenance: Provenance {
-                format: "creo".to_string(),
-                stream: section.name.clone(),
-                offset: section.offset as u64,
-                tag: Some("psb_geometry_section".to_string()),
-            },
-            exactness: Exactness::Unknown,
-        };
-        annotate(&mut annotations, &id, &meta);
+        let id = UnknownId(format!("creo:{}:section#{}", section.name, section.offset));
+        annotate(
+            &mut annotations,
+            &id,
+            &section.name,
+            section.offset as u64,
+            "psb_geometry_section",
+            Exactness::Unknown,
+        );
         ir.unknowns.push(UnknownRecord {
             id,
             offset: section.offset as u64,
@@ -73,22 +71,19 @@ fn build_ir(scan: &ContainerScan) -> CadIr {
             sha256: sha256_hex(bytes),
             data: Some(bytes.to_vec()),
             links: Vec::new(),
-            meta,
         });
     }
     for plane in &scan.datum_planes {
         let id = SurfaceId(format!("creo:datum-plane#{}", plane.id));
-        let meta = EntityMeta {
-            provenance: Provenance {
-                format: "creo".to_string(),
-                stream: "ActDatums".to_string(),
-                offset: plane.offset_in_payload as u64,
-                tag: Some("datum_plane_outline".to_string()),
-            },
-            exactness: Exactness::Derived,
-        };
-        annotate(&mut annotations, &id, &meta);
-        ir.surfaces.push(Surface {
+        annotate(
+            &mut annotations,
+            &id,
+            "ActDatums",
+            plane.offset_in_payload as u64,
+            "datum_plane_outline",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(
@@ -97,23 +92,29 @@ fn build_ir(scan: &ContainerScan) -> CadIr {
                     plane.normal[2] * plane.offset,
                 ),
                 normal: Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
-                u_axis: None,
+                u_axis: cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
+                    plane.normal[0],
+                    plane.normal[1],
+                    plane.normal[2],
+                )),
             },
-            meta,
         });
     }
     ir.annotations = annotations.build();
     ir
 }
 
-fn annotate(annotations: &mut AnnotationBuilder, id: impl std::fmt::Display, meta: &EntityMeta) {
-    let provenance = &meta.provenance;
-    let stream = annotations.stream(format!("{}:{}", provenance.format, provenance.stream));
-    let note = annotations.note(id.to_string(), stream, provenance.offset);
-    if let Some(tag) = &provenance.tag {
-        note.tag(tag);
-    }
-    annotations.exactness(id, meta.exactness);
+fn annotate(
+    annotations: &mut AnnotationBuilder,
+    id: impl std::fmt::Display,
+    source_stream: &str,
+    offset: u64,
+    tag: &str,
+    exactness: Exactness,
+) {
+    let stream = annotations.stream(format!("creo:{source_stream}"));
+    annotations.note(id.to_string(), stream, offset).tag(tag);
+    annotations.exactness(id, exactness);
 }
 
 fn source_meta(scan: &ContainerScan) -> SourceMeta {
@@ -262,7 +263,7 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
         category: LossCategory::Topology,
         severity: Severity::Blocking,
         message: "Native curve half-edges and closed loops were decoded, but the IR B-rep graph \
-                  (body/lump/shell/face/loop/coedge/edge/vertex) was not emitted: face-instance \
+                  (body/region/shell/face/loop/coedge/edge/vertex) was not emitted: face-instance \
                   partitioning, surface parameter bindings, curve geometry, and vertex coordinates \
                   remain incomplete."
             .to_string(),

@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::design::{ActEntity, ActGuid, ActRootComponent};
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 
 use crate::container::{self, role, ContainerScan};
 
@@ -31,24 +30,24 @@ pub fn decode(reader: &mut dyn ReadSeek, scan: &ContainerScan) -> Result<Decoded
             by_key.insert(
                 (item.record_index, item.entity_id.clone()),
                 ActEntity {
+                    id: format!("f3d:{}:act-entity#{}", entry.name, item.record_index),
                     record_index: item.record_index,
                     entity_id: item.entity_id,
                     in_table: true,
                     channel_class_tag: None,
                     channels: BTreeMap::new(),
-                    meta: meta(&entry.name, item.offset, "ACTTableEntry"),
                 },
             );
         }
         for group in groups {
             let key = (group.record_index, group.entity_id.clone());
             let entity = by_key.entry(key).or_insert_with(|| ActEntity {
+                id: format!("f3d:{}:act-entity#{}", entry.name, group.record_index),
                 record_index: group.record_index,
                 entity_id: group.entity_id.clone(),
                 in_table: false,
                 channel_class_tag: None,
                 channels: BTreeMap::new(),
-                meta: meta(&entry.name, group.offset, "ACTChannelGroup"),
             });
             entity.channel_class_tag = Some(group.class_tag);
             entity.channels = group.channels;
@@ -59,9 +58,9 @@ pub fn decode(reader: &mut dyn ReadSeek, scan: &ContainerScan) -> Result<Decoded
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, (guid, offset))| ActGuid {
+                    id: format!("f3d:{}:act-guid#{offset}", entry.name),
                     ordinal: ordinal as u32,
                     guid,
-                    meta: meta(&entry.name, offset, "ACTGuid"),
                 }),
         );
     }
@@ -133,6 +132,7 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
             continue;
         };
         out.push(ActRootComponent {
+            id: format!("f3d:{stream}:act-root-component#{position}"),
             record_index: u32::from_le_bytes(record_raw.try_into().expect(
                 "invariant: record_raw is a 4-byte slice from bytes.get(range) of length 4",
             )),
@@ -142,7 +142,6 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
             registry_flag: selector,
             entity_id,
             display_name,
-            meta: meta(stream, position, "ACTRootComponent"),
         });
         position = end;
     }
@@ -175,7 +174,6 @@ fn marker_value(bytes: &[u8], position: usize) -> Option<(u32, usize)> {
 struct TableEntry {
     record_index: u32,
     entity_id: String,
-    offset: usize,
 }
 
 fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
@@ -201,7 +199,6 @@ fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
     cursor += 4;
     let mut indexed = Vec::with_capacity(count);
     for _ in 0..count {
-        let offset = cursor;
         if bytes.get(cursor) != Some(&1) {
             return (Vec::new(), Vec::new());
         }
@@ -219,7 +216,6 @@ fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
                 "invariant: index_raw is a 4-byte slice from bytes.get(range) of length 4",
             )),
             entity_id,
-            offset,
         ));
         cursor = end;
     }
@@ -234,10 +230,9 @@ fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
     }
     let entries = indexed
         .into_iter()
-        .map(|(record_index, entity_id, offset)| TableEntry {
+        .map(|(record_index, entity_id)| TableEntry {
             record_index,
             entity_id,
-            offset,
         })
         .collect();
     (entries, guids)
@@ -248,7 +243,6 @@ struct ChannelGroup {
     entity_id: String,
     class_tag: String,
     channels: BTreeMap<String, String>,
-    offset: usize,
 }
 
 fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
@@ -306,7 +300,6 @@ fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
                     entity_id,
                     class_tag,
                     channels,
-                    offset: position,
                 });
                 position = end;
                 continue;
@@ -355,16 +348,4 @@ fn is_guid(value: &str) -> bool {
                 byte.is_ascii_hexdigit()
             }
         })
-}
-
-fn meta(stream: &str, offset: usize, tag: &str) -> EntityMeta {
-    EntityMeta {
-        provenance: Provenance {
-            format: "f3d".into(),
-            stream: stream.into(),
-            offset: offset as u64,
-            tag: Some(tag.into()),
-        },
-        exactness: Exactness::ByteExact,
-    }
 }

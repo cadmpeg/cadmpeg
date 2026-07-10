@@ -179,7 +179,7 @@ mod f3d {
         t_ref(&mut r, -1);
         t_end(&mut r);
 
-        t_ident(&mut r, "lump");
+        t_ident(&mut r, "region");
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -309,7 +309,7 @@ mod f3d {
         t_ref(&mut r, -1);
         t_end(&mut r);
 
-        t_ident(&mut r, "lump");
+        t_ident(&mut r, "region");
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -1163,22 +1163,79 @@ mod nx {
 // ============================================================================
 
 fn generate_ir_seeds() {
-    let dir = Path::new("seeds/ir_from_json");
-    fs::create_dir_all(dir).unwrap();
-
-    let seeds: Vec<(&str, &str)> = vec![
-        (
-            "empty_valid.json",
-            r#"{"irVersion":"0","units":"mm","tolerances":{"resabs":1e-6,"resnor":1e-10},"bodies":[],"lumps":[],"shells":[],"faces":[],"loops":[],"coedges":[],"edges":[],"vertices":[],"points":[],"surfaces":[],"curves":[],"pcurves":[],"unknowns":[]}"#,
-        ),
-        ("minimal.json", r#"{}"#),
-        ("truncated.json", "{"),
-        ("garbage.json", "not json at all"),
+    let minimal = cadmpeg_ir::CadIr::empty(Default::default())
+        .to_canonical_json()
+        .unwrap();
+    let cube = cadmpeg_ir::examples::unit_cube()
+        .to_canonical_json()
+        .unwrap();
+    let canonical = [
+        ("minimal_v1.json", minimal.as_bytes()),
+        ("unit_cube_v1.json", cube.as_bytes()),
     ];
+    let valid_v0 = minimal.replacen(r#""ir_version": "1""#, r#""ir_version": "0""#, 1);
 
-    for (name, data) in seeds {
-        fs::write(dir.join(name), data).unwrap();
-        println!("  ir/{} ({} bytes)", name, data.len());
+    let from_json = Path::new("seeds/ir_from_json");
+    replace_seed_directory(from_json);
+    for (name, data) in &canonical {
+        fs::write(from_json.join(name), data).unwrap();
+        println!("  ir/{name} ({} bytes)", data.len());
+    }
+    fs::write(from_json.join("valid_v0_rejected.json"), valid_v0).unwrap();
+
+    for target in ["ir_validate", "ir_canonical_roundtrip", "step_writer"] {
+        let dir = Path::new("seeds").join(target);
+        replace_seed_directory(&dir);
+        for (name, data) in &canonical {
+            fs::write(dir.join(name), data).unwrap();
+        }
+    }
+
+    let mutated = Path::new("seeds/ir_validate_mutated");
+    replace_seed_directory(mutated);
+    for (index, (name, data)) in canonical.iter().enumerate() {
+        let mut input = vec![index as u8];
+        input.extend_from_slice(data);
+        fs::write(mutated.join(name), input).unwrap();
+    }
+
+    let custom = Path::new("seeds/step_writer_custom");
+    replace_seed_directory(custom);
+    for (index, (name, data)) in canonical.iter().enumerate() {
+        let mut input = vec![index as u8; 8];
+        input.extend_from_slice(data);
+        fs::write(custom.join(name), input).unwrap();
+    }
+
+    let diff = Path::new("seeds/ir_diff");
+    replace_seed_directory(diff);
+    for (name, selector, left, right) in [
+        (
+            "minimal_vs_minimal",
+            0_u8,
+            minimal.as_bytes(),
+            minimal.as_bytes(),
+        ),
+        ("minimal_vs_cube", 1_u8, minimal.as_bytes(), cube.as_bytes()),
+        ("cube_vs_minimal", 2_u8, cube.as_bytes(), minimal.as_bytes()),
+    ] {
+        let mut input = vec![selector];
+        input.extend_from_slice(left);
+        input.push(0);
+        input.extend_from_slice(right);
+        fs::write(diff.join(name), input).unwrap();
+    }
+}
+
+fn replace_seed_directory(directory: &Path) {
+    fs::create_dir_all(directory).unwrap();
+    for entry in fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            fs::remove_dir_all(path).unwrap();
+        } else {
+            fs::remove_file(path).unwrap();
+        }
     }
 }
 
@@ -1196,15 +1253,31 @@ const MUTANT_SUFFIXES: [&str; 3] = [".mut_trunc", ".mut_flip", ".mut_lenmax"];
 /// Mutants are derived only from files this run just wrote, never from other
 /// mutants, so regeneration is idempotent.
 fn generate_mutated_seeds() {
-    let dirs = [
+    let container_dirs = [
         "seeds/f3d_container",
         "seeds/sldprt_container",
         "seeds/catia_container",
         "seeds/creo_container",
         "seeds/nx_container",
-        "seeds/ir_from_json",
     ];
-    for dir in dirs {
+    for dir in container_dirs {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_str().unwrap();
+            if MUTANT_SUFFIXES.iter().any(|suffix| name.ends_with(suffix)) {
+                fs::remove_file(path).unwrap();
+            }
+        }
+    }
+
+    for dir in ["seeds/ir_from_json"] {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_str().unwrap();
+            if MUTANT_SUFFIXES.iter().any(|suffix| name.ends_with(suffix)) {
+                fs::remove_file(path).unwrap();
+            }
+        }
         let mut entries: Vec<_> = fs::read_dir(dir)
             .unwrap()
             .map(|e| e.unwrap().path())

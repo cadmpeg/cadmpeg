@@ -11,50 +11,33 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::provenance::{EntityMeta, Exactness};
 
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
-fn assert_annotation_matches_meta(ir: &CadIr, id: &str, meta: &EntityMeta) {
-    let provenance = &ir.annotations.provenance[id];
-    assert_eq!(
-        ir.annotations.streams[provenance.stream as usize],
-        format!("{}:{}", meta.provenance.format, meta.provenance.stream)
-    );
-    assert_eq!(provenance.offset, meta.provenance.offset);
-    assert_eq!(provenance.tag, meta.provenance.tag);
-    assert_eq!(
-        ir.annotations
-            .exactness
-            .get(id)
-            .map_or(Exactness::ByteExact, |note| note.entity),
-        meta.exactness
-    );
-}
-
-fn assert_annotations_reconstruct_inline_meta(ir: &CadIr) {
+fn assert_every_entity_has_v1_annotation(ir: &CadIr) {
     let mut entity_count = 0;
     macro_rules! check {
         ($entities:expr) => {
             for entity in $entities {
                 entity_count += 1;
-                assert_annotation_matches_meta(ir, &entity.id.0, &entity.meta);
+                let provenance = &ir.annotations.provenance[&entity.id.0];
+                assert!(ir.annotations.streams[provenance.stream as usize].starts_with("catia:"));
             }
         };
     }
 
-    check!(&ir.bodies);
-    check!(&ir.lumps);
-    check!(&ir.shells);
-    check!(&ir.faces);
-    check!(&ir.loops);
-    check!(&ir.coedges);
-    check!(&ir.edges);
-    check!(&ir.vertices);
-    check!(&ir.points);
-    check!(&ir.surfaces);
-    check!(&ir.curves);
+    check!(&ir.model.bodies);
+    check!(&ir.model.regions);
+    check!(&ir.model.shells);
+    check!(&ir.model.faces);
+    check!(&ir.model.loops);
+    check!(&ir.model.coedges);
+    check!(&ir.model.edges);
+    check!(&ir.model.vertices);
+    check!(&ir.model.points);
+    check!(&ir.model.surfaces);
+    check!(&ir.model.curves);
     check!(&ir.unknowns);
     assert_eq!(ir.annotations.provenance.len(), entity_count);
 }
@@ -905,34 +888,41 @@ fn decode_standard_transfers_vertices_and_cylinder() {
 
     assert!(result.report.geometry_transferred);
     // Three vertex records → three points and three vertices.
-    assert_eq!(result.ir.points.len(), 3);
-    assert_eq!(result.ir.vertices.len(), 3);
+    assert_eq!(result.ir.model.points.len(), 3);
+    assert_eq!(result.ir.model.vertices.len(), 3);
     // A vertex coordinate is transferred verbatim in millimetres (no scaling).
     assert!(result
         .ir
+        .model
         .points
         .iter()
         .any(|p| (p.position.x - 10.0).abs() < 1e-6));
 
     // Cylinder and tag-bridged plane carriers are decoded from their stored
     // parameters.
-    assert_eq!(result.ir.surfaces.len(), 2);
-    assert_eq!(result.ir.curves.len(), 1);
+    assert_eq!(result.ir.model.surfaces.len(), 2);
+    assert_eq!(result.ir.model.curves.len(), 1);
     assert_eq!(result.ir.unknowns.len(), 1);
-    assert_eq!(result.ir.unknowns[0].id.0, "catia:brep_stream");
-    match &result.ir.surfaces[0].geometry {
+    assert_eq!(
+        result.ir.unknowns[0].id.0,
+        "catia:payload:unknown#brep-stream"
+    );
+    assert!(result.ir.unknowns[0]
+        .links
+        .contains(&"catia:standard:circle#0".to_string()));
+    match &result.ir.model.surfaces[0].geometry {
         SurfaceGeometry::Cylinder { radius, axis, .. } => {
             assert!((radius - 5.0).abs() < 1e-6);
             assert!((axis.z - 1.0).abs() < 1e-6);
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
-    assert!(result.ir.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
         SurfaceGeometry::Plane {
             origin,
             normal,
-            u_axis: Some(u_axis),
+            u_axis,
         }
             if (origin.x - 1.0).abs() < 1e-6
                 && (origin.y - 2.0).abs() < 1e-6
@@ -948,17 +938,17 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     // Complete FBB face records with stored carrier senses bind the analytic
     // carrier order to a body/shell/face hierarchy. Boundary topology remains
     // unavailable until the trim/edge graph is decoded.
-    assert_eq!(result.ir.faces.len(), 2);
-    assert_eq!(result.ir.bodies.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 2);
+    assert_eq!(result.ir.model.bodies.len(), 1);
     assert!(matches!(
-        result.ir.faces[0].sense,
+        result.ir.model.faces[0].sense,
         cadmpeg_ir::topology::Sense::Forward
     ));
     assert!(matches!(
-        result.ir.faces[1].sense,
+        result.ir.model.faces[1].sense,
         cadmpeg_ir::topology::Sense::Reversed
     ));
-    assert!(result.ir.edges.is_empty());
+    assert!(result.ir.model.edges.is_empty());
     assert!(result
         .report
         .losses
@@ -979,17 +969,28 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         )
         .expect("decode generated topology part");
 
-    assert_eq!(decoded.ir.faces.len(), 4);
-    assert_eq!(decoded.ir.loops.len(), 4);
-    assert_eq!(decoded.ir.edges.len(), 6);
-    assert_eq!(decoded.ir.coedges.len(), 12);
-    assert!(decoded.ir.faces.iter().all(|face| face.loops.len() == 1));
+    assert_eq!(decoded.ir.model.faces.len(), 4);
+    assert_eq!(decoded.ir.model.loops.len(), 4);
+    assert_eq!(decoded.ir.model.edges.len(), 6);
+    assert_eq!(decoded.ir.model.coedges.len(), 12);
     assert!(decoded
         .ir
+        .model
+        .faces
+        .iter()
+        .all(|face| face.loops.len() == 1));
+    assert!(decoded
+        .ir
+        .model
         .coedges
         .iter()
-        .all(|coedge| coedge.partner.is_some()));
-    assert!(decoded.ir.edges.iter().all(|edge| edge.curve.is_some()));
+        .all(|coedge| coedge.radial_next != coedge.id));
+    assert!(decoded
+        .ir
+        .model
+        .edges
+        .iter()
+        .all(|edge| edge.curve.is_some()));
     assert!(!decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
@@ -1006,8 +1007,8 @@ fn decode_fbb_only_transfers_shared_vertices_and_carriers() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.points.len(), 3);
-    assert_eq!(result.ir.surfaces.len(), 2);
+    assert_eq!(result.ir.model.points.len(), 3);
+    assert_eq!(result.ir.model.surfaces.len(), 2);
 }
 
 #[test]
@@ -1041,9 +1042,9 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.surfaces.len(), 1);
-    assert_eq!(result.ir.vertices.len(), 1);
-    match &result.ir.surfaces[0].geometry {
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 1);
+    match &result.ir.model.surfaces[0].geometry {
         SurfaceGeometry::Cylinder {
             origin,
             axis,
@@ -1054,7 +1055,7 @@ fn decode_zero_entity_transfers_framed_cylinder() {
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(
                 *ref_direction,
-                Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
             );
             assert_eq!(*radius, 4.0);
         }
@@ -1068,8 +1069,8 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.surfaces.len(), 1);
-    match &result.ir.surfaces[0].geometry {
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    match &result.ir.model.surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => {
             assert_eq!((surface.u_degree, surface.v_degree), (2, 2));
             assert_eq!((surface.u_count, surface.v_count), (3, 3));
@@ -1091,6 +1092,7 @@ fn e5_circle_parser_reads_framed_carrier() {
             center,
             axis,
             radius,
+            ..
         } => {
             assert_eq!(*center, cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
@@ -1557,7 +1559,7 @@ fn e5_surface_parser_reads_framed_torus() {
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(
                 *ref_direction,
-                Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
             );
             assert_eq!((*major_radius, *minor_radius), (12.0, 2.0));
         }
@@ -1645,7 +1647,7 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        result.ir.surfaces[0].geometry,
+        result.ir.model.surfaces[0].geometry,
         SurfaceGeometry::Nurbs(_)
     ));
 }
@@ -1661,7 +1663,7 @@ fn decode_inner_no_directory_transfers_a8_nurbs() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        result.ir.surfaces[0].geometry,
+        result.ir.model.surfaces[0].geometry,
         SurfaceGeometry::Nurbs(_)
     ));
 }
@@ -1674,14 +1676,18 @@ fn decode_e5_stream_transfers_circle_carrier() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.curves.len(), 1);
-    assert_eq!(result.ir.vertices.len(), 2);
-    assert_eq!(result.ir.edges.len(), 1);
+    assert_eq!(result.ir.model.curves.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 2);
+    assert_eq!(result.ir.model.edges.len(), 1);
     assert!(matches!(
-        result.ir.curves[0].geometry,
+        result.ir.model.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Circle { .. }
     ));
-    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    assert!(result.ir.unknowns[0]
+        .links
+        .contains(&"catia:e5:surf#0".to_string()));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
@@ -1700,7 +1706,7 @@ fn container_only_stops_before_geometry() {
 }
 
 #[test]
-fn every_decode_path_dual_writes_inline_meta_to_annotations() {
+fn every_decode_path_populates_v1_annotations() {
     let fixtures = [
         standard_catpart(),
         fbb_only_catpart(),
@@ -1714,7 +1720,7 @@ fn every_decode_path_dual_writes_inline_meta_to_annotations() {
         let decoded = CatiaCodec
             .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
             .unwrap();
-        assert_annotations_reconstruct_inline_meta(&decoded.ir);
+        assert_every_entity_has_v1_annotation(&decoded.ir);
     }
 
     let container_only = CatiaCodec
@@ -1725,5 +1731,5 @@ fn every_decode_path_dual_writes_inline_meta_to_annotations() {
             },
         )
         .unwrap();
-    assert_annotations_reconstruct_inline_meta(&container_only.ir);
+    assert_every_entity_has_v1_annotation(&container_only.ir);
 }

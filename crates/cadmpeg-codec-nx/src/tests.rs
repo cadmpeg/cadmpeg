@@ -14,7 +14,7 @@ use flate2::Compression;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::provenance::Exactness;
+use cadmpeg_ir::Exactness;
 
 use crate::container;
 use crate::parasolid::{self, StreamKind};
@@ -481,21 +481,23 @@ fn decode_transfers_point_plane_cylinder_line() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.points.len(), 1);
-    assert_eq!(result.ir.vertices.len(), 1);
+    assert_eq!(result.ir.model.points.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 1);
     // Point coordinate is scaled metres → millimetres, byte-exact.
-    let p = &result.ir.points[0].position;
+    let p = &result.ir.model.points[0].position;
     assert!((p.x - 62.5).abs() < 1e-6 && (p.z - 12.7).abs() < 1e-6);
 
     // One plane, one cylinder decoded.
     let planes = result
         .ir
+        .model
         .surfaces
         .iter()
         .filter(|s| matches!(s.geometry, SurfaceGeometry::Plane { .. }))
         .count();
     let cyls: Vec<_> = result
         .ir
+        .model
         .surfaces
         .iter()
         .filter_map(|s| match &s.geometry {
@@ -506,17 +508,17 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert_eq!(planes, 1);
     assert_eq!(cyls.len(), 1);
     assert!((cyls[0] - 4.05).abs() < 1e-6);
-    assert!(result.ir.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Plane {
-            u_axis: Some(axis),
+            u_axis: axis,
             ..
         } if axis == Vector3::new(1.0, 0.0, 0.0)
     )));
-    assert!(result.ir.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Cylinder {
-            ref_direction: Some(direction),
+            ref_direction: direction,
             ..
         } if direction == Vector3::new(1.0, 0.0, 0.0)
     )));
@@ -524,6 +526,7 @@ fn decode_transfers_point_plane_cylinder_line() {
     // One line decoded, with a unit direction.
     let lines: Vec<_> = result
         .ir
+        .model
         .curves
         .iter()
         .filter(|c| matches!(c.geometry, CurveGeometry::Line { .. }))
@@ -531,7 +534,7 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert_eq!(lines.len(), 1);
 
     // No topology graph is fabricated; the loss is reported as blocking.
-    assert!(result.ir.faces.is_empty() && result.ir.edges.is_empty());
+    assert!(result.ir.model.faces.is_empty() && result.ir.model.edges.is_empty());
     assert!(result
         .report
         .losses
@@ -542,8 +545,16 @@ fn decode_transfers_point_plane_cylinder_line() {
     // The Parasolid stream is preserved verbatim.
     assert_eq!(result.ir.unknowns.len(), 1);
     assert_eq!(result.ir.unknowns[0].sha256.len(), 64);
+    assert_eq!(
+        result.ir.unknowns[0].links,
+        ["nx:s0:surf#0", "nx:s0:surf#1", "nx:s0:crv#0",]
+    );
+    assert_eq!(
+        result.ir.annotations.exactness[&result.ir.unknowns[0].id.to_string()].fields["links"],
+        Exactness::Derived
+    );
 
-    // The produced IR validates (free carriers, no dangling references).
+    // The preserved stream owns partial-decode carriers without fabricating topology.
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
@@ -553,28 +564,28 @@ fn decode_emits_connected_primitive_brep() {
     let mut cur = Cursor::new(topology_part_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.bodies.len(), 1);
-    assert_eq!(result.ir.lumps.len(), 1);
-    assert_eq!(result.ir.shells.len(), 1);
-    assert_eq!(result.ir.faces.len(), 1);
-    assert_eq!(result.ir.loops.len(), 1);
-    assert_eq!(result.ir.coedges.len(), 1);
-    assert_eq!(result.ir.edges.len(), 1);
-    assert_eq!(result.ir.vertices.len(), 1);
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.regions.len(), 1);
+    assert_eq!(result.ir.model.shells.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 1);
     assert_eq!(
-        result.ir.faces[0].loops,
-        vec![result.ir.loops[0].id.clone()]
+        result.ir.model.faces[0].loops,
+        vec![result.ir.model.loops[0].id.clone()]
     );
     assert_eq!(
-        result.ir.edges[0].curve.as_ref(),
-        Some(&result.ir.curves[0].id)
+        result.ir.model.edges[0].curve.as_ref(),
+        Some(&result.ir.model.curves[0].id)
     );
-    assert_eq!(result.ir.vertices[0].tolerance, Some(0.1));
-    assert_eq!(result.ir.edges[0].tolerance, Some(0.3));
-    assert_eq!(result.ir.faces[0].tolerance, Some(0.2));
+    assert_eq!(result.ir.model.vertices[0].tolerance, Some(0.1));
+    assert_eq!(result.ir.model.edges[0].tolerance, Some(0.3));
+    assert_eq!(result.ir.model.faces[0].tolerance, Some(0.2));
     assert_eq!(
-        result.ir.coedges[0].radial_next.as_ref(),
-        Some(&result.ir.coedges[0].id)
+        result.ir.model.coedges[0].radial_next,
+        result.ir.model.coedges[0].id
     );
     assert!(result
         .report
@@ -590,9 +601,9 @@ fn decode_emits_topology_when_record_xmt_uses_extended_encoding() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.faces.len(), 1);
-    assert_eq!(result.ir.edges.len(), 1);
-    assert_eq!(result.ir.vertices.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 1);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
@@ -602,9 +613,9 @@ fn decode_maps_parasolid_tolerance_sentinel_to_none() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.vertices[0].tolerance, None);
-    assert_eq!(result.ir.edges[0].tolerance, None);
-    assert_eq!(result.ir.faces[0].tolerance, None);
+    assert_eq!(result.ir.model.vertices[0].tolerance, None);
+    assert_eq!(result.ir.model.edges[0].tolerance, None);
+    assert_eq!(result.ir.model.faces[0].tolerance, None);
 }
 
 #[test]
@@ -621,38 +632,42 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
                     .provenance
                     .get(&entity.id.to_string())
                     .expect("annotation provenance");
-                assert_eq!(
-                    ir.annotations.streams[provenance.stream as usize],
-                    format!(
-                        "{}:{}",
-                        entity.meta.provenance.format, entity.meta.provenance.stream
-                    )
-                );
-                assert_eq!(provenance.offset, entity.meta.provenance.offset);
-                assert_eq!(provenance.tag, entity.meta.provenance.tag);
-                let exactness = ir
-                    .annotations
-                    .exactness
-                    .get(&entity.id.to_string())
-                    .map(|note| note.entity)
-                    .unwrap_or(Exactness::ByteExact);
-                assert_eq!(exactness, entity.meta.exactness);
+                assert!(ir.annotations.streams[provenance.stream as usize].starts_with("nx:"));
+                assert!(provenance.tag.is_some());
             }
         };
     }
 
-    assert_arena_annotations!(&ir.bodies);
-    assert_arena_annotations!(&ir.lumps);
-    assert_arena_annotations!(&ir.shells);
-    assert_arena_annotations!(&ir.faces);
-    assert_arena_annotations!(&ir.loops);
-    assert_arena_annotations!(&ir.coedges);
-    assert_arena_annotations!(&ir.edges);
-    assert_arena_annotations!(&ir.vertices);
-    assert_arena_annotations!(&ir.points);
-    assert_arena_annotations!(&ir.surfaces);
-    assert_arena_annotations!(&ir.curves);
+    assert_arena_annotations!(&ir.model.bodies);
+    assert_arena_annotations!(&ir.model.regions);
+    assert_arena_annotations!(&ir.model.shells);
+    assert_arena_annotations!(&ir.model.faces);
+    assert_arena_annotations!(&ir.model.loops);
+    assert_arena_annotations!(&ir.model.coedges);
+    assert_arena_annotations!(&ir.model.edges);
+    assert_arena_annotations!(&ir.model.vertices);
+    assert_arena_annotations!(&ir.model.points);
+    assert_arena_annotations!(&ir.model.surfaces);
+    assert_arena_annotations!(&ir.model.curves);
     assert_arena_annotations!(&ir.unknowns);
+
+    let point_note = &ir.annotations.exactness[&ir.model.points[0].id.to_string()];
+    assert_eq!(point_note.entity, Exactness::ByteExact);
+    assert_eq!(point_note.fields["position"], Exactness::Derived);
+    let surface_note = &ir.annotations.exactness[&ir.model.surfaces[0].id.to_string()];
+    assert_eq!(surface_note.fields["geometry"], Exactness::Derived);
+    let curve_note = &ir.annotations.exactness[&ir.model.curves[0].id.to_string()];
+    assert_eq!(curve_note.fields["geometry"], Exactness::Derived);
+    for id in [
+        ir.model.vertices[0].id.to_string(),
+        ir.model.edges[0].id.to_string(),
+        ir.model.faces[0].id.to_string(),
+    ] {
+        assert_eq!(
+            ir.annotations.exactness[&id].fields["tolerance"],
+            Exactness::Derived
+        );
+    }
 }
 
 #[test]
@@ -662,6 +677,7 @@ fn decode_transfers_bspline_surface_and_curve() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let surface = result
         .ir
+        .model
         .surfaces
         .iter()
         .find_map(|surface| match &surface.geometry {
@@ -674,6 +690,7 @@ fn decode_transfers_bspline_surface_and_curve() {
     assert!((surface.control_points[1].y - 20.0).abs() < 1e-9);
     let curve = result
         .ir
+        .model
         .curves
         .iter()
         .find_map(|curve| match &curve.geometry {
@@ -690,8 +707,8 @@ fn decode_transfers_bspline_surface_and_curve() {
 fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
     let mut cur = Cursor::new(prt_with_partition(&trimmed_topology_partition_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let edge = result.ir.edges.first().expect("edge");
-    assert_eq!(edge.curve.as_ref(), Some(&result.ir.curves[0].id));
+    let edge = result.ir.model.edges.first().expect("edge");
+    assert_eq!(edge.curve.as_ref(), Some(&result.ir.model.curves[0].id));
     assert_eq!(edge.param_range, Some([0.25, 0.75]));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
@@ -702,10 +719,10 @@ fn decode_resolves_extended_xmt_reference_inside_edge_record() {
         &topology_with_extended_edge_curve_reference(),
     ));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir.edges.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 1);
     assert_eq!(
-        result.ir.edges[0].curve.as_ref(),
-        Some(&result.ir.curves[0].id)
+        result.ir.model.edges[0].curve.as_ref(),
+        Some(&result.ir.model.curves[0].id)
     );
 }
 
@@ -768,7 +785,7 @@ fn container_only_preserves_streams_without_geometry() {
     assert!(!result.report.geometry_transferred);
     assert!(result.report.container_only);
     assert_eq!(result.ir.unknowns.len(), 1);
-    assert!(result.ir.points.is_empty());
+    assert!(result.ir.model.points.is_empty());
 }
 
 #[test]

@@ -1,0 +1,1424 @@
+{
+  "ir_version": "1",
+  "units": {
+    "length": "millimeter"
+  },
+  "tolerances": {
+    "linear": 1e-6,
+    "angular": 1e-10
+  },
+  "model": {
+    "bodies": [
+      {
+        "id": "body0",
+        "kind": "solid",
+        "regions": ["region0"],
+        "name": "unit cube"
+      }
+    ],
+    "regions": [
+      {
+        "id": "region0",
+        "body": "body0",
+        "shells": ["shell0"]
+      }
+    ],
+    "shells": [
+      {
+        "id": "shell0",
+        "region": "region0",
+        "faces": ["f_bottom", "f_top", "f_front", "f_right", "f_back", "f_left"]
+      }
+    ],
+    "faces": [
+      {
+        "id": "f_back",
+        "shell": "shell0",
+        "surface": "srf_back",
+        "sense": "forward",
+        "loops": ["lp_back"],
+        "name": "back face"
+      },
+      {
+        "id": "f_bottom",
+        "shell": "shell0",
+        "surface": "srf_bottom",
+        "sense": "forward",
+        "loops": ["lp_bottom"],
+        "name": "bottom face"
+      },
+      {
+        "id": "f_front",
+        "shell": "shell0",
+        "surface": "srf_front",
+        "sense": "forward",
+        "loops": ["lp_front"],
+        "name": "front face"
+      },
+      {
+        "id": "f_left",
+        "shell": "shell0",
+        "surface": "srf_left",
+        "sense": "forward",
+        "loops": ["lp_left"],
+        "name": "left face"
+      },
+      {
+        "id": "f_right",
+        "shell": "shell0",
+        "surface": "srf_right",
+        "sense": "forward",
+        "loops": ["lp_right"],
+        "name": "right face"
+      },
+      {
+        "id": "f_top",
+        "shell": "shell0",
+        "surface": "srf_top",
+        "sense": "forward",
+        "loops": ["lp_top"],
+        "name": "top face"
+      }
+    ],
+    "loops": [
+      {
+        "id": "lp_back",
+        "face": "f_back",
+        "coedges": ["ce_back_0", "ce_back_1", "ce_back_2", "ce_back_3"]
+      },
+      {
+        "id": "lp_bottom",
+        "face": "f_bottom",
+        "coedges": ["ce_bottom_0", "ce_bottom_1", "ce_bottom_2", "ce_bottom_3"]
+      },
+      {
+        "id": "lp_front",
+        "face": "f_front",
+        "coedges": ["ce_front_0", "ce_front_1", "ce_front_2", "ce_front_3"]
+      },
+      {
+        "id": "lp_left",
+        "face": "f_left",
+        "coedges": ["ce_left_0", "ce_left_1", "ce_left_2", "ce_left_3"]
+      },
+      {
+        "id": "lp_right",
+        "face": "f_right",
+        "coedges": ["ce_right_0", "ce_right_1", "ce_right_2", "ce_right_3"]
+      },
+      {
+        "id": "lp_top",
+        "face": "f_top",
+        "coedges": ["ce_top_0", "ce_top_1", "ce_top_2", "ce_top_3"]
+      }
+    ],
+    "coedges": [
+      {
+        "id": "ce_back_0",
+        "owner_loop": "lp_back",
+        "edge": "e2",
+        "next": "ce_back_1",
+        "previous": "ce_back_3",
+        "radial_next": "ce_bottom_2",
+        "sense": "reversed"
+      },
+      {
+        "id": "ce_back_1",
+        "owner_loop": "lp_back",
+        "edge": "e10",
+        "next": "ce_back_2",
+        "previous": "ce_back_0",
+        "radial_next": "ce_right_3",
+        "sense": "forward"
+      },
+      {
+        "id": "ce_back_2",
+        "owner_loop": "lp_back",
+        "edge": "e6",
+        "next": "ce_back_3",
+        "previous": "ce_back_1",
+        "radial_next": "ce_top_1",
+        "sense": "forward"
+      },
+      {
+        "id": "ce_back_3",
+        "owner_loop": "lp_back",
+        "edge": "e11",
+        "next": "ce_back_0",
+        "previous": "ce_back_2",
+        "radial_next": "ce_left_1",
+        "sense": "reversed"
+      },
+      {
+        "id": "ce_bottom_0",
+        "owner_loop": "lp_bottom",
+        "edge": "e0",
+        "next": "ce_bottom_1",
+        "previous": "ce_bottom_3",
+        "radial_next": "ce_front_0",
+        "sense": "forward"
+      },
+      {
+        "id": "ce_bottom_1",
+        "owner_loop": "lp_bottom",
+        "edge": "e1",
+        "next": "ce_bottom_2",
+        "previous": "ce_bottom_0",
+        "radial_next": "ce_right_0",
+        "sense": "forward"
+      },
+      {
+        "id": "ce_bottom_2",
+        "owner_loop": "lp_bottom",
+        "edge": "e2",
+        "next": "ce_bottom_3",
+        "previous": "ce_bottom_1",
+        "radial_next": "ce_back_0",
+        "sense": "forward"
+      },
+      {
+        "id": "ce_bottom_3",
+        "owner_loop": "lp_bottom",
+        "edge": "e3",
+        "next": "ce_bottom_0",
+        "previous": "ce_bottom_2",
+        "radial_next": "ce_left_0",
+        "sense": "forward"
+      },
+      {
+        "id": "ce_front_0",
+        "owner_loop": "lp_front",
+        "edge": "e0",
+        "next": "ce_front_1",
+        "previous": "ce_front_3",
+        "radial_next": "ce_bottom_0",
+        "sense": "reversed"
+      },
+      {
+        "id": "ce_front_1",
+        "owner_loop": "lp_front",
+        "edge": "e8",
+        "next": "ce_front_2",
+        "previous": "ce_front_0",
+        "radial_next": "ce_left_3",
+        "sense": "forward"
+      },
+      {
+        "id": "ce_front_2",
+        "owner_loop": "lp_front",
+        "edge": "e4",
+        "next": "ce_front_3",
+        "previous": "ce_front_1",
+        "radial_next": "ce_top_3",
+        "sense": "forward"
+      },
+      {
+        "id": "ce_front_3",
+        "owner_loop": "lp_front",
+        "edge": "e9",
+        "next": "ce_front_0",
+        "previous": "ce_front_2",
+        "radial_next": "ce_right_1",
+        "sense": "reversed"
+      },
+      {
+        "id": "ce_left_0",
+        "owner_loop": "lp_left",
+        "edge": "e3",
+        "next": "ce_left_1",
+        "previous": "ce_left_3",
+        "radial_next": "ce_bottom_3",
+        "sense": "reversed"
+      },
+      {
+        "id": "ce_left_1",
+        "owner_loop": "lp_left",
+        "edge": "e11",
+        "next": "ce_left_2",
+        "previous": "ce_left_0",
+        "radial_next": "ce_back_3",
+        "sense": "forward"
+      },
+      {
+        "id": "ce_left_2",
+        "owner_loop": "lp_left",
+        "edge": "e7",
+        "next": "ce_left_3",
+        "previous": "ce_left_1",
+        "radial_next": "ce_top_0",
+        "sense": "forward"
+      },
+      {
+        "id": "ce_left_3",
+        "owner_loop": "lp_left",
+        "edge": "e8",
+        "next": "ce_left_0",
+        "previous": "ce_left_2",
+        "radial_next": "ce_front_1",
+        "sense": "reversed"
+      },
+      {
+        "id": "ce_right_0",
+        "owner_loop": "lp_right",
+        "edge": "e1",
+        "next": "ce_right_1",
+        "previous": "ce_right_3",
+        "radial_next": "ce_bottom_1",
+        "sense": "reversed"
+      },
+      {
+        "id": "ce_right_1",
+        "owner_loop": "lp_right",
+        "edge": "e9",
+        "next": "ce_right_2",
+        "previous": "ce_right_0",
+        "radial_next": "ce_front_3",
+        "sense": "forward"
+      },
+      {
+        "id": "ce_right_2",
+        "owner_loop": "lp_right",
+        "edge": "e5",
+        "next": "ce_right_3",
+        "previous": "ce_right_1",
+        "radial_next": "ce_top_2",
+        "sense": "forward"
+      },
+      {
+        "id": "ce_right_3",
+        "owner_loop": "lp_right",
+        "edge": "e10",
+        "next": "ce_right_0",
+        "previous": "ce_right_2",
+        "radial_next": "ce_back_1",
+        "sense": "reversed"
+      },
+      {
+        "id": "ce_top_0",
+        "owner_loop": "lp_top",
+        "edge": "e7",
+        "next": "ce_top_1",
+        "previous": "ce_top_3",
+        "radial_next": "ce_left_2",
+        "sense": "reversed"
+      },
+      {
+        "id": "ce_top_1",
+        "owner_loop": "lp_top",
+        "edge": "e6",
+        "next": "ce_top_2",
+        "previous": "ce_top_0",
+        "radial_next": "ce_back_2",
+        "sense": "reversed"
+      },
+      {
+        "id": "ce_top_2",
+        "owner_loop": "lp_top",
+        "edge": "e5",
+        "next": "ce_top_3",
+        "previous": "ce_top_1",
+        "radial_next": "ce_right_2",
+        "sense": "reversed"
+      },
+      {
+        "id": "ce_top_3",
+        "owner_loop": "lp_top",
+        "edge": "e4",
+        "next": "ce_top_0",
+        "previous": "ce_top_2",
+        "radial_next": "ce_front_2",
+        "sense": "reversed"
+      }
+    ],
+    "edges": [
+      {
+        "id": "e0",
+        "curve": "crv_e0",
+        "start": "v0",
+        "end": "v1",
+        "param_range": [0.0, 10.0]
+      },
+      {
+        "id": "e1",
+        "curve": "crv_e1",
+        "start": "v1",
+        "end": "v2",
+        "param_range": [0.0, 10.0]
+      },
+      {
+        "id": "e10",
+        "curve": "crv_e10",
+        "start": "v2",
+        "end": "v6",
+        "param_range": [0.0, 10.0]
+      },
+      {
+        "id": "e11",
+        "curve": "crv_e11",
+        "start": "v3",
+        "end": "v7",
+        "param_range": [0.0, 10.0]
+      },
+      {
+        "id": "e2",
+        "curve": "crv_e2",
+        "start": "v2",
+        "end": "v3",
+        "param_range": [0.0, 10.0]
+      },
+      {
+        "id": "e3",
+        "curve": "crv_e3",
+        "start": "v3",
+        "end": "v0",
+        "param_range": [0.0, 10.0]
+      },
+      {
+        "id": "e4",
+        "curve": "crv_e4",
+        "start": "v4",
+        "end": "v5",
+        "param_range": [0.0, 10.0]
+      },
+      {
+        "id": "e5",
+        "curve": "crv_e5",
+        "start": "v5",
+        "end": "v6",
+        "param_range": [0.0, 10.0]
+      },
+      {
+        "id": "e6",
+        "curve": "crv_e6",
+        "start": "v6",
+        "end": "v7",
+        "param_range": [0.0, 10.0]
+      },
+      {
+        "id": "e7",
+        "curve": "crv_e7",
+        "start": "v7",
+        "end": "v4",
+        "param_range": [0.0, 10.0]
+      },
+      {
+        "id": "e8",
+        "curve": "crv_e8",
+        "start": "v0",
+        "end": "v4",
+        "param_range": [0.0, 10.0]
+      },
+      {
+        "id": "e9",
+        "curve": "crv_e9",
+        "start": "v1",
+        "end": "v5",
+        "param_range": [0.0, 10.0]
+      }
+    ],
+    "vertices": [
+      {
+        "id": "v0",
+        "point": "p0"
+      },
+      {
+        "id": "v1",
+        "point": "p1"
+      },
+      {
+        "id": "v2",
+        "point": "p2"
+      },
+      {
+        "id": "v3",
+        "point": "p3"
+      },
+      {
+        "id": "v4",
+        "point": "p4"
+      },
+      {
+        "id": "v5",
+        "point": "p5"
+      },
+      {
+        "id": "v6",
+        "point": "p6"
+      },
+      {
+        "id": "v7",
+        "point": "p7"
+      }
+    ],
+    "points": [
+      {
+        "id": "p0",
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      {
+        "id": "p1",
+        "position": {
+          "x": 10.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      {
+        "id": "p2",
+        "position": {
+          "x": 10.0,
+          "y": 10.0,
+          "z": 0.0
+        }
+      },
+      {
+        "id": "p3",
+        "position": {
+          "x": 0.0,
+          "y": 10.0,
+          "z": 0.0
+        }
+      },
+      {
+        "id": "p4",
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 10.0
+        }
+      },
+      {
+        "id": "p5",
+        "position": {
+          "x": 10.0,
+          "y": 0.0,
+          "z": 10.0
+        }
+      },
+      {
+        "id": "p6",
+        "position": {
+          "x": 10.0,
+          "y": 10.0,
+          "z": 10.0
+        }
+      },
+      {
+        "id": "p7",
+        "position": {
+          "x": 0.0,
+          "y": 10.0,
+          "z": 10.0
+        }
+      }
+    ],
+    "surfaces": [
+      {
+        "id": "srf_back",
+        "geometry": {
+          "kind": "plane",
+          "origin": {
+            "x": 0.0,
+            "y": 10.0,
+            "z": 0.0
+          },
+          "normal": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "srf_bottom",
+        "geometry": {
+          "kind": "plane",
+          "origin": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "normal": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": -1.0
+          }
+        }
+      },
+      {
+        "id": "srf_front",
+        "geometry": {
+          "kind": "plane",
+          "origin": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "normal": {
+            "x": 0.0,
+            "y": -1.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "srf_left",
+        "geometry": {
+          "kind": "plane",
+          "origin": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "normal": {
+            "x": -1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "srf_right",
+        "geometry": {
+          "kind": "plane",
+          "origin": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "normal": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "srf_top",
+        "geometry": {
+          "kind": "plane",
+          "origin": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 10.0
+          },
+          "normal": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 1.0
+          }
+        }
+      }
+    ],
+    "curves": [
+      {
+        "id": "crv_e0",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "direction": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "crv_e1",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "direction": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "crv_e10",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 10.0,
+            "y": 10.0,
+            "z": 0.0
+          },
+          "direction": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 1.0
+          }
+        }
+      },
+      {
+        "id": "crv_e11",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 0.0,
+            "y": 10.0,
+            "z": 0.0
+          },
+          "direction": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 1.0
+          }
+        }
+      },
+      {
+        "id": "crv_e2",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 10.0,
+            "y": 10.0,
+            "z": 0.0
+          },
+          "direction": {
+            "x": -1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "crv_e3",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 0.0,
+            "y": 10.0,
+            "z": 0.0
+          },
+          "direction": {
+            "x": 0.0,
+            "y": -1.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "crv_e4",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 10.0
+          },
+          "direction": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "crv_e5",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 10.0
+          },
+          "direction": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "crv_e6",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 10.0,
+            "y": 10.0,
+            "z": 10.0
+          },
+          "direction": {
+            "x": -1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "crv_e7",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 0.0,
+            "y": 10.0,
+            "z": 10.0
+          },
+          "direction": {
+            "x": 0.0,
+            "y": -1.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "crv_e8",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "direction": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 1.0
+          }
+        }
+      },
+      {
+        "id": "crv_e9",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "direction": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 1.0
+          }
+        }
+      }
+    ],
+    "pcurves": [],
+    "procedural_surfaces": [],
+    "procedural_curves": [],
+    "features": [],
+    "tessellations": [],
+    "appearances": [],
+    "appearance_bindings": [],
+    "attributes": []
+  },
+  "annotations": {
+    "streams": ["synthetic:"],
+    "provenance": {
+      "body0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_back_0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_back_1": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_back_2": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_back_3": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_bottom_0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_bottom_1": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_bottom_2": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_bottom_3": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_front_0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_front_1": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_front_2": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_front_3": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_left_0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_left_1": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_left_2": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_left_3": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_right_0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_right_1": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_right_2": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_right_3": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_top_0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_top_1": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_top_2": {
+        "stream": 0,
+        "offset": 0
+      },
+      "ce_top_3": {
+        "stream": 0,
+        "offset": 0
+      },
+      "crv_e0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "crv_e1": {
+        "stream": 0,
+        "offset": 0
+      },
+      "crv_e10": {
+        "stream": 0,
+        "offset": 0
+      },
+      "crv_e11": {
+        "stream": 0,
+        "offset": 0
+      },
+      "crv_e2": {
+        "stream": 0,
+        "offset": 0
+      },
+      "crv_e3": {
+        "stream": 0,
+        "offset": 0
+      },
+      "crv_e4": {
+        "stream": 0,
+        "offset": 0
+      },
+      "crv_e5": {
+        "stream": 0,
+        "offset": 0
+      },
+      "crv_e6": {
+        "stream": 0,
+        "offset": 0
+      },
+      "crv_e7": {
+        "stream": 0,
+        "offset": 0
+      },
+      "crv_e8": {
+        "stream": 0,
+        "offset": 0
+      },
+      "crv_e9": {
+        "stream": 0,
+        "offset": 0
+      },
+      "e0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "e1": {
+        "stream": 0,
+        "offset": 0
+      },
+      "e10": {
+        "stream": 0,
+        "offset": 0
+      },
+      "e11": {
+        "stream": 0,
+        "offset": 0
+      },
+      "e2": {
+        "stream": 0,
+        "offset": 0
+      },
+      "e3": {
+        "stream": 0,
+        "offset": 0
+      },
+      "e4": {
+        "stream": 0,
+        "offset": 0
+      },
+      "e5": {
+        "stream": 0,
+        "offset": 0
+      },
+      "e6": {
+        "stream": 0,
+        "offset": 0
+      },
+      "e7": {
+        "stream": 0,
+        "offset": 0
+      },
+      "e8": {
+        "stream": 0,
+        "offset": 0
+      },
+      "e9": {
+        "stream": 0,
+        "offset": 0
+      },
+      "f_back": {
+        "stream": 0,
+        "offset": 0
+      },
+      "f_bottom": {
+        "stream": 0,
+        "offset": 0
+      },
+      "f_front": {
+        "stream": 0,
+        "offset": 0
+      },
+      "f_left": {
+        "stream": 0,
+        "offset": 0
+      },
+      "f_right": {
+        "stream": 0,
+        "offset": 0
+      },
+      "f_top": {
+        "stream": 0,
+        "offset": 0
+      },
+      "lp_back": {
+        "stream": 0,
+        "offset": 0
+      },
+      "lp_bottom": {
+        "stream": 0,
+        "offset": 0
+      },
+      "lp_front": {
+        "stream": 0,
+        "offset": 0
+      },
+      "lp_left": {
+        "stream": 0,
+        "offset": 0
+      },
+      "lp_right": {
+        "stream": 0,
+        "offset": 0
+      },
+      "lp_top": {
+        "stream": 0,
+        "offset": 0
+      },
+      "p0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "p1": {
+        "stream": 0,
+        "offset": 0
+      },
+      "p2": {
+        "stream": 0,
+        "offset": 0
+      },
+      "p3": {
+        "stream": 0,
+        "offset": 0
+      },
+      "p4": {
+        "stream": 0,
+        "offset": 0
+      },
+      "p5": {
+        "stream": 0,
+        "offset": 0
+      },
+      "p6": {
+        "stream": 0,
+        "offset": 0
+      },
+      "p7": {
+        "stream": 0,
+        "offset": 0
+      },
+      "region0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "shell0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "srf_back": {
+        "stream": 0,
+        "offset": 0
+      },
+      "srf_bottom": {
+        "stream": 0,
+        "offset": 0
+      },
+      "srf_front": {
+        "stream": 0,
+        "offset": 0
+      },
+      "srf_left": {
+        "stream": 0,
+        "offset": 0
+      },
+      "srf_right": {
+        "stream": 0,
+        "offset": 0
+      },
+      "srf_top": {
+        "stream": 0,
+        "offset": 0
+      },
+      "v0": {
+        "stream": 0,
+        "offset": 0
+      },
+      "v1": {
+        "stream": 0,
+        "offset": 0
+      },
+      "v2": {
+        "stream": 0,
+        "offset": 0
+      },
+      "v3": {
+        "stream": 0,
+        "offset": 0
+      },
+      "v4": {
+        "stream": 0,
+        "offset": 0
+      },
+      "v5": {
+        "stream": 0,
+        "offset": 0
+      },
+      "v6": {
+        "stream": 0,
+        "offset": 0
+      },
+      "v7": {
+        "stream": 0,
+        "offset": 0
+      }
+    },
+    "exactness": {
+      "body0": {
+        "entity": "inferred"
+      },
+      "ce_back_0": {
+        "entity": "inferred"
+      },
+      "ce_back_1": {
+        "entity": "inferred"
+      },
+      "ce_back_2": {
+        "entity": "inferred"
+      },
+      "ce_back_3": {
+        "entity": "inferred"
+      },
+      "ce_bottom_0": {
+        "entity": "inferred"
+      },
+      "ce_bottom_1": {
+        "entity": "inferred"
+      },
+      "ce_bottom_2": {
+        "entity": "inferred"
+      },
+      "ce_bottom_3": {
+        "entity": "inferred"
+      },
+      "ce_front_0": {
+        "entity": "inferred"
+      },
+      "ce_front_1": {
+        "entity": "inferred"
+      },
+      "ce_front_2": {
+        "entity": "inferred"
+      },
+      "ce_front_3": {
+        "entity": "inferred"
+      },
+      "ce_left_0": {
+        "entity": "inferred"
+      },
+      "ce_left_1": {
+        "entity": "inferred"
+      },
+      "ce_left_2": {
+        "entity": "inferred"
+      },
+      "ce_left_3": {
+        "entity": "inferred"
+      },
+      "ce_right_0": {
+        "entity": "inferred"
+      },
+      "ce_right_1": {
+        "entity": "inferred"
+      },
+      "ce_right_2": {
+        "entity": "inferred"
+      },
+      "ce_right_3": {
+        "entity": "inferred"
+      },
+      "ce_top_0": {
+        "entity": "inferred"
+      },
+      "ce_top_1": {
+        "entity": "inferred"
+      },
+      "ce_top_2": {
+        "entity": "inferred"
+      },
+      "ce_top_3": {
+        "entity": "inferred"
+      },
+      "crv_e0": {
+        "entity": "inferred"
+      },
+      "crv_e1": {
+        "entity": "inferred"
+      },
+      "crv_e10": {
+        "entity": "inferred"
+      },
+      "crv_e11": {
+        "entity": "inferred"
+      },
+      "crv_e2": {
+        "entity": "inferred"
+      },
+      "crv_e3": {
+        "entity": "inferred"
+      },
+      "crv_e4": {
+        "entity": "inferred"
+      },
+      "crv_e5": {
+        "entity": "inferred"
+      },
+      "crv_e6": {
+        "entity": "inferred"
+      },
+      "crv_e7": {
+        "entity": "inferred"
+      },
+      "crv_e8": {
+        "entity": "inferred"
+      },
+      "crv_e9": {
+        "entity": "inferred"
+      },
+      "e0": {
+        "entity": "inferred"
+      },
+      "e1": {
+        "entity": "inferred"
+      },
+      "e10": {
+        "entity": "inferred"
+      },
+      "e11": {
+        "entity": "inferred"
+      },
+      "e2": {
+        "entity": "inferred"
+      },
+      "e3": {
+        "entity": "inferred"
+      },
+      "e4": {
+        "entity": "inferred"
+      },
+      "e5": {
+        "entity": "inferred"
+      },
+      "e6": {
+        "entity": "inferred"
+      },
+      "e7": {
+        "entity": "inferred"
+      },
+      "e8": {
+        "entity": "inferred"
+      },
+      "e9": {
+        "entity": "inferred"
+      },
+      "f_back": {
+        "entity": "inferred"
+      },
+      "f_bottom": {
+        "entity": "inferred"
+      },
+      "f_front": {
+        "entity": "inferred"
+      },
+      "f_left": {
+        "entity": "inferred"
+      },
+      "f_right": {
+        "entity": "inferred"
+      },
+      "f_top": {
+        "entity": "inferred"
+      },
+      "lp_back": {
+        "entity": "inferred"
+      },
+      "lp_bottom": {
+        "entity": "inferred"
+      },
+      "lp_front": {
+        "entity": "inferred"
+      },
+      "lp_left": {
+        "entity": "inferred"
+      },
+      "lp_right": {
+        "entity": "inferred"
+      },
+      "lp_top": {
+        "entity": "inferred"
+      },
+      "p0": {
+        "entity": "inferred"
+      },
+      "p1": {
+        "entity": "inferred"
+      },
+      "p2": {
+        "entity": "inferred"
+      },
+      "p3": {
+        "entity": "inferred"
+      },
+      "p4": {
+        "entity": "inferred"
+      },
+      "p5": {
+        "entity": "inferred"
+      },
+      "p6": {
+        "entity": "inferred"
+      },
+      "p7": {
+        "entity": "inferred"
+      },
+      "region0": {
+        "entity": "inferred"
+      },
+      "shell0": {
+        "entity": "inferred"
+      },
+      "srf_back": {
+        "entity": "inferred"
+      },
+      "srf_bottom": {
+        "entity": "inferred"
+      },
+      "srf_front": {
+        "entity": "inferred"
+      },
+      "srf_left": {
+        "entity": "inferred"
+      },
+      "srf_right": {
+        "entity": "inferred"
+      },
+      "srf_top": {
+        "entity": "inferred"
+      },
+      "v0": {
+        "entity": "inferred"
+      },
+      "v1": {
+        "entity": "inferred"
+      },
+      "v2": {
+        "entity": "inferred"
+      },
+      "v3": {
+        "entity": "inferred"
+      },
+      "v4": {
+        "entity": "inferred"
+      },
+      "v5": {
+        "entity": "inferred"
+      },
+      "v6": {
+        "entity": "inferred"
+      },
+      "v7": {
+        "entity": "inferred"
+      }
+    }
+  },
+  "native": {},
+  "unknowns": []
+}

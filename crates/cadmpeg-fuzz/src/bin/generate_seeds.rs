@@ -203,7 +203,7 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
     t_ref(&mut r, -1);
     t_end(&mut r);
 
-    t_ident(&mut r, "lump");
+    t_ident(&mut r, "region");
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
@@ -379,7 +379,7 @@ fn synthetic_mixed_smbh() -> Vec<u8> {
     t_ref(&mut r, -1);
     t_end(&mut r);
 
-    t_ident(&mut r, "lump");
+    t_ident(&mut r, "region");
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);

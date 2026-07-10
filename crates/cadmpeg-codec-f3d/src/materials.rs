@@ -8,7 +8,6 @@ use cadmpeg_ir::appearance::Appearance;
 use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 use cadmpeg_ir::topology::Color;
 
 use crate::container::{self, role, ContainerScan};
@@ -83,7 +82,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
                 || assignment.visual_preset.as_deref() == appearance.name.as_deref()
         }) {
             out.push(Appearance {
-                id: AppearanceId(format!("f3d:appearance:{}", assignment.visual_guid)),
+                id: AppearanceId(format!("f3d:design:appearance#{}", assignment.visual_guid)),
                 name: assignment.visual_preset.clone(),
                 asset_guid: Some(assignment.visual_guid.clone()),
                 visual_guid: Some(assignment.visual_guid.clone()),
@@ -92,15 +91,6 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
                 category: None,
                 base_color: None,
                 properties: BTreeMap::new(),
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "f3d".into(),
-                        stream: assignment.stream.clone(),
-                        offset: assignment.offset as u64,
-                        tag: Some("design_material_assignment".into()),
-                    },
-                    exactness: Exactness::ByteExact,
-                },
             });
         }
     }
@@ -127,8 +117,6 @@ struct DesignAssignment {
     visual_guid: String,
     physical_token: Option<String>,
     visual_preset: Option<String>,
-    offset: usize,
-    stream: String,
 }
 
 fn decode_design_assignments(
@@ -144,7 +132,7 @@ fn decode_design_assignments(
         let bytes = container::decompress_entry(reader, &entry.name)?;
         let body_map = decode_body_map(&bytes);
         let strings = lp_utf16_strings(&bytes);
-        for (index, (offset, value)) in strings.iter().enumerate() {
+        for (index, (_, value)) in strings.iter().enumerate() {
             if !value.starts_with("PrismMaterial") || value.contains("_physmat_aspects") {
                 continue;
             }
@@ -192,8 +180,6 @@ fn decode_design_assignments(
                     visual_guid: visual_guid.clone(),
                     physical_token: Some(value.clone()),
                     visual_preset,
-                    offset: *offset,
-                    stream: entry.name.clone(),
                 });
             }
         }
@@ -219,6 +205,10 @@ fn bind_bodies<S: std::hash::BuildHasher>(
                     || assignment.visual_preset.as_deref() == appearance.name.as_deref()
             })?;
             Some(AppearanceBinding {
+                id: format!(
+                    "f3d:appearance:binding#{}:{}",
+                    assignment.entity_id, assignment.visual_guid
+                ),
                 target: AppearanceTarget::Body(body),
                 appearance: appearance.id.clone(),
                 source_entity_id: Some(assignment.entity_id.clone()),
@@ -227,15 +217,6 @@ fn bind_bodies<S: std::hash::BuildHasher>(
                     .get(&assignment.entity_suffix)
                     .cloned()
                     .unwrap_or_default(),
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "f3d".into(),
-                        stream: assignment.stream.clone(),
-                        offset: assignment.offset as u64,
-                        tag: assignment.physical_token.clone(),
-                    },
-                    exactness: Exactness::ByteExact,
-                },
             })
         })
         .collect()
@@ -573,7 +554,7 @@ fn decode_logical_records(bytes: &[u8], stream: &str) -> Vec<Appearance> {
         .collect()
 }
 
-fn decode_record(record: &[u8], stream: &str, offset: usize) -> Option<Appearance> {
+fn decode_record(record: &[u8], _stream: &str, _offset: usize) -> Option<Appearance> {
     if !record.starts_with(RECORD_MARKER) {
         return None;
     }
@@ -648,7 +629,7 @@ fn decode_record(record: &[u8], stream: &str, offset: usize) -> Option<Appearanc
         _ => {}
     }
     Some(Appearance {
-        id: AppearanceId(format!("f3d:appearance:{guid}")),
+        id: AppearanceId(format!("f3d:design:appearance#{guid}")),
         name: Some(base),
         asset_guid: Some(guid.clone()),
         visual_guid: (!matches!(
@@ -664,15 +645,6 @@ fn decode_record(record: &[u8], stream: &str, offset: usize) -> Option<Appearanc
         category: None,
         base_color: color,
         properties,
-        meta: EntityMeta {
-            provenance: Provenance {
-                format: "f3d".into(),
-                stream: stream.into(),
-                offset: offset as u64,
-                tag: Some(schema),
-            },
-            exactness: Exactness::ByteExact,
-        },
     })
 }
 

@@ -32,10 +32,10 @@ fuzz_target!(|data: &[u8]| {
     };
 
     // Apply mutations based on strategy
-    match strategy % 10 {
+    match strategy % 15 {
         0 => {
             // Mutate vertex positions with NaN/infinity
-            for point in &mut ir.points {
+            for point in &mut ir.model.points {
                 point.position.x = f64::NAN;
                 point.position.y = f64::INFINITY;
                 point.position.z = f64::NEG_INFINITY;
@@ -43,26 +43,26 @@ fuzz_target!(|data: &[u8]| {
         }
         1 => {
             // Create invalid cross-references
-            if !ir.vertices.is_empty() {
-                ir.vertices[0].point = cadmpeg_ir::ids::PointId("nonexistent".to_string());
+            if !ir.model.vertices.is_empty() {
+                ir.model.vertices[0].point = cadmpeg_ir::ids::PointId("nonexistent".to_string());
             }
         }
         2 => {
             // Break coedge ring topology
-            if ir.coedges.len() >= 2 {
-                ir.coedges[0].next = ir.coedges[1].id.clone();
-                ir.coedges[1].previous = ir.coedges[0].id.clone();
+            if ir.model.coedges.len() >= 2 {
+                ir.model.coedges[0].next = ir.model.coedges[1].id.clone();
+                ir.model.coedges[1].previous = ir.model.coedges[0].id.clone();
             }
         }
         3 => {
             // Create inconsistent edge references
-            if !ir.edges.is_empty() && ir.vertices.is_empty() {
-                ir.edges[0].start = cadmpeg_ir::ids::VertexId("nonexistent".to_string());
+            if !ir.model.edges.is_empty() {
+                ir.model.edges[0].start = cadmpeg_ir::ids::VertexId("nonexistent".to_string());
             }
         }
         4 => {
             // Mutate surface geometry with degenerate values
-            for surface in &mut ir.surfaces {
+            for surface in &mut ir.model.surfaces {
                 if let cadmpeg_ir::geometry::SurfaceGeometry::Plane { normal, .. } =
                     &mut surface.geometry
                 {
@@ -73,33 +73,67 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         5 => {
-            // Create empty body (no lumps)
-            if !ir.bodies.is_empty() {
-                ir.bodies[0].lumps.clear();
+            // Create empty body (no regions)
+            if !ir.model.bodies.is_empty() {
+                ir.model.bodies[0].regions.clear();
             }
         }
         6 => {
             // Create face with no loops
-            if !ir.faces.is_empty() {
-                ir.faces[0].loops.clear();
+            if !ir.model.faces.is_empty() {
+                ir.model.faces[0].loops.clear();
             }
         }
         7 => {
             // Create loop with no coedges
-            if !ir.loops.is_empty() {
-                ir.loops[0].coedges.clear();
+            if !ir.model.loops.is_empty() {
+                ir.model.loops[0].coedges.clear();
             }
         }
         8 => {
             // Mutate tolerances to invalid values
-            ir.tolerances.resabs = -1.0;
-            ir.tolerances.resnor = f64::NAN;
+            ir.tolerances.linear = -1.0;
+            ir.tolerances.angular = f64::NAN;
         }
         9 => {
             // Clear all geometry but keep topology
-            ir.points.clear();
-            ir.curves.clear();
-            ir.surfaces.clear();
+            ir.model.points.clear();
+            ir.model.curves.clear();
+            ir.model.surfaces.clear();
+        }
+        10 => {
+            // Break a radial ring with an unresolved coedge.
+            if let Some(coedge) = ir.model.coedges.first_mut() {
+                coedge.radial_next = cadmpeg_ir::ids::CoedgeId("nonexistent".to_string());
+            }
+        }
+        11 => {
+            // Violate canonical arena ordering.
+            ir.model.coedges.reverse();
+        }
+        12 => {
+            // Put a coedge-owned edge into a shell's wire set.
+            if let (Some(shell), Some(edge)) = (ir.model.shells.first_mut(), ir.model.edges.first())
+            {
+                shell.wire_edges.push(edge.id.clone());
+            }
+        }
+        13 => {
+            // Add an annotation for an entity that does not exist.
+            ir.annotations.provenance.insert(
+                "nonexistent".to_string(),
+                cadmpeg_ir::annotations::Provenance {
+                    stream: u32::MAX,
+                    offset: u64::MAX,
+                    tag: None,
+                },
+            );
+        }
+        14 => {
+            // Put an invalid range on a canonical curve parameterization.
+            if let Some(edge) = ir.model.edges.first_mut() {
+                edge.param_range = Some([f64::INFINITY, f64::NEG_INFINITY]);
+            }
         }
         _ => {}
     }

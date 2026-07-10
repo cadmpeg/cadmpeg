@@ -15,8 +15,15 @@ fuzz_target!(|data: &[u8]| {
     if data.len() < 4 {
         return;
     }
-    let split_point = (data[0] as usize) % data.len();
-    let (left_bytes, right_bytes) = data.split_at(split_point);
+    let payload = &data[1..];
+    let split_point = payload
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or_else(|| (data[0] as usize) % payload.len());
+    let (left_bytes, right_with_separator) = payload.split_at(split_point);
+    let right_bytes = right_with_separator
+        .strip_prefix(&[0])
+        .unwrap_or(right_with_separator);
 
     let left_str = match std::str::from_utf8(left_bytes) {
         Ok(s) => s,

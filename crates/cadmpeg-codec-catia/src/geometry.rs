@@ -198,7 +198,8 @@ pub fn decode_plane(params: &PlaneParams) -> SurfaceGeometry {
     SurfaceGeometry::Plane {
         origin: params.origin,
         normal: Vector3::new(normal.x / length, normal.y / length, normal.z / length),
-        u_axis: unit(params.diagonal),
+        u_axis: unit(params.diagonal)
+            .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal)),
     }
 }
 
@@ -271,6 +272,9 @@ pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
                             geometry: CurveGeometry::Circle {
                                 center: origin,
                                 axis,
+                                ref_direction: unit(frame_u).unwrap_or_else(|| {
+                                    cadmpeg_ir::geometry::derive_reference_direction(axis)
+                                }),
                                 radius,
                             },
                         });
@@ -386,7 +390,7 @@ fn e5_cylinder(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Cylinder {
         origin,
         axis,
-        ref_direction: unit(frame_u),
+        ref_direction: unit(frame_u)?,
         radius,
     })
 }
@@ -1131,7 +1135,7 @@ fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Cone {
         origin,
         axis,
-        ref_direction,
+        ref_direction: ref_direction?,
         radius,
         half_angle,
     })
@@ -1149,7 +1153,7 @@ fn e5_torus(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Torus {
         center,
         axis,
-        ref_direction,
+        ref_direction: ref_direction?,
         major_radius,
         minor_radius,
     })
@@ -1239,7 +1243,7 @@ fn zero_entity_plane(payload: &[u8]) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Plane {
         origin,
         normal: unit(cross(row0, row1))?,
-        u_axis: unit(row0),
+        u_axis: unit(row0)?,
     })
 }
 
@@ -1254,7 +1258,7 @@ fn zero_entity_cylinder(payload: &[u8]) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Cylinder {
         origin,
         axis: unit(cross(row0, row1))?,
-        ref_direction: unit(row0),
+        ref_direction: unit(row0)?,
         radius,
     })
 }
@@ -1278,7 +1282,7 @@ fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Cone {
         origin,
         axis,
-        ref_direction,
+        ref_direction: ref_direction?,
         radius,
         half_angle,
     })
@@ -1302,7 +1306,7 @@ fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Torus {
         center,
         axis,
-        ref_direction,
+        ref_direction: ref_direction?,
         major_radius,
         minor_radius,
     })
@@ -1328,8 +1332,8 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             }
             Some(SurfaceGeometry::Sphere {
                 center: pt(cx, cy, cz),
-                axis: None,
-                ref_direction: None,
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
                 radius: r as f64,
             })
         }
@@ -1346,7 +1350,9 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             Some(SurfaceGeometry::Torus {
                 center: pt(cx, cy, cz),
                 axis: axis_from_xy(ax, ay, 1.0),
-                ref_direction: None,
+                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis_from_xy(
+                    ax, ay, 1.0,
+                )),
                 major_radius: major as f64,
                 minor_radius: minor as f64,
             })
@@ -1363,7 +1369,9 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             Some(SurfaceGeometry::Cylinder {
                 origin: pt(px, py, pz),
                 axis: axis_from_xy(ax, ay, radius),
-                ref_direction: None,
+                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis_from_xy(
+                    ax, ay, radius,
+                )),
                 radius: radius.abs() as f64,
             })
         }
@@ -1379,7 +1387,9 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             Some(SurfaceGeometry::Cone {
                 origin: pt(x, y, z),
                 axis: axis_from_xy(ax, ay, semi),
-                ref_direction: None,
+                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis_from_xy(
+                    ax, ay, semi,
+                )),
                 radius: 0.0,
                 half_angle: semi.abs() as f64,
             })

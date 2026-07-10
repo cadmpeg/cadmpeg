@@ -8,12 +8,12 @@
 //!
 //! A decoded CAD document is a [`CadIr`]: units, tolerances, and an exact B-rep
 //! stored as flat, id-referenced arenas following the ACIS/ASM topology
-//! hierarchy `body → lump → shell → face → loop → coedge → edge → vertex`, with
-//! geometry attached by reference (surfaces, curves, pcurves, points). Every
-//! entity carries [`EntityMeta`] — [`Provenance`] (where the bytes came from)
-//! and [`Exactness`] (how faithfully they were transferred). Records the decoder
-//! recognized but could not interpret are preserved as [`UnknownRecord`]s rather
-//! than dropped.
+//! hierarchy `body → region → shell → face → loop → coedge → edge → vertex`, with
+//! geometry attached by reference (surfaces, curves, pcurves, points). In v1,
+//! entity provenance and exactness are stored in the sparse document-wide
+//! [`Annotations`] tables, keyed by globally unique entity id. Records the
+//! decoder recognized but could not interpret are preserved as
+//! [`UnknownRecord`]s rather than dropped.
 //!
 //! ## What is deliberately reserved
 //!
@@ -42,7 +42,7 @@ pub mod history;
 pub mod ids;
 pub mod math;
 pub mod native;
-pub mod provenance;
+mod provenance;
 pub mod report;
 pub mod reserved;
 pub mod tessellation;
@@ -51,7 +51,7 @@ pub mod transform;
 pub mod units;
 pub mod validate;
 
-pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote};
+pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
 pub use codec::{
     Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions, DecodeResult,
     Encoder, ReadSeek,
@@ -60,7 +60,7 @@ pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{Feature, FeatureDefinition, FeatureId};
 pub use native::{F3dNative, LossCount, Native, SldprtNative};
-pub use provenance::{EntityMeta, Exactness, Provenance};
+pub use provenance::Exactness;
 pub use report::{
     Check, DecodeReport, Finding, LossCategory, LossNote, Severity, ValidationReport,
 };

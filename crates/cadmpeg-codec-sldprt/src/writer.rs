@@ -15,7 +15,10 @@ use crate::container::MARKER;
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
 pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-    let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
+    let retained_partition = retained_partition(ir);
+    let mut normalized = ir.clone();
+    sort_arenas(&mut normalized);
+    let validation = cadmpeg_ir::validate::validate(&normalized, Vec::new());
     if !validation.is_ok() {
         let detail = validation
             .findings
@@ -24,9 +27,8 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             .map_or("IR validation failed", |finding| finding.message.as_str());
         return Err(CodecError::Malformed(detail.into()));
     }
-    let retained_partition = retained_partition(ir);
-    let mut normalized = ir.clone();
     crate::writer_transform::bake(&mut normalized)?;
+    sort_arenas(&mut normalized);
     let ir = &normalized;
     let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
     if !validation.is_ok() {
@@ -40,23 +42,28 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         return Err(CodecError::Malformed(detail.into()));
     }
     check_semantic_support(ir)?;
-    if ir.faces.is_empty() {
+    if ir.model.faces.is_empty() {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writing requires a B-rep".into(),
         ));
     }
     let length_scale = ir.units.length.to_millimeters() / 1000.0;
-    let patched_partition = retained_partition
-        .is_none()
-        .then(|| crate::writer_patch::patch_partition(ir, length_scale))
-        .flatten();
+    let patched_partition = if retained_partition.is_none() {
+        crate::writer_patch::patch_partition(ir, length_scale)?
+    } else {
+        None
+    };
     let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
     let (partition_section, partition_payload) = if let Some(retained) = retained_partition {
         retained
     } else if let Some(patched) = patched_partition {
         patched
     } else {
-        let schema_32001 = ir.bodies.iter().any(|body| body.kind == BodyKind::Sheet);
+        let schema_32001 = ir
+            .model
+            .bodies
+            .iter()
+            .any(|body| body.kind == BodyKind::Sheet);
         let body = brep_body(ir, length_scale, schema_32001)?;
         let schema = if schema_32001 {
             "SCH_SW_32001_11000"
@@ -80,23 +87,42 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
     if let Some(units) = units {
         sections.push(("Units".into(), units));
     }
-    if !ir.tessellations.is_empty() {
+    if !ir.model.tessellations.is_empty() {
         sections.push((
             "Contents/DisplayLists".into(),
             tessellation_payload(ir, length_scale)?,
         ));
     }
-    for (index, history) in ir.feature_histories.iter().enumerate() {
+    for (index, history) in ir
+        .native
+        .sldprt
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .enumerate()
+    {
         sections.push((
             format!("Contents/Keywords-{index}"),
             history_payload(history)?,
         ));
     }
-    for lane in &ir.feature_input_lanes {
-        sections.push((
-            lane.meta.provenance.stream.clone(),
-            resolved_feature_payload(lane)?,
-        ));
+    for lane in ir
+        .native
+        .sldprt
+        .iter()
+        .flat_map(|native| &native.feature_input_lanes)
+    {
+        let section = ir
+            .annotations
+            .provenance
+            .get(&lane.id)
+            .and_then(|provenance| {
+                ir.annotations
+                    .streams
+                    .get(provenance.stream as usize)
+                    .cloned()
+            })
+            .unwrap_or_else(|| lane.id.clone());
+        sections.push((section, resolved_feature_payload(lane)?));
     }
     for (section, payload) in opaque_blocks(ir, &active_partition_section, retain_native_brep) {
         sections.push((section.to_string(), payload.to_vec()));
@@ -116,6 +142,31 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
     Ok(())
 }
 
+fn sort_arenas(ir: &mut CadIr) {
+    ir.model.bodies.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.regions.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.shells.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.faces.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.loops.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.coedges.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.edges.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.vertices.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.points.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.surfaces.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.curves.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.pcurves.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.procedural_surfaces.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.procedural_curves.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.features.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.tessellations.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.appearances.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.attributes.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model
+        .appearance_bindings
+        .sort_by_key(|binding| format!("{:?}:{}", binding.target, binding.appearance.0));
+    ir.unknowns.sort_by(|a, b| a.id.cmp(&b.id));
+}
+
 fn section_directory_entries(
     ir: &CadIr,
     sections: &[(String, Vec<u8>)],
@@ -124,7 +175,7 @@ fn section_directory_entries(
     let source = ir
         .unknowns
         .iter()
-        .find(|record| record.id.0 == "sldprt:source-image")
+        .find(|record| record.id.0 == "sldprt:file:source-image#0")
         .and_then(|record| record.data.as_deref());
     let source_scan = source.map(crate::container::scan_bytes);
     sections
@@ -150,7 +201,7 @@ fn retained_cache_cells(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Vec<Vec<u
     let Some(source) = ir
         .unknowns
         .iter()
-        .find(|record| record.id.0 == "sldprt:source-image")
+        .find(|record| record.id.0 == "sldprt:file:source-image#0")
         .and_then(|record| record.data.as_deref())
     else {
         return Vec::new();
@@ -183,7 +234,7 @@ fn retained_partition(ir: &CadIr) -> Option<(String, Vec<u8>)> {
     let source_image = ir
         .unknowns
         .iter()
-        .find(|record| record.id.0 == "sldprt:source-image")?
+        .find(|record| record.id.0 == "sldprt:file:source-image#0")?
         .data
         .as_deref()?;
     let scan = crate::container::scan_bytes(source_image);
@@ -200,7 +251,7 @@ fn retained_partition(ir: &CadIr) -> Option<(String, Vec<u8>)> {
 fn outer_header(ir: &CadIr) -> [u8; 8] {
     ir.unknowns
         .iter()
-        .find(|record| record.id.0 == "sldprt:source-image")
+        .find(|record| record.id.0 == "sldprt:file:source-image#0")
         .and_then(|record| record.data.as_deref())
         .and_then(|source| source.get(..8))
         .and_then(|header| header.try_into().ok())
@@ -217,7 +268,7 @@ fn section_type_ids(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Result<Vec<u3
     if let Some(source) = ir
         .unknowns
         .iter()
-        .find(|record| record.id.0 == "sldprt:source-image")
+        .find(|record| record.id.0 == "sldprt:file:source-image#0")
         .and_then(|record| record.data.as_deref())
     {
         for block in crate::container::scan_bytes(source).blocks {
@@ -253,21 +304,22 @@ fn section_type_ids(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Result<Vec<u3
 }
 
 fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
-    let lumps = ir
-        .lumps
+    let regions = ir
+        .model
+        .regions
         .iter()
-        .map(|lump| (&lump.id, lump))
+        .map(|region| (&region.id, region))
         .collect::<HashMap<_, _>>();
-    for body in &ir.bodies {
-        if body.lumps.len() != 1 {
+    for body in &ir.model.bodies {
+        if body.regions.len() != 1 {
             return Err(CodecError::NotImplemented(
-                "SLDPRT semantic writer requires one lump per body".into(),
+                "SLDPRT semantic writer requires one region per body".into(),
             ));
         }
-        let lump = lumps[&body.lumps[0]];
-        if lump.shells.len() != 1 {
+        let region = regions[&body.regions[0]];
+        if region.shells.len() != 1 {
             return Err(CodecError::NotImplemented(
-                "SLDPRT semantic writer requires one shell per lump".into(),
+                "SLDPRT semantic writer requires one shell per region".into(),
             ));
         }
         if body.name.is_some() && body.color.is_none() {
@@ -276,20 +328,24 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
             ));
         }
     }
-    if ir.faces.iter().any(|face| face.name.is_some()) {
+    if ir.model.faces.iter().any(|face| face.name.is_some()) {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not encode face names".into(),
         ));
     }
-    if ir.edges.iter().any(|edge| {
+    if ir.model.edges.iter().any(|edge| {
         edge.param_range.is_some()
-            && edge.meta.exactness != cadmpeg_ir::provenance::Exactness::Derived
+            && ir
+                .annotations
+                .exactness
+                .get(&edge.id.0)
+                .is_none_or(|note| note.entity != cadmpeg_ir::Exactness::Derived)
     }) {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not encode explicit edge parameter ranges".into(),
         ));
     }
-    for appearance in &ir.appearances {
+    for appearance in &ir.model.appearances {
         if appearance.asset_guid.is_some()
             || appearance.visual_guid.is_some()
             || appearance.physical_token.is_some()
@@ -312,9 +368,14 @@ fn opaque_blocks<'a>(
     let mut seen = HashSet::new();
     ir.unknowns
         .iter()
-        .filter(|record| record.id.0.starts_with("sldprt:block:"))
+        .filter(|record| record.id.0.starts_with("sldprt:file:block#"))
         .filter_map(|record| {
-            let section = record.meta.provenance.stream.as_str();
+            let provenance = ir.annotations.provenance.get(&record.id.0)?;
+            let section = ir
+                .annotations
+                .streams
+                .get(usize::try_from(provenance.stream).ok()?)?
+                .as_str();
             let lower = section.to_ascii_lowercase();
             if section == active_partition {
                 return None;
@@ -380,8 +441,8 @@ fn metadata_payloads(
 
     let mut objects = Vec::new();
     let mut unit_code = None;
-    for attribute in &ir.attributes {
-        if attribute.meta.provenance.format != "sldprt" {
+    for attribute in &ir.model.attributes {
+        if !attribute.id.0.starts_with("sldprt:") {
             continue;
         }
         if attribute.target != AttributeTarget::Document {
@@ -627,7 +688,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
     out.extend_from_slice(&[0; 8]);
     out.extend_from_slice(b"uoTempFaceTessData_c");
     out.extend_from_slice(&[0; 8]);
-    for mesh in &ir.tessellations {
+    for mesh in &ir.model.tessellations {
         let expected = triangles_from_strips(&mesh.strip_lengths)?;
         if expected != mesh.triangles
             || mesh.strip_lengths.iter().sum::<u32>() as usize != mesh.vertices.len()
@@ -711,12 +772,13 @@ fn descriptor(out: &mut Vec<u8>, item_size: u32, kind: u32, flags: u32, count: u
 
 fn body_material(ir: &CadIr) -> Result<Option<(String, Color)>, CodecError> {
     let appearances = ir
+        .model
         .appearances
         .iter()
         .map(|appearance| (&appearance.id, appearance))
         .collect::<HashMap<_, _>>();
     let mut selected: Option<(String, Color)> = None;
-    for binding in &ir.appearance_bindings {
+    for binding in &ir.model.appearance_bindings {
         let AppearanceTarget::Body(_) = &binding.target else {
             continue;
         };
@@ -741,7 +803,7 @@ fn body_material(ir: &CadIr) -> Result<Option<(String, Color)>, CodecError> {
         selected = Some(material);
     }
     if selected.is_none() {
-        for body in &ir.bodies {
+        for body in &ir.model.bodies {
             let Some(color) = body.color else { continue };
             let material = (
                 body.name.clone().unwrap_or_else(|| "Material".into()),
@@ -787,47 +849,55 @@ fn material_payload(name: &str, color: Color) -> Vec<u8> {
 fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8>, CodecError> {
     let mut next = 2u16;
     let surfaces = ir
+        .model
         .surfaces
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let curves = ir
+        .model
         .curves
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let points = ir
+        .model
         .points
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let vertices = ir
+        .model
         .vertices
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let edges = ir
+        .model
         .edges
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let coedges = ir
+        .model
         .coedges
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let loops = ir
+        .model
         .loops
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let faces = ir
+        .model
         .faces
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut out = Vec::new();
-    for surface in &ir.surfaces {
+    for surface in &ir.model.surfaces {
         if let SurfaceGeometry::Nurbs(nurbs) = &surface.geometry {
             write_nurbs_surface(
                 &mut out,
@@ -838,18 +908,11 @@ fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8
             )?;
             continue;
         }
-        let reference = ir
-            .surface_parameterizations
-            .iter()
-            .find(|frame| frame.surface == surface.id)
-            .map_or_else(
-                || surface_reference(&surface.geometry),
-                |frame| frame.u_reference,
-            );
+        let reference = surface_reference(&surface.geometry);
         let (kind, values) = surface_values(&surface.geometry, reference, length_scale)?;
         compact(&mut out, kind, surfaces[&surface.id], &values);
     }
-    for curve in &ir.curves {
+    for curve in &ir.model.curves {
         if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
             write_nurbs_curve(&mut out, curves[&curve.id], nurbs, &mut next, length_scale)?;
             continue;
@@ -858,6 +921,7 @@ fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8
         compact(&mut out, kind, curves[&curve.id], &values);
     }
     let face_owners = ir
+        .model
         .faces
         .iter()
         .map(|face| Ok((face.id.clone(), take_attr(&mut next)?)))
@@ -867,7 +931,7 @@ fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8
         .keys()
         .map(|face| Ok((face.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
-    for point in &ir.points {
+    for point in &ir.model.points {
         tag(&mut out, 0x1d);
         be16(&mut out, points[&point.id]);
         be32(&mut out, 0);
@@ -876,7 +940,7 @@ fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8
             bef64(&mut out, value * length_scale);
         }
     }
-    for vertex in &ir.vertices {
+    for vertex in &ir.model.vertices {
         tag(&mut out, 0x12);
         be16(&mut out, vertices[&vertex.id]);
         be32(&mut out, 0);
@@ -885,7 +949,7 @@ fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8
         }
         out.extend_from_slice(&MAGIC);
     }
-    for edge in &ir.edges {
+    for edge in &ir.model.edges {
         tag(&mut out, 0x10);
         be16(&mut out, edges[&edge.id]);
         be32(&mut out, 0);
@@ -902,10 +966,11 @@ fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8
             be16(&mut out, value);
         }
     }
-    for coedge in &ir.coedges {
+    for coedge in &ir.model.coedges {
         tag(&mut out, 0x11);
         be16(&mut out, coedges[&coedge.id]);
         let edge = ir
+            .model
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
@@ -921,7 +986,7 @@ fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8
             coedges[&coedge.previous],
             coedges[&coedge.next],
             vertices[start],
-            coedge.partner.as_ref().map_or(0, |id| coedges[id]),
+            coedges[&coedge.radial_next],
             edges[&coedge.edge],
             0,
             0,
@@ -934,7 +999,7 @@ fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8
             0x2d
         });
     }
-    for lp in &ir.loops {
+    for lp in &ir.model.loops {
         tag(&mut out, 0x0f);
         be16(&mut out, loops[&lp.id]);
         be32(&mut out, 0);
@@ -950,7 +1015,7 @@ fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8
             be16(&mut out, value);
         }
     }
-    for face in &ir.faces {
+    for face in &ir.model.faces {
         tag(&mut out, 0x0e);
         be16(&mut out, faces[&face.id]);
         be32(&mut out, 0);
@@ -995,26 +1060,28 @@ fn write_body_hierarchy(
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let shells = ir
+        .model
         .shells
         .iter()
         .map(|shell| (shell.id.clone(), shell))
         .collect::<HashMap<_, _>>();
-    let lumps = ir
-        .lumps
+    let regions = ir
+        .model
+        .regions
         .iter()
-        .map(|lump| (lump.id.clone(), lump))
+        .map(|region| (region.id.clone(), region))
         .collect::<HashMap<_, _>>();
     let mut assigned = HashSet::new();
-    for body in &ir.bodies {
+    for body in &ir.model.bodies {
         let mut owned = Vec::new();
-        for lump_id in &body.lumps {
-            let lump = lumps
-                .get(lump_id)
-                .ok_or_else(|| CodecError::Malformed("body references missing lump".into()))?;
-            for shell_id in &lump.shells {
-                let shell = shells
-                    .get(shell_id)
-                    .ok_or_else(|| CodecError::Malformed("lump references missing shell".into()))?;
+        for region_id in &body.regions {
+            let region = regions
+                .get(region_id)
+                .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
+            for shell_id in &region.shells {
+                let shell = shells.get(shell_id).ok_or_else(|| {
+                    CodecError::Malformed("region references missing shell".into())
+                })?;
                 for face in &shell.faces {
                     if !faces.contains_key(face) {
                         return Err(CodecError::Malformed(
@@ -1038,7 +1105,7 @@ fn write_body_hierarchy(
             entity51(out, 1, region, 0x001d, &[head, 0, 0, 0, 0, 0]);
             continue;
         }
-        let lump = take_attr(next)?;
+        let region = take_attr(next)?;
         let shell = take_attr(next)?;
         let shell_link = take_attr(next)?;
         let head = write_face_list(
@@ -1048,12 +1115,12 @@ fn write_body_hierarchy(
             if schema_32001 { 0x0015 } else { 0x0013 },
         )?;
         entity51(out, 2, root, 0x0017, &[0, region, 0, 0, 0, 0]);
-        entity51(out, 1, region, 0x001b, &[0, lump, 0, 0, 0, 0]);
-        entity51(out, 2, lump, 0x001f, &[0, shell, 0, 0, 0, 0]);
+        entity51(out, 1, region, 0x001b, &[0, region, 0, 0, 0, 0]);
+        entity51(out, 2, region, 0x001f, &[0, shell, 0, 0, 0, 0]);
         entity51(out, 2, shell, 0x0021, &[0, shell_link, 0, 0, 0, 0]);
         entity51(out, 2, shell_link, 0x0023, &[0, head, 0, 0, 0, 0]);
     }
-    if assigned.len() != ir.faces.len() {
+    if assigned.len() != ir.model.faces.len() {
         return Err(CodecError::Malformed(
             "face is not assigned to a body".into(),
         ));
@@ -1074,16 +1141,18 @@ fn write_body_hierarchy(
 
 fn face_colors(ir: &CadIr) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, CodecError> {
     let appearances = ir
+        .model
         .appearances
         .iter()
         .map(|appearance| (&appearance.id, appearance))
         .collect::<HashMap<_, _>>();
     let mut colors = ir
+        .model
         .faces
         .iter()
         .filter_map(|face| face.color.map(|color| (face.id.clone(), color)))
         .collect::<HashMap<_, _>>();
-    for binding in &ir.appearance_bindings {
+    for binding in &ir.model.appearance_bindings {
         let AppearanceTarget::Face(face) = &binding.target else {
             continue;
         };
@@ -1216,11 +1285,7 @@ pub(super) fn surface_values(
             radius,
             ..
         } => {
-            let axis = axis.unwrap_or(cadmpeg_ir::math::Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0,
-            });
+            let axis = *axis;
             (
                 0x35,
                 vec![
@@ -1447,9 +1512,10 @@ pub(super) fn curve_values(
         CurveGeometry::Circle {
             center,
             axis,
+            ref_direction,
             radius,
         } => {
-            let reference = orthogonal(*axis);
+            let reference = *ref_direction;
             (
                 0x1f,
                 vec![
@@ -1498,44 +1564,38 @@ pub(super) fn curve_values(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
             ))
         }
+        CurveGeometry::Unknown { .. } => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer cannot regenerate an opaque curve".into(),
+            ))
+        }
     };
     Ok(result)
 }
 
 pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math::Vector3 {
     match geometry {
-        SurfaceGeometry::Plane { normal, u_axis, .. } => {
-            u_axis.unwrap_or_else(|| orthogonal(*normal))
-        }
+        SurfaceGeometry::Plane { u_axis, .. } => *u_axis,
         SurfaceGeometry::Cylinder {
-            axis,
+            axis: _,
             ref_direction,
             ..
         }
         | SurfaceGeometry::Cone {
-            axis,
+            axis: _,
             ref_direction,
             ..
         }
         | SurfaceGeometry::Torus {
-            axis,
+            axis: _,
             ref_direction,
             ..
-        } => ref_direction.unwrap_or_else(|| orthogonal(*axis)),
+        } => *ref_direction,
         SurfaceGeometry::Sphere {
-            axis,
+            axis: _,
             ref_direction,
             ..
-        } => ref_direction.unwrap_or_else(|| {
-            axis.map_or(
-                cadmpeg_ir::math::Vector3 {
-                    x: 1.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-                orthogonal,
-            )
-        }),
+        } => *ref_direction,
         SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
             x: 1.0,
             y: 0.0,
@@ -1600,20 +1660,6 @@ fn directory_entry(type_id: u32, size: u32, section: &str) -> Vec<u8> {
     out.extend_from_slice(&name);
     out.extend_from_slice(&[0xe5, 0x4b, 0x57, 0x5b, 0, 0]);
     out
-}
-fn orthogonal(normal: cadmpeg_ir::math::Vector3) -> cadmpeg_ir::math::Vector3 {
-    let seed = if normal.x.abs() < 0.9 {
-        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-    } else {
-        cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
-    };
-    let value = cadmpeg_ir::math::Vector3::new(
-        normal.y * seed.z - normal.z * seed.y,
-        normal.z * seed.x - normal.x * seed.z,
-        normal.x * seed.y - normal.y * seed.x,
-    );
-    let norm = value.norm();
-    cadmpeg_ir::math::Vector3::new(value.x / norm, value.y / norm, value.z / norm)
 }
 fn tag(out: &mut Vec<u8>, kind: u8) {
     out.extend_from_slice(&[0, kind]);

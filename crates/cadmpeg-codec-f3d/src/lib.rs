@@ -15,7 +15,7 @@
 //!   `product_family`/`product_version`/`save_date`, `scale`/`resabs`/`resnor`)
 //!   and locates the `delta_state` history boundary;
 //! - [`F3dCodec::decode`] frames the active BREP's SAB record stream and builds
-//!   the IR B-rep graph (`body → lump → shell → face → loop → coedge → edge →
+//!   the IR B-rep graph (`body → region → shell → face → loop → coedge → edge →
 //!   vertex → point`) plus the analytic surface/curve carriers it references.
 //!
 //! ## What is decoded, and what is reported as loss

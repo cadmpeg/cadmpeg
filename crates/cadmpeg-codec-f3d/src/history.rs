@@ -5,7 +5,6 @@ use cadmpeg_ir::history::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
     AsmHistoryRecord,
 };
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
@@ -42,7 +41,8 @@ pub fn decode(bytes: &[u8], stream: &str) -> Option<AsmHistory> {
         if bytes.get(position) != Some(&0x0b) {
             continue;
         }
-        let (bulletin_boards, body_end) = decode_bulletin_boards(bytes, position + 1)?;
+        let (bulletin_boards, body_end) =
+            decode_bulletin_boards(bytes, position + 1, stream, offset)?;
         let records = decode_history_records(
             bytes,
             body_end,
@@ -50,6 +50,7 @@ pub fn decode(bytes: &[u8], stream: &str) -> Option<AsmHistory> {
             stream,
         );
         states.push(AsmDeltaState {
+            id: format!("f3d:{stream}:asm-delta-state#{offset}"),
             state_id,
             version_flag,
             state_flag,
@@ -60,7 +61,6 @@ pub fn decode(bytes: &[u8], stream: &str) -> Option<AsmHistory> {
             owner_ref,
             bulletin_boards,
             records,
-            meta: meta(stream, offset, "delta_state"),
         });
     }
     if states.is_empty() {
@@ -73,18 +73,20 @@ pub fn decode(bytes: &[u8], stream: &str) -> Option<AsmHistory> {
     let (stream_size, high_water_mark) = preamble_offset
         .and_then(|offset| decode_preamble(bytes, offset + PREAMBLE.len()))
         .map_or((None, None), |(size, high)| (Some(size), Some(high)));
-    let offset = preamble_offset.unwrap_or(states[0].meta.provenance.offset as usize);
+    let offset = preamble_offset.unwrap_or(0);
     Some(AsmHistory {
+        id: format!("f3d:{stream}:asm-history#{offset}"),
         stream_size,
         high_water_mark,
         states,
-        meta: meta(stream, offset, "history_stream"),
     })
 }
 
 fn decode_bulletin_boards(
     bytes: &[u8],
     mut position: usize,
+    stream: &str,
+    state_offset: usize,
 ) -> Option<(Vec<AsmBulletinBoard>, usize)> {
     if bytes.get(position) == Some(&0x11) {
         return Some((Vec::new(), position));
@@ -112,12 +114,21 @@ fn decode_bulletin_boards(
                 (false, false) => return None,
             };
             changes.push(AsmEntityChange {
+                id: format!(
+                    "f3d:asm-entity-change:{stream}:{state_offset}:{}:{}",
+                    boards.len(),
+                    changes.len()
+                ),
                 kind,
                 old_ref: (old >= 0).then_some(old),
                 new_ref: (new >= 0).then_some(new),
             });
         }
         boards.push(AsmBulletinBoard {
+            id: format!(
+                "f3d:asm-bulletin-board:{stream}:{state_offset}:{}",
+                boards.len()
+            ),
             owner_ref,
             number,
             changes,
@@ -141,17 +152,17 @@ fn decode_history_records(
         Ok(records) => records
             .into_iter()
             .map(|record| AsmHistoryRecord {
+                id: format!("f3d:{stream}:asm-history-record#{}", record.offset),
                 index: record.index as u64,
                 name: record.name,
                 raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
-                meta: meta(stream, record.offset, "history_entity"),
             })
             .collect(),
         Err(_) => vec![AsmHistoryRecord {
+            id: format!("f3d:{stream}:asm-history-record#{start}"),
             index: 0,
             name: "opaque_history_payload".into(),
             raw_bytes: bytes[start..limit].to_vec(),
-            meta: meta(stream, start, "opaque_history_payload"),
         }],
     }
 }
@@ -171,16 +182,4 @@ fn take_i64(bytes: &[u8], position: &mut usize, tag: u8) -> Option<i64> {
     let value = i64::from_le_bytes(bytes.get(*position + 1..*position + 9)?.try_into().ok()?);
     *position += 9;
     Some(value)
-}
-
-fn meta(stream: &str, offset: usize, tag: &str) -> EntityMeta {
-    EntityMeta {
-        provenance: Provenance {
-            format: "f3d".into(),
-            stream: stream.into(),
-            offset: offset as u64,
-            tag: Some(tag.into()),
-        },
-        exactness: Exactness::ByteExact,
-    }
 }

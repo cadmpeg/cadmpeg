@@ -2,11 +2,12 @@
 //! `SolidWorks` Keywords XML feature history.
 
 use crate::container::ContainerScan;
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::history::{Configuration, Feature, FeatureHistory};
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
+use cadmpeg_ir::Exactness;
 use std::collections::BTreeMap;
 
-pub fn histories(scan: &ContainerScan) -> Vec<FeatureHistory> {
+pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureHistory> {
     scan.blocks
         .iter()
         .filter_map(|block| {
@@ -16,34 +17,39 @@ pub fn histories(scan: &ContainerScan) -> Vec<FeatureHistory> {
             if !root.tag_name().name().contains("Keywords") {
                 return None;
             }
-            let meta = |offset, tag: &str| EntityMeta {
-                provenance: Provenance {
-                    format: "sldprt".into(),
-                    stream: block
-                        .section
-                        .clone()
-                        .unwrap_or_else(|| format!("block@{}", block.offset)),
-                    offset,
-                    tag: Some(tag.into()),
-                },
-                exactness: Exactness::ByteExact,
-            };
+            let stream = block
+                .section
+                .clone()
+                .unwrap_or_else(|| format!("block@{}", block.offset));
             let configurations = root
                 .children()
                 .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
-                .map(|node| Configuration {
-                    name: node.attribute("Name").unwrap_or("").into(),
-                    material: node
-                        .attribute("Material")
-                        .filter(|value| !value.is_empty())
-                        .map(str::to_string),
-                    properties: node
-                        .attributes()
-                        .filter(|attribute| !matches!(attribute.name(), "Name" | "Material"))
-                        .map(|attribute| {
-                            (attribute.name().to_string(), attribute.value().to_string())
-                        })
-                        .collect(),
+                .enumerate()
+                .map(|(ordinal, node)| {
+                    let id = format!("sldprt:history:configuration#{}:{ordinal}", block.offset);
+                    crate::annotations::note(
+                        annotations,
+                        id.clone(),
+                        stream.clone(),
+                        node.range().start as u64,
+                        "Configuration",
+                        Exactness::ByteExact,
+                    );
+                    Configuration {
+                        id,
+                        name: node.attribute("Name").unwrap_or("").into(),
+                        material: node
+                            .attribute("Material")
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string),
+                        properties: node
+                            .attributes()
+                            .filter(|attribute| !matches!(attribute.name(), "Name" | "Material"))
+                            .map(|attribute| {
+                                (attribute.name().to_string(), attribute.value().to_string())
+                            })
+                            .collect(),
+                    }
                 })
                 .collect();
             let features = root
@@ -56,56 +62,76 @@ pub fn histories(scan: &ContainerScan) -> Vec<FeatureHistory> {
                         )
                 })
                 .enumerate()
-                .map(|(ordinal, node)| Feature {
-                    source_id: node
-                        .attribute("id")
-                        .filter(|value| !value.is_empty())
-                        .map(str::to_string),
-                    parent_source_id: node
-                        .ancestors()
-                        .skip(1)
-                        .find_map(|parent| parent.attribute("id").map(str::to_string)),
-                    ordinal: ordinal as u32,
-                    name: node.attribute("Name").unwrap_or("").into(),
-                    kind: node
-                        .attribute("Type")
-                        .unwrap_or_else(|| node.tag_name().name())
-                        .into(),
-                    suppressed: node
-                        .attribute("Suppressed")
-                        .is_some_and(|value| matches!(value, "1" | "true" | "True")),
-                    parameters: node
-                        .children()
-                        .filter(|child| {
-                            child.is_element() && child.tag_name().name() == "Dimension"
-                        })
-                        .filter_map(|dimension| {
-                            Some((
-                                dimension.attribute("Name")?.into(),
-                                dimension.text()?.trim().into(),
-                            ))
-                        })
-                        .collect::<BTreeMap<_, _>>(),
-                    properties: node
-                        .attributes()
-                        .filter(|attribute| {
-                            !matches!(attribute.name(), "id" | "Name" | "Type" | "Suppressed")
-                        })
-                        .map(|attribute| {
-                            (attribute.name().to_string(), attribute.value().to_string())
-                        })
-                        .collect(),
-                    meta: meta(node.range().start as u64, node.tag_name().name()),
+                .map(|(ordinal, node)| {
+                    let id = format!("sldprt:history:feature#{}:{ordinal}", block.offset);
+                    crate::annotations::note(
+                        annotations,
+                        id.clone(),
+                        stream.clone(),
+                        node.range().start as u64,
+                        node.tag_name().name(),
+                        Exactness::ByteExact,
+                    );
+                    Feature {
+                        id,
+                        source_id: node
+                            .attribute("id")
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string),
+                        parent_source_id: node
+                            .ancestors()
+                            .skip(1)
+                            .find_map(|parent| parent.attribute("id").map(str::to_string)),
+                        ordinal: ordinal as u32,
+                        name: node.attribute("Name").unwrap_or("").into(),
+                        kind: node
+                            .attribute("Type")
+                            .unwrap_or_else(|| node.tag_name().name())
+                            .into(),
+                        suppressed: node
+                            .attribute("Suppressed")
+                            .is_some_and(|value| matches!(value, "1" | "true" | "True")),
+                        parameters: node
+                            .children()
+                            .filter(|child| {
+                                child.is_element() && child.tag_name().name() == "Dimension"
+                            })
+                            .filter_map(|dimension| {
+                                Some((
+                                    dimension.attribute("Name")?.into(),
+                                    dimension.text()?.trim().into(),
+                                ))
+                            })
+                            .collect::<BTreeMap<_, _>>(),
+                        properties: node
+                            .attributes()
+                            .filter(|attribute| {
+                                !matches!(attribute.name(), "id" | "Name" | "Type" | "Suppressed")
+                            })
+                            .map(|attribute| {
+                                (attribute.name().to_string(), attribute.value().to_string())
+                            })
+                            .collect(),
+                    }
                 })
                 .collect();
+            let id = format!("sldprt:history:feature-history#{}", block.offset);
+            crate::annotations::note(
+                annotations,
+                id.clone(),
+                stream,
+                0,
+                "Keywords",
+                Exactness::ByteExact,
+            );
             Some(FeatureHistory {
+                id,
                 part_name: root
                     .attribute("Name")
                     .filter(|value| !value.is_empty())
                     .map(str::to_string),
                 configurations,
                 features,
-                meta: meta(0, "Keywords"),
             })
         })
         .collect()

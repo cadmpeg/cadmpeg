@@ -24,10 +24,7 @@
 //! and rational weights are not scaled. Surface control grids are stored
 //! v-major (v outer, u inner) and are transposed to the IR's u-major order.
 
-use cadmpeg_ir::geometry::{
-    BlendRadiusLaw, BlendSupports, NurbsCurve, NurbsSurface, ProceduralSupportKind,
-    ProceduralSurfaceDefinition,
-};
+use cadmpeg_ir::geometry::{BlendCrossSection, BlendRadiusLaw, NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 /// Millimetres per ASM model-space length unit (centimetres).
@@ -333,11 +330,33 @@ pub fn decode_surface_cache(record_bytes: &[u8]) -> Option<NurbsSurface> {
 pub struct DecodedProceduralSurface {
     /// The native procedural surface construction (blend, sweep, loft, or
     /// taper family) decoded from its subtype-dispatched inline fields.
-    pub definition: ProceduralSurfaceDefinition,
+    pub definition: DecodedProceduralSurfaceDefinition,
     /// `surface_fit_tolerance` of the cached B-spline block, if present.
     /// `0.0` indicates fidelity to the procedural surface rather than
     /// identity with a primitive (spec §7.5).
     pub cache_fit_tolerance: Option<f64>,
+}
+
+/// Source-native procedural semantics before embedded geometry is assigned IR ids.
+pub enum DecodedProceduralSurfaceDefinition {
+    /// Translation of an embedded directrix along a length-bearing direction.
+    Extrusion {
+        /// Embedded directrix cache.
+        directrix: NurbsCurve,
+        /// Length-bearing sweep direction.
+        direction: Vector3,
+    },
+    /// Rolling-ball blend with embedded support and spine caches.
+    Blend {
+        /// Embedded support caches in side order.
+        supports: Box<[Option<NurbsSurface>; 2]>,
+        /// Embedded center/spine curve.
+        spine: Option<NurbsCurve>,
+        /// Signed radius law.
+        radius: BlendRadiusLaw,
+        /// Blend cross-section family.
+        cross_section: BlendCrossSection,
+    },
 }
 
 /// Decode an inline `cyl_spl_sur` translational-extrusion definition.
@@ -366,12 +385,12 @@ pub fn decode_cyl_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurfac
         }
         pos = next_token(span, pos)?;
     }
-    let u_range = [*doubles.first()?, *doubles.get(1)?];
+    let _u_range = [*doubles.first()?, *doubles.get(1)?];
     let decoded_cache = marker_positions(span)
         .into_iter()
         .filter_map(|at| decode_surface_block(span, at))
         .next_back()?;
-    let v_range = [
+    let _v_range = [
         *decoded_cache.surface.v_knots.first()?,
         *decoded_cache.surface.v_knots.last()?,
     ];
@@ -380,26 +399,12 @@ pub fn decode_cyl_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurfac
         .flatten();
 
     Some(DecodedProceduralSurface {
-        definition: ProceduralSurfaceDefinition::TranslationalExtrusion {
+        definition: DecodedProceduralSurfaceDefinition::Extrusion {
             directrix,
             direction: direction?,
-            u_range,
-            v_range,
         },
         cache_fit_tolerance,
     })
-}
-
-fn support_kind(name: &[u8]) -> Option<ProceduralSupportKind> {
-    match name {
-        b"plane" => Some(ProceduralSupportKind::Plane),
-        b"cone" => Some(ProceduralSupportKind::Cone),
-        b"sphere" => Some(ProceduralSupportKind::Sphere),
-        b"torus" => Some(ProceduralSupportKind::Torus),
-        b"spline" => Some(ProceduralSupportKind::Spline),
-        b"cyl_spl_sur" => Some(ProceduralSupportKind::TranslationalExtrusion),
-        _ => None,
-    }
 }
 
 fn decode_rb_blend_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurface> {
@@ -413,15 +418,16 @@ fn decode_rb_blend_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurfa
         .filter_map(|at| decode_surface_block(span, at))
         .next_back()?;
 
-    let mut supports = Vec::new();
+    let mut support_count = 0usize;
     let mut radius_boundary = None;
     let mut pos = marker.len();
     while pos < cache.end {
         match span[pos] {
             0x0d | 0x0e => {
                 let len = usize::from(*span.get(pos + 1)?);
-                if let Some(kind) = support_kind(span.get(pos + 2..pos + 2 + len)?) {
-                    supports.push(kind);
+                let name = span.get(pos + 2..pos + 2 + len)?;
+                if [b"plane".as_slice(), b"sphere", b"cone", b"torus"].contains(&name) {
+                    support_count += 1;
                 }
             }
             0x15 if read_i64(span, pos + 1) == Some(-1) => radius_boundary = Some(pos),
@@ -452,21 +458,25 @@ fn decode_rb_blend_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurfa
         .filter_map(|at| decode_curve_block(span, at))
         .map(|decoded| decoded.curve)
         .next_back();
-    supports.truncate(2);
-    let supports = match supports.try_into() {
-        Ok(complete) => BlendSupports::Complete(complete),
-        Err(partial) if !partial.is_empty() => BlendSupports::Partial(partial),
-        Err(_) => return None,
-    };
+    let mut support_caches = marker_positions(span)
+        .into_iter()
+        .filter_map(|at| decode_surface_block(span, at))
+        .filter(|decoded| decoded.end < cache.end)
+        .map(|decoded| decoded.surface);
+    let supports = [
+        (support_count > 0).then(|| support_caches.next()).flatten(),
+        (support_count > 1).then(|| support_caches.next()).flatten(),
+    ];
     let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
         .then(|| read_f64(span, cache.end + 1).map(|v| v * LEN_TO_MM))
         .flatten();
 
     Some(DecodedProceduralSurface {
-        definition: ProceduralSurfaceDefinition::RollingBallBlend {
-            supports,
-            center_curve,
+        definition: DecodedProceduralSurfaceDefinition::Blend {
+            supports: Box::new(supports),
+            spine: center_curve,
             radius,
+            cross_section: BlendCrossSection::Circular,
         },
         cache_fit_tolerance,
     })

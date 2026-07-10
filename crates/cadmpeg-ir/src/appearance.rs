@@ -7,7 +7,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{AppearanceId, BodyId, FaceId};
-use crate::provenance::EntityMeta;
 use crate::topology::Color;
 
 /// A decoded appearance/material asset.
@@ -39,8 +38,6 @@ pub struct Appearance {
     /// Additional byte-decoded shader scalars keyed by schema property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, f64>,
-    /// Byte provenance.
-    pub meta: EntityMeta,
 }
 
 /// A topology entity which receives an appearance.
@@ -56,6 +53,8 @@ pub enum AppearanceTarget {
 /// An explicit appearance assignment.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AppearanceBinding {
+    /// Globally unique deterministic assignment identity.
+    pub id: String,
     /// Assigned topology entity.
     pub target: AppearanceTarget,
     /// Referenced appearance asset.
@@ -69,6 +68,4 @@ pub struct AppearanceBinding {
     /// ACT change-version channel GUIDs for this assigned entity.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub channels: BTreeMap<String, String>,
-    /// Byte provenance for the assignment record.
-    pub meta: EntityMeta,
 }

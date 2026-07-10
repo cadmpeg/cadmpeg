@@ -31,9 +31,12 @@ fn geometryless_creo(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
 
 fn sldprt_cube() -> cadmpeg_ir::CadIr {
     let mut ir = unit_cube();
-    ir.bodies[0].name = None;
-    ir.faces.iter_mut().for_each(|face| face.name = None);
-    ir.edges.iter_mut().for_each(|edge| edge.param_range = None);
+    ir.model.bodies[0].name = None;
+    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    ir.model
+        .edges
+        .iter_mut()
+        .for_each(|edge| edge.param_range = None);
     ir
 }
 
@@ -87,16 +90,16 @@ fn source_less_ir_exports_to_decodable_sldprt() {
     let decoded = cadmpeg_codec_sldprt::SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.bodies.len(), 1);
-    assert_eq!(decoded.ir.faces.len(), 6);
-    assert_eq!(decoded.ir.edges.len(), 12);
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.faces.len(), 6);
+    assert_eq!(decoded.ir.model.edges.len(), 12);
 }
 
 #[test]
 fn validation_blocks_conversion_unless_overridden() {
     let dir = tempdir().unwrap();
     let mut invalid = unit_cube();
-    invalid.faces[0].surface.0 = "missing".into();
+    invalid.model.faces[0].surface.0 = "missing".into();
     let input = fixture(dir.path(), "invalid.json", &invalid);
     let output = dir.path().join("blocked.step");
     Command::cargo_bin("cadmpeg")
@@ -186,10 +189,9 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
     let dir = tempdir().unwrap();
     let left = unit_cube();
     let mut right = left.clone();
-    right.points[0].position.x += 0.5;
-    right.edges[0].tolerance = Some(0.01);
-    right.coedges[0].radial_next = right.coedges[0].partner.clone();
-    right.coedges[0].sense = match right.coedges[0].sense {
+    right.model.points[0].position.x += 0.5;
+    right.model.edges[0].tolerance = Some(0.01);
+    right.model.coedges[0].sense = match right.model.coedges[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
     };
@@ -335,7 +337,7 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
         .code(2);
 
     let mut invalid = unit_cube();
-    invalid.faces[0].surface.0 = "missing".into();
+    invalid.model.faces[0].surface.0 = "missing".into();
     let invalid = fixture(dir.path(), "invalid.json", &invalid);
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -419,7 +421,7 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
         .success();
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(success_report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 1);
+    assert_eq!(value["schema_version"], 2);
     assert_eq!(value["command"], "convert");
     assert!(value["decode_report"].is_null());
     assert!(value["validation_report"].is_object());
@@ -505,7 +507,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
-    assert_eq!(value["schema_version"], 1);
+    assert_eq!(value["schema_version"], 2);
     assert_eq!(value["command"], "validate");
 
     let diff = Command::cargo_bin("cadmpeg")
@@ -519,7 +521,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&diff.stdout).unwrap();
-    assert_eq!(value["schema_version"], 1);
+    assert_eq!(value["schema_version"], 2);
     assert_eq!(value["command"], "diff");
 
     let native = geometryless_creo(dir.path(), "ambiguous.bin");
@@ -536,7 +538,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .unwrap();
     assert!(inspect.status.success());
     let value: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
-    assert_eq!(value["schema_version"], 1);
+    assert_eq!(value["schema_version"], 2);
     assert_eq!(value["command"], "inspect");
 }
 

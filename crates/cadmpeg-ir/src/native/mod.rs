@@ -35,6 +35,16 @@ pub struct Native {
 }
 
 impl Native {
+    /// Sort every present native namespace into canonical identity order.
+    pub(crate) fn finalize(&mut self) {
+        if let Some(native) = &mut self.f3d {
+            native.finalize();
+        }
+        if let Some(native) = &mut self.sldprt {
+            native.finalize();
+        }
+    }
+
     /// Return one count for each non-empty native arena.
     pub fn loss_counts(&self) -> Vec<LossCount> {
         let mut counts = Vec::new();
@@ -131,6 +141,50 @@ impl Native {
                 "asm_histories",
                 native.asm_histories.len(),
             );
+            push_count(
+                &mut counts,
+                "f3d",
+                "asm_delta_states",
+                native
+                    .asm_histories
+                    .iter()
+                    .map(|history| history.states.len())
+                    .sum(),
+            );
+            push_count(
+                &mut counts,
+                "f3d",
+                "asm_bulletin_boards",
+                native
+                    .asm_histories
+                    .iter()
+                    .flat_map(|history| &history.states)
+                    .map(|state| state.bulletin_boards.len())
+                    .sum(),
+            );
+            push_count(
+                &mut counts,
+                "f3d",
+                "asm_entity_changes",
+                native
+                    .asm_histories
+                    .iter()
+                    .flat_map(|history| &history.states)
+                    .flat_map(|state| &state.bulletin_boards)
+                    .map(|board| board.changes.len())
+                    .sum(),
+            );
+            push_count(
+                &mut counts,
+                "f3d",
+                "asm_history_records",
+                native
+                    .asm_histories
+                    .iter()
+                    .flat_map(|history| &history.states)
+                    .map(|state| state.records.len())
+                    .sum(),
+            );
         }
 
         if let Some(native) = &self.sldprt {
@@ -145,6 +199,36 @@ impl Native {
                 "sldprt",
                 "feature_input_lanes",
                 native.feature_input_lanes.len(),
+            );
+            push_count(
+                &mut counts,
+                "sldprt",
+                "configurations",
+                native
+                    .feature_histories
+                    .iter()
+                    .map(|history| history.configurations.len())
+                    .sum(),
+            );
+            push_count(
+                &mut counts,
+                "sldprt",
+                "features",
+                native
+                    .feature_histories
+                    .iter()
+                    .map(|history| history.features.len())
+                    .sum(),
+            );
+            push_count(
+                &mut counts,
+                "sldprt",
+                "sketch_input_entities",
+                native
+                    .feature_input_lanes
+                    .iter()
+                    .map(|lane| lane.sketch_entities.len())
+                    .sum(),
             );
         }
 

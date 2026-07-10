@@ -119,12 +119,34 @@ impl DecodeReport {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum Check {
+    /// The document schema version is not the version accepted by this build.
+    Version,
+    /// Entity identifiers are empty, duplicated, or not globally unique.
+    Identity,
+    /// An arena is not sorted lexicographically by entity id.
+    ArenaOrder,
     /// A referenced id does not resolve in its arena.
     ReferentialIntegrity,
     /// A face loop's coedge ring does not close.
     LoopClosure,
     /// An edge's two coedges do not pair consistently.
     CoedgePairing,
+    /// Wire edges, free vertices, or wire bodies violate topology ownership rules.
+    WireTopology,
+    /// A geometry carrier cannot be reached from topology or retained construction data.
+    CarrierReachability,
+    /// An annotation key, stream index, or field path is invalid.
+    Annotations,
+    /// A source-native namespace record has an unresolved link.
+    NativeLinks,
+    /// An edge parameter range violates the carrier's canonical domain.
+    ParameterDomain,
+    /// A document-wide or per-entity tolerance is not sane.
+    Tolerances,
+    /// A preserved byte payload does not match its declared digest or length.
+    PayloadIntegrity,
+    /// A tessellation payload is malformed.
+    Tessellation,
     /// The document's units are missing or non-canonical, or a tolerance is
     /// invalid.
     Units,
@@ -137,9 +159,20 @@ pub enum Check {
 impl fmt::Display for Check {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
+            Self::Version => "version",
+            Self::Identity => "identity",
+            Self::ArenaOrder => "arena_order",
             Self::ReferentialIntegrity => "referential_integrity",
             Self::LoopClosure => "loop_closure",
             Self::CoedgePairing => "coedge_pairing",
+            Self::WireTopology => "wire_topology",
+            Self::CarrierReachability => "carrier_reachability",
+            Self::Annotations => "annotations",
+            Self::NativeLinks => "native_links",
+            Self::ParameterDomain => "parameter_domain",
+            Self::Tolerances => "tolerances",
+            Self::PayloadIntegrity => "payload_integrity",
+            Self::Tessellation => "tessellation",
             Self::Units => "units",
             Self::Bounds => "bounds",
             Self::Counts => "counts",

@@ -16,6 +16,8 @@ use crate::loader::{self, read_prefix};
 use crate::registry::Registry;
 use crate::{DecodeArgs, ForcedInput, Format};
 
+const CLI_SCHEMA_VERSION: u32 = 2;
+
 #[derive(Debug)]
 pub struct SemanticFailure(String);
 
@@ -69,7 +71,7 @@ pub fn inspect(
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "schema_version": 1,
+                "schema_version": CLI_SCHEMA_VERSION,
                 "command": "inspect",
                 "confidence": confidence,
                 "summary": summary,
@@ -150,7 +152,7 @@ pub fn validate_cmd(
             stdout,
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "schema_version": 1,
+                "schema_version": CLI_SCHEMA_VERSION,
                 "command": "validate",
                 "decode_report": loaded.decode_report,
                 "validation_report": report,
@@ -309,7 +311,7 @@ pub fn diff(
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "schema_version": 1,
+                "schema_version": CLI_SCHEMA_VERSION,
                 "command": "diff",
                 "different": !result.is_empty(),
                 "diff": result,
@@ -496,7 +498,7 @@ fn write_command_report(
         return Ok(());
     };
     let mut bytes = serde_json::to_vec_pretty(&serde_json::json!({
-        "schema_version": 1,
+        "schema_version": CLI_SCHEMA_VERSION,
         "command": command,
         "decode_report": decode_report,
         "validation_report": validation_report,

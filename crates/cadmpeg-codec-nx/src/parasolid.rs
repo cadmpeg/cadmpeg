@@ -127,6 +127,7 @@ pub fn extract_streams(data: &[u8]) -> Vec<Stream> {
 /// 31. NX uses the standard `78 01`, `78 9c`, and `78 da` variants, but the
 /// predicate accepts every standards-conforming FLG byte rather than treating a
 /// compression level as a format discriminator.
+#[allow(clippy::manual_is_multiple_of)] // `is_multiple_of` exceeds the workspace MSRV.
 fn is_zlib_header(cmf: u8, flg: u8) -> bool {
     cmf & 0x0f == 8 && cmf >> 4 <= 7 && u16::from_be_bytes([cmf, flg]).is_multiple_of(31)
 }

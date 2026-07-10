@@ -183,10 +183,10 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
                 if let Some(s) = h.scale {
                     attributes.insert("scale".to_string(), format!("{s}"));
                 }
-                if let Some(r) = h.resabs {
+                if let Some(r) = h.linear {
                     attributes.insert("resabs".to_string(), format!("{r}"));
                 }
-                if let Some(r) = h.resnor {
+                if let Some(r) = h.angular {
                     attributes.insert("resnor".to_string(), format!("{r}"));
                 }
             }

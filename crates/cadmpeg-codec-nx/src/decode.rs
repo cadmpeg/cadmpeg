@@ -13,21 +13,23 @@
 //! those carriers; a stream that yields no topology is reported as a counted
 //! loss instead.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::geometry::{Curve, Surface};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, LumpId, PointId, ShellId, SurfaceId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
     UnknownId, VertexId,
 };
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
-use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Lump, Point, Sense, Shell, Vertex};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::Exactness;
 
 use crate::container::{self, Container};
 use crate::geometry;
@@ -74,16 +76,16 @@ pub fn decode(
     if options.container_only {
         let ir = build_metadata_ir(&scan);
         let report = build_container_report(&scan, true);
-        return Ok(DecodeResult { ir, report });
+        return Ok(DecodeResult::new(ir, report));
     }
 
     if let Some((ir, report)) = try_decode_geometry(&scan) {
-        return Ok(DecodeResult { ir, report });
+        return Ok(DecodeResult::new(ir, report));
     }
 
     let ir = build_metadata_ir(&scan);
     let report = build_container_report(&scan, false);
-    Ok(DecodeResult { ir, report })
+    Ok(DecodeResult::new(ir, report))
 }
 
 /// Aggregate carrier counts across the decoded streams, for reporting.
@@ -114,10 +116,8 @@ impl Counts {
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
 fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
-    use cadmpeg_ir::geometry::CurveGeometry;
-    use cadmpeg_ir::geometry::SurfaceGeometry;
-
     let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
     let mut counts = Counts::default();
 
@@ -126,29 +126,39 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             continue;
         }
         let stream_name = format!("parasolid#{si}:{}", stream.kind.label());
+        let source_stream = annotations.stream(format!("nx:{stream_name}"));
         let graph = Graph::parse(&stream.inflated);
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
         let mut curves_by_xmt = BTreeMap::new();
         let mut trim_ranges = BTreeMap::new();
+        let first_surface = ir.model.surfaces.len();
+        let first_curve = ir.model.curves.len();
 
         for (pi, pt) in geometry::points(&stream.inflated).into_iter().enumerate() {
             let pid = PointId(format!("nx:s{si}:pt#{pi}"));
             let vid = VertexId(format!("nx:s{si}:v#{pi}"));
-            ir.points.push(Point {
+            annotations
+                .note(&pid, source_stream, pt.pos as u64)
+                .tag("POINT");
+            annotations.derived(&pid, "position");
+            annotations
+                .note(&vid, source_stream, pt.pos as u64)
+                .tag("POINT");
+            annotations.exactness(&vid, Exactness::Inferred);
+            ir.model.points.push(Point {
                 id: pid.clone(),
                 position: pt.position,
-                meta: byte_exact(&stream_name, pt.pos as u64, "point"),
             });
-            ir.vertices.push(Vertex {
+            ir.model.vertices.push(Vertex {
                 id: vid.clone(),
                 point: pid,
                 tolerance: None,
-                meta: byte_exact(&stream_name, pt.pos as u64, "point"),
             });
             if let Some(node) = graph.at_pos(pt.pos) {
                 if node.kind == 29 {
                     let point_id = ir
+                        .model
                         .points
                         .last()
                         .expect("invariant: just pushed above")
@@ -170,10 +180,13 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
             }
             let id = SurfaceId(format!("nx:s{si}:surf#{fi}"));
-            ir.surfaces.push(Surface {
+            annotations
+                .note(&id, source_stream, surf.pos as u64)
+                .tag(surface_tag(&surf.geometry));
+            annotations.derived(&id, "geometry");
+            ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: surf.geometry,
-                meta: byte_exact(&stream_name, surf.pos as u64, "analytic_surface"),
             });
             if let Some(node) = graph.at_pos(surf.pos) {
                 surfaces_by_xmt.insert(node.xmt, id);
@@ -186,10 +199,13 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         {
             counts.nurbs_surfaces += 1;
             let id = SurfaceId(format!("nx:s{si}:nurbs-surf#{fi}"));
-            ir.surfaces.push(Surface {
+            annotations
+                .note(&id, source_stream, surf.pos as u64)
+                .tag("B_SPLINE_SURFACE");
+            annotations.derived(&id, "geometry");
+            ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: surf.geometry,
-                meta: byte_exact(&stream_name, surf.pos as u64, "bspline_surface"),
             });
             if let Some(node) = graph.at_pos(surf.pos) {
                 surfaces_by_xmt.insert(node.xmt, id);
@@ -203,13 +219,17 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 CurveGeometry::Ellipse { .. } => counts.ellipses += 1,
                 CurveGeometry::Parabola { .. }
                 | CurveGeometry::Hyperbola { .. }
-                | CurveGeometry::Nurbs(_) => {}
+                | CurveGeometry::Nurbs(_)
+                | CurveGeometry::Unknown { .. } => {}
             }
             let id = CurveId(format!("nx:s{si}:crv#{ci}"));
-            ir.curves.push(Curve {
+            annotations
+                .note(&id, source_stream, crv.pos as u64)
+                .tag(curve_tag(&crv.geometry));
+            annotations.derived(&id, "geometry");
+            ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry: crv.geometry,
-                meta: byte_exact(&stream_name, crv.pos as u64, "analytic_curve"),
             });
             if let Some(node) = graph.at_pos(crv.pos) {
                 curves_by_xmt.insert(node.xmt, id);
@@ -222,10 +242,13 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         {
             counts.nurbs_curves += 1;
             let id = CurveId(format!("nx:s{si}:nurbs-crv#{ci}"));
-            ir.curves.push(Curve {
+            annotations
+                .note(&id, source_stream, crv.pos as u64)
+                .tag("B_SPLINE_CURVE");
+            annotations.derived(&id, "geometry");
+            ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry: crv.geometry,
-                meta: byte_exact(&stream_name, crv.pos as u64, "bspline_curve"),
             });
             if let Some(node) = graph.at_pos(crv.pos) {
                 curves_by_xmt.insert(node.xmt, id);
@@ -247,20 +270,112 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             &surfaces_by_xmt,
             &curves_by_xmt,
             &trim_ranges,
-            &stream_name,
+            source_stream,
+            &mut annotations,
         );
 
         // Preserve the whole inflated stream verbatim so nothing is dropped.
-        ir.unknowns.push(unknown_stream(si, stream));
+        let mut unknown = unknown_stream(si, stream);
+        unknown.links.extend(
+            ir.model.surfaces[first_surface..]
+                .iter()
+                .map(|surface| surface.id.0.clone()),
+        );
+        unknown.links.extend(
+            ir.model.curves[first_curve..]
+                .iter()
+                .map(|curve| curve.id.0.clone()),
+        );
+        let container_stream = annotations.stream("nx:container");
+        annotations
+            .note(&unknown.id, container_stream, stream.file_offset as u64)
+            .tag(stream.kind.label());
+        annotations.exactness(&unknown.id, Exactness::Derived);
+        if !unknown.links.is_empty() {
+            annotations.derived(&unknown.id, "links");
+        }
+        ir.unknowns.push(unknown);
     }
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
         return None;
     }
 
-    dual_write_annotations(&mut ir);
-    let report = build_geometry_report(scan, &counts, !ir.faces.is_empty());
+    attach_free_topology(&mut ir, &mut annotations);
+    ir.annotations = annotations.build();
+    let report = build_geometry_report(scan, &counts, !ir.model.faces.is_empty());
     Some((ir, report))
+}
+
+fn attach_free_topology(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+    let edge_vertices: BTreeSet<_> = ir
+        .model
+        .edges
+        .iter()
+        .flat_map(|edge| [&edge.start, &edge.end])
+        .cloned()
+        .collect();
+    let coedge_edges: BTreeSet<_> = ir
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| coedge.edge.clone())
+        .collect();
+    let free_vertices: Vec<_> = ir
+        .model
+        .vertices
+        .iter()
+        .filter(|vertex| !edge_vertices.contains(&vertex.id))
+        .map(|vertex| vertex.id.clone())
+        .collect();
+    let wire_edges: Vec<_> = ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| !coedge_edges.contains(&edge.id))
+        .map(|edge| edge.id.clone())
+        .collect();
+    if free_vertices.is_empty() && wire_edges.is_empty() {
+        return;
+    }
+
+    if let Some(shell) = ir.model.shells.first_mut() {
+        shell.free_vertices.extend(free_vertices);
+        shell.wire_edges.extend(wire_edges);
+        annotations
+            .derived(&shell.id, "free_vertices")
+            .derived(&shell.id, "wire_edges");
+        return;
+    }
+
+    let body_id = BodyId("nx:derived:body#0".to_string());
+    let region_id = RegionId("nx:derived:region#0".to_string());
+    let shell_id = ShellId("nx:derived:shell#0".to_string());
+    let stream = annotations.stream("nx:container");
+    for id in [&body_id.0, &region_id.0, &shell_id.0] {
+        annotations.note(id, stream, 0).tag("derived_free_topology");
+        annotations.exactness(id, Exactness::Inferred);
+    }
+    ir.model.shells.push(Shell {
+        id: shell_id.clone(),
+        region: region_id.clone(),
+        faces: Vec::new(),
+        wire_edges,
+        free_vertices,
+    });
+    ir.model.regions.push(Region {
+        id: region_id,
+        body: body_id.clone(),
+        shells: vec![shell_id],
+    });
+    ir.model.bodies.push(Body {
+        id: body_id,
+        kind: BodyKind::General,
+        regions: vec!["nx:derived:region#0".into()],
+        transform: None,
+        name: None,
+        color: None,
+    });
 }
 
 // The parameters are the per-stream lookup tables produced by the decode pass;
@@ -274,21 +389,22 @@ fn emit_topology(
     surfaces: &BTreeMap<u32, SurfaceId>,
     curves: &BTreeMap<u32, CurveId>,
     trim_ranges: &BTreeMap<u32, [f64; 2]>,
-    stream_name: &str,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    annotations: &mut AnnotationBuilder,
 ) {
     let prefix = format!("nx:s{stream_index}");
     let mut bodies = BTreeMap::new();
     for node in graph.of_kind(12) {
         let id = BodyId(format!("{prefix}:body#{}", node.xmt));
+        annotate_node(annotations, &id, source_stream, node, "BODY");
         bodies.insert(node.xmt, id.clone());
-        ir.bodies.push(Body {
+        ir.model.bodies.push(Body {
             id,
             kind: cadmpeg_ir::topology::BodyKind::Solid,
-            lumps: Vec::new(),
+            regions: Vec::new(),
             transform: None,
             name: None,
             color: None,
-            meta: byte_exact(stream_name, node.pos as u64, "body"),
         });
     }
 
@@ -297,24 +413,30 @@ fn emit_topology(
         let Some(body) = node.xmt_at(10).and_then(|xmt| bodies.get(&xmt)).cloned() else {
             continue;
         };
-        let lump_id = LumpId(format!("{prefix}:lump#{}", node.xmt));
+        let region_id = RegionId(format!("{prefix}:region#{}", node.xmt));
         let shell_id = ShellId(format!("{prefix}:shell#{}", node.xmt));
-        ir.lumps.push(Lump {
-            id: lump_id.clone(),
+        annotate_node(annotations, &region_id, source_stream, node, "SHELL");
+        annotations.exactness(&region_id, Exactness::Inferred);
+        annotate_node(annotations, &shell_id, source_stream, node, "SHELL");
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
             body: body.clone(),
             shells: vec![shell_id.clone()],
-            meta: byte_exact(stream_name, node.pos as u64, "lump"),
         });
-        ir.shells.push(Shell {
+        ir.model.shells.push(Shell {
             id: shell_id.clone(),
-            lump: lump_id.clone(),
+            region: region_id.clone(),
             faces: Vec::new(),
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
-            meta: byte_exact(stream_name, node.pos as u64, "shell"),
         });
-        if let Some(parent) = ir.bodies.iter_mut().find(|candidate| candidate.id == body) {
-            parent.lumps.push(lump_id);
+        if let Some(parent) = ir
+            .model
+            .bodies
+            .iter_mut()
+            .find(|candidate| candidate.id == body)
+        {
+            parent.regions.push(region_id);
         }
         shells.insert(node.xmt, shell_id);
     }
@@ -328,13 +450,15 @@ fn emit_topology(
             continue;
         };
         if let Some(decoded_vertex) = ir
+            .model
             .vertices
             .iter_mut()
             .find(|candidate| candidate.id == *vertex)
         {
             decoded_vertex.tolerance = geometric_tolerance(node, 18);
-            decoded_vertex.meta = byte_exact(stream_name, node.pos as u64, "vertex");
         }
+        annotate_node(annotations, vertex, source_stream, node, "VERTEX");
+        annotations.derived(vertex, "tolerance");
         vertices.insert(node.xmt, vertex.clone());
     }
 
@@ -359,14 +483,15 @@ fn emit_topology(
         let curve_xmt = node.xmt_at(24);
         let curve = curve_xmt.and_then(|xmt| curves.get(&xmt)).cloned();
         let id = EdgeId(format!("{prefix}:edge#{}", node.xmt));
-        ir.edges.push(Edge {
+        annotate_node(annotations, &id, source_stream, node, "EDGE");
+        annotations.derived(&id, "tolerance");
+        ir.model.edges.push(Edge {
             id: id.clone(),
             curve,
             start,
             end,
             param_range: curve_xmt.and_then(|xmt| trim_ranges.get(&xmt)).copied(),
             tolerance: geometric_tolerance(node, 10),
-            meta: byte_exact(stream_name, node.pos as u64, "edge"),
         });
         edges.insert(node.xmt, id);
     }
@@ -380,7 +505,9 @@ fn emit_topology(
             continue;
         };
         let id = FaceId(format!("{prefix}:face#{}", node.xmt));
-        ir.faces.push(Face {
+        annotate_node(annotations, &id, source_stream, node, "FACE");
+        annotations.derived(&id, "tolerance");
+        ir.model.faces.push(Face {
             id: id.clone(),
             shell: shell.clone(),
             surface,
@@ -389,9 +516,13 @@ fn emit_topology(
             name: None,
             color: None,
             tolerance: geometric_tolerance(node, 10),
-            meta: byte_exact(stream_name, node.pos as u64, "face"),
         });
-        if let Some(parent) = ir.shells.iter_mut().find(|candidate| candidate.id == shell) {
+        if let Some(parent) = ir
+            .model
+            .shells
+            .iter_mut()
+            .find(|candidate| candidate.id == shell)
+        {
             parent.faces.push(id.clone());
         }
         faces.insert(node.xmt, id);
@@ -403,13 +534,18 @@ fn emit_topology(
             continue;
         };
         let id = LoopId(format!("{prefix}:loop#{}", node.xmt));
-        ir.loops.push(Loop {
+        annotate_node(annotations, &id, source_stream, node, "LOOP");
+        ir.model.loops.push(Loop {
             id: id.clone(),
             face: face.clone(),
             coedges: Vec::new(),
-            meta: byte_exact(stream_name, node.pos as u64, "loop"),
         });
-        if let Some(parent) = ir.faces.iter_mut().find(|candidate| candidate.id == face) {
+        if let Some(parent) = ir
+            .model
+            .faces
+            .iter_mut()
+            .find(|candidate| candidate.id == face)
+        {
             parent.loops.push(id.clone());
         }
         loops.insert(node.xmt, id);
@@ -435,6 +571,7 @@ fn emit_topology(
             continue;
         };
         let id = fin_ids.get(&node.xmt).cloned().expect("filtered above");
+        annotate_node(annotations, &id, source_stream, node, "FIN");
         let next = Some(refs[1])
             .and_then(|xmt| fin_ids.get(&xmt))
             .cloned()
@@ -445,25 +582,58 @@ fn emit_topology(
             .unwrap_or_else(|| id.clone());
         let partner = fin_ids.get(&refs[4]).cloned();
         let radial_next = partner.clone().unwrap_or_else(|| id.clone());
-        ir.coedges.push(Coedge {
+        ir.model.coedges.push(Coedge {
             id: id.clone(),
             owner_loop: loop_id.clone(),
             edge,
             next,
             previous,
-            partner,
-            radial_next: Some(radial_next),
+            radial_next,
             sense: sense(node.byte_at(22)),
             pcurve: None,
-            meta: byte_exact(stream_name, node.pos as u64, "fin"),
         });
         if let Some(parent) = ir
+            .model
             .loops
             .iter_mut()
             .find(|candidate| candidate.id == loop_id)
         {
             parent.coedges.push(id);
         }
+    }
+}
+
+fn annotate_node(
+    annotations: &mut AnnotationBuilder,
+    id: impl std::fmt::Display,
+    stream: cadmpeg_ir::annotations::StreamHandle,
+    node: &Node,
+    tag: &str,
+) {
+    annotations.note(id, stream, node.pos as u64).tag(tag);
+}
+
+fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
+    match geometry {
+        SurfaceGeometry::Plane { .. } => "PLANE",
+        SurfaceGeometry::Cylinder { .. } => "CYLINDER",
+        SurfaceGeometry::Cone { .. } => "CONE",
+        SurfaceGeometry::Sphere { .. } => "SPHERE",
+        SurfaceGeometry::Torus { .. } => "TORUS",
+        SurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
+        SurfaceGeometry::Unknown { .. } => "UNKNOWN_SURFACE",
+    }
+}
+
+fn curve_tag(geometry: &CurveGeometry) -> &'static str {
+    match geometry {
+        CurveGeometry::Line { .. } => "LINE",
+        CurveGeometry::Circle { .. } => "CIRCLE",
+        CurveGeometry::Ellipse { .. } => "ELLIPSE",
+        CurveGeometry::Parabola { .. } => "PARABOLA",
+        CurveGeometry::Hyperbola { .. } => "HYPERBOLA",
+        CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
+        CurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
     }
 }
 
@@ -485,21 +655,12 @@ fn sense(byte: Option<u8>) -> Sense {
 
 fn unknown_stream(si: usize, stream: &Stream) -> UnknownRecord {
     UnknownRecord {
-        id: UnknownId(format!("nx:parasolid#{si}")),
+        id: UnknownId(format!("nx:container:parasolid#{si}")),
         offset: stream.file_offset as u64,
         byte_len: stream.inflated.len() as u64,
         sha256: sha256_hex(&stream.inflated),
         data: Some(stream.inflated.clone()),
         links: Vec::new(),
-        meta: EntityMeta {
-            provenance: Provenance {
-                format: "nx".to_string(),
-                stream: format!("parasolid#{si}:{}", stream.kind.label()),
-                offset: stream.file_offset as u64,
-                tag: stream.schema.clone(),
-            },
-            exactness: Exactness::Unknown,
-        },
     }
 }
 
@@ -658,13 +819,20 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
 
 fn build_metadata_ir(scan: &Scan) -> CadIr {
     let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind.is_parasolid() {
-            ir.unknowns.push(unknown_stream(si, stream));
+            let unknown = unknown_stream(si, stream);
+            let source_stream = annotations.stream("nx:container");
+            annotations
+                .note(&unknown.id, source_stream, stream.file_offset as u64)
+                .tag(stream.kind.label());
+            annotations.exactness(&unknown.id, Exactness::Derived);
+            ir.unknowns.push(unknown);
         }
     }
-    dual_write_annotations(&mut ir);
+    ir.annotations = annotations.build();
     ir
 }
 
@@ -753,61 +921,6 @@ pub fn summary_notes(scan: &Scan) -> Vec<String> {
         );
     }
     notes
-}
-
-fn byte_exact(stream: &str, offset: u64, tag: &str) -> EntityMeta {
-    EntityMeta {
-        provenance: Provenance {
-            format: "nx".to_string(),
-            stream: stream.to_string(),
-            offset,
-            tag: Some(tag.to_string()),
-        },
-        exactness: Exactness::ByteExact,
-    }
-}
-
-fn dual_write_annotations(ir: &mut CadIr) {
-    let mut builder = AnnotationBuilder::new();
-
-    macro_rules! annotate_arena {
-        ($arena:expr) => {
-            for entity in $arena {
-                annotate_entity(&mut builder, &entity.id, &entity.meta);
-            }
-        };
-    }
-
-    annotate_arena!(&ir.bodies);
-    annotate_arena!(&ir.lumps);
-    annotate_arena!(&ir.shells);
-    annotate_arena!(&ir.faces);
-    annotate_arena!(&ir.loops);
-    annotate_arena!(&ir.coedges);
-    annotate_arena!(&ir.edges);
-    annotate_arena!(&ir.vertices);
-    annotate_arena!(&ir.points);
-    annotate_arena!(&ir.surfaces);
-    annotate_arena!(&ir.curves);
-    annotate_arena!(&ir.unknowns);
-
-    ir.annotations = builder.build();
-}
-
-fn annotate_entity(
-    builder: &mut AnnotationBuilder,
-    id: &impl std::fmt::Display,
-    meta: &EntityMeta,
-) {
-    let stream = builder.stream(format!(
-        "{}:{}",
-        meta.provenance.format, meta.provenance.stream
-    ));
-    let note = builder.note(id, stream, meta.provenance.offset);
-    if let Some(tag) = &meta.provenance.tag {
-        note.tag(tag);
-    }
-    builder.exactness(id, meta.exactness);
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

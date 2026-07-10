@@ -18,7 +18,6 @@ use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::native::F3dNative;
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -36,9 +35,9 @@ pub fn decode(
 
     if options.container_only {
         let mut ir = build_metadata_ir(&scan);
-        finalize_dual_write(&mut ir);
+        populate_annotations(&mut ir, &scan, None);
         let report = build_container_report(&scan, true);
-        return Ok(DecodeResult { ir, report });
+        return Ok(DecodeResult::new(ir, report));
     }
 
     // Attempt a real geometry decode of the active BREP. `try_decode_brep`
@@ -46,45 +45,113 @@ pub fn decode(
     // that frames but carries no geometry falls through to the honest metadata
     // path rather than reporting an empty graph as a geometry transfer.
     if let Some(active) = container::select_active_brep(&scan).cloned() {
-        if let Some((brep, mut report)) = try_decode_brep(reader, &scan, &active)? {
+        if let Some((mut brep, mut report)) = try_decode_brep(reader, &scan, &active)? {
             let decoded_materials = materials::decode_with_bodies(reader, &scan, &brep.body_keys)?;
+            let annotation_records = std::mem::take(&mut brep.annotation_records);
             let mut ir = build_geometry_ir(&scan, &active, brep);
             if let Some(history) = decode_asm_history(reader, &active)? {
-                ir.asm_histories.push(history);
+                ir.native
+                    .f3d
+                    .get_or_insert_with(F3dNative::default)
+                    .asm_histories
+                    .push(history);
             }
-            ir.construction_recipes = crate::design::decode_recipes(reader, &scan)?;
-            ir.persistent_references = crate::design::decode_persistent_references(reader, &scan)?;
-            ir.lost_edge_references = crate::design::decode_lost_edge_references(reader, &scan)?;
-            ir.design_objects = crate::design::decode_objects(reader, &scan)?;
-            ir.design_entity_headers = crate::design::decode_entity_headers(reader, &scan)?;
-            ir.design_record_headers =
-                crate::design::decode_record_headers(reader, &scan, &ir.design_entity_headers)?;
-            ir.sketch_relations =
-                crate::design::decode_sketch_relations(reader, &scan, &ir.design_record_headers)?;
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .construction_recipes = crate::design::decode_recipes(reader, &scan)?;
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .persistent_references =
+                crate::design::decode_persistent_references(reader, &scan)?;
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .lost_edge_references = crate::design::decode_lost_edge_references(reader, &scan)?;
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .design_objects = crate::design::decode_objects(reader, &scan)?;
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .design_entity_headers = crate::design::decode_entity_headers(reader, &scan)?;
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .design_record_headers = crate::design::decode_record_headers(
+                reader,
+                &scan,
+                &ir.native
+                    .f3d
+                    .get_or_insert_with(F3dNative::default)
+                    .design_entity_headers,
+            )?;
+            let (record_headers, entity_headers) = {
+                let native = ir.native.f3d.get_or_insert_with(F3dNative::default);
+                (
+                    native.design_record_headers.clone(),
+                    native.design_entity_headers.clone(),
+                )
+            };
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .sketch_relations = crate::design::decode_sketch_relations(
+                reader,
+                &scan,
+                &record_headers,
+                &entity_headers,
+            )?;
             extend_related_design_records(reader, &scan, &mut ir)?;
-            ir.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
-            ir.sketch_curve_identities =
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .sketch_curve_identities =
                 crate::design::decode_sketch_curve_identities(reader, &scan)?;
-            ir.design_body_members = crate::design::decode_body_members(reader, &scan)?;
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .design_body_members = crate::design::decode_body_members(reader, &scan)?;
             let act = crate::act::decode(reader, &scan)?;
-            ir.act_entities = act.entities;
-            ir.act_guids = act.guids;
-            ir.act_root_components = act.root_components;
-            if !ir.lost_edge_references.is_empty() {
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .act_entities = act.entities;
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .act_guids = act.guids;
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .act_root_components = act.root_components;
+            if !ir
+                .native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .lost_edge_references
+                .is_empty()
+            {
                 report.losses.push(LossNote {
                     category: LossCategory::Attribute,
                     severity: Severity::Warning,
                     message: format!(
                         "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and cannot be replayed without repair.",
-                        ir.lost_edge_references.len()
+                        ir.native.f3d.get_or_insert_with(F3dNative::default).lost_edge_references.len()
                     ),
                     provenance: None,
                 });
             }
-            ir.appearances = decoded_materials.appearances;
-            ir.appearance_bindings = decoded_materials.bindings;
-            if !ir.appearances.is_empty() {
-                if ir.appearance_bindings.is_empty() {
+            ir.model.appearances = decoded_materials.appearances;
+            ir.model.appearance_bindings = decoded_materials.bindings;
+            if !ir.model.appearances.is_empty() {
+                if ir.model.appearance_bindings.is_empty() {
                     if let Some(loss) = report
                         .losses
                         .iter_mut()
@@ -92,7 +159,7 @@ pub fn decode(
                     {
                         loss.message = format!(
                             "{} Protein appearance asset(s) were decoded, but no topology assignment was resolved.",
-                            ir.appearances.len()
+                            ir.model.appearances.len()
                         );
                     }
                 } else {
@@ -101,8 +168,8 @@ pub fn decode(
                         .retain(|loss| loss.category != LossCategory::Material);
                 }
             }
-            finalize_dual_write(&mut ir);
-            return Ok(DecodeResult { ir, report });
+            populate_annotations(&mut ir, &scan, Some((&active.name, &annotation_records)));
+            return Ok(DecodeResult::new(ir, report));
         }
     }
 
@@ -110,251 +177,211 @@ pub fn decode(
     let mut ir = build_metadata_ir(&scan);
     if let Some(active) = container::select_active_brep(&scan) {
         if let Some(history) = decode_asm_history(reader, active)? {
-            ir.asm_histories.push(history);
+            ir.native
+                .f3d
+                .get_or_insert_with(F3dNative::default)
+                .asm_histories
+                .push(history);
         }
     }
-    ir.construction_recipes = crate::design::decode_recipes(reader, &scan)?;
-    ir.persistent_references = crate::design::decode_persistent_references(reader, &scan)?;
-    ir.lost_edge_references = crate::design::decode_lost_edge_references(reader, &scan)?;
-    ir.design_objects = crate::design::decode_objects(reader, &scan)?;
-    ir.design_entity_headers = crate::design::decode_entity_headers(reader, &scan)?;
-    ir.design_record_headers =
-        crate::design::decode_record_headers(reader, &scan, &ir.design_entity_headers)?;
-    ir.sketch_relations =
-        crate::design::decode_sketch_relations(reader, &scan, &ir.design_record_headers)?;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .construction_recipes = crate::design::decode_recipes(reader, &scan)?;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .persistent_references = crate::design::decode_persistent_references(reader, &scan)?;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .lost_edge_references = crate::design::decode_lost_edge_references(reader, &scan)?;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .design_objects = crate::design::decode_objects(reader, &scan)?;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .design_entity_headers = crate::design::decode_entity_headers(reader, &scan)?;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .design_record_headers = crate::design::decode_record_headers(
+        reader,
+        &scan,
+        &ir.native
+            .f3d
+            .get_or_insert_with(F3dNative::default)
+            .design_entity_headers,
+    )?;
+    let (record_headers, entity_headers) = {
+        let native = ir.native.f3d.get_or_insert_with(F3dNative::default);
+        (
+            native.design_record_headers.clone(),
+            native.design_entity_headers.clone(),
+        )
+    };
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .sketch_relations =
+        crate::design::decode_sketch_relations(reader, &scan, &record_headers, &entity_headers)?;
     extend_related_design_records(reader, &scan, &mut ir)?;
-    ir.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
-    ir.sketch_curve_identities = crate::design::decode_sketch_curve_identities(reader, &scan)?;
-    ir.design_body_members = crate::design::decode_body_members(reader, &scan)?;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .sketch_curve_identities = crate::design::decode_sketch_curve_identities(reader, &scan)?;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .design_body_members = crate::design::decode_body_members(reader, &scan)?;
     let act = crate::act::decode(reader, &scan)?;
-    ir.act_entities = act.entities;
-    ir.act_guids = act.guids;
-    ir.act_root_components = act.root_components;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .act_entities = act.entities;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .act_guids = act.guids;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .act_root_components = act.root_components;
     let decoded_materials = materials::decode(reader, &scan)?;
-    ir.appearances = decoded_materials.appearances;
-    ir.appearance_bindings = decoded_materials.bindings;
+    ir.model.appearances = decoded_materials.appearances;
+    ir.model.appearance_bindings = decoded_materials.bindings;
+    populate_annotations(&mut ir, &scan, None);
     let report = build_container_report(&scan, false);
-    finalize_dual_write(&mut ir);
-    Ok(DecodeResult { ir, report })
+    Ok(DecodeResult::new(ir, report))
 }
 
-fn finalize_dual_write(ir: &mut CadIr) {
-    ir.native.f3d = Some(F3dNative {
-        act_entities: ir.act_entities.clone(),
-        act_guids: ir.act_guids.clone(),
-        act_root_components: ir.act_root_components.clone(),
-        design_objects: ir.design_objects.clone(),
-        design_entity_headers: ir.design_entity_headers.clone(),
-        design_record_headers: ir.design_record_headers.clone(),
-        design_body_members: ir.design_body_members.clone(),
-        construction_recipes: ir.construction_recipes.clone(),
-        persistent_design_links: ir.persistent_design_links.clone(),
-        persistent_references: ir.persistent_references.clone(),
-        sketch_curve_links: ir.sketch_curve_links.clone(),
-        sketch_relations: ir.sketch_relations.clone(),
-        sketch_points: ir.sketch_points.clone(),
-        sketch_curve_identities: ir.sketch_curve_identities.clone(),
-        lost_edge_references: ir.lost_edge_references.clone(),
-        asm_histories: ir.asm_histories.clone(),
-        ..F3dNative::default()
-    });
-
+fn populate_annotations(
+    ir: &mut CadIr,
+    scan: &ContainerScan,
+    brep: Option<(&str, &[brep::AnnotationRecord])>,
+) {
     let mut annotations = AnnotationBuilder::new();
-    macro_rules! annotate {
-        ($arena:expr, $key:expr) => {
-            for entity in $arena {
-                let key = ($key)(entity);
-                let stream = annotations.stream(entity.meta.provenance.stream.clone());
-                let note = annotations.note(key.clone(), stream, entity.meta.provenance.offset);
-                if let Some(tag) = &entity.meta.provenance.tag {
-                    note.tag(tag.clone());
-                }
-                annotations.exactness(key, entity.meta.exactness);
+    if let Some((stream_name, records)) = brep {
+        let stream = annotations.stream(format!("f3d:{stream_name}"));
+        for record in records {
+            annotations
+                .note(&record.id, stream, record.offset)
+                .tag(&record.tag);
+            for field in &record.derived_fields {
+                annotations.derived(&record.id, *field);
             }
-        };
-    }
-
-    annotate!(&ir.bodies, |e: &cadmpeg_ir::topology::Body| e.id.0.clone());
-    annotate!(&ir.lumps, |e: &cadmpeg_ir::topology::Lump| e.id.0.clone());
-    annotate!(&ir.shells, |e: &cadmpeg_ir::topology::Shell| e.id.0.clone());
-    annotate!(&ir.faces, |e: &cadmpeg_ir::topology::Face| e.id.0.clone());
-    annotate!(&ir.loops, |e: &cadmpeg_ir::topology::Loop| e.id.0.clone());
-    annotate!(&ir.coedges, |e: &cadmpeg_ir::topology::Coedge| e
-        .id
-        .0
-        .clone());
-    annotate!(&ir.edges, |e: &cadmpeg_ir::topology::Edge| e.id.0.clone());
-    annotate!(&ir.vertices, |e: &cadmpeg_ir::topology::Vertex| e
-        .id
-        .0
-        .clone());
-    annotate!(&ir.points, |e: &cadmpeg_ir::topology::Point| e.id.0.clone());
-    annotate!(&ir.surfaces, |e: &cadmpeg_ir::geometry::Surface| e
-        .id
-        .0
-        .clone());
-    annotate!(&ir.curves, |e: &cadmpeg_ir::geometry::Curve| e.id.0.clone());
-    annotate!(&ir.pcurves, |e: &cadmpeg_ir::geometry::Pcurve| e
-        .id
-        .0
-        .clone());
-    annotate!(
-        &ir.surface_parameterizations,
-        |e: &cadmpeg_ir::geometry::SurfaceParameterization| e.surface.0.clone()
-    );
-    annotate!(
-        &ir.procedural_surfaces,
-        |e: &cadmpeg_ir::geometry::ProceduralSurface| e.surface.0.clone()
-    );
-    annotate!(
-        &ir.procedural_curves,
-        |e: &cadmpeg_ir::geometry::ProceduralCurve| e.curve.0.clone()
-    );
-    annotate!(
-        &ir.sketch_curve_links,
-        |e: &cadmpeg_ir::design::SketchCurveLink| {
-            format!("{}:{}", e.coedge.0, e.sketch_curve_id)
-        }
-    );
-    annotate!(
-        &ir.persistent_design_links,
-        |e: &cadmpeg_ir::design::PersistentDesignLink| {
-            format!("{:?}:{}:{}", e.target, e.design_id, e.ordinal)
-        }
-    );
-    annotate!(
-        &ir.construction_recipes,
-        |e: &cadmpeg_ir::design::ConstructionRecipe| {
-            format!("{:?}:{:?}:{}", e.kind, e.design_id, e.recipe_index)
-        }
-    );
-    annotate!(
-        &ir.persistent_references,
-        |e: &cadmpeg_ir::design::PersistentReference| {
-            format!("{:?}:{}", e.kind, e.meta.provenance.offset)
-        }
-    );
-    annotate!(
-        &ir.lost_edge_references,
-        |e: &cadmpeg_ir::design::LostEdgeReference| {
-            format!("{}:{}", e.class_tag, e.record_index)
-        }
-    );
-    annotate!(
-        &ir.design_objects,
-        |e: &cadmpeg_ir::design::DesignObject| e.self_guid.clone()
-    );
-    annotate!(
-        &ir.design_entity_headers,
-        |e: &cadmpeg_ir::design::DesignEntityHeader| { format!("{}:{}", e.class_tag, e.entity_id) }
-    );
-    annotate!(
-        &ir.design_record_headers,
-        |e: &cadmpeg_ir::design::DesignRecordHeader| {
-            format!("{}:{}", e.record_index, e.class_tag)
-        }
-    );
-    annotate!(
-        &ir.sketch_relations,
-        |e: &cadmpeg_ir::design::SketchRelation| e.record_index.to_string()
-    );
-    annotate!(&ir.sketch_points, |e: &cadmpeg_ir::design::SketchPoint| e
-        .record_index
-        .to_string());
-    annotate!(
-        &ir.sketch_curve_identities,
-        |e: &cadmpeg_ir::design::SketchCurveIdentity| e.record_index.to_string()
-    );
-    annotate!(
-        &ir.design_body_members,
-        |e: &cadmpeg_ir::design::DesignBodyMember| e.entity_suffix.to_string()
-    );
-    annotate!(&ir.act_entities, |e: &cadmpeg_ir::design::ActEntity| {
-        format!("{}:{}", e.record_index, e.entity_id)
-    });
-    annotate!(&ir.act_guids, |e: &cadmpeg_ir::design::ActGuid| {
-        format!("{}:{}", e.ordinal, e.guid)
-    });
-    annotate!(
-        &ir.act_root_components,
-        |e: &cadmpeg_ir::design::ActRootComponent| {
-            format!("{}:{}", e.record_index, e.entity_id)
-        }
-    );
-    annotate!(&ir.asm_histories, |e: &cadmpeg_ir::history::AsmHistory| {
-        format!("{}:{}", e.meta.provenance.stream, e.meta.provenance.offset)
-    });
-    annotate!(&ir.appearances, |e: &cadmpeg_ir::appearance::Appearance| e
-        .id
-        .0
-        .clone());
-    annotate!(
-        &ir.appearance_bindings,
-        |e: &cadmpeg_ir::appearance::AppearanceBinding| {
-            format!("{:?}:{}", e.target, e.appearance.0)
-        }
-    );
-    annotate!(
-        &ir.attributes,
-        |e: &cadmpeg_ir::attributes::SourceAttribute| e.id.0.clone()
-    );
-    annotate!(&ir.unknowns, |e: &cadmpeg_ir::unknown::UnknownRecord| e
-        .id
-        .0
-        .clone());
-
-    for edge in &ir.edges {
-        if edge.param_range.is_some()
-            && edge
-                .curve
-                .as_ref()
-                .and_then(|curve| ir.curves.iter().find(|candidate| candidate.id == *curve))
-                .is_some_and(|curve| {
-                    matches!(
-                        curve.geometry,
-                        cadmpeg_ir::geometry::CurveGeometry::Circle { .. }
-                            | cadmpeg_ir::geometry::CurveGeometry::Ellipse { .. }
-                    )
-                })
-        {
-            annotations.derived(&edge.id.0, "param_range");
         }
     }
-    for surface in &ir.surfaces {
-        let source_frame = ir
-            .surface_parameterizations
-            .iter()
-            .any(|frame| frame.surface == surface.id);
-        if !source_frame {
-            match surface.geometry {
-                cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-                    u_axis: Some(_), ..
-                } => {
-                    annotations.derived(&surface.id.0, "geometry.u_axis");
+
+    let native_stream = annotations.stream("f3d:native");
+    let mut note = |id: &str, tag: &str| {
+        let offset = trailing_offset(id);
+        annotations.note(id, native_stream, offset).tag(tag);
+    };
+    if let Some(native) = &ir.native.f3d {
+        for entity in &native.construction_recipes {
+            note(&entity.id, "construction_recipe");
+        }
+        for entity in &native.persistent_references {
+            note(&entity.id, "persistent_reference");
+        }
+        for entity in &native.lost_edge_references {
+            note(&entity.id, "EDGE_REFERENCE_LOST");
+        }
+        for entity in &native.design_objects {
+            note(&entity.id, "design_object");
+        }
+        for entity in &native.design_entity_headers {
+            note(&entity.id, "design_entity_header");
+        }
+        for entity in &native.design_record_headers {
+            note(&entity.id, "design_record_header");
+        }
+        for entity in &native.design_body_members {
+            note(&entity.id, "BodiesRoot");
+        }
+        for entity in &native.sketch_relations {
+            note(&entity.id, "sketch_relation");
+        }
+        for entity in &native.sketch_points {
+            note(&entity.id, "sketch_point");
+        }
+        for entity in &native.sketch_curve_identities {
+            note(&entity.id, "sketch_curve");
+        }
+        for entity in &native.sketch_curve_links {
+            note(&entity.id, "sketch_curve_link");
+        }
+        for entity in &native.persistent_design_links {
+            note(&entity.id, "persistent_design_link");
+        }
+        for entity in &native.act_entities {
+            note(&entity.id, "ACTEntity");
+        }
+        for entity in &native.act_guids {
+            note(&entity.id, "ACTGuid");
+        }
+        for entity in &native.act_root_components {
+            note(&entity.id, "ACTRootComponent");
+        }
+        for history in &native.asm_histories {
+            note(&history.id, "history_stream");
+            for state in &history.states {
+                note(&state.id, "delta_state");
+                for board in &state.bulletin_boards {
+                    note(&board.id, "BulletinBoard");
+                    for change in &board.changes {
+                        note(&change.id, "entity_change");
+                    }
                 }
-                cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                    ref_direction: Some(_),
-                    ..
+                for record in &state.records {
+                    note(&record.id, &record.name);
                 }
-                | cadmpeg_ir::geometry::SurfaceGeometry::Cone {
-                    ref_direction: Some(_),
-                    ..
-                }
-                | cadmpeg_ir::geometry::SurfaceGeometry::Sphere {
-                    ref_direction: Some(_),
-                    ..
-                }
-                | cadmpeg_ir::geometry::SurfaceGeometry::Torus {
-                    ref_direction: Some(_),
-                    ..
-                } => {
-                    annotations.derived(&surface.id.0, "geometry.ref_direction");
-                }
-                _ => {}
+            }
+        }
+    }
+
+    let appearance_stream = scan
+        .entries
+        .iter()
+        .find(|entry| entry.role == container::role::PROTEIN)
+        .map(|entry| annotations.stream(format!("f3d:{}", entry.name)));
+    if let Some(stream) = appearance_stream {
+        for appearance in &ir.model.appearances {
+            annotations
+                .note(&appearance.id.0, stream, 0)
+                .tag(appearance.schema.as_deref().unwrap_or("appearance"));
+        }
+    }
+    for binding in &ir.model.appearance_bindings {
+        let id = format!("{:?}:{}", binding.target, binding.appearance.0);
+        annotations
+            .note(id, native_stream, 0)
+            .tag("appearance_binding");
+    }
+    if brep.is_none() {
+        if let Some(active) = container::select_active_brep(scan) {
+            let stream = annotations.stream(format!("f3d:{}", active.name));
+            for unknown in &ir.unknowns {
+                annotations
+                    .note(&unknown.id.0, stream, unknown.offset)
+                    .tag("opaque_brep");
             }
         }
     }
     ir.annotations = annotations.build();
+}
+
+fn trailing_offset(id: &str) -> u64 {
+    id.rsplit(':')
+        .find_map(|part| part.parse::<u64>().ok())
+        .unwrap_or(0)
 }
 
 fn decode_asm_history(
@@ -371,23 +398,36 @@ fn extend_related_design_records(
     ir: &mut CadIr,
 ) -> Result<(), CodecError> {
     let indices = ir
+        .native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
         .sketch_relations
         .iter()
         .flat_map(|relation| relation.members.iter().chain(&relation.return_members))
         .copied()
         .collect::<Vec<_>>();
     let existing = ir
+        .native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
         .design_record_headers
         .iter()
         .map(|record| record.record_index)
         .collect::<std::collections::HashSet<_>>();
-    ir.design_record_headers.extend(
-        crate::design::decode_related_record_headers(reader, scan, &indices)?
-            .into_iter()
-            .filter(|record| !existing.contains(&record.record_index)),
-    );
-    ir.design_record_headers
-        .sort_by_key(|record| record.meta.provenance.offset);
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .design_record_headers
+        .extend(
+            crate::design::decode_related_record_headers(reader, scan, &indices)?
+                .into_iter()
+                .filter(|record| !existing.contains(&record.record_index)),
+        );
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .design_record_headers
+        .sort_by_key(|record| record.record_index);
     Ok(())
 }
 
@@ -431,24 +471,29 @@ fn build_geometry_ir(scan: &ContainerScan, active: &BrepFacts, brep: Brep) -> Ca
     ir.source = Some(source);
     ir.tolerances = tolerances;
 
-    ir.bodies = brep.bodies;
-    ir.lumps = brep.lumps;
-    ir.shells = brep.shells;
-    ir.faces = brep.faces;
-    ir.loops = brep.loops;
-    ir.coedges = brep.coedges;
-    ir.edges = brep.edges;
-    ir.vertices = brep.vertices;
-    ir.points = brep.points;
-    ir.surfaces = brep.surfaces;
-    ir.curves = brep.curves;
-    ir.pcurves = brep.pcurves;
-    ir.procedural_surfaces = brep.procedural_surfaces;
-    ir.procedural_curves = brep.procedural_curves;
-    ir.surface_parameterizations = brep.surface_parameterizations;
-    ir.sketch_curve_links = brep.sketch_curve_links;
-    ir.persistent_design_links = brep.persistent_design_links;
-    ir.attributes = brep.attributes;
+    ir.model.bodies = brep.bodies;
+    ir.model.regions = brep.regions;
+    ir.model.shells = brep.shells;
+    ir.model.faces = brep.faces;
+    ir.model.loops = brep.loops;
+    ir.model.coedges = brep.coedges;
+    ir.model.edges = brep.edges;
+    ir.model.vertices = brep.vertices;
+    ir.model.points = brep.points;
+    ir.model.surfaces = brep.surfaces;
+    ir.model.curves = brep.curves;
+    ir.model.pcurves = brep.pcurves;
+    ir.model.procedural_surfaces = brep.procedural_surfaces;
+    ir.model.procedural_curves = brep.procedural_curves;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .sketch_curve_links = brep.sketch_curve_links;
+    ir.native
+        .f3d
+        .get_or_insert_with(F3dNative::default)
+        .persistent_design_links = brep.persistent_design_links;
+    ir.model.attributes = brep.attributes;
     ir.unknowns = brep.unknowns;
     ir
 }
@@ -480,8 +525,11 @@ fn source_and_tolerances(scan: &ContainerScan, active: &BrepFacts) -> (SourceMet
         if let Some(sd) = &h.save_date {
             attributes.insert("save_date".to_string(), sd.clone());
         }
-        if let (Some(resabs), Some(resnor)) = (h.resabs, h.resnor) {
-            tolerances = Tolerances { resabs, resnor };
+        if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
+            tolerances = Tolerances {
+                linear: resabs,
+                angular: resnor,
+            };
         }
     }
 
@@ -641,27 +689,21 @@ fn build_metadata_ir(scan: &ContainerScan) -> CadIr {
             if let Some(sd) = &h.save_date {
                 attributes.insert("save_date".to_string(), sd.clone());
             }
-            if let (Some(resabs), Some(resnor)) = (h.resabs, h.resnor) {
-                ir.tolerances = Tolerances { resabs, resnor };
+            if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
+                ir.tolerances = Tolerances {
+                    linear: resabs,
+                    angular: resnor,
+                };
             }
         }
 
         ir.unknowns.push(UnknownRecord {
-            id: UnknownId(format!("f3d:{}", brep.name)),
+            id: UnknownId(format!("f3d:{}:unknown#0", brep.name)),
             offset: 0,
             byte_len: brep.uncompressed_len,
             sha256: brep.sha256.clone(),
             data: None,
             links: Vec::new(),
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "f3d".to_string(),
-                    stream: brep.name.clone(),
-                    offset: 0,
-                    tag: Some("asm_brep_stream".to_string()),
-                },
-                exactness: Exactness::Unknown,
-            },
         });
     }
 
@@ -690,9 +732,10 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         LossNote {
             category: LossCategory::Topology,
             severity: Severity::Blocking,
-            message: "B-rep topology graph (body/lump/shell/face/loop/coedge/edge/vertex) was not \
+            message:
+                "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
                       built for this stream."
-                .to_string(),
+                    .to_string(),
             provenance: None,
         },
         LossNote {

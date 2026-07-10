@@ -9,7 +9,6 @@
 //! decoder version can resolve it.
 
 use crate::ids::UnknownId;
-use crate::provenance::EntityMeta;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -25,13 +24,16 @@ pub struct UnknownRecord {
     /// Lowercase hex SHA-256 of the record bytes, for integrity and dedup.
     pub sha256: String,
     /// Preserved record bytes, when retained by the decoder.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::bytes::option"
+    )]
+    #[schemars(with = "Option<String>")]
     pub data: Option<Vec<u8>>,
     /// Ids of other IR entities this record is known to relate to (e.g. an
     /// attribute's owner), when the decoder can attribute them. Free-form
     /// string ids so a link can point into any arena.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<String>,
-    /// Provenance/exactness metadata.
-    pub meta: EntityMeta,
 }

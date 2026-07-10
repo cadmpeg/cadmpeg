@@ -10,44 +10,51 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
 pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
-    if !ir.bodies.iter().any(|body| {
+    if !ir.model.bodies.iter().any(|body| {
         body.transform
             .is_some_and(|value| value != Transform::identity())
     }) {
         return Ok(());
     }
 
-    let lumps = ir
-        .lumps
+    let regions = ir
+        .model
+        .regions
         .iter()
         .map(|value| (value.id.0.as_str(), value))
         .collect::<HashMap<_, _>>();
     let shells = ir
+        .model
         .shells
         .iter()
         .map(|value| (value.id.0.as_str(), value))
         .collect::<HashMap<_, _>>();
     let faces = ir
+        .model
         .faces
         .iter()
         .map(|value| (value.id.0.as_str(), value))
         .collect::<HashMap<_, _>>();
     let loops = ir
+        .model
         .loops
         .iter()
         .map(|value| (value.id.0.as_str(), value))
         .collect::<HashMap<_, _>>();
     let coedges = ir
+        .model
         .coedges
         .iter()
         .map(|value| (value.id.0.as_str(), value))
         .collect::<HashMap<_, _>>();
     let edges = ir
+        .model
         .edges
         .iter()
         .map(|value| (value.id.0.as_str(), value))
         .collect::<HashMap<_, _>>();
     let vertices = ir
+        .model
         .vertices
         .iter()
         .map(|value| (value.id.0.as_str(), value))
@@ -56,17 +63,17 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     let mut point_transforms = HashMap::new();
     let mut surface_transforms = HashMap::new();
     let mut curve_transforms = HashMap::new();
-    for body in &ir.bodies {
+    for body in &ir.model.bodies {
         let transform = body.transform.unwrap_or_default();
         check_rigid(transform)?;
-        for lump_id in &body.lumps {
-            let lump = lumps
-                .get(lump_id.0.as_str())
-                .ok_or_else(|| CodecError::Malformed("body references missing lump".into()))?;
-            for shell_id in &lump.shells {
-                let shell = shells
-                    .get(shell_id.0.as_str())
-                    .ok_or_else(|| CodecError::Malformed("lump references missing shell".into()))?;
+        for region_id in &body.regions {
+            let region = regions
+                .get(region_id.0.as_str())
+                .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
+            for shell_id in &region.shells {
+                let shell = shells.get(shell_id.0.as_str()).ok_or_else(|| {
+                    CodecError::Malformed("region references missing shell".into())
+                })?;
                 for face_id in &shell.faces {
                     let face = faces.get(face_id.0.as_str()).ok_or_else(|| {
                         CodecError::Malformed("shell references missing face".into())
@@ -102,38 +109,31 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         }
     }
 
-    for point in &mut ir.points {
+    for point in &mut ir.model.points {
         if let Some(transform) = point_transforms.get(point.id.0.as_str()) {
             point.position = transform_point(*transform, point.position);
         }
     }
-    for surface in &mut ir.surfaces {
+    for surface in &mut ir.model.surfaces {
         let Some(transform) = surface_transforms.get(surface.id.0.as_str()).copied() else {
             continue;
         };
         transform_surface(&mut surface.geometry, transform)?;
     }
-    for curve in &mut ir.curves {
+    for curve in &mut ir.model.curves {
         let Some(transform) = curve_transforms.get(curve.id.0.as_str()).copied() else {
             continue;
         };
         transform_curve(&mut curve.geometry, transform);
     }
-    for frame in &mut ir.surface_parameterizations {
-        if let Some(transform) = surface_transforms.get(frame.surface.0.as_str()).copied() {
-            frame.origin = transform_point(transform, frame.origin);
-            frame.u_reference = transform_vector(transform, frame.u_reference);
-            frame.v_reference = transform_vector(transform, frame.v_reference);
-        }
-    }
-    if !ir.tessellations.is_empty() {
-        if ir.bodies.len() != 1 {
+    if !ir.model.tessellations.is_empty() {
+        if ir.model.bodies.len() != 1 {
             return Err(CodecError::NotImplemented(
                 "SLDPRT cannot assign tessellation meshes to transformed bodies".into(),
             ));
         }
-        let transform = ir.bodies[0].transform.unwrap_or_default();
-        for mesh in &mut ir.tessellations {
+        let transform = ir.model.bodies[0].transform.unwrap_or_default();
+        for mesh in &mut ir.model.tessellations {
             mesh.vertices
                 .iter_mut()
                 .for_each(|point| *point = transform_point(transform, *point));
@@ -142,7 +142,10 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 .for_each(|normal| *normal = transform_vector(transform, *normal));
         }
     }
-    ir.bodies.iter_mut().for_each(|body| body.transform = None);
+    ir.model
+        .bodies
+        .iter_mut()
+        .for_each(|body| body.transform = None);
     Ok(())
 }
 
@@ -256,9 +259,7 @@ fn transform_surface(
         } => {
             *origin = transform_point(transform, *origin);
             *normal = transform_vector(transform, *normal);
-            if let Some(u_axis) = u_axis {
-                *u_axis = transform_vector(transform, *u_axis);
-            }
+            *u_axis = transform_vector(transform, *u_axis);
         }
         SurfaceGeometry::Cylinder {
             origin,
@@ -274,9 +275,7 @@ fn transform_surface(
         } => {
             *origin = transform_point(transform, *origin);
             *axis = transform_vector(transform, *axis);
-            if let Some(ref_direction) = ref_direction {
-                *ref_direction = transform_vector(transform, *ref_direction);
-            }
+            *ref_direction = transform_vector(transform, *ref_direction);
         }
         SurfaceGeometry::Sphere {
             center,
@@ -285,12 +284,8 @@ fn transform_surface(
             ..
         } => {
             *center = transform_point(transform, *center);
-            if let Some(axis) = axis {
-                *axis = transform_vector(transform, *axis);
-            }
-            if let Some(ref_direction) = ref_direction {
-                *ref_direction = transform_vector(transform, *ref_direction);
-            }
+            *axis = transform_vector(transform, *axis);
+            *ref_direction = transform_vector(transform, *ref_direction);
         }
         SurfaceGeometry::Torus {
             center,
@@ -300,9 +295,7 @@ fn transform_surface(
         } => {
             *center = transform_point(transform, *center);
             *axis = transform_vector(transform, *axis);
-            if let Some(ref_direction) = ref_direction {
-                *ref_direction = transform_vector(transform, *ref_direction);
-            }
+            *ref_direction = transform_vector(transform, *ref_direction);
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs
             .control_points
@@ -361,6 +354,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) {
             *axis = transform_vector(transform, *axis);
             *major_direction = transform_vector(transform, *major_direction);
         }
+        CurveGeometry::Unknown { .. } => {}
     }
 }
 

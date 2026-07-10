@@ -2,7 +2,7 @@
 //! B-rep topology and analytic geometry decode from a framed SAB `RecordTable`.
 //!
 //! Given the [`crate::sab`] `RecordTable` of an active model slice, this builds
-//! the IR topology graph (`body → lump → shell → face → loop → coedge → edge →
+//! the IR topology graph (`body → region → shell → face → loop → coedge → edge →
 //! vertex → point`) and the analytic surface/curve carriers it references
 //! (`plane`, `cone`/cylinder, `sphere`, `torus`, `straight` line,
 //! `ellipse`/circle). Fusion `BinaryFile8` model-space lengths are centimetres
@@ -25,17 +25,16 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::design::{PersistentDesignLink, SketchCurveLink};
 use cadmpeg_ir::geometry::{
-    BlendSupports, Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve,
-    ProceduralSurface, Surface, SurfaceGeometry, SurfaceParameterization,
+    BlendSupport, Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    AttributeId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, LumpId, PcurveId, PointId,
+    AttributeId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId,
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 use cadmpeg_ir::topology::{
-    Body, Coedge, Color, Edge, Face, Loop, Lump, Point, Sense, Shell, Vertex,
+    Body, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::unknown::UnknownRecord;
 
@@ -51,8 +50,8 @@ const LEN_TO_MM: f64 = 10.0;
 pub struct Brep {
     /// Bodies.
     pub bodies: Vec<Body>,
-    /// Lumps.
-    pub lumps: Vec<Lump>,
+    /// Regions.
+    pub regions: Vec<Region>,
     /// Shells.
     pub shells: Vec<Shell>,
     /// Faces.
@@ -78,7 +77,6 @@ pub struct Brep {
     /// Native procedural definitions for solved curve caches.
     pub procedural_curves: Vec<ProceduralCurve>,
     /// Native analytic surface parameter frames.
-    pub surface_parameterizations: Vec<SurfaceParameterization>,
     /// Typed sketch-curve provenance links.
     pub sketch_curve_links: Vec<SketchCurveLink>,
     /// Persistent design identifiers attached to solved entities.
@@ -91,6 +89,20 @@ pub struct Brep {
     pub unknowns: Vec<UnknownRecord>,
     /// Loss accounting for the report.
     pub stats: Stats,
+    /// Source locations for emitted B-rep and synthetic child records.
+    pub annotation_records: Vec<AnnotationRecord>,
+}
+
+/// One sparse v1 annotation produced while SAB record offsets are available.
+pub struct AnnotationRecord {
+    /// Globally unique IR entity id.
+    pub id: String,
+    /// Byte offset in the decompressed ASM stream.
+    pub offset: u64,
+    /// Source SAB record name.
+    pub tag: String,
+    /// Serialized fields whose values were canonically derived.
+    pub derived_fields: Vec<&'static str>,
 }
 
 /// Counts of what could not be transferred faithfully.
@@ -195,7 +207,7 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
                 SurfaceGeometry::Plane {
                     origin: scale_point(origin),
                     normal,
-                    u_axis: Some(u_axis),
+                    u_axis,
                 },
                 false,
             ))
@@ -219,7 +231,7 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
                     SurfaceGeometry::Cylinder {
                         origin: scale_point(origin),
                         axis,
-                        ref_direction: Some(ref_direction),
+                        ref_direction,
                         radius,
                     },
                     false,
@@ -229,7 +241,7 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
                     SurfaceGeometry::Cone {
                         origin: scale_point(origin),
                         axis,
-                        ref_direction: Some(ref_direction),
+                        ref_direction,
                         radius,
                         half_angle: sine.abs().asin(),
                     },
@@ -252,8 +264,8 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             Some((
                 SurfaceGeometry::Sphere {
                     center: scale_point(origin),
-                    axis: Some(polar_axis),
-                    ref_direction: Some(equator),
+                    axis: polar_axis,
+                    ref_direction: equator,
                     radius: signed * LEN_TO_MM,
                 },
                 false,
@@ -272,7 +284,7 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
                 SurfaceGeometry::Torus {
                     center: scale_point(origin),
                     axis,
-                    ref_direction: Some(ref_direction),
+                    ref_direction,
                     major_radius: major * LEN_TO_MM,
                     minor_radius: minor * LEN_TO_MM,
                 },
@@ -281,14 +293,6 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         }
         _ => None,
     }
-}
-
-fn cross(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
 }
 
 fn deterministic_ref_direction(axis: Vector3) -> Vector3 {
@@ -319,80 +323,40 @@ fn deterministic_ref_direction(axis: Vector3) -> Vector3 {
     )
 }
 
-fn decode_surface_parameterization(
-    rec: &Record,
-    surface: SurfaceId,
-    meta: EntityMeta,
-) -> Option<SurfaceParameterization> {
-    let carrier = collect_carrier(rec);
-    let origin = scale_point(*carrier.positions.first()?);
-    let (u_reference, v_reference) = match rec.head.as_str() {
-        "plane" => {
-            let normal = unit(*carrier.vectors.first()?);
-            let u = unit(*carrier.vectors.get(1)?);
-            (u, cross(normal, u))
-        }
-        "cone" => (
-            unit(*carrier.vectors.get(1)?),
-            unit(*carrier.vectors.first()?),
-        ),
-        "sphere" => (
-            unit(*carrier.vectors.first()?),
-            unit(*carrier.vectors.get(1)?),
-        ),
-        "torus" => (
-            unit(*carrier.vectors.get(1)?),
-            unit(*carrier.vectors.first()?),
-        ),
-        _ => return None,
-    };
-    Some(SurfaceParameterization {
-        surface,
-        origin,
-        u_reference,
-        v_reference,
-        meta,
-    })
-}
-
 /// Decode an analytic curve carrier.
 pub(crate) fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
-    let c = collect_carrier(rec);
-    let base = *c.positions.first()?;
+    let carrier = collect_carrier(rec);
+    let base = *carrier.positions.first()?;
     match rec.head.as_str() {
-        "straight" => {
-            let dir = *c.vectors.first()?;
-            Some(CurveGeometry::Line {
-                origin: scale_point(base),
-                direction: unit(dir),
-            })
-        }
+        "straight" => Some(CurveGeometry::Line {
+            origin: scale_point(base),
+            direction: unit(*carrier.vectors.first()?),
+        }),
         "ellipse" => {
-            let axis = *c.vectors.first()?;
-            let refv = *c.vectors.get(1)?;
-            let ratio = *c.doubles.first()?;
-            let r_major = norm3(refv) * LEN_TO_MM;
+            let axis = *carrier.vectors.first()?;
+            let reference = *carrier.vectors.get(1)?;
+            let ratio = *carrier.doubles.first()?;
+            let major_radius = norm3(reference) * LEN_TO_MM;
             if (ratio.abs() - 1.0).abs() <= f64::EPSILON {
                 Some(CurveGeometry::Circle {
                     center: scale_point(base),
                     axis: unit(axis),
-                    radius: r_major,
+                    ref_direction: unit(reference),
+                    radius: major_radius,
                 })
             } else {
                 Some(CurveGeometry::Ellipse {
                     center: scale_point(base),
                     axis: unit(axis),
-                    major_direction: unit(refv),
-                    major_radius: r_major,
-                    minor_radius: r_major * ratio.abs(),
+                    major_direction: unit(reference),
+                    major_radius,
+                    minor_radius: major_radius * ratio.abs(),
                 })
             }
         }
         _ => None,
     }
 }
-
-// ---- topology record views ---------------------------------------------------
 
 fn sense_at(rec: &Record, i: usize) -> Sense {
     match rec.chunk(i) {
@@ -411,21 +375,11 @@ fn double_at(rec: &Record, i: usize) -> Option<f64> {
 /// Decode a framed active slice into the IR B-rep graph.
 ///
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
-/// `f3d#<record-index>`, unique across the `RecordTable`.
-pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
+/// `f3d:brep:entity#<record-index>`, unique across the `RecordTable`.
+pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     let mut out = Brep::default();
 
-    let id = |i: i64| format!("f3d#{i}");
-    let meta = |rec: &Record| EntityMeta {
-        provenance: Provenance {
-            format: "f3d".to_string(),
-            stream: stream.to_string(),
-            offset: rec.offset as u64,
-            tag: Some(rec.name.clone()),
-        },
-        exactness: Exactness::ByteExact,
-    };
-
+    let id = |i: i64| format!("f3d:brep:entity#{i}");
     // Index records by RecordTable index (== position for a framed slice).
     let by_index: HashMap<i64, &Record> = records.iter().map(|r| (r.index as i64, r)).collect();
     let header_scale = asm_header::parse(bytes)
@@ -650,30 +604,76 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 out.surfaces.push(Surface {
                     id: SurfaceId(id(i)),
                     geometry,
-                    meta: meta(r),
                 });
-                if is_analytic_surface(&r.head) {
-                    if let Some(parameterization) =
-                        decode_surface_parameterization(r, SurfaceId(id(i)), meta(r))
-                    {
-                        out.surface_parameterizations.push(parameterization);
-                    }
-                }
                 if let Some(procedural) = procedural_surface_defs.remove(&i) {
-                    if matches!(
-                        &procedural.definition,
-                        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallBlend {
-                            supports: BlendSupports::Partial(_),
-                            ..
+                    let definition = match procedural.definition {
+                        nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
+                            directrix,
+                            direction,
+                        } => {
+                            let directrix_id =
+                                CurveId(format!("f3d:brep:procedural_surface#{i}:directrix"));
+                            out.curves.push(Curve {
+                                id: directrix_id.clone(),
+                                geometry: CurveGeometry::Nurbs(directrix),
+                            });
+                            ProceduralSurfaceDefinition::Extrusion {
+                                directrix: directrix_id,
+                                direction,
+                            }
                         }
-                    ) {
-                        out.stats.partial_procedural_supports += 1;
-                    }
+                        nurbs::DecodedProceduralSurfaceDefinition::Blend {
+                            supports,
+                            spine,
+                            radius,
+                            cross_section,
+                        } => {
+                            let mut resolved_supports = [None, None];
+                            for (side, support) in supports.into_iter().enumerate() {
+                                if let Some(support) = support {
+                                    let support_id = SurfaceId(format!(
+                                        "f3d:brep:procedural_surface#{i}:support#{side}"
+                                    ));
+                                    out.surfaces.push(Surface {
+                                        id: support_id.clone(),
+                                        geometry: SurfaceGeometry::Nurbs(support),
+                                    });
+                                    resolved_supports[side] = Some(BlendSupport {
+                                        surface: support_id,
+                                        reversed: false,
+                                    });
+                                }
+                            }
+                            let spine = spine.map(|spine| {
+                                let spine_id =
+                                    CurveId(format!("f3d:brep:procedural_surface#{i}:spine"));
+                                out.curves.push(Curve {
+                                    id: spine_id.clone(),
+                                    geometry: CurveGeometry::Nurbs(spine),
+                                });
+                                spine_id
+                            });
+                            if resolved_supports
+                                .iter()
+                                .filter(|support| support.is_some())
+                                .count()
+                                == 1
+                            {
+                                out.stats.partial_procedural_supports += 1;
+                            }
+                            ProceduralSurfaceDefinition::Blend {
+                                supports: resolved_supports,
+                                spine,
+                                radius,
+                                cross_section,
+                            }
+                        }
+                    };
                     out.procedural_surfaces.push(ProceduralSurface {
+                        id: format!("f3d:brep:procedural_surface#{i}").into(),
                         surface: SurfaceId(id(i)),
-                        definition: procedural.definition,
+                        definition,
                         cache_fit_tolerance: procedural.cache_fit_tolerance,
-                        meta: meta(r),
                     });
                 }
             }
@@ -685,15 +685,6 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                     geometry: SurfaceGeometry::Unknown {
                         record: Some(UnknownId(unknown_record_id(r))),
                     },
-                    meta: EntityMeta {
-                        provenance: Provenance {
-                            format: "f3d".to_string(),
-                            stream: stream.to_string(),
-                            offset: r.offset as u64,
-                            tag: Some(r.name.clone()),
-                        },
-                        exactness: Exactness::Unknown,
-                    },
                 });
             }
             _ if kept_curves.contains(&i) => {
@@ -703,14 +694,15 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 out.curves.push(Curve {
                     id: CurveId(id(i)),
                     geometry,
-                    meta: meta(r),
                 });
                 if let Some(procedural) = procedural_curve_defs.remove(&i) {
                     out.procedural_curves.push(ProceduralCurve {
+                        id: format!("f3d:brep:procedural_curve#{i}").into(),
                         curve: CurveId(id(i)),
-                        native_kind: procedural.0,
+                        definition: cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
+                            record: None,
+                        },
                         cache_fit_tolerance: procedural.1,
-                        meta: meta(r),
                     });
                 }
             }
@@ -725,7 +717,6 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 out.pcurves.push(Pcurve {
                     id: PcurveId(id(i)),
                     geometry,
-                    meta: meta(r),
                 });
             }
         }
@@ -738,7 +729,6 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 out.points.push(Point {
                     id: PointId(id(i)),
                     position: scale_point(*p),
-                    meta: meta(r),
                 });
             }
         }
@@ -753,7 +743,6 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                         id: VertexId(id(i)),
                         point: PointId(id(pi)),
                         tolerance: None,
-                        meta: meta(r),
                     });
                 }
             }
@@ -797,7 +786,6 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 end: VertexId(id(end)),
                 param_range,
                 tolerance: None,
-                meta: meta(r),
             });
         }
     }
@@ -824,14 +812,12 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 edge: EdgeId(id(edge)),
                 next: CoedgeId(id(next)),
                 previous: CoedgeId(id(prev)),
-                partner: partner.map(|p| CoedgeId(id(p))),
-                radial_next: partner.map(|p| CoedgeId(id(p))),
+                radial_next: partner.map_or_else(|| CoedgeId(id(i)), |p| CoedgeId(id(p))),
                 sense: sense_at(r, 7),
                 pcurve: r
                     .ref_at(10)
                     .filter(|p| kept_pcurves.contains(p))
                     .map(|p| PcurveId(id(p))),
-                meta: meta(r),
             });
         }
     }
@@ -845,7 +831,6 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 id: LoopId(id(i)),
                 face: FaceId(id(owner)),
                 coedges,
-                meta: meta(r),
             });
         }
     }
@@ -866,7 +851,6 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 name: None,
                 color: attribute_color(r),
                 tolerance: None,
-                meta: meta(r),
             });
         }
     }
@@ -881,25 +865,23 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 let faces = face_chain(r, &by_index, &kept_faces);
                 out.shells.push(Shell {
                     id: ShellId(id(i)),
-                    lump: LumpId(id(owner)),
+                    region: RegionId(id(owner)),
                     faces,
                     wire_edges: Vec::new(),
                     free_vertices: Vec::new(),
-                    meta: meta(r),
                 });
             }
-            "lump" => {
+            "region" => {
                 let Some(owner) = r.ref_at(5) else { continue };
                 let shells = shell_chain(r, &by_index);
-                out.lumps.push(Lump {
-                    id: LumpId(id(i)),
+                out.regions.push(Region {
+                    id: RegionId(id(i)),
                     body: BodyId(id(owner)),
                     shells,
-                    meta: meta(r),
                 });
             }
             "body" => {
-                let lumps = lump_chain(r, &by_index);
+                let regions = region_chain(r, &by_index);
                 let body_id = BodyId(id(i));
                 if let Some(Token::Long(key)) = r.chunk(1) {
                     if *key >= 0 {
@@ -909,14 +891,13 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 out.bodies.push(Body {
                     id: body_id,
                     kind: cadmpeg_ir::topology::BodyKind::Solid,
-                    lumps,
+                    regions,
                     transform: r
                         .ref_at(5)
                         .and_then(|reference| by_index.get(&reference))
                         .and_then(|transform| decode_transform(transform, header_scale)),
                     name: None,
                     color: attribute_color(r),
-                    meta: meta(r),
                 });
             }
             _ => {}
@@ -945,7 +926,6 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 record,
                 &target,
                 &by_index,
-                stream,
                 &mut emitted_attributes,
                 &mut out.attributes,
             );
@@ -979,8 +959,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         };
         if let Some(target) = target {
             emitted_attributes.insert(index);
-            out.attributes
-                .push(source_attribute(record, target, stream));
+            out.attributes.push(source_attribute(record, target));
         }
     }
     out.sketch_curve_links = out
@@ -1005,15 +984,6 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 sha256: sha256_hex(&bytes[r.offset..(r.offset + r.len).min(bytes.len())]),
                 data: Some(bytes[r.offset..(r.offset + r.len).min(bytes.len())].to_vec()),
                 links: Vec::new(),
-                meta: EntityMeta {
-                    provenance: Provenance {
-                        format: "f3d".to_string(),
-                        stream: stream.to_string(),
-                        offset: r.offset as u64,
-                        tag: Some(r.name.clone()),
-                    },
-                    exactness: Exactness::Unknown,
-                },
             });
         }
     }
@@ -1032,7 +1002,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
     let known_head = |h: &str| {
         matches!(
             h,
-            "body" | "lump" | "shell" | "face" | "loop" | "coedge" | "edge" | "vertex" | "point"
+            "body" | "region" | "shell" | "face" | "loop" | "coedge" | "edge" | "vertex" | "point"
         ) || is_analytic_surface(h)
             || is_analytic_curve(h)
             || h == "asmheader"
@@ -1058,6 +1028,147 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 .entry(r.name.clone())
                 .or_default() += 1;
         }
+    }
+
+    let emitted_ids = out
+        .bodies
+        .iter()
+        .map(|entity| entity.id.0.as_str())
+        .chain(out.regions.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.shells.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.faces.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.loops.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.coedges.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.edges.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.vertices.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.points.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.surfaces.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.curves.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.pcurves.iter().map(|entity| entity.id.0.as_str()))
+        .collect::<HashSet<_>>();
+    for record in records {
+        let entity_id = id(record.index as i64);
+        if emitted_ids.contains(entity_id.as_str()) {
+            let mut derived_fields = Vec::new();
+            match record.head.as_str() {
+                "plane" => {
+                    derived_fields.extend(["geometry.normal", "geometry.u_axis"]);
+                }
+                "cone" => {
+                    derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                }
+                "sphere" => {
+                    derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                }
+                "torus" => {
+                    derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                }
+                "straight" => derived_fields.push("geometry.direction"),
+                "ellipse" => {
+                    derived_fields.extend(["geometry.axis", "geometry.major_direction"]);
+                }
+                _ => {}
+            }
+            if record.head == "edge" {
+                if let Some(curve) = record
+                    .ref_at(8)
+                    .and_then(|reference| by_index.get(&reference))
+                {
+                    if curve.head == "ellipse" {
+                        derived_fields.push("param_range");
+                    }
+                }
+            }
+            out.annotation_records.push(AnnotationRecord {
+                id: entity_id,
+                offset: record.offset as u64,
+                tag: record.name.clone(),
+                derived_fields,
+            });
+        }
+        let attribute_id = format!("f3d:attribute#{}", record.index);
+        if out
+            .attributes
+            .iter()
+            .any(|attribute| attribute.id.0 == attribute_id)
+        {
+            out.annotation_records.push(AnnotationRecord {
+                id: attribute_id,
+                offset: record.offset as u64,
+                tag: record.name.clone(),
+                derived_fields: Vec::new(),
+            });
+        }
+        let unknown_id = unknown_record_id(record);
+        if out
+            .unknowns
+            .iter()
+            .any(|unknown| unknown.id.0 == unknown_id)
+        {
+            out.annotation_records.push(AnnotationRecord {
+                id: unknown_id,
+                offset: record.offset as u64,
+                tag: record.name.clone(),
+                derived_fields: Vec::new(),
+            });
+        }
+        for (synthetic_id, tag) in [
+            (
+                format!("f3d:brep:procedural_surface#{}", record.index),
+                "procedural_surface",
+            ),
+            (
+                format!("f3d:brep:procedural_curve#{}", record.index),
+                "procedural_curve",
+            ),
+        ] {
+            if out
+                .procedural_surfaces
+                .iter()
+                .any(|entity| entity.id.0 == synthetic_id)
+                || out
+                    .procedural_curves
+                    .iter()
+                    .any(|entity| entity.id.0 == synthetic_id)
+            {
+                out.annotation_records.push(AnnotationRecord {
+                    id: synthetic_id,
+                    offset: record.offset as u64,
+                    tag: tag.into(),
+                    derived_fields: Vec::new(),
+                });
+            }
+        }
+    }
+    for (entity_id, tag) in out
+        .surfaces
+        .iter()
+        .map(|entity| (entity.id.0.as_str(), "procedural_support"))
+        .chain(
+            out.curves
+                .iter()
+                .map(|entity| (entity.id.0.as_str(), "procedural_curve_child")),
+        )
+    {
+        if !entity_id.starts_with("f3d:brep:procedural_surface#") {
+            continue;
+        }
+        let Some(index) = entity_id
+            .split_once('#')
+            .and_then(|(_, suffix)| suffix.split(':').next())
+            .and_then(|value| value.parse::<usize>().ok())
+        else {
+            continue;
+        };
+        let Some(record) = records.get(index) else {
+            continue;
+        };
+        out.annotation_records.push(AnnotationRecord {
+            id: entity_id.to_owned(),
+            offset: record.offset as u64,
+            tag: tag.into(),
+            derived_fields: Vec::new(),
+        });
     }
 
     out
@@ -1098,12 +1209,15 @@ fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
         return None;
     };
     Some(SketchCurveLink {
+        id: format!(
+            "f3d:design:sketch-curve-link#{}:{sketch_curve_id}",
+            coedge.0
+        ),
         coedge: coedge.clone(),
         sketch_curve_id: *sketch_curve_id,
         signed_reference: (*signed_reference != -1).then_some(*signed_reference),
         role: *role,
         closure: *closure,
-        meta: attribute.meta.clone(),
     })
 }
 
@@ -1130,11 +1244,14 @@ fn persistent_design_links(attribute: &SourceAttribute) -> Vec<PersistentDesignL
     ids.into_iter()
         .enumerate()
         .map(|(ordinal, design_id)| PersistentDesignLink {
+            id: format!(
+                "f3d:persistent-design-link:{:?}:{}:{ordinal}",
+                attribute.target, design_id
+            ),
             target: attribute.target.clone(),
             design_id,
             ordinal: ordinal as u32,
             is_current: ordinal == last,
-            meta: attribute.meta.clone(),
         })
         .collect()
 }
@@ -1143,7 +1260,6 @@ fn collect_attributes(
     entity: &Record,
     target: &AttributeTarget,
     by_index: &HashMap<i64, &Record>,
-    stream: &str,
     emitted: &mut HashSet<i64>,
     out: &mut Vec<SourceAttribute>,
 ) {
@@ -1154,27 +1270,18 @@ fn collect_attributes(
             break;
         };
         if emitted.insert(index) {
-            out.push(source_attribute(record, target.clone(), stream));
+            out.push(source_attribute(record, target.clone()));
         }
         current = record.ref_at(0);
     }
 }
 
-fn source_attribute(record: &Record, target: AttributeTarget, stream: &str) -> SourceAttribute {
+fn source_attribute(record: &Record, target: AttributeTarget) -> SourceAttribute {
     SourceAttribute {
         id: AttributeId(format!("f3d:attribute#{}", record.index)),
         target,
         name: record.name.clone(),
         values: record.tokens.iter().map(attribute_value).collect(),
-        meta: EntityMeta {
-            provenance: Provenance {
-                format: "f3d".into(),
-                stream: stream.into(),
-                offset: record.offset as u64,
-                tag: Some(record.name.clone()),
-            },
-            exactness: Exactness::ByteExact,
-        },
     }
 }
 
@@ -1190,7 +1297,7 @@ fn attribute_value(token: &Token) -> AttributeValue {
         Token::Str(value) => AttributeValue::String(value.clone()),
         Token::True => AttributeValue::Boolean(true),
         Token::False => AttributeValue::Boolean(false),
-        Token::Ref(value) => AttributeValue::Reference(format!("f3d#{value}")),
+        Token::Ref(value) => AttributeValue::Reference(format!("f3d:brep:entity#{value}")),
         Token::SubtypeOpen => AttributeValue::String("subtype_open".into()),
         Token::SubtypeClose => AttributeValue::String("subtype_close".into()),
         Token::Position(value) | Token::Vector3(value) => AttributeValue::Vector(value.to_vec()),
@@ -1285,7 +1392,7 @@ fn record_slice<'a>(rec: &Record, bytes: &'a [u8]) -> &'a [u8] {
 /// `UnknownRecord` and any `SurfaceGeometry::Unknown` that links to it, so the
 /// reference resolves under validation.
 fn unknown_record_id(rec: &Record) -> String {
-    format!("f3d:{}#{}", rec.head, rec.index)
+    format!("f3d:brep:{}#{}", rec.head, rec.index)
 }
 
 fn ring_coedges(
@@ -1293,7 +1400,7 @@ fn ring_coedges(
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
 ) -> Vec<CoedgeId> {
-    let id = |i: i64| CoedgeId(format!("f3d#{i}"));
+    let id = |i: i64| CoedgeId(format!("f3d:brep:entity#{i}"));
     let mut out = Vec::new();
     let Some(first) = loop_rec.ref_at(4) else {
         return out;
@@ -1319,7 +1426,7 @@ fn loop_chain(
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
 ) -> Vec<LoopId> {
-    let id = |i: i64| LoopId(format!("f3d#{i}"));
+    let id = |i: i64| LoopId(format!("f3d:brep:entity#{i}"));
     let mut out = Vec::new();
     let mut cur = face_rec.ref_at(4);
     let mut guard = HashSet::new();
@@ -1341,7 +1448,7 @@ fn face_chain(
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
 ) -> Vec<FaceId> {
-    let id = |i: i64| FaceId(format!("f3d#{i}"));
+    let id = |i: i64| FaceId(format!("f3d:brep:entity#{i}"));
     let mut out = Vec::new();
     let mut cur = shell_rec.ref_at(5);
     let mut guard = HashSet::new();
@@ -1358,10 +1465,10 @@ fn face_chain(
     out
 }
 
-fn shell_chain(lump_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<ShellId> {
-    let id = |i: i64| ShellId(format!("f3d#{i}"));
+fn shell_chain(region_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<ShellId> {
+    let id = |i: i64| ShellId(format!("f3d:brep:entity#{i}"));
     let mut out = Vec::new();
-    let mut cur = lump_rec.ref_at(4);
+    let mut cur = region_rec.ref_at(4);
     let mut guard = HashSet::new();
     while let Some(si) = cur {
         if !guard.insert(si) {
@@ -1374,8 +1481,8 @@ fn shell_chain(lump_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<Shell
     out
 }
 
-fn lump_chain(body_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<LumpId> {
-    let id = |i: i64| LumpId(format!("f3d#{i}"));
+fn region_chain(body_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<RegionId> {
+    let id = |i: i64| RegionId(format!("f3d:brep:entity#{i}"));
     let mut out = Vec::new();
     let mut cur = body_rec.ref_at(3);
     let mut guard = HashSet::new();

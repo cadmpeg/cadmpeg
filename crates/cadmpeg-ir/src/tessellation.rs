@@ -5,7 +5,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::math::{Point3, Vector3};
-use crate::provenance::EntityMeta;
 
 /// One indexed triangle mesh decoded from a source display or facet stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -27,8 +26,6 @@ pub struct Tessellation {
     /// table (e.g. UVs, colors); empty when the source carried none.
     #[serde(default)]
     pub channels: Vec<TessellationChannel>,
-    /// Byte provenance.
-    pub meta: EntityMeta,
 }
 
 /// One descriptor from the source tessellation table.
@@ -43,5 +40,7 @@ pub struct TessellationChannel {
     /// Number of elements in `data`.
     pub count: u32,
     /// Raw channel payload, `count * item_size` bytes, undecoded.
+    #[serde(with = "crate::bytes")]
+    #[schemars(with = "String")]
     pub data: Vec<u8>,
 }

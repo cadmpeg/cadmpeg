@@ -2,15 +2,16 @@
 //! Typed SW Objects document metadata.
 
 use crate::container::ContainerScan;
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
+use cadmpeg_ir::Exactness;
 
 fn f64_le(bytes: &[u8], at: usize) -> Option<f64> {
     Some(f64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
 }
 
-pub fn attributes(scan: &ContainerScan) -> Vec<SourceAttribute> {
+pub fn attributes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<SourceAttribute> {
     let mut out = Vec::new();
     for block in &scan.blocks {
         scan_vectors(
@@ -21,6 +22,7 @@ pub fn attributes(scan: &ContainerScan) -> Vec<SourceAttribute> {
             4,
             true,
             &mut out,
+            annotations,
         );
         scan_vectors(
             block,
@@ -30,15 +32,20 @@ pub fn attributes(scan: &ContainerScan) -> Vec<SourceAttribute> {
             0,
             false,
             &mut out,
+            annotations,
         );
-        scan_part(block, &mut out);
-        scan_configuration_manager(block, &mut out);
-        scan_units_xml(block, &mut out);
+        scan_part(block, &mut out, annotations);
+        scan_configuration_manager(block, &mut out, annotations);
+        scan_units_xml(block, &mut out, annotations);
     }
     out
 }
 
-fn scan_units_xml(block: &crate::container::Block, out: &mut Vec<SourceAttribute>) {
+fn scan_units_xml(
+    block: &crate::container::Block,
+    out: &mut Vec<SourceAttribute>,
+    annotations: &mut Annotations,
+) {
     let Some(text) = xml_text(&block.payload) else {
         return;
     };
@@ -62,6 +69,7 @@ fn scan_units_xml(block: &crate::container::Block, out: &mut Vec<SourceAttribute
             "source_linear_unit_code",
             b"SW_UnitsLinear",
             vec![AttributeValue::Integer(code)],
+            annotations,
         ));
     }
 }
@@ -80,6 +88,7 @@ fn xml_text(bytes: &[u8]) -> Option<String> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn scan_vectors(
     block: &crate::container::Block,
     token: &[u8],
@@ -88,6 +97,7 @@ fn scan_vectors(
     skip: usize,
     all_lengths: bool,
     out: &mut Vec<SourceAttribute>,
+    annotations: &mut Annotations,
 ) {
     for offset in block
         .payload
@@ -115,11 +125,15 @@ fn scan_vectors(
                 AttributeValue::Vector(values[3..].to_vec()),
             ]
         };
-        out.push(attribute(block, offset, name, token, values));
+        out.push(attribute(block, offset, name, token, values, annotations));
     }
 }
 
-fn scan_part(block: &crate::container::Block, out: &mut Vec<SourceAttribute>) {
+fn scan_part(
+    block: &crate::container::Block,
+    out: &mut Vec<SourceAttribute>,
+    annotations: &mut Annotations,
+) {
     const TOKEN: &[u8] = b"moPart_c";
     for offset in block
         .payload
@@ -143,11 +157,16 @@ fn scan_part(block: &crate::container::Block, out: &mut Vec<SourceAttribute>) {
                 AttributeValue::Integer(id as i64),
                 AttributeValue::Integer(version as i64),
             ],
+            annotations,
         ));
     }
 }
 
-fn scan_configuration_manager(block: &crate::container::Block, out: &mut Vec<SourceAttribute>) {
+fn scan_configuration_manager(
+    block: &crate::container::Block,
+    out: &mut Vec<SourceAttribute>,
+    annotations: &mut Annotations,
+) {
     const TOKEN: &[u8] = b"moConfigurationMgr_c";
     for offset in block
         .payload
@@ -176,6 +195,7 @@ fn scan_configuration_manager(block: &crate::container::Block, out: &mut Vec<Sou
                 AttributeValue::Integer(*states as i64),
                 AttributeValue::Integer(filetime as i64),
             ],
+            annotations,
         ));
     }
 }
@@ -193,23 +213,24 @@ fn attribute(
     name: &str,
     token: &[u8],
     values: Vec<AttributeValue>,
+    annotations: &mut Annotations,
 ) -> SourceAttribute {
+    let id = AttributeId(format!("sldprt:metadata:{name}#{}:{offset}", block.offset));
+    crate::annotations::note(
+        annotations,
+        id.0.clone(),
+        block
+            .section
+            .clone()
+            .unwrap_or_else(|| format!("block@{}", block.offset)),
+        offset as u64,
+        std::str::from_utf8(token).unwrap_or(name),
+        Exactness::ByteExact,
+    );
     SourceAttribute {
-        id: AttributeId(format!("sldprt:{name}:{}:{offset}", block.offset)),
+        id,
         target: AttributeTarget::Document,
         name: name.into(),
         values,
-        meta: EntityMeta {
-            provenance: Provenance {
-                format: "sldprt".into(),
-                stream: block
-                    .section
-                    .clone()
-                    .unwrap_or_else(|| format!("block@{}", block.offset)),
-                offset: offset as u64,
-                tag: Some(token.escape_ascii().to_string()),
-            },
-            exactness: Exactness::ByteExact,
-        },
     }
 }

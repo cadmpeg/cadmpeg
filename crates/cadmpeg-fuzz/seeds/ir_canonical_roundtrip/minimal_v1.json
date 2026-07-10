@@ -1,0 +1,34 @@
+{
+  "ir_version": "1",
+  "units": {
+    "length": "millimeter"
+  },
+  "tolerances": {
+    "linear": 1e-6,
+    "angular": 1e-10
+  },
+  "model": {
+    "bodies": [],
+    "regions": [],
+    "shells": [],
+    "faces": [],
+    "loops": [],
+    "coedges": [],
+    "edges": [],
+    "vertices": [],
+    "points": [],
+    "surfaces": [],
+    "curves": [],
+    "pcurves": [],
+    "procedural_surfaces": [],
+    "procedural_curves": [],
+    "features": [],
+    "tessellations": [],
+    "appearances": [],
+    "appearance_bindings": [],
+    "attributes": []
+  },
+  "annotations": {},
+  "native": {},
+  "unknowns": []
+}

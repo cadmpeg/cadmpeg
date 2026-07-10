@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed views over `SolidWorks` `ResolvedFeatures` sketch records.
 
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::history::{FeatureInputLane, SketchInputEntity, SketchInputKind};
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
+use cadmpeg_ir::Exactness;
 
 use crate::container::ContainerScan;
 
 const SKETCH_MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
 
-pub fn lanes(scan: &ContainerScan) -> Vec<FeatureInputLane> {
+pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
     scan.blocks
         .iter()
         .filter_map(|block| {
@@ -16,16 +17,7 @@ pub fn lanes(scan: &ContainerScan) -> Vec<FeatureInputLane> {
             if !section.to_ascii_lowercase().contains("resolvedfeatures") {
                 return None;
             }
-            let meta = |offset, tag: &str| EntityMeta {
-                provenance: Provenance {
-                    format: "sldprt".into(),
-                    stream: section.into(),
-                    offset,
-                    tag: Some(tag.into()),
-                },
-                exactness: Exactness::ByteExact,
-            };
-            let sketch_entities = block
+            let mut sketch_entities = block
                 .payload
                 .windows(SKETCH_MARKER.len())
                 .enumerate()
@@ -41,19 +33,42 @@ pub fn lanes(scan: &ContainerScan) -> Vec<FeatureInputLane> {
                     Some((offset, code))
                 })
                 .enumerate()
-                .map(|(ordinal, (offset, code))| SketchInputEntity {
-                    ordinal: ordinal as u32,
-                    offset: offset as u64,
-                    kind: SketchInputKind::from_native_code(code),
-                    meta: meta(offset as u64, "ff_ff_1f_00_03"),
+                .map(|(ordinal, (offset, code))| {
+                    let id = format!(
+                        "sldprt:feature-input:sketch-entity#{}:{offset}",
+                        block.offset
+                    );
+                    crate::annotations::note(
+                        annotations,
+                        id.clone(),
+                        section,
+                        offset as u64,
+                        "ff_ff_1f_00_03",
+                        Exactness::ByteExact,
+                    );
+                    SketchInputEntity {
+                        id,
+                        ordinal: ordinal as u32,
+                        offset: offset as u64,
+                        kind: SketchInputKind::from_native_code(code),
+                    }
                 })
-                .collect();
+                .collect::<Vec<_>>();
+            sketch_entities.sort_by(|a, b| a.id.cmp(&b.id));
+            let id = format!("sldprt:feature-input:resolved-features#{}", block.offset);
+            crate::annotations::note(
+                annotations,
+                id.clone(),
+                section,
+                0,
+                "ResolvedFeatures",
+                Exactness::ByteExact,
+            );
             Some(FeatureInputLane {
-                id: format!("sldprt:resolved-features:{}", block.offset),
+                id,
                 configuration: configuration(section),
                 native_payload: block.payload.clone(),
                 sketch_entities,
-                meta: meta(0, "ResolvedFeatures"),
             })
         })
         .collect()

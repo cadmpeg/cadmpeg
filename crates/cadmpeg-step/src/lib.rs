@@ -10,7 +10,7 @@
 //! The product-structure boilerplate mainstream kernels expect (`PRODUCT`,
 //! `PRODUCT_DEFINITION`, `SHAPE_DEFINITION_REPRESENTATION`, a unit-bearing
 //! `GEOMETRIC_REPRESENTATION_CONTEXT`), then one `MANIFOLD_SOLID_BREP` (or
-//! `BREP_WITH_VOIDS`) per IR lump, down through `CLOSED_SHELL` → `ADVANCED_FACE`
+//! `BREP_WITH_VOIDS`) per IR region, down through `CLOSED_SHELL` → `ADVANCED_FACE`
 //! → `FACE_OUTER_BOUND`/`FACE_BOUND` → `EDGE_LOOP` → `ORIENTED_EDGE` →
 //! `EDGE_CURVE` → `VERTEX_POINT`, with analytic and NURBS surfaces/curves.
 //!
@@ -28,10 +28,9 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 
-use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::{Coedge, Edge, Point, Sense, Vertex};
-use cadmpeg_ir::units::LengthUnit;
 use cadmpeg_ir::CadIr;
 
 use writer::{real, refs, string, Emitter, Ref};
@@ -188,12 +187,27 @@ impl<'a> Builder<'a> {
             ir,
             emitter: Emitter::new(),
             losses: Vec::new(),
-            points: ir.points.iter().map(|p| (p.id.as_str(), p)).collect(),
-            vertices: ir.vertices.iter().map(|v| (v.id.as_str(), v)).collect(),
-            edges: ir.edges.iter().map(|e| (e.id.as_str(), e)).collect(),
-            coedges: ir.coedges.iter().map(|c| (c.id.as_str(), c)).collect(),
-            surfaces: ir.surfaces.iter().map(|s| (s.id.as_str(), s)).collect(),
-            curves: ir.curves.iter().map(|c| (c.id.as_str(), c)).collect(),
+            points: ir.model.points.iter().map(|p| (p.id.as_str(), p)).collect(),
+            vertices: ir
+                .model
+                .vertices
+                .iter()
+                .map(|v| (v.id.as_str(), v))
+                .collect(),
+            edges: ir.model.edges.iter().map(|e| (e.id.as_str(), e)).collect(),
+            coedges: ir
+                .model
+                .coedges
+                .iter()
+                .map(|c| (c.id.as_str(), c))
+                .collect(),
+            surfaces: ir
+                .model
+                .surfaces
+                .iter()
+                .map(|s| (s.id.as_str(), s))
+                .collect(),
+            curves: ir.model.curves.iter().map(|c| (c.id.as_str(), c)).collect(),
             surface_refs: HashMap::new(),
             curve_refs: HashMap::new(),
             edge_refs: HashMap::new(),
@@ -223,7 +237,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 LossCategory::Topology,
                 Severity::Warning,
-                "no exportable solids: the IR document contains no body/lump/shell \
+                "no exportable solids: the IR document contains no body/region/shell \
                  geometry, so the STEP representation is empty"
                     .to_string(),
             );
@@ -256,6 +270,7 @@ impl<'a> Builder<'a> {
     fn emit_product_structure(&mut self) -> Ref {
         let name = self
             .ir
+            .model
             .bodies
             .first()
             .and_then(|b| b.name.clone())
@@ -315,7 +330,7 @@ impl<'a> Builder<'a> {
             "UNCERTAINTY_MEASURE_WITH_UNIT",
             &format!(
                 "LENGTH_MEASURE({}),{len},{},{}",
-                real(self.ir.tolerances.resabs),
+                real(self.ir.tolerances.linear),
                 string("distance_accuracy_value"),
                 string("maximum model space distance")
             ),
@@ -336,49 +351,19 @@ impl<'a> Builder<'a> {
     /// to the metre. Coordinate values are written as stored (not rescaled), so
     /// the declared unit and the stored numbers stay consistent.
     fn emit_length_unit(&mut self) -> Ref {
-        match self.ir.units.length {
-            LengthUnit::Millimeter => self.emitter.emit_raw(
-                "LENGTH_UNIT",
-                "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) )",
-            ),
-            LengthUnit::Centimeter => self.emitter.emit_raw(
-                "LENGTH_UNIT",
-                "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.CENTI.,.METRE.) )",
-            ),
-            LengthUnit::Meter => self.emitter.emit_raw(
-                "LENGTH_UNIT",
-                "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.) )",
-            ),
-            LengthUnit::Inch => {
-                let si = self.emitter.emit_raw(
-                    "LENGTH_UNIT",
-                    "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.) )",
-                );
-                let dim = self
-                    .emitter
-                    .emit("DIMENSIONAL_EXPONENTS", "1.,0.,0.,0.,0.,0.,0.");
-                let msr = self.emitter.emit(
-                    "LENGTH_MEASURE_WITH_UNIT",
-                    &format!("LENGTH_MEASURE({}),{si}", real(0.0254)),
-                );
-                self.emitter.emit_raw(
-                    "LENGTH_UNIT",
-                    &format!(
-                        "( CONVERSION_BASED_UNIT({},{msr}) LENGTH_UNIT() NAMED_UNIT({dim}) )",
-                        string("INCH")
-                    ),
-                )
-            }
-        }
+        self.emitter.emit_raw(
+            "LENGTH_UNIT",
+            "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) )",
+        )
     }
 
-    /// Emit one solid per lump across all bodies; returns the solid references.
+    /// Emit one solid per region across all bodies; returns the solid references.
     fn emit_solids(&mut self) -> Vec<Ref> {
         let mut solids = Vec::new();
         // `ir` is a shared `&CadIr`; binding it locally lets us read the arenas
         // while still calling `&mut self` helpers (loss/emit).
         let ir = self.ir;
-        for body in &ir.bodies {
+        for body in &ir.model.bodies {
             if let Some(t) = &body.transform {
                 if !is_identity(&t.rows) {
                     self.loss(
@@ -395,8 +380,8 @@ impl<'a> Builder<'a> {
             }
         }
 
-        for lump in &ir.lumps {
-            let shell_refs: Vec<Ref> = lump
+        for region in &ir.model.regions {
+            let shell_refs: Vec<Ref> = region
                 .shells
                 .iter()
                 .filter_map(|sid| self.emit_shell(sid.as_str()))
@@ -426,7 +411,12 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_shell(&mut self, shell_id: &str) -> Option<Ref> {
-        let shell = self.ir.shells.iter().find(|s| s.id.as_str() == shell_id)?;
+        let shell = self
+            .ir
+            .model
+            .shells
+            .iter()
+            .find(|s| s.id.as_str() == shell_id)?;
         let face_ids: Vec<String> = shell.faces.iter().map(|f| f.0.clone()).collect();
         let mut face_refs = Vec::new();
         for fid in &face_ids {
@@ -444,7 +434,12 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
-        let face = self.ir.faces.iter().find(|f| f.id.as_str() == face_id)?;
+        let face = self
+            .ir
+            .model
+            .faces
+            .iter()
+            .find(|f| f.id.as_str() == face_id)?;
         let surface_id = face.surface.0.clone();
         // A face resting on an unknown (opaque) surface cannot become an
         // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
@@ -484,7 +479,12 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_loop(&mut self, loop_id: &str) -> Option<Ref> {
-        let lp = self.ir.loops.iter().find(|l| l.id.as_str() == loop_id)?;
+        let lp = self
+            .ir
+            .model
+            .loops
+            .iter()
+            .find(|l| l.id.as_str() == loop_id)?;
         let coedge_ids: Vec<String> = lp.coedges.iter().map(|c| c.0.clone()).collect();
         let mut oe_refs = Vec::new();
         for cid in &coedge_ids {
@@ -523,6 +523,14 @@ impl<'a> Builder<'a> {
             self.curveless_edges.insert(edge_id.to_string());
             return None;
         };
+        if self
+            .curves
+            .get(curve_id.as_str())
+            .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+        {
+            self.curveless_edges.insert(edge_id.to_string());
+            return None;
+        }
         let curve_ref = self.emit_curve(curve_id.as_str())?;
         // same_sense = .T.: the edge runs start→end along the curve's own
         // parameterization, the convention IR curves follow.
@@ -569,6 +577,7 @@ impl<'a> Builder<'a> {
     fn note_unrepresented(&mut self) {
         let nonstandard_analytic_surfaces = self
             .ir
+            .model
             .surfaces
             .iter()
             .filter(|surface| match &surface.geometry {
@@ -596,7 +605,7 @@ impl<'a> Builder<'a> {
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
-                    "{} edge(s) have no attributed 3D curve and were omitted from \
+                    "{} edge(s) have no typed 3D curve and were omitted from \
                      their edge loops (STEP EDGE_CURVE requires a 3D curve)",
                     self.curveless_edges.len()
                 ),
@@ -616,6 +625,7 @@ impl<'a> Builder<'a> {
         }
         let pcurve_count = self
             .ir
+            .model
             .coedges
             .iter()
             .filter(|c| c.pcurve.is_some())
@@ -631,13 +641,13 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.ir.pcurves.is_empty() {
+        if !self.ir.model.pcurves.is_empty() {
             self.loss(
                 LossCategory::Geometry,
                 Severity::Info,
                 format!(
                     "{} pcurve carrier(s) in the IR were not emitted",
-                    self.ir.pcurves.len()
+                    self.ir.model.pcurves.len()
                 ),
             );
         }
@@ -653,8 +663,20 @@ impl<'a> Builder<'a> {
         }
         // Colors carried on bodies/faces are not mapped to STEP presentation
         // (styled_item/colour_rgb) in this writer.
-        let colored = self.ir.bodies.iter().filter(|b| b.color.is_some()).count()
-            + self.ir.faces.iter().filter(|f| f.color.is_some()).count();
+        let colored = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .filter(|b| b.color.is_some())
+            .count()
+            + self
+                .ir
+                .model
+                .faces
+                .iter()
+                .filter(|f| f.color.is_some())
+                .count();
         if colored > 0 {
             self.loss(
                 LossCategory::Attribute,
@@ -662,55 +684,47 @@ impl<'a> Builder<'a> {
                 format!("{colored} display color(s) were not written to STEP presentation"),
             );
         }
-        if !self.ir.appearances.is_empty() || !self.ir.appearance_bindings.is_empty() {
+        if !self.ir.model.appearances.is_empty() || !self.ir.model.appearance_bindings.is_empty() {
             self.loss(
                 LossCategory::Material,
                 Severity::Info,
                 format!(
                     "{} appearance asset(s) and {} binding(s) were not written to STEP presentation",
-                    self.ir.appearances.len(),
-                    self.ir.appearance_bindings.len()
+                    self.ir.model.appearances.len(),
+                    self.ir.model.appearance_bindings.len()
                 ),
             );
         }
-        if !self.ir.attributes.is_empty() {
+        if !self.ir.model.attributes.is_empty() {
             self.loss(
                 LossCategory::Attribute,
                 Severity::Info,
                 format!(
                     "{} source attribute record(s) were not written to STEP",
-                    self.ir.attributes.len()
+                    self.ir.model.attributes.len()
                 ),
             );
         }
-        if !self.ir.procedural_surfaces.is_empty() || !self.ir.procedural_curves.is_empty() {
+        if !self.ir.model.procedural_surfaces.is_empty()
+            || !self.ir.model.procedural_curves.is_empty()
+        {
             self.loss(
                 LossCategory::Geometry,
                 Severity::Info,
                 format!(
                     "{} procedural surface definition(s) and {} procedural curve definition(s) were reduced to their solved STEP carriers",
-                    self.ir.procedural_surfaces.len(),
-                    self.ir.procedural_curves.len()
+                    self.ir.model.procedural_surfaces.len(),
+                    self.ir.model.procedural_curves.len()
                 ),
             );
         }
-        let parametric_records = self.ir.feature_histories.len()
-            + self.ir.asm_histories.len()
-            + self.ir.construction_recipes.len()
-            + self.ir.design_objects.len()
-            + self.ir.design_entity_headers.len()
-            + self.ir.design_record_headers.len()
-            + self.ir.sketch_relations.len()
-            + self.ir.sketch_points.len()
-            + self.ir.sketch_curve_identities.len()
-            + self.ir.design_body_members.len()
-            + self.ir.act_entities.len()
-            + self.ir.act_guids.len()
-            + self.ir.act_root_components.len()
-            + self.ir.sketch_curve_links.len()
-            + self.ir.persistent_design_links.len()
-            + self.ir.persistent_references.len()
-            + self.ir.lost_edge_references.len();
+        let parametric_records: usize = self
+            .ir
+            .native
+            .loss_counts()
+            .iter()
+            .map(|loss| loss.count)
+            .sum();
         if parametric_records > 0 {
             self.loss(
                 LossCategory::Metadata,

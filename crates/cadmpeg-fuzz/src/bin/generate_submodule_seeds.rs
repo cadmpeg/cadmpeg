@@ -292,17 +292,35 @@ fn generate_nx_submodule_seeds() {
 // ============================================================================
 
 fn generate_ir_submodule_seeds() {
-    // Minimal valid CadIr JSON
-    let minimal_ir = r#"{
-        "version": "1.0",
-        "parts": []
-    }"#;
-    write_seed("seeds/ir_diff", "minimal_left", minimal_ir.as_bytes());
-    write_seed("seeds/ir_diff", "minimal_right", minimal_ir.as_bytes());
-    write_seed(
-        "seeds/ir_canonical_roundtrip",
-        "minimal",
-        minimal_ir.as_bytes(),
-    );
-    write_seed("seeds/step_writer_custom", "minimal", minimal_ir.as_bytes());
+    for stale in [
+        "seeds/ir_diff/minimal_left",
+        "seeds/ir_diff/minimal_right",
+        "seeds/ir_canonical_roundtrip/minimal",
+        "seeds/step_writer_custom/minimal",
+    ] {
+        let _ = fs::remove_file(stale);
+    }
+
+    let empty = cadmpeg_ir::CadIr::empty(Default::default())
+        .to_canonical_json()
+        .unwrap();
+    let cube = cadmpeg_ir::examples::unit_cube()
+        .to_canonical_json()
+        .unwrap();
+
+    for (name, right) in [("empty_vs_cube", &cube), ("empty_vs_empty", &empty)] {
+        let mut input = vec![0];
+        input.extend_from_slice(empty.as_bytes());
+        input.push(0);
+        input.extend_from_slice(right.as_bytes());
+        write_seed("seeds/ir_diff", name, &input);
+    }
+
+    for (name, data) in [("empty_v1.json", &empty), ("unit_cube_v1.json", &cube)] {
+        write_seed("seeds/ir_canonical_roundtrip", name, data.as_bytes());
+
+        let mut custom = vec![0; 8];
+        custom.extend_from_slice(data.as_bytes());
+        write_seed("seeds/step_writer_custom", name, &custom);
+    }
 }

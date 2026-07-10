@@ -18,16 +18,18 @@ use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, LumpId, PointId, ShellId, SurfaceId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
     UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
-use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Lump, Point, Sense, Shell, Vertex};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::Exactness;
 use sha2::{Digest, Sha256};
 
 use crate::container::{self, ContainerScan};
@@ -43,35 +45,26 @@ pub fn decode(
     let scan = container::scan(reader)?;
 
     if options.container_only {
-        let ir = with_annotations(build_metadata_ir(&scan));
+        let ir = build_metadata_ir(&scan);
         let report = build_container_report(&scan, true);
-        return Ok(DecodeResult { ir, report });
+        return Ok(DecodeResult::new(ir, report));
     }
 
     if matches!(scan.variant, Variant::StandardNested | Variant::FbbOnly) {
         if let Some((ir, report)) = try_decode_standard(&scan) {
-            return Ok(DecodeResult {
-                ir: with_annotations(ir),
-                report,
-            });
+            return Ok(DecodeResult::new(ir, report));
         }
     }
 
     if scan.variant == Variant::ZeroEntity {
         if let Some((ir, report)) = try_decode_zero_entity(&scan) {
-            return Ok(DecodeResult {
-                ir: with_annotations(ir),
-                report,
-            });
+            return Ok(DecodeResult::new(ir, report));
         }
     }
 
     if scan.variant == Variant::E5Stream {
         if let Some((ir, report)) = try_decode_e5(&scan) {
-            return Ok(DecodeResult {
-                ir: with_annotations(ir),
-                report,
-            });
+            return Ok(DecodeResult::new(ir, report));
         }
     }
 
@@ -80,58 +73,29 @@ pub fn decode(
         Variant::FloatPackedInnerNoFbb | Variant::FbbOnly | Variant::InnerNoDirectory
     ) {
         if let Some((ir, report)) = try_decode_freeform_surfaces(&scan) {
-            return Ok(DecodeResult {
-                ir: with_annotations(ir),
-                report,
-            });
+            return Ok(DecodeResult::new(ir, report));
         }
     }
 
-    let ir = with_annotations(build_metadata_ir(&scan));
+    let ir = build_metadata_ir(&scan);
     let report = build_container_report(&scan, false);
-    Ok(DecodeResult { ir, report })
+    Ok(DecodeResult::new(ir, report))
 }
 
-fn with_annotations(mut ir: CadIr) -> CadIr {
-    let mut annotations = AnnotationBuilder::new();
-
-    macro_rules! annotate {
-        ($entities:expr) => {
-            for entity in $entities {
-                let meta = &entity.meta;
-                let stream = annotations.stream(format!(
-                    "{}:{}",
-                    meta.provenance.format, meta.provenance.stream
-                ));
-                let note = annotations.note(&entity.id, stream, meta.provenance.offset);
-                if let Some(tag) = &meta.provenance.tag {
-                    note.tag(tag);
-                }
-                annotations.exactness(&entity.id, meta.exactness);
-            }
-        };
-    }
-
-    annotate!(&ir.bodies);
-    annotate!(&ir.lumps);
-    annotate!(&ir.shells);
-    annotate!(&ir.faces);
-    annotate!(&ir.loops);
-    annotate!(&ir.coedges);
-    annotate!(&ir.edges);
-    annotate!(&ir.vertices);
-    annotate!(&ir.points);
-    annotate!(&ir.surfaces);
-    annotate!(&ir.curves);
-    annotate!(&ir.unknowns);
-
-    ir.annotations = annotations.build();
-    ir
+fn annotate(
+    annotations: &mut AnnotationBuilder,
+    id: impl std::fmt::Display,
+    stream_name: &str,
+    offset: u64,
+    tag: impl Into<String>,
+    exactness: Exactness,
+) {
+    let id = id.to_string();
+    let stream = annotations.stream(format!("catia:{stream_name}"));
+    annotations.note(&id, stream, offset).tag(tag);
+    annotations.exactness(id, exactness);
 }
 
-/// Decode directly framed analytic carriers in the zero-entity record stream.
-/// These records do not yet provide enough byte-bound topology to attach faces,
-/// loops, or edges, but their carrier geometry is complete and transferable.
 fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let decoded = geometry::zero_entity_surfaces(&scan.data);
     let points = geometry::vertices(&scan.data);
@@ -139,45 +103,61 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
         return None;
     }
     let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
-    preserve_raw_payload(&mut ir, scan, "catia:zero_entity_payload");
+    preserve_raw_payload(
+        &mut ir,
+        &mut annotations,
+        scan,
+        "catia:payload:unknown#zero-entity",
+    );
     for (index, point) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:zero-entity:pt#{index}"));
-        ir.points.push(Point {
+        annotate(
+            &mut annotations,
+            &point_id,
+            "zero_entity_a9_03",
+            0,
+            "vertex_05_08_01",
+            Exactness::ByteExact,
+        );
+        ir.model.points.push(Point {
             id: point_id.clone(),
             position: *point,
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "catia".to_string(),
-                    stream: "zero_entity_a9_03".to_string(),
-                    offset: 0,
-                    tag: Some("vertex_05_08_01".to_string()),
-                },
-                exactness: Exactness::ByteExact,
-            },
         });
-        ir.vertices.push(Vertex {
-            id: VertexId(format!("catia:zero-entity:v#{index}")),
+        let vertex_id = VertexId(format!("catia:zero-entity:v#{index}"));
+        annotate(
+            &mut annotations,
+            &vertex_id,
+            "MainDataStream+SurfacicReps",
+            0,
+            "vertex_05_08_01",
+            Exactness::ByteExact,
+        );
+        annotations.derived(&vertex_id, "point");
+        ir.model.vertices.push(Vertex {
+            id: vertex_id,
             point: point_id,
             tolerance: None,
-            meta: byte_exact("vertex_05_08_01", 0),
         });
     }
     for (index, surface) in decoded.iter().enumerate() {
-        ir.surfaces.push(Surface {
-            id: SurfaceId(format!("catia:zero-entity:surf#{index}")),
+        let id = SurfaceId(format!("catia:zero-entity:surf#{index}"));
+        annotate(
+            &mut annotations,
+            &id,
+            "zero_entity_a9_03",
+            surface.pos as u64,
+            "analytic_surface",
+            Exactness::ByteExact,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
             geometry: surface.geometry.clone(),
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "catia".to_string(),
-                    stream: "zero_entity_a9_03".to_string(),
-                    offset: surface.pos as u64,
-                    tag: Some("analytic_surface".to_string()),
-                },
-                exactness: Exactness::ByteExact,
-            },
         });
     }
+    link_payload_carriers(&mut ir, &mut annotations);
+    ir.annotations = annotations.build();
     let summary = container::summarize(scan);
     let report = DecodeReport {
         format: "catia".to_string(),
@@ -207,64 +187,109 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         return None;
     }
     let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
-    preserve_raw_payload(&mut ir, scan, "catia:e5_payload");
+    preserve_raw_payload(&mut ir, &mut annotations, scan, "catia:payload:unknown#e5");
     for (index, point) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:e5:pt#{index}"));
-        ir.points.push(Point {
+        annotate(
+            &mut annotations,
+            &point_id,
+            "e5_0d_03",
+            0,
+            "vertex_05_08_01",
+            Exactness::ByteExact,
+        );
+        ir.model.points.push(Point {
             id: point_id.clone(),
             position: *point,
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "catia".to_string(),
-                    stream: "e5_0d_03".to_string(),
-                    offset: 0,
-                    tag: Some("vertex_05_08_01".to_string()),
-                },
-                exactness: Exactness::ByteExact,
-            },
         });
-        ir.vertices.push(Vertex {
-            id: VertexId(format!("catia:e5:v#{index}")),
+        let vertex_id = VertexId(format!("catia:e5:v#{index}"));
+        annotate(
+            &mut annotations,
+            &vertex_id,
+            "MainDataStream+SurfacicReps",
+            0,
+            "vertex_05_08_01",
+            Exactness::ByteExact,
+        );
+        annotations.derived(&vertex_id, "point");
+        ir.model.vertices.push(Vertex {
+            id: vertex_id,
             point: point_id,
             tolerance: None,
-            meta: byte_exact("vertex_05_08_01", 0),
         });
     }
     let mut circle_ids = HashMap::new();
     for (index, circle) in circles.iter().enumerate() {
         let id = CurveId(format!("catia:e5:curve#{index}"));
         circle_ids.insert(circle.record_id, id.clone());
-        ir.curves.push(Curve {
+        annotate(
+            &mut annotations,
+            &id,
+            "e5_0d_03",
+            circle.pos as u64,
+            "circle_carrier",
+            Exactness::ByteExact,
+        );
+        ir.model.curves.push(Curve {
             id,
             geometry: circle.geometry.clone(),
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "catia".to_string(),
-                    stream: "e5_0d_03".to_string(),
-                    offset: circle.pos as u64,
-                    tag: Some("circle_carrier".to_string()),
-                },
-                exactness: Exactness::ByteExact,
-            },
         });
     }
     for (index, surface) in surfaces.iter().enumerate() {
-        ir.surfaces.push(Surface {
-            id: SurfaceId(format!("catia:e5:surf#{index}")),
+        let id = SurfaceId(format!("catia:e5:surf#{index}"));
+        annotate(
+            &mut annotations,
+            &id,
+            "e5_0d_03",
+            surface.pos as u64,
+            "analytic_surface",
+            Exactness::ByteExact,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
             geometry: surface.geometry.clone(),
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "catia".to_string(),
-                    stream: "e5_0d_03".to_string(),
-                    offset: surface.pos as u64,
-                    tag: Some("analytic_surface".to_string()),
-                },
-                exactness: Exactness::ByteExact,
-            },
         });
     }
-    attach_e5_edges(&mut ir, &edges, &circle_ids);
+    attach_e5_edges(&mut ir, &mut annotations, &edges, &circle_ids);
+    if !ir.model.edges.is_empty() {
+        let body_id = BodyId("catia:e5:body#0".to_string());
+        let region_id = RegionId("catia:e5:region#0".to_string());
+        let shell_id = ShellId("catia:e5:shell#0".to_string());
+        for id in [&body_id.0, &region_id.0, &shell_id.0] {
+            annotate(
+                &mut annotations,
+                id,
+                "MainDataStream+SurfacicReps",
+                0,
+                "derived_wire_owner",
+                Exactness::Inferred,
+            );
+        }
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id.clone(),
+            faces: Vec::new(),
+            wire_edges: ir.model.edges.iter().map(|edge| edge.id.clone()).collect(),
+            free_vertices: Vec::new(),
+        });
+        ir.model.regions.push(Region {
+            id: region_id,
+            body: body_id.clone(),
+            shells: vec![shell_id],
+        });
+        ir.model.bodies.push(Body {
+            id: body_id,
+            kind: BodyKind::Wire,
+            regions: vec!["catia:e5:region#0".into()],
+            transform: None,
+            name: None,
+            color: None,
+        });
+    }
+    link_payload_carriers(&mut ir, &mut annotations);
+    ir.annotations = annotations.build();
     Some((
         ir,
         DecodeReport {
@@ -283,12 +308,17 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     ))
 }
 
-fn attach_e5_edges(ir: &mut CadIr, edges: &[geometry::E5Edge], circles: &HashMap<u32, CurveId>) {
+fn attach_e5_edges(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    edges: &[geometry::E5Edge],
+    circles: &HashMap<u32, CurveId>,
+) {
     let refs: std::collections::BTreeSet<u32> = edges
         .iter()
         .flat_map(|edge| [edge.start_vertex_id, edge.end_vertex_id])
         .collect();
-    if refs.len() != ir.vertices.len() || refs.is_empty() {
+    if refs.len() != ir.model.vertices.len() || refs.is_empty() {
         return;
     }
     let vertex_for_ref: HashMap<u32, VertexId> = refs
@@ -302,7 +332,7 @@ fn attach_e5_edges(ir: &mut CadIr, edges: &[geometry::E5Edge], circles: &HashMap
         let Some(curve_id) = circles.get(&edge.support_id) else {
             return;
         };
-        let Some((center, radius)) = ir.curves.iter().find_map(|curve| {
+        let Some((center, radius)) = ir.model.curves.iter().find_map(|curve| {
             (curve.id == *curve_id)
                 .then_some(match &curve.geometry {
                     CurveGeometry::Circle { center, radius, .. } => Some((*center, *radius)),
@@ -317,10 +347,16 @@ fn attach_e5_edges(ir: &mut CadIr, edges: &[geometry::E5Edge], circles: &HashMap
                 return;
             };
             let Some(point) = ir
+                .model
                 .vertices
                 .iter()
                 .find(|vertex| vertex.id == *vertex_id)
-                .and_then(|vertex| ir.points.iter().find(|point| point.id == vertex.point))
+                .and_then(|vertex| {
+                    ir.model
+                        .points
+                        .iter()
+                        .find(|point| point.id == vertex.point)
+                })
             else {
                 return;
             };
@@ -333,14 +369,25 @@ fn attach_e5_edges(ir: &mut CadIr, edges: &[geometry::E5Edge], circles: &HashMap
         }
     }
     for (index, edge) in edges.iter().enumerate() {
-        ir.edges.push(Edge {
-            id: EdgeId(format!("catia:e5:edge#{index}")),
+        let id = EdgeId(format!("catia:e5:edge#{index}"));
+        annotate(
+            annotations,
+            &id,
+            "MainDataStream+SurfacicReps",
+            edge.pos as u64,
+            "e5_ff_edge_use",
+            Exactness::ByteExact,
+        );
+        for field in ["curve", "start", "end"] {
+            annotations.derived(&id, field);
+        }
+        ir.model.edges.push(Edge {
+            id,
             curve: circles.get(&edge.support_id).cloned(),
             start: vertex_for_ref[&edge.start_vertex_id].clone(),
             end: vertex_for_ref[&edge.end_vertex_id].clone(),
             param_range: None,
             tolerance: None,
-            meta: byte_exact("e5_ff_edge_use", edge.pos as u64),
         });
     }
 }
@@ -352,23 +399,31 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
         return None;
     }
     let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
-    preserve_raw_payload(&mut ir, scan, "catia:freeform_payload");
+    preserve_raw_payload(
+        &mut ir,
+        &mut annotations,
+        scan,
+        "catia:payload:unknown#freeform",
+    );
     for (index, surface) in surfaces.iter().enumerate() {
-        ir.surfaces.push(Surface {
-            id: SurfaceId(format!("catia:a8:surf#{index}")),
+        let id = SurfaceId(format!("catia:a8:surf#{index}"));
+        annotate(
+            &mut annotations,
+            &id,
+            "object_stream_a8_03",
+            surface.pos as u64,
+            format!("object_id:{:08x}", surface.object_id),
+            Exactness::ByteExact,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
             geometry: surface.geometry.clone(),
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "catia".to_string(),
-                    stream: "object_stream_a8_03".to_string(),
-                    offset: surface.pos as u64,
-                    tag: Some(format!("object_id:{:08x}", surface.object_id)),
-                },
-                exactness: Exactness::ByteExact,
-            },
         });
     }
+    link_payload_carriers(&mut ir, &mut annotations);
+    ir.annotations = annotations.build();
     Some((
         ir,
         DecodeReport {
@@ -387,23 +442,23 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
     ))
 }
 
-fn append_freeform_surface_pools(ir: &mut CadIr, data: &[u8]) {
+fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
     let mut surfaces = geometry::a8_surfaces(data);
     surfaces.extend(geometry::a5_surfaces(data));
     for surface in surfaces {
-        let index = ir.surfaces.len();
-        ir.surfaces.push(Surface {
-            id: SurfaceId(format!("catia:freeform:surf#{index}")),
+        let index = ir.model.surfaces.len();
+        let id = SurfaceId(format!("catia:freeform:surf#{index}"));
+        annotate(
+            annotations,
+            &id,
+            "object_stream_a8_03_or_consolidated_a5_03",
+            surface.pos as u64,
+            format!("object_id:{:08x}", surface.object_id),
+            Exactness::ByteExact,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
             geometry: surface.geometry,
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "catia".to_string(),
-                    stream: "object_stream_a8_03_or_consolidated_a5_03".to_string(),
-                    offset: surface.pos as u64,
-                    tag: Some(format!("object_id:{:08x}", surface.object_id)),
-                },
-                exactness: Exactness::ByteExact,
-            },
         });
     }
 }
@@ -421,6 +476,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         .collect();
 
     let mut surfaces = Vec::new();
+    let mut surface_annotations = Vec::new();
     let mut face_bindings = Vec::new();
     let mut decoded_plane_targets = HashSet::new();
     let mut plane_faces = 0usize;
@@ -439,15 +495,12 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         match decoded {
             Some(geom) => {
                 typed.record(&geom);
-                let id = SurfaceId(format!("catia:surf#{i}"));
+                let id = SurfaceId(format!("catia:standard:surf#{i}"));
                 if let Some(forward) = geometry::face_sense(brep, prefix) {
                     face_bindings.push((id.clone(), forward, prefix.pos));
                 }
-                surfaces.push(Surface {
-                    id,
-                    geometry: geom,
-                    meta: byte_exact("surfacic_reps_analytic", prefix.pos as u64),
-                });
+                surface_annotations.push((id.clone(), prefix.pos, prefix.kind));
+                surfaces.push(Surface { id, geometry: geom });
             }
             None if prefix.kind == 0x32 => plane_faces += 1,
             None => {}
@@ -459,30 +512,75 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     }
 
     let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
-    preserve_raw_payload(&mut ir, scan, "catia:brep_stream");
+    preserve_raw_payload(
+        &mut ir,
+        &mut annotations,
+        scan,
+        "catia:payload:unknown#brep-stream",
+    );
 
     for (i, p) in points.iter().enumerate() {
-        ir.points.push(Point {
-            id: PointId(format!("catia:pt#{i}")),
+        let point_id = PointId(format!("catia:standard:pt#{i}"));
+        annotate(
+            &mut annotations,
+            &point_id,
+            "MainDataStream+SurfacicReps",
+            0,
+            "vertex_05_08_01",
+            Exactness::ByteExact,
+        );
+        ir.model.points.push(Point {
+            id: point_id.clone(),
             position: *p,
-            meta: byte_exact("vertex_05_08_01", 0),
         });
-        ir.vertices.push(Vertex {
-            id: VertexId(format!("catia:v#{i}")),
-            point: PointId(format!("catia:pt#{i}")),
+        let vertex_id = VertexId(format!("catia:standard:v#{i}"));
+        annotate(
+            &mut annotations,
+            &vertex_id,
+            "MainDataStream+SurfacicReps",
+            0,
+            "vertex_05_08_01",
+            Exactness::ByteExact,
+        );
+        annotations.derived(&vertex_id, "point");
+        ir.model.vertices.push(Vertex {
+            id: vertex_id,
+            point: point_id,
             tolerance: None,
-            meta: byte_exact("vertex_05_08_01", 0),
         });
     }
-    ir.surfaces = surfaces;
-    attach_standard_faces(&mut ir, &face_bindings, brep);
-    let topology_attached = attach_standard_topology(&mut ir, &face_bindings, brep);
-    if !topology_attached {
-        attach_standard_circles(&mut ir, &face_bindings, brep);
-        attach_standard_lines(&mut ir, &face_bindings, brep);
+    for (id, offset, kind) in surface_annotations {
+        annotate(
+            &mut annotations,
+            &id,
+            "MainDataStream+SurfacicReps",
+            offset as u64,
+            format!("surfacic_reps_{kind:02x}"),
+            Exactness::ByteExact,
+        );
     }
-    append_freeform_surface_pools(&mut ir, &scan.data);
+    ir.model.surfaces = surfaces;
+    attach_standard_faces(&mut ir, &mut annotations, &face_bindings, brep);
+    let topology_attached =
+        attach_standard_topology(&mut ir, &mut annotations, &face_bindings, brep);
+    if !topology_attached {
+        attach_standard_circles(&mut ir, &mut annotations, &face_bindings, brep);
+        attach_standard_lines(&mut ir, &mut annotations, &face_bindings, brep);
+        if let Some(shell) = ir.model.shells.first_mut() {
+            shell.free_vertices = ir
+                .model
+                .vertices
+                .iter()
+                .map(|vertex| vertex.id.clone())
+                .collect();
+            annotations.derived(&shell.id, "free_vertices");
+        }
+    }
+    append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data);
+    link_payload_carriers(&mut ir, &mut annotations);
+    ir.annotations = annotations.build();
 
     let report = build_geometry_report(
         scan,
@@ -497,7 +595,12 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
 
 /// Attach standard analytic carriers to faces only when every FBB face has a
 /// decoded carrier and its stored sense byte.  FBB runs delimit bodies.
-fn attach_standard_faces(ir: &mut CadIr, bindings: &[(SurfaceId, bool, usize)], brep: &[u8]) {
+fn attach_standard_faces(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    bindings: &[(SurfaceId, bool, usize)],
+    brep: &[u8],
+) {
     let groups = fbb_groups(brep);
     let face_count: usize = groups.iter().sum();
     if face_count == 0 || face_count != bindings.len() {
@@ -505,15 +608,26 @@ fn attach_standard_faces(ir: &mut CadIr, bindings: &[(SurfaceId, bool, usize)], 
     }
     let mut face_index = 0usize;
     for (body_index, &count) in groups.iter().enumerate() {
-        let body_id = BodyId(format!("catia:body#{body_index}"));
-        let lump_id = LumpId(format!("catia:lump#{body_index}"));
-        let shell_id = ShellId(format!("catia:shell#{body_index}"));
+        let body_id = BodyId(format!("catia:standard:body#{body_index}"));
+        let region_id = RegionId(format!("catia:standard:region#{body_index}"));
+        let shell_id = ShellId(format!("catia:standard:shell#{body_index}"));
         let mut face_ids = Vec::with_capacity(count);
         for _ in 0..count {
             let (surface, forward, offset) = &bindings[face_index];
-            let face_id = FaceId(format!("catia:face#{face_index}"));
+            let face_id = FaceId(format!("catia:standard:face#{face_index}"));
+            annotate(
+                annotations,
+                &face_id,
+                "MainDataStream+SurfacicReps",
+                *offset as u64,
+                "surfacic_reps_face_sense",
+                Exactness::ByteExact,
+            );
+            for field in ["shell", "surface", "sense"] {
+                annotations.derived(&face_id, field);
+            }
             face_ids.push(face_id.clone());
-            ir.faces.push(Face {
+            ir.model.faces.push(Face {
                 id: face_id,
                 shell: shell_id.clone(),
                 surface: surface.clone(),
@@ -526,32 +640,61 @@ fn attach_standard_faces(ir: &mut CadIr, bindings: &[(SurfaceId, bool, usize)], 
                 name: None,
                 color: None,
                 tolerance: None,
-                meta: byte_exact("surfacic_reps_face_sense", *offset as u64),
             });
             face_index += 1;
         }
-        ir.bodies.push(Body {
+        annotate(
+            annotations,
+            &body_id,
+            "MainDataStream+SurfacicReps",
+            0,
+            "fbb_body_run",
+            Exactness::ByteExact,
+        );
+        annotations
+            .derived(&body_id, "kind")
+            .derived(&body_id, "regions");
+        ir.model.bodies.push(Body {
             id: body_id.clone(),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
-            lumps: vec![lump_id.clone()],
+            regions: vec![region_id.clone()],
             transform: None,
             name: None,
             color: None,
-            meta: byte_exact("fbb_body_run", 0),
         });
-        ir.lumps.push(Lump {
-            id: lump_id.clone(),
+        annotate(
+            annotations,
+            &region_id,
+            "MainDataStream+SurfacicReps",
+            0,
+            "fbb_body_run",
+            Exactness::ByteExact,
+        );
+        annotations
+            .derived(&region_id, "body")
+            .derived(&region_id, "shells");
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
             body: body_id,
             shells: vec![shell_id.clone()],
-            meta: byte_exact("fbb_body_run", 0),
         });
-        ir.shells.push(Shell {
+        annotate(
+            annotations,
+            &shell_id,
+            "MainDataStream+SurfacicReps",
+            0,
+            "fbb_face_run",
+            Exactness::ByteExact,
+        );
+        annotations
+            .derived(&shell_id, "region")
+            .derived(&shell_id, "faces");
+        ir.model.shells.push(Shell {
             id: shell_id,
-            lump: lump_id,
+            region: region_id,
             faces: face_ids,
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
-            meta: byte_exact("fbb_face_run", 0),
         });
     }
 }
@@ -577,18 +720,19 @@ fn fbb_groups(brep: &[u8]) -> Vec<usize> {
 
 fn attach_standard_topology(
     ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
 ) -> bool {
     let Some(topology) = topology::parse_standard(brep) else {
         return false;
     };
-    if topology.face_count() != ir.faces.len()
-        || topology.vertex_points().len() != ir.points.len()
+    if topology.face_count() != ir.model.faces.len()
+        || topology.vertex_points().len() != ir.model.points.len()
         || !topology
             .vertex_points()
             .iter()
-            .zip(&ir.points)
+            .zip(&ir.model.points)
             .all(|(stored, point)| {
                 stored[0] == point.position.x
                     && stored[1] == point.position.y
@@ -610,6 +754,7 @@ fn attach_standard_topology(
             return false;
         };
         let candidates: Vec<usize> = ir
+            .model
             .points
             .iter()
             .enumerate()
@@ -635,63 +780,102 @@ fn attach_standard_topology(
     {
         let start_point = point_assignment[logical_vertices[0]];
         let end_point = point_assignment[logical_vertices[1]];
-        let curve = build_standard_edge_curve(ir, bindings, support, start_point, end_point);
-        ir.edges.push(Edge {
-            id: EdgeId(format!("catia:edge#{edge_index}")),
+        let curve =
+            build_standard_edge_curve(ir, annotations, bindings, support, start_point, end_point);
+        let id = EdgeId(format!("catia:standard:edge#{edge_index}"));
+        annotate(
+            annotations,
+            &id,
+            "MainDataStream+SurfacicReps",
+            support.pos as u64,
+            "standard_spine_edge_row",
+            Exactness::ByteExact,
+        );
+        for field in ["curve", "start", "end"] {
+            annotations.derived(&id, field);
+        }
+        ir.model.edges.push(Edge {
+            id,
             curve,
-            start: VertexId(format!("catia:v#{start_point}")),
-            end: VertexId(format!("catia:v#{end_point}")),
+            start: VertexId(format!("catia:standard:v#{start_point}")),
+            end: VertexId(format!("catia:standard:v#{end_point}")),
             param_range: None,
             tolerance: None,
-            meta: byte_exact("standard_spine_edge_row", support.pos as u64),
         });
     }
 
-    let mut edge_coedges = vec![Vec::new(); ir.edges.len()];
+    let mut edge_coedges = vec![Vec::new(); ir.model.edges.len()];
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
         for (loop_index, boundary) in face_topology.boundaries.iter().enumerate() {
-            let loop_id = LoopId(format!("catia:loop#{face_index}:{loop_index}"));
+            let loop_id = LoopId(format!("catia:standard:loop#{face_index}:{loop_index}"));
             let coedge_ids: Vec<CoedgeId> = (0..boundary.coedges.len())
                 .map(|coedge_index| {
                     CoedgeId(format!(
-                        "catia:coedge#{face_index}:{loop_index}:{coedge_index}"
+                        "catia:standard:coedge#{face_index}:{loop_index}:{coedge_index}"
                     ))
                 })
                 .collect();
             for (coedge_index, edge_use) in boundary.coedges.iter().enumerate() {
-                let arena_index = ir.coedges.len();
+                let arena_index = ir.model.coedges.len();
                 edge_coedges[edge_use.edge_row].push(arena_index);
-                ir.coedges.push(Coedge {
-                    id: coedge_ids[coedge_index].clone(),
+                let id = coedge_ids[coedge_index].clone();
+                annotate(
+                    annotations,
+                    &id,
+                    "MainDataStream+SurfacicReps",
+                    0,
+                    "trim_mesh_boundary_run",
+                    Exactness::ByteExact,
+                );
+                for field in [
+                    "owner_loop",
+                    "edge",
+                    "next",
+                    "previous",
+                    "radial_next",
+                    "sense",
+                ] {
+                    annotations.derived(&id, field);
+                }
+                ir.model.coedges.push(Coedge {
+                    id,
                     owner_loop: loop_id.clone(),
-                    edge: EdgeId(format!("catia:edge#{}", edge_use.edge_row)),
+                    edge: EdgeId(format!("catia:standard:edge#{}", edge_use.edge_row)),
                     next: coedge_ids[(coedge_index + 1) % coedge_ids.len()].clone(),
                     previous: coedge_ids[(coedge_index + coedge_ids.len() - 1) % coedge_ids.len()]
                         .clone(),
-                    partner: None,
-                    radial_next: None,
+                    radial_next: coedge_ids[coedge_index].clone(),
                     sense: if edge_use.reversed {
                         Sense::Reversed
                     } else {
                         Sense::Forward
                     },
                     pcurve: None,
-                    meta: byte_exact("trim_mesh_boundary_run", 0),
                 });
             }
-            ir.loops.push(Loop {
+            annotate(
+                annotations,
+                &loop_id,
+                "MainDataStream+SurfacicReps",
+                0,
+                "trim_mesh_boundary_cycle",
+                Exactness::ByteExact,
+            );
+            annotations
+                .derived(&loop_id, "face")
+                .derived(&loop_id, "coedges");
+            ir.model.loops.push(Loop {
                 id: loop_id.clone(),
-                face: FaceId(format!("catia:face#{face_index}")),
+                face: FaceId(format!("catia:standard:face#{face_index}")),
                 coedges: coedge_ids,
-                meta: byte_exact("trim_mesh_boundary_cycle", 0),
             });
-            ir.faces[face_index].loops.push(loop_id);
+            ir.model.faces[face_index].loops.push(loop_id);
         }
     }
     for uses in edge_coedges {
-        if let [left, right] = uses.as_slice() {
-            ir.coedges[*left].partner = Some(ir.coedges[*right].id.clone());
-            ir.coedges[*right].partner = Some(ir.coedges[*left].id.clone());
+        for (position, current) in uses.iter().enumerate() {
+            let next = uses[(position + 1) % uses.len()];
+            ir.model.coedges[*current].radial_next = ir.model.coedges[next].id.clone();
         }
     }
     true
@@ -703,7 +887,7 @@ fn face_surface<'a>(
     face: usize,
 ) -> Option<&'a Surface> {
     let id = &bindings.get(face)?.0;
-    ir.surfaces.iter().find(|surface| surface.id == *id)
+    ir.model.surfaces.iter().find(|surface| surface.id == *id)
 }
 
 fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
@@ -768,6 +952,7 @@ fn point_distance_squared(left: Point3, right: Point3) -> f64 {
 
 fn build_standard_edge_curve(
     ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     support: &geometry::StandardCurveSupport,
     start_point: usize,
@@ -775,8 +960,8 @@ fn build_standard_edge_curve(
 ) -> Option<CurveId> {
     let geometry = match &support.geometry {
         geometry::StandardCurveGeometry::Line => {
-            let start = ir.points[start_point].position;
-            let end = ir.points[end_point].position;
+            let start = ir.model.points[start_point].position;
+            let end = ir.model.points[end_point].position;
             let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
             let length = axis_dot(delta, delta).sqrt();
             if length <= f64::EPSILON {
@@ -805,28 +990,51 @@ fn build_standard_edge_curve(
             CurveGeometry::Circle {
                 center: *center,
                 axis,
+                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
                 radius: *radius,
             }
         }
         geometry::StandardCurveGeometry::Bspline => return None,
     };
     let id = CurveId(format!("catia:standard:curve#{}", support.pos));
-    ir.curves.push(Curve {
+    annotate(
+        annotations,
+        &id,
+        "MainDataStream+SurfacicReps",
+        support.pos as u64,
+        "curve_support_60",
+        Exactness::ByteExact,
+    );
+    if matches!(&support.geometry, geometry::StandardCurveGeometry::Line) {
+        annotations
+            .derived(&id, "geometry.origin")
+            .derived(&id, "geometry.direction");
+    } else {
+        annotations.derived(&id, "geometry.axis");
+    }
+    ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
-        meta: byte_exact("curve_support_60", support.pos as u64),
     });
     Some(id)
 }
 
-fn attach_standard_circles(ir: &mut CadIr, bindings: &[(SurfaceId, bool, usize)], brep: &[u8]) {
+fn attach_standard_circles(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    bindings: &[(SurfaceId, bool, usize)],
+    brep: &[u8],
+) {
     for circle in geometry::standard_circles(brep, bindings.len()) {
         let axes: Vec<Vector3> = circle
             .faces
             .iter()
             .filter_map(|face| bindings.get(*face))
             .filter_map(|(surface_id, _, _)| {
-                ir.surfaces.iter().find(|surface| surface.id == *surface_id)
+                ir.model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *surface_id)
             })
             .filter_map(surface_axis)
             .collect();
@@ -840,15 +1048,25 @@ fn attach_standard_circles(ir: &mut CadIr, bindings: &[(SurfaceId, bool, usize)]
         {
             continue;
         }
-        let index = ir.curves.len();
-        ir.curves.push(Curve {
-            id: CurveId(format!("catia:standard:circle#{index}")),
+        let index = ir.model.curves.len();
+        let id = CurveId(format!("catia:standard:circle#{index}"));
+        annotate(
+            annotations,
+            &id,
+            "MainDataStream+SurfacicReps",
+            circle.pos as u64,
+            "curve_support_60_circle",
+            Exactness::ByteExact,
+        );
+        annotations.derived(&id, "geometry.axis");
+        ir.model.curves.push(Curve {
+            id,
             geometry: CurveGeometry::Circle {
                 center: circle.center,
                 axis,
+                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
                 radius: circle.radius,
             },
-            meta: byte_exact("curve_support_60_circle", circle.pos as u64),
         });
     }
 }
@@ -867,7 +1085,12 @@ fn axis_dot(a: Vector3, b: Vector3) -> f64 {
     a.x * b.x + a.y * b.y + a.z * b.z
 }
 
-fn attach_standard_lines(ir: &mut CadIr, bindings: &[(SurfaceId, bool, usize)], brep: &[u8]) {
+fn attach_standard_lines(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    bindings: &[(SurfaceId, bool, usize)],
+    brep: &[u8],
+) {
     for line in geometry::standard_lines(brep, bindings.len()) {
         let Some((origin_a, normal_a)) = plane_for_face(ir, bindings, line.faces[0]) else {
             continue;
@@ -888,9 +1111,21 @@ fn attach_standard_lines(ir: &mut CadIr, bindings: &[(SurfaceId, bool, usize)], 
             d_a * normal_b.z - d_b * normal_a.z,
         );
         let point = cross_vector(numerator, direction);
-        let index = ir.curves.len();
-        ir.curves.push(Curve {
-            id: CurveId(format!("catia:standard:line#{index}")),
+        let index = ir.model.curves.len();
+        let id = CurveId(format!("catia:standard:line#{index}"));
+        annotate(
+            annotations,
+            &id,
+            "MainDataStream+SurfacicReps",
+            line.pos as u64,
+            "curve_support_60_line",
+            Exactness::ByteExact,
+        );
+        annotations
+            .derived(&id, "geometry.origin")
+            .derived(&id, "geometry.direction");
+        ir.model.curves.push(Curve {
+            id,
             geometry: CurveGeometry::Line {
                 origin: cadmpeg_ir::math::Point3::new(
                     point.x / denom,
@@ -903,7 +1138,6 @@ fn attach_standard_lines(ir: &mut CadIr, bindings: &[(SurfaceId, bool, usize)], 
                     direction.z / denom.sqrt(),
                 ),
             },
-            meta: byte_exact("curve_support_60_line", line.pos as u64),
         });
     }
 }
@@ -915,6 +1149,7 @@ fn plane_for_face(
 ) -> Option<(cadmpeg_ir::math::Point3, Vector3)> {
     let (surface_id, _, _) = bindings.get(face)?;
     let surface = ir
+        .model
         .surfaces
         .iter()
         .find(|surface| surface.id == *surface_id)?;
@@ -1081,56 +1316,85 @@ fn build_geometry_report(
 
 fn build_metadata_ir(scan: &ContainerScan) -> CadIr {
     let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
 
     // Preserve the reconstructed BREP stream (or, absent one, the whole file) as
     // an unknown passthrough so no recognized data is silently dropped.
     if let Some(brep) = &scan.brep {
+        let id = UnknownId("catia:payload:unknown#brep-stream".to_string());
+        annotate(
+            &mut annotations,
+            &id,
+            "MainDataStream+SurfacicReps",
+            0,
+            scan.variant.token(),
+            Exactness::Unknown,
+        );
         ir.unknowns.push(UnknownRecord {
-            id: UnknownId("catia:brep_stream".to_string()),
+            id,
             offset: 0,
             byte_len: brep.len() as u64,
             sha256: sha256_hex(brep),
             data: Some(brep.clone()),
             links: Vec::new(),
-            meta: EntityMeta {
-                provenance: Provenance {
-                    format: "catia".to_string(),
-                    stream: "MainDataStream+SurfacicReps".to_string(),
-                    offset: 0,
-                    tag: Some(scan.variant.token().to_string()),
-                },
-                exactness: Exactness::Unknown,
-            },
         });
     }
+    ir.annotations = annotations.build();
     ir
 }
 
 /// Preserve the native payload for every partial decode.  Typed entities are
 /// additive views; unrecovered record families must remain byte-addressable.
-fn preserve_raw_payload(ir: &mut CadIr, scan: &ContainerScan, id: &str) {
+fn preserve_raw_payload(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    scan: &ContainerScan,
+    id: &str,
+) {
     let (bytes, stream) = match scan.brep.as_ref() {
         Some(brep) => (brep.as_slice(), "MainDataStream+SurfacicReps"),
         None => (scan.data.as_slice(), "CATPart"),
     };
+    let id = UnknownId(id.to_string());
+    annotate(
+        annotations,
+        &id,
+        stream,
+        0,
+        scan.variant.token(),
+        Exactness::Unknown,
+    );
     ir.unknowns.push(UnknownRecord {
-        id: UnknownId(id.to_string()),
+        id,
         offset: 0,
         byte_len: bytes.len() as u64,
         sha256: sha256_hex(bytes),
         data: Some(bytes.to_vec()),
         links: Vec::new(),
-        meta: EntityMeta {
-            provenance: Provenance {
-                format: "catia".to_string(),
-                stream: stream.to_string(),
-                offset: 0,
-                tag: Some(scan.variant.token().to_string()),
-            },
-            exactness: Exactness::Unknown,
-        },
     });
+}
+
+/// Attribute typed carrier views to the preserved payload when CATIA's binding
+/// layer was not recovered. The raw payload is their byte-backed owner; this
+/// avoids inventing topology or procedural relationships.
+fn link_payload_carriers(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+    let links = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| surface.id.0.clone())
+        .chain(ir.model.curves.iter().map(|curve| curve.id.0.clone()))
+        .collect::<Vec<_>>();
+    if links.is_empty() {
+        return;
+    }
+    let payload = ir
+        .unknowns
+        .last_mut()
+        .expect("partial CATIA decode preserves its source payload");
+    payload.links = links;
+    annotations.derived(&payload.id, "links");
 }
 
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
@@ -1161,7 +1425,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         category: LossCategory::Topology,
         severity: Severity::Blocking,
         message:
-            "B-rep topology graph (body/lump/shell/face/loop/coedge/edge/vertex) was not built \
+            "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
                   for this file."
                 .to_string(),
         provenance: None,
@@ -1173,18 +1437,6 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         geometry_transferred: false,
         losses,
         notes: summary.notes,
-    }
-}
-
-fn byte_exact(tag: &str, offset: u64) -> EntityMeta {
-    EntityMeta {
-        provenance: Provenance {
-            format: "catia".to_string(),
-            stream: "MainDataStream+SurfacicReps".to_string(),
-            offset,
-            tag: Some(tag.to_string()),
-        },
-        exactness: Exactness::ByteExact,
     }
 }
 

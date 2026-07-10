@@ -3,21 +3,32 @@
 
 use std::collections::HashMap;
 
+use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
-pub fn patch_partition(ir: &CadIr, scale: f64) -> Option<(String, Vec<u8>)> {
+pub fn patch_partition(ir: &CadIr, scale: f64) -> Result<Option<(String, Vec<u8>)>, CodecError> {
+    patch_partition_inner(ir, scale).transpose()
+}
+
+fn patch_partition_inner(ir: &CadIr, scale: f64) -> Option<Result<(String, Vec<u8>), CodecError>> {
     if !ir
+        .model
         .surfaces
         .iter()
         .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
+        && !ir
+            .model
+            .curves
+            .iter()
+            .any(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
     {
         return None;
     }
     let source = ir
         .unknowns
         .iter()
-        .find(|record| record.id.0 == "sldprt:source-image")?
+        .find(|record| record.id.0 == "sldprt:file:source-image#0")?
         .data
         .as_deref()?;
     let scan = crate::container::scan_bytes(source);
@@ -59,18 +70,107 @@ pub fn patch_partition(ir: &CadIr, scale: f64) -> Option<(String, Vec<u8>)> {
     if !same_graph(ir, &native) {
         return None;
     }
+    let section = block
+        .section
+        .clone()
+        .unwrap_or_else(|| format!("block@{}", block.offset));
+    if let Err(error) = validate_changed_annotations(ir, &native, &section) {
+        return Some(Err(error));
+    }
 
     let mut payload = block.payload.clone();
     patch_points(ir, &native, &mut payload, header.body_offset, scale)?;
     patch_surfaces(ir, &native, &mut payload, header.body_offset, scale)?;
     patch_curves(ir, &native, &mut payload, header.body_offset, scale)?;
-    Some((
-        block
-            .section
-            .clone()
-            .unwrap_or_else(|| format!("block@{}", block.offset)),
-        payload,
-    ))
+    Some(Ok((section, payload)))
+}
+
+fn validate_changed_annotations(
+    ir: &CadIr,
+    native: &crate::brep::Brep,
+    section: &str,
+) -> Result<(), CodecError> {
+    let points = native
+        .points
+        .iter()
+        .map(|value| (&value.id, value))
+        .collect::<HashMap<_, _>>();
+    let surfaces = native
+        .surfaces
+        .iter()
+        .map(|value| (&value.id, value))
+        .collect::<HashMap<_, _>>();
+    let curves = native
+        .curves
+        .iter()
+        .map(|value| (&value.id, value))
+        .collect::<HashMap<_, _>>();
+    for point in &ir.model.points {
+        if points
+            .get(&point.id)
+            .is_some_and(|old| old.position != point.position)
+        {
+            annotation_offset(ir, &point.id, section)?;
+        }
+    }
+    for surface in &ir.model.surfaces {
+        if surfaces
+            .get(&surface.id)
+            .is_some_and(|old| old.geometry != surface.geometry)
+        {
+            annotation_offset(ir, &surface.id, section)?;
+        }
+    }
+    for curve in &ir.model.curves {
+        if curves
+            .get(&curve.id)
+            .is_some_and(|old| old.geometry != curve.geometry)
+        {
+            annotation_offset(ir, &curve.id, section)?;
+        }
+    }
+    Ok(())
+}
+
+fn annotation_offset(
+    ir: &CadIr,
+    id: impl std::fmt::Display,
+    section: &str,
+) -> Result<usize, CodecError> {
+    let id = id.to_string();
+    let provenance = ir.annotations.provenance.get(&id).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "SLDPRT mutation requires provenance annotation for {id}"
+        ))
+    })?;
+    let stream = usize::try_from(provenance.stream)
+        .ok()
+        .and_then(|index| ir.annotations.streams.get(index))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "SLDPRT mutation provenance for {id} references a missing stream"
+            ))
+        })?;
+    if stream != section {
+        return Err(CodecError::Malformed(format!(
+            "SLDPRT mutation provenance for {id} references {stream}, not {section}"
+        )));
+    }
+    raw_annotation_offset(ir, &id)
+}
+
+fn raw_annotation_offset(ir: &CadIr, id: impl std::fmt::Display) -> Result<usize, CodecError> {
+    let id = id.to_string();
+    let provenance = ir.annotations.provenance.get(&id).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "SLDPRT mutation requires provenance annotation for {id}"
+        ))
+    })?;
+    usize::try_from(provenance.offset).map_err(|_| {
+        CodecError::Malformed(format!(
+            "SLDPRT mutation provenance offset for {id} exceeds address space"
+        ))
+    })
 }
 
 fn site_key(block: &crate::container::Block) -> String {
@@ -89,21 +189,25 @@ fn site_key(block: &crate::container::Block) -> String {
 }
 
 fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
-    ir.bodies
+    ir.model
+        .bodies
         .iter()
-        .map(|v| (&v.id, v.kind, &v.lumps))
-        .eq(native.bodies.iter().map(|v| (&v.id, v.kind, &v.lumps)))
+        .map(|v| (&v.id, v.kind, &v.regions))
+        .eq(native.bodies.iter().map(|v| (&v.id, v.kind, &v.regions)))
         && ir
-            .lumps
+            .model
+            .regions
             .iter()
             .map(|v| (&v.id, &v.body, &v.shells))
-            .eq(native.lumps.iter().map(|v| (&v.id, &v.body, &v.shells)))
+            .eq(native.regions.iter().map(|v| (&v.id, &v.body, &v.shells)))
         && ir
+            .model
             .shells
             .iter()
-            .map(|v| (&v.id, &v.lump, &v.faces))
-            .eq(native.shells.iter().map(|v| (&v.id, &v.lump, &v.faces)))
+            .map(|v| (&v.id, &v.region, &v.faces))
+            .eq(native.shells.iter().map(|v| (&v.id, &v.region, &v.faces)))
         && ir
+            .model
             .faces
             .iter()
             .map(|v| (&v.id, &v.shell, &v.surface, v.sense, &v.loops))
@@ -112,11 +216,13 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
                 .iter()
                 .map(|v| (&v.id, &v.shell, &v.surface, v.sense, &v.loops)))
         && ir
+            .model
             .loops
             .iter()
             .map(|v| (&v.id, &v.face, &v.coedges))
             .eq(native.loops.iter().map(|v| (&v.id, &v.face, &v.coedges)))
         && ir
+            .model
             .coedges
             .iter()
             .map(|v| {
@@ -126,7 +232,7 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
                     &v.edge,
                     &v.next,
                     &v.previous,
-                    &v.partner,
+                    &v.radial_next,
                     v.sense,
                     &v.pcurve,
                 )
@@ -138,12 +244,13 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
                     &v.edge,
                     &v.next,
                     &v.previous,
-                    &v.partner,
+                    &v.radial_next,
                     v.sense,
                     &v.pcurve,
                 )
             }))
         && ir
+            .model
             .edges
             .iter()
             .map(|v| (&v.id, &v.curve, &v.start, &v.end, v.param_range))
@@ -152,16 +259,19 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
                 .iter()
                 .map(|v| (&v.id, &v.curve, &v.start, &v.end, v.param_range)))
         && ir
+            .model
             .vertices
             .iter()
             .map(|v| (&v.id, &v.point))
             .eq(native.vertices.iter().map(|v| (&v.id, &v.point)))
         && ir
+            .model
             .points
             .iter()
             .map(|v| &v.id)
             .eq(native.points.iter().map(|v| &v.id))
         && ir
+            .model
             .surfaces
             .iter()
             .map(|v| (&v.id, surface_class(&v.geometry)))
@@ -170,6 +280,7 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
                 .iter()
                 .map(|v| (&v.id, surface_class(&v.geometry))))
         && ir
+            .model
             .curves
             .iter()
             .map(|v| (&v.id, curve_class(&v.geometry)))
@@ -199,6 +310,7 @@ fn curve_class(value: &CurveGeometry) -> u8 {
         CurveGeometry::Nurbs(_) => 3,
         CurveGeometry::Parabola { .. } => 4,
         CurveGeometry::Hyperbola { .. } => 5,
+        CurveGeometry::Unknown { .. } => 6,
     }
 }
 
@@ -210,6 +322,7 @@ fn patch_points(
     scale: f64,
 ) -> Option<()> {
     let current = ir
+        .model
         .points
         .iter()
         .map(|v| (&v.id, v))
@@ -221,7 +334,7 @@ fn patch_points(
         }
         let old_bytes = point_bytes(old.position, 0.001);
         let new_bytes = point_bytes(new.position, scale);
-        let start = body_start.checked_add(old.meta.provenance.offset as usize)?;
+        let start = body_start.checked_add(raw_annotation_offset(ir, &old.id).ok()?)?;
         if payload.get(start..start + 2) != Some(&[0, 0x1d]) {
             return None;
         }
@@ -265,7 +378,7 @@ fn patch_surfaces(
         .iter()
         .map(|v| (&v.id, v))
         .collect::<HashMap<_, _>>();
-    for surface in &ir.surfaces {
+    for surface in &ir.model.surfaces {
         let baseline = old[&surface.id];
         match (&surface.geometry, &baseline.geometry) {
             (SurfaceGeometry::Unknown { .. }, SurfaceGeometry::Unknown { .. }) => continue,
@@ -273,7 +386,7 @@ fn patch_surfaces(
             (SurfaceGeometry::Nurbs(new), SurfaceGeometry::Nurbs(old)) => {
                 crate::brep::patch_nurbs_surface(
                     payload.get_mut(body_start..)?,
-                    baseline.meta.provenance.offset as usize,
+                    raw_annotation_offset(ir, &surface.id).ok()?,
                     old,
                     new,
                     scale,
@@ -283,20 +396,13 @@ fn patch_surfaces(
             _ if surface.geometry == baseline.geometry => continue,
             _ => {}
         }
-        let reference = ir
-            .surface_parameterizations
-            .iter()
-            .find(|frame| frame.surface == surface.id)
-            .map_or_else(
-                || super::writer::surface_reference(&surface.geometry),
-                |frame| frame.u_reference,
-            );
+        let reference = super::writer::surface_reference(&surface.geometry);
         let (_, values) =
             super::writer::surface_values(&surface.geometry, reference, scale).ok()?;
         patch_compact(
             payload,
             body_start,
-            baseline.meta.provenance.offset,
+            raw_annotation_offset(ir, &surface.id).ok()? as u64,
             &values,
         )?;
     }
@@ -315,14 +421,15 @@ fn patch_curves(
         .iter()
         .map(|v| (&v.id, v))
         .collect::<HashMap<_, _>>();
-    for curve in &ir.curves {
+    for curve in &ir.model.curves {
         let baseline = old[&curve.id];
         match (&curve.geometry, &baseline.geometry) {
+            (CurveGeometry::Unknown { .. }, CurveGeometry::Unknown { .. }) => continue,
             (CurveGeometry::Nurbs(new), CurveGeometry::Nurbs(old)) if new == old => continue,
             (CurveGeometry::Nurbs(new), CurveGeometry::Nurbs(old)) => {
                 crate::brep::patch_nurbs_curve(
                     payload.get_mut(body_start..)?,
-                    baseline.meta.provenance.offset as usize,
+                    raw_annotation_offset(ir, &curve.id).ok()?,
                     old,
                     new,
                     scale,
@@ -336,7 +443,7 @@ fn patch_curves(
         patch_compact(
             payload,
             body_start,
-            baseline.meta.provenance.offset,
+            raw_annotation_offset(ir, &curve.id).ok()? as u64,
             &values,
         )?;
     }

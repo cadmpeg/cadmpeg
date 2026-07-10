@@ -344,5 +344,9 @@ path = "src/bin/generate_all_seeds.rs"
 name = "generate_submodule_seeds"
 path = "src/bin/generate_submodule_seeds.rs"
 
+[[bin]]
+name = "generate_synthetic_fixtures"
+path = "src/bin/generate_synthetic_fixtures.rs"
+
 [profile.release]
 debug = 1

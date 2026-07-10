@@ -32,6 +32,7 @@
 //!
 //! [`SurfaceGeometry::Unknown`]: cadmpeg_ir::geometry::SurfaceGeometry::Unknown
 
+mod annotations;
 mod appearance;
 pub mod brep;
 pub mod container;
@@ -69,7 +70,7 @@ impl SldprtCodec {
         let record = ir
             .unknowns
             .iter()
-            .find(|record| record.id.0 == "sldprt:source-image")
+            .find(|record| record.id.0 == "sldprt:file:source-image#0")
             .ok_or_else(|| {
                 CodecError::NotImplemented("IR has no retained SLDPRT source image".into())
             })?;
