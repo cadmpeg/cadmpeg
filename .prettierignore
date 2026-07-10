@@ -1,0 +1,7 @@
+# Fuzzer seed corpora are raw libFuzzer inputs, not source. Several targets
+# prefix a strategy byte before the JSON payload, so files under these paths
+# are binary even when named *.json and must never be formatted.
+crates/cadmpeg-fuzz/seeds/
+crates/cadmpeg-fuzz/corpus/
+crates/cadmpeg-fuzz/artifacts/
+seeds/
