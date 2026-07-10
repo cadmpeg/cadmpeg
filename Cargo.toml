@@ -44,7 +44,7 @@ anyhow = "1"
 zip = { version = "8", default-features = false, features = ["deflate", "zstd"] }
 flate2 = "1"
 crc32fast = "1"
-roxmltree = "0.20"
+roxmltree = "0.21"
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
