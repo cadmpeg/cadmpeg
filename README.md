@@ -18,7 +18,7 @@ Format knowledge comes from CAD files contributors may legally possess and from 
 
 The grand vision is high fidelity conversion between all CAD formats, including parametric design history, across versions and vendors. Impossible to perfectly convert but the idea is to get as close as possible.
 
-## Quick start
+## Install
 
 cadmpeg requires Rust 1.88 or later:
 
@@ -46,10 +46,10 @@ Windows:
 powershell -ExecutionPolicy Bypass -c "irm https://github.com/cadmpeg/cadmpeg/releases/latest/download/cadmpeg-installer.ps1 | iex"
 ```
 
-Convert your own Fusion 360 file to STEP:
+## Quick start
 
 ```sh
-cadmpeg convert part.f3d -f step -o part.step
+cadmpeg convert part.f3d -f step 
 ```
 
 The conversion reports validation results and any loss:
