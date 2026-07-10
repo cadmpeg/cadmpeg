@@ -53,8 +53,6 @@ validation: OK (0 error(s), 0 warning(s))
 wrote part.step (2125 entities)
 ```
 
-STEP export is pure Rust and needs no external geometry kernel.
-
 ## Format support
 
 The repository contains five native-format codecs:
