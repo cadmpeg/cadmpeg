@@ -31,7 +31,9 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --workspace -- -D warnings
+        # -W missing-docs keeps the documentation debt visible without
+        # blocking; drop it once the workspace is fully documented.
+        run: cargo clippy --workspace -- -D warnings -W missing-docs
 
       - name: Build
         run: cargo build --workspace

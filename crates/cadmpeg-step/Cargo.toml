@@ -11,3 +11,6 @@ description = "Pure-Rust ISO 10303-21 (STEP AP214) writer for the cadmpeg IR."
 [dependencies]
 cadmpeg-ir = { workspace = true }
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

@@ -6,8 +6,8 @@ set -e
 echo "pre-commit: cargo fmt --all --check"
 cargo fmt --all --check
 
-echo "pre-commit: cargo clippy --workspace -- -D warnings"
-cargo clippy --workspace -- -D warnings
+echo "pre-commit: cargo clippy --workspace -- -D warnings -W missing-docs"
+cargo clippy --workspace -- -D warnings -W missing-docs
 
 echo "pre-commit: cargo build --workspace"
 cargo build --workspace

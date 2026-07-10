@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
+# Pinned so local builds and CI run identical rustc/clippy. Clippy adds
+# lints between releases; an unpinned channel means CI can fail on code
+# that was green locally. Bump deliberately, fixing new lints in the
+# same commit.
 [toolchain]
-channel = "stable"
+channel = "1.97.0"
 components = ["rustfmt", "clippy"]

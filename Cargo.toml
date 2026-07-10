@@ -50,3 +50,46 @@ tempfile = "3"
 
 [profile.release]
 lto = "thin"
+
+# Shared lint policy. Crates opt in with `[lints] workspace = true`.
+# CI escalates warnings to errors (`cargo clippy -- -D warnings -W missing-docs`);
+# missing_docs stays a visible warning until the documentation debt is paid down.
+[workspace.lints.rust]
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+
+# Byte-offset decoder reality: the codecs are wall-to-wall u32/usize/f64
+# conversions over file offsets and fixed-width records. Cast lints on this
+# codebase are noise, not signal.
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"
+cast_lossless = "allow"
+
+# Byte-exact roundtrip semantics: float equality against decoded values is
+# intentional, not a rounding hazard.
+float_cmp = "allow"
+
+# Decoder ergonomics: long match-heavy decode functions and near-identical
+# field names are the domain, not smells.
+too_many_lines = "allow"
+similar_names = "allow"
+match_same_arms = "allow"
+single_match_else = "allow"
+
+# API-surface lints deferred alongside missing_docs.
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+
+# Restriction picks: fail loudly instead of silently panicking or shipping
+# debug scaffolding. Use `expect` with a message where infallibility is a
+# real invariant; `unwrap` is reserved for tests.
+unwrap_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
