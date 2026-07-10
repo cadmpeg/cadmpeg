@@ -38,25 +38,3 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
-
-  # Optional gate: fuzz targets should at least still compile on nightly.
-  # Allowed to fail for now while the fuzz crate is young.
-  fuzz-smoke:
-    name: fuzz target smoke build (nightly, optional)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Cache cargo registry and target
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
-
-      - name: Build fuzz targets (no run)
-        run: cargo fuzz build --fuzz-dir crates/cadmpeg-fuzz

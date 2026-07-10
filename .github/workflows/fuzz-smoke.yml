@@ -1,0 +1,33 @@
+name: Fuzz smoke
+
+on:
+  schedule:
+    # Nightly at 03:17 UTC (off the hour to avoid the cron rush).
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Compile-only check that the fuzz targets still build on the Rust
+  # nightly toolchain. Non-blocking for regular development.
+  fuzz-smoke:
+    name: fuzz target smoke build (rust nightly)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Build fuzz targets (no run)
+        run: cargo fuzz build --fuzz-dir crates/cadmpeg-fuzz
