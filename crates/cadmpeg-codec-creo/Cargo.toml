@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-creo"
-description = "Inspect and partially decode PTC Creo Parametric .prt files into cadmpeg's provenance-aware CAD IR."
+description = "Inspect Creo .prt files and recover previews and datum planes."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-catia"
-description = "Decode supported CATIA V5 .CATPart content into cadmpeg's provenance-aware CAD IR with explicit loss reporting."
+description = "Read geometry and topology from .CATPart files."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-nx"
-description = "Decode Siemens NX .prt files into cadmpeg's provenance-aware CAD IR with explicit loss reporting."
+description = "Read Parasolid geometry and topology from NX .prt files."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

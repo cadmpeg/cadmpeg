@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-f3d"
-description = "Decode Autodesk Fusion 360 .f3d files into cadmpeg's provenance-aware CAD IR with explicit loss reporting."
+description = "Read .f3d B-rep and sketch data and edit common geometry."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

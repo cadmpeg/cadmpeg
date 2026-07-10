@@ -1,22 +1,14 @@
 # cadmpeg-codec-f3d
 
-**Autodesk Fusion 360 `.f3d` decoding for the cadmpeg CAD pipeline.**
-
-This crate inspects Fusion 360 ZIP containers and decodes supported ASM/SAB
-B-rep topology, analytic geometry, cached NURBS, design records, transforms,
-attributes, and appearance data into `cadmpeg-ir`.
-
-> Support is partial. Unsupported source records and semantic domains are
-> preserved or reported as explicit loss. This version does not write native
-> `.f3d` files.
+`cadmpeg-codec-f3d` opens `.f3d` archives and loads their model data into
+`CadIr`. It reads the archive structure, B-rep topology, analytic and spline
+geometry, design records, transforms, and appearances.
 
 ## Install
 
 ```sh
 cargo add cadmpeg-codec-f3d cadmpeg-ir
 ```
-
-cadmpeg requires Rust 1.88 or later.
 
 ## Use
 
@@ -29,40 +21,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.f3d")?;
     let result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    println!("geometry transferred: {}", result.report.geometry_transferred);
-    println!("loss notes: {}", result.report.losses.len());
+    println!(
+        "{} bodies, {} surfaces",
+        result.ir.model.bodies.len(),
+        result.ir.model.surfaces.len()
+    );
     Ok(())
 }
 ```
 
-`F3dCodec::inspect` enumerates archive entries and reads B-rep stream headers
-without decoding model geometry. `F3dCodec::decode` selects the active B-rep,
-frames the SAB record stream, builds the supported topology and geometry graph,
-and returns both `CadIr` and `DecodeReport`.
+`F3dCodec::inspect` returns the archive entries and B-rep headers without
+decoding the model.
 
-## Current boundaries
+## Coverage
 
-- B-rep topology, analytic carriers, cached spline carriers, selected
-  procedural definitions, appearances, and design-side records are partial.
-- Fusion display meshes are not transferred into the IR tessellation arena.
-- Complete component structure, constraints, and replayable feature history are
-  not implemented.
-- Native write and round-trip support are not implemented.
+The decoder handles common analytic and NURBS geometry, connected B-rep
+topology, body transforms, material data, and a growing set of design and
+sketch records.
 
-See the [format support profile][support] for the current domain-by-domain
-status.
+The writer can replay an unchanged archive byte for byte. It can also update
+the B-rep points, curves, surfaces, sketch geometry, and sketch constraints it
+understands while retaining the rest of the archive.
 
-## Project links
+Display meshes, full component structure, assembly constraints, and replayable
+feature history remain outside the current coverage. See
+[format support][support] for the detailed matrix.
+
+## Documentation
 
 - [API documentation][docs]
 - [Format support][support]
-- [F3D byte-format specification][spec]
-- [Repository][repo]
+- [Format notes][spec]
 - [Clean-room and legal policy][legal]
+- [Repository][repo]
 
-Code is licensed under the Apache License 2.0. Autodesk and Fusion 360 are
-trademarks of their respective owners; cadmpeg is independent of and is not
-endorsed by Autodesk.
+Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
 [docs]: https://docs.rs/cadmpeg-codec-f3d
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md

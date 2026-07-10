@@ -1,22 +1,15 @@
 # cadmpeg-codec-catia
 
-**CATIA V5 `.CATPart` decoding for the cadmpeg CAD pipeline.**
-
-This crate inspects `V5_CFV2` containers, identifies the native geometry storage
-family, and decodes supported analytic, freeform, and topology content into
-`cadmpeg-ir`.
-
-> Support is partial. Unsupported source records and unresolved
-> carrier-to-topology bindings are preserved or reported as explicit loss. This
-> version does not write native `.CATPart` files.
+`cadmpeg-codec-catia` opens `.CATPart` files and loads available model data
+into `CadIr`. It recognizes the known `V5_CFV2` storage layouts and reads
+analytic geometry, spline geometry, and topology where the file records provide
+the needed links.
 
 ## Install
 
 ```sh
 cargo add cadmpeg-codec-catia cadmpeg-ir
 ```
-
-cadmpeg requires Rust 1.88 or later.
 
 ## Use
 
@@ -29,40 +22,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.CATPart")?;
     let result = CatiaCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    println!("geometry transferred: {}", result.report.geometry_transferred);
-    println!("loss notes: {}", result.report.losses.len());
+    println!(
+        "{} bodies, {} surfaces",
+        result.ir.model.bodies.len(),
+        result.ir.model.surfaces.len()
+    );
     Ok(())
 }
 ```
 
-`CatiaCodec::inspect` reconstructs named logical streams and identifies the
-storage family without decoding model geometry. `CatiaCodec::decode` handles
-supported standard-nested, zero-entity, E5, and freeform carrier families and
-attaches topology where source references resolve.
+`CatiaCodec::inspect` identifies the storage layout and lists its logical
+streams without decoding geometry.
 
-## Current boundaries
+## Coverage
 
-- Container identification works across the known storage families.
-- Analytic and freeform geometry support is partial.
-- Standard-nested topology is conditional on available source senses and
-  bindings.
-- Tessellation, design intent, product structure, presentation, metadata, and
-  native writing are not implemented.
+Standard nested files have the broadest coverage, including connected B-rep
+topology when trim and endpoint records resolve. Other layouts currently yield
+smaller sets of analytic or spline geometry.
 
-See the [format support profile][support] for the current domain-by-domain
-status.
+The crate does not yet read tessellation, design history, assemblies,
+appearances, or persistent attributes, and it does not write `.CATPart` files.
+See [format support][support] for the detailed matrix.
 
-## Project links
+## Documentation
 
 - [API documentation][docs]
 - [Format support][support]
-- [CATIA V5 byte-format specification][spec]
-- [Repository][repo]
+- [Format notes][spec]
 - [Clean-room and legal policy][legal]
+- [Repository][repo]
 
-Code is licensed under the Apache License 2.0. CATIA is a trademark of its
-respective owner; cadmpeg is independent of and is not endorsed by Dassault
-Systèmes.
+Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
 [docs]: https://docs.rs/cadmpeg-codec-catia
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md

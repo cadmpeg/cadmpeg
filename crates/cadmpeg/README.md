@@ -1,39 +1,35 @@
 # cadmpeg
 
-**One open pipeline for native CAD.**
+`cadmpeg` is a command-line tool for inspecting native CAD files, converting
+them to STEP or CADIR, comparing models, and validating model structure.
 
-`cadmpeg` is the command-line front end for inspecting, decoding, validating,
-comparing, and converting CAD files through a documented, provenance-aware
-intermediate representation.
-
-> cadmpeg is early software. Every native format has partial support. Commands
-> report unsupported or reduced content instead of silently claiming a complete
-> conversion.
+Native format support is still growing. The [format support page][support]
+lists what works for each file type.
 
 ## Install
 
-Prebuilt binaries are available through Homebrew and the release installers:
+Install with Homebrew:
 
 ```sh
 brew install cadmpeg/tap/cadmpeg
 ```
+
+Or use the installer for macOS and Linux:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/cadmpeg/cadmpeg/releases/latest/download/cadmpeg-installer.sh | sh
 ```
 
-You can also install the Rust package:
+You can also build it with Cargo:
 
 ```sh
 cargo install cadmpeg
 ```
 
-cadmpeg requires Rust 1.88 or later.
-
 ## Use
 
-Convert a Fusion 360 part to STEP:
+Convert an `.f3d` file to STEP:
 
 ```sh
 cadmpeg convert part.f3d -f step -o part.step
@@ -47,27 +43,21 @@ cadmpeg decode part.f3d -o part.cadir.json
 cadmpeg validate part.cadir.json
 ```
 
-The command report records validation findings and any source or export content
-that could not be represented.
-
 ## Formats
 
-The built-in codecs cover Fusion 360 `.f3d`, SolidWorks `.sldprt`, CATIA V5
-`.CATPart`, Siemens NX `.prt`, and Creo Parametric `.prt`. Export targets are
-CADIR, STEP AP214, and supported SolidWorks `.sldprt` content.
+The built-in codecs recognize `.f3d`, `.sldprt`, `.CATPart`, and the NX and
+Creo `.prt` layouts. cadmpeg writes CADIR and STEP AP214, and can update parts
+of retained `.f3d` and `.sldprt` files.
 
-See the [format support profiles][support] for the current capability matrix.
+## Documentation
 
-## Project links
-
-- [Repository and full project README][repo]
 - [Format support][support]
 - [Architecture][architecture]
 - [Contributing][contributing]
 - [Clean-room and legal policy][legal]
+- [Repository][repo]
 
-Code is licensed under the Apache License 2.0. cadmpeg is independent of and is
-not endorsed by any CAD vendor.
+Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
 [architecture]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/architecture.md
 [contributing]: https://github.com/cadmpeg/cadmpeg/blob/main/CONTRIBUTING.md

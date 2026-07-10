@@ -1,23 +1,16 @@
 # cadmpeg-ir
 
-**The shared, provenance-aware model behind the cadmpeg CAD pipeline.**
+`cadmpeg-ir` is the common data model used by every cadmpeg codec. Use it to
+work with decoded CAD data without coupling your code to one source format.
 
-`cadmpeg-ir` defines the versioned CAD intermediate representation, codec
-traits, canonical JSON serialization, validation, structural diffing, source
-annotations, and explicit loss reports used by every cadmpeg format crate.
-
-> cadmpeg is early software. The IR is versioned and validated, but several
-> semantic areas remain reserved or partial. Assembly structure is reserved,
-> while feature history currently represents ordered source-provenanced
-> operations.
+The crate includes the `CadIr` document type, codec traits, canonical JSON,
+validation, structural diffing, and source annotations.
 
 ## Install
 
 ```sh
 cargo add cadmpeg-ir
 ```
-
-cadmpeg requires Rust 1.88 or later.
 
 ## Use
 
@@ -34,7 +27,7 @@ assert_eq!(report.error_count(), 0);
 assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);
 ```
 
-Format plugins implement the object-safe `Codec` trait:
+Format crates implement the object-safe `Codec` trait:
 
 ```rust
 use cadmpeg_ir::{Codec, Confidence};
@@ -44,23 +37,25 @@ fn accepts(codec: &dyn Codec, prefix: &[u8]) -> bool {
 }
 ```
 
-## Model
+## Scope
 
-`CadIr` stores canonical units and tolerances, a flat ID-referenced B-rep graph,
-geometry carriers, tessellation, appearance, design records, sparse provenance
-annotations, source-native namespaces, and opaque records. Recognized content
-that cannot be represented remains explicit in `DecodeReport` or
-`UnknownRecord`; it is not silently discarded.
+Version 1 covers units, tolerances, B-rep topology, analytic and spline
+geometry, tessellation, appearance, and design records. Entity IDs connect flat
+arenas, which keeps serialized documents stable and easy to diff.
 
-## Project links
+Assembly structure is reserved. Feature history currently stores ordered
+operations rather than a model that cadmpeg can replay. `UnknownRecord` keeps
+source records that a codec cannot map yet.
+
+## Documentation
 
 - [API documentation][docs]
 - [CAD IR version 1][ir-spec]
 - [Architecture and crate map][architecture]
-- [Repository][repo]
 - [Clean-room and legal policy][legal]
+- [Repository][repo]
 
-Code is licensed under the Apache License 2.0.
+Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
 [architecture]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/architecture.md
 [docs]: https://docs.rs/cadmpeg-ir

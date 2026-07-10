@@ -1,14 +1,8 @@
 # cadmpeg-codec-creo
 
-**Creo Parametric `.prt` inspection and partial decoding for cadmpeg.**
-
-This crate recognizes the `#UGC:2` Pro/E Session Binary container, enumerates
-its sections, decodes supported PSB primitives and namespace structure, and
-transfers supported datum-plane carriers into `cadmpeg-ir`.
-
-> This is the lowest-fidelity cadmpeg native-format codec. Reliable container
-> inspection is the primary capability. It does not currently transfer a placed
-> model B-rep or write native `.prt` files.
+`cadmpeg-codec-creo` opens `.prt` files that use the `#UGC:2` container layout.
+Use it to list sections, inspect layout and namespace data, find the preview,
+and recover datum planes.
 
 ## Install
 
@@ -16,52 +10,41 @@ transfers supported datum-plane carriers into `cadmpeg-ir`.
 cargo add cadmpeg-codec-creo cadmpeg-ir
 ```
 
-cadmpeg requires Rust 1.88 or later.
-
 ## Use
 
 ```rust,no_run
 use cadmpeg_codec_creo::CreoCodec;
-use cadmpeg_ir::{Codec, DecodeOptions};
+use cadmpeg_ir::Codec;
 use std::fs::File;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.prt")?;
-    let result = CreoCodec.decode(&mut input, &DecodeOptions::default())?;
+    let summary = CreoCodec.inspect(&mut input)?;
 
-    println!("geometry transferred: {}", result.report.geometry_transferred);
-    println!("loss notes: {}", result.report.losses.len());
+    println!("{} sections", summary.entries.len());
     Ok(())
 }
 ```
 
-`CreoCodec::inspect` parses the PSB header and table of contents, identifies the
-layout family, enumerates sections, and reports supported namespace counts.
-`CreoCodec::decode` preserves geometry sections as opaque records, transfers
-supported datum planes, and reports each blocked semantic layer.
+## Coverage
 
-## Current boundaries
+The container reader handles the known ND and DEPDB layouts, PSB compact
+numbers, section tables, and surface and curve namespace counts. The decoder
+can add model-space datum planes to `CadIr`.
 
-- Container and PSB primitive decoding are the strongest capabilities.
-- Surface and curve prototype namespaces do not represent placed model
-  geometry and are not presented as if they do.
-- Model B-rep, tessellation, design intent, product structure, presentation,
-  metadata, and native writing are not implemented.
+The geometry namespaces describe prototypes rather than placed model geometry,
+so this crate does not build a body B-rep from them. It also does not write
+`.prt` files. See [format support][support] for the detailed matrix.
 
-See the [format support profile][support] for the current domain-by-domain
-status.
-
-## Project links
+## Documentation
 
 - [API documentation][docs]
 - [Format support][support]
-- [Creo PRT byte-format specification][spec]
-- [Repository][repo]
+- [Format notes][spec]
 - [Clean-room and legal policy][legal]
+- [Repository][repo]
 
-Code is licensed under the Apache License 2.0. Creo and Pro/ENGINEER are
-trademarks of their respective owners; cadmpeg is independent of and is not
-endorsed by PTC.
+Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
 [docs]: https://docs.rs/cadmpeg-codec-creo
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md

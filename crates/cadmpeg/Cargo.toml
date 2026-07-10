@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg"
-description = "Command-line CAD inspection and transcoding through a provenance-aware intermediate representation."
+description = "Inspect, convert, compare, and validate CAD files from the command line."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

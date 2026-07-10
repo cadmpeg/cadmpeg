@@ -1,22 +1,14 @@
 # cadmpeg-codec-nx
 
-**Siemens NX `.prt` decoding for the cadmpeg CAD pipeline.**
-
-This crate inspects SPLMSSTR containers, extracts embedded Parasolid
-neutral-binary streams, and decodes supported B-rep topology and geometry into
-`cadmpeg-ir`.
-
-> Support is partial. Unsupported source records and semantic domains are
-> preserved or reported as explicit loss. This version does not write native NX
-> `.prt` files.
+`cadmpeg-codec-nx` opens `.prt` files stored as SPLMSSTR containers and loads
+their model data into `CadIr`. It extracts embedded Parasolid streams and reads
+analytic geometry, spline geometry, trimmed curves, and connected topology.
 
 ## Install
 
 ```sh
 cargo add cadmpeg-codec-nx cadmpeg-ir
 ```
-
-cadmpeg requires Rust 1.88 or later.
 
 ## Use
 
@@ -29,40 +21,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.prt")?;
     let result = NxCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    println!("geometry transferred: {}", result.report.geometry_transferred);
-    println!("loss notes: {}", result.report.losses.len());
+    println!(
+        "{} bodies, {} surfaces",
+        result.ir.model.bodies.len(),
+        result.ir.model.surfaces.len()
+    );
     Ok(())
 }
 ```
 
-`NxCodec::inspect` enumerates named streams and classifies embedded Parasolid
-partition, deltas, and cached-body streams without decoding model geometry.
-`NxCodec::decode` transfers supported analytic and NURBS carriers, trimmed
-curves, and topology when stream framing and references resolve.
+`NxCodec::inspect` lists named streams and classifies embedded model data
+without decoding geometry.
 
-## Current boundaries
+## Coverage
 
-- SPLMSSTR container and embedded-stream extraction are partial.
-- Analytic geometry, NURBS, trimmed curves, and topology are partial.
-- Active-face selection remains unavailable for layouts whose
-  partition-to-deltas tombstones do not resolve.
-- Tessellation, design intent, assembly placements, presentation, metadata, and
-  native writing are not implemented.
+The decoder handles points, common analytic surfaces and curves, B-splines,
+selected trimmed curves, and topology where record references resolve.
 
-See the [format support profile][support] for the current domain-by-domain
-status.
+Some files still lack enough decoded tombstone data to choose the active face
+set. Tessellation, design history, assembly placement, appearances, and native
+writing are not implemented. See [format support][support] for the detailed
+matrix.
 
-## Project links
+## Documentation
 
 - [API documentation][docs]
 - [Format support][support]
-- [Siemens NX byte-format specification][spec]
-- [Repository][repo]
+- [Format notes][spec]
 - [Clean-room and legal policy][legal]
+- [Repository][repo]
 
-Code is licensed under the Apache License 2.0. NX and Parasolid are trademarks
-of their respective owners; cadmpeg is independent of and is not endorsed by
-Siemens.
+Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
 [docs]: https://docs.rs/cadmpeg-codec-nx
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md

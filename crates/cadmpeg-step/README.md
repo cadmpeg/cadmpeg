@@ -1,21 +1,13 @@
 # cadmpeg-step
 
-**Pure-Rust STEP AP214 writing for the cadmpeg CAD pipeline.**
-
-`cadmpeg-step` serializes supported `cadmpeg-ir` B-rep topology and geometry as
-ISO 10303-21 STEP AP214. It emits mainstream product and representation
-structure and returns an explicit report for IR content STEP cannot represent.
-
-> Export support is partial. The writer reports omitted or reduced content and
-> does not fabricate placeholder geometry.
+`cadmpeg-step` writes `CadIr` documents as ISO 10303-21 STEP AP214 files. Use
+it when you want to export a model without calling the cadmpeg CLI.
 
 ## Install
 
 ```sh
 cargo add cadmpeg-step cadmpeg-ir
 ```
-
-cadmpeg requires Rust 1.88 or later.
 
 ## Use
 
@@ -34,29 +26,24 @@ assert!(output.starts_with(b"ISO-10303-21;"));
 # Ok::<(), cadmpeg_step::StepError>(())
 ```
 
-The writer emits product-definition and unit-bearing representation context,
-then supported manifold B-rep regions, shells, faces, loops, edges, vertices,
-analytic carriers, and B-spline carriers. `StepReport` contains entity counts
-and every export loss note.
+## Coverage
 
-## Current boundaries
+The writer handles solids, shells, faces, loops, edges, vertices, common
+analytic geometry, and B-spline curves and surfaces. It also writes the product
+and unit records expected by STEP readers.
 
-- STEP AP214 output covers supported analytic and B-spline B-rep geometry.
-- IR domains without an AP214 representation remain explicit in the report.
-- Inputs with unsupported geometry may produce a partial STEP file with loss
-  notes; sink I/O failures are returned as errors.
+The writer does not map every `CadIr` field to STEP AP214. `StepReport` lists
+entities it skipped or reduced so callers can decide whether to keep the file.
 
-See the [format support profile][support] for the current capability summary.
-
-## Project links
+## Documentation
 
 - [API documentation][docs]
 - [Format support][support]
 - [Architecture and crate map][architecture]
-- [Repository][repo]
 - [Clean-room and legal policy][legal]
+- [Repository][repo]
 
-Code is licensed under the Apache License 2.0.
+Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
 [architecture]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/architecture.md
 [docs]: https://docs.rs/cadmpeg-step

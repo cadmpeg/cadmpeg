@@ -1,22 +1,14 @@
 # cadmpeg-codec-sldprt
 
-**SolidWorks `.sldprt` reading and writing for the cadmpeg CAD pipeline.**
-
-This crate inspects SolidWorks part containers, decodes supported embedded
-Parasolid B-rep topology and geometry into `cadmpeg-ir`, preserves source
-content, and writes unchanged or supported modified documents.
-
-> Support is partial. Unsupported source records and semantic domains are
-> preserved or reported as explicit loss. Generated `.sldprt` output is limited
-> to the documented semantic-write subset.
+`cadmpeg-codec-sldprt` opens `.sldprt` files and loads their model data into
+`CadIr`. It reads B-rep topology, analytic and spline geometry, display meshes,
+appearances, document metadata, and parts of the feature history.
 
 ## Install
 
 ```sh
 cargo add cadmpeg-codec-sldprt cadmpeg-ir
 ```
-
-cadmpeg requires Rust 1.88 or later.
 
 ## Use
 
@@ -29,40 +21,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.sldprt")?;
     let result = SldprtCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    println!("geometry transferred: {}", result.report.geometry_transferred);
-    println!("loss notes: {}", result.report.losses.len());
+    println!(
+        "{} bodies, {} faces",
+        result.ir.model.bodies.len(),
+        result.ir.model.faces.len()
+    );
     Ok(())
 }
 ```
 
-`SldprtCodec::inspect` enumerates compressed blocks, the section directory,
-cache cells, and embedded Parasolid streams without decoding model geometry.
-`SldprtCodec::decode` builds supported B-rep topology, analytic and NURBS
-geometry, appearance, feature lanes, history, and tessellation.
+`SldprtCodec::inspect` returns the container blocks, section directory, cache
+cells, and embedded streams without decoding the model.
 
-## Current boundaries
+## Coverage
 
-- Container, geometry, topology, tessellation, design intent, presentation, and
-  metadata support are partial.
-- Product structure and assembly constraints are not implemented.
-- Unchanged retained source files can round-trip byte for byte.
-- Semantic writing supports a bounded subset and rejects unsupported inputs
-  instead of fabricating output.
+The writer can replay an unchanged file byte for byte. It can also rebuild the
+B-rep geometry it understands and retain selected appearances, metadata,
+display data, and feature records.
 
-See the [format support profile][support] for the current domain-by-domain
-status.
+Assembly documents and constraints are outside this crate. Older layouts and
+some geometry families still need broader coverage. See
+[format support][support] for the detailed matrix.
 
-## Project links
+## Documentation
 
 - [API documentation][docs]
 - [Format support][support]
-- [SLDPRT byte-format specification][spec]
-- [Repository][repo]
+- [Format notes][spec]
 - [Clean-room and legal policy][legal]
+- [Repository][repo]
 
-Code is licensed under the Apache License 2.0. SolidWorks is a trademark of its
-respective owner; cadmpeg is independent of and is not endorsed by Dassault
-Systèmes.
+Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
 [docs]: https://docs.rs/cadmpeg-codec-sldprt
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md

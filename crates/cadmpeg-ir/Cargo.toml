@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-ir"
-description = "Provenance-rich intermediate representation and codec contract for the cadmpeg CAD transcoder."
+description = "CAD data model, validation, diffing, and codec API for cadmpeg."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

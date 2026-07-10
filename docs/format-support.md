@@ -18,7 +18,7 @@ Entity provenance is separate from domain status. `byte_exact`, `derived`, `infe
 ## At a glance
 
 - **SolidWorks `.sldprt`:** partial semantic read, native write, and round-trip support.
-- **Fusion 360 `.f3d`:** partial B-rep, design-record, and appearance read support; no native write.
+- **Fusion 360 `.f3d`:** partial B-rep, design-record, and appearance read support; byte-exact replay and selected native edits.
 - **Siemens NX `.prt`:** partial analytic, NURBS, trimmed-curve, and conditional topology read support; no native write.
 - **CATIA V5 `.CATPart`:** partial analytic and freeform carrier decode with conditional standard-nested topology; no native write.
 - **Creo Parametric `.prt`:** container and prototype-structure decode with derived datum-plane carriers; no placed model B-rep or native write.
@@ -64,8 +64,9 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
 
 ### Write and round trip
 
-- **Native write: None.**
-- **Round trip: None.**
+- **Native write: Partial.** An unchanged retained source archive writes byte for byte. The writer patches model points, common analytic B-rep curves and surfaces, sketch points, sketch lines, arcs and NURBS, and sketch constraint masks in their original records.
+- **Write limits:** Writing requires a retained source archive and the original entity and record layouts. Source-less generation, topology changes, and edits outside the listed fields are rejected.
+- **Round trip: Partial.** Generated fixtures cover byte-exact replay and each writable geometry and sketch family.
 
 See [`formats/f3d.md`](formats/f3d.md) and [`formats/f3d-open-items.md`](formats/f3d-open-items.md).
 
