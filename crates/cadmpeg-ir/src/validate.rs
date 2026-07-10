@@ -181,8 +181,11 @@ fn check_unknown_payloads(ir: &CadIr, findings: &mut Vec<Finding>) {
         let Some(data) = &record.data else { continue };
         let hash = Sha256::digest(data)
             .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+            .fold(String::new(), |mut acc, byte| {
+                use std::fmt::Write as _;
+                let _ = write!(acc, "{byte:02x}");
+                acc
+            });
         if data.len() as u64 != record.byte_len || hash != record.sha256 {
             findings.push(Finding {
                 check: Check::Counts,
@@ -194,60 +197,19 @@ fn check_unknown_payloads(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
+macro_rules! define_registered_entity_counts {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] => $key:expr; )*) => {
+        fn registered_entity_counts(ir: &CadIr) -> BTreeMap<String, usize> {
+            BTreeMap::from([
+                $((stringify!($field).into(), ir.$field.len())),*
+            ])
+        }
+    };
+}
+crate::document::arena_registry!(define_registered_entity_counts);
+
 fn entity_counts(ir: &CadIr) -> BTreeMap<String, usize> {
-    let mut m = BTreeMap::new();
-    m.insert("bodies".into(), ir.bodies.len());
-    m.insert("lumps".into(), ir.lumps.len());
-    m.insert("shells".into(), ir.shells.len());
-    m.insert("faces".into(), ir.faces.len());
-    m.insert("loops".into(), ir.loops.len());
-    m.insert("coedges".into(), ir.coedges.len());
-    m.insert("edges".into(), ir.edges.len());
-    m.insert("vertices".into(), ir.vertices.len());
-    m.insert("points".into(), ir.points.len());
-    m.insert("surfaces".into(), ir.surfaces.len());
-    m.insert("curves".into(), ir.curves.len());
-    m.insert("pcurves".into(), ir.pcurves.len());
-    m.insert(
-        "surface_parameterizations".into(),
-        ir.surface_parameterizations.len(),
-    );
-    m.insert("procedural_surfaces".into(), ir.procedural_surfaces.len());
-    m.insert("procedural_curves".into(), ir.procedural_curves.len());
-    m.insert("sketch_curve_links".into(), ir.sketch_curve_links.len());
-    m.insert(
-        "persistent_design_links".into(),
-        ir.persistent_design_links.len(),
-    );
-    m.insert("construction_recipes".into(), ir.construction_recipes.len());
-    m.insert(
-        "persistent_references".into(),
-        ir.persistent_references.len(),
-    );
-    m.insert("lost_edge_references".into(), ir.lost_edge_references.len());
-    m.insert("design_objects".into(), ir.design_objects.len());
-    m.insert(
-        "design_entity_headers".into(),
-        ir.design_entity_headers.len(),
-    );
-    m.insert(
-        "design_record_headers".into(),
-        ir.design_record_headers.len(),
-    );
-    m.insert("sketch_relations".into(), ir.sketch_relations.len());
-    m.insert("sketch_points".into(), ir.sketch_points.len());
-    m.insert(
-        "sketch_curve_identities".into(),
-        ir.sketch_curve_identities.len(),
-    );
-    m.insert("design_body_members".into(), ir.design_body_members.len());
-    m.insert("act_entities".into(), ir.act_entities.len());
-    m.insert("act_guids".into(), ir.act_guids.len());
-    m.insert("act_root_components".into(), ir.act_root_components.len());
-    m.insert("tessellations".into(), ir.tessellations.len());
-    m.insert("feature_histories".into(), ir.feature_histories.len());
-    m.insert("feature_input_lanes".into(), ir.feature_input_lanes.len());
-    m.insert("asm_histories".into(), ir.asm_histories.len());
+    let mut m = registered_entity_counts(ir);
     m.insert(
         "asm_history_states".into(),
         ir.asm_histories
@@ -272,10 +234,6 @@ fn entity_counts(ir: &CadIr) -> BTreeMap<String, usize> {
             .map(|state| state.records.len())
             .sum(),
     );
-    m.insert("appearances".into(), ir.appearances.len());
-    m.insert("appearance_bindings".into(), ir.appearance_bindings.len());
-    m.insert("attributes".into(), ir.attributes.len());
-    m.insert("unknowns".into(), ir.unknowns.len());
     let unknown_surfaces = ir
         .surfaces
         .iter()
@@ -466,6 +424,16 @@ fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
                 ref_error(findings, &s.id.0, "face", &f.0);
             }
         }
+        for e in &s.wire_edges {
+            if !ids.edges.contains(&e.0) {
+                ref_error(findings, &s.id.0, "wire edge", &e.0);
+            }
+        }
+        for v in &s.free_vertices {
+            if !ids.vertices.contains(&v.0) {
+                ref_error(findings, &s.id.0, "free vertex", &v.0);
+            }
+        }
     }
     for f in &ir.faces {
         if !ids.shells.contains(&f.shell.0) {
@@ -506,6 +474,11 @@ fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
         if let Some(p) = &ce.partner {
             if !ids.coedges.contains(&p.0) {
                 ref_error(findings, &ce.id.0, "coedge(partner)", &p.0);
+            }
+        }
+        if let Some(radial_next) = &ce.radial_next {
+            if !ids.coedges.contains(&radial_next.0) {
+                ref_error(findings, &ce.id.0, "coedge(radial_next)", &radial_next.0);
             }
         }
         if let Some(pc) = &ce.pcurve {
@@ -554,19 +527,19 @@ fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
         match &attribute.target {
             AttributeTarget::Document => {}
             AttributeTarget::Body(id) if !ids.bodies.contains(&id.0) => {
-                ref_error(findings, owner, "body", &id.0)
+                ref_error(findings, owner, "body", &id.0);
             }
             AttributeTarget::Face(id) if !ids.faces.contains(&id.0) => {
-                ref_error(findings, owner, "face", &id.0)
+                ref_error(findings, owner, "face", &id.0);
             }
             AttributeTarget::Coedge(id) if !ids.coedges.contains(&id.0) => {
-                ref_error(findings, owner, "coedge", &id.0)
+                ref_error(findings, owner, "coedge", &id.0);
             }
             AttributeTarget::Edge(id) if !ids.edges.contains(&id.0) => {
-                ref_error(findings, owner, "edge", &id.0)
+                ref_error(findings, owner, "edge", &id.0);
             }
             AttributeTarget::Vertex(id) if !ids.vertices.contains(&id.0) => {
-                ref_error(findings, owner, "vertex", &id.0)
+                ref_error(findings, owner, "vertex", &id.0);
             }
             _ => {}
         }
@@ -577,19 +550,19 @@ fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
         match &link.target {
             AttributeTarget::Document => {}
             AttributeTarget::Body(id) if !ids.bodies.contains(&id.0) => {
-                ref_error(findings, &owner, "body", &id.0)
+                ref_error(findings, &owner, "body", &id.0);
             }
             AttributeTarget::Face(id) if !ids.faces.contains(&id.0) => {
-                ref_error(findings, &owner, "face", &id.0)
+                ref_error(findings, &owner, "face", &id.0);
             }
             AttributeTarget::Coedge(id) if !ids.coedges.contains(&id.0) => {
-                ref_error(findings, &owner, "coedge", &id.0)
+                ref_error(findings, &owner, "coedge", &id.0);
             }
             AttributeTarget::Edge(id) if !ids.edges.contains(&id.0) => {
-                ref_error(findings, &owner, "edge", &id.0)
+                ref_error(findings, &owner, "edge", &id.0);
             }
             AttributeTarget::Vertex(id) if !ids.vertices.contains(&id.0) => {
-                ref_error(findings, &owner, "vertex", &id.0)
+                ref_error(findings, &owner, "vertex", &id.0);
             }
             _ => {}
         }
@@ -731,42 +704,103 @@ fn degenerate(v: &Vector3) -> bool {
 }
 
 fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
+    for (id, tolerance) in ir
+        .vertices
+        .iter()
+        .map(|entity| (&entity.id.0, entity.tolerance))
+        .chain(
+            ir.edges
+                .iter()
+                .map(|entity| (&entity.id.0, entity.tolerance)),
+        )
+        .chain(
+            ir.faces
+                .iter()
+                .map(|entity| (&entity.id.0, entity.tolerance)),
+        )
+    {
+        if tolerance.is_some_and(|value| !value.is_finite() || value < 0.0) {
+            bounds_err(findings, id, "topology tolerance is negative or non-finite");
+        }
+    }
     for s in &ir.surfaces {
         match &s.geometry {
-            SurfaceGeometry::Plane { normal, .. } => {
+            SurfaceGeometry::Plane { normal, u_axis, .. } => {
                 if degenerate(normal) {
                     bounds_err(findings, &s.id.0, "plane normal is degenerate");
                 }
+                if u_axis.is_some_and(|direction| degenerate(&direction)) {
+                    bounds_err(findings, &s.id.0, "plane u axis is degenerate");
+                }
             }
-            SurfaceGeometry::Cylinder { axis, radius, .. } => {
+            SurfaceGeometry::Cylinder {
+                axis,
+                ref_direction,
+                radius,
+                ..
+            } => {
                 if degenerate(axis) {
                     bounds_err(findings, &s.id.0, "cylinder axis is degenerate");
+                }
+                if ref_direction.is_some_and(|direction| degenerate(&direction)) {
+                    bounds_err(
+                        findings,
+                        &s.id.0,
+                        "cylinder reference direction is degenerate",
+                    );
                 }
                 if nonpositive(*radius) {
                     bounds_err(findings, &s.id.0, "cylinder radius is not positive");
                 }
             }
-            SurfaceGeometry::Cone { axis, radius, .. } => {
+            SurfaceGeometry::Cone {
+                axis,
+                ref_direction,
+                radius,
+                ..
+            } => {
                 if degenerate(axis) {
                     bounds_err(findings, &s.id.0, "cone axis is degenerate");
+                }
+                if ref_direction.is_some_and(|direction| degenerate(&direction)) {
+                    bounds_err(findings, &s.id.0, "cone reference direction is degenerate");
                 }
                 if *radius < 0.0 {
                     bounds_err(findings, &s.id.0, "cone radius is negative");
                 }
             }
-            SurfaceGeometry::Sphere { radius, .. } => {
+            SurfaceGeometry::Sphere {
+                axis,
+                ref_direction,
+                radius,
+                ..
+            } => {
+                if axis.is_some_and(|direction| degenerate(&direction)) {
+                    bounds_err(findings, &s.id.0, "sphere axis is degenerate");
+                }
+                if ref_direction.is_some_and(|direction| degenerate(&direction)) {
+                    bounds_err(
+                        findings,
+                        &s.id.0,
+                        "sphere reference direction is degenerate",
+                    );
+                }
                 if radius.abs() <= f64::EPSILON {
                     bounds_err(findings, &s.id.0, "sphere radius is zero");
                 }
             }
             SurfaceGeometry::Torus {
                 axis,
+                ref_direction,
                 major_radius,
                 minor_radius,
                 ..
             } => {
                 if degenerate(axis) {
                     bounds_err(findings, &s.id.0, "torus axis is degenerate");
+                }
+                if ref_direction.is_some_and(|direction| degenerate(&direction)) {
+                    bounds_err(findings, &s.id.0, "torus reference direction is degenerate");
                 }
                 if nonpositive(*major_radius) || minor_radius.abs() <= f64::EPSILON {
                     bounds_err(
@@ -816,6 +850,33 @@ fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             } => {
                 if nonpositive(*major_radius) || nonpositive(*minor_radius) {
                     bounds_err(findings, &c.id.0, "ellipse radius is not positive");
+                }
+            }
+            CurveGeometry::Parabola {
+                axis,
+                major_direction,
+                focal_distance,
+                ..
+            } => {
+                if degenerate(axis) || degenerate(major_direction) {
+                    bounds_err(findings, &c.id.0, "parabola frame is degenerate");
+                }
+                if nonpositive(*focal_distance) {
+                    bounds_err(findings, &c.id.0, "parabola focal distance is not positive");
+                }
+            }
+            CurveGeometry::Hyperbola {
+                axis,
+                major_direction,
+                major_radius,
+                minor_radius,
+                ..
+            } => {
+                if degenerate(axis) || degenerate(major_direction) {
+                    bounds_err(findings, &c.id.0, "hyperbola frame is degenerate");
+                }
+                if nonpositive(*major_radius) || nonpositive(*minor_radius) {
+                    bounds_err(findings, &c.id.0, "hyperbola radius is not positive");
                 }
             }
             CurveGeometry::Nurbs(n) => {

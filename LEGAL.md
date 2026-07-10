@@ -61,7 +61,7 @@ Format names and CAD application names (SolidWorks, Fusion 360, Creo, NX, and ot
 
 If you believe any content in cadmpeg was derived from a forbidden source, infringes a right you hold, or violates this policy, report it to the maintainers.
 
-- Open a GitHub issue describing the concern, **or**, if the matter is sensitive, contact the maintainers privately via the security/contact address listed in the repository's `SECURITY.md` or repository metadata.
+- Open a GitHub issue describing a non-sensitive concern. If the matter is sensitive, use the repository's [GitHub private vulnerability reporting channel](https://github.com/cadmpeg/cadmpeg/security/advisories/new) defined in [SECURITY.md](SECURITY.md).
 - Identify the specific file(s), commit(s), or spec section(s) at issue and the basis for the concern.
 - Maintainers will review the report. Where a concern is substantiated, maintainers will remove or revert the affected material pending provenance review. If provenance is unclear, maintainers will remove the material and re-derive it from allowed sources.
 

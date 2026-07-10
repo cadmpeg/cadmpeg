@@ -106,7 +106,12 @@ impl Container {
             };
             let ids: Vec<_> = raw
                 .chunks_exact(4)
-                .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
+                .map(|word| {
+                    u32::from_le_bytes(
+                        word.try_into()
+                            .expect("invariant: chunks_exact(4) yields exactly 4-byte slices"),
+                    )
+                })
                 .collect();
             if ids.iter().all(|id| (1..70_000).contains(id)) {
                 return ids;

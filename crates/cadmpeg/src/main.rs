@@ -216,7 +216,7 @@ fn main() -> ExitCode {
             json,
             input_args,
         } => commands::inspect(&registry, &input, input_args.forced(), json)
-            .map(|_| ExitCode::SUCCESS),
+            .map(|()| ExitCode::SUCCESS),
         Command::Decode {
             input,
             output,
@@ -227,20 +227,20 @@ fn main() -> ExitCode {
         } => commands::decode(
             &registry,
             &input,
-            output,
+            output.as_deref(),
             force,
-            report,
+            report.as_deref(),
             input_args.forced(),
             &decode,
         )
-        .map(|_| ExitCode::SUCCESS),
+        .map(|()| ExitCode::SUCCESS),
         Command::Validate {
             input,
             json,
             input_args,
             decode,
         } => commands::validate_cmd(&registry, &input, input_args.forced(), &decode, json)
-            .map(|_| ExitCode::SUCCESS),
+            .map(|()| ExitCode::SUCCESS),
         Command::Export {
             input,
             format,
@@ -254,7 +254,7 @@ fn main() -> ExitCode {
             &registry,
             &input,
             format,
-            output,
+            output.as_deref(),
             commands::ExportSettings {
                 force,
                 report,
@@ -263,7 +263,7 @@ fn main() -> ExitCode {
             },
             &decode,
         )
-        .map(|_| ExitCode::SUCCESS),
+        .map(|()| ExitCode::SUCCESS),
         Command::Diff { a, b, json, decode } => commands::diff(&registry, &a, &b, &decode, json),
         Command::Convert {
             input,
@@ -279,8 +279,8 @@ fn main() -> ExitCode {
             &registry,
             &input,
             format,
-            output,
-            commands::ConvertSettings {
+            output.as_deref(),
+            &commands::ConvertSettings {
                 force,
                 report,
                 allow_invalid,
@@ -289,7 +289,7 @@ fn main() -> ExitCode {
             },
             &decode,
         )
-        .map(|_| ExitCode::SUCCESS),
+        .map(|()| ExitCode::SUCCESS),
     };
     result.unwrap_or_else(|err| {
         eprintln!("error: {err:#}");

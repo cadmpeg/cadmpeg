@@ -16,15 +16,27 @@ fn main() {
     let seeds = [
         ("empty_zip", empty_zip()),
         ("bare_zip_with_txt", bare_zip_with_txt()),
-        ("synthetic_smbh_header_only", f3d_with_smbh(&synthetic_smbh())),
-        ("synthetic_geometry", f3d_with_smbh(&synthetic_geometry_smbh())),
+        (
+            "synthetic_smbh_header_only",
+            f3d_with_smbh(&synthetic_smbh()),
+        ),
+        (
+            "synthetic_geometry",
+            f3d_with_smbh(&synthetic_geometry_smbh()),
+        ),
         ("synthetic_mixed", f3d_with_smbh(&synthetic_mixed_smbh())),
-        ("synthetic_with_pcurve", f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh())),
+        (
+            "synthetic_with_pcurve",
+            f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh()),
+        ),
         ("full_f3d_with_smbh", synthetic_f3d(true)),
         ("full_f3d_smb_only", synthetic_f3d(false)),
         ("corrupt_zip_magic", corrupt_zip_magic()),
         ("truncated_smbh", truncated_smbh()),
-        ("binary_file4_width", f3d_with_smbh(&synthetic_binary_file4())),
+        (
+            "binary_file4_width",
+            f3d_with_smbh(&synthetic_binary_file4()),
+        ),
     ];
 
     for (name, data) in seeds {

@@ -80,9 +80,10 @@ pub fn inspect(
     println!(
         "format: {}{}\ncontainer: {}\nentries: {}",
         summary.format,
-        confidence
-            .map(|value| format!(" (detected {value})"))
-            .unwrap_or_else(|| " (forced)".to_string()),
+        confidence.map_or_else(
+            || " (forced)".to_string(),
+            |value| format!(" (detected {value})")
+        ),
         summary.container_kind,
         summary.entries.len()
     );
@@ -108,20 +109,20 @@ pub fn inspect(
 pub fn decode(
     registry: &Registry,
     path: &Path,
-    out: Option<PathBuf>,
+    out: Option<&Path>,
     force: bool,
-    report_path: Option<PathBuf>,
+    report_path: Option<&Path>,
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
 ) -> Result<()> {
-    let loaded = loader::load_ir(registry, path, &args.options(), forced)?;
-    write_ir(&loaded.ir, out.as_deref(), path, force)?;
+    let loaded = loader::load_ir(registry, path, args.options(), forced)?;
+    write_ir(&loaded.ir, out, path, force)?;
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
     write_command_report(
         path,
-        report_path.as_deref(),
+        report_path,
         force,
         "decode",
         loaded.decode_report.as_ref(),
@@ -138,12 +139,12 @@ pub fn validate_cmd(
     args: &DecodeArgs,
     json: bool,
 ) -> Result<()> {
-    let loaded = loader::load_ir(registry, path, &args.options(), forced)?;
+    let loaded = loader::load_ir(registry, path, args.options(), forced)?;
     let mut stdout = io::stdout();
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
-    let report = validate(&loaded.ir, losses(&loaded.decode_report));
+    let report = validate(&loaded.ir, losses(loaded.decode_report.as_ref()));
     if json {
         writeln!(
             stdout,
@@ -178,7 +179,7 @@ pub fn export(
     registry: &Registry,
     path: &Path,
     format: Option<Format>,
-    out: Option<PathBuf>,
+    out: Option<&Path>,
     settings: ExportSettings,
     args: &DecodeArgs,
 ) -> Result<()> {
@@ -188,8 +189,8 @@ pub fn export(
         allow_empty,
         forced_input,
     } = settings;
-    let format = resolve_format(format, out.as_deref())?;
-    let loaded = loader::load_ir(registry, path, &args.options(), forced_input)?;
+    let format = resolve_format(format, out)?;
+    let loaded = loader::load_ir(registry, path, args.options(), forced_input)?;
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
         eprintln!("note: export skips IR validation; use `convert` to validate");
@@ -215,7 +216,7 @@ pub fn export(
             format.name()
         )));
     }
-    let export = export_ir(&loaded.ir, format, out.as_deref(), path, force)?;
+    let export = export_ir(&loaded.ir, format, out, path, force)?;
     let report = export.as_report(format);
     write_command_report(
         path,
@@ -232,18 +233,18 @@ pub fn convert(
     registry: &Registry,
     path: &Path,
     format: Option<Format>,
-    out: Option<PathBuf>,
-    settings: ConvertSettings,
+    out: Option<&Path>,
+    settings: &ConvertSettings,
     args: &DecodeArgs,
 ) -> Result<()> {
-    let format = resolve_format(format, out.as_deref())?;
-    let loaded = loader::load_ir(registry, path, &args.options(), settings.forced_input)?;
+    let format = resolve_format(format, out)?;
+    let loaded = loader::load_ir(registry, path, args.options(), settings.forced_input)?;
     let mut stderr = io::stderr();
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut stderr, report)?;
         writeln!(stderr)?;
     }
-    let validation = validate(&loaded.ir, losses(&loaded.decode_report));
+    let validation = validate(&loaded.ir, losses(loaded.decode_report.as_ref()));
     print_validation_report(&mut stderr, &validation)?;
     if !validation.is_ok() && !settings.allow_invalid {
         write_command_report(
@@ -281,7 +282,7 @@ pub fn convert(
             format.name()
         )));
     }
-    let export = export_ir(&loaded.ir, format, out.as_deref(), path, settings.force)?;
+    let export = export_ir(&loaded.ir, format, out, path, settings.force)?;
     let report = export.as_report(format);
     write_command_report(
         path,
@@ -301,8 +302,8 @@ pub fn diff(
     args: &DecodeArgs,
     json: bool,
 ) -> Result<ExitCode> {
-    let left = loader::load_ir(registry, a, &args.options(), None)?.ir;
-    let right = loader::load_ir(registry, b, &args.options(), None)?.ir;
+    let left = loader::load_ir(registry, a, args.options(), None)?.ir;
+    let right = loader::load_ir(registry, b, args.options(), None)?.ir;
     let result = cadmpeg_ir::diff(&left, &right);
     if json {
         println!(
@@ -355,9 +356,8 @@ pub fn diff(
     }
 }
 
-fn losses(report: &Option<DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
+fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
     report
-        .as_ref()
         .map(|report| report.losses.clone())
         .unwrap_or_default()
 }
@@ -543,10 +543,10 @@ fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Resul
 }
 
 fn print_id_delta(label: &str, ids: &[String]) {
+    const MAX: usize = 8;
     if ids.is_empty() {
         return;
     }
-    const MAX: usize = 8;
     let more = ids.len().saturating_sub(MAX);
     let shown = ids
         .iter()

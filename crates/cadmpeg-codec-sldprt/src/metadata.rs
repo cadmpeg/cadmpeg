@@ -45,7 +45,7 @@ fn scan_units_xml(block: &crate::container::Block, out: &mut Vec<SourceAttribute
     let Ok(document) = roxmltree::Document::parse(&text) else {
         return;
     };
-    for node in document.descendants().filter(|node| node.is_element()) {
+    for node in document.descendants().filter(roxmltree::Node::is_element) {
         let value = if node.tag_name().name() == "SW_UnitsLinear" {
             node.text()
         } else if node.attribute("Name") == Some("SW_UnitsLinear") {

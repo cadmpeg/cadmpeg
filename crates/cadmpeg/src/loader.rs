@@ -35,7 +35,7 @@ pub fn read_prefix(path: &Path, n: usize) -> Result<Vec<u8>> {
 pub fn load_ir(
     registry: &Registry,
     path: &Path,
-    options: &DecodeOptions,
+    options: DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedIr> {
     let prefix = read_prefix(path, 512)?;
@@ -60,7 +60,7 @@ pub fn load_ir(
         }
         let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
         let result = codec
-            .decode(&mut f, options)
+            .decode(&mut f, &options)
             .with_context(|| format!("decoding {} as {}", path.display(), codec.id()))?;
         return Ok(LoadedIr {
             ir: result.ir,

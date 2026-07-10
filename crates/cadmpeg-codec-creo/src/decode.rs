@@ -81,6 +81,7 @@ fn build_ir(scan: &ContainerScan) -> CadIr {
                     plane.normal[2] * plane.offset,
                 ),
                 normal: Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
+                u_axis: None,
             },
             meta: EntityMeta {
                 provenance: Provenance {
@@ -174,13 +175,11 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let srf = scan
         .census
         .srf_array_count
-        .map(|c| c.to_string())
-        .unwrap_or_else(|| "n/a".to_string());
+        .map_or_else(|| "n/a".to_string(), |c| c.to_string());
     let crv = scan
         .census
         .crv_array_count
-        .map(|c| c.to_string())
-        .unwrap_or_else(|| "n/a".to_string());
+        .map_or_else(|| "n/a".to_string(), |c| c.to_string());
     losses.push(LossNote {
         category: LossCategory::Geometry,
         severity: Severity::Info,
@@ -271,13 +270,15 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(bytes);
     let digest = h.finalize();
     let mut s = String::with_capacity(digest.len() * 2);
     for b in digest {
-        s.push_str(&format!("{b:02x}"));
+        let _ = write!(s, "{b:02x}");
     }
     s
 }

@@ -61,9 +61,15 @@ pub fn classify(name: &str) -> &'static str {
         return role::DIRECTORY;
     }
     let base = name.rsplit('/').next().unwrap_or(name);
-    if name.ends_with(".smbh") {
+    if std::path::Path::new(name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("smbh"))
+    {
         role::BREP_SMBH
-    } else if name.ends_with(".smb") {
+    } else if std::path::Path::new(name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("smb"))
+    {
         role::BREP_SMB
     } else if name.ends_with(".protein") {
         role::PROTEIN
@@ -285,12 +291,14 @@ pub fn select_active_brep(scan: &ContainerScan) -> Option<&BrepFacts> {
 }
 
 fn hex_sha256(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
     let mut h = Sha256::new();
     h.update(bytes);
     let digest = h.finalize();
     let mut s = String::with_capacity(digest.len() * 2);
     for b in digest {
-        s.push_str(&format!("{b:02x}"));
+        let _ = write!(s, "{b:02x}");
     }
     s
 }

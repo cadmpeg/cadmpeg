@@ -1,0 +1,314 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Neutral construction-feature taxonomy.
+
+use std::collections::BTreeMap;
+
+use crate::ids::{BodyId, EdgeId, FaceId};
+use crate::math::{Point3, Vector3};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+/// Identifies a neutral construction feature.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(transparent)]
+pub struct FeatureId(pub String);
+
+impl FeatureId {
+    /// Borrow the underlying id string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for FeatureId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<S: Into<String>> From<S> for FeatureId {
+    fn from(value: S) -> Self {
+        Self(value.into())
+    }
+}
+
+/// A length in canonical millimeters.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct Length(pub f64);
+
+/// An angle in canonical radians.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct Angle(pub f64);
+
+/// An ordered neutral construction feature and its resulting bodies.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Feature {
+    /// Globally unique feature id.
+    pub id: FeatureId,
+    /// Stable construction order within the source history.
+    pub ordinal: u64,
+    /// Source display name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Whether evaluation of this feature is disabled.
+    #[serde(default)]
+    pub suppressed: bool,
+    /// Containing or logically preceding feature, when represented by the source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<FeatureId>,
+    /// Bodies produced or modified by the feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outputs: Vec<BodyId>,
+    /// Neutral construction semantics.
+    pub definition: FeatureDefinition,
+    /// Identifier of the full-fidelity record in a native namespace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+}
+
+/// Neutral construction semantics, with an explicit native escape hatch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "definition", rename_all = "snake_case")]
+pub enum FeatureDefinition {
+    /// Linear extrusion of a profile.
+    Extrude {
+        /// Profile swept along `direction` (or the profile's own normal, when
+        /// `direction` is `None`).
+        profile: ProfileRef,
+        /// Extrusion direction, when the source recorded one explicit of the
+        /// profile plane; `None` to extrude along the profile's own normal.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
+        /// How far the extrusion travels.
+        extent: Extent,
+        /// Boolean combination with existing bodies.
+        op: BooleanOp,
+        /// Draft angle applied to the extruded side walls, when present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        draft: Option<Angle>,
+    },
+    /// Revolution of a profile around an axis.
+    Revolve {
+        /// Profile revolved about the axis.
+        profile: ProfileRef,
+        /// A point on the revolution axis.
+        axis_origin: Point3,
+        /// Unit direction of the revolution axis.
+        axis_dir: Vector3,
+        /// Angular extent of the revolution.
+        angle: Extent,
+        /// Boolean combination with existing bodies.
+        op: BooleanOp,
+    },
+    /// Edge fillet.
+    Fillet {
+        /// Edges the fillet is applied to.
+        edges: Vec<EdgeId>,
+        /// Fillet radius assignment along the edges.
+        radius: RadiusSpec,
+    },
+    /// Edge chamfer.
+    Chamfer {
+        /// Edges the chamfer is applied to.
+        edges: Vec<EdgeId>,
+        /// Dimensional definition of the chamfer.
+        spec: ChamferSpec,
+    },
+    /// Thin-wall shell operation.
+    Shell {
+        /// Faces removed to open the shell; empty for a fully closed shell.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        removed_faces: Vec<FaceId>,
+        /// Wall thickness left after shelling.
+        thickness: Length,
+        /// Whether the wall is grown outward from the original boundary,
+        /// as opposed to inward.
+        outward: bool,
+    },
+    /// Drilled or machined hole.
+    Hole {
+        /// Face the hole is placed on, when known.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        face: Option<FaceId>,
+        /// Hole placement position, when recorded independently of `face`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        position: Option<Point3>,
+        /// Entry-shape family of the hole.
+        kind: HoleKind,
+        /// Hole diameter.
+        diameter: Length,
+        /// How deep the hole extends.
+        extent: Extent,
+    },
+    /// Repetition or reflection of existing features.
+    Pattern {
+        /// Features being repeated or reflected.
+        seeds: Vec<FeatureId>,
+        /// Spatial transform defining the repetition or reflection.
+        pattern: PatternKind,
+    },
+    /// Source-native operation without neutral semantics.
+    Native {
+        /// Native feature-type tag (e.g. `"Extrude"`, `"Fillet"`).
+        kind: String,
+        /// Source parametric input values keyed by parameter name.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        parameters: BTreeMap<String, String>,
+    },
+}
+
+/// Termination of a linear or angular feature.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Extent {
+    /// Fixed depth or angle in one direction.
+    Blind(Length),
+    /// Fixed depth or angle split evenly on both sides of the profile.
+    Symmetric(Length),
+    /// Independent depths or angles on each side of the profile.
+    TwoSided {
+        /// Extent on the first side.
+        first: Length,
+        /// Extent on the second side.
+        second: Length,
+    },
+    /// Extends through all material.
+    ThroughAll,
+    /// Extends until it reaches a target face.
+    ToFace(FaceId),
+    /// Fixed angular extent.
+    Angle(Angle),
+}
+
+/// Boolean effect of a solid-producing feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BooleanOp {
+    /// Union with existing bodies.
+    Join,
+    /// Subtraction from existing bodies.
+    Cut,
+    /// Intersection with existing bodies.
+    Intersect,
+    /// Creates an independent new body without combining.
+    NewBody,
+}
+
+/// Profile consumed by an extrude or revolve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum ProfileRef {
+    /// Opaque reference into a native feature-input record; no neutral geometry given.
+    Native(String),
+    /// Profile given directly as a set of solved B-rep faces.
+    Faces(Vec<FaceId>),
+}
+
+/// Radius assignment along filleted edges.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RadiusSpec {
+    /// Same radius along the whole edge chain.
+    Constant {
+        /// The fillet radius.
+        radius: Length,
+    },
+    /// Radius varying along the edge chain per explicit control points.
+    Variable {
+        /// Radius samples along the edge chain, in chain-parameter order.
+        points: Vec<VariableRadius>,
+    },
+}
+
+/// Radius at a normalized position along a filleted edge chain.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableRadius {
+    /// Position in `[0, 1]` along the edge chain.
+    pub parameter: f64,
+    /// Fillet radius at this position.
+    pub radius: Length,
+}
+
+/// Dimensional definition of an edge chamfer.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ChamferSpec {
+    /// Equal setback distance on both faces meeting the edge.
+    Distance {
+        /// Setback distance from the edge.
+        distance: Length,
+    },
+    /// Independent setback distances on each face meeting the edge.
+    TwoDistances {
+        /// Setback distance on the first face.
+        first: Length,
+        /// Setback distance on the second face.
+        second: Length,
+    },
+    /// A setback distance on one face plus an angle from it to the other.
+    DistanceAngle {
+        /// Setback distance on the reference face.
+        distance: Length,
+        /// Chamfer angle measured from the reference face.
+        angle: Angle,
+    },
+}
+
+/// Shape at the entry of a hole.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HoleKind {
+    /// Plain cylindrical hole with no entry feature.
+    Simple,
+    /// Hole with a wider, flat-bottomed counterbore at the entry.
+    Counterbore {
+        /// Counterbore diameter, wider than the hole diameter.
+        diameter: Length,
+        /// Counterbore depth.
+        depth: Length,
+    },
+    /// Hole with a conical countersink at the entry.
+    Countersink {
+        /// Countersink diameter at the surface, wider than the hole diameter.
+        diameter: Length,
+        /// Countersink included angle.
+        angle: Angle,
+    },
+}
+
+/// Spatial transform used to repeat or reflect seed features.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PatternKind {
+    /// Repeats seeds evenly along a straight direction.
+    Linear {
+        /// Repetition direction.
+        direction: Vector3,
+        /// Distance between consecutive instances.
+        spacing: Length,
+        /// Total number of instances, including the original.
+        count: u32,
+    },
+    /// Repeats seeds evenly around an axis.
+    Circular {
+        /// A point on the pattern axis.
+        axis_origin: Point3,
+        /// Unit direction of the pattern axis.
+        axis_dir: Vector3,
+        /// Angular span covered by the pattern.
+        angle: Angle,
+        /// Total number of instances, including the original.
+        count: u32,
+    },
+    /// Reflects seeds across a plane.
+    Mirror {
+        /// A point on the mirror plane.
+        plane_origin: Point3,
+        /// Unit normal of the mirror plane.
+        plane_normal: Vector3,
+    },
+}

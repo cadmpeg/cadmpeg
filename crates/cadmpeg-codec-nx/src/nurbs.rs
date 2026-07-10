@@ -9,17 +9,24 @@ use cadmpeg_ir::math::Point3;
 /// A decoded B-spline carrier keyed by its record position.
 #[derive(Debug, Clone)]
 pub struct Surface {
+    /// Byte offset of the tag-126 descriptor record within the input stream.
     pub pos: usize,
+    /// Reconstructed NURBS surface geometry.
     pub geometry: SurfaceGeometry,
 }
 
 /// A decoded B-spline carrier keyed by its record position.
 #[derive(Debug, Clone)]
 pub struct Curve {
+    /// Byte offset of the tag-136 descriptor record within the input stream.
     pub pos: usize,
+    /// Reconstructed NURBS curve geometry.
     pub geometry: CurveGeometry,
 }
 
+/// Scan `bytes` for tag-126/125 descriptor-payload pairs and decode each into
+/// a NURBS surface. Pairs with malformed offsets, non-finite control-point or
+/// knot values, or a poles/stride mismatch are skipped.
 pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
     let arrays = arrays(bytes);
     let payloads = surface_payloads(bytes);
@@ -81,6 +88,9 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
         .collect()
 }
 
+/// Scan `bytes` for tag-136/135 descriptor-payload pairs and decode each into
+/// a NURBS curve. Pairs with malformed offsets, non-finite control-point or
+/// knot values, or a poles/stride mismatch are skipped.
 pub fn curves(bytes: &[u8]) -> Vec<Curve> {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
@@ -164,7 +174,12 @@ fn arrays(bytes: &[u8]) -> Arrays {
             } else {
                 let values: Vec<_> = raw
                     .chunks_exact(8)
-                    .map(|b| f64::from_be_bytes(b.try_into().unwrap()))
+                    .map(|b| {
+                        f64::from_be_bytes(
+                            b.try_into()
+                                .expect("invariant: chunks_exact(8) yields exactly 8-byte slices"),
+                        )
+                    })
                     .collect();
                 if values.iter().all(|value| value.is_finite()) {
                     out.f64s.insert(reference, values);
@@ -188,7 +203,12 @@ fn surface_payloads(bytes: &[u8]) -> BTreeMap<u16, Payload> {
             let raw = bytes.get(pos + 97..pos + 97 + count * 8)?;
             let values: Vec<_> = raw
                 .chunks_exact(8)
-                .map(|b| f64::from_be_bytes(b.try_into().unwrap()))
+                .map(|b| {
+                    f64::from_be_bytes(
+                        b.try_into()
+                            .expect("invariant: chunks_exact(8) yields exactly 8-byte slices"),
+                    )
+                })
                 .collect();
             values
                 .iter()
@@ -206,7 +226,12 @@ fn curve_payloads(bytes: &[u8]) -> BTreeMap<u16, Payload> {
             let raw = bytes.get(pos + 15..pos + 15 + count * 8)?;
             let values: Vec<_> = raw
                 .chunks_exact(8)
-                .map(|b| f64::from_be_bytes(b.try_into().unwrap()))
+                .map(|b| {
+                    f64::from_be_bytes(
+                        b.try_into()
+                            .expect("invariant: chunks_exact(8) yields exactly 8-byte slices"),
+                    )
+                })
                 .collect();
             values
                 .iter()

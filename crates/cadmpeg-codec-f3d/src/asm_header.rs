@@ -50,7 +50,7 @@ const MAGIC_PREFIX: &[u8] = b"ASM BinaryFile";
 /// the nominal end of the word block.
 const STRING_REGION_START: usize = 47;
 
-/// Returns `true` if `bytes` begins with an ASM BinaryFile magic.
+/// Returns `true` if `bytes` begins with an ASM `BinaryFile` magic.
 pub fn has_asm_magic(bytes: &[u8]) -> bool {
     bytes.len() >= 16
         && bytes.starts_with(MAGIC_PREFIX)
@@ -129,7 +129,7 @@ pub fn parse(bytes: &[u8]) -> Option<AsmHeader> {
 /// Byte offset at which the SAB record stream begins, i.e. the first byte after
 /// the fixed `BinaryFile8` header (the three `0x07`-tagged product strings and
 /// three `0x06`-tagged tolerance doubles). The record stream's first record is
-/// the `asmheader`, which is RecordTable index 0. Returns `None` for streams
+/// the `asmheader`, which is `RecordTable` index 0. Returns `None` for streams
 /// without the documented `BinaryFile8` layout (e.g. `BinaryFile4`), whose
 /// record framing this codec does not decode.
 pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
@@ -179,9 +179,12 @@ pub fn first_delta_state_offset(bytes: &[u8]) -> Option<usize> {
 }
 
 fn read_be_u64(bytes: &[u8], at: usize) -> Option<u64> {
-    bytes
-        .get(at..at + 8)
-        .map(|s| u64::from_be_bytes(s.try_into().unwrap()))
+    bytes.get(at..at + 8).map(|s| {
+        u64::from_be_bytes(
+            s.try_into()
+                .expect("invariant: bytes.get(at..at+8) is an 8-byte slice"),
+        )
+    })
 }
 
 /// Read a `0x07`-tagged UTF-8 string (tag byte, u8 length, bytes). Returns the
@@ -204,5 +207,12 @@ fn read_tagged_f64(bytes: &[u8], at: usize) -> Option<(f64, usize)> {
         return None;
     }
     let slice = bytes.get(at + 1..at + 9)?;
-    Some((f64::from_le_bytes(slice.try_into().unwrap()), at + 9))
+    Some((
+        f64::from_le_bytes(
+            slice
+                .try_into()
+                .expect("invariant: bytes.get(at+1..at+9) is an 8-byte slice"),
+        ),
+        at + 9,
+    ))
 }

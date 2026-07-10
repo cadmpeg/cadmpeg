@@ -72,33 +72,48 @@ fn orthogonal(axis: Vector3) -> Vector3 {
 /// Emit an analytic or NURBS surface carrier, returning its reference.
 pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
     match g {
-        SurfaceGeometry::Plane { origin, normal } => {
-            let pl = placement(e, *origin, *normal, orthogonal(*normal));
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            let ref_dir = u_axis.unwrap_or_else(|| orthogonal(*normal));
+            let pl = placement(e, *origin, *normal, ref_dir);
             e.emit("PLANE", &format!("'',{pl}"))
         }
         SurfaceGeometry::Cylinder {
             origin,
             axis,
+            ref_direction,
             radius,
         } => {
-            let pl = placement(e, *origin, *axis, orthogonal(*axis));
+            let ref_dir = ref_direction.unwrap_or_else(|| orthogonal(*axis));
+            let pl = placement(e, *origin, *axis, ref_dir);
             e.emit("CYLINDRICAL_SURFACE", &format!("'',{pl},{}", real(*radius)))
         }
         SurfaceGeometry::Cone {
             origin,
             axis,
+            ref_direction,
             radius,
             half_angle,
         } => {
-            let pl = placement(e, *origin, *axis, orthogonal(*axis));
+            let ref_dir = ref_direction.unwrap_or_else(|| orthogonal(*axis));
+            let pl = placement(e, *origin, *axis, ref_dir);
             e.emit(
                 "CONICAL_SURFACE",
                 &format!("'',{pl},{},{}", real(*radius), real(*half_angle)),
             )
         }
-        SurfaceGeometry::Sphere { center, radius } => {
-            let axis = Vector3::new(0.0, 0.0, 1.0);
-            let pl = placement(e, *center, axis, orthogonal(axis));
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            let axis = axis.unwrap_or(Vector3::new(0.0, 0.0, 1.0));
+            let ref_dir = ref_direction.unwrap_or_else(|| orthogonal(axis));
+            let pl = placement(e, *center, axis, ref_dir);
             e.emit(
                 "SPHERICAL_SURFACE",
                 &format!("'',{pl},{}", real(radius.abs())),
@@ -107,10 +122,12 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
         SurfaceGeometry::Torus {
             center,
             axis,
+            ref_direction,
             major_radius,
             minor_radius,
         } => {
-            let pl = placement(e, *center, *axis, orthogonal(*axis));
+            let ref_dir = ref_direction.unwrap_or_else(|| orthogonal(*axis));
+            let pl = placement(e, *center, *axis, ref_dir);
             e.emit(
                 "TOROIDAL_SURFACE",
                 &format!(
@@ -163,6 +180,28 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
                 &format!("'',{pl},{},{}", real(*major_radius), real(*minor_radius)),
             )
         }
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => {
+            let pl = placement(e, *vertex, *axis, *major_direction);
+            e.emit("PARABOLA", &format!("'',{pl},{}", real(*focal_distance)))
+        }
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            let pl = placement(e, *center, *axis, *major_direction);
+            e.emit(
+                "HYPERBOLA",
+                &format!("'',{pl},{},{}", real(*major_radius), real(*minor_radius)),
+            )
+        }
         CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
     }
 }
@@ -175,7 +214,9 @@ fn compress_knots(knots: &[f64]) -> (Vec<f64>, Vec<usize>) {
     for &k in knots {
         if let Some(last) = values.last() {
             if *last == k {
-                *mults.last_mut().unwrap() += 1;
+                *mults
+                    .last_mut()
+                    .expect("invariant: mults and values grow in lockstep") += 1;
                 continue;
             }
         }

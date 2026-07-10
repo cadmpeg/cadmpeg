@@ -144,8 +144,9 @@ pub struct ContainerScan {
     pub curve_topology_rows: Vec<CurveTopologyRow>,
     /// Resolved native half-edges and closed loops built from curve rows.
     pub half_edges: Vec<HalfEdge>,
+    /// Closed rings of half-edges, one per resolved face loop.
     pub loops: Vec<Loop>,
-    /// Model-space standard datum planes decoded from ActDatums outlines.
+    /// Model-space standard datum planes decoded from `ActDatums` outlines.
     pub datum_planes: Vec<DatumPlane>,
     /// Feature IDs that own decoded geometry rows.
     pub feature_ids: Vec<u32>,
@@ -243,10 +244,7 @@ fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
 
     let mut sections = Vec::with_capacity(hits.len());
     for (idx, (hdr_off, raw)) in hits.iter().enumerate() {
-        let end = hits
-            .get(idx + 1)
-            .map(|(next, _)| *next)
-            .unwrap_or(data.len());
+        let end = hits.get(idx + 1).map_or(data.len(), |(next, _)| *next);
         let name = normalize_name(raw);
         let role = classify(&name);
         sections.push(Section {
@@ -584,15 +582,15 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 
     match (scan.census.srf_array_count, scan.census.crv_array_count) {
         (None, None) => {
-            notes.push("no VisibGeom srf_array/crv_array count header was located".to_string())
+            notes.push("no VisibGeom srf_array/crv_array count header was located".to_string());
         }
         (srf, crv) => {
             notes.push(format!(
-            "VisibGeom namespace census: srf_array={}, crv_array={} (byte-backed count headers; \
-             per-instance row geometry is not decoded)",
-            srf.map(|c| c.to_string()).unwrap_or_else(|| "n/a".to_string()),
-            crv.map(|c| c.to_string()).unwrap_or_else(|| "n/a".to_string()),
-        ))
+                "VisibGeom namespace census: srf_array={}, crv_array={} (byte-backed count \
+                 headers; per-instance row geometry is not decoded)",
+                srf.map_or_else(|| "n/a".to_string(), |c| c.to_string()),
+                crv.map_or_else(|| "n/a".to_string(), |c| c.to_string()),
+            ));
         }
     }
 

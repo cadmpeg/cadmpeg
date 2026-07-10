@@ -147,9 +147,10 @@ pub fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
 /// diagonal.  The record's cached diagonal length is validated before it is
 /// returned, which rejects incidental marker matches.
 pub fn plane_params(brep: &[u8]) -> Vec<PlaneParams> {
+    const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
+
     let mut out = Vec::new();
     let mut p = 0usize;
-    const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
     while p + MARKER.len() + 40 <= brep.len() {
         let Some(relative) = brep[p..].windows(MARKER.len()).position(|w| w == MARKER) else {
             break;
@@ -197,6 +198,7 @@ pub fn decode_plane(params: &PlaneParams) -> SurfaceGeometry {
     SurfaceGeometry::Plane {
         origin: params.origin,
         normal: Vector3::new(normal.x / length, normal.y / length, normal.z / length),
+        u_axis: unit(params.diagonal),
     }
 }
 
@@ -234,9 +236,10 @@ pub struct E5Surface {
 /// Walk an E5 record stream and decode its inline `0xc9` circle carriers.
 /// Record strides are derived from the little-endian size field at `+5`.
 pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
+    const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
+
     let mut out = Vec::new();
     let mut p = 0usize;
-    const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
     while p + 13 <= data.len() {
         let Some(relative) = data[p..].windows(3).position(|bytes| bytes == MARKER) else {
             break;
@@ -284,17 +287,22 @@ pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
 /// records, not point-table indexes.
 #[derive(Debug, Clone)]
 pub struct E5Edge {
+    /// Offset of the `e5 0d 03` record in the source buffer.
     pub pos: usize,
+    /// Referenced curve-support (`0xc0`/`0xc1`) record id.
     pub support_id: u32,
+    /// Referenced start-vertex (class `0xfe`) record id.
     pub start_vertex_id: u32,
+    /// Referenced end-vertex (class `0xfe`) record id.
     pub end_vertex_id: u32,
 }
 
 /// Decode E5 `0xff` five-reference edge records.
 pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
+    const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
+
     let mut out = Vec::new();
     let mut p = 0usize;
-    const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
     while let Some(relative) = data[p..].windows(3).position(|bytes| bytes == MARKER) {
         let pos = p + relative;
         let Some(size) = u16_le(data, pos + 5).map(usize::from) else {
@@ -329,9 +337,10 @@ pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
 /// Decode E5 cylinder (`0xc9`), cone (`0xca`), and torus (`0xcc`) surface
 /// records. The E5 plane class does not serialize a standalone normal.
 pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
+    const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
+
     let mut out = Vec::new();
     let mut p = 0usize;
-    const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
     while p + 13 <= data.len() {
         let Some(relative) = data[p..].windows(3).position(|bytes| bytes == MARKER) else {
             break;
@@ -377,6 +386,7 @@ fn e5_cylinder(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Cylinder {
         origin,
         axis,
+        ref_direction: unit(frame_u),
         radius,
     })
 }
@@ -392,41 +402,83 @@ pub struct A8Surface {
     pub geometry: SurfaceGeometry,
 }
 
+/// A decoded consolidated `a5 03 32` explicit 3D spline support: a swept band
+/// around a freeform curve, reconstructed as a per-span quintic Hermite jet
+/// and, from the same jet, a rolling-ball fillet surface (spec §6.2).
 #[derive(Debug, Clone)]
 pub struct A5FreeformCurve {
+    /// Offset of the `a5 03 32` marker in the source buffer.
     pub pos: usize,
+    /// Header token byte at `record + 7`; a small repeating type code, not
+    /// a per-record object id (spec §6).
     pub header_token: u8,
+    /// B-spline degree; always `5`.
     pub degree: u32,
+    /// Distinct, strictly increasing knot values, one per jet site.
     pub knots: Vec<f64>,
+    /// Per-knot rolling-ball jet sites: position, limit points, and
+    /// subtended angle.
     pub sites: Vec<RollingBallSite>,
+    /// Per-knot first-derivative jet block (`C'`), 10 f64 channels per
+    /// site matching the [`RollingBallSite`] layout.
     pub first_derivatives: Vec<[f64; 10]>,
+    /// Per-knot second-derivative jet block (`C''`), same channel layout
+    /// as `first_derivatives`.
     pub second_derivatives: Vec<[f64; 10]>,
+    /// Minimum per-site rolling-ball radius across `sites`.
     pub radius_min: f64,
+    /// Maximum per-site rolling-ball radius across `sites`.
     pub radius_max: f64,
+    /// `true` when `radius_max - radius_min < 1e-9`: the fillet has a
+    /// constant radius rather than a variable one.
     pub radius_constant: bool,
 }
 
+/// One 80-byte rolling-ball jet site from an [`A5FreeformCurve`] (spec
+/// §6.2): `Limit1 [0:3], Limit2 [3:6], Center [6:9], theta [9]`, satisfying
+/// `|Center-Limit1| == |Center-Limit2| == radius` and `theta =
+/// 2*arcsin(|Limit2-Limit1| / (2*radius))`.
 #[derive(Debug, Clone)]
 pub struct RollingBallSite {
+    /// First limit point on the rolling ball's contact circle.
     pub limit1: [f64; 3],
+    /// Second limit point on the rolling ball's contact circle.
     pub limit2: [f64; 3],
+    /// Rolling-ball center at this site.
     pub center: [f64; 3],
+    /// Angle in radians subtended by `limit1`/`limit2` at `center`.
     pub theta: f64,
+    /// Rolling-ball radius at this site, `|center - limit1|`.
     pub radius: f64,
 }
 
+/// A decoded common object-stream `a8 03 20` pcurve: a degree-5 C2 B-spline
+/// UV jet in a surface's parameter space (spec §6.5).
 #[derive(Debug, Clone)]
 pub struct A8Pcurve {
+    /// Offset of the `a8 03 20` marker in the source buffer.
     pub pos: usize,
+    /// Inline persistent object id stored at `record + 7` (spec §6.5).
     pub object_id: u32,
+    /// Referenced owning-surface object id (`0x18`-tagged u16 or
+    /// `0x38`-tagged u24 reference).
     pub support_id: u32,
+    /// B-spline degree.
     pub degree: u32,
+    /// Distinct knot values.
     pub knots: Vec<f64>,
+    /// Per-knot multiplicities, index-aligned with `knots`.
     pub multiplicities: Vec<u32>,
+    /// `true` when the record's mode byte is `0x05` (rational); `false`
+    /// for `0x01` (non-rational).
     pub rational: bool,
+    /// `(u, v)` jet-site positions, one per knot.
     pub points: Vec<[f64; 2]>,
+    /// `(u, v)` first derivatives at each jet site.
     pub first_derivatives: Vec<[f64; 2]>,
+    /// `(u, v)` second derivatives at each jet site.
     pub second_derivatives: Vec<[f64; 2]>,
+    /// `[param_lo, param_hi]` curve parameter range.
     pub range: [f64; 2],
 }
 
@@ -712,17 +764,29 @@ pub enum StandardCurveGeometry {
     /// The line equation is derived from endpoints or adjacent surfaces.
     Line,
     /// Inline circle parameters.
-    Circle { center: Point3, radius: f64 },
+    Circle {
+        /// Circle center in millimetres.
+        center: Point3,
+        /// Circle radius in millimetres.
+        radius: f64,
+    },
     /// A separately allocated spline carrier.
     Bspline,
 }
 
-/// One row of the standard positional edge-support/incidence table.
+/// One row of the standard positional edge-support/incidence table (spec
+/// §5.5): `60 <tag:u24le> <curve_body> <face_ref> <face_ref>`, one row per
+/// spine edge.
 #[derive(Debug, Clone)]
 pub struct StandardCurveSupport {
+    /// Offset of the `0x60` row marker in the BREP stream.
     pub pos: usize,
+    /// Little-endian u24 local allocation tag for this row.
     pub tag: u32,
+    /// The two adjacent standard face ordinals forming this edge's
+    /// edge-to-face incidence.
     pub faces: [usize; 2],
+    /// The row's curve geometry family and, where inline, its parameters.
     pub geometry: StandardCurveGeometry,
 }
 
@@ -878,9 +942,10 @@ pub fn standard_lines(brep: &[u8], face_count: usize) -> Vec<StandardLine> {
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
 pub fn a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
+    const MARKER: &[u8; 3] = b"\xa8\x03\x34";
+
     let mut out = Vec::new();
     let mut start = 0usize;
-    const MARKER: &[u8; 3] = b"\xa8\x03\x34";
     while let Some(relative) = data[start..].windows(3).position(|bytes| bytes == MARKER) {
         let pos = start + relative;
         start = pos + 3;
@@ -895,9 +960,10 @@ pub fn a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
 pub fn a5_surfaces(data: &[u8]) -> Vec<A8Surface> {
+    const MARKER: &[u8; 3] = b"\xa5\x03\x34";
+
     let mut out = Vec::new();
     let mut start = 0usize;
-    const MARKER: &[u8; 3] = b"\xa5\x03\x34";
     while let Some(relative) = data[start..].windows(3).position(|bytes| bytes == MARKER) {
         let pos = start + relative;
         start = pos + 1;
@@ -1050,6 +1116,7 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
 
 fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     let origin = f64_point(data, pos + 14)?;
+    let ref_direction = unit(f64_vector(data, pos + 38)?);
     let axis = unit(f64_vector(data, pos + 86)?)?;
     let stored_angle = f64_le(data, pos + 110)?;
     let radius = f64_le(data, pos + 118)?;
@@ -1064,6 +1131,7 @@ fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Cone {
         origin,
         axis,
+        ref_direction,
         radius,
         half_angle,
     })
@@ -1071,6 +1139,7 @@ fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
 
 fn e5_torus(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     let center = f64_point(data, pos + 14)?;
+    let ref_direction = unit(f64_vector(data, pos + 38)?);
     let axis = unit(f64_vector(data, pos + 86)?)?;
     let major_radius = f64_le(data, pos + 110)?;
     let minor_radius = f64_le(data, pos + 118)?;
@@ -1080,6 +1149,7 @@ fn e5_torus(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Torus {
         center,
         axis,
+        ref_direction,
         major_radius,
         minor_radius,
     })
@@ -1106,7 +1176,7 @@ pub fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
             (0x28, 0x8a) => zero_entity_cylinder(payload),
             (0x29, 0xb8) => zero_entity_cone(payload),
             (0x2b, 0xc8) => zero_entity_torus(payload),
-            (0x34, 0xc8) | (0x34, 0x5e) => zero_entity_nurbs_surface(data, p),
+            (0x34, 0xc8 | 0x5e) => zero_entity_nurbs_surface(data, p),
             _ => None,
         };
         if let Some(geometry) = geometry {
@@ -1169,6 +1239,7 @@ fn zero_entity_plane(payload: &[u8]) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Plane {
         origin,
         normal: unit(cross(row0, row1))?,
+        u_axis: unit(row0),
     })
 }
 
@@ -1183,12 +1254,14 @@ fn zero_entity_cylinder(payload: &[u8]) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Cylinder {
         origin,
         axis: unit(cross(row0, row1))?,
+        ref_direction: unit(row0),
         radius,
     })
 }
 
 fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
     let origin = f64_point(payload, 8)?;
+    let ref_direction = unit(f64_vector(payload, 32)?);
     let axis = unit(f64_vector(payload, 80)?)?;
     let stored_angle = f64_le(payload, 104)?;
     let radius = f64_le(payload, 112)?;
@@ -1205,6 +1278,7 @@ fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Cone {
         origin,
         axis,
+        ref_direction,
         radius,
         half_angle,
     })
@@ -1212,6 +1286,7 @@ fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
 
 fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     let center = f64_point(payload, 8)?;
+    let ref_direction = unit(f64_vector(payload, 32)?);
     let axis = unit(f64_vector(payload, 80)?)?;
     let major_radius = f64_le(payload, 104)?;
     let minor_radius = f64_le(payload, 112)?;
@@ -1227,6 +1302,7 @@ fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Torus {
         center,
         axis,
+        ref_direction,
         major_radius,
         minor_radius,
     })
@@ -1252,6 +1328,8 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             }
             Some(SurfaceGeometry::Sphere {
                 center: pt(cx, cy, cz),
+                axis: None,
+                ref_direction: None,
                 radius: r as f64,
             })
         }
@@ -1268,6 +1346,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             Some(SurfaceGeometry::Torus {
                 center: pt(cx, cy, cz),
                 axis: axis_from_xy(ax, ay, 1.0),
+                ref_direction: None,
                 major_radius: major as f64,
                 minor_radius: minor as f64,
             })
@@ -1284,6 +1363,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             Some(SurfaceGeometry::Cylinder {
                 origin: pt(px, py, pz),
                 axis: axis_from_xy(ax, ay, radius),
+                ref_direction: None,
                 radius: radius.abs() as f64,
             })
         }
@@ -1299,6 +1379,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             Some(SurfaceGeometry::Cone {
                 origin: pt(x, y, z),
                 axis: axis_from_xy(ax, ay, semi),
+                ref_direction: None,
                 radius: 0.0,
                 half_angle: semi.abs() as f64,
             })

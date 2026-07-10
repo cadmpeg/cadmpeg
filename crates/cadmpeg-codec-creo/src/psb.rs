@@ -28,8 +28,11 @@ pub mod token {
 /// skipped, which makes the walker safe for provenance and cache building.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
+    /// Byte offset of the token's first byte in the original stream.
     pub offset: usize,
+    /// Total byte length of the token, including its prefix byte(s).
     pub length: usize,
+    /// The token's structural classification.
     pub kind: TokenKind,
 }
 
@@ -37,18 +40,40 @@ pub struct Token {
 /// parent record grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
+    /// A PSB compact integer (spec §3.1): `0x00..=0x7f` one byte, or
+    /// `0x80..=0xbf XX` two bytes big-endian.
     CompactInt,
+    /// A 3-byte short-form float token (spec §3.3): `<prefix> XX YY`.
     ShortFloat,
+    /// An 8-byte world-coordinate token whose leading byte is `0x46`
+    /// (positive) or `0x2d` (negative).
     WorldCoordinate,
+    /// A named-record header: `e0 <type> <name>\0`.
     NamedRecord,
+    /// An entity reference: `f7 <id>`, where `<id>` is a reference-id token.
     EntityReference,
+    /// An array opener: `f8 <count>`.
     ArrayOpen,
+    /// A count-bounded scalar body header: `f9 <ndim> <count>`.
     ScalarBody,
+    /// An array close byte, `0xfb`.
     ArrayClose,
+    /// A nested compound-body opener or continuation byte, `0xe2`.
     CompoundOpen,
+    /// A compound close or row terminator byte, `0xe3`, whose exact role
+    /// depends on the enclosing record grammar.
     CompoundClose,
+    /// A recognized single-byte structural marker outside the primary token
+    /// set (spec §3.2), such as `0xe1`, `0xe4`, `0xe5`, `0xe6`, `0xe8`,
+    /// `0xf1`, `0xf2`, `0xf3`, `0xf5`, or `0xf6`. The wrapped byte is the raw
+    /// marker value.
     OtherStructural(u8),
+    /// A byte that does not match any recognized structural or numeric
+    /// prefix. The wrapped byte is the raw value.
     Unknown(u8),
+    /// A structural token whose prefix was recognized but whose required
+    /// trailing bytes were not available before end-of-buffer. The wrapped
+    /// byte is the token's prefix byte.
     Truncated(u8),
 }
 

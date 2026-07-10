@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! B-rep topology and analytic geometry decode from a framed SAB RecordTable.
+//! B-rep topology and analytic geometry decode from a framed SAB `RecordTable`.
 //!
-//! Given the [`crate::sab`] RecordTable of an active model slice, this builds
+//! Given the [`crate::sab`] `RecordTable` of an active model slice, this builds
 //! the IR topology graph (`body → lump → shell → face → loop → coedge → edge →
 //! vertex → point`) and the analytic surface/curve carriers it references
 //! (`plane`, `cone`/cylinder, `sphere`, `torus`, `straight` line,
@@ -186,10 +186,12 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
     match rec.head.as_str() {
         "plane" => {
             let normal = *c.vectors.first()?;
+            let u_axis = *c.vectors.get(1)?;
             Some((
                 SurfaceGeometry::Plane {
                     origin: scale_point(origin),
                     normal: unit(normal),
+                    u_axis: Some(unit(u_axis)),
                 },
                 false,
             ))
@@ -203,14 +205,13 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             // vs cone; `r1` is the explicit base radius.
             let sine = *c.doubles.get(1).unwrap_or(&0.0);
             let r1 = c.doubles.get(3).copied();
-            let radius = r1
-                .map(|r| r * LEN_TO_MM)
-                .unwrap_or_else(|| norm3(major) * LEN_TO_MM);
+            let radius = r1.map_or_else(|| norm3(major) * LEN_TO_MM, |r| r * LEN_TO_MM);
             if sine.abs() <= f64::EPSILON {
                 Some((
                     SurfaceGeometry::Cylinder {
                         origin: scale_point(origin),
                         axis: unit(axis),
+                        ref_direction: Some(unit(major)),
                         radius,
                     },
                     false,
@@ -220,6 +221,7 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
                     SurfaceGeometry::Cone {
                         origin: scale_point(origin),
                         axis: unit(axis),
+                        ref_direction: Some(unit(major)),
                         radius,
                         half_angle: sine.abs().asin(),
                     },
@@ -229,9 +231,13 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         }
         "sphere" => {
             let signed = *c.doubles.first()?;
+            let equator = *c.vectors.first()?;
+            let polar_axis = *c.vectors.get(1)?;
             Some((
                 SurfaceGeometry::Sphere {
                     center: scale_point(origin),
+                    axis: Some(unit(polar_axis)),
+                    ref_direction: Some(unit(equator)),
                     radius: signed * LEN_TO_MM,
                 },
                 false,
@@ -239,12 +245,14 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         }
         "torus" => {
             let axis = *c.vectors.first()?;
+            let ref_direction = *c.vectors.get(1)?;
             let major = *c.doubles.first()?;
             let minor = *c.doubles.get(1)?;
             Some((
                 SurfaceGeometry::Torus {
                     center: scale_point(origin),
                     axis: unit(axis),
+                    ref_direction: Some(unit(ref_direction)),
                     major_radius: major * LEN_TO_MM,
                     minor_radius: minor * LEN_TO_MM,
                 },
@@ -355,7 +363,7 @@ fn double_at(rec: &Record, i: usize) -> Option<f64> {
 /// Decode a framed active slice into the IR B-rep graph.
 ///
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
-/// `f3d#<record-index>`, unique across the RecordTable.
+/// `f3d#<record-index>`, unique across the `RecordTable`.
 pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
     let mut out = Brep::default();
 
@@ -696,6 +704,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                     out.vertices.push(Vertex {
                         id: VertexId(id(i)),
                         point: PointId(id(pi)),
+                        tolerance: None,
                         meta: meta(r),
                     });
                 }
@@ -723,6 +732,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 start: VertexId(id(start)),
                 end: VertexId(id(end)),
                 param_range,
+                tolerance: None,
                 meta: meta(r),
             });
         }
@@ -751,6 +761,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 next: CoedgeId(id(next)),
                 previous: CoedgeId(id(prev)),
                 partner: partner.map(|p| CoedgeId(id(p))),
+                radial_next: None,
                 sense: sense_at(r, 7),
                 pcurve: r
                     .ref_at(10)
@@ -790,6 +801,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 loops,
                 name: None,
                 color: attribute_color(r),
+                tolerance: None,
                 meta: meta(r),
             });
         }
@@ -807,6 +819,8 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                     id: ShellId(id(i)),
                     lump: LumpId(id(owner)),
                     faces,
+                    wire_edges: Vec::new(),
+                    free_vertices: Vec::new(),
                     meta: meta(r),
                 });
             }
@@ -865,7 +879,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         if let Some(target) = target {
             collect_attributes(
                 record,
-                target,
+                &target,
                 &by_index,
                 stream,
                 &mut emitted_attributes,
@@ -1063,7 +1077,7 @@ fn persistent_design_links(attribute: &SourceAttribute) -> Vec<PersistentDesignL
 
 fn collect_attributes(
     entity: &Record,
-    target: AttributeTarget,
+    target: &AttributeTarget,
     by_index: &HashMap<i64, &Record>,
     stream: &str,
     emitted: &mut HashSet<i64>,
@@ -1313,13 +1327,15 @@ fn lump_chain(body_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<LumpId
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(bytes);
     let digest = h.finalize();
     let mut s = String::with_capacity(digest.len() * 2);
     for b in digest {
-        s.push_str(&format!("{b:02x}"));
+        let _ = write!(s, "{b:02x}");
     }
     s
 }

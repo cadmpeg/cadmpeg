@@ -81,11 +81,9 @@ Payload kind is determined from **decompressed bytes**, not from `type_id`.
 
 PNG preview dimensions and encoding fields are in `IHDR`. BMP thumbnail width, height, planes, bit depth, compression, and image size are in the 40-byte BITMAPINFOHEADER after the leading file-size word. The `swSolidWorks` XML root carries version, creation time, and path; its `swModel` child carries model and configuration names.
 
-The active `Contents/Config-0-Partition` block contains the analytic B-rep in partition and deltas streams. `Contents/Config-0-ResolvedFeatures` contains feature-input sketch profiles. `Config-0-GhostPartition`, `Contents/Definition`, and `Config-0-LWDATA` do not contain active body geometry.
+`Contents/Config-0-Partition` and `Contents/Config-0-Deltas` carry body B-rep records. `Contents/Config-0-ResolvedFeatures` carries feature-input sketch profiles. `Config-0-GhostPartition`, `Contents/Definition`, and `Config-0-LWDATA` are separate payload families.
 
-When a B-rep contains an opaque surface carrier, native writing retains the partition and patches byte-backed points and compact analytic carriers in place. This path requires identical topology and carrier kinds and unchanged NURBS payloads. Site-local deltas remain byte-identical; only records in the partition are patchable. Other geometry edits regenerate the partition.
-
-`ResolvedFeatures` sketch entities start with `ff ff 1f 00 03`. A little-endian u32 at marker +17 is the native entity type: `0` point, `1` curve, `2` arc, `3` constrained point; other values remain native codes. IR retains the complete block payload and marker offsets. Semantic writing patches typed codes into that payload and preserves all other bytes.
+`ResolvedFeatures` sketch entities begin with `ff ff 1f 00 03`. A little-endian u32 at marker +17 is the entity type: `0` point, `1` curve, `2` arc, `3` constrained point.
 
 ---
 
@@ -102,13 +100,13 @@ schema_len  u8
 schema      ASCII[schema_len]      ; SCH_<modeller>_<schema>_<format>
 ```
 
-The schema identifier has the form `SCH_<modeller>_<schema>_<format>`. Partition and deltas streams contain the active body geometry. Class-definition payloads use `C` for class, `I` for instance, `A` for attribute, `D` for data, and `Z` for a Z-block container.
+The schema identifier has the form `SCH_<modeller>_<schema>_<format>`. Partition and deltas streams contain body geometry records. Class-definition payloads use `C` for class, `I` for instance, `A` for attribute, `D` for data, and `Z` for a Z-block container.
 
 ### 3.2 Sites and attribute scope
 
 An attribute id is **not** globally unique. A **site** is one validated outer block (identified by its marker offset). Partition and deltas streams in the same outer block share a site namespace; streams in different outer blocks are distinct sites.
 
-These families **must be keyed by `(site_id, attr)`** because their attrs collide across sites: compact analytic records, `00 11` coedges, `00 12` vertex-uses, `00 1d` points. Bridges (`00 0e`), loop heads (`00 0f`), and edge-uses (`00 10`) are globally unique, but their references to colliding families must still resolve inside the referring record's site. Within a site, partition records are the base set and deltas records are incremental variants; a weak deltas candidate must not overwrite a stronger partition record. Boundary vertices are **coordinate-canonical**: resolve `00 11 → 00 12 → 00 1d` inside the coedge's site, then deduplicate by coordinate.
+Compact analytic records, `00 11` coedges, `00 12` vertex-uses, and `00 1d` points use `(site_id, attr)` identity because their attributes can repeat across sites. Bridges (`00 0e`), loop heads (`00 0f`), and edge-uses (`00 10`) carry globally unique attributes, but their references to site-scoped families remain in the referring record's site. Partition and deltas records in one site share an attribute namespace.
 
 ---
 
@@ -133,15 +131,15 @@ face → 00 0f loop head → 00 11 coedge ring → 00 10 edge-use → support cu
 
 Magic-bearing records use `c2 bc 92 8f 99 6e 00 00`.
 
-- **Bridge `00 0e`:** `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed). `ref0` = owner/use discriminator for face validation.
+- **Bridge `00 0e`:** `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed). `ref0` = owner/use discriminator.
 - **Loop head `00 0f`:** `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling loop head.
 - **Edge-use `00 10`:** `refs[0]` = canonical forward coedge (`0x2b`), `refs[3]` = support curve (compact analytic or `00 86`).
 - **Coedge `00 11`:** `refs[1]` owning loop, `refs[2]`/`refs[3]` reciprocal ring links (prev/next), `refs[4]` start vertex-use, `refs[5]` twin coedge, `refs[6]` edge-use, `marker` sense vs canonical (`0x2b` forward, `0x2d` reversed).
 - **Vertex-use `00 12` / point `00 1d`:** `00 12.refs[4]` = point attr; `00 1d` stores xyz as three f64 BE at body +14, in metres. Attrs `0` and `1` are sentinels, not world points.
 
-A support surface belongs to a face only through `face -> validated bridge -> bridge.refs[4] -> carrier`. Face and carrier attributes do not establish ownership by equality. Resolve the carrier in the bridge's site.
+A support surface belongs to a face through `face -> bridge -> bridge.refs[4] -> carrier`. Face and carrier attribute equality does not establish ownership. The carrier reference uses the bridge's site.
 
-### 4.1 Canonical edge direction
+### 4.1 Stored edge direction
 
 ```
 canonical coedge = same-site coedge with attr == 00 10.refs[0]   (marker always 0x2b)
@@ -149,85 +147,56 @@ edge.start_vertex = canonical.start_vertex_use → 00 12 → 00 1d
 edge.end_vertex   = partner coedge (same edge_use_attr).start_vertex_use → …
 ```
 
-The canonical coedge anchors the stored edge direction.
-
-Deduplicate byte-backed edge uses by order-independent endpoint pair, curve kind, and curve-geometry fingerprint. Retain the lowest-attr representative. A final B-rep boundary edge is an edge used by a loop after this deduplication. A native `00 1d` coordinate is a boundary vertex only when a final edge endpoint reaches it.
-
-For a closed full-circle edge whose paired coedges both use vertex-use sentinel `0x0001`, derive its seam vertex as `circle.origin - circle.radius * owning_cylinder_surface.ref_direction`. A periodic cylinder with two singleton circle loop heads has one derived axial seam-line edge between its circle seam vertices. A spherical patch bounded by three circle arcs has a degenerate meridian seam edge at `center + radius * axis`.
+The `00 10.refs[0]` coedge anchors the stored edge direction. Sentinel attributes `0` and `1` do not reference vertex-use or point records.
 
 ### 4.2 Deltas encodings
 
-Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a `[hi][lo][01]` triple) or as `[disc][attr]` adjacency tables; the magic moves within the record window and must be located inside it.
+Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a `[hi][lo][01]` triple) or as `[disc][attr]` adjacency tables; the magic occurs at the family-specific position within the record window.
 
 | Tag                    | Deltas form | Magic    | Anchor                                 |
 | ---------------------- | ----------- | -------- | -------------------------------------- |
-| `00 10`                | prefixed    | body +9  | decoded ref slot 2 = curve carrier     |
+| `00 10`                | prefixed    | body +9  | ref slot 2 = curve carrier             |
 | `00 11`                | tripled     | none     | slot4 vuse, slot5 twin, slot6 edge-use |
 | `00 12`                | prefixed    | body +21 | refs-before-magic slot 4 = point attr  |
 | `00 1d`                | prefixed    | none     | xyz after `[hi][lo][01]*` run          |
 | `00 1e/1f/20/32/33/35` | prefixed    | none     | f64 block after `2b`/`2d` marker       |
 
-Partition and deltas streams in the same outer block share a site namespace. When recovering a deltas-only candidate topology, key its records under a synthetic deltas site so colliding references resolve within the deltas tables. Deltas topology is candidate topology. Prefer partition topology for the final solid unless a byte-backed body-membership path assigns a deltas edge to the active solid boundary.
+Partition and deltas streams in the same outer block share a site namespace. Prefixed and tripled references encode the same u16 attribute values as bare references.
 
-Recover loop heads and bare coedges with non-advancing byte-by-byte passes. Accept a recovered coedge only when its edge-use and start vertex-use resolve and its twin has the same edge-use, a reciprocal twin reference, and the opposite marker. Apply the loop-head graph filter after coedge recovery.
-
-Use the bridge marker as the initial face orientation. Flip whole faces until each shared edge has opposite composed orientation in its two incident faces, then select the remaining shell sense by positive signed volume.
-
-## 5. Entity records and canonical faces
+## 5. Entity records and face families
 
 Top-level entity families: `00 51` entity, `00 52` wrapper/container, `00 53` color/property/helper, `00 54` metadata. Common header: `flags u32 BE`, `attr u16 BE`, `seq u32 BE`, `disc u16 BE`.
 
-`0x52` and `0x51` can occur in u16 slot values. Entity boundaries use fixed-slot windows keyed by `(schema, disc, flo)`.
+`flo` is the low byte of `flags`. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. Entity-family bodies have fixed slot counts keyed by `(schema, disc, flo)`, so `00 51` and `00 52` byte values inside slots are data rather than record delimiters.
 
-The canonical face container depends on the SolidWorks generation:
+Face records use these families:
 
-| Family       | Selection rule                                        |
+| Family       | Record invariant                                      |
 | ------------ | ----------------------------------------------------- |
-| disc14       | entity-51 `disc == 0x0014` + structured 6-slot prefix |
-| disc15/flo=1 | entity-51 `disc == 0x0015`, low flag byte 1           |
-| disc1F/flo=1 | entity-51 `disc == 0x001f`, low flag byte 1           |
+| disc14       | `00 51`, `disc == 0x0014`, six-u16 slot prefix        |
+| disc15/flo=1 | `00 51`, `disc == 0x0015`, `flo == 1`, six-u16 prefix |
 
-All share a 6-slot prefix (`raw_body[12:24]` = six u16 BE slots) with family-specific roles. Support families (disc11/flo=2, disc13/flo=1, disc19/flo=2) are not faces but participate in owner-chain validation: a small set of per-family chains resolves `bridge.ref0` to the face attr, directly or through one/two support records. A structurally valid canonical face outranks any non-face record for the same attr; within a class, highest `seq` wins. A wide scan can catch a **false** `00 54` when a byte pair lands inside another record's payload (garbage high-bit `disc`, absurd `seq`); a plain highest-seq dedup would drop the real face, so the canonical-precedence rule is required.
+The bridge owner field `00 0e.ref0` joins the topology bridge to an entity-family face attribute.
 
 ---
 
-## 6. Bodies
+## 6. Body records
 
-Explicit manifold bodies use entity-51 disc `0x0017` with geometry-body flags. Grouping resolves through two mechanisms: UUID-body face-list membership, and single-shell face-use rings. The body→face relation partitions the face set exactly once per file (0 duplicate, 0 unassigned, 0 dangling). **Bodies must be grouped explicitly**: pooling all faces and re-separating by geometric edge connectivity merges bodies whose faces touch (abutting bodies collapse into one wrong pseudo-solid).
-
-### 6.1 Schema-32001 UUID bodies
-
-Stream-scope `00 51` records carry a disc/flo family: disc17/flo2 = UUID body, disc1b/flo2 = solid region/lump, disc19/flo2 = connector, disc15/flo2 = body face-list head, disc13/flo1 = face owner, disc1f/flo1 = canonical face. The optional `ff` after the `00 51` marker is **load-bearing** (a body-face-list head is invisible without the one-byte shift).
-
-**Solid/sheet gate:**
+An explicit body root is an entity record with `disc == 0x0017` and `flo == 2`:
 
 ```
-solid iff  0x17.slot1 → 0x1b directly
-      or   0x17.slot1 → 0x19 ; 0x19.slot1 → 0x1b
+00 51
+[ff]?
+flags      u32 BE       ; low byte = 2
+attr       u16 BE       ; body identity within the site
+seq        u32 BE
+disc       u16 BE       ; 0x0017
+slots      u16 BE[6]
 ```
 
-A body satisfying neither is an **open/sheet body**. Sheet bodies are positively identified: each reaches `0x19 → slot1 → disc 0x1d/flo1`, so schema 32001 uses `0x1b/flo2` for solid regions and `0x1d/flo1` for sheet regions. Both body kinds retain their faces and boundary topology in IR. The gate is schema-specific; applying the 32001 constants to schema 33103 misclassifies bodies.
+Slot values `0` and `1` are sentinels. Values greater than 1 are entity attributes in the same site. Multiple disc17 records represent distinct stored bodies even when their face geometry touches.
 
-**Body → face membership** is a relocated shell/face-use equivalent, read section-ordered by stream offset between face-list heads.
-
-### 6.2 Schema-33103 variant
-
-Schema 33103 encodes the same section-ordered membership with shifted roles:
-
-| role           | 32001       | 33103       |
-| -------------- | ----------- | ----------- |
-| canonical face | disc1F/flo1 | disc15/flo1 |
-| face-list head | disc15/flo2 | disc13/flo2 |
-| body           | disc17/flo2 | disc17/flo2 |
-| region         | disc1b/flo2 | disc1b/flo1 |
-
-Heads bind to bodies by a **shared slot0 cluster key** (`body.slot0 == head.slot0`), because `head.slot1` is polymorphic. Each disc17 body resolves through its disc1b/flo1 region into a slot1-linked `disc1b → disc1f → disc21 → disc23` hierarchy (the 33103 analog of 32001's region/lump/shell).
-
-**The face partition is the disc15/flo1 face-use _adjacency graph_, not the stream interval:** the head stream-interval is only a section-order proxy, exact when a body's records are contiguous and wrong when interleaved. The adjacency-graph components are the true per-body face sets and build valid closed solids where the interval reading yields a non-closing shell.
-
-### 6.3 Single-shell disc14 bodies
-
-The partition stream of a single-solid disc14 part has exactly one region + one shell, with one face-use per face. Deltas streams add extra shells/face-uses from superseded feature states, so the shell count must come from the partition stream's **undeduplicated** variants. Body/shell/face-use membership walks through an entity web (shell `0x16` → face-use `0x20`.slot3 ring → face-geom `0x18` → face `0x14`). An explicit **class-root vector** anchored by the ASCII token `index_map_offset` followed by `CCZ` names the head entity of each disc family; walking the face-use ring from the root visits every face-use and terminates at sentinel `0x0001`. A `0x52`-safe fixed-slot window is required; a terminator scan loses face-uses whose slot values contain byte `0x52`.
+Disc14 and disc15 face records use the common six-slot prefix in §5. Disc15/flo2 is a face-list-head family in schema 32001; disc15/flo1 is a face family in schema 33103. The exact body-to-face relation is carried by entity references, not geometric connectivity.
 
 ---
 
@@ -274,13 +243,13 @@ For rational arrays (`dimension == 4`) `00 2d` stores `[x*w, y*w, z*w, w]` per p
 
 Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
 
-The curved Parasolid partition and deltas stream grammar contains no stored two-dimensional UV pcurve control array. The `00 2d`, `00 7f`, and `00 80` arrays carry 3D or homogeneous control nets and knot data; trimmed NURBS-face pcurves derive from the surface, 3D boundary curve, and trim topology.
+The Parasolid partition and deltas grammar contains no two-dimensional UV pcurve control array. The `00 2d`, `00 7f`, and `00 80` arrays carry 3D or homogeneous control nets and knot data.
 
 ## 8. Auxiliary lanes
 
 - **DisplayLists tessellation** uses a 6-descriptor table: List A strip lengths, Positions/Normals f32 metres, and Lists B/C/D. `C = sum(ListA)`, `ListC[i] = 2*ListA[i] - 2`, and `TriCount = C - 2*N`.
 - **Materials / metadata** live in SW Objects blocks: `moVisualProperties_c` contains material names and RGB `0x00BBGGRR` values; names use UTF-16LE. `moBBoxCenterData_c` contains the bounding-box center and maximum radius in metres. `moDefaultRefPlnData_c` contains datum planes through the origin.
-- **Per-face appearance** is generation-specific and the two routes point in _opposite_ directions: disc14 is face-local (`disc14 face stub → adjacent 00 53 flo=3 → rgb`); disc15 (33103) is `face slot5 → 00 53 flo=3 color attr → rgb`. A real flo=3 color record is ~84 bytes (three RGB f64 BE at body +6 + one inline `00 51` face link); the apparent "2–3 KB nested color bodies" are the `0x52`-terminator artifact. The optional `ff` after `00 53` is load-bearing.
+- **Per-face appearance** is generation-specific. A disc14 face is followed by an adjacent `00 53 flo=3` color record. A schema-33103 disc15 face stores the color-record attribute in slot 5. The color record stores RGB as three f64 BE values at body +6 and an inline `00 51` face link. An optional `ff` byte after `00 53` shifts the body by one byte.
 - **XML / UnQLite** carry OPC parts, document/feature metadata, unit metadata (`SW_UnitsLinear=0` = millimetres), and MessagePack UI data: auxiliary, not the exact B-rep.
 
 ---
@@ -291,14 +260,12 @@ The curved Parasolid partition and deltas stream grammar contains no stored two-
 - Coordinates and radii convert from metres to millimetres by a factor of `1000`. Rational B-spline poles require dehomogenization (`[x*w, y*w, z*w, w] -> xyz`) before conversion.
 - Directions, normals, axes, reference directions, knot values, and weights are dimensionless.
 - `SW_UnitsLinear=0` denotes millimetre document units. It does not change stored coordinate values.
-- Model coordinates use the export world frame. Metres-to-millimetres conversion by `1000` is the only coordinate conversion; no per-file rotation, translation, or scale transform applies.
+- Model coordinates use the world frame. No per-file rotation, translation, or scale field applies to these coordinates.
 
 ---
 
-## 10. Inline record selection
+## 10. Inline record framing
 
 Inline `00 51` subrecords use a fixed slot count selected by the Parasolid schema, disc, low flag byte, and optional prefixed form. `00 51` and `00 52` byte occurrences do not delimit records.
 
-For a prefixed subrecord, `body[14] == 0x01`, each slot is `[01][hi][lo]`, the final byte is `00`, and `end = pos + 14 + 3*slot_count + 1`. For a bare subrecord, `end = pos + 14 + 2*slot_count`. Stop an inline walk at the next record owned by another entity.
-
-In schema 33103, partition and deltas candidates that share a face attribute and sequence number select the candidate whose slot-5 appearance reference resolves. A remaining tie selects the partition candidate.
+For a prefixed subrecord, `body[14] == 0x01`, each slot is `[01][hi][lo]`, the final byte is `00`, and `end = pos + 14 + 3*slot_count + 1`. For a bare subrecord, `end = pos + 14 + 2*slot_count`.

@@ -8,9 +8,19 @@ use crate::psb::{compact_int, reference_id};
 /// grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CurvePrototype {
+    /// The row's `crv_id`: the curve's identifier in the `crv_array`
+    /// namespace, referenced by `srf_array` and topology row `E0`/`E1`
+    /// fields.
     pub id: u32,
+    /// The row's raw `type` byte. Its geometric meaning is not identified by
+    /// the namespace grammar alone (spec §4); the curve-body evaluator
+    /// determines the interpretation.
     pub type_byte: u8,
+    /// The `feat_id` compact integer, when the labeled row has one: the
+    /// feature that generated this curve.
     pub feature_id: Option<u32>,
+    /// Byte offset of this prototype's `crv_array` label in the original
+    /// stream.
     pub offset: usize,
 }
 
@@ -18,12 +28,26 @@ pub struct CurvePrototype {
 /// `faces` and `next_edges` retain the two native half-edge sides in order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CurveTopologyRow {
+    /// The row's `crv_id`, matching a [`CurvePrototype::id`] in the same
+    /// `crv_array` namespace.
     pub id: u32,
+    /// The row's raw `type` byte; see [`CurvePrototype::type_byte`].
     pub type_byte: u8,
+    /// The `feat_id` compact integer: the feature that generated this
+    /// curve.
     pub feature_id: u32,
+    /// The two `crv_pnt_dir` orientation-flag bytes, one per half-edge side.
+    /// These are per-side orientation flags, not a tangent vector (spec
+    /// §4).
     pub directions: [u8; 2],
+    /// The `F0`/`F1` suffix fields: the `srf_array` face identifiers
+    /// bounding the curve's two half-edge sides.
     pub faces: [u32; 2],
+    /// The `E0`/`E1` suffix fields: the `crv_array` identifier of the next
+    /// edge for each of the two half-edge sides, used to walk loops (spec
+    /// §4).
     pub next_edges: [u32; 2],
+    /// Byte offset of the row's `crv_id` field in the original stream.
     pub offset: usize,
 }
 

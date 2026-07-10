@@ -22,7 +22,7 @@ Entity provenance is separate from domain status. `byte_exact`, `derived`, `infe
 - **Siemens NX `.prt`:** partial analytic, NURBS, trimmed-curve, and conditional topology read support; no native write.
 - **CATIA V5 `.CATPart`:** partial analytic and freeform carrier decode with conditional standard-nested topology; no native write.
 - **Creo Parametric `.prt`:** container and prototype-structure decode with derived datum-plane carriers; no placed model B-rep or native write.
-- **STEP AP214:** partial manifold B-rep export with explicit loss reporting.
+- **STEP AP214:** partial B-rep export with explicit loss reporting.
 
 ## SolidWorks `.sldprt`
 
@@ -54,7 +54,7 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
 
 ### Read profile
 
-- **Container and versions: Partial.** The codec identifies the active ASM/SAB stream and decodes linked Protein, Design, MetaStream, and ACT records used by the active model. Several header and record flags remain unresolved.
+- **Container and versions: Partial.** The codec selects the first `.smbh` entry, falling back to the first B-rep entry, and decodes linked Protein, Design, MetaStream, and ACT records. The authoritative relation among multiple asset folders and B-rep entries remains unresolved.
 - **Geometry: Partial.** Analytic surfaces and curves, cached NURBS carriers, parameterizations, signed radii, and supported procedural definitions transfer. Law, taper, loft, skin, net, sweep, helix, variable-blend, and related families remain incomplete when no solved cache resolves.
 - **Topology: Partial.** Shell-reachable bodies, shells, faces, loops, coedges, edges, and vertices transfer. Unsupported surface records retain topology with unknown geometry; some procedural edges lack curve carriers and some explicit pcurves remain unresolved.
 - **Tessellation: None.** The codec does not transfer Fusion display meshes into the IR tessellation arena.
@@ -145,7 +145,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 The pure-Rust `cadmpeg-step` crate writes ISO 10303-21 AP214.
 
 - **Geometry: Partial.** Planes, cylinders, cones, spheres, tori, lines, circles, ellipses, and rational or non-rational B-spline carriers map to STEP entities.
-- **Topology: Partial.** Supported manifold bodies emit a full solid, shell, face, loop, edge, and vertex hierarchy. Faces with unknown surfaces and curveless edges are omitted with losses. Invalid solids are refused; non-identity body transforms are reported and coordinates remain in body-local space.
+- **Topology: Partial.** Supported bodies emit a solid, shell, face, loop, edge, and vertex hierarchy. Faces with unknown surfaces and curveless edges are omitted with losses. The writer does not establish shell closure or manifold validity. Non-identity body transforms are reported and coordinates remain in body-local space.
 - **Procedural geometry: Solved carriers only.** Source-native procedural definitions reduce to their analytic or NURBS carriers and produce an informational loss.
 - **Tessellation: None.**
 - **Product structure: None.**

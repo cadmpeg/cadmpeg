@@ -37,13 +37,21 @@ const NUBS_MARKER: &[u8] = b"\x0d\x04nubs";
 const NURBS_MARKER: &[u8] = b"\x0d\x05nurbs";
 
 fn read_i64(b: &[u8], p: usize) -> Option<i64> {
-    b.get(p..p + 8)
-        .map(|s| i64::from_le_bytes(s.try_into().unwrap()))
+    b.get(p..p + 8).map(|s| {
+        i64::from_le_bytes(
+            s.try_into()
+                .expect("invariant: b.get(p..p+8) is an 8-byte slice"),
+        )
+    })
 }
 
 fn read_f64(b: &[u8], p: usize) -> Option<f64> {
-    b.get(p..p + 8)
-        .map(|s| f64::from_le_bytes(s.try_into().unwrap()))
+    b.get(p..p + 8).map(|s| {
+        f64::from_le_bytes(
+            s.try_into()
+                .expect("invariant: b.get(p..p+8) is an 8-byte slice"),
+        )
+    })
 }
 
 /// Consume a `tag`-prefixed i64 at `*pos`, advancing past it.
@@ -104,7 +112,7 @@ fn read_knots(b: &[u8], pos: &mut usize, n: usize, degree: i64) -> Option<(Vec<f
     }
     let mut expanded = Vec::new();
     for (i, (kv, m)) in knots.iter().zip(&mults).enumerate() {
-        let extra = if i == 0 || i == n - 1 { 1 } else { 0 };
+        let extra = i64::from(i == 0 || i == n - 1);
         for _ in 0..(*m + extra).max(0) {
             expanded.push(*kv);
         }
@@ -175,7 +183,7 @@ fn decode_surface_block(b: &[u8], marker_pos: usize) -> Option<DecodedSurfaceBlo
         pos += 2 + len;
     }
     let mut enums = [0i64; 4];
-    for e in enums.iter_mut() {
+    for e in &mut enums {
         *e = take_tagged_i64(b, &mut pos, 0x15)?;
     }
     let n_uniq_u = take_tagged_i64(b, &mut pos, 0x04)?;
@@ -186,11 +194,7 @@ fn decode_surface_block(b: &[u8], marker_pos: usize) -> Option<DecodedSurfaceBlo
 
     let (u_knots, n_poles_u) = read_knots(b, &mut pos, n_uniq_u as usize, degree_u)?;
     let (v_knots, n_poles_v) = read_knots(b, &mut pos, n_uniq_v as usize, degree_v)?;
-    if n_poles_u
-        .checked_mul(n_poles_v)
-        .map(|n| n > 200_000)
-        .unwrap_or(true)
-    {
+    if n_poles_u.checked_mul(n_poles_v).is_none_or(|n| n > 200_000) {
         return None;
     }
 
@@ -327,7 +331,12 @@ pub fn decode_surface_cache(record_bytes: &[u8]) -> Option<NurbsSurface> {
 
 /// A decoded native procedural definition and the fit contract of its solved cache.
 pub struct DecodedProceduralSurface {
+    /// The native procedural surface construction (blend, sweep, loft, or
+    /// taper family) decoded from its subtype-dispatched inline fields.
     pub definition: ProceduralSurfaceDefinition,
+    /// `surface_fit_tolerance` of the cached B-spline block, if present.
+    /// `0.0` indicates fidelity to the procedural surface rather than
+    /// identity with a primitive (spec §7.5).
     pub cache_fit_tolerance: Option<f64>,
 }
 
@@ -538,8 +547,14 @@ pub fn decode_curve_cache_resolving_refs(
 
 /// A procedural curve cache together with its native subtype and fit contract.
 pub struct DecodedProceduralCurve {
+    /// The cached B-spline curve (control points scaled centimetre→
+    /// millimetre; knots and weights unscaled).
     pub curve: NurbsCurve,
+    /// The `intcurve` subtype record name (`exact_int_cur`, `off_int_cur`,
+    /// `proj_int_cur`, `int_int_cur`, `helix_int_cur`, `sss_int_cur`, ...).
     pub native_kind: String,
+    /// `surface_fit_tolerance` of the cached B-spline block, if present
+    /// (spec §7.5).
     pub cache_fit_tolerance: Option<f64>,
 }
 

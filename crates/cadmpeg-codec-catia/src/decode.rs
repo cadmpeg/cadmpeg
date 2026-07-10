@@ -12,6 +12,7 @@
 //! with its BREP/preamble bytes preserved as an [`UnknownRecord`].
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write as _;
 
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -26,6 +27,7 @@ use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Lump, Point, Sense, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use sha2::{Digest, Sha256};
 
 use crate::container::{self, ContainerScan};
 use crate::geometry;
@@ -107,6 +109,7 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
         ir.vertices.push(Vertex {
             id: VertexId(format!("catia:zero-entity:v#{index}")),
             point: point_id,
+            tolerance: None,
             meta: byte_exact("vertex_05_08_01", 0),
         });
     }
@@ -174,6 +177,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         ir.vertices.push(Vertex {
             id: VertexId(format!("catia:e5:v#{index}")),
             point: point_id,
+            tolerance: None,
             meta: byte_exact("vertex_05_08_01", 0),
         });
     }
@@ -285,6 +289,7 @@ fn attach_e5_edges(ir: &mut CadIr, edges: &[geometry::E5Edge], circles: &HashMap
             start: vertex_for_ref[&edge.start_vertex_id].clone(),
             end: vertex_for_ref[&edge.end_vertex_id].clone(),
             param_range: None,
+            tolerance: None,
             meta: byte_exact("e5_ff_edge_use", edge.pos as u64),
         });
     }
@@ -416,6 +421,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         ir.vertices.push(Vertex {
             id: VertexId(format!("catia:v#{i}")),
             point: PointId(format!("catia:pt#{i}")),
+            tolerance: None,
             meta: byte_exact("vertex_05_08_01", 0),
         });
     }
@@ -469,6 +475,7 @@ fn attach_standard_faces(ir: &mut CadIr, bindings: &[(SurfaceId, bool, usize)], 
                 loops: Vec::new(),
                 name: None,
                 color: None,
+                tolerance: None,
                 meta: byte_exact("surfacic_reps_face_sense", *offset as u64),
             });
             face_index += 1;
@@ -492,6 +499,8 @@ fn attach_standard_faces(ir: &mut CadIr, bindings: &[(SurfaceId, bool, usize)], 
             id: shell_id,
             lump: lump_id,
             faces: face_ids,
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
             meta: byte_exact("fbb_face_run", 0),
         });
     }
@@ -583,6 +592,7 @@ fn attach_standard_topology(
             start: VertexId(format!("catia:v#{start_point}")),
             end: VertexId(format!("catia:v#{end_point}")),
             param_range: None,
+            tolerance: None,
             meta: byte_exact("standard_spine_edge_row", support.pos as u64),
         });
     }
@@ -609,6 +619,7 @@ fn attach_standard_topology(
                     previous: coedge_ids[(coedge_index + coedge_ids.len() - 1) % coedge_ids.len()]
                         .clone(),
                     partner: None,
+                    radial_next: None,
                     sense: if edge_use.reversed {
                         Sense::Reversed
                     } else {
@@ -648,13 +659,14 @@ fn face_surface<'a>(
 fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
     const TOLERANCE: f64 = 1e-3;
     let residual = match surface {
-        SurfaceGeometry::Plane { origin, normal } => {
+        SurfaceGeometry::Plane { origin, normal, .. } => {
             dot_point_vector(point, *origin, *normal).abs()
         }
         SurfaceGeometry::Cylinder {
             origin,
             axis,
             radius,
+            ..
         } => {
             let axial = dot_point_vector(point, *origin, *axis);
             let radial = point_distance_squared(point, *origin) - axial * axial;
@@ -665,6 +677,7 @@ fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
             axis,
             radius,
             half_angle,
+            ..
         } => {
             let axial = dot_point_vector(point, *origin, *axis);
             let radial = (point_distance_squared(point, *origin) - axial * axial)
@@ -672,7 +685,7 @@ fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
                 .sqrt();
             (radial - (radius + axial * half_angle.tan()).abs()).abs()
         }
-        SurfaceGeometry::Sphere { center, radius } => {
+        SurfaceGeometry::Sphere { center, radius, .. } => {
             (point_distance_squared(point, *center).sqrt() - *radius).abs()
         }
         SurfaceGeometry::Torus {
@@ -680,6 +693,7 @@ fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
             axis,
             major_radius,
             minor_radius,
+            ..
         } => {
             let axial = dot_point_vector(point, *center, *axis);
             let radial = (point_distance_squared(point, *center) - axial * axial)
@@ -855,7 +869,7 @@ fn plane_for_face(
         .iter()
         .find(|surface| surface.id == *surface_id)?;
     match &surface.geometry {
-        SurfaceGeometry::Plane { origin, normal } => Some((*origin, *normal)),
+        SurfaceGeometry::Plane { origin, normal, .. } => Some((*origin, *normal)),
         _ => None,
     }
 }
@@ -1027,7 +1041,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> CadIr {
             offset: 0,
             byte_len: brep.len() as u64,
             sha256: sha256_hex(brep),
-            data: Some(brep.to_vec()),
+            data: Some(brep.clone()),
             links: Vec::new(),
             meta: EntityMeta {
                 provenance: Provenance {
@@ -1125,13 +1139,12 @@ fn byte_exact(tag: &str, offset: u64) -> EntityMeta {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(bytes);
     let digest = h.finalize();
     let mut s = String::with_capacity(digest.len() * 2);
     for b in digest {
-        s.push_str(&format!("{b:02x}"));
+        let _ = write!(s, "{b:02x}");
     }
     s
 }

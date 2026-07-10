@@ -2,6 +2,7 @@
 //! Self-contained tests: IR documents are built in code (via the IR crate's
 //! fixtures or inline), and expected STEP fragments are asserted inline. No test
 //! depends on an external STEP consumer.
+#![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
@@ -57,11 +58,13 @@ fn edgeless_doc() -> CadIr {
     ir.vertices.push(Vertex {
         id: VertexId("v0".into()),
         point: PointId("p0".into()),
+        tolerance: None,
         meta: m(),
     });
     ir.vertices.push(Vertex {
         id: VertexId("v1".into()),
         point: PointId("p1".into()),
+        tolerance: None,
         meta: m(),
     });
     ir.edges.push(Edge {
@@ -70,6 +73,7 @@ fn edgeless_doc() -> CadIr {
         start: VertexId("v0".into()),
         end: VertexId("v1".into()),
         param_range: None,
+        tolerance: None,
         meta: m(),
     });
     ir.surfaces.push(Surface {
@@ -77,6 +81,7 @@ fn edgeless_doc() -> CadIr {
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: None,
         },
         meta: m(),
     });
@@ -87,6 +92,7 @@ fn edgeless_doc() -> CadIr {
         next: CoedgeId("ce0".into()),
         previous: CoedgeId("ce0".into()),
         partner: None,
+        radial_next: None,
         sense: Sense::Forward,
         pcurve: None,
         meta: m(),
@@ -105,12 +111,15 @@ fn edgeless_doc() -> CadIr {
         loops: vec![LoopId("lp0".into())],
         name: None,
         color: None,
+        tolerance: None,
         meta: m(),
     });
     ir.shells.push(Shell {
         id: ShellId("sh0".into()),
         lump: LumpId("l0".into()),
         faces: vec![FaceId("f0".into())],
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
         meta: m(),
     });
     ir.lumps.push(Lump {
@@ -254,6 +263,7 @@ fn cylinder_surface_doc() -> CadIr {
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: None,
             radius: 5.0,
         },
         meta: EntityMeta::synthetic(),
@@ -269,6 +279,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
             SurfaceGeometry::Cylinder {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: None,
                 radius: 5.0,
             },
             "CYLINDRICAL_SURFACE",
@@ -277,6 +288,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
             SurfaceGeometry::Cone {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: None,
                 radius: 2.0,
                 half_angle: 0.5,
             },
@@ -285,6 +297,8 @@ fn analytic_surfaces_map_to_their_step_entities() {
         (
             SurfaceGeometry::Sphere {
                 center: Point3::new(1.0, 2.0, 3.0),
+                axis: None,
+                ref_direction: None,
                 radius: 4.0,
             },
             "SPHERICAL_SURFACE",
@@ -293,6 +307,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
             SurfaceGeometry::Torus {
                 center: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: None,
                 major_radius: 3.0,
                 minor_radius: 1.0,
             },
@@ -311,6 +326,41 @@ fn analytic_surfaces_map_to_their_step_entities() {
         let s = emit_surface_only(&ir.surfaces[0].geometry);
         assert!(s.contains(kw), "missing {kw} in {s}");
     }
+}
+
+#[test]
+fn analytic_surface_placements_preserve_orientation() {
+    let geometry = SurfaceGeometry::Sphere {
+        center: Point3::new(1.0, 2.0, 3.0),
+        axis: Some(Vector3::new(0.0, 1.0, 0.0)),
+        ref_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+        radius: 4.0,
+    };
+    let s = emit_surface_only(&geometry);
+    assert!(s.contains("DIRECTION('',(0.,1.,0.))"));
+    assert!(s.contains("DIRECTION('',(0.,0.,1.))"));
+}
+
+#[test]
+fn parabola_and_hyperbola_map_to_step_conics() {
+    let parabola = emit_curve_only(&CurveGeometry::Parabola {
+        vertex: Point3::new(1.0, 2.0, 3.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        major_direction: Vector3::new(0.0, 1.0, 0.0),
+        focal_distance: 2.5,
+    });
+    assert!(parabola.contains("= PARABOLA("));
+    assert!(parabola.contains(",2.5)"));
+
+    let hyperbola = emit_curve_only(&CurveGeometry::Hyperbola {
+        center: Point3::new(1.0, 2.0, 3.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        major_direction: Vector3::new(0.0, 1.0, 0.0),
+        major_radius: 4.0,
+        minor_radius: 1.5,
+    });
+    assert!(hyperbola.contains("= HYPERBOLA("));
+    assert!(hyperbola.contains(",4.,1.5)"));
 }
 
 #[test]
@@ -456,6 +506,8 @@ fn signed_analytic_radius_normalization_is_reported() {
     let mut ir = unit_cube();
     ir.surfaces[0].geometry = SurfaceGeometry::Sphere {
         center: Point3::new(0.0, 0.0, 0.0),
+        axis: None,
+        ref_direction: None,
         radius: -2.0,
     };
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! DisplayLists descriptor tables.
+//! `DisplayLists` descriptor tables.
 
 use crate::container::{Block, ContainerScan};
 use cadmpeg_ir::math::{Point3, Vector3};

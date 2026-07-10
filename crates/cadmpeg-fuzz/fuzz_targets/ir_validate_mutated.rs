@@ -63,7 +63,9 @@ fuzz_target!(|data: &[u8]| {
         4 => {
             // Mutate surface geometry with degenerate values
             for surface in &mut ir.surfaces {
-                if let cadmpeg_ir::geometry::SurfaceGeometry::Plane { normal, .. } = &mut surface.geometry {
+                if let cadmpeg_ir::geometry::SurfaceGeometry::Plane { normal, .. } =
+                    &mut surface.geometry
+                {
                     normal.x = 0.0;
                     normal.y = 0.0;
                     normal.z = 0.0;

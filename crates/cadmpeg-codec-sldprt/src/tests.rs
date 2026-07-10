@@ -2,6 +2,7 @@
 //! Tests over synthetic byte fixtures. No real CAD file exists in this repo and
 //! none may be added, so every fixture is a hand-built `.sldprt` byte image that
 //! exercises a real decode path and fails if the code regresses.
+#![allow(clippy::unwrap_used)]
 
 use std::io::{Cursor, Write};
 
@@ -709,7 +710,7 @@ fn sldprt_with_body_and_material(body: &[u8], name: &str, rgb: [u8; 3]) -> Vec<u
     let mut material = b"moVisualProperties_c".to_vec();
     material.extend_from_slice(&u32::from_le_bytes([rgb[0], rgb[1], rgb[2], 0]).to_le_bytes());
     material.extend_from_slice(&0u32.to_le_bytes());
-    material.extend_from_slice(&0x00c0c0c0u32.to_le_bytes());
+    material.extend_from_slice(&0x00c0_c0c0u32.to_le_bytes());
     material.extend_from_slice(&[0xff, 0xfe, 0xff, 0x00]);
     material.extend_from_slice(&[0xff, 0xfe, 0xff, name.len() as u8]);
     for unit in name.encode_utf16() {
@@ -1291,7 +1292,7 @@ fn decode_builds_valid_topology_and_plane() {
 
     // The plane decoded with its stored origin and unit normal.
     match &result.ir.surfaces[0].geometry {
-        SurfaceGeometry::Plane { origin, normal } => {
+        SurfaceGeometry::Plane { origin, normal, .. } => {
             assert_eq!(*origin, Point3::new(0.0, 0.0, 0.0));
             assert_eq!(normal.z, 1.0);
         }
@@ -1488,6 +1489,32 @@ fn semantic_writer_rejects_unrepresented_typed_fields() {
         error,
         cadmpeg_ir::codec::CodecError::NotImplemented(_)
     ));
+}
+
+#[test]
+fn semantic_writer_rejects_unsupported_conic_curves() {
+    let axis = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
+    let major_direction = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
+    for geometry in [
+        cadmpeg_ir::geometry::CurveGeometry::Parabola {
+            vertex: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            axis,
+            major_direction,
+            focal_distance: 1.0,
+        },
+        cadmpeg_ir::geometry::CurveGeometry::Hyperbola {
+            center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            axis,
+            major_direction,
+            major_radius: 2.0,
+            minor_radius: 1.0,
+        },
+    ] {
+        assert!(matches!(
+            crate::writer::curve_values(&geometry, 0.001),
+            Err(cadmpeg_ir::codec::CodecError::NotImplemented(_))
+        ));
+    }
 }
 
 #[test]

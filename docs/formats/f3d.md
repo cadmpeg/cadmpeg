@@ -20,13 +20,13 @@
 | `<folder>/FusionBrowserSegmentType1/BulkStream.dat`                              | Fusion UI browser tree                                  |
 | `<folder>/Previews/*`, `<folder>/Images.BlobParts/*`                             | thumbnails / appearance images; never geometry          |
 | `ParaMeshGeometry.BlobParts/*.paramesh`                                          | secondary mesh; not the exact source                    |
-| `Manifest.dat` (top-level and per-asset)                                         | asset-folder registry (see §1.3)                        |
+| `Manifest.dat` (top-level and per-asset)                                         | document, asset, and segment registry (see §1.3)        |
 
-`<folder>` is the active asset folder. Fusion exports use the fixed string `FusionAssetName[Active]`, but the folder name is taken from the manifest rather than hard-coded.
+`<folder>` is an asset-folder path component.
 
 ### 1.2 Small stored placeholder entries
 
-Three tiny entries appear in every file, all STORED:
+The following small entries are STORED:
 
 | Entry                                           | Bytes                   | Meaning                                      |
 | ----------------------------------------------- | ----------------------- | -------------------------------------------- |
@@ -36,41 +36,44 @@ Three tiny entries appear in every file, all STORED:
 
 ### 1.3 `Manifest.dat` grammar
 
-Both manifests are flat sequences of `u32`-length-prefixed strings. Each record is either ASCII (length = byte count) or UTF-16-LE (length = character count, payload = 2×length bytes); disambiguate per record by trying ASCII first and checking that the successor parses as a plausible `u32` length.
+Both manifests are flat sequences of `u32`-length-prefixed strings. An ASCII field stores a byte count followed by that many bytes. A UTF-16LE field stores a code-unit count followed by twice that many bytes.
 
-The **top-level manifest** is 571 bytes, identical across files modulo two per-file UUIDs. It carries a document version tag (`3-2-0-0`), the `FusionDocType` marker, the `.f3d` extension, a display name/description, two per-file UUIDs, a six-token capability vocabulary (`CAM`, `ParaMesh`, `SimCommon`, `SimFEACSObjects`, `SimFluidDynamics`, `SimStructuralAttributes`), and the active-asset-folder UUID.
-
-**Self-consistency invariant:** the asset-folder UUID at top-level offset 430 equals the UUID at offset 34 of `<folder>/Manifest.dat`; this locates and verifies the active folder.
+The **top-level manifest** carries a document version tag (`3-2-0-0`), the `FusionDocType` marker, the `.f3d` extension, a display name and description, document and asset UUIDs, capability tokens, and an asset-folder UUID.
 
 The **per-asset manifest** carries two asset GUIDs, `FusionAssetType`, the asset type `Neutron3DAssetType`, a `physicalChangeGuid`, and the segment-type registry (`FusionDesignSegmentType`, `FusionACTSegmentType`, `FusionBrowserSegmentType`).
 
 ---
 
-## 2. B-rep stream selection and history partition
+## 2. B-rep streams and history partition
 
-### 2.1 Selecting the active B-rep
+### 2.1 Stream forms
 
-1. Prefer `.smbh` over `.smb` for the same snapshot.
-2. Use the manifest-selected folder first.
-3. Slice the `.smbh` at the **first `delta_state` record** (§2.3) and decode only the bytes before it as the active exact model.
-
-`.smb` is an earlier construction snapshot. Both streams carry `ASM BinaryFile8<` magic, but `.smb` has no `delta_state` marker and its face count differs from the active model. A construction snapshot can contain more faces than the final body; face count does not identify the active payload.
-
-A file can contain multiple `.smbh` snapshots. Select the snapshot with the greatest pre-history fraction rather than the highest raw face count.
+Both `.smb` and `.smbh` entries carry an ASM `BinaryFile` token stream. A history-bearing stream contains solved-model records followed by a `history_stream` record and linked `delta_state` records. The `history_stream` record, rather than the first `delta_state` name token, is the byte boundary between the solved-model record sequence and construction history.
 
 ### 2.2 History preamble
 
-Exactly 120 bytes before the first `delta_state` sits the ASM history-container header. Its name is **not** a contiguous ASCII literal; it is a tag-segmented record-name chain:
+The history-container record begins with this tag-segmented name chain:
 
 ```
 11 0e 05 "Begin" 0e 02 "of" 0e 03 "ASM" 0e 07 "History" 0d 04 "Data"  0d 0e "history_stream"
 ```
 
-i.e. base-class lineage `Begin·of·ASM·History·Data` with leaf class `history_stream`. A search for the literal string `Begin of ASM History Data` finds nothing. This 120-byte gap is topology-free, so slicing at the first `delta_state` is byte-equivalent to slicing at the `history_stream` record start.
+The class lineage is `Begin-of-ASM-History-Data`; `history_stream` is the second leaf token. Its body begins with:
 
-### 2.3 `delta_state` records (construction history; NOT active geometry)
+```
+04 i64 stream_size
+04 i64 stream_size_duplicate
+04 i64 = 0
+04 i64 high_water_mark
+0c ref[4]
+11
+```
 
-Each history node is a doubly-linked construction state:
+`stream_size == stream_size_duplicate`.
+
+### 2.3 `delta_state` records
+
+Each history node is a linked construction state:
 
 ```
 11 0d 0b "delta_state"
@@ -85,7 +88,7 @@ Each history node is a doubly-linked construction state:
 0b                       (false sentinel)
 ```
 
-The tail from the history preamble onward contains per-feature construction-state topology snapshots. It is outside the active exact B-rep. Each `delta_state` body contains a BulletinBoard chain of per-entity insert, delete, and update bulletins.
+Each `delta_state` body contains a BulletinBoard chain. A bulletin entry stores an old and new entity reference: null→entity is insertion, entity→null is deletion, and entity→entity is update.
 
 ---
 
@@ -95,23 +98,30 @@ Streams begin with `ASM BinaryFile4<` or `ASM BinaryFile8<`. The digit selects t
 
 `BinaryFile8` header layout:
 
-| Bytes    | Meaning                                                                  |
-| -------- | ------------------------------------------------------------------------ |
-| `0..15`  | magic `ASM BinaryFile8<`                                                 |
-| `16..23` | zero                                                                     |
-| `24..31` | **big-endian** u64 version/save word: per-file-varying (see below)       |
-| `32..39` | big-endian u64 = `3` (constant: ASM binary format version)               |
-| `40..47` | big-endian u64 = `7` (constant: ASM binary schema version)               |
-| next     | `0x07` LP string `product_family` = `Autodesk Neutron`                   |
-| next     | `0x07` LP string `product_version_string` = e.g. `ASM 231.6.3.65535 OSX` |
-| next     | `0x07` LP string `save_date` (e.g. `Tue Mar 31 16:16:19 2026`)           |
-| `114..`  | tagged f64 `scale`, then `resabs`, then `resnor`                         |
+| Bytes    | Meaning                                                            |
+| -------- | ------------------------------------------------------------------ |
+| `0..15`  | magic `ASM BinaryFile8<`                                           |
+| `16..23` | zero                                                               |
+| `24..31` | **big-endian** u64 version/save word: per-file-varying (see below) |
+| `32..39` | big-endian u64 = `3` (constant: ASM binary format version)         |
+| `40..47` | big-endian u64 = `7` (ASM binary schema version)                   |
+
+Byte 47 is both the low byte of the schema-version word and the `0x07` tag of the first string. The remaining header is a sequence rather than a fixed-offset structure:
+
+```
+0x07 u8_len UTF8[product_family]
+0x07 u8_len UTF8[product_version_string]
+0x07 u8_len UTF8[save_date]
+0x06 f64_le scale
+0x06 f64_le resabs
+0x06 f64_le resnor
+```
 
 Header invariants:
 
 - The words at 24/32/40 are **big-endian**; the rest of the stream is little-endian.
-- Word @24 is the only per-file-varying header value and is not a model quantity (not bodies, faces, `delta_state` count, or history high-water).
-- `scale`, `resabs`, `resnor` are fixed kernel defaults: `scale = 60.0`, `resabs = 1e-6`, `resnor = 1e-10`. `scale` is the SAB "scale slot", a fixed ASM kernel default that varies by kernel version (`90.0` on an ASM-229 `BinaryFile4` stream): it is **not** a model scale and **not** the coordinate transform, and must never be applied to coordinates.
+- Word @24 is a header version/save word, not a model-space quantity.
+- `scale`, `resabs`, and `resnor` are kernel metadata. `scale` is not a coordinate transform. Fusion `BinaryFile8` streams use `scale = 60.0`, `resabs = 1e-6`, and `resnor = 1e-10`; an ASM-229 `BinaryFile4` stream uses `scale = 90.0`.
 
 ---
 
@@ -148,11 +158,11 @@ The stream is a tag-typed SAB (ACIS binary) token stream.
 
 ### 4.2 Record names and the RecordTable
 
-A record name is the `-`-joined chain of all `0x0E` tokens terminated by one `0x0D` leaf token (e.g. `persubent-acadSolidHistory-attrib`). ASM-written files rewrite the token `ASM` → `ACIS` during name assembly.
+A record name is the `-`-joined chain of all `0x0E` tokens terminated by one `0x0D` leaf token (e.g. `persubent-acadSolidHistory-attrib`). In assembled record names, the class token `ASM` is represented as `ACIS`.
 
 **RecordTable indexing:** the stream begins with an `asmheader` record (not preceded by `0x11`) at **index 0**. `RecordTable[1]` is the first record after it, and so on. Positive `0x0C` refs index this table directly; `-1` is null.
 
-> Keep `asmheader` at index 0. Omitting this row shifts each reference by one and invalidates topology and carrier resolution.
+The `asmheader` row participates in RecordTable indexing; the first following entity therefore has index 1.
 
 ### 4.3 Version/product gates
 
@@ -162,12 +172,12 @@ Non-ASM (pure ACIS) and SpaceClaim SAB streams use version-gated padding absent 
 
 ## 5. Unit rules
 
-- The exact-B-rep contract is **millimetres**. Fusion `BinaryFile8` model-space lengths are **centimetres**; convert with factor **×10** at decode time.
-- Scale at decode: model-space points, radii, length-bearing vectors, 3D control points, length tolerances.
-- **Do NOT scale:** unit vectors, ratios, angles, knot parameters, non-length enums, homogeneous weights, UV pcurve coordinates.
-- The header `scale` field is metadata, never a coordinate multiplier (§3).
+- Fusion `BinaryFile8` model-space lengths are stored in centimetres.
+- Model-space points, radii, length-bearing vectors, 3D control points, and length tolerances convert to millimetres by ×10.
+- Unit vectors, ratios, angles, knot parameters, non-length enums, homogeneous weights, and UV pcurve coordinates are dimensionless.
+- The header `scale` field is metadata, not a coordinate multiplier (§3).
 
-On convex curved faces the analytic surface bulges slightly past the vertex hull; this is a surface-extent property, not a decode error.
+An analytic surface is untrimmed; its extent is independent of the face's vertex hull.
 
 ---
 
@@ -179,7 +189,7 @@ On convex curved faces the analytic surface bulges slightly past the vertex hull
 body → lump → shell → [subshell] → face → loop → coedge → edge → vertex → point
 ```
 
-Authoritative binding links (do not substitute nearby fields):
+Authoritative binding links:
 
 | Link               | Field              |
 | ------------------ | ------------------ |
@@ -212,9 +222,9 @@ All records of a given class are fixed-size on Fusion files. Offsets are record-
 +81 chunk[10] containment       ← PRESENT ONLY IF chunk[9]=double
 ```
 
-`sides` and `containment` are two separate enum chunks; unconditionally reading a containment chunk over-consumes on every single-sided face and shreds the stream. All reversed faces are **planar** (see §6.4).
+`sides` and `containment` are separate enum chunks. Single-sided faces end after `sides`; double-sided faces carry `containment`.
 
-**Loop (61 B):** `chunk[3]` @+34 = next_loop (`-1` for the last/outer), `chunk[4]` @+43 = first_coedge, `chunk[5]` @+52 = owner_face. The first loop on a face is **not** guaranteed to be the semantic outer loop. Walk the face→loop chain via refs, never by stream position.
+**Loop (61 B):** `chunk[3]` @+34 = next_loop (`-1` terminates the chain), `chunk[4]` @+43 = first_coedge, `chunk[5]` @+52 = owner_face. Loop order is defined by the `next_loop` references, not stream position; the first loop is not an outer-loop marker.
 
 **CoEdge (100 B):**
 
@@ -225,7 +235,7 @@ All records of a given class are fixed-size on Fusion files. Offsets are record-
 +90 chunk[10] pcurve ref (or -1)
 ```
 
-The `{+35,+44,+53}` triad is uniformly next/prev/partner and is _not_ reorderable. `+72` is the owner loop, not a pcurve. **Partner symmetry** is a manifold invariant: every coedge's partner's partner is itself, and every shell edge is shared by exactly two mutually-referencing coedges of opposite sense.
+The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partner symmetry** is a manifold invariant: every coedge's partner's partner is itself, and every shell edge is shared by exactly two mutually-referencing coedges of opposite sense.
 
 **Edge (98 B):**
 
@@ -240,35 +250,35 @@ The `{+35,+44,+53}` triad is uniformly next/prev/partner and is _not_ reorderabl
 
 **Vertex (63 B):** `chunk[3]` @+36 = owning_edge, `chunk[4]` @+45 = index_flag (`0` = this is the owning edge's START vertex, `1` = its END vertex), `chunk[5]` @+54 = point ref. Each vertex has its own point entity; no deduplication.
 
-**Transform (142 B):** 13×f64 (@+18..117): `a[0..8]` 3×3 rotation, `a[9..11]` translation (pre-scaled by header scale), `a[12]` overall scale; then 3 flag bytes (ROTATION/REFLECTION/SHEAR enums). Column mapping: `a[0..2]`→col0, `a[3..5]`→col1, `a[6..8]`→col2, `a[9..11]×scale`→col3. Active-stream transforms have identity rotation, zero translation, unit scale, and flags `[0x0b,0x0b,0x0b]`; vertex and point coordinates are world coordinates. A non-identity body transform applies once at body scope and is not baked into face-local frames.
+**Transform (142 B):** 13×f64 (@+18..117): `a[0..8]` 3×3 rotation, `a[9..11]` translation, `a[12]` overall scale; then 3 flag bytes (ROTATION/REFLECTION/SHEAR enums). Column mapping: `a[0..2]`→col0, `a[3..5]`→col1, `a[6..8]`→col2, `a[9..11]`→col3. The body references its transform through `body.chunk[5]`; null denotes no body transform.
 
 ### 6.3 Point records and coordinate authority
 
-The only active-slice records carrying model-space points are `point` (count == vertex count) and NURBS control grids. This ASM version has no separate face-sample/edge-sample point-array record. Every shell-reachable vertex has its own `point`.
+A `point` record carries a model-space `POSITION`. `vertex.chunk[5]` references the point record. NURBS control grids independently carry their model-space poles.
 
-### 6.4 Sense semantics and loop winding
+### 6.4 Sense semantics
 
 Three sense bits compose into the winding:
 
-- **face.sense**: forward = surface's natural normal, reversed = flipped. On periodic carriers (cylinder/cone/sphere/torus) face.sense is _uniformly forward_, and all reversed faces are planar. Curved-face loop winding is therefore **not** carried by face.sense.
-- **coedge.sense**: loop-traversal direction relative to the edge curve parameterization. Splits 50/50 per file.
+- **face.sense**: forward = surface's natural normal, reversed = flipped.
+- **coedge.sense**: loop-traversal direction relative to the edge curve parameterization.
 - **edge.sense**: the edge's own curve-parameterization sense.
 
 **Winding rule:** `effective_curve_reversed = edge.sense_reversed XOR coedge.sense_reversed`. Each edge has two coedges with opposite `effective_curve_reversed`.
 
-### 6.5 Shell-reachability and orphan records
+### 6.5 Ownership reachability
 
-The active slice may contain byte-decodable topology records outside the ownership graph. The **shell-reachable** subgraph contains the active B-rep topology. An edge is reachable when a coedge in a shell-reachable loop ring references it; the same rule applies to vertices, surfaces, and curves.
+Topology membership is defined by references from `body → lump → shell → face → loop → coedge → edge → vertex`. Surface, curve, and point membership follows the authoritative binding references in §6.1.
 
-Orphan construction-wire line edges have `owner_coedge_ref == -1` and no coedge-ring reference. Their endpoint vertices and `straight` carriers can occur before the shell-reachable topology in the stream. Exclude these records from the shell-reachable subgraph.
+An edge with `owner_coedge_ref == -1` and no reference from a reachable coedge is outside that ownership graph.
 
 ### 6.6 Attributes on the topology graph
 
-Every entity carries an `attrib` ref-chain (doubly-linked, walked from `Entity.attrib` via `next`, `-1` ends). Match on the full `-`-joined name; color and feature-tag attributes co-exist on one chain. `ATTRIB_CUSTOM-attrib` records carry an owner ref at record-relative `+60..68` and a family name (`generic_tag_attrib_def`, `sketch_attrib_def`, `Timestamp_attrib_def`, `FPM_tracked_attrib_def`). Attribute records are **not** fixed-width: payloads range from zero chunks to dozens; reserving a fixed slot desynchronizes.
+Every entity carries an `attrib` ref-chain. `Entity.attrib` is the chain head, each record carries `next` and `previous` references, and `-1` terminates the chain. Color and feature-tag attributes can coexist on one chain. `ATTRIB_CUSTOM-attrib` records carry an owner ref at record-relative `+60..68` and a family name (`generic_tag_attrib_def`, `sketch_attrib_def`, `Timestamp_attrib_def`, `FPM_tracked_attrib_def`). Attribute records are variable-width.
 
 `generic_tag_attrib_def` stores a count followed by repeated `(kind, token string, design reference, 0, 0)` groups. `kind` identifies the labelled entity class: `3` for body, `2` for face, and `1` for edge. Each token/reference pair binds a persistent Fusion design ID to an ASM entity reference.
 
-`sketch_attrib_def` is coedge-owned provenance metadata. After its three-integer attribute header, a tagged UTF-8 field stores the six-integer ASCII tuple `(sketch_curve_id, 0, signed_ref, 0, enum_a, enum_b)`, where `signed_ref` uses `-1` as null. It links a generated B-rep coedge to its source sketch curve and does not define analytic geometry.
+`sketch_attrib_def` is coedge-owned source-link metadata. After its three-integer attribute header, a tagged UTF-8 field stores the six-integer ASCII tuple `(sketch_curve_id, 0, signed_ref, 0, enum_a, enum_b)`, where `signed_ref` uses `-1` as null. It links a B-rep coedge to a sketch curve and does not define analytic geometry.
 
 ---
 
@@ -280,19 +290,17 @@ All model-space lengths are cm→mm ×10; unit vectors/ratios/angles/knots are n
 
 `plane`, `cone` (covers cylinders: `sin(half_angle)==0` ⇒ cylinder), `sphere`, `torus`, `spline` (procedural/NURBS, dispatched by nested subtype), `mesh` (not the exact carrier when analytic/spline carriers exist). Curve vocabulary: `straight`, `ellipse` (covers circles: `ratio==1` ⇒ circle), `intcurve`, `pcurve`, plus `null_*` sentinels.
 
-Every record-name token in an active slice is one of the topology, geometry, attribute, `transform`, `asmheader`, or single-trailing-history-preamble types. There are no opaque entity types.
-
 ### 7.2 Analytic surface byte layouts
 
 Each layout is fixed-size. Offsets are record-relative from the `0x11` byte.
 
 **`plane`**: origin (`0x13`) + unit normal (`0x14`) + unit UV-reference direction (`0x14`). Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`, `v_dir = normal × u_dir`.
 
-**`cone` (161 B, covers cylinders)**: order: origin (`0x13`), axis (`0x14`), `ref × r_major` (`0x14`, magnitude = major radius), `ratio` (f64, 1.0 = circular), `0x0b 0x0b`, `sin(half_angle)` (f64, 0 ⇒ cylinder), `cos(half_angle)` (f64), `r1` explicit base radius (f64), 5×`0x0b`. **Half-angle rule:** `half_angle = asin(|sine|)`. When a cone stores both sine and cosine negative, `asin(|sine|)` gives the correct acute angle; `atan2(sine,cosine)` picks the wrong branch.
+**`cone` (161 B, covers cylinders)**: order: origin (`0x13`), axis (`0x14`), `ref × r_major` (`0x14`, magnitude = major radius), `ratio` (f64, 1.0 = circular), `0x0b 0x0b`, `sin(half_angle)` (f64, 0 ⇒ cylinder), `cos(half_angle)` (f64), `r1` explicit base radius (f64), 5×`0x0b`. **Half-angle rule:** `half_angle = asin(|sine|)`. The angle is the acute branch even when both stored sine and cosine are negative.
 
-**`sphere` (134 B)**: center (`0x13`), **signed** radius (f64), dir1 (equator), dir2 (polar axis). **Signed-radius rule:** a negative radius identifies an inward-facing, concave feature. Preserve the sign.
+**`sphere` (134 B)**: center (`0x13`), **signed** radius (f64), dir1 (equator), dir2 (polar axis). **Signed-radius rule:** a negative radius identifies an inward-facing, concave feature; the sign is part of the carrier.
 
-**`torus` (142 B basic / 160 B ranged)**: origin, axis, `major_radius` (f64), **signed** `minor_radius` (f64), `ref_direction`; then a range flag (`0x0b` = full 142-B variant; `0x0a` = 160-B variant with start/end angles). `minor < 0` with `|minor| ≤ |major|` describes a valid apple/lemon torus. **Inside-out torus rule:** `|minor| > |major|` is self-intersecting. Preserve the native torus frame and signed minor radius.
+**`torus` (142 B basic / 160 B ranged)**: origin, axis, `major_radius` (f64), **signed** `minor_radius` (f64), `ref_direction`; then a range flag (`0x0b` = full 142-B variant; `0x0a` = 160-B variant with start/end angles). `minor < 0` with `|minor| ≤ |major|` describes an apple/lemon torus. **Inside-out torus rule:** `|minor| > |major|` is self-intersecting. The native frame and minor-radius sign are part of the carrier.
 
 Evaluation formulas for all four carriers follow directly from the frame vectors above.
 
@@ -300,7 +308,7 @@ Evaluation formulas for all four carriers follow directly from the frame vectors
 
 **`straight` (115 B)**: base point + unit direction. Curve range is unbounded; the owning edge's `t_start`/`t_end` clip it. Endpoints `= base + t·direction`. Line directions are unit vectors.
 
-**`ellipse` (148 B with angles / 130 B without, covers circles)**: center, axis normal, `ref × r_major` (magnitude = major radius), `ratio = r_minor/r_major`; the 148-B variant adds start/end angles. Circle when `ratio==1`. **Ratio-sign phase convention:** for `ratio > 0` the stored range is axis-aligned and endpoints rotate by +π/2. For `ratio < 0`, the negative sign encodes a flipped parameterization; use the range directly and take `|ratio|`. Omitting the `ratio<0` branch puts trim endpoints π/2 out of phase.
+**`ellipse` (148 B with angles / 130 B without, covers circles)**: center, axis normal, `ref × r_major` (magnitude = major radius), `ratio = r_minor/r_major`; the 148-B variant adds start/end angles. Circle when `ratio==1`. **Ratio-sign phase convention:** for `ratio > 0` the stored range is axis-aligned and the endpoint phase is +π/2. For `ratio < 0`, the negative sign encodes a flipped parameterization; the stored range is direct and the minor-radius magnitude is `|ratio|`.
 
 **`degenerate_curve`**: collapses to a point (cone apex / sphere pole). An edge may _also_ collapse to a point with no `degenerate_curve` entity: curve ref null and both vertex refs identical. That is valid ACIS, not a malformed edge.
 
@@ -311,25 +319,58 @@ A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at r
 - **discriminator == 0 → inline form**: a `0x0a`/`0x0b` `wrapper_reversed` boolean, then a `0x0f 0d 0b exp_par_cur` subtype opening a 2D `nubs` block. 2D poles are stored as `(u,v)` pairs (8+8 B each, **not** 24).
 - **discriminator != 0 (1, 2, −1) → ref form (72 B)**: a `0x0c` ref to the intcurve carrying the UV curve, then two parameter doubles. No wrapper boolean (its absence is structural).
 
-**UV poles are surface parameters, NOT lengths; never cm→mm scaled.** `wrapper_reversed` is the inline curve's fit-convention bit, independent of coedge sense and of the parameter-interval sign; it must **not** be multiplied into loop winding.
+UV poles are dimensionless surface parameters. `wrapper_reversed` is the inline curve's fit-convention bit, independent of coedge sense and of the parameter-interval sign.
 
-Coedge sense re-orients a pcurve inherited from its surface: `effective_pcurve = flip_pcurve(surface_pcurve, coedge.sense)`. This is an edge-use orientation. Do not reverse the 2D B-spline poles or knots. `wrapper_reversed` does not replace coedge sense.
+Coedge sense is the edge-use orientation for a pcurve inherited from its surface: `effective_pcurve = flip_pcurve(surface_pcurve, coedge.sense)`. The stored 2D B-spline poles and knots retain their native order. `wrapper_reversed` is separate from coedge sense.
 
-Explicit pcurves exist only on free-form B-spline faces: a coedge carrying a pcurve ref occurs only on a `bspline_surface` face, never on a plane/cylinder/cone/sphere/torus coedge. An analytic face stores no explicit pcurve because the kernel inverts the 3D edge curve onto the analytic frame at build time. A coedge with pcurve ref `-1` on an analytic face is valid topology; do not synthesize an analytic pcurve.
+An explicit pcurve reference belongs to a free-form B-spline face. Analytic plane, cylinder, cone, sphere, and torus faces store `-1` in the coedge pcurve field; their UV boundary is not serialized as a pcurve record.
 
 ### 7.5 `nubs`/`nurbs` blocks (B-spline curves and surfaces)
 
 Surface block grammar: name (`nubs`|`nurbs`), degree_u, degree_v, u/v periodicity + singularity enums, unique-knot counts, (knot, multiplicity) pairs for each direction, then the control grid (3D for `nubs`, 4D homogeneous for `nurbs`). Control grids are **row-major with v in the outer loop, u in the inner loop.**
 
-**Pole-count rule:** the block stores endpoint multiplicities as `degree` (not `degree+1`). With stored multiplicities: `n_poles = sum(stored_mults) − (degree − 1)`. With expanded (clamped) multiplicities: `n_poles = sum(expanded_mults) − (degree + 1)`. Both give the same count once endpoints are expanded. Applying the wrong subtraction to the wrong convention over/under-counts poles by 4 and desynchronizes every subsequent record.
+**Pole-count rule:** the block stores endpoint multiplicities as `degree` (not `degree+1`). With stored multiplicities: `n_poles = sum(stored_mults) − (degree − 1)`. With expanded (clamped) multiplicities: `n_poles = sum(expanded_mults) − (degree + 1)`. Both expressions produce the same pole count.
 
 Native ASM NURBS control grids are the per-face cache. `surface_fit_tolerance == 0.0` indicates fidelity to the procedural surface, rather than identity with a primitive.
 
 ### 7.6 `intcurve` and `spline` subtypes
 
-Procedural intcurve subtypes (`exact_int_cur`, `off_int_cur`, `proj_int_cur`, `int_int_cur`, `helix_int_cur`, `sss_int_cur`, …) and spline-surface subtypes (`rb_blend_spl_sur`, `sss_blend_spl_sur`, `var_blend_spl_sur`, `loft_spl_sur`, `sweep_spl_sur`, `net_spl_sur`, VBL/taper families, …) each carry per-subtype field tails and version/`asm_major` gates. A `ref N` nested inside a surface/curve/pcurve body is an **index into a per-file subtype table** built as the stream is walked (every `0x0F` block decoding to a Surface/Curve/Pcurve registers in order), **not** a byte offset. Chase with a monotonic-decrease guard.
+Procedural intcurve subtypes (`exact_int_cur`, `off_int_cur`, `proj_int_cur`, `int_int_cur`, `helix_int_cur`, `sss_int_cur`, …) and spline-surface subtypes (`rb_blend_spl_sur`, `sss_blend_spl_sur`, `var_blend_spl_sur`, `loft_spl_sur`, `sweep_spl_sur`, `net_spl_sur`, VBL/taper families, …) each carry per-subtype field tails and version/`asm_major` gates. A `ref N` nested inside a surface, curve, or pcurve body indexes a per-file subtype table, not a byte offset. Each `0x0F` Surface/Curve/Pcurve block contributes one table entry in stream order.
 
-A `spline` subtype can contain several top-level surface-bearing `nubs` or `nurbs` blocks. The last valid surface block is the face-surface cache; earlier blocks can be 2D support pcurves. Resolve nested `ref` carriers recursively. Decode a subtype block from its `SUBTYPE_OPEN` marker regardless of its parent record.
+A `spline` subtype can contain several top-level surface-bearing `nubs` or `nurbs` blocks. The final surface block is the face-surface cache; earlier blocks can be 2D support pcurves. A nested `ref` denotes another carrier through the subtype table.
+
+The `cyl_spl_sur` and `rb_blend_spl_sur` field sequences are:
+
+```
+cyl_spl_sur :=
+  0x0f 0x0d "cyl_spl_sur"
+  DOUBLE u_start
+  DOUBLE u_end
+  VECTOR_3D extrusion_direction
+  POSITION
+  curve-cache
+  surface-cache
+  DOUBLE cache_fit_tolerance
+  0x10
+```
+
+`u_start` and `u_end` are directrix parameters. `extrusion_direction` is length-bearing. The final `surface-cache` is the solved NURBS surface, and `cache_fit_tolerance` is a length.
+
+```
+rb_blend_spl_sur :=
+  0x0f 0x0d "rb_blend_spl_sur"
+  support-name support-kind
+  support-name support-kind
+  curve-cache
+  DOUBLE radius_start
+  DOUBLE radius_end
+  ENUM_VALUE -1
+  surface-cache
+  DOUBLE cache_fit_tolerance
+  0x10
+```
+
+Each `support-name` is the string `blend_support_surface`; `support-kind` is a surface class token. The curve cache is the blend center curve. The signed radii and fit tolerance are lengths. Equal radius values define a constant-radius rolling-ball blend; unequal values define a linear radius law.
 
 ---
 
@@ -359,13 +400,13 @@ On a body, `generic_tag_attrib_def` supplies a design/construction ID distinct f
 
 ### 8.2 Materials
 
-Appearance arrives through three independent channels, merged by priority: (1) face-level ACIS attribute color, (2) body-level ACIS attribute color, (3) design-side appearance streams (`BulkStream` assignment → `.protein` asset → diffuse/albedo), then an `rh_material` Phong fallback, then default gray `(0.749, 0.749, 0.749)`. Visual and physical materials are distinct channels and must not be conflated.
+Visual and physical materials are distinct serialized channels.
 
-Color attribute record names on the topology chain (first match wins): `rgb_color-st-attrib` (float r,g,b in 0..1), `truecolor-adesk-attrib` (packed ARGB int /255), `color-adesk-attrib` (palette index, needs external palette), `material-adesk-attrib` (library lookup pair). `Timestamp_attrib_def` carries an f64 Unix-epoch timestamp in microseconds for the original feature or body creation time. The ASM header `save_date` stores the last export or save time.
+Color attribute records include `rgb_color-st-attrib` (float r,g,b in 0..1), `truecolor-adesk-attrib` (packed ARGB integer), `color-adesk-attrib` (palette index), and `material-adesk-attrib` (library lookup pair). `Timestamp_attrib_def` carries an f64 Unix-epoch timestamp in microseconds for the original feature or body creation time. The ASM header `save_date` stores the file save-time string.
 
-`.protein` assets are **nested ZIP archives** carrying per-asset `AssetData/*.bin` value streams plus XML schemas (`CommonSchema`, `GenericSchema`, `PhysMatSchema`, `PrismOpaqueSchema`, …). `InstanceProperties.bin` and `DefinitionIteratorProperties.bin` have a 16-byte prefix followed by 136-byte pages. Each page is a record-start page, continuation page, or `0xffffffff` terminal page with a u16 used length. Concatenate page payloads into logical records before parsing schema headers and value blocks.
+`.protein` assets are **nested ZIP archives** carrying per-asset `AssetData/*.bin` value streams plus XML schemas (`CommonSchema`, `GenericSchema`, `PhysMatSchema`, `PrismOpaqueSchema`, …). `InstanceProperties.bin` and `DefinitionIteratorProperties.bin` have a 16-byte prefix followed by 136-byte pages. Each page is a record-start page, continuation page, or `0xffffffff` terminal page with a u16 used length. A logical record is the concatenation of its start-page and continuation-page payloads.
 
-A design BulkStream material assignment targets the nearest preceding component-prefixed entity ID. Its physical-material token joins to the `.protein` `PhysMatSchema` asset. Its visual appearance GUID is the GUID immediately before the fixed visual-appearance marker GUID. If an assignment has no visual branch, the physical-material default-appearance clause resolves to its associated GenericSchema and Prism appearance asset.
+A design BulkStream material assignment targets the nearest preceding component-prefixed entity ID. Its physical-material token joins to the `.protein` `PhysMatSchema` asset. Its visual appearance GUID is the GUID immediately before the fixed visual-appearance marker GUID. A physical-material default-appearance clause stores associated GenericSchema and Prism appearance asset references.
 
 A `PhysMatSchema` value block contains a count followed by 36-character GUID references to its constituent aspect assets. The physical-material join is `BulkStream` `PrismMaterial` token → `PhysMatSchema` asset → referenced Structural, Thermal, and Prism aspect assets.
 
@@ -383,6 +424,6 @@ The material-bearing bodies are the ACT PhysicalMaterial-channel entities minus 
 
 The `id_count` field after a MetaStream type name is a count, not a flag with fixed `id1`/`id2` slots. BulkStream design body IDs use the numeric design-entity namespace and do not index the ACIS RecordTable.
 
-The bytes contain a visual preset (`Prism-###`), visual GUID, stored protein phrase, physical-material token/category, and shader parameters. Autodesk material-library display names, such as `PEEK` and `Rilsan Invent Natural - PA 11`, require an external material-library catalog.
+Material records store a visual preset (`Prism-###`), visual GUID, protein phrase, physical-material token and category, and shader parameters. They do not store Autodesk material-library display names.
 
 ---

@@ -40,10 +40,17 @@ pub mod role {
 /// magic (absolute file offset = `inner + phys_off`).
 #[derive(Debug, Clone)]
 pub struct Extent {
+    /// Physical byte offset from the inner `V5_CFV2` magic (absolute file
+    /// offset = `inner + phys_off`).
     pub phys_off: u32,
+    /// Physical byte length of this extent.
     pub phys_len: u32,
+    /// Logical byte length; validated equal to `phys_len` (spec §3.4).
     pub log_len: u32,
+    /// Logical byte offset within the reconstructed stream; validated
+    /// cumulative from `0` across a descriptor's extents (spec §3.4).
     pub log_off: u32,
+    /// Raw extent-struct flags word; meaning not decoded further.
     pub flags: u32,
 }
 
@@ -177,7 +184,9 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
     // real descriptor. The extent count sits at `desc_offset + 0x50`.
     let mut o = 0usize;
     while o + 4 <= dirbuf.len() {
-        let k = u32_be(dirbuf, o).unwrap() as usize;
+        let Some(k) = u32_be(dirbuf, o).map(|value| value as usize) else {
+            break;
+        };
         if (1..=64).contains(&k) && o + 4 + 20 * k <= dirbuf.len() {
             if let Some((extents, cum)) = parse_extents(dirbuf, o, k, inner, file_len) {
                 if cum > 0 && o >= 0x50 {

@@ -16,12 +16,22 @@ use crate::container::{self, role, ContainerScan};
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
 
+/// Decoded appearance assets and body bindings from a single `decode` pass:
+/// the merged `.protein`/design/ACT appearance records ([`Appearance`]) and
+/// the body-to-appearance bindings resolved through the design-entity join
+/// backbone (spec §8.2).
 #[derive(Default)]
 pub struct DecodedMaterials {
+    /// Merged appearance records, deduplicated by [`AppearanceId`].
     pub appearances: Vec<Appearance>,
+    /// Body-to-appearance bindings resolved via ACT/design/ASM body-key joins.
     pub bindings: Vec<AppearanceBinding>,
 }
 
+/// Decode all `.protein` appearance assets and design/ACT appearance
+/// assignments reachable from `scan`, without resolving ASM body-key bindings
+/// (spec §8.2's `asm_body_key` join is skipped; callers with body keys should
+/// use [`decode_with_bodies`]).
 pub fn decode(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -29,10 +39,13 @@ pub fn decode(
     decode_with_bodies(reader, scan, &std::collections::HashMap::new())
 }
 
-pub fn decode_with_bodies(
+/// Decode appearance assets and bindings, resolving each binding's body
+/// through `body_keys` (`BodyId` → `asm_body_key`, the ASM `Body.chunk[1]`
+/// value) to close the design-entity join backbone described in spec §8.2.
+pub fn decode_with_bodies<S: std::hash::BuildHasher>(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
-    body_keys: &std::collections::HashMap<BodyId, u64>,
+    body_keys: &std::collections::HashMap<BodyId, u64, S>,
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -143,7 +156,9 @@ fn decode_design_assignments(
             let Some(entity_id) = entity_id else {
                 continue;
             };
-            let entity_suffix = entity_suffix(&entity_id).unwrap();
+            let entity_suffix = entity_suffix(&entity_id).expect(
+                "invariant: entity_id was selected because entity_suffix(entity_id) is Some",
+            );
             let Some(ba5e_index) = strings
                 .iter()
                 .enumerate()
@@ -186,12 +201,12 @@ fn decode_design_assignments(
     Ok(out)
 }
 
-fn bind_bodies(
+fn bind_bodies<S: std::hash::BuildHasher>(
     appearances: &[Appearance],
     assignments: &[DesignAssignment],
     act_channels: &std::collections::HashMap<u64, BTreeMap<String, String>>,
     object_types: &std::collections::HashMap<u64, String>,
-    body_keys: &std::collections::HashMap<BodyId, u64>,
+    body_keys: &std::collections::HashMap<BodyId, u64, S>,
 ) -> Vec<AppearanceBinding> {
     assignments
         .iter()
@@ -250,14 +265,20 @@ fn decode_design_object_types(
             let Some(count_bytes) = bytes.get(after_type..after_type + 4) else {
                 break;
             };
-            let count = u32::from_le_bytes(count_bytes.try_into().unwrap()) as usize;
+            let count = u32::from_le_bytes(count_bytes.try_into().expect(
+                "invariant: count_bytes is a 4-byte slice from bytes.get(range) of length 4",
+            )) as usize;
             if count > 200 || after_type + 4 + count * 8 > bytes.len() {
                 position += 1;
                 continue;
             }
             for id_bytes in bytes[after_type + 4..after_type + 4 + count * 8].chunks_exact(8) {
                 out.insert(
-                    u64::from_le_bytes(id_bytes.try_into().unwrap()),
+                    u64::from_le_bytes(
+                        id_bytes
+                            .try_into()
+                            .expect("invariant: chunks_exact(8) yields 8-byte slices"),
+                    ),
                     object_type.clone(),
                 );
             }
@@ -293,7 +314,11 @@ fn decode_act_channels(
                 position += 1;
                 continue;
             }
-            let count = u32::from_le_bytes(header[14..18].try_into().unwrap()) as usize;
+            let count = u32::from_le_bytes(
+                header[14..18]
+                    .try_into()
+                    .expect("invariant: header is an 18-byte slice, so header[14..18] is 4 bytes"),
+            ) as usize;
             if !(1..=8).contains(&count) {
                 position += 1;
                 continue;
@@ -367,7 +392,11 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut offset = 0usize;
     while offset + 4 <= bytes.len() {
-        let count = u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+        let count = u32::from_le_bytes(
+            bytes[offset..offset + 4]
+                .try_into()
+                .expect("invariant: bytes[offset..offset+4] is a 4-byte slice"),
+        ) as usize;
         let byte_len = count.saturating_mul(2);
         if (2..=256).contains(&count) && offset + 4 + byte_len <= bytes.len() {
             let units: Vec<u16> = bytes[offset + 4..offset + 4 + byte_len]
@@ -395,23 +424,34 @@ fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, u64> {
         .enumerate()
         .filter_map(|(offset, window)| (window == needle).then_some(offset))
     {
-        let block_end = match offset.checked_sub(16) {
-            Some(value) => value,
-            None => continue,
+        let Some(block_end) = offset.checked_sub(16) else {
+            continue;
         };
         for count in 1usize..=64 {
             let Some(count_pos) = block_end.checked_sub(count * 16 + 4) else {
                 break;
             };
-            if u32::from_le_bytes(bytes[count_pos..count_pos + 4].try_into().unwrap()) as usize
+            if u32::from_le_bytes(
+                bytes[count_pos..count_pos + 4]
+                    .try_into()
+                    .expect("invariant: bytes[count_pos..count_pos+4] is a 4-byte slice"),
+            ) as usize
                 != count
             {
                 continue;
             }
             for pair in bytes[count_pos + 4..count_pos + 4 + count * 16].chunks_exact(16) {
                 out.insert(
-                    u64::from_le_bytes(pair[..8].try_into().unwrap()),
-                    u64::from_le_bytes(pair[8..].try_into().unwrap()),
+                    u64::from_le_bytes(
+                        pair[..8]
+                            .try_into()
+                            .expect("invariant: pair is a 16-byte slice, so pair[..8] is 8 bytes"),
+                    ),
+                    u64::from_le_bytes(
+                        pair[8..]
+                            .try_into()
+                            .expect("invariant: pair is a 16-byte slice, so pair[8..] is 8 bytes"),
+                    ),
                 );
             }
             break;
@@ -451,8 +491,11 @@ fn definition_catalog(
         let mut strings = Vec::new();
         let mut position = *start + marker.len();
         while position + 4 <= end && strings.len() < 8 {
-            let length =
-                u32::from_le_bytes(bytes[position..position + 4].try_into().unwrap()) as usize;
+            let length = u32::from_le_bytes(
+                bytes[position..position + 4]
+                    .try_into()
+                    .expect("invariant: bytes[position..position+4] is a 4-byte slice"),
+            ) as usize;
             if (1..=200).contains(&length) && position + 4 + length <= end {
                 let raw = &bytes[position + 4..position + 4 + length];
                 if raw.iter().all(|byte| (0x20..=0x7e).contains(byte)) {
@@ -638,13 +681,19 @@ fn generic_connection_delta(record: &[u8], value_block: usize) -> usize {
     match record.get(slot) {
         Some(0) => 0,
         Some(1) if slot + 6 <= record.len() => {
-            let count = u32::from_le_bytes(record[slot + 2..slot + 6].try_into().unwrap()) as usize;
+            let count = u32::from_le_bytes(
+                record[slot + 2..slot + 6]
+                    .try_into()
+                    .expect("invariant: record[slot+2..slot+6] is a 4-byte slice"),
+            ) as usize;
             let mut position = slot + 6;
             for _ in 0..count.min(8) {
                 let Some(length_bytes) = record.get(position..position + 4) else {
                     return 0;
                 };
-                let length = u32::from_le_bytes(length_bytes.try_into().unwrap()) as usize;
+                let length = u32::from_le_bytes(length_bytes.try_into().expect(
+                    "invariant: length_bytes is a 4-byte slice from bytes.get(range) of length 4",
+                )) as usize;
                 position += 4;
                 if record.get(position..position + length).is_none() {
                     return 0;
@@ -672,10 +721,13 @@ fn insert_scalar(
     offset: usize,
     range: std::ops::RangeInclusive<f64>,
 ) {
-    let Some(value) = bytes
-        .get(offset..offset + 8)
-        .map(|slice| f64::from_le_bytes(slice.try_into().unwrap()))
-    else {
+    let Some(value) = bytes.get(offset..offset + 8).map(|slice| {
+        f64::from_le_bytes(
+            slice
+                .try_into()
+                .expect("invariant: chunks_exact(8) yields 8-byte slices"),
+        )
+    }) else {
         return;
     };
     if value.is_finite() && range.contains(&value) {

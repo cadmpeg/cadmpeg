@@ -42,21 +42,27 @@ pub enum Sense {
     Reversed,
 }
 
-/// A top-level solid or sheet body.
+/// A top-level solid, sheet, wire, or general body.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BodyKind {
+    /// A closed, volume-bounding solid body.
     #[default]
     Solid,
+    /// An open, zero-thickness sheet body.
     Sheet,
+    /// A one-dimensional body composed of wires.
+    Wire,
+    /// A body containing mixed-dimensional topology.
+    General,
 }
 
-/// A top-level solid or sheet body.
+/// A top-level solid, sheet, wire, or general body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Body {
     /// Arena id.
     pub id: BodyId,
-    /// Whether the body encloses volume or represents an open sheet.
+    /// The dimensional kind of topology contained by the body.
     #[serde(default)]
     pub kind: BodyKind,
     /// Constituent lumps.
@@ -96,6 +102,12 @@ pub struct Shell {
     pub lump: LumpId,
     /// Faces of the shell.
     pub faces: Vec<FaceId>,
+    /// Edges belonging directly to a wire shell.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wire_edges: Vec<EdgeId>,
+    /// Vertices belonging directly to a shell and not bounding an edge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub free_vertices: Vec<VertexId>,
     /// Provenance/exactness metadata.
     pub meta: EntityMeta,
 }
@@ -119,6 +131,9 @@ pub struct Face {
     /// Optional display color.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<Color>,
+    /// Optional geometric tolerance in the document's length unit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tolerance: Option<f64>,
     /// Provenance/exactness metadata.
     pub meta: EntityMeta,
 }
@@ -156,6 +171,9 @@ pub struct Coedge {
     /// manifold at this edge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub partner: Option<CoedgeId>,
+    /// Next coedge around the edge for non-manifold radial adjacency.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radial_next: Option<CoedgeId>,
     /// Direction relative to the edge curve.
     pub sense: Sense,
     /// Optional parameter-space image of this coedge on the face surface.
@@ -181,6 +199,9 @@ pub struct Edge {
     /// Parameter range `[t_start, t_end]` on the curve, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub param_range: Option<[f64; 2]>,
+    /// Optional geometric tolerance in the document's length unit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tolerance: Option<f64>,
     /// Provenance/exactness metadata.
     pub meta: EntityMeta,
 }
@@ -192,6 +213,9 @@ pub struct Vertex {
     pub id: VertexId,
     /// Position carrier.
     pub point: PointId,
+    /// Optional geometric tolerance in the document's length unit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tolerance: Option<f64>,
     /// Provenance/exactness metadata.
     pub meta: EntityMeta,
 }

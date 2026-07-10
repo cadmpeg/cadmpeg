@@ -12,28 +12,39 @@ use crate::CadIr;
 /// A modified entity and its differing top-level fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct ModifiedEntity {
+    /// Diff key of the entity, as produced by the arena's key function.
     pub id: String,
+    /// Names of the top-level entity fields whose JSON-serialized values differ
+    /// between the two documents.
     pub fields: Vec<String>,
 }
 
 /// Changes within one entity arena.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct ArenaDiff {
+    /// Arena name, matching the field name in [`crate::CadIr`] (e.g. `"faces"`).
     pub kind: &'static str,
+    /// Diff keys of entities present only in the right-hand document.
     pub added: Vec<String>,
+    /// Diff keys of entities present only in the left-hand document.
     pub removed: Vec<String>,
+    /// Entities present in both documents with at least one differing field.
     pub modified: Vec<ModifiedEntity>,
 }
 
 /// Structural changes between two IR documents.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct IrDiff {
+    /// `(left, right)` units, present only when the two documents' units differ.
     pub unit_change: Option<(crate::units::Units, crate::units::Units)>,
+    /// `(left, right)` tolerances, present only when the two documents' tolerances differ.
     pub tolerance_change: Option<(crate::units::Tolerances, crate::units::Tolerances)>,
+    /// Per-arena diffs, one entry per arena compared.
     pub per_arena: Vec<ArenaDiff>,
 }
 
 impl IrDiff {
+    /// Returns `true` when neither units, tolerances, nor any arena differ.
     pub fn is_empty(&self) -> bool {
         self.unit_change.is_none()
             && self.tolerance_change.is_none()
@@ -93,174 +104,27 @@ where
     }
 }
 
+macro_rules! define_diff_arenas {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] => $key:expr; )*) => {
+        fn diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
+            vec![$(arena(
+                stringify!($field),
+                &left.$field,
+                &right.$field,
+                $key,
+            )),*]
+        }
+    };
+}
+crate::document::arena_registry!(define_diff_arenas);
+
 /// Compare units, tolerances, and every entity arena by stable entity ID.
 pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
     let unit_change =
         (left.units != right.units).then(|| (left.units.clone(), right.units.clone()));
     let tolerance_change =
         (left.tolerances != right.tolerances).then_some((left.tolerances, right.tolerances));
-    let per_arena = vec![
-        arena("bodies", &left.bodies, &right.bodies, |e| e.id.0.clone()),
-        arena("lumps", &left.lumps, &right.lumps, |e| e.id.0.clone()),
-        arena("shells", &left.shells, &right.shells, |e| e.id.0.clone()),
-        arena("faces", &left.faces, &right.faces, |e| e.id.0.clone()),
-        arena("loops", &left.loops, &right.loops, |e| e.id.0.clone()),
-        arena("coedges", &left.coedges, &right.coedges, |e| e.id.0.clone()),
-        arena("edges", &left.edges, &right.edges, |e| e.id.0.clone()),
-        arena("vertices", &left.vertices, &right.vertices, |e| {
-            e.id.0.clone()
-        }),
-        arena("points", &left.points, &right.points, |e| e.id.0.clone()),
-        arena("surfaces", &left.surfaces, &right.surfaces, |e| {
-            e.id.0.clone()
-        }),
-        arena("curves", &left.curves, &right.curves, |e| e.id.0.clone()),
-        arena("pcurves", &left.pcurves, &right.pcurves, |e| e.id.0.clone()),
-        arena(
-            "surface_parameterizations",
-            &left.surface_parameterizations,
-            &right.surface_parameterizations,
-            |e| e.surface.0.clone(),
-        ),
-        arena(
-            "procedural_surfaces",
-            &left.procedural_surfaces,
-            &right.procedural_surfaces,
-            |e| e.surface.0.clone(),
-        ),
-        arena(
-            "procedural_curves",
-            &left.procedural_curves,
-            &right.procedural_curves,
-            |e| e.curve.0.clone(),
-        ),
-        arena(
-            "sketch_curve_links",
-            &left.sketch_curve_links,
-            &right.sketch_curve_links,
-            |e| format!("{}:{}", e.coedge.0, e.sketch_curve_id),
-        ),
-        arena(
-            "persistent_design_links",
-            &left.persistent_design_links,
-            &right.persistent_design_links,
-            |e| format!("{:?}:{}:{}", e.target, e.design_id, e.ordinal),
-        ),
-        arena(
-            "construction_recipes",
-            &left.construction_recipes,
-            &right.construction_recipes,
-            |e| format!("{:?}:{:?}:{}", e.kind, e.design_id, e.recipe_index),
-        ),
-        arena(
-            "persistent_references",
-            &left.persistent_references,
-            &right.persistent_references,
-            |e| format!("{:?}:{}", e.kind, e.meta.provenance.offset),
-        ),
-        arena(
-            "lost_edge_references",
-            &left.lost_edge_references,
-            &right.lost_edge_references,
-            |e| format!("{}:{}", e.class_tag, e.record_index),
-        ),
-        arena(
-            "design_objects",
-            &left.design_objects,
-            &right.design_objects,
-            |e| e.self_guid.clone(),
-        ),
-        arena(
-            "design_entity_headers",
-            &left.design_entity_headers,
-            &right.design_entity_headers,
-            |e| format!("{}:{}", e.class_tag, e.entity_id),
-        ),
-        arena(
-            "design_record_headers",
-            &left.design_record_headers,
-            &right.design_record_headers,
-            |e| format!("{}:{}", e.record_index, e.class_tag),
-        ),
-        arena(
-            "sketch_relations",
-            &left.sketch_relations,
-            &right.sketch_relations,
-            |e| e.record_index.to_string(),
-        ),
-        arena(
-            "sketch_points",
-            &left.sketch_points,
-            &right.sketch_points,
-            |e| e.record_index.to_string(),
-        ),
-        arena(
-            "sketch_curve_identities",
-            &left.sketch_curve_identities,
-            &right.sketch_curve_identities,
-            |e| e.record_index.to_string(),
-        ),
-        arena(
-            "design_body_members",
-            &left.design_body_members,
-            &right.design_body_members,
-            |e| e.entity_suffix.to_string(),
-        ),
-        arena(
-            "act_entities",
-            &left.act_entities,
-            &right.act_entities,
-            |e| format!("{}:{}", e.record_index, e.entity_id),
-        ),
-        arena("act_guids", &left.act_guids, &right.act_guids, |e| {
-            format!("{}:{}", e.ordinal, e.guid)
-        }),
-        arena(
-            "act_root_components",
-            &left.act_root_components,
-            &right.act_root_components,
-            |e| format!("{}:{}", e.record_index, e.entity_id),
-        ),
-        arena(
-            "tessellations",
-            &left.tessellations,
-            &right.tessellations,
-            |e| e.id.clone(),
-        ),
-        arena(
-            "feature_histories",
-            &left.feature_histories,
-            &right.feature_histories,
-            |e| format!("{}:{}", e.meta.provenance.stream, e.meta.provenance.offset),
-        ),
-        arena(
-            "feature_input_lanes",
-            &left.feature_input_lanes,
-            &right.feature_input_lanes,
-            |e| e.id.clone(),
-        ),
-        arena(
-            "asm_histories",
-            &left.asm_histories,
-            &right.asm_histories,
-            |e| format!("{}:{}", e.meta.provenance.stream, e.meta.provenance.offset),
-        ),
-        arena("appearances", &left.appearances, &right.appearances, |e| {
-            e.id.0.clone()
-        }),
-        arena(
-            "appearance_bindings",
-            &left.appearance_bindings,
-            &right.appearance_bindings,
-            |e| format!("{:?}:{}", e.target, e.appearance.0),
-        ),
-        arena("attributes", &left.attributes, &right.attributes, |e| {
-            e.id.0.clone()
-        }),
-        arena("unknowns", &left.unknowns, &right.unknowns, |e| {
-            e.id.0.clone()
-        }),
-    ];
+    let per_arena = diff_arenas(left, right);
     IrDiff {
         unit_change,
         tolerance_change,
@@ -269,6 +133,7 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::diff;
     use crate::examples::unit_cube;

@@ -8,10 +8,10 @@
 
 #![no_main]
 
-use std::io::Cursor;
 use cadmpeg_codec_sldprt::SldprtCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use libfuzzer_sys::fuzz_target;
+use std::io::Cursor;
 
 fuzz_target!(|data: &[u8]| {
     let codec = SldprtCodec;

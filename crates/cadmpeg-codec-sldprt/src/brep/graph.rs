@@ -37,21 +37,46 @@ use crate::parasolid::StreamHeader;
 /// The decoded B-rep graph plus loss accounting.
 #[derive(Default)]
 pub struct Brep {
+    /// Top-level bodies grouped by disc17 UUID membership or single-shell
+    /// face-use rings, per §6.
     pub bodies: Vec<Body>,
+    /// Solid regions / sheet regions owned by each body.
     pub lumps: Vec<Lump>,
+    /// Shells owned by each lump.
     pub shells: Vec<Shell>,
+    /// Faces reached through `00 0e` bridges and their canonical face
+    /// records.
     pub faces: Vec<Face>,
+    /// Loops reached through `00 0f` loop heads.
     pub loops: Vec<Loop>,
+    /// Coedges from `00 11` records, ring-ordered by the walk.
     pub coedges: Vec<Coedge>,
+    /// Edges deduplicated from `00 10` edge-uses by endpoint pair, curve
+    /// kind, and curve-geometry fingerprint, per §4.1.
     pub edges: Vec<Edge>,
+    /// Vertices resolved from `00 12` vertex-uses and `00 1d` world points,
+    /// deduplicated by coordinate.
     pub vertices: Vec<Vertex>,
+    /// World points transferred from `00 1d` records, in metres.
     pub points: Vec<Point>,
+    /// Support surfaces: compact analytic carriers or `00 7c`/`00 7e`
+    /// B-spline surface carriers.
     pub surfaces: Vec<Surface>,
+    /// Per-face UV parameterization of each face's surface.
     pub surface_parameterizations: Vec<SurfaceParameterization>,
+    /// Support curves: compact analytic carriers or `00 86`/`00 88`
+    /// B-spline curve carriers.
     pub curves: Vec<Curve>,
+    /// Placeholder UV pcurves; the Parasolid stream grammar stores no 2D
+    /// pcurve control arrays, so pcurves are derived, not transferred (§7.2).
     pub pcurves: Vec<Pcurve>,
+    /// Records whose carrier kind this codec does not type, retained as
+    /// opaque payloads.
     pub unknowns: Vec<UnknownRecord>,
+    /// Per-face RGB colors resolved through the generation-specific route
+    /// (disc14 or disc15/33103), per §8.
     pub face_colors: Vec<entity::FaceColor>,
+    /// Loss accounting for this decode.
     pub stats: Stats,
 }
 
@@ -269,6 +294,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
         out.vertices.push(Vertex {
             id: VertexId(id_vertex(a)),
             point: PointId(id_point(point_attr)),
+            tolerance: None,
             meta: meta(rec.offset, "00_12", Exactness::ByteExact),
         });
     }
@@ -296,20 +322,28 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                 _ => out.stats.unknown_curve_edges += 1,
             }
         }
-        let off = eu.map(|r| r.offset).unwrap_or(0);
+        let off = eu.map_or(0, |r| r.offset);
         out.edges.push(Edge {
             id: EdgeId(id_edge(e)),
             curve,
             start: VertexId(id_vertex(start_v)),
             end: VertexId(id_vertex(end_v)),
             param_range: None,
+            tolerance: None,
             meta: meta(off, "00_10", Exactness::ByteExact),
         });
     }
     let edge_set: HashSet<u16> = out
         .edges
         .iter()
-        .map(|e| e.id.0.rsplit('#').next().unwrap().parse().unwrap())
+        .map(|e| {
+            e.id.0
+                .rsplit('#')
+                .next()
+                .expect("invariant: id_edge always emits a '#'-separated suffix")
+                .parse()
+                .expect("invariant: id_edge suffix is the u16 attr formatted with {}")
+        })
         .collect();
 
     // A loop is kept only when its whole ring resolves: every coedge exists and
@@ -363,6 +397,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                     next: CoedgeId(id_coedge(next)),
                     previous: CoedgeId(id_coedge(prev)),
                     partner,
+                    radial_next: None,
                     sense: sense_of(ce.marker.unwrap_or(0x2b)),
                     pcurve: None,
                     meta: meta(ce.offset, "00_11", Exactness::ByteExact),
@@ -378,7 +413,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                 continue;
             }
             let coedges: Vec<CoedgeId> = ring.iter().map(|a| CoedgeId(id_coedge(*a))).collect();
-            let off = t.loops.get(loop_attr).map(|r| r.offset).unwrap_or(0);
+            let off = t.loops.get(loop_attr).map_or(0, |r| r.offset);
             out.loops.push(Loop {
                 id: LoopId(id_loop(*loop_attr)),
                 face: FaceId(id_face(f.bridge_attr)),
@@ -413,7 +448,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             continue;
         }
         // Support surface: a decoded surface carrier, else an opaque carrier.
-        let surf_off = t.bridges.get(&f.bridge_attr).map(|r| r.offset).unwrap_or(0);
+        let surf_off = t.bridges.get(&f.bridge_attr).map_or(0, |r| r.offset);
         match carriers.get(&f.surface_attr).map(|c| (c, &c.geometry)) {
             Some((c, CarrierGeometry::Surface(geo))) => {
                 if c.single_sample {
@@ -450,13 +485,15 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                     .get(&f.bridge_attr)
                     .and_then(|group| body_records.get(*group))
                     .and_then(|record| record.shell)
-                    .map(|(attr, _)| format!("sldprt:shell#{attr}"))
-                    .unwrap_or_else(|| {
-                        format!(
-                            "sldprt:shell#{}",
-                            bridge_group.get(&f.bridge_attr).copied().unwrap_or(0)
-                        )
-                    }),
+                    .map_or_else(
+                        || {
+                            format!(
+                                "sldprt:shell#{}",
+                                bridge_group.get(&f.bridge_attr).copied().unwrap_or(0)
+                            )
+                        },
+                        |(attr, _)| format!("sldprt:shell#{attr}"),
+                    ),
             ),
             surface: SurfaceId(id_surf(f.bridge_attr)),
             sense: sense_of(f.marker),
@@ -472,6 +509,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                         .find(|entry| entry.face_attr == owner)
                 })
                 .map(|entry| entry.color),
+            tolerance: None,
             meta: meta(surf_off, "00_0e", Exactness::ByteExact),
         });
     }
@@ -510,17 +548,18 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
     };
     for group in 0..group_count {
         let body_record = body_records.get(group);
-        let body_id = body_record
-            .map(|r| format!("sldprt:body#{}", r.attr))
-            .unwrap_or_else(|| "sldprt:body#0".to_string());
-        let lump_id = body_record
-            .and_then(|record| record.lump)
-            .map(|(attr, _)| format!("sldprt:lump#{attr}"))
-            .unwrap_or_else(|| format!("sldprt:lump#{group}"));
-        let shell_id = body_record
-            .and_then(|record| record.shell)
-            .map(|(attr, _)| format!("sldprt:shell#{attr}"))
-            .unwrap_or_else(|| format!("sldprt:shell#{group}"));
+        let body_id = body_record.map_or_else(
+            || "sldprt:body#0".to_string(),
+            |r| format!("sldprt:body#{}", r.attr),
+        );
+        let lump_id = body_record.and_then(|record| record.lump).map_or_else(
+            || format!("sldprt:lump#{group}"),
+            |(attr, _)| format!("sldprt:lump#{attr}"),
+        );
+        let shell_id = body_record.and_then(|record| record.shell).map_or_else(
+            || format!("sldprt:shell#{group}"),
+            |(attr, _)| format!("sldprt:shell#{attr}"),
+        );
         let faces = out
             .faces
             .iter()
@@ -531,6 +570,8 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             id: ShellId(shell_id.clone()),
             lump: LumpId(lump_id.clone()),
             faces,
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
             meta: body_record
                 .and_then(|record| record.shell)
                 .map_or_else(synth, |(_, offset)| {
@@ -701,6 +742,7 @@ fn derive_cylindrical_pcurves(out: &mut Brep, stream: &str) {
             origin,
             axis,
             radius,
+            ..
         } = &surface.geometry
         else {
             continue;
@@ -845,6 +887,7 @@ fn derive_spherical_pcurves(out: &mut Brep, stream: &str) {
         let SurfaceGeometry::Sphere {
             center: sphere_center,
             radius,
+            ..
         } = &surface.geometry
         else {
             continue;
@@ -1259,6 +1302,7 @@ fn synthesize_cylinder_seams(out: &mut Brep, stream: &str) {
             start: vertex_a,
             end: vertex_b,
             param_range: Some([0.0, norm]),
+            tolerance: None,
             meta: derived("derived_periodic_seam"),
         });
         out.coedges.push(Coedge {
@@ -1268,6 +1312,7 @@ fn synthesize_cylinder_seams(out: &mut Brep, stream: &str) {
             next: circle_b.clone(),
             previous: circle_a.clone(),
             partner: Some(seam_b.clone()),
+            radial_next: None,
             sense: Sense::Forward,
             pcurve: None,
             meta: derived("derived_periodic_seam"),
@@ -1279,6 +1324,7 @@ fn synthesize_cylinder_seams(out: &mut Brep, stream: &str) {
             next: circle_a.clone(),
             previous: circle_b.clone(),
             partner: Some(seam_a.clone()),
+            radial_next: None,
             sense: Sense::Reversed,
             pcurve: None,
             meta: derived("derived_periodic_seam"),
@@ -1312,7 +1358,7 @@ fn synthesize_sphere_seams(out: &mut Brep, stream: &str) {
         else {
             continue;
         };
-        let SurfaceGeometry::Sphere { center, radius } = surface.geometry else {
+        let SurfaceGeometry::Sphere { center, radius, .. } = surface.geometry else {
             continue;
         };
         if face.loops.len() != 1 {
@@ -1382,6 +1428,7 @@ fn synthesize_sphere_seams(out: &mut Brep, stream: &str) {
         out.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
+            tolerance: None,
             meta: derived("derived_sphere_seam"),
         });
         out.edges.push(Edge {
@@ -1390,6 +1437,7 @@ fn synthesize_sphere_seams(out: &mut Brep, stream: &str) {
             start: vertex_id.clone(),
             end: vertex_id,
             param_range: None,
+            tolerance: None,
             meta: derived("derived_sphere_seam"),
         });
         ring.push(coedge_id.clone());
@@ -1400,6 +1448,7 @@ fn synthesize_sphere_seams(out: &mut Brep, stream: &str) {
             next: ring[0].clone(),
             previous: ring[2].clone(),
             partner: None,
+            radial_next: None,
             sense: Sense::Forward,
             pcurve: None,
             meta: derived("derived_sphere_seam"),

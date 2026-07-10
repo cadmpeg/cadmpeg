@@ -42,18 +42,54 @@ fn generate_sldprt_seeds() {
         ("empty", vec![]),
         ("just_header", sldprt::outer_header()),
         ("synthetic_sldprt", sldprt::synthetic_sldprt()),
-        ("triangle_body", sldprt::sldprt_with_body(&sldprt::triangle_body())),
-        ("triangle_overlapping_point", sldprt::sldprt_with_body(&sldprt::triangle_body_with_overlapping_point())),
-        ("closed_cylinder", sldprt::sldprt_with_body(&sldprt::closed_cylinder_body())),
-        ("with_material", sldprt::sldprt_with_body_and_material(&sldprt::triangle_body(), "Steel", [32, 64, 128])),
-        ("with_display_list", sldprt::sldprt_with_body_and_display_list(&sldprt::triangle_body())),
-        ("partition_and_deltas", sldprt::sldprt_with_partition_and_deltas(&sldprt::triangle_body())),
-        ("sheet_body", sldprt::sldprt_with_body(&sldprt::sheet_body())),
-        ("two_owned_triangles", sldprt::sldprt_with_body(&sldprt::two_owned_triangles())),
-        ("with_nurbs_curve", sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_curve())),
-        ("with_nurbs_surface", sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_surface())),
-        ("face_on_untyped_surface", sldprt::sldprt_with_body(&sldprt::face_on_untyped_surface())),
-        ("with_line_curve", sldprt::sldprt_with_body(&sldprt::triangle_with_line_curve())),
+        (
+            "triangle_body",
+            sldprt::sldprt_with_body(&sldprt::triangle_body()),
+        ),
+        (
+            "triangle_overlapping_point",
+            sldprt::sldprt_with_body(&sldprt::triangle_body_with_overlapping_point()),
+        ),
+        (
+            "closed_cylinder",
+            sldprt::sldprt_with_body(&sldprt::closed_cylinder_body()),
+        ),
+        (
+            "with_material",
+            sldprt::sldprt_with_body_and_material(&sldprt::triangle_body(), "Steel", [32, 64, 128]),
+        ),
+        (
+            "with_display_list",
+            sldprt::sldprt_with_body_and_display_list(&sldprt::triangle_body()),
+        ),
+        (
+            "partition_and_deltas",
+            sldprt::sldprt_with_partition_and_deltas(&sldprt::triangle_body()),
+        ),
+        (
+            "sheet_body",
+            sldprt::sldprt_with_body(&sldprt::sheet_body()),
+        ),
+        (
+            "two_owned_triangles",
+            sldprt::sldprt_with_body(&sldprt::two_owned_triangles()),
+        ),
+        (
+            "with_nurbs_curve",
+            sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_curve()),
+        ),
+        (
+            "with_nurbs_surface",
+            sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_surface()),
+        ),
+        (
+            "face_on_untyped_surface",
+            sldprt::sldprt_with_body(&sldprt::face_on_untyped_surface()),
+        ),
+        (
+            "with_line_curve",
+            sldprt::sldprt_with_body(&sldprt::triangle_with_line_curve()),
+        ),
     ];
 
     for (name, data) in seeds {
@@ -68,7 +104,9 @@ mod sldprt {
     pub const MARKER: [u8; 4] = [0x9e, 0x14, 0x01, 0x00];
     const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
-    fn swap_name(name: &str) -> Vec<u8> { name.bytes().map(|b| b.rotate_left(4)).collect() }
+    fn swap_name(name: &str) -> Vec<u8> {
+        name.bytes().map(|b| b.rotate_left(4)).collect()
+    }
     fn raw_deflate(data: &[u8]) -> Vec<u8> {
         let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
         enc.write_all(data).unwrap();
@@ -149,8 +187,16 @@ mod sldprt {
 
     pub fn synthetic_sldprt() -> Vec<u8> {
         let mut f = outer_header();
-        f.extend_from_slice(&make_block(0x10, "PreviewPNG", &[0x89, b'P', b'N', b'G', 1, 2, 3, 4]));
-        f.extend_from_slice(&make_block(0x20, "Contents/Config-0-Partition", &parasolid_payload("partition body", "SCH_SW_33103_11000")));
+        f.extend_from_slice(&make_block(
+            0x10,
+            "PreviewPNG",
+            &[0x89, b'P', b'N', b'G', 1, 2, 3, 4],
+        ));
+        f.extend_from_slice(&make_block(
+            0x20,
+            "Contents/Config-0-Partition",
+            &parasolid_payload("partition body", "SCH_SW_33103_11000"),
+        ));
         f.extend_from_slice(&make_cache_cell(90, "Contents/DisplayLists"));
         f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml"));
         f
@@ -158,7 +204,11 @@ mod sldprt {
 
     pub fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
         let mut f = outer_header();
-        f.extend_from_slice(&make_block(0x20, "Contents/Config-0-Partition", &parasolid_with_body("partition body", "SCH_SW_33103_11000", body)));
+        f.extend_from_slice(&make_block(
+            0x20,
+            "Contents/Config-0-Partition",
+            &parasolid_with_body("partition body", "SCH_SW_33103_11000", body),
+        ));
         f
     }
 
@@ -206,28 +256,50 @@ mod sldprt {
 
     pub fn sldprt_with_body_and_display_list(body: &[u8]) -> Vec<u8> {
         let mut f = sldprt_with_body(body);
-        f.extend(make_block(0x41, "Contents/DisplayLists", &display_list_payload()));
+        f.extend(make_block(
+            0x41,
+            "Contents/DisplayLists",
+            &display_list_payload(),
+        ));
         f
     }
 
     pub fn sldprt_with_partition_and_deltas(partition: &[u8]) -> Vec<u8> {
         let mut f = outer_header();
-        f.extend_from_slice(&make_block(0x20, "Contents/Config-0-Partition", &parasolid_with_body("partition body", "SCH_SW_33103_11000", partition)));
-        f.extend_from_slice(&make_block(0x21, "Contents/Config-0-Deltas", &parasolid_with_body("deltas body", "SCH_SW_33103_11000", &[])));
+        f.extend_from_slice(&make_block(
+            0x20,
+            "Contents/Config-0-Partition",
+            &parasolid_with_body("partition body", "SCH_SW_33103_11000", partition),
+        ));
+        f.extend_from_slice(&make_block(
+            0x21,
+            "Contents/Config-0-Deltas",
+            &parasolid_with_body("deltas body", "SCH_SW_33103_11000", &[]),
+        ));
         f
     }
 
-    fn be16(b: &mut Vec<u8>, v: u16) { b.extend_from_slice(&v.to_be_bytes()); }
-    fn be32(b: &mut Vec<u8>, v: u32) { b.extend_from_slice(&v.to_be_bytes()); }
-    fn bef64(b: &mut Vec<u8>, v: f64) { b.extend_from_slice(&v.to_be_bytes()); }
+    fn be16(b: &mut Vec<u8>, v: u16) {
+        b.extend_from_slice(&v.to_be_bytes());
+    }
+    fn be32(b: &mut Vec<u8>, v: u32) {
+        b.extend_from_slice(&v.to_be_bytes());
+    }
+    fn bef64(b: &mut Vec<u8>, v: f64) {
+        b.extend_from_slice(&v.to_be_bytes());
+    }
 
     fn plane_carrier(attr: u16, origin: [f64; 3], normal: [f64; 3], refdir: [f64; 3]) -> Vec<u8> {
         let mut b = vec![0x00, 0x32];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for _ in 0..5 { be16(&mut b, 0); }
+        for _ in 0..5 {
+            be16(&mut b, 0);
+        }
         b.push(0x2b);
-        for v in origin.into_iter().chain(normal).chain(refdir) { bef64(&mut b, v); }
+        for v in origin.into_iter().chain(normal).chain(refdir) {
+            bef64(&mut b, v);
+        }
         b
     }
 
@@ -235,9 +307,13 @@ mod sldprt {
         let mut b = vec![0x00, 0x1e];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for _ in 0..5 { be16(&mut b, 0); }
+        for _ in 0..5 {
+            be16(&mut b, 0);
+        }
         b.push(0x2b);
-        for v in point.into_iter().chain(dir) { bef64(&mut b, v); }
+        for v in point.into_iter().chain(dir) {
+            bef64(&mut b, v);
+        }
         b
     }
 
@@ -245,9 +321,17 @@ mod sldprt {
         let mut b = vec![0x00, 0x33];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for _ in 0..5 { be16(&mut b, 0); }
+        for _ in 0..5 {
+            be16(&mut b, 0);
+        }
         b.push(0x2b);
-        for value in origin.into_iter().chain(axis).chain([radius, 1.0, 0.0, 0.0]) { bef64(&mut b, value); }
+        for value in origin
+            .into_iter()
+            .chain(axis)
+            .chain([radius, 1.0, 0.0, 0.0])
+        {
+            bef64(&mut b, value);
+        }
         b
     }
 
@@ -255,9 +339,17 @@ mod sldprt {
         let mut b = vec![0x00, 0x1f];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for _ in 0..5 { be16(&mut b, 0); }
+        for _ in 0..5 {
+            be16(&mut b, 0);
+        }
         b.push(0x2b);
-        for value in center.into_iter().chain(axis).chain([1.0, 0.0, 0.0, radius]) { bef64(&mut b, value); }
+        for value in center
+            .into_iter()
+            .chain(axis)
+            .chain([1.0, 0.0, 0.0, radius])
+        {
+            bef64(&mut b, value);
+        }
         b
     }
 
@@ -267,7 +359,9 @@ mod sldprt {
         be32(&mut b, 0);
         be16(&mut b, 0);
         b.extend_from_slice(&MAGIC);
-        for r in [0u16, 0, loop_attr, 0, surface_attr] { be16(&mut b, r); }
+        for r in [0u16, 0, loop_attr, 0, surface_attr] {
+            be16(&mut b, r);
+        }
         b.push(0x2b);
         b.extend_from_slice(&[0u8; 10]);
         b
@@ -283,14 +377,26 @@ mod sldprt {
         let mut b = vec![0x00, 0x0f];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for r in [0u16, first_coedge, bridge_attr, 0] { be16(&mut b, r); }
+        for r in [0u16, first_coedge, bridge_attr, 0] {
+            be16(&mut b, r);
+        }
         b
     }
 
-    fn coedge(attr: u16, owner_loop: u16, next: u16, start_vuse: u16, twin: u16, edge_use: u16, reversed: bool) -> Vec<u8> {
+    fn coedge(
+        attr: u16,
+        owner_loop: u16,
+        next: u16,
+        start_vuse: u16,
+        twin: u16,
+        edge_use: u16,
+        reversed: bool,
+    ) -> Vec<u8> {
         let mut b = vec![0x00, 0x11];
         be16(&mut b, attr);
-        for r in [0u16, owner_loop, 0, next, start_vuse, twin, edge_use, 0, 0] { be16(&mut b, r); }
+        for r in [0u16, owner_loop, 0, next, start_vuse, twin, edge_use, 0, 0] {
+            be16(&mut b, r);
+        }
         b.push(if reversed { 0x2d } else { 0x2b });
         b
     }
@@ -301,7 +407,9 @@ mod sldprt {
         be32(&mut b, 0);
         be16(&mut b, 0);
         b.extend_from_slice(&MAGIC);
-        for r in [0u16, 0, 0, curve_attr, 0, 0] { be16(&mut b, r); }
+        for r in [0u16, 0, 0, curve_attr, 0, 0] {
+            be16(&mut b, r);
+        }
         b
     }
 
@@ -309,7 +417,9 @@ mod sldprt {
         let mut b = vec![0x00, 0x12];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for r in [0u16, 0, 0, 0, point_attr] { be16(&mut b, r); }
+        for r in [0u16, 0, 0, 0, point_attr] {
+            be16(&mut b, r);
+        }
         b.extend_from_slice(&MAGIC);
         b
     }
@@ -318,8 +428,12 @@ mod sldprt {
         let mut b = vec![0x00, 0x1d];
         be16(&mut b, attr);
         be32(&mut b, 0);
-        for _ in 0..4 { be16(&mut b, 0); }
-        for v in xyz { bef64(&mut b, v); }
+        for _ in 0..4 {
+            be16(&mut b, 0);
+        }
+        for v in xyz {
+            bef64(&mut b, v);
+        }
         b
     }
 
@@ -329,13 +443,20 @@ mod sldprt {
         be16(&mut b, attr);
         be32(&mut b, 1);
         be16(&mut b, disc);
-        for slot in slots { be16(&mut b, *slot); }
+        for slot in slots {
+            be16(&mut b, *slot);
+        }
         b
     }
 
     pub fn triangle_body() -> Vec<u8> {
         let mut b = Vec::new();
-        b.extend(plane_carrier(100, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]));
+        b.extend(plane_carrier(
+            100,
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ));
         b.extend(bridge(10, 20, 100));
         b.extend(loop_head(20, 30, 10));
         b.extend(coedge(30, 20, 31, 50, 0, 40, false));
@@ -355,7 +476,12 @@ mod sldprt {
 
     pub fn triangle_body_with_overlapping_point() -> Vec<u8> {
         let mut b = Vec::new();
-        b.extend(plane_carrier(100, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]));
+        b.extend(plane_carrier(
+            100,
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ));
         let mut face_bridge = bridge(10, 20, 100);
         face_bridge.splice(31..31, world_point(60, [0.0, 0.0, 0.0]));
         b.extend(face_bridge);
@@ -401,9 +527,14 @@ mod sldprt {
         body.extend(entity51(2, 501, 0x0017, &[511, 701, 0, 0, 0, 0]));
         body.extend(entity51(1, 510, 0x001b, &[700, 0, 0, 0, 0, 0]));
         body.extend(entity51(1, 511, 0x001d, &[701, 0, 0, 0, 0, 0]));
-        
+
         let mut tri1 = Vec::new();
-        tri1.extend(plane_carrier(100, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]));
+        tri1.extend(plane_carrier(
+            100,
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ));
         tri1.extend(bridge_owned(10, 20, 100, 700));
         tri1.extend(loop_head(20, 30, 10));
         tri1.extend(coedge(30, 20, 31, 50, 0, 40, false));
@@ -419,9 +550,14 @@ mod sldprt {
         tri1.extend(world_point(61, [1.0, 0.0, 0.0]));
         tri1.extend(world_point(62, [0.0, 1.0, 0.0]));
         body.extend(tri1);
-        
+
         let mut tri2 = Vec::new();
-        tri2.extend(plane_carrier(200, [10.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]));
+        tri2.extend(plane_carrier(
+            200,
+            [10.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ));
         tri2.extend(bridge_owned(210, 220, 200, 701));
         tri2.extend(loop_head(220, 230, 210));
         tri2.extend(coedge(230, 220, 231, 250, 0, 240, false));
@@ -437,7 +573,7 @@ mod sldprt {
         tri2.extend(world_point(261, [11.0, 0.0, 0.0]));
         tri2.extend(world_point(262, [10.0, 1.0, 0.0]));
         body.extend(tri2);
-        
+
         body
     }
 
@@ -445,9 +581,14 @@ mod sldprt {
         let mut body = Vec::new();
         body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
         body.extend(entity51(2, 501, 0x0017, &[701, 0, 0, 0, 0, 0]));
-        
+
         let mut tri1 = Vec::new();
-        tri1.extend(plane_carrier(100, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]));
+        tri1.extend(plane_carrier(
+            100,
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ));
         tri1.extend(bridge_owned(10, 20, 100, 700));
         tri1.extend(loop_head(20, 30, 10));
         tri1.extend(coedge(30, 20, 31, 50, 0, 40, false));
@@ -463,9 +604,14 @@ mod sldprt {
         tri1.extend(world_point(61, [1.0, 0.0, 0.0]));
         tri1.extend(world_point(62, [0.0, 1.0, 0.0]));
         body.extend(tri1);
-        
+
         let mut tri2 = Vec::new();
-        tri2.extend(plane_carrier(300, [10.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]));
+        tri2.extend(plane_carrier(
+            300,
+            [10.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ));
         tri2.extend(bridge_owned(310, 320, 300, 701));
         tri2.extend(loop_head(320, 330, 310));
         tri2.extend(coedge(330, 320, 331, 350, 0, 340, false));
@@ -481,7 +627,7 @@ mod sldprt {
         tri2.extend(world_point(361, [11.0, 0.0, 0.0]));
         tri2.extend(world_point(362, [10.0, 1.0, 0.0]));
         body.extend(tri2);
-        
+
         body
     }
 
@@ -489,7 +635,9 @@ mod sldprt {
         let mut b = vec![0x00, tag, 0x2b];
         be32(&mut b, values.len() as u32);
         be16(&mut b, attr);
-        for value in values { bef64(&mut b, *value); }
+        for value in values {
+            bef64(&mut b, *value);
+        }
         b
     }
 
@@ -497,19 +645,21 @@ mod sldprt {
         let mut b = vec![0x00, 0x7f, 0x2b];
         be32(&mut b, values.len() as u32);
         be16(&mut b, attr);
-        for value in values { be16(&mut b, *value); }
+        for value in values {
+            be16(&mut b, *value);
+        }
         b
     }
 
     pub fn triangle_with_nurbs_curve() -> Vec<u8> {
         let mut body = triangle_body();
-        
+
         let wrapper_attr = 170u16;
         let descriptor_attr = 171u16;
         let control_attr = descriptor_attr + 1;
         let mult_attr = descriptor_attr + 2;
         let knot_attr = descriptor_attr + 3;
-        
+
         let mut b = vec![0x00, 0x86];
         be16(&mut b, wrapper_attr);
         be16(&mut b, descriptor_attr);
@@ -525,20 +675,24 @@ mod sldprt {
         be16(&mut b, control_attr);
         be16(&mut b, mult_attr);
         be16(&mut b, knot_attr);
-        b.extend(f64_array(0x2d, control_attr, &[0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 1.0, 0.0, 0.0]));
+        b.extend(f64_array(
+            0x2d,
+            control_attr,
+            &[0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 1.0, 0.0, 0.0],
+        ));
         b.extend(u16_array(mult_attr, &[3, 3]));
         b.extend(f64_array(0x80, knot_attr, &[0.0, 1.0]));
         body.extend(b);
-        
+
         let edge = body.windows(2).position(|w| w == [0x00, 0x10]).unwrap();
         body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
-        
+
         body
     }
 
     pub fn triangle_with_nurbs_surface() -> Vec<u8> {
         let mut body = triangle_body();
-        
+
         let wrapper_attr = 180u16;
         let descriptor_attr = 181u16;
         let bridge_attr = 10u16;
@@ -547,28 +701,42 @@ mod sldprt {
         let v_mult_attr = descriptor_attr + 3;
         let u_knot_attr = descriptor_attr + 4;
         let v_knot_attr = descriptor_attr + 5;
-        
+
         let mut b = vec![0x00, 0x7c];
         be16(&mut b, wrapper_attr);
         be32(&mut b, 1);
-        for reference in [0, bridge_attr, 0, 0, 0] { be16(&mut b, reference); }
+        for reference in [0, bridge_attr, 0, 0, 0] {
+            be16(&mut b, reference);
+        }
         b.push(0x2b);
         be16(&mut b, descriptor_attr);
         be16(&mut b, 0);
         b.extend_from_slice(&[0x00, 0x7e]);
         be16(&mut b, descriptor_attr);
         b.extend_from_slice(&[0u8; 12]);
-        for reference in [control_attr, u_mult_attr, v_mult_attr, u_knot_attr, v_knot_attr] { be16(&mut b, reference); }
-        b.extend(f64_array(0x2d, control_attr, &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5]));
+        for reference in [
+            control_attr,
+            u_mult_attr,
+            v_mult_attr,
+            u_knot_attr,
+            v_knot_attr,
+        ] {
+            be16(&mut b, reference);
+        }
+        b.extend(f64_array(
+            0x2d,
+            control_attr,
+            &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5],
+        ));
         b.extend(u16_array(u_mult_attr, &[2, 2]));
         b.extend(u16_array(v_mult_attr, &[2, 2]));
         b.extend(f64_array(0x80, u_knot_attr, &[0.0, 1.0]));
         b.extend(f64_array(0x80, v_knot_attr, &[0.0, 1.0]));
         body.extend(b);
-        
+
         let bridge = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
         body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
-        
+
         body
     }
 
@@ -612,7 +780,10 @@ fn generate_catia_seeds() {
         ("empty", vec![]),
         ("just_magic", catia::outer_magic()),
         ("zero_entity", catia::zero_entity_catpart()),
-        ("zero_entity_cylinder", catia::zero_entity_cylinder_catpart()),
+        (
+            "zero_entity_cylinder",
+            catia::zero_entity_cylinder_catpart(),
+        ),
         ("zero_entity_nurbs", catia::zero_entity_nurbs_catpart()),
         ("standard_nested", catia::standard_catpart()),
         ("e5_circle", catia::e5_catpart()),
@@ -628,20 +799,34 @@ mod catia {
     const OUTER_MAGIC: &[u8; 8] = b"V5_CFV2\0";
     const DIR_MAGIC: &[u8; 16] = b"CATIA_V5 CB0001\0";
 
-    pub fn outer_magic() -> Vec<u8> { OUTER_MAGIC.to_vec() }
+    pub fn outer_magic() -> Vec<u8> {
+        OUTER_MAGIC.to_vec()
+    }
 
-    fn be32(v: u32) -> [u8; 4] { v.to_be_bytes() }
-    fn le_f32(v: f32) -> [u8; 4] { v.to_le_bytes() }
-    fn le_f64(v: f64) -> [u8; 8] { v.to_le_bytes() }
-    fn be_f32(v: f32) -> [u8; 4] { v.to_be_bytes() }
+    fn be32(v: u32) -> [u8; 4] {
+        v.to_be_bytes()
+    }
+    fn le_f32(v: f32) -> [u8; 4] {
+        v.to_le_bytes()
+    }
+    fn le_f64(v: f64) -> [u8; 8] {
+        v.to_le_bytes()
+    }
+    fn be_f32(v: f32) -> [u8; 4] {
+        v.to_be_bytes()
+    }
 
     fn main_stream() -> Vec<u8> {
         let mut b = Vec::new();
-        for _ in 0..2 { b.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]); }
+        for _ in 0..2 {
+            b.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
+        }
         b.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
         for xyz in [[0.0f32, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0]] {
             b.extend_from_slice(&[0x05, 0x08, 0x01]);
-            for v in xyz { b.extend_from_slice(&le_f32(v)); }
+            for v in xyz {
+                b.extend_from_slice(&le_f32(v));
+            }
         }
         b
     }
@@ -652,7 +837,9 @@ mod catia {
         b.push(0x00);
         b.push(0x1a);
         b.extend_from_slice(&[0x00, 0x33, 0x33]);
-        for v in [0.0f32, 0.0, 0.0, 0.0, 0.0, 5.0] { b.extend_from_slice(&be_f32(v)); }
+        for v in [0.0f32, 0.0, 0.0, 0.0, 0.0, 5.0] {
+            b.extend_from_slice(&be_f32(v));
+        }
         b
     }
 
@@ -660,7 +847,11 @@ mod catia {
         let mut b = vec![0u8; 0x54];
         b[0x0c..0x10].copy_from_slice(&be32(phys_len));
         let mut np = 0x10;
-        for ch in name.chars() { b[np] = ch as u8; b[np + 1] = 0x00; np += 2; }
+        for ch in name.chars() {
+            b[np] = ch as u8;
+            b[np + 1] = 0x00;
+            np += 2;
+        }
         b[0x50..0x54].copy_from_slice(&be32(1));
         b.extend_from_slice(&be32(phys_off));
         b.extend_from_slice(&be32(phys_len));
@@ -706,7 +897,9 @@ mod catia {
         f.extend_from_slice(OUTER_MAGIC);
         f.extend_from_slice(&be32(0));
         f.extend_from_slice(&be32(0));
-        for _ in 0..5 { f.extend_from_slice(&[0xa9, 0x03, 0x10, 0x00, 0, 0, 0, 0, 0, 0, 0, 0]); }
+        for _ in 0..5 {
+            f.extend_from_slice(&[0xa9, 0x03, 0x10, 0x00, 0, 0, 0, 0, 0, 0, 0, 0]);
+        }
         f
     }
 
@@ -720,7 +913,14 @@ mod catia {
         let write = |payload: &mut [u8], at: usize, value: f64| {
             payload[at..at + 8].copy_from_slice(&le_f64(value));
         };
-        for (at, value) in [(8, 1.0), (16, 2.0), (24, 3.0), (33, 1.0), (65, 1.0), (81, 4.0)] {
+        for (at, value) in [
+            (8, 1.0),
+            (16, 2.0),
+            (24, 3.0),
+            (33, 1.0),
+            (65, 1.0),
+            (81, 4.0),
+        ] {
             write(&mut payload, at, value);
         }
         f.extend_from_slice(&payload);
@@ -765,7 +965,14 @@ mod catia {
         let write = |record: &mut [u8], at: usize, value: f64| {
             record[at..at + 8].copy_from_slice(&le_f64(value));
         };
-        for (at, value) in [(14, 10.0), (22, 20.0), (30, 30.0), (38, 1.0), (70, 1.0), (86, 2.5)] {
+        for (at, value) in [
+            (14, 10.0),
+            (22, 20.0),
+            (30, 30.0),
+            (38, 1.0),
+            (70, 1.0),
+            (86, 2.5),
+        ] {
             write(&mut record, at, value);
         }
         record
@@ -824,7 +1031,9 @@ fn generate_creo_seeds() {
 }
 
 mod creo {
-    pub fn just_magic() -> Vec<u8> { b"#UGC:2 P test\n".to_vec() }
+    pub fn just_magic() -> Vec<u8> {
+        b"#UGC:2 P test\n".to_vec()
+    }
 
     fn build_prt(version: &str, sections: &[(&str, Vec<u8>)]) -> Vec<u8> {
         let mut out = Vec::new();
@@ -854,10 +1063,21 @@ mod creo {
         p
     }
 
-    pub fn minimal_prt() -> Vec<u8> { build_prt("c", &[("VisibGeom", vec![0x00])]) }
-    pub fn with_visibgeom() -> Vec<u8> { build_prt("c", &[("VisibGeom", visibgeom_payload(5, 12))]) }
-    pub fn nd_layout() -> Vec<u8> { build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(3, 4))]) }
-    pub fn depdb_layout() -> Vec<u8> { build_prt("c", &[("VisibGeom", vec![0x00]), ("DEPDB_DATA", vec![0x00, 0x01])]) }
+    pub fn minimal_prt() -> Vec<u8> {
+        build_prt("c", &[("VisibGeom", vec![0x00])])
+    }
+    pub fn with_visibgeom() -> Vec<u8> {
+        build_prt("c", &[("VisibGeom", visibgeom_payload(5, 12))])
+    }
+    pub fn nd_layout() -> Vec<u8> {
+        build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(3, 4))])
+    }
+    pub fn depdb_layout() -> Vec<u8> {
+        build_prt(
+            "c",
+            &[("VisibGeom", vec![0x00]), ("DEPDB_DATA", vec![0x00, 0x01])],
+        )
+    }
 
     pub fn with_surface_rows() -> Vec<u8> {
         let mut payload = visibgeom_payload(2, 0);
@@ -903,15 +1123,23 @@ mod nx {
 
     const MAGIC: &[u8; 8] = b"SPLMSSTR";
 
-    fn be_f64(v: f64) -> [u8; 8] { v.to_be_bytes() }
-
-    fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
-        for (i, v) in xyz.iter().enumerate() { rec[at + 8 * i..at + 8 * i + 8].copy_from_slice(&be_f64(*v)); }
+    fn be_f64(v: f64) -> [u8; 8] {
+        v.to_be_bytes()
     }
 
-    fn put_f64(rec: &mut [u8], at: usize, v: f64) { rec[at..at + 8].copy_from_slice(&be_f64(v)); }
+    fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
+        for (i, v) in xyz.iter().enumerate() {
+            rec[at + 8 * i..at + 8 * i + 8].copy_from_slice(&be_f64(*v));
+        }
+    }
 
-    fn put_ref(rec: &mut [u8], at: usize, value: u16) { rec[at..at + 2].copy_from_slice(&value.to_be_bytes()); }
+    fn put_f64(rec: &mut [u8], at: usize, v: f64) {
+        rec[at..at + 8].copy_from_slice(&be_f64(v));
+    }
+
+    fn put_ref(rec: &mut [u8], at: usize, value: u16) {
+        rec[at..at + 2].copy_from_slice(&value.to_be_bytes());
+    }
 
     fn record(tag: u8, len: usize) -> Vec<u8> {
         let mut r = vec![0u8; len];
@@ -923,7 +1151,9 @@ mod nx {
     fn partition_stream() -> Vec<u8> {
         let mut s = Vec::new();
         s.extend_from_slice(b"PS\x00\x00");
-        s.extend_from_slice(b"XX: TRANSMIT FILE (partition) created by modeller version 3400176\x00");
+        s.extend_from_slice(
+            b"XX: TRANSMIT FILE (partition) created by modeller version 3400176\x00",
+        );
         s.extend_from_slice(b"SCH_TEST_1_9999\x00");
 
         let mut pt = record(0x1d, 40);
@@ -953,7 +1183,9 @@ mod nx {
     fn topology_partition_stream() -> Vec<u8> {
         let mut s = Vec::new();
         s.extend_from_slice(b"PS\x00\x00");
-        s.extend_from_slice(b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00");
+        s.extend_from_slice(
+            b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
+        );
 
         let mut body = record(12, 24);
         put_ref(&mut body, 2, 2);
@@ -1053,7 +1285,12 @@ mod nx {
         put_ref(&mut data, 2, 21);
         data[90] = b'+';
         data[91..95].copy_from_slice(&12u32.to_be_bytes());
-        for (index, value) in [0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.01, 0.0, 0.0, 0.01, 0.02, 0.0].into_iter().enumerate() {
+        for (index, value) in [
+            0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.01, 0.0, 0.0, 0.01, 0.02, 0.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
             put_f64(&mut data, 97 + index * 8, value);
         }
         s.extend(data);
@@ -1062,7 +1299,9 @@ mod nx {
             let mut array = record(tag, 8 + values.len() * 2);
             array[4..6].copy_from_slice(&(values.len() as u16).to_be_bytes());
             put_ref(&mut array, 6, reference);
-            for (index, value) in values.into_iter().enumerate() { put_ref(&mut array, 8 + index * 2, value); }
+            for (index, value) in values.into_iter().enumerate() {
+                put_ref(&mut array, 8 + index * 2, value);
+            }
             s.extend(array);
         }
         for reference in [32, 33] {
@@ -1118,7 +1357,9 @@ mod nx {
         e.finish().unwrap()
     }
 
-    pub fn just_magic() -> Vec<u8> { MAGIC.to_vec() }
+    pub fn just_magic() -> Vec<u8> {
+        MAGIC.to_vec()
+    }
 
     pub fn single_part_prt() -> Vec<u8> {
         let mut f = Vec::new();
@@ -1144,8 +1385,12 @@ mod nx {
         f
     }
 
-    pub fn topology_part_prt() -> Vec<u8> { prt_with_partition(&topology_partition_stream()) }
-    pub fn bspline_part_prt() -> Vec<u8> { prt_with_partition(&bspline_partition_stream()) }
+    pub fn topology_part_prt() -> Vec<u8> {
+        prt_with_partition(&topology_partition_stream())
+    }
+    pub fn bspline_part_prt() -> Vec<u8> {
+        prt_with_partition(&bspline_partition_stream())
+    }
 
     fn prt_with_partition(stream: &[u8]) -> Vec<u8> {
         let mut f = single_part_prt();

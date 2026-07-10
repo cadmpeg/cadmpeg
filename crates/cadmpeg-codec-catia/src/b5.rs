@@ -5,85 +5,170 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
 
+/// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
+/// surfaces bound through the in-stream `object_id` map (spec §6.6),
+/// together with the `05 08 01` vertex points used to bind edge endpoints.
 #[derive(Debug, Clone, PartialEq)]
 pub struct B5Graph {
+    /// Every `b5 03` record found in the stream, in walk order, including
+    /// records not otherwise resolved into `faces`/`loops`/etc.
     pub records: Vec<B5Record>,
+    /// `b5 03 5f` face nodes, in stream declaration order (equal to STEP
+    /// `ADVANCED_FACE` order, spec §6.6).
     pub faces: Vec<B5Face>,
+    /// `b5 03 62` loop nodes, keyed by `object_id`.
     pub loops: BTreeMap<u32, B5Loop>,
+    /// `b5 03 21` pcurve nodes, keyed by `object_id`.
     pub pcurves: BTreeMap<u32, B5Pcurve>,
+    /// `b5 03 27/28/2d` analytic surface nodes and `a8 03 34` NURBS
+    /// surfaces, keyed by `object_id`.
     pub surfaces: BTreeMap<u32, B5Surface>,
+    /// World-frame `05 08 01` vertex coordinates, in stream order.
     pub vertex_points: Vec<[f64; 3]>,
+    /// Per-edge pair of indices into `vertex_points`, resolved by lifting
+    /// each edge's pcurve endpoints through its surface and matching them
+    /// to a unique vertex point.
     pub edge_vertices: BTreeMap<u32, [usize; 2]>,
+    /// `b5 03 0e`/`0f` line and arc profile curves, keyed by `object_id`;
+    /// referenced by `B5Surface::Revolution::profile_curve`.
     pub profiles: BTreeMap<u32, B5Profile>,
 }
 
+/// A profile curve swept by a `b5 03 2d` surface of revolution.
 #[derive(Debug, Clone, PartialEq)]
 pub enum B5Profile {
+    /// `b5 03 0e`: a line through `point` along `direction`.
     Line {
+        /// A point on the line.
         point: [f64; 3],
+        /// Unit direction of the line.
         direction: [f64; 3],
     },
+    /// `b5 03 0f`: an arc with a positive radius.
     Arc {
+        /// Arc center.
         center: [f64; 3],
+        /// Unit vector from `center` toward the zero-angle point.
         direction_x: [f64; 3],
+        /// Unit vector orthogonal to `direction_x` completing the arc
+        /// plane's basis.
         direction_y: [f64; 3],
+        /// Positive arc radius.
         radius: f64,
     },
 }
 
+/// A resolved `b5 03` surface node (spec §6.6).
 #[derive(Debug, Clone, PartialEq)]
 pub enum B5Surface {
+    /// `b5 03 27`: a plane spanned by `origin`, `direction_u`, and
+    /// `direction_v`.
     Plane {
+        /// A point on the plane.
         origin: [f64; 3],
+        /// First in-plane basis direction, as stored (not necessarily
+        /// unit).
         direction_u: [f64; 3],
+        /// Second in-plane basis direction, as stored (not necessarily
+        /// unit).
         direction_v: [f64; 3],
     },
+    /// `b5 03 28`: a cylinder with a positive radius.
     Cylinder {
+        /// A point on the cylinder axis.
         origin: [f64; 3],
+        /// Unit reference direction orthogonal to `axis`, the zero-angle
+        /// ray.
         reference_x: [f64; 3],
+        /// Unit cylinder axis, `reference_x × stored_v` normalized.
         axis: [f64; 3],
+        /// Positive cylinder radius.
         radius: f64,
     },
+    /// `b5 03 2d`: a surface of revolution sweeping `profile_curve` about
+    /// `axis_origin`/`axis_direction`.
     Revolution {
+        /// `object_id` of the swept [`B5Profile`].
         profile_curve: u32,
+        /// A point on the revolution axis.
         axis_origin: [f64; 3],
+        /// Unit revolution axis.
         axis_direction: [f64; 3],
+        /// Nonzero scale mapping a pcurve's `v` parameter to a revolution
+        /// angle in radians (`angle = v / gauge_radius`).
         gauge_radius: f64,
     },
+    /// An `a8 03 34` inline-pole B-spline surface, resolved through
+    /// [`crate::geometry::a8_surfaces`] and merged into the same
+    /// `object_id` namespace.
     Nurbs(NurbsSurface),
 }
 
+/// A resolved `b5 03 21` pcurve node: a 2D B-spline curve in a surface's
+/// parameter space (spec §6.6).
 #[derive(Debug, Clone, PartialEq)]
 pub struct B5Pcurve {
+    /// This record's stream `object_id`.
     pub object_id: u32,
+    /// `object_id` of the owning surface, taken directly from the pcurve's
+    /// `catia_support_ref` (spec §6.6).
     pub surface: u32,
+    /// B-spline degree.
     pub degree: u32,
+    /// Distinct knot values, strictly increasing.
     pub distinct_knots: Vec<f64>,
+    /// Per-knot multiplicities, index-aligned with `distinct_knots`.
     pub multiplicities: Vec<u32>,
+    /// `(u, v)` control points in the surface's parameter space.
     pub control_points: Vec<[f64; 2]>,
+    /// The curve's two clamped-end poles lifted through `surface` into
+    /// world-frame 3D points, or `None` before [`parse`] resolves them or
+    /// when the lift fails (unresolved surface, degenerate revolution
+    /// scale, or NURBS evaluation failure).
     pub lifted_endpoints: Option<[[f64; 3]; 2]>,
 }
 
+/// One length-framed `b5 03` record as found by the stream walk (spec §6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B5Record {
+    /// Byte offset of the `b5 03` marker in the source stream.
     pub offset: usize,
+    /// Third header byte: the record's type/class code (`0x5f` face,
+    /// `0x62` loop, `0x21` pcurve, `0x27`/`0x28`/`0x2d` surface, `0x5e`
+    /// edge, `0x18` line pcurve, `0x0e`/`0x0f` profile, ...).
     pub class: u8,
+    /// Dense creation-order `object_id` stored inline at `+4` (spec §6.5).
     pub object_id: u32,
+    /// Raw record payload after the 8-byte header.
     pub payload: Vec<u8>,
 }
 
+/// A resolved `b5 03 5f` face node (spec §6.6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B5Face {
+    /// This record's stream `object_id`.
     pub object_id: u32,
+    /// `object_id` of the face's surface, taken from the first reference
+    /// token.
     pub surface: u32,
+    /// `object_id`s of the face's `b5 03 62` loop nodes, in reference
+    /// order.
     pub loops: Vec<u32>,
 }
 
+/// A resolved `b5 03 62` loop node: payload `<0x80 + n_refs>
+/// (pcurve_ref edge_ref)* surface_ref` (spec §6.6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B5Loop {
+    /// This record's stream `object_id`.
     pub object_id: u32,
+    /// `object_id`s of the loop's member pcurves (or `0x18` lines), in
+    /// serialized order.
     pub pcurves: Vec<u32>,
+    /// `object_id`s of the loop's member `b5 03 5e` edges, index-aligned
+    /// with `pcurves`.
     pub edges: Vec<u32>,
+    /// `object_id` of the loop's surface (the trailing reference token).
     pub surface: u32,
 }
 

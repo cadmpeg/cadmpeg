@@ -4,6 +4,7 @@
 //! bytes exercise the real SPLMSSTR container parse, the Parasolid zlib
 //! extraction/classification, and the analytic geometry decode, and fail if the
 //! code regresses.
+#![allow(clippy::unwrap_used)]
 
 use std::io::{Cursor, Write};
 
@@ -12,6 +13,7 @@ use flate2::Compression;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::math::Vector3;
 
 use crate::container;
 use crate::parasolid::{self, StreamKind};
@@ -68,11 +70,12 @@ fn partition_stream() -> Vec<u8> {
     put_vec3(&mut pl, 67, [1.0, 0.0, 0.0]);
     s.extend_from_slice(&pl);
 
-    // CYLINDER (type 51): origin +19, axis +43, radius +67.
+    // CYLINDER (type 51): origin +19, axis +43, radius +67, x_axis +75.
     let mut cy = record(0x33, 99);
     put_vec3(&mut cy, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
     put_f64(&mut cy, 67, 0.004_05); // 4.05 mm
+    put_vec3(&mut cy, 75, [1.0, 0.0, 0.0]);
     s.extend_from_slice(&cy);
 
     // LINE (type 30): point +19, direction +43.
@@ -106,6 +109,7 @@ fn topology_partition_stream() -> Vec<u8> {
 
     let mut face = record(14, 39);
     put_ref(&mut face, 2, 4);
+    put_f64(&mut face, 10, 0.000_2); // 0.2 mm
     put_ref(&mut face, 22, 5); // loop
     put_ref(&mut face, 24, 3); // shell
     put_ref(&mut face, 26, 6); // plane
@@ -131,6 +135,7 @@ fn topology_partition_stream() -> Vec<u8> {
 
     let mut edge = record(16, 32);
     put_ref(&mut edge, 2, 8);
+    put_f64(&mut edge, 10, 0.000_3); // 0.3 mm
     put_ref(&mut edge, 18, 7); // fin
     put_ref(&mut edge, 24, 9); // curve
     s.extend_from_slice(&edge);
@@ -151,6 +156,7 @@ fn topology_partition_stream() -> Vec<u8> {
     let mut vertex = record(18, 28);
     put_ref(&mut vertex, 2, 10);
     put_ref(&mut vertex, 16, 11); // point
+    put_f64(&mut vertex, 18, 0.000_1); // 0.1 mm
     s.extend_from_slice(&vertex);
 
     let mut point = record(29, 40);
@@ -486,6 +492,20 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert_eq!(planes, 1);
     assert_eq!(cyls.len(), 1);
     assert!((cyls[0] - 4.05).abs() < 1e-6);
+    assert!(result.ir.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Plane {
+            u_axis: Some(axis),
+            ..
+        } if axis == Vector3::new(1.0, 0.0, 0.0)
+    )));
+    assert!(result.ir.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Cylinder {
+            ref_direction: Some(direction),
+            ..
+        } if direction == Vector3::new(1.0, 0.0, 0.0)
+    )));
 
     // One line decoded, with a unit direction.
     let lines: Vec<_> = result
@@ -535,6 +555,9 @@ fn decode_emits_connected_primitive_brep() {
         result.ir.edges[0].curve.as_ref(),
         Some(&result.ir.curves[0].id)
     );
+    assert_eq!(result.ir.vertices[0].tolerance, Some(0.1));
+    assert_eq!(result.ir.edges[0].tolerance, Some(0.3));
+    assert_eq!(result.ir.faces[0].tolerance, Some(0.2));
     assert!(result
         .report
         .losses
@@ -618,6 +641,7 @@ fn cylinder_gate_rejects_denormal_radius() {
     put_vec3(&mut cy, 19, [0.003_175, 0.0, 0.0]);
     put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
     put_f64(&mut cy, 67, f64::from_bits(1)); // smallest positive subnormal
+    put_vec3(&mut cy, 75, [1.0, 0.0, 0.0]);
     assert!(crate::geometry::surfaces(&cy).is_empty());
 }
 
@@ -662,7 +686,6 @@ fn container_only_preserves_streams_without_geometry() {
     let mut cur = Cursor::new(single_part_prt());
     let opts = DecodeOptions {
         container_only: true,
-        ..DecodeOptions::default()
     };
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
     assert!(!result.report.geometry_transferred);

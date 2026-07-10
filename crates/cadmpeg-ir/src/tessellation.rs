@@ -16,10 +16,15 @@ pub struct Tessellation {
     pub vertices: Vec<Point3>,
     /// Zero-based vertex indices, with source winding preserved.
     pub triangles: Vec<[u32; 3]>,
+    /// Triangle-strip run lengths, when the source stored strips instead of an
+    /// independent triangle list; empty when the mesh is a flat triangle list.
     #[serde(default)]
     pub strip_lengths: Vec<u32>,
+    /// Per-vertex normals, parallel to `vertices`; empty when the source carried none.
     #[serde(default)]
     pub normals: Vec<Vector3>,
+    /// Additional per-vertex or per-facet data channels from the source tessellation
+    /// table (e.g. UVs, colors); empty when the source carried none.
     #[serde(default)]
     pub channels: Vec<TessellationChannel>,
     /// Byte provenance.
@@ -29,9 +34,14 @@ pub struct Tessellation {
 /// One descriptor from the source tessellation table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TessellationChannel {
+    /// Byte size of one element of `data`.
     pub item_size: u32,
+    /// Source channel-kind tag (e.g. UV, color); interpretation is source-defined.
     pub kind: u32,
+    /// Source per-channel flag word.
     pub flags: u32,
+    /// Number of elements in `data`.
     pub count: u32,
+    /// Raw channel payload, `count * item_size` bytes, undecoded.
     pub data: Vec<u8>,
 }

@@ -235,15 +235,15 @@ fn parse_point(buf: &[u8], off: usize) -> Option<Record> {
     let attr = attr_at(buf, p)?;
     let mut xyz_at = p + 14;
     let mut tripled = Vec::new();
-    let mut q = p + 6;
-    while buf.get(q + 2) == Some(&1) && tripled.len() < 16 {
-        tripled.push(u16_be(buf, q)?);
-        q += 3;
+    let mut cursor = p + 6;
+    while buf.get(cursor + 2) == Some(&1) && tripled.len() < 16 {
+        tripled.push(u16_be(buf, cursor)?);
+        cursor += 3;
     }
     let refs = if tripled.is_empty() {
         refs_be(buf, p + 6, 4)?
     } else {
-        xyz_at = q;
+        xyz_at = cursor;
         tripled
     };
     let x = f64_be(buf, xyz_at)?;

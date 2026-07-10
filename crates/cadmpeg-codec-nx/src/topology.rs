@@ -43,6 +43,13 @@ impl Node {
     pub fn byte_at(&self, offset: usize) -> Option<u8> {
         self.bytes.get(offset + self.shift).copied()
     }
+
+    /// Read a big-endian floating-point field at its logical record offset.
+    pub fn f64_at(&self, offset: usize) -> Option<f64> {
+        let at = offset + self.shift;
+        let bytes: [u8; 8] = self.bytes.get(at..at + 8)?.try_into().ok()?;
+        Some(f64::from_be_bytes(bytes))
+    }
 }
 
 /// Fixed-record index keyed by `(node_type, xmt)`.
@@ -55,8 +62,11 @@ pub struct Graph {
 /// A type-133 edge-carrier restriction over its basis curve.
 #[derive(Debug, Clone, Copy)]
 pub struct TrimmedCurve {
+    /// Cross-reference index (XMT) of the tag-133 record.
     pub xmt: u32,
+    /// Cross-reference index of the untrimmed basis curve record.
     pub basis: u32,
+    /// `[start, end]` parameter range of the trim, in the basis curve's own parameterization.
     pub parameters: [f64; 2],
 }
 

@@ -60,7 +60,7 @@ impl Emitter {
 
     /// Emit `type_`, reusing an existing instance when an identical one (same
     /// encoded params) was already interned. Use only for value-like leaves
-    /// (CARTESIAN_POINT, DIRECTION) where sharing is always sound.
+    /// (`CARTESIAN_POINT`, `DIRECTION`) where sharing is always sound.
     pub fn emit_interned(&mut self, type_: &str, params: &str) -> Ref {
         let key = format!("{type_}|{params}");
         if let Some(r) = self.interned.get(&key) {
@@ -121,6 +121,8 @@ pub fn real(v: f64) -> String {
 /// double; non-ASCII and control characters use the `\X2\..\X0\` extended
 /// notation so the file stays 7-bit clean per ISO 10303-21.
 pub fn string(s: &str) -> String {
+    use std::fmt::Write as _;
+
     let mut out = String::with_capacity(s.len() + 2);
     out.push('\'');
     for ch in s.chars() {
@@ -134,7 +136,7 @@ pub fn string(s: &str) -> String {
             out.push_str("\\X2\\");
             let mut buf = [0u16; 2];
             for cu in ch.encode_utf16(&mut buf) {
-                out.push_str(&format!("{cu:04X}"));
+                let _ = write!(out, "{cu:04X}");
             }
             out.push_str("\\X0\\");
         }

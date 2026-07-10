@@ -251,8 +251,8 @@ impl<'a> Builder<'a> {
         self.note_unrepresented();
     }
 
-    /// Emit the PRODUCT → PRODUCT_DEFINITION_SHAPE chain, returning the
-    /// PRODUCT_DEFINITION_SHAPE reference.
+    /// Emit the `PRODUCT` → `PRODUCT_DEFINITION_SHAPE` chain, returning the
+    /// `PRODUCT_DEFINITION_SHAPE` reference.
     fn emit_product_structure(&mut self) -> Ref {
         let name = self
             .ir

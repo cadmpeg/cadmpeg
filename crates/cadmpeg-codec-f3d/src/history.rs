@@ -10,6 +10,13 @@ use cadmpeg_ir::provenance::{EntityMeta, Exactness, Provenance};
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
 
+/// Decode the construction-history tail of an ASM stream: every `delta_state`
+/// record (spec §2.3) from `bytes`, each with its `BulletinBoard` chain of
+/// per-entity insert/delete/update changes and the raw history-entity records
+/// framed between it and the next `delta_state`. `stream` is the source ZIP
+/// entry name, recorded in each decoded item's provenance. Returns `None` when
+/// `bytes` carries no `delta_state` record (the stream is a construction
+/// snapshot with no history tail) or a malformed history body.
 pub fn decode(bytes: &[u8], stream: &str) -> Option<AsmHistory> {
     let mut delta_offsets = Vec::new();
     let mut search = 0usize;
@@ -41,7 +48,7 @@ pub fn decode(bytes: &[u8], stream: &str) -> Option<AsmHistory> {
             body_end,
             delta_offsets.get(ordinal + 1).copied(),
             stream,
-        )?;
+        );
         states.push(AsmDeltaState {
             state_id,
             version_flag,
@@ -124,30 +131,28 @@ fn decode_history_records(
     state_end: usize,
     next_delta: Option<usize>,
     stream: &str,
-) -> Option<Vec<AsmHistoryRecord>> {
+) -> Vec<AsmHistoryRecord> {
     let start = state_end + usize::from(bytes.get(state_end) == Some(&0x11));
     let limit = next_delta.map_or(bytes.len(), |offset| offset + 1);
     if start >= limit {
-        return Some(Vec::new());
+        return Vec::new();
     }
     match crate::sab::frame(bytes, start, limit, 8) {
-        Ok(records) => Some(
-            records
-                .into_iter()
-                .map(|record| AsmHistoryRecord {
-                    index: record.index as u64,
-                    name: record.name,
-                    raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
-                    meta: meta(stream, record.offset, "history_entity"),
-                })
-                .collect(),
-        ),
-        Err(_) => Some(vec![AsmHistoryRecord {
+        Ok(records) => records
+            .into_iter()
+            .map(|record| AsmHistoryRecord {
+                index: record.index as u64,
+                name: record.name,
+                raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
+                meta: meta(stream, record.offset, "history_entity"),
+            })
+            .collect(),
+        Err(_) => vec![AsmHistoryRecord {
             index: 0,
             name: "opaque_history_payload".into(),
             raw_bytes: bytes[start..limit].to_vec(),
             meta: meta(stream, start, "opaque_history_payload"),
-        }]),
+        }],
     }
 }
 

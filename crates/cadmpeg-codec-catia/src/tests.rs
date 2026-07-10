@@ -4,6 +4,8 @@
 //! whose bytes exercise the real container, variant-detection, and geometry
 //! decode paths and fail if the code regresses.
 
+#![allow(clippy::unwrap_used)]
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
@@ -351,10 +353,10 @@ fn descriptor(name: &str, phys_off: u32, phys_len: u32) -> Vec<u8> {
 /// a `SurfacicReps`, with their physical bytes placed right after the inner
 /// header and the directory placed after them.
 fn standard_catpart() -> Vec<u8> {
-    standard_catpart_from_streams(main_stream(), surf_stream())
+    standard_catpart_from_streams(&main_stream(), &surf_stream())
 }
 
-fn standard_catpart_from_streams(main: Vec<u8>, surf: Vec<u8>) -> Vec<u8> {
+fn standard_catpart_from_streams(main: &[u8], surf: &[u8]) -> Vec<u8> {
     // Physical stream layout, relative to the inner magic:
     //   [0..16]  inner header (magic, A, B)
     //   [16..]   MainDataStream, then SurfacicReps
@@ -374,8 +376,8 @@ fn standard_catpart_from_streams(main: Vec<u8>, surf: Vec<u8>) -> Vec<u8> {
     inner.extend_from_slice(OUTER_MAGIC);
     inner.extend_from_slice(&be32(dir_rel)); // A
     inner.extend_from_slice(&be32(b_len)); // B
-    inner.extend_from_slice(&main);
-    inner.extend_from_slice(&surf);
+    inner.extend_from_slice(main);
+    inner.extend_from_slice(surf);
     inner.extend_from_slice(&dir);
 
     // Outer header: magic + a big-endian directory offset/length pair whose sum
@@ -466,7 +468,7 @@ fn tetrahedron_topology_catpart() -> Vec<u8> {
         surf.resize(start + 65, 0);
         surf[start + 64] = 1;
     }
-    standard_catpart_from_streams(main, surf)
+    standard_catpart_from_streams(&main, &surf)
 }
 
 fn fbb_only_catpart() -> Vec<u8> {
@@ -599,6 +601,7 @@ fn e5_torus_stream() -> Vec<u8> {
         (14, 1.0),
         (22, 2.0),
         (30, 3.0),
+        (38, 1.0),
         (102, 1.0),
         (110, 12.0),
         (118, 2.0),
@@ -627,7 +630,7 @@ fn a8_surface_stream() -> Vec<u8> {
     let mut record = Vec::new();
     record.extend_from_slice(&[0xa8, 0x03, 0x34]);
     record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    record.extend_from_slice(&0xdecafbad_u32.to_le_bytes());
+    record.extend_from_slice(&0xdeca_fbad_u32.to_le_bytes());
     record.extend_from_slice(&payload);
     record
 }
@@ -881,13 +884,20 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     }
     assert!(result.ir.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
-        SurfaceGeometry::Plane { origin, normal }
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis: Some(u_axis),
+        }
             if (origin.x - 1.0).abs() < 1e-6
                 && (origin.y - 2.0).abs() < 1e-6
                 && (origin.z - 3.0).abs() < 1e-6
                 && normal.x.abs() < 1e-6
                 && normal.y.abs() < 1e-6
                 && (normal.z.abs() - 1.0).abs() < 1e-6
+                && u_axis.x.abs() < 1e-6
+                && (u_axis.y - 1.0).abs() < 1e-6
+                && u_axis.z.abs() < 1e-6
     )));
 
     // Complete FBB face records with stored carrier senses bind the analytic
@@ -992,10 +1002,15 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         SurfaceGeometry::Cylinder {
             origin,
             axis,
+            ref_direction,
             radius,
         } => {
             assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
+            assert_eq!(
+                *ref_direction,
+                Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+            );
             assert_eq!(*radius, 4.0);
         }
         other => panic!("expected cylinder, got {other:?}"),
@@ -1489,11 +1504,16 @@ fn e5_surface_parser_reads_framed_torus() {
         SurfaceGeometry::Torus {
             center,
             axis,
+            ref_direction,
             major_radius,
             minor_radius,
         } => {
             assert_eq!(*center, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
+            assert_eq!(
+                *ref_direction,
+                Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+            );
             assert_eq!((*major_radius, *minor_radius), (12.0, 2.0));
         }
         other => panic!("expected torus, got {other:?}"),
@@ -1504,7 +1524,7 @@ fn e5_surface_parser_reads_framed_torus() {
 fn a8_surface_parser_reads_common_form_nurbs() {
     let surfaces = crate::geometry::a8_surfaces(&a8_surface_stream());
     assert_eq!(surfaces.len(), 1);
-    assert_eq!(surfaces[0].object_id, 0xdecafbad);
+    assert_eq!(surfaces[0].object_id, 0xdeca_fbad);
     match &surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => {
             assert_eq!((surface.u_degree, surface.v_degree), (2, 2));

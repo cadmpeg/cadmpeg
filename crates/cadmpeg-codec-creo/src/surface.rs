@@ -8,15 +8,26 @@
 use crate::psb::compact_int;
 use crate::scalar;
 
-/// Creo's PSB surface-family discriminator.
+/// Creo's PSB surface-family discriminator (spec §3.1), read from a
+/// `srf_array` row's `geom_type` byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SurfaceKind {
+    /// `geom_type = 0x22`.
     Plane,
+    /// `geom_type = 0x24`.
     Cylinder,
+    /// `geom_type = 0x25`.
     Cone,
+    /// `geom_type = 0x26`: a torus when the prototype's `radius1` is
+    /// nonzero, a sphere when `radius1 = 0` (spec §3.3).
     TorusOrSphere,
+    /// `geom_type = 0x28`.
     Spline,
+    /// `geom_type = 0x29`: fillet or spline surface family; the split
+    /// between the two is not decoded (see the open-items list).
     FilletOrSpline,
+    /// `geom_type = 0x2a` or `0x2c`: a `surface_of_extrusion` linear
+    /// extrusion.
     Extrusion,
 }
 
@@ -38,12 +49,25 @@ impl SurfaceKind {
 /// One `srf_array` row whose fixed prefix passed the row grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceRow {
+    /// The row's `geom_id`: the surface's identifier in the `srf_array`
+    /// namespace, referenced by curve `F0`/`F1` face fields and by
+    /// `next_surface` links.
     pub id: u32,
+    /// The row's surface family, from `geom_type`.
     pub kind: SurfaceKind,
+    /// The `feat_id` compact integer: the feature that generated this
+    /// surface, joining `AllFeatur`/`MdlStatus` feature rows.
     pub feature_id: u32,
+    /// `true` when the row's orientation byte is `0xf6` (reversed), `false`
+    /// when it is `0x01` (as-stored orientation).
     pub reversed: bool,
+    /// The row's `boundary_type` byte: one of `0x00`, `0x01`, `0x06`, or
+    /// `0xf6`.
     pub boundary_type: u8,
+    /// The `next_geom_ptr` compact integer: the identifier of the next
+    /// `srf_array` row in this namespace's link chain.
     pub next_surface: u32,
+    /// Byte offset of the row's `geom_id` field in the original stream.
     pub offset: usize,
 }
 
@@ -51,10 +75,18 @@ pub struct SurfaceRow {
 /// treated as a per-instance surface parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfacePrototype {
+    /// The prototype's surface family, from its labeled `geom_type` field.
     pub kind: SurfaceKind,
+    /// The `radius` scalar field for a cylinder prototype, or `radius1` for
+    /// a torus/sphere prototype (nonzero for a torus, zero for a sphere).
     pub radius: Option<f64>,
+    /// The `radius2` scalar field for a torus/sphere prototype.
     pub radius2: Option<f64>,
+    /// The `half_angle` scalar field for a cone prototype, in radians, in
+    /// the range `(0, pi/2)` (spec §3.2).
     pub half_angle: Option<f64>,
+    /// Byte offset of the `srf_prim_ptr` record's label in the original
+    /// stream.
     pub offset: usize,
 }
 

@@ -314,10 +314,10 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
     // family label.
     let ps_streams = crate::parasolid::extract_streams(&inflated);
     let ps_stream = ps_streams.first().cloned();
-    let family = if !ps_streams.is_empty() {
-        "parasolid"
-    } else {
+    let family = if ps_streams.is_empty() {
         payload_family(&inflated)
+    } else {
+        "parasolid"
     };
 
     Some(RawBlock {
@@ -532,7 +532,7 @@ pub fn select_active_parasolid(
             score += 50_000;
         }
 
-        if best.as_ref().map(|(s, _, _)| score > *s).unwrap_or(true) {
+        if best.as_ref().is_none_or(|(s, _, _)| score > *s) {
             best = Some((score, b, sch));
         }
     }
@@ -545,7 +545,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
     let digest = h.finalize();
     let mut s = String::with_capacity(digest.len() * 2);
     for b in digest {
-        s.push_str(&format!("{b:02x}"));
+        use std::fmt::Write as _;
+        let _ = write!(s, "{b:02x}");
     }
     s
 }

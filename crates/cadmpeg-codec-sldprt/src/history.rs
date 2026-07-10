@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! SolidWorks Keywords XML feature history.
+//! `SolidWorks` Keywords XML feature history.
 
 use crate::container::ContainerScan;
 use cadmpeg_ir::history::{Configuration, Feature, FeatureHistory};

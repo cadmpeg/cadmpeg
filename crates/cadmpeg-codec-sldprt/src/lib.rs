@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! # cadmpeg-codec-sldprt
 //!
-//! Decoder for SolidWorks `.sldprt` files.
+//! Decoder for `SolidWorks` `.sldprt` files.
 //!
 //! ## What is implemented
 //!
@@ -52,7 +52,7 @@ use cadmpeg_ir::document::CadIr;
 use sha2::{Digest, Sha256};
 use std::io::Write;
 
-/// The SolidWorks `.sldprt` codec.
+/// The `SolidWorks` `.sldprt` codec.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SldprtCodec;
 
@@ -78,8 +78,11 @@ impl SldprtCodec {
         })?;
         let hash = Sha256::digest(data)
             .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+            .fold(String::new(), |mut acc, byte| {
+                use std::fmt::Write as _;
+                let _ = write!(acc, "{byte:02x}");
+                acc
+            });
         if data.len() as u64 != record.byte_len || hash != record.sha256 {
             return Err(CodecError::Malformed(
                 "retained SLDPRT source image failed integrity validation".into(),

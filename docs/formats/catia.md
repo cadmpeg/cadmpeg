@@ -8,15 +8,16 @@ All multi-byte integers are little-endian unless explicitly marked **BE**. Float
 
 ## 1. Variant families
 
-A file stores its geometry in one of five families; the family determines the entire decode path. Detect it before anything else.
+A file stores its geometry in one of six families; the family determines the record grammar.
 
-| Variant                       | Detection                                                                                           | Geometry source                                                                               |
-| ----------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| **Standard nested `V5_CFV2`** | Outer file contains a nested `V5_CFV2` container, no coherent overriding E5 stream                  | Inner-body BREP spine, trim mesh records, `00 33 <kind>` surface markers, `05 08 01` vertices |
-| **FBB-only partial spine**    | Nested `V5_CFV2` with contiguous FBB face rows + `05 08 01` vertices but no standard edge-row table | FBB face group + vertex records; post-FBB edge rows are `u24be`, trim `H` handles are `u24be` |
-| **E5 `0D 03` stream**         | Coherent walked E5 record stream in the preamble or a FINJPL segment                                | Native E5 records: faces, loops, edge-uses, p-curves, curve supports, surface carriers        |
-| **Zero-entity `a9 03`**       | No nested inner `V5_CFV2`; outer preamble carries `a9 03 XX YY` record families                     | Outer-preamble `a9 03` records                                                                |
-| **Float-packed inner-no-FBB** | Nested `V5_CFV2` with no `30 04 04 ff` FBB spine, large vertex/object-graph/float populations       | Object-stream (`b5 03` / `a8 03`) records; surface-kind markers only for the pure marker case |
+| Variant                          | Detection                                                                                                            | Geometry source                                                                               |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Standard nested `V5_CFV2`**    | Outer file contains a nested `V5_CFV2` container, no coherent overriding E5 stream                                   | Inner-body BREP spine, trim mesh records, `00 33 <kind>` surface markers, `05 08 01` vertices |
+| **FBB-only partial spine**       | Nested `V5_CFV2` with contiguous FBB face rows + `05 08 01` vertices but no standard edge-row table                  | FBB face group + vertex records; post-FBB edge rows are `u24be`, trim `H` handles are `u24be` |
+| **E5 `0D 03` stream**            | Coherent walked E5 record stream in the preamble or a FINJPL segment                                                 | Native E5 records: faces, loops, edge-uses, p-curves, curve supports, surface carriers        |
+| **Zero-entity `a9 03`**          | No nested inner `V5_CFV2`; outer preamble carries `a9 03 XX YY` record families                                      | Outer-preamble `a9 03` records                                                                |
+| **Float-packed inner-no-FBB**    | Nested `V5_CFV2` with no `30 04 04 ff` FBB spine, large vertex/object-graph/float populations                        | Object-stream (`b5 03` / `a8 03`) records; surface-kind markers only for the pure marker case |
+| **Inner body without directory** | Nested `V5_CFV2` whose directory contains no BREP body; the body occupies the contiguous region before the directory | Contiguous inner records and freeform carrier families                                        |
 
 Detection invariants: a standard file has one nested inner `V5_CFV2` past byte 8; the standard BREP spine contains the largest FBB run followed by parseable edge tables and a `kind=0x06` table of 15-byte `05 08 01` vertex records. E5 classification requires a coherent record walk. Zero-entity classification requires no inner `V5_CFV2` and at least one recognized `a9 03` family.
 
@@ -32,7 +33,7 @@ The persisted CGM graph keeps three identity classes separate. Conflating them m
 - **Occurrence identity**: the face-local objects (loop members, support occurrences, pcurve occurrences, coedge uses); this layer holds the topology.
 - **Geometric definition**: the exact curve/surface/endpoint an occurrence evaluates to.
 
-The occurrence graph and geometry determine an analytic BREP up to isomorphism. Reconstructions with the same edge-endpoint incidence and coordinates represent the same BREP even when their vertex and edge tables differ in order. The persistent allocation index identifies serialized rows and tags; it supports byte-faithful reserialization.
+The occurrence graph and geometry determine an analytic BREP up to isomorphism. Graphs with the same edge-endpoint incidence and coordinates represent the same BREP even when their vertex and edge tables differ in order. The persistent allocation index identifies serialized rows and tags.
 
 ---
 
@@ -132,7 +133,7 @@ edge_row[i]    -> edge i
 vertex_row[i]  -> vertex i
 ```
 
-Face ordinals are CATIA's own, **not** STEP `ADVANCED_FACE` file order.
+Face identity is the native ordinal within the FBB row sequence.
 
 ### 5.2 Spine grammar
 
@@ -146,7 +147,7 @@ vertex_table := count_header(kind=0x06) vertex_record{count}
 vertex_record:= 05 08 01 <x_f32le> <y_f32le> <z_f32le>
 ```
 
-Decode rules: the face population is the largest contiguous stride-8 `30 04 04 ff` run; edge-row payloads are `u16` handles read **big-endian** (the BE sequence is canonical); the first and last BE handles of a row are its graph endpoints; the `05 08 01` table is the vertex coordinate source; body count = number of contiguous FBB runs. The FBB row payload is a _constant_ repeated for every face (e.g. `ffffd2d2`): it carries no per-face tag, so a face's identity is purely its ordinal.
+Spine invariants: the face population is the largest contiguous stride-8 `30 04 04 ff` run; edge-row payloads are `u16` handles read **big-endian**; the first and last BE handles of a row are its graph endpoints; the `05 08 01` table is the vertex coordinate source; body count = number of contiguous FBB runs. The FBB row payload is constant across the run, such as `ffffd2d2`, and carries no per-face tag.
 
 ### 5.3 Trim records (indexed triangle-mesh packets)
 
@@ -173,7 +174,7 @@ Invariant `N == 3*A + sum(K)`. Handle **width is family-dependent** and is the o
 
 The trim handle lane is ordered as the `A` independent-triangle triples, then the `B` triangle-strip lists in `K[0:B]` order, then the `C` triangle-fan lists in `K[B:B+C]` order.
 
-Triangle expansion: independent `(H[3i],H[3i+1],H[3i+2])`; strips alternate winding by parity; fans pivot on `q[0]`. Boundary extraction: emit directed edges per oriented triangle; a directed edge whose reverse is absent is a boundary segment; the multiplicity-one segments form the exact ordered closed boundary cycle(s). **Loop count = boundary-cycle count** (one outer cycle + one per hole), matching STEP `EDGE_LOOP`. Recovering inner-hole loops requires reading edge-row endpoint ports at their native width (FBB-spline `u24be`, standard `u16be`).
+Triangle expansion: independent `(H[3i],H[3i+1],H[3i+2])`; strips alternate winding by parity; fans pivot on `q[0]`. Boundary extraction emits directed edges per oriented triangle. A directed edge whose reverse is absent is a boundary segment; multiplicity-one segments form the exact ordered closed boundary cycles. **Loop count = boundary-cycle count**, with one outer cycle and one cycle per hole. Inner-hole loops require edge-row endpoint ports at their native width: FBB-spline `u24be`, standard `u16be`.
 
 **`0x42 B=2` packed strip lengths:** a `0x42` packet with plain `B`=2 packs its two strip lengths as two `u8` bytes `K0,K1` (`K0+K1==N`) in place of the usual `count()` list. At `u24be` a naive read of those two bytes as a handle over-consumes one byte and desyncs; read them as two `u8`.
 
@@ -195,18 +196,18 @@ face_ref := <u8>  |  ff <u32le>   (widened when the ordinal needs it)
 
 The table has one row per spine edge. Circle center and radius use BE f32. The two trailing references are adjacent face ordinals and form an edge-to-face incidence graph. The `u24` `tag` is a local allocation identifier. The byte sequence `ff 46` encodes a widened face ordinal as `ff <u32le>`.
 
-### 5.6 Curve geometry reconstruction
+### 5.6 Curve carrier and endpoint semantics
 
 **Edge endpoints by surface-intersection binding:** an edge lies on both adjacent analytic carriers. Two vertices on both carriers (`on(P,surf)` := signed distance within 1e-3 mm) define the endpoint pair. For a line edge whose faces share a carrier, use the two common vertices collinear with the surface-intersection direction `d` (`plane∩plane`: `n0×n1`; `plane∩cylinder`: axis; `cylinder∩cylinder`: shared ruling).
 
 **Circle/arc endpoints by support intersection:** intersect the decoded circle (center `c`, radius `r`) with the vertex table (`|dist(v,c)−r| ≤ 1e-3`). Two candidates define the endpoint pair. Coaxial arcs can share a circle and require connectivity or cycle closure. A full circle has antipodal on-circle candidates and uses `start==end`. **Line edges** derive from their endpoints (`origin=start`, `direction=end−start`). Use the mesh-derived port-to-vertex collapse rather than sorted handle rank.
 
-### 5.7 Surface geometry reconstruction
+### 5.7 Surface carrier semantics
 
 - **Cylinder axis-frame** from its two parallel equal-radius rim circles: `origin=circle0.center`, `axis=normalize(circle1.center−circle0.center)`, `radius=circle.radius`.
 - **Circle plane normal from the adjacent carrier** under per-kind exact on-carrier identity gates (plane: center in plane; cylinder: center on axis and `r==R` ⇒ normal=axis; torus meridional/latitude, cone latitude, sphere section each with an exact identity gate). The gates matter: a center-on-axis circle not on the torus correctly declines.
 - **Plane normal** from three non-collinear incident circle centers (cross product) or two non-parallel line directions. A cap closing a cylinder uses the cylinder axis.
-- Standard-family geometry uses single-precision storage (`05 08 01` = 3×f32le, `0x60` circles = BE f32). Use a reconstruction gate no tighter than approximately 1e-5 mm.
+- Standard-family geometry uses single-precision storage (`05 08 01` = 3×f32le, `0x60` circles = BE f32). Incidence gates are no tighter than approximately 1e-5 mm.
 
 ### 5.8 Analytic surface records in `SurfacicReps`
 
@@ -230,7 +231,7 @@ A sequential walker over the SURFACE section terminates on the `0x60` marker. Pa
 
 ### 5.9 Surface-of-revolution record `b2 03 2d`
 
-The `00 33 30` byte is only the kind tag; geometry is a dedicated 174-byte `b2 03 2d` record: `+6` profile-curve ref (u16le), `+8` 12×f64le (axis origin XYZ + three basis vectors), `+104` 4×f64le angular/profile bounds, then scale/flag tail. Three normalized relations hold to f64 bit-equality (`angular_lo/scale==0.5`, `(angular_hi−angular_lo)/scale==2π`, `mean/scale==π+0.5`). One native record yields two STEP `SURFACE_OF_REVOLUTION` face-local representations.
+The `00 33 30` byte is only the kind tag; geometry is a dedicated 174-byte `b2 03 2d` record: `+6` profile-curve ref (u16le), `+8` 12×f64le (axis origin XYZ + three basis vectors), `+104` 4×f64le angular/profile bounds, then scale/flag tail. Three normalized relations hold to f64 bit-equality (`angular_lo/scale==0.5`, `(angular_hi−angular_lo)/scale==2π`, `mean/scale==π+0.5`).
 
 ---
 
@@ -249,7 +250,7 @@ The header token is a small repeating type code, **not** a per-record object id.
 
 ### 6.1 `a5 03 34` freeform surface (consolidated class)
 
-Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c` or `0x08 0x09`), `K_U` distinct U knots (f64le), then `degV`/`K_V`/marker/V-knots, a mode byte (`0x01` non-rational / `0x05` rational), the pole grid (nu×nv×3 f64le, 24-byte stride), an optional weight program, and a limit/parameterization tail. **Only distinct knots are stored; multiplicities are an implicit clamped quintic-C2 policy** (`[6,3,…,3,6]` for degree 5), so `n_control = Σmult − degree − 1 = 3·K` (degree 5) or 2 (degree-1). Poles are in the **world frame** (identity body placement): every `05 08 01` vertex is at STEP `VERTEX_POINT` at identity, and pole grids appear verbatim in STEP `CARTESIAN_POINT`s. Rational weights (mode `0x05`) are a separate compact `02`-run program after the poles (`02` = copy-previous-row; expands a palindromic seed to the full grid). The tail carries current-limits + original parameterization (`param_after = coef·param_before + shift`) and extrapolation flags/data.
+Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c` or `0x08 0x09`), `K_U` distinct U knots (f64le), then `degV`/`K_V`/marker/V-knots, a mode byte (`0x01` non-rational / `0x05` rational), the pole grid (nu×nv×3 f64le, 24-byte stride), an optional weight program, and a limit/parameterization tail. **Only distinct knots are stored; multiplicities are an implicit clamped quintic-C2 policy** (`[6,3,…,3,6]` for degree 5), so `n_control = Σmult − degree − 1 = 3·K` (degree 5) or 2 (degree-1). Poles and `05 08 01` vertex coordinates share the identity world frame. Rational weights (mode `0x05`) are a separate compact `02`-run program after the poles (`02` = copy-previous-row; expands a palindromic seed to the full grid). The tail carries current-limits + original parameterization (`param_after = coef·param_before + shift`) and extrapolation flags/data.
 
 The 6-byte `b2 03 2e 01 05 05` record following an `a5 03 34` core is a standalone object.
 
@@ -275,18 +276,18 @@ Frame: `a8 03 <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>
 
 ### 6.6 Object-stream topology (`b5 03`)
 
-- `b5 03 5f` (per-face node): first ref token names the surface (`b5 03 27` plane / `28` cylinder / `2d` revolution / `a8 03 34` bspline), resolved through the object-id map. The bspline subset binds injectively to `a8 03 34`. The `5f` stream rank equals the STEP `ADVANCED_FACE` declaration order.
+- `b5 03 5f` (per-face node): first ref token names the surface (`b5 03 27` plane / `28` cylinder / `2d` revolution / `a8 03 34` bspline), resolved through the object-id map. The bspline subset binds injectively to `a8 03 34`. The `5f` stream rank is the native face ordinal.
 - `b5 03 62` (loop node): payload `<0x80 + n_refs> (pcurve_ref edge_ref)* surface_ref`, `n_refs` odd. Member ref tokens use the E5-style compact set (`18`/`38`/`10 <hi>`=hi<<8/`08 <lo>`/`30 <lo><hi>`=(u16le)<<8).
 - `b5 03 21` (pcurve): `catia_support_ref` is the owning surface's `object_id` directly. The 3D edge is the pcurve lifted through the surface (plane / cylinder arc-length `θ=u/r` / surface-of-revolution / bspline), and the clamped end poles land on `05 08 01` vertices to f32 round-trip.
 - `b5 03 27/28/2d` analytic surfaces: plane origin+normal, cylinder origin+axis+radius, revolution axis origin+direction.
 
-**Object-stream BREP reconstruction:** faces are `b5 03 5f` nodes in face-ordinal order; edges are distinct `b5 03 5e` identifiers referenced by loop nodes. A paired pcurve lifted through its support defines the edge curve. Its endpoints coincide with `05 08 01` rows. Pcurve degree and support identify lines, circles, and B-splines. Each `62` node defines one loop; object-stream files contain one body. The 3D edge geometry uses f32 endpoint coordinates, and native pcurves have degree 1 or 2.
+**Object-stream topology:** `b5 03 5f` nodes are faces in native ordinal order. Distinct `b5 03 5e` identifiers referenced by loop nodes are physical edges. Each `b5 03 62` node defines one loop and stores its ordered edge occurrences. A paired pcurve lifted through its carrier defines the edge curve, and its endpoints coincide with `05 08 01` vertex rows. Pcurve degree and carrier identify lines, circles, and B-splines. An object-stream file contains one body. The 3D edge geometry uses f32 endpoint coordinates, and native pcurves have degree 1 or 2.
 
 ---
 
 ## 7. Outer `7C08` object graph
 
-A nested total-length tree rooted at `7C 08`; each `7C09` object holds a lead-coded head and a `7C0A` tagged-atom payload. It is the **feature/object-ownership layer**: _not_ the expanded face→loop→coedge table and _not_ the port→vertex collapse (it is roughly constant in size regardless of BREP counts; the structure scaling with topology is the trim `H` lane). `7C09` head: `<lead> 01 <owner_ref> <class_ref> [storage_ref]`; references are compact record ordinals, class refs are per-file prototype ordinals (not global type codes). `7C0A` atoms: compact `0x80..0xD0` (value = byte−0x80), raw `0x51..0x7F`, **paged** `0xD1..0xE4 <byte>` (value = `(prefix−0xD1)·256 + byte + 1`, consumes 2 bytes, **not** little-endian-widened), escaped `0x80 <u32le>`. E5 blobs inside `7C0A` are templated descriptor records (≈59 or 46 bytes), **not** NURBS payloads. The class30 pair records and `76 ac 7f`-delimited handle table look like collapse candidates but are coedge/half-edge sub-tables smaller than the vertex/edge namespaces.
+A nested total-length tree rooted at `7C 08`; each `7C09` object holds a lead-coded head and a `7C0A` tagged-atom payload. It is the **feature/object-ownership layer**, not the expanded face→loop→coedge table or the port→vertex collapse. `7C09` head: `<lead> 01 <owner_ref> <class_ref> [storage_ref]`; references are compact record ordinals, class refs are per-file prototype ordinals rather than global type codes. `7C0A` atoms: compact `0x80..0xD0` (value = byte−0x80), raw `0x51..0x7F`, **paged** `0xD1..0xE4 <byte>` (value = `(prefix−0xD1)·256 + byte + 1`, consumes 2 bytes, **not** little-endian-widened), escaped `0x80 <u32le>`. E5 blobs inside `7C0A` are templated descriptor records (≈59 or 46 bytes), not NURBS payloads. The class30 pair records and `76 ac 7f`-delimited handle table are coedge/half-edge sub-tables, not the port→vertex relation.
 
 ---
 
@@ -296,13 +297,13 @@ Record framing `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12`; records
 
 Record families: `5f 0c` face (24 B), `5e 1a` edge-stride (38 B), `62 xx` edge-loop, `06 38` coedge (68 B, two per edge), `5d 06` vertex marker, `25 69` edge side-pair header, `21 71` curve-support-on-surface, `27 6a` plane, `28 8a` cylinder-family, `29 b8` cone-family, `2b c8` circle/arc/torus, `34 c8`/`34 5e` bspline carriers, `05 0b/10/15` vertex-incidence.
 
-- **`62xx` loop** is an alternating even/odd lane; `edge_count = (flag_at_+12 − 0x81)/2`. The even lane satisfies `A[j] = T − g − j`. **Loop-class byte = location:** `0x50` = inner (hole) loop, `0x41`/`0xc1` = non-inner (the `0x50` count equals the hole count). Outer loop serializes first, then inner loops in ascending terminal-id order (matches STEP `FACE_OUTER_BOUND`-before-`FACE_BOUND`).
+- **`62xx` loop** is an alternating even/odd lane; `edge_count = (flag_at_+12 − 0x81)/2`. The even lane satisfies `A[j] = T − g − j`. **Loop-class byte = location:** `0x50` = inner (hole) loop, `0x41`/`0xc1` = non-inner; the `0x50` count equals the hole count. The outer loop is first, followed by inner loops in ascending terminal-id order.
 - A face-family record with counted references `[R0, R1, ..., Rm]` defines ordered loop terminals `T[j] = R0 - R[j+1]`. Concatenate loops in face-record order and each loop's members in serialized order. For an owned `21xx` support occurrence with local slot `s` at `+12`, its first-lane loop member is `A = T - s`. `A` identifies a face-local support occurrence rather than a global `0638` identifier.
-- **Coedge sense** is a packed 3-bit-per-coedge stream after the reference lane: code 7 = STEP `.T.` (forward), code 2 = `.F.` (reversed). The `0638` `(1,2)` byte identifies the positional twin; the `62xx` stream stores orientation.
+- **Coedge sense** is a packed 3-bit-per-coedge stream after the reference lane: code 7 = forward and code 2 = reversed relative to the stored edge direction. The `0638` `(1,2)` byte identifies the positional twin; the `62xx` stream stores orientation.
 - A `2569` side-pair header supplies base columns `[B0, B1]`. Its two following `0638` records carry side numbers `1` and `2`; the side-slot pair is `(B0 + side, B1 + side)`. This pair identifies an oriented use in the `2569`/`0638` topology namespace and does not directly address a `21xx` support or `05xx` vertex item.
 - **Carrier run = per-face surface:** a carrier (`276a`/`288a`/`29b8`/`2bc8`) followed by a maximal run of `21xx` supports; face order aligns 1:1. Surface kind is in the payload f64, not the tag.
-- **Zero-entity edge reconstruction** (STEP-free): a `21xx` coedge's f64 tail is `(u0,v0,u1,v1)` on its owner-run carrier; lift per kind: plane direct-UV; cylinder `θ=u/radius`; **cone `u`=angle directly** (a genuine per-kind difference); torus `θ=u/R & φ=v/r`. Lifted endpoints land on STEP `VERTEX_POINT`s. Bspline carriers `34c8`/`345e` store the **full NURBS pole grid inline** (`34c8` 7×7 @+167, `345e` 5×7 @+141).
-- **`2bc8` surface** resolves by decoded radii: `major≠minor` ⇒ STEP `TOROIDAL_SURFACE`; `major==minor` ⇒ degenerate horn torus re-represented as a NURBS (`bspline_surface`).
+- **Zero-entity edge carrier:** a `21xx` coedge's f64 tail is `(u0,v0,u1,v1)` on its owner-run carrier. Lift per kind: plane direct-UV; cylinder `θ=u/radius`; cone `u` is the angle directly; torus `θ=u/R` and `φ=v/r`. The two lifted UV pairs define the edge endpoint coordinates. Bspline carriers `34c8`/`345e` store the **full NURBS pole grid inline** (`34c8` 7×7 @+167, `345e` 5×7 @+141).
+- **`2bc8` carrier kind:** `major≠minor` is a torus. `major==minor` is a degenerate horn torus.
 - Edge curve kind: two coaxial surfaces of revolution intersect in circles (exact theorem); a plane cuts a cylinder in a circle (⊥), lines (∥), or ellipse (oblique): classify per `|cos∠(plane_normal, cyl_axis)|`.
 
 The `5e1a` edge-stride, `0638` coedge-twin, `2569` side-pair header, and `2171` support head have the layouts described above. The `2171` f64 tail stores `(u0,v0,u1,v1)` at `+93`, `+101`, `+109`, and `+117`.
@@ -317,7 +318,7 @@ Classes: `0x01` body, `0x00` advanced face, `0x08` datum/template face, `0x09` e
 
 **Topology:** a face is `<0x81 + loop_count> <surface_ref> <loop_ref>* <01 00>`: loop location is structural (`loop_count==1` simply bounded, `>1` = 1 outer + `loop_count−1` holes; `Σ(loop_count−1)` = part hole count). A loop is `<0x81 + 2*edge_count> (pcurve_ref edge_use_ref)* surface_ref`. An edge-use (`0xff`) is `85 <curve_support_ref> <start_vertex> <end_vertex> <param_start> <param_end>`. **Vertex ref → index** is sorted-ref-rank, validated by the exact on-circle check (every circle edge's endpoints lie exactly on its decoded circle support to f32).
 
-**E5 orientation is byte-determined with zero STEP** for non-digon loops: `absolute_sense = g_loop × relative_chain_sense`, where `relative_chain_sense` is the unique head-to-tail vertex-chain closure of the fixed cyclic member list, and `g_loop` is a per-loop sign fixed by manifold coherence: the `0xff` edge-sharing graph is a closed 2-manifold (every edge referenced by exactly two loop members), giving `g_A·g_B = −r_A·r_B` over shared edges (frustration-free), and the one global sign per `0xff`-coherent component is recovered by majority `face_trailer_sign` alignment. The loop role bit (`ref_aligned_signs[1]`: `+1`=`FACE_OUTER_BOUND`, `−1`=`FACE_BOUND`).
+**E5 orientation** for non-digon loops is `absolute_sense = g_loop × relative_chain_sense`, where `relative_chain_sense` is the unique head-to-tail vertex-chain closure of the fixed cyclic member list. The per-loop sign `g_loop` follows manifold coherence: the `0xff` edge-sharing graph is a closed 2-manifold, every edge is referenced by exactly two loop members, and shared edges satisfy `g_A·g_B = −r_A·r_B`. One global sign per `0xff`-coherent component follows majority `face_trailer_sign` alignment. `ref_aligned_signs[1]` stores loop role: `+1` is outer and `−1` is inner.
 
 **E5 surface carriers** use these byte layouts: plane `0xc8` 90 B, cylinder/circle `0xc9` 137 B, cone `0xca` 185 B, and torus `0xcc` 201 B. **Edge curve descriptors** evaluate pcurves on their carriers: cylinder isoparametric curves yield circles or lines, torus isoparametric curves yield circles, and cone isoparametric curves yield circles. Torus and cone boundary UV pcurves are co-parameterized to the 3D edge angle parameter. The `0xa0` UV jet encodes a constant-speed circular arc with degree-5 C2 grammar; a square Hermite solve recovers `P/D/DD`.
 
@@ -357,9 +358,9 @@ A nested-`V5_CFV2` file without a `30 04 04 ff` spine uses the object-stream `b5
 
 ## 12. Units & tolerances
 
-- **Length unit is millimetres.** No unit word or scale slot is stored. Decoded `05 08 01` vertices, pole grids, and surface origins use world-frame coordinates. Do not scale coordinates.
+- **Length unit is millimetres.** No unit word or scale slot is stored. `05 08 01` vertices, pole grids, and surface origins use world-frame coordinates. Do not scale coordinates.
 - **Angles are radians**; cone/torus half-angle is `|semi_angle|` (the stored sine/semi-angle sign is a frame bit, not magnitude). Knot parameters, pcurve `(U,V)` parameters, and surface-parameter tails are dimensionless and are never scaled.
-- **Storage precision is variant-dependent, and it sets the reconstruction gate:**
+- **Storage precision is variant-dependent, and it sets the incidence gate:**
 
   | Family                                      | Coordinate storage                                                                              | Effective precision   |
   | ------------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------- |
@@ -368,7 +369,7 @@ A nested-`V5_CFV2` file without a `30 04 04 ff` spine uses the object-stream `b5
   | Zero-entity (`a9 03`)                       | surface + pcurve parameter tails = f64le                                                        | full f64              |
   | E5 (`0D 03`)                                | carrier layouts exact; edge endpoints round-trip through f32 `05 08 01`                         | ~1e-5 mm at endpoints |
 
-  A single-precision family stores geometry to ~1e-5 mm; **a reconstruction gate tighter than the source storage precision rejects correct decodes on quantization noise.**
+  A single-precision family stores geometry to ~1e-5 mm; incidence gates cannot be tighter than the source storage precision.
 
 - **On-carrier incidence tolerance is 1e-3 mm.** Endpoint-by-surface-intersection binding uses `on(P,surf)` := signed distance ≤ 1e-3 mm (§5.6); circle/arc vertex matching uses `|dist(v,c) − r| ≤ 1e-3` (§5.6); per-coordinate cylinder rim/axis identity gates and the plane/cylinder/torus/cone/sphere on-carrier gates (§5.7) run at the same order.
 - **Normalized-relation checks are exact (f64 bit-equality)** where the source is f64: the surface-of-revolution angular relations (`angular_lo/scale == 0.5`, `(angular_hi−angular_lo)/scale == 2π`; §5.9) and the `SurfacicReps` bounding-sphere containment `|f[i]−f[6+i]| + f[3+i] ≤ f[9]` (§3.5) hold to bit-equality, not within a tolerance band.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! SolidWorks visual-property records.
+//! `SolidWorks` visual-property records.
 
 use cadmpeg_ir::topology::Color;
 

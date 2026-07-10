@@ -197,6 +197,8 @@ fn curve_class(value: &CurveGeometry) -> u8 {
         CurveGeometry::Circle { .. } => 1,
         CurveGeometry::Ellipse { .. } => 2,
         CurveGeometry::Nurbs(_) => 3,
+        CurveGeometry::Parabola { .. } => 4,
+        CurveGeometry::Hyperbola { .. } => 5,
     }
 }
 
@@ -276,8 +278,10 @@ fn patch_surfaces(
             .surface_parameterizations
             .iter()
             .find(|frame| frame.surface == surface.id)
-            .map(|frame| frame.u_reference)
-            .unwrap_or_else(|| super::writer::surface_reference(&surface.geometry));
+            .map_or_else(
+                || super::writer::surface_reference(&surface.geometry),
+                |frame| frame.u_reference,
+            );
         let (_, values) =
             super::writer::surface_values(&surface.geometry, reference, scale).ok()?;
         patch_compact(

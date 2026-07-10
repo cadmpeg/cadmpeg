@@ -5,22 +5,40 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::curve::CurveTopologyRow;
 
+/// Identifies one half-edge: a `crv_array` curve together with one of its two
+/// native sides (spec §4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct HalfEdgeId {
+    /// The owning curve's `crv_id` in the `crv_array` namespace.
     pub curve_id: u32,
+    /// The half-edge side: `0` for the `F0`/`E0` suffix fields, `1` for
+    /// `F1`/`E1`.
     pub side: u8,
 }
 
+/// One resolved native half-edge, bound to the face it walks and its unique
+/// successor when one exists.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HalfEdge {
+    /// This half-edge's curve and side.
     pub id: HalfEdgeId,
+    /// The `srf_array` face identifier this half-edge side bounds (the
+    /// corresponding `F0`/`F1` suffix field).
     pub face_id: u32,
+    /// The next half-edge on the same face, when exactly one candidate
+    /// successor matched the row's `E0`/`E1` next-edge field on that face.
+    /// `None` when the successor is absent or ambiguous.
     pub next: Option<HalfEdgeId>,
 }
 
+/// A closed ring of half-edges bounding one face, built by following
+/// [`HalfEdge::next`] links back to the starting half-edge.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Loop {
+    /// The `srf_array` face identifier this loop bounds.
     pub face_id: u32,
+    /// The ring of half-edges in traversal order, starting from the first
+    /// half-edge encountered for this face.
     pub half_edges: Vec<HalfEdgeId>,
 }
 

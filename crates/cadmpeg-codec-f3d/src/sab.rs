@@ -8,7 +8,7 @@
 //! scopes are brace-balanced by `0x0f`/`0x10`. A record's name is the `-`-joined
 //! chain of `0x0e` sub-identifiers terminated by one `0x0d` identifier.
 //!
-//! This module turns those bytes into a [`Vec<Record>`], the RecordTable that
+//! This module turns those bytes into a [`Vec<Record>`], the `RecordTable` that
 //! topology and geometry decoding index into. Because every token's width is
 //! known, the framer stays byte-synchronized even across records whose interior
 //! payload this codec does not interpret (splines, attributes) — it can still
@@ -34,7 +34,7 @@ pub enum Token {
     True,
     /// `0x0b` logical false (also `forward` in sense fields).
     False,
-    /// `0x0c` entity reference (RecordTable index; `-1` is null).
+    /// `0x0c` entity reference (`RecordTable` index; `-1` is null).
     Ref(i64),
     /// `0x0f` subtype-scope open.
     SubtypeOpen,
@@ -48,15 +48,15 @@ pub enum Token {
     Vector3([f64; 3]),
     /// `0x16` 2D `(u, v)` vector.
     Vector2([f64; 2]),
-    /// `0x17` AutoCAD ASM int64 attribute value.
+    /// `0x17` `AutoCAD` ASM int64 attribute value.
     Int64(i64),
 }
 
-/// One framed record: its RecordTable index, assembled name, payload tokens
+/// One framed record: its `RecordTable` index, assembled name, payload tokens
 /// (the tokens after the name chain), and byte extent within the stream.
 #[derive(Debug, Clone)]
 pub struct Record {
-    /// RecordTable index. `asmheader` is index 0.
+    /// `RecordTable` index. `asmheader` is index 0.
     pub index: usize,
     /// Full `-`-joined record name, e.g. `cone-surface`, `body`.
     pub name: String,
@@ -124,8 +124,16 @@ enum Lexed {
 fn read_i(bytes: &[u8], at: usize, width: usize) -> Option<i64> {
     let slice = bytes.get(at..at + width)?;
     let v = match width {
-        8 => i64::from_le_bytes(slice.try_into().unwrap()),
-        4 => i32::from_le_bytes(slice.try_into().unwrap()) as i64,
+        8 => i64::from_le_bytes(
+            slice
+                .try_into()
+                .expect("invariant: bytes.get(at..at+width) with width=8 is an 8-byte slice"),
+        ),
+        4 => i32::from_le_bytes(
+            slice
+                .try_into()
+                .expect("invariant: bytes.get(at..at+width) with width=4 is a 4-byte slice"),
+        ) as i64,
         _ => return None,
     };
     Some(v)
@@ -133,7 +141,11 @@ fn read_i(bytes: &[u8], at: usize, width: usize) -> Option<i64> {
 
 fn read_f64(bytes: &[u8], at: usize) -> Option<f64> {
     let slice = bytes.get(at..at + 8)?;
-    Some(f64::from_le_bytes(slice.try_into().unwrap()))
+    Some(f64::from_le_bytes(
+        slice
+            .try_into()
+            .expect("invariant: bytes.get(at..at+8) is an 8-byte slice"),
+    ))
 }
 
 fn read_vec3(bytes: &[u8], at: usize) -> Option<[f64; 3]> {
@@ -168,7 +180,10 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
         0x03 => {
             let s = bytes.get(p..p + 2).ok_or_else(truncated)?;
             (
-                Lexed::Value(Token::Short(i16::from_le_bytes(s.try_into().unwrap()))),
+                Lexed::Value(Token::Short(i16::from_le_bytes(
+                    s.try_into()
+                        .expect("invariant: bytes.get(p..p+2) is a 2-byte slice"),
+                ))),
                 p + 2,
             )
         }
@@ -179,7 +194,10 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
         0x05 => {
             let s = bytes.get(p..p + 4).ok_or_else(truncated)?;
             (
-                Lexed::Value(Token::Float(f32::from_le_bytes(s.try_into().unwrap()))),
+                Lexed::Value(Token::Float(f32::from_le_bytes(
+                    s.try_into()
+                        .expect("invariant: bytes.get(p..p+4) is a 4-byte slice"),
+                ))),
                 p + 4,
             )
         }
@@ -198,7 +216,10 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
         }
         0x08 => {
             let s = bytes.get(p..p + 2).ok_or_else(truncated)?;
-            let len = u16::from_le_bytes(s.try_into().unwrap()) as usize;
+            let len = u16::from_le_bytes(
+                s.try_into()
+                    .expect("invariant: bytes.get(p..p+2) is a 2-byte slice"),
+            ) as usize;
             (
                 Lexed::Value(Token::Str(
                     read_string(bytes, p + 2, len).ok_or_else(truncated)?,
@@ -208,7 +229,10 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
         }
         0x09 | 0x12 => {
             let s = bytes.get(p..p + 4).ok_or_else(truncated)?;
-            let len = u32::from_le_bytes(s.try_into().unwrap()) as usize;
+            let len = u32::from_le_bytes(
+                s.try_into()
+                    .expect("invariant: bytes.get(p..p+4) is a 4-byte slice"),
+            ) as usize;
             (
                 Lexed::Value(Token::Str(
                     read_string(bytes, p + 4, len).ok_or_else(truncated)?,
@@ -270,7 +294,7 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
     Ok(out)
 }
 
-/// Frame the active slice `bytes[start..limit]` into the RecordTable.
+/// Frame the active slice `bytes[start..limit]` into the `RecordTable`.
 ///
 /// `ref_width` is the stream's reference width (8 for `BinaryFile8`). Framing
 /// stops at `limit`, at end of stream, or when it reaches the `delta_state`
@@ -311,7 +335,7 @@ pub fn frame(
                     // The history partition opens with the delta_state record;
                     // stop at its name before consuming a payload the active
                     // slice does not include.
-                    if name_parts.first().map(|n| n == "delta_state") == Some(true) {
+                    if name_parts.first().is_some_and(|n| n == "delta_state") {
                         is_delta = true;
                         break;
                     }

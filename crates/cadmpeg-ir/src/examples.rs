@@ -115,6 +115,7 @@ pub fn unit_cube() -> CadIr {
         ir.vertices.push(Vertex {
             id: VertexId(format!("v{i}")),
             point: PointId(format!("p{i}")),
+            tolerance: None,
             meta: meta(),
         });
     }
@@ -140,6 +141,7 @@ pub fn unit_cube() -> CadIr {
             start: VertexId(format!("v{a}")),
             end: VertexId(format!("v{b}")),
             param_range: Some([0.0, len]),
+            tolerance: None,
             meta: meta(),
         });
     }
@@ -153,6 +155,7 @@ pub fn unit_cube() -> CadIr {
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(origin.0, origin.1, origin.2),
                 normal: Vector3::new(normal.0, normal.1, normal.2),
+                u_axis: None,
             },
             meta: meta(),
         });
@@ -170,6 +173,7 @@ pub fn unit_cube() -> CadIr {
                 next: CoedgeId(next.clone()),
                 previous: CoedgeId(prev.clone()),
                 partner: None, // filled in below
+                radial_next: None,
                 sense: if *forward {
                     Sense::Forward
                 } else {
@@ -198,6 +202,7 @@ pub fn unit_cube() -> CadIr {
             loops: vec![loop_id.into()],
             name: Some(format!("{name} face")),
             color: None,
+            tolerance: None,
             meta: meta(),
         });
     }
@@ -222,6 +227,8 @@ pub fn unit_cube() -> CadIr {
             .iter()
             .map(|(name, ..)| format!("f_{name}").into())
             .collect(),
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
         meta: meta(),
     });
     ir.lumps.push(Lump {

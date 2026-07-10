@@ -1,89 +1,191 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted topology records in the zero-entity `a9 03` stream family.
 
+/// Resolved zero-entity `a9 03` stream: records, faces, loops, carrier runs,
+/// and the edge/vertex tables recovered from them (spec §8).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZeroEntityTopology {
+    /// Every `a9 03` record found by the stream walk, in stream order.
+    /// Indexed by `ordinal`, and by extension by every `*_ordinal` field
+    /// below.
     pub records: Vec<ZeroEntityRecord>,
+    /// `5f 0c` face records.
     pub faces: Vec<ZeroEntityFace>,
+    /// `62 xx` loop records.
     pub loops: Vec<ZeroEntityLoop>,
+    /// Carrier-then-supports runs: each surface carrier (`27 6a`/`28
+    /// 8a`/`29 b8`/`2b c8`/`34 xx`) followed by its maximal run of `21 xx`
+    /// support occurrences, one run per face (spec §8).
     pub carrier_runs: Vec<ZeroCarrierRun>,
+    /// `21 xx` curve-support-on-surface records, across all carrier runs.
     pub supports: Vec<ZeroSupport>,
+    /// `5e 1a` edge-stride records.
     pub physical_edges: Vec<ZeroPhysicalEdge>,
+    /// `06 38` coedge records, two per physical edge (one per side).
     pub coedge_twins: Vec<ZeroCoedgeTwin>,
+    /// `25 69` side-pair header records, each identifying its two `06 38`
+    /// twin coedges.
     pub side_pairs: Vec<ZeroSidePair>,
+    /// `05 0b`/`05 10`/`05 15` vertex-incidence records paired with their
+    /// following `5d 06` marker.
     pub vertices: Vec<ZeroVertex>,
 }
 
+/// A resolved vertex-incidence pair: a `05 0b`/`05 10`/`05 15` incidence
+/// record immediately followed by its `5d 06` vertex marker (spec §8).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroVertex {
+    /// `ordinal` of the following `5d 06` marker record.
     pub marker_ordinal: usize,
+    /// `ordinal` of this `05 0x` incidence record.
     pub incidence_record_ordinal: usize,
+    /// Referenced record ordinals from the incidence record's counted
+    /// reference lane: 2 items for tag `0x0b`, 3 for `0x10`, 4 for `0x15`.
     pub incidence_items: Vec<u32>,
 }
 
+/// A resolved `5e 1a` edge-stride record (38 bytes; spec §8).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroPhysicalEdge {
+    /// `ordinal` of this record.
     pub record_ordinal: usize,
+    /// Six `0x10`-tagged `u32` reference tokens at fixed offsets `7, 12,
+    /// 17, 22, 27, 32`; meaning not decoded further.
     pub references: [u32; 6],
 }
 
+/// A resolved `06 38` coedge record: one of the two per-side halves of a
+/// physical edge (68 bytes; spec §8).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroCoedgeTwin {
+    /// `ordinal` of this record.
     pub record_ordinal: usize,
+    /// Side number, `1` or `2`, read from the byte following the `0x10`
+    /// marker at the record's `0x83` position.
     pub side: u8,
+    /// `0x10`-tagged `u32` reference tokens following the side byte, in
+    /// serialized order.
     pub references: Vec<u32>,
 }
 
+/// A resolved `25 69` side-pair header record, linking two [`ZeroCoedgeTwin`]
+/// records by side number (spec §8).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroSidePair {
+    /// `ordinal` of this record.
     pub record_ordinal: usize,
+    /// The header's two base columns `[B0, B1]`.
     pub bases: [u32; 2],
+    /// `record_ordinal`s of the two following `06 38` records: side `1`
+    /// first, side `2` second.
     pub coedge_ordinals: [usize; 2],
+    /// `[bases[i] + side]` for `side` in `1, 2`; each side's composite key
+    /// must equal the first two references of its paired coedge.
     pub composite_keys: [[u32; 2]; 2],
 }
 
+/// One surface carrier and its maximal run of `21 xx` support occurrences,
+/// aligned 1:1 with a face (spec §8, "Carrier run = per-face surface").
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZeroCarrierRun {
+    /// `ordinal` of the carrier record (`27 6a`/`28 8a`/`29 b8`/`2b
+    /// c8`/`34 xx`).
     pub carrier_ordinal: usize,
+    /// `ordinal`s of the carrier's `21 xx` support records, in stream
+    /// order.
     pub support_ordinals: Vec<usize>,
 }
 
+/// A resolved `21 xx` curve-support-on-surface record, with its UV
+/// endpoints lifted through the owning carrier where possible (spec §8).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZeroSupport {
+    /// `ordinal` of this record.
     pub record_ordinal: usize,
+    /// `ordinal` of the owning carrier record.
     pub owner_carrier_ordinal: usize,
+    /// Local slot index at `+12`, used with a loop's `terminal_id` to
+    /// address this support from a `62xx` loop member (`A = T - s`).
     pub slot: u32,
+    /// `(u0,v0)`/`(u1,v1)` endpoint pairs read from the record's f64 tail
+    /// at the family-specific offsets in [`support_uv_endpoints`], or
+    /// `None` for an unrecognized support-record tag.
     pub uv_endpoints: Option<[[f64; 2]; 2]>,
+    /// `uv_endpoints` lifted to world-frame 3D points through the owning
+    /// carrier's analytic parameterization, or `None` when `uv_endpoints`
+    /// is `None` or the carrier's tag is not one of the four supported
+    /// analytic kinds ([`lift_endpoints`]).
     pub lifted_endpoints: Option<[[f64; 3]; 2]>,
 }
 
+/// One length-framed `a9 03` record as found by the stream walk: framing
+/// `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12` (spec §8).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroEntityRecord {
+    /// This record's position in the stream walk order. Records reference
+    /// each other by this ordinal, not by byte offset (spec §8).
     pub ordinal: usize,
+    /// Byte offset of the `a9 03` marker in the source stream.
     pub offset: usize,
+    /// The two tag bytes (`XX`, `YY`) identifying the record family.
     pub tag: [u8; 2],
+    /// The full record, including its `a9 03 XX YY` header.
     pub bytes: Vec<u8>,
 }
 
+/// A resolved `5f 0c` face record (24 bytes; spec §8).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroEntityFace {
+    /// `ordinal` of this record.
     pub record_ordinal: usize,
+    /// The record's counted reference lane `[R0, R1, ..., Rm]`: `R0` is
+    /// the face's terminal base, `R1..` name loop terminals.
     pub references: Vec<u32>,
+    /// Ordered loop terminals `T[j] = R0 - R[j+1]`, one per loop owned by
+    /// this face.
     pub loop_terminals: Vec<u32>,
+    /// Indices into the topology's `loops` vector, one per
+    /// `loop_terminals` entry in the same order, resolved by
+    /// [`bind_face_runs`]. Empty until binding runs.
     pub loop_indices: Vec<usize>,
+    /// Index into the topology's `carrier_runs` vector for this face's
+    /// surface carrier, resolved by [`bind_face_runs`]. `None` until
+    /// binding runs or when no carrier run aligns with this face.
     pub carrier_run: Option<usize>,
 }
 
+/// A resolved `62 xx` loop record: an alternating even/odd reference lane
+/// plus a packed 3-bit-per-member sense stream (spec §8).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroEntityLoop {
+    /// `ordinal` of this record.
     pub record_ordinal: usize,
+    /// Even-lane reference ids `A[j]`, one per loop member, satisfying
+    /// `A[j] = T - g - j` for this loop's `terminal_id` (`T`) and `gap`
+    /// (`g`).
     pub member_ids: Vec<u32>,
+    /// Odd-lane reference ids interleaved with `member_ids`; meaning not
+    /// decoded further.
     pub secondary_refs: Vec<u32>,
+    /// The loop's terminal id `T`: the last entry of the record's counted
+    /// reference lane.
     pub terminal_id: u32,
+    /// `T - member_ids[0]`: the offset between the terminal id and the
+    /// first even-lane member.
     pub gap: u32,
+    /// Loop-class byte from the record header: `0x50` marks an inner
+    /// (hole) loop, `0x41`/`0xc1` mark a non-inner loop.
     pub loop_class: u8,
+    /// `true` when `loop_class == 0x50` (an inner/hole loop).
     pub inner: bool,
+    /// Per-member coedge sense decoded from the packed 3-bit stream: code
+    /// `7` (`.T.`, forward) decodes to `false`, code `2` (`.F.`, reversed)
+    /// decodes to `true`. Index-aligned with `member_ids`.
     pub reversed: Vec<bool>,
+    /// Per-member index into the topology's `supports` vector, resolved by
+    /// [`bind_face_runs`] from each member's local slot `A = T - s`.
+    /// `None` for a member whose slot resolves to no support in the
+    /// owning carrier run, or before binding runs.
     pub support_indices: Vec<Option<usize>>,
 }
 

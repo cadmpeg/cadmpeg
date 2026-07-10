@@ -63,7 +63,7 @@ pub struct AppearanceBinding {
     /// Fusion design-entity id, such as `0_985`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_entity_id: Option<String>,
-    /// Design MetaStream object type, such as `Body`.
+    /// Design `MetaStream` object type, such as `Body`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_type: Option<String>,
     /// ACT change-version channel GUIDs for this assigned entity.

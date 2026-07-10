@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+//! CLI integration tests exercising `cadmpeg` end to end via `assert_cmd`.
+
+#![allow(clippy::unwrap_used)]
+
 use std::fs;
 use std::io::Cursor;
 
@@ -183,6 +187,8 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
     let left = unit_cube();
     let mut right = left.clone();
     right.points[0].position.x += 0.5;
+    right.edges[0].tolerance = Some(0.01);
+    right.coedges[0].radial_next = right.coedges[0].partner.clone();
     right.coedges[0].sense = match right.coedges[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
@@ -203,7 +209,8 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
         .code(1)
         .stdout(
             predicate::str::contains("points: +0 -0 ~1")
-                .and(predicate::str::contains("coedges: +0 -0 ~1")),
+                .and(predicate::str::contains("coedges: +0 -0 ~1"))
+                .and(predicate::str::contains("edges: +0 -0 ~1")),
         )
         .stderr(predicate::str::is_empty());
 }

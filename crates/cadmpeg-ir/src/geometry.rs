@@ -8,7 +8,7 @@
 //! entity by reference id (see the f3d program notes on sequential-ID surface
 //! sharing).
 
-use crate::ids::{CurveId, PcurveId, SurfaceId, UnknownId};
+use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::provenance::EntityMeta;
 use schemars::JsonSchema;
@@ -76,6 +76,9 @@ pub enum SurfaceGeometry {
         origin: Point3,
         /// Plane normal (unit in well-formed IR).
         normal: Vector3,
+        /// Positive-u direction in the plane.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        u_axis: Option<Vector3>,
     },
     /// Right circular cylinder of the given `radius` about the axis line.
     Cylinder {
@@ -83,6 +86,9 @@ pub enum SurfaceGeometry {
         origin: Point3,
         /// Axis direction (unit).
         axis: Vector3,
+        /// Zero-azimuth direction perpendicular to `axis`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ref_direction: Option<Vector3>,
         /// Cylinder radius, in the document's length unit.
         radius: f64,
     },
@@ -93,6 +99,9 @@ pub enum SurfaceGeometry {
         origin: Point3,
         /// Axis direction (unit).
         axis: Vector3,
+        /// Zero-azimuth direction perpendicular to `axis`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ref_direction: Option<Vector3>,
         /// Radius at `origin`.
         radius: f64,
         /// Half-angle in radians.
@@ -102,6 +111,12 @@ pub enum SurfaceGeometry {
     Sphere {
         /// Sphere center.
         center: Point3,
+        /// Polar axis.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        axis: Option<Vector3>,
+        /// Zero-azimuth direction perpendicular to `axis`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ref_direction: Option<Vector3>,
         /// Radius.
         radius: f64,
     },
@@ -112,6 +127,9 @@ pub enum SurfaceGeometry {
         center: Point3,
         /// Axis of revolution (unit).
         axis: Vector3,
+        /// Zero-azimuth direction perpendicular to `axis`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ref_direction: Option<Vector3>,
         /// Major radius.
         major_radius: f64,
         /// Minor (tube) radius.
@@ -155,10 +173,15 @@ pub struct Surface {
 /// positive u axis; `v_reference` defines the positive v direction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SurfaceParameterization {
+    /// Surface this parameter frame applies to.
     pub surface: SurfaceId,
+    /// World-space point at parameter `(0, 0)`.
     pub origin: Point3,
+    /// Zero-azimuth / positive-u direction, in document length units.
     pub u_reference: Vector3,
+    /// Positive-v direction, in document length units.
     pub v_reference: Vector3,
+    /// Provenance metadata for this parameterization record.
     pub meta: EntityMeta,
 }
 
@@ -207,7 +230,9 @@ pub enum ProceduralSurfaceDefinition {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "state", content = "supports", rename_all = "snake_case")]
 pub enum BlendSupports {
+    /// Both support sides were resolved to a known kind.
     Complete([ProceduralSupportKind; 2]),
+    /// Only some support sides were resolved; length is 0, 1, or unresolved-partial.
     Partial(Vec<ProceduralSupportKind>),
 }
 
@@ -215,11 +240,17 @@ pub enum BlendSupports {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProceduralSupportKind {
+    /// Planar support surface.
     Plane,
+    /// Conical (or cylindrical) support surface.
     Cone,
+    /// Spherical support surface.
     Sphere,
+    /// Toroidal support surface.
     Torus,
+    /// Free-form spline support surface.
     Spline,
+    /// Translational-extrusion support surface.
     TranslationalExtrusion,
 }
 
@@ -227,8 +258,18 @@ pub enum ProceduralSupportKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BlendRadiusLaw {
-    Constant { signed_radius: f64 },
-    Linear { start: f64, end: f64 },
+    /// Constant blend radius along the whole spine.
+    Constant {
+        /// Signed radius, in document length units; sign selects the support offset side.
+        signed_radius: f64,
+    },
+    /// Radius varying linearly from `start` to `end` along the spine.
+    Linear {
+        /// Signed radius at the spine start, in document length units.
+        start: f64,
+        /// Signed radius at the spine end, in document length units.
+        end: f64,
+    },
 }
 
 /// The analytic or free-form shape of a 3D curve carrier.
@@ -264,6 +305,30 @@ pub enum CurveGeometry {
         /// Semi-minor radius.
         minor_radius: f64,
     },
+    /// Parabola in STEP conic form.
+    Parabola {
+        /// Parabola vertex.
+        vertex: Point3,
+        /// Plane normal (unit).
+        axis: Vector3,
+        /// In-plane direction from the vertex toward increasing axial parameter.
+        major_direction: Vector3,
+        /// Distance from the vertex to the focus.
+        focal_distance: f64,
+    },
+    /// Hyperbola in STEP conic form.
+    Hyperbola {
+        /// Hyperbola center.
+        center: Point3,
+        /// Plane normal (unit).
+        axis: Vector3,
+        /// In-plane direction of the transverse axis.
+        major_direction: Vector3,
+        /// Semi-transverse radius.
+        major_radius: f64,
+        /// Semi-conjugate radius.
+        minor_radius: f64,
+    },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
 }
@@ -282,11 +347,201 @@ pub struct Curve {
 /// Native construction metadata for a solved procedural curve cache.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ProceduralCurve {
+    /// Solved curve produced by this construction.
     pub curve: CurveId,
+    /// Native construction subtype name, retained independently of its solved cache.
     pub native_kind: String,
+    /// Fit contract for the stored solved cache, when supplied by the source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_fit_tolerance: Option<f64>,
+    /// Byte provenance of the native construction record.
     pub meta: EntityMeta,
+}
+
+/// A v1 source-native surface construction retained beside its solved carrier.
+///
+/// This type is parallel to [`ProceduralSurface`]; the v0 carrier remains
+/// unchanged during the additive migration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ProceduralSurfaceV1 {
+    /// Stable construction identity.
+    pub id: ProceduralSurfaceId,
+    /// Solved surface produced by this construction.
+    pub surface: SurfaceId,
+    /// Neutral construction definition.
+    pub definition: ProceduralSurfaceDefinitionV1,
+    /// Fit contract for the solved cache.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_fit_tolerance: Option<f64>,
+}
+
+/// Neutral v1 taxonomy for source-native surface constructions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ProceduralSurfaceDefinitionV1 {
+    /// Translation of a directrix along a direction.
+    Extrusion {
+        /// Curve swept along `direction` to form the surface.
+        directrix: CurveId,
+        /// Length-bearing sweep direction, in document length units.
+        direction: Vector3,
+    },
+    /// Revolution of a directrix about an axis.
+    Revolution {
+        /// Curve revolved about the axis to form the surface.
+        directrix: CurveId,
+        /// A point on the revolution axis.
+        axis_origin: Point3,
+        /// Unit direction of the revolution axis.
+        axis_direction: Vector3,
+    },
+    /// Sweep of a profile along a spine.
+    Sweep {
+        /// Cross-section curve carried along `spine`.
+        profile: CurveId,
+        /// Path curve the profile is swept along.
+        spine: CurveId,
+    },
+    /// Offset from a support surface.
+    Offset {
+        /// Surface this surface is offset from.
+        support: SurfaceId,
+        /// Signed offset distance, in document length units.
+        distance: f64,
+    },
+    /// Ruled surface joining two directrices.
+    Ruled {
+        /// First bounding curve of the ruled surface.
+        first: CurveId,
+        /// Second bounding curve of the ruled surface.
+        second: CurveId,
+    },
+    /// Rolling-ball or law-driven blend between two support surfaces.
+    Blend {
+        /// The two blend support sides, in side order; `None` when a side was
+        /// not resolved.
+        supports: [Option<BlendSupport>; 2],
+        /// Stored center/spine curve, when present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        spine: Option<CurveId>,
+        /// Signed offset-radius law along the spine.
+        radius: BlendRadiusLawV1,
+        /// Cross-section family of the blend.
+        cross_section: BlendCrossSection,
+    },
+    /// Preserved construction without a neutral interpretation.
+    Unknown {
+        /// Reference to the preserved raw source record, when retained.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<UnknownId>,
+    },
+}
+
+/// One oriented support of a procedural blend.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BlendSupport {
+    /// The support surface.
+    pub surface: SurfaceId,
+    /// Selects the opposite surface-normal side when true.
+    #[serde(default)]
+    pub reversed: bool,
+}
+
+/// Cross-section family of a procedural blend.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BlendCrossSection {
+    /// Constant-radius circular cross-section.
+    Circular,
+    /// Conic (non-circular quadric) cross-section.
+    Conic,
+    /// Free-form polynomial cross-section.
+    Polynomial,
+}
+
+/// Radius law for a v1 procedural blend.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BlendRadiusLawV1 {
+    /// Constant blend radius along the whole spine.
+    Constant {
+        /// Signed radius, in document length units; sign selects the support offset side.
+        signed_radius: f64,
+    },
+    /// Radius varying linearly from `start` to `end` along the spine.
+    Linear {
+        /// Signed radius at the spine start, in document length units.
+        start: f64,
+        /// Signed radius at the spine end, in document length units.
+        end: f64,
+    },
+    /// Radius varying along the spine per an explicit law curve.
+    Law {
+        /// Curve whose parameterization gives the signed radius along the spine.
+        curve: NurbsCurve,
+    },
+}
+
+/// A v1 source-native curve construction retained beside its solved carrier.
+///
+/// This type is parallel to [`ProceduralCurve`]; the v0 carrier remains
+/// unchanged during the additive migration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ProceduralCurveV1 {
+    /// Stable construction identity.
+    pub id: ProceduralCurveId,
+    /// Solved curve produced by this construction.
+    pub curve: CurveId,
+    /// Neutral construction definition.
+    pub definition: ProceduralCurveDefinitionV1,
+    /// Fit contract for the solved cache.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_fit_tolerance: Option<f64>,
+}
+
+/// Neutral v1 taxonomy for source-native curve constructions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ProceduralCurveDefinitionV1 {
+    /// Intersection of two support surfaces.
+    Intersection {
+        /// The two intersecting surfaces; `None` when a side was not resolved.
+        supports: [Option<SurfaceId>; 2],
+    },
+    /// Projection of a source curve onto a support surface.
+    Projection {
+        /// Curve being projected.
+        source: CurveId,
+        /// Surface the source curve is projected onto.
+        support: SurfaceId,
+        /// Projection direction, when the source recorded one; `None` for a
+        /// normal (closest-point) projection.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
+    },
+    /// Offset from a source curve.
+    Offset {
+        /// Curve this curve is offset from.
+        source: CurveId,
+        /// Signed offset distance, in document length units.
+        distance: f64,
+        /// Surface the offset is measured within, when the offset is constrained
+        /// to a support surface; `None` for a free-space offset.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        support: Option<SurfaceId>,
+    },
+    /// Spine or center curve of a blend surface.
+    BlendSpine {
+        /// The blend surface this curve is the spine of, when known.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend_surface: Option<SurfaceId>,
+    },
+    /// Preserved construction without a neutral interpretation.
+    Unknown {
+        /// Reference to the preserved raw source record, when retained.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<UnknownId>,
+    },
 }
 
 /// The shape of a parameter-space (u, v) curve on a surface.

@@ -133,7 +133,9 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
             continue;
         };
         out.push(ActRootComponent {
-            record_index: u32::from_le_bytes(record_raw.try_into().unwrap()),
+            record_index: u32::from_le_bytes(record_raw.try_into().expect(
+                "invariant: record_raw is a 4-byte slice from bytes.get(range) of length 4",
+            )),
             class_tag,
             instance_root_record,
             components_root_record,
@@ -188,7 +190,11 @@ fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
     let Some(count_raw) = bytes.get(cursor..cursor + 4) else {
         return (Vec::new(), Vec::new());
     };
-    let count = u32::from_le_bytes(count_raw.try_into().unwrap()) as usize;
+    let count = u32::from_le_bytes(
+        count_raw
+            .try_into()
+            .expect("invariant: count_raw is a 4-byte slice from bytes.get(range) of length 4"),
+    ) as usize;
     if count > 100_000 {
         return (Vec::new(), Vec::new());
     }
@@ -209,7 +215,9 @@ fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
             return (Vec::new(), Vec::new());
         };
         indexed.push((
-            u32::from_le_bytes(index_raw.try_into().unwrap()),
+            u32::from_le_bytes(index_raw.try_into().expect(
+                "invariant: index_raw is a 4-byte slice from bytes.get(range) of length 4",
+            )),
             entity_id,
             offset,
         ));
@@ -265,7 +273,11 @@ fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
         let Some(count_raw) = bytes.get(after_tag + 14..after_tag + 18) else {
             break;
         };
-        let count = u32::from_le_bytes(count_raw.try_into().unwrap()) as usize;
+        let count = u32::from_le_bytes(
+            count_raw
+                .try_into()
+                .expect("invariant: count_raw is a 4-byte slice from bytes.get(range) of length 4"),
+        ) as usize;
         if !(1..=8).contains(&count) {
             position += 1;
             continue;
@@ -288,7 +300,9 @@ fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
         if !channels.is_empty() {
             if let Some((entity_id, end)) = lp_utf16(bytes, cursor) {
                 out.push(ChannelGroup {
-                    record_index: u32::from_le_bytes(index_raw.try_into().unwrap()),
+                    record_index: u32::from_le_bytes(index_raw.try_into().expect(
+                        "invariant: index_raw is a 4-byte slice from bytes.get(range) of length 4",
+                    )),
                     entity_id,
                     class_tag,
                     channels,
@@ -322,7 +336,12 @@ fn lp_utf16(bytes: &[u8], position: usize) -> Option<(String, usize)> {
     let units = bytes
         .get(position + 4..end)?
         .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes(pair.try_into().unwrap()))
+        .map(|pair| {
+            u16::from_le_bytes(
+                pair.try_into()
+                    .expect("invariant: chunks_exact(2) yields 2-byte slices"),
+            )
+        })
         .collect::<Vec<_>>();
     Some((String::from_utf16(&units).ok()?, end))
 }

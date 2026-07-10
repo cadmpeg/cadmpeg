@@ -3,103 +3,223 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+/// Resolved graph of an E5 `0D 03` record stream: bodies, faces, edges, and
+/// the geometry records they reference. Produced by [`parse_topology`], which
+/// walks every class-tagged record, resolves cross-record references, and
+/// returns `None` if the walk cannot be closed (spec §9).
 #[derive(Debug, Clone, PartialEq)]
 pub struct E5Topology {
+    /// Class-`0x01` body records with their resolved face rosters and
+    /// orientation-sign tapes. Empty when the stream carries no `0x01`
+    /// records (bodies are optional; face/loop/edge resolution does not
+    /// require them).
     pub bodies: Vec<E5Body>,
+    /// Class-`0x00` advanced-face records, each resolved to its surface and
+    /// loops.
     pub faces: Vec<E5Face>,
+    /// Class-`0xff` trimmed edge-use records, keyed by their `record_id`.
+    /// Only edges reachable from a resolved face's loops are retained.
     pub edges: BTreeMap<u32, E5Edge>,
+    /// Class-`0x96` (line), `0x97` (circle), and `0xa0` (spline jet) pcurve
+    /// records, keyed by `record_id`.
     pub pcurves: BTreeMap<u32, E5Pcurve>,
+    /// Class-`0x0e` parameter-bound records, keyed by `record_id`.
     pub bounds: BTreeMap<u32, E5Bounds>,
+    /// Class-`0xc0` (one-pcurve boundary) and `0xc1` (two-pcurve
+    /// intersection) curve-support records, keyed by `record_id`.
     pub curve_supports: BTreeMap<u32, E5CurveSupport>,
+    /// Sorted, deduplicated `record_id`s of every class-`0xfe` vertex record
+    /// referenced as an edge endpoint.
     pub vertex_refs: Vec<u32>,
 }
 
+/// A class-`0xc0`/`0xc1` curve-support record: the pcurve(s) an edge curve
+/// evaluates against and the surface parameter range they span (spec §9).
 #[derive(Debug, Clone, PartialEq)]
 pub struct E5CurveSupport {
+    /// This record's stream-assigned `record_id`, used to resolve
+    /// `E5Edge::support` references.
     pub record_id: u32,
+    /// `true` for a class-`0xc1` two-pcurve intersection support, `false`
+    /// for a class-`0xc0` one-pcurve boundary support.
     pub intersection: bool,
+    /// Referenced pcurve `record_id`s: one entry for `0xc0`, two for
+    /// `0xc1`.
     pub pcurves: Vec<u32>,
+    /// Raw mode byte following the pcurve reference lane; meaning not
+    /// decoded further.
     pub mode: u8,
+    /// Finite `[lo, hi]` parameter range on the support, stored as LE f64.
     pub range: [f64; 2],
+    /// Unparsed bytes after the fixed header; not interpreted.
     pub tail: Vec<u8>,
 }
 
+/// A class-`0x0e` parameter-bound record: a list of representation
+/// references each paired with a bound parameter (spec §9).
 #[derive(Debug, Clone, PartialEq)]
 pub struct E5Bounds {
+    /// This record's stream-assigned `record_id`.
     pub record_id: u32,
+    /// Ordered `(representation, parameter, code)` entries, one per
+    /// referenced representation.
     pub entries: Vec<E5BoundEntry>,
 }
 
+/// One entry of an [`E5Bounds`] record.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct E5BoundEntry {
+    /// Referenced representation's `record_id`.
     pub representation: u32,
+    /// Finite LE-f64 bound parameter for this representation.
     pub parameter: f64,
+    /// Raw trailing `u32` code following the parameter; meaning not decoded
+    /// further.
     pub code: u32,
 }
 
+/// A resolved E5 pcurve: a 2D curve in a surface's parameter space, decoded
+/// from a class-`0x96` (line), `0x97` (circle), or `0xa0` (spline jet)
+/// record (spec §9).
 #[derive(Debug, Clone, PartialEq)]
 pub enum E5Pcurve {
+    /// Class `0x96`: `<surface_ref>, origin_u, origin_v, dir_u, dir_v,
+    /// param_lo, param_hi` stored as f64.
     Line {
+        /// `record_id` of the owning surface carrier.
         surface: u32,
+        /// `(u, v)` origin of the line in surface parameter space.
         origin: [f64; 2],
+        /// `(u, v)` direction of the line in surface parameter space.
         direction: [f64; 2],
+        /// `[param_lo, param_hi]` domain along `direction` from `origin`.
         range: [f64; 2],
     },
+    /// Class `0x97`: `<surface_ref>, center_u, center_v, radius, param_lo,
+    /// param_hi` with two intervening `u32` fields (`codes`).
     Circle {
+        /// `record_id` of the owning surface carrier.
         surface: u32,
+        /// `(u, v)` center of the circle in surface parameter space.
         center: [f64; 2],
+        /// The two `u32` fields between `center` and `radius`; meaning not
+        /// decoded further.
         codes: [u32; 2],
+        /// Positive circle radius in surface parameter units.
         radius: f64,
+        /// `[param_lo, param_hi]` angular domain.
         range: [f64; 2],
     },
+    /// Class `0xa0`: a nonperiodic degree-5 C2 B-spline p-curve encoded as a
+    /// per-knot position/first-derivative/second-derivative jet (spec §9).
     Jet {
+        /// `record_id` of the owning surface carrier.
         surface: u32,
+        /// B-spline degree; always `5` (only degree-5 jets are accepted).
         degree: u32,
+        /// Distinct knot values, starting at `0.0`.
         knots: Vec<f64>,
+        /// Per-knot multiplicities: `degree + 1` at each end, `3` at
+        /// interior knots (clamped-C2 policy).
         multiplicities: Vec<u32>,
+        /// `(u, v)` jet-site positions, one per knot.
         points: Vec<[f64; 2]>,
+        /// `(u, v)` first derivatives at each jet site.
         first_derivatives: Vec<[f64; 2]>,
+        /// `(u, v)` second derivatives at each jet site.
         second_derivatives: Vec<[f64; 2]>,
+        /// `[0.0, knots.last()]` parameter range, validated against the
+        /// knot span.
         range: [f64; 2],
     },
 }
 
+/// A class-`0x01` body record resolved through its class-`0x08` root record:
+/// the body's face roster and the per-face/global orientation-sign tape
+/// (spec §9).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct E5Body {
+    /// The class-`0x01` record's `record_id`.
     pub record_id: u32,
+    /// The referenced class-`0x08` root record's `record_id`.
     pub root_record_id: u32,
+    /// `record_id`s of every class-`0x00` face in the body, in root-record
+    /// order.
     pub faces: Vec<u32>,
+    /// Per-face sign tape from the root record, one entry per `faces`
+    /// element, each `+1` or `-1`.
     pub face_orientation_signs: Vec<i16>,
+    /// The two trailing sign-tape entries after the per-face signs. Per
+    /// spec §9, these have no assigned semantic role.
     pub extra_orientation_signs: [i16; 2],
 }
 
+/// A resolved class-`0x00` advanced-face record: its surface, loops, and
+/// root sign-tape entry (spec §9).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct E5Face {
+    /// This face record's `record_id`.
     pub record_id: u32,
+    /// `record_id` of the face's surface carrier.
     pub surface: u32,
+    /// This face's entry in the class-`0x08` root sign tape (`+1` or
+    /// `-1`), used by [`solve_absolute_orientation`] to fix each loop's
+    /// global sense.
     pub trailer_sign: i16,
+    /// The face's loops, first entry outer-bounded, remaining entries
+    /// holes.
     pub loops: Vec<E5Loop>,
 }
 
+/// A resolved class-`0x09` loop record: its member pcurve/edge-use pairs and
+/// derived orientation (spec §9).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct E5Loop {
+    /// This loop record's `record_id`.
     pub record_id: u32,
+    /// `record_id` of the loop's surface, matched against the owning
+    /// face's surface during resolution.
     pub surface: u32,
+    /// `record_id`s of the loop's member pcurves, in serialized order.
     pub pcurves: Vec<u32>,
+    /// `record_id`s of the loop's member edge-uses, in serialized order,
+    /// index-aligned with `pcurves`.
     pub edge_uses: Vec<u32>,
+    /// Per-edge-use traversal sense from the unique head-to-tail chain
+    /// solved by [`solve_loop_chain`]; `true` means the edge is traversed
+    /// end-to-start.
     pub reversed: Vec<bool>,
+    /// Per-edge-use sense after folding in the loop's global orientation
+    /// sign `g_loop` (spec §9); `None` until [`solve_absolute_orientation`]
+    /// resolves it, which it can decline to do (frustrated or ambiguous
+    /// sign system).
     pub absolute_reversed: Option<Vec<bool>>,
+    /// Loop role bit from the trailing sign tape: `Some(true)` =
+    /// `FACE_OUTER_BOUND`, `Some(false)` = `FACE_BOUND`, `None` for a
+    /// two-edge digon loop (no trailing role tape).
     pub outer: Option<bool>,
 }
 
+/// A resolved class-`0xff` trimmed edge-use record (spec §9, grammar `85
+/// <curve_support_ref> <start_vertex> <end_vertex> <param_start>
+/// <param_end>`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct E5Edge {
+    /// This edge-use record's `record_id`.
     pub record_id: u32,
+    /// `record_id` of the owning [`E5CurveSupport`].
     pub support: u32,
+    /// `record_id` of the class-`0xfe` start vertex.
     pub start_vertex: u32,
+    /// `record_id` of the class-`0xfe` end vertex.
     pub end_vertex: u32,
+    /// Reference to the start-parameter representation on the curve
+    /// support.
     pub parameter_start: u32,
+    /// Reference to the end-parameter representation on the curve support.
     pub parameter_end: u32,
+    /// Raw trailing reference token following the parameter pair; meaning
+    /// not decoded further.
     pub terminator: u32,
 }
 
@@ -678,7 +798,11 @@ fn parse_loop(record: &Record<'_>) -> Option<RawLoop> {
         edges.push(reference(record.payload, &mut position)?);
     }
     let surface = reference(record.payload, &mut position)?;
-    let outer = parse_loop_role(record.payload.get(position..)?, member_count / 2)?;
+    let outer = match parse_loop_role(record.payload.get(position..)?, member_count / 2) {
+        LoopRole::Malformed => return None,
+        LoopRole::Absent => None,
+        LoopRole::Present(role) => Some(role),
+    };
     Some(RawLoop {
         id: record.id,
         surface,
@@ -688,23 +812,37 @@ fn parse_loop(record: &Record<'_>) -> Option<RawLoop> {
     })
 }
 
-fn parse_loop_role(trailing: &[u8], edge_count: usize) -> Option<Option<bool>> {
+/// Result of decoding a loop record's trailing role tape.
+enum LoopRole {
+    /// The trailing bytes do not match the expected role-tape layout.
+    Malformed,
+    /// No trailing role tape is present (a two-edge digon loop).
+    Absent,
+    /// A role tape is present and decodes to a loop-outer bit.
+    Present(bool),
+}
+
+fn parse_loop_role(trailing: &[u8], edge_count: usize) -> LoopRole {
     if trailing.is_empty() {
-        return Some(None);
+        return LoopRole::Absent;
     }
-    if trailing.first() != Some(&(0x80u8.checked_add(u8::try_from(edge_count).ok()?)?))
-        || trailing.len() != 1 + 2 * (3 * edge_count + 4)
-    {
-        return None;
+    let Some(expected_head) = u8::try_from(edge_count)
+        .ok()
+        .and_then(|n| 0x80u8.checked_add(n))
+    else {
+        return LoopRole::Malformed;
+    };
+    if trailing.first() != Some(&expected_head) || trailing.len() != 1 + 2 * (3 * edge_count + 4) {
+        return LoopRole::Malformed;
     }
     let signs: Vec<i16> = trailing[1..]
         .chunks_exact(2)
         .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
         .collect();
     if signs.iter().any(|sign| !matches!(sign, -1 | 1)) {
-        return None;
+        return LoopRole::Malformed;
     }
-    Some(Some(signs[1] == 1))
+    LoopRole::Present(signs[1] == 1)
 }
 
 fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {

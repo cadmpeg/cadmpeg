@@ -1,12 +1,12 @@
-# cadmpeg corpus manifest — annotated template
+# cadmpeg corpus manifest: annotated template
 #
 # Copy a [[file]] block per donated file. Every file in the public corpus must
 # be CC0-1.0 and authored by the donor. See corpus/README.md for the full
 # donation process and LEGAL.md for the clean-room rules this supports.
 #
-# The real manifest for the committed corpus lives alongside the files in this
-# directory (e.g. corpus/manifest.toml). This .example file is documentation
-# only and is never read by tooling.
+# The first accepted donation creates corpus/manifest.toml alongside the donated
+# files. Verification is manual until tooling lands. This .example file is
+# documentation only and is not read by tooling.
 
 [[file]]
 # Required fields ----------------------------------------------------------
@@ -14,8 +14,7 @@
 # File name as committed in corpus/ (or the sharing location noted in the PR).
 filename = "bracket_single_body.f3d"
 
-# Format key. Match a directory under docs/formats/: f3d | sldprt | creo_prt
-# | siemens_nx (more as they are added).
+# Codec format key: f3d | sldprt | catia | nx | creo.
 format = "f3d"
 
 # The application you authored the file in, and its exact version. Version
@@ -30,14 +29,16 @@ license = "CC0-1.0"
 #   shasum -a 256 <file>   (macOS)   or   sha256sum <file>   (Linux)
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
-# Optional fields ----------------------------------------------------------
+# Required purpose ---------------------------------------------------------
 
 # One line on what this file is meant to exercise. Helps reviewers and future
 # decoder authors know why it is in the corpus.
 notes = "Minimal single prismatic body; smoke test for container + planar faces."
 
+# Optional fields ----------------------------------------------------------
+
 # Expected topology counts, if you can read them off the authoring app. When
-# present, decoders can assert against these — turning the file into a golden
+# present, decoders can assert against these, turning the file into a golden
 # fixture. Omit any you do not know rather than guessing.
 [file.expected_topology]
 bodies = 1

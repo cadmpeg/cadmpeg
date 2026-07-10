@@ -4,16 +4,24 @@
 
 The schema-33103 solid and sheet discriminator is unresolved. `0x1d/flo2` belongs to the face-connectivity web rather than a sheet region. The unresolved sheet discriminator must occur in the body-reachable `0x1b → 0x1f → 0x21 → 0x23` region chain.
 
+- The complete disc17 body-to-face reference mapping for disc14 face families is unresolved.
+- In schema 32001, the slot semantics joining disc17 bodies, disc15/flo2 face-list heads, and face records are not fully defined.
+- In schema 33103, the body-to-face mapping through disc15/flo1 adjacency and the `0x1b → 0x1f → 0x21 → 0x23` hierarchy is not fully defined.
+- The class-root vector following `index_map_offset` and its relation to body, shell, and face-use heads is unresolved.
+
 ## Geometry carriers
 
 - The convention for derived UV pcurves on trimmed B-spline faces is unresolved.
 - The carriers for offset, swept, blended, intersection, and spline-on-surface geometry are unresolved.
+- The stored topology convention for periodic cylinder and sphere seams is unresolved.
+- The relation between bridge/coedge orientation markers and a closed shell's global orientation is unresolved.
 
 ## Container metadata
 
 - The cache-cell prefix, fill, and high half of `type_id` have unresolved index-state semantics.
 - The variable-length fill after the final tail-directory entry has unresolved index-state semantics.
 - The fixed slot-count and boundary grammar for inline entity families outside canonical faces is not defined for all Parasolid schemas.
+- The precedence relation between partition and deltas records with the same site, attribute, and sequence is unresolved.
 
 ## Auxiliary lanes
 

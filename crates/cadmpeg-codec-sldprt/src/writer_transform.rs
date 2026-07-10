@@ -249,21 +249,60 @@ fn transform_surface(
     transform: Transform,
 ) -> Result<(), CodecError> {
     match geometry {
-        SurfaceGeometry::Plane { origin, normal } => {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
             *origin = transform_point(transform, *origin);
             *normal = transform_vector(transform, *normal);
+            if let Some(u_axis) = u_axis {
+                *u_axis = transform_vector(transform, *u_axis);
+            }
         }
-        SurfaceGeometry::Cylinder { origin, axis, .. }
-        | SurfaceGeometry::Cone { origin, axis, .. } => {
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            ..
+        }
+        | SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            ..
+        } => {
             *origin = transform_point(transform, *origin);
             *axis = transform_vector(transform, *axis);
+            if let Some(ref_direction) = ref_direction {
+                *ref_direction = transform_vector(transform, *ref_direction);
+            }
         }
-        SurfaceGeometry::Sphere { center, .. } => {
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            ..
+        } => {
             *center = transform_point(transform, *center);
+            if let Some(axis) = axis {
+                *axis = transform_vector(transform, *axis);
+            }
+            if let Some(ref_direction) = ref_direction {
+                *ref_direction = transform_vector(transform, *ref_direction);
+            }
         }
-        SurfaceGeometry::Torus { center, axis, .. } => {
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            ..
+        } => {
             *center = transform_point(transform, *center);
             *axis = transform_vector(transform, *axis);
+            if let Some(ref_direction) = ref_direction {
+                *ref_direction = transform_vector(transform, *ref_direction);
+            }
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs
             .control_points
@@ -302,6 +341,26 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) {
             .control_points
             .iter_mut()
             .for_each(|point| *point = transform_point(transform, *point)),
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            ..
+        } => {
+            *vertex = transform_point(transform, *vertex);
+            *axis = transform_vector(transform, *axis);
+            *major_direction = transform_vector(transform, *major_direction);
+        }
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            ..
+        } => {
+            *center = transform_point(transform, *center);
+            *axis = transform_vector(transform, *axis);
+            *major_direction = transform_vector(transform, *major_direction);
+        }
     }
 }
 

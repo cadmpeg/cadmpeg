@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::unwrap_used)]
 //! Tests over synthetic byte fixtures. No real CAD files exist in this repo and
 //! none may be added, so every fixture is hand-built here to exercise a real
 //! decode path that can fail if the code regresses.
@@ -120,7 +121,7 @@ fn t_end(b: &mut Vec<u8>) {
 }
 
 /// Assemble the active slice: header prefix + records + `delta_state` boundary.
-/// RecordTable indices are the order below, starting at 0 (`asmheader`).
+/// `RecordTable` indices are the order below, starting at 0 (`asmheader`).
 fn synthetic_geometry_smbh() -> Vec<u8> {
     // Indices: 0 asmheader, 1 body, 2 lump, 3 shell, 4 face, 5 loop,
     // 6 plane, 7/8/9 coedges, 10/11/12 edges, 13/14/15 vertices,
@@ -332,7 +333,7 @@ fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
 }
 
 /// Add a generated inline 2D `nubs` pcurve to the first coedge of the base
-/// topology fixture. The new record is appended at RecordTable index 19.
+/// topology fixture. The new record is appended at `RecordTable` index 19.
 fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -1537,11 +1538,16 @@ fn decode_builds_valid_topology_and_geometry() {
     assert_eq!(result.ir.surfaces.len(), 1);
     assert_eq!(result.ir.surface_parameterizations.len(), 1);
 
-    // The plane decoded with its stored origin and unit normal.
+    // The plane decoded with its stored origin and complete parameter frame.
     match &result.ir.surfaces[0].geometry {
-        SurfaceGeometry::Plane { origin, normal } => {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
             assert_eq!(*origin, Point3::new(0.0, 0.0, 0.0));
             assert_eq!(normal.z, 1.0);
+            assert_eq!(*u_axis, Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)));
         }
         other => panic!("expected plane, got {other:?}"),
     }
@@ -1601,9 +1607,18 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Double(2.0),              // r1 = 2 cm
     ]);
     match decode_surface(&rec("cone", cyl)).unwrap().0 {
-        SurfaceGeometry::Cylinder { radius, axis, .. } => {
+        SurfaceGeometry::Cylinder {
+            radius,
+            axis,
+            ref_direction,
+            ..
+        } => {
             assert_eq!(radius, 20.0);
             assert_eq!(axis.z, 1.0);
+            assert_eq!(
+                ref_direction,
+                Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+            );
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
@@ -1616,12 +1631,20 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Vector3([2.0, 0.0, 0.0]),
         Token::Double(1.0),
         Token::Double(-0.5), // sine (both-negative branch)
-        Token::Double(-0.8660254),
+        Token::Double(-0.866_025_4),
         Token::Double(2.0),
     ]);
     match decode_surface(&rec("cone", cone)).unwrap().0 {
-        SurfaceGeometry::Cone { half_angle, .. } => {
+        SurfaceGeometry::Cone {
+            half_angle,
+            ref_direction,
+            ..
+        } => {
             assert!((half_angle - 0.5f64.asin()).abs() < 1e-12);
+            assert_eq!(
+                ref_direction,
+                Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+            );
         }
         other => panic!("expected cone, got {other:?}"),
     }
@@ -1637,7 +1660,19 @@ fn analytic_carrier_decode_covers_each_shape() {
     let (geo, signed) = decode_surface(&rec("sphere", sph)).unwrap();
     assert!(!signed);
     match geo {
-        SurfaceGeometry::Sphere { radius, .. } => assert_eq!(radius, -10.0),
+        SurfaceGeometry::Sphere {
+            radius,
+            axis,
+            ref_direction,
+            ..
+        } => {
+            assert_eq!(radius, -10.0);
+            assert_eq!(axis, Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)));
+            assert_eq!(
+                ref_direction,
+                Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+            );
+        }
         other => panic!("expected sphere, got {other:?}"),
     }
 
@@ -1656,10 +1691,15 @@ fn analytic_carrier_decode_covers_each_shape() {
         SurfaceGeometry::Torus {
             major_radius,
             minor_radius,
+            ref_direction,
             ..
         } => {
             assert_eq!(major_radius, 10.0);
             assert_eq!(minor_radius, -20.0);
+            assert_eq!(
+                ref_direction,
+                Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+            );
         }
         other => panic!("expected torus, got {other:?}"),
     }

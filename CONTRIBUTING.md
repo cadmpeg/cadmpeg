@@ -22,7 +22,7 @@ Any PR that adds or changes a **decoder** or a **format specification** must inc
 
 > I derived this contribution solely by analyzing CAD files I am legally entitled to possess and from publicly available information. I did not use vendor SDKs, decompiled binaries, confidential or NDA-covered material, or any source listed as forbidden in LEGAL.md.
 
-PRs that only touch tooling, the IR, exporters, tests, or docs do not need the provenance declaration (but still need the DCO sign-off).
+PRs that only touch tooling, the IR, exporters, tests, or non-specification documentation do not need the provenance declaration (but still need the DCO sign-off).
 
 ---
 
@@ -38,11 +38,11 @@ By contributing, you license code under **Apache-2.0** and documentation/spec co
 
 A codec takes native bytes and produces the cadmpeg IR.
 
-1. **Start from a spec.** Pick a format in [`docs/formats/`](docs/formats/). If the spec has open gates, implement only the byte-proven subset.
-2. **Implement the codec interface.** Codecs plug in through a common trait with three responsibilities: _detect_ (is this my format?), _inspect_ (report containers/streams/structure without full decode), and _decode_ (produce IR). See [docs/architecture.md](docs/architecture.md) for the codec plugin model and the exact trait; it lives in the Rust workspace.
-3. **Respect the two tiers.** Values you read directly from bytes are strict. Label values you infer or repair as inferred in the IR; never present an inferred value as if it were byte-derived.
+1. **Start from a spec.** Pick a format in [`docs/formats/`](docs/formats/) and review its companion `*-open-items.md` file. Implement only settled byte semantics.
+2. **Implement the codec interface.** Codecs implement the [`Codec` trait in `crates/cadmpeg-ir/src/codec.rs`](crates/cadmpeg-ir/src/codec.rs), which defines `id`, `detect`, `inspect`, and `decode`. See [docs/architecture.md](docs/architecture.md) for the plugin model.
+3. **Classify exactness correctly.** `ByteExact` means read from the source stream without transformation beyond documented unit conversion. `Derived` means computed deterministically from byte-exact inputs. `Inferred` means supplied from context or convention rather than an explicit source field. `Unknown` means origin or trustworthiness could not be established.
 4. **Account for loss.** If your decoder skips or approximates something, surface it; do not silently drop bytes.
-5. **Test against the corpus.** Add openly-licensed test files through the [corpus donation pipeline](corpus/README.md) rather than committing binaries directly, and add golden/round-trip tests where you can.
+5. **Add authorized fixtures.** Add public CAD fixtures through the [corpus donation pipeline](corpus/README.md), not as untracked test binaries. Add focused decode, validation, and round-trip tests where applicable.
 6. **Include the provenance declaration** in your PR.
 
 ### Contribute format research (extend a spec)
@@ -51,12 +51,33 @@ Format research starts with a hypothesis about an unknown file region. Test that
 
 1. Work in the relevant [`docs/formats/`](docs/formats/) spec.
 2. Document findings with evidence: byte offsets, hex, and the reasoning that ties a region to a meaning. Record falsified hypotheses to avoid repeated analysis.
-3. Keep the "open gates" / remaining-unknowns section of the spec current.
+3. Keep the companion `*-open-items.md` file current. Specs contain settled byte semantics and invariants; unresolved questions belong in the open-items file.
 4. Include the provenance declaration; format research is derived-knowledge work and the clean-room rules apply in full.
 
 ### Everything else
 
-IR schema tooling, validators, exporters, corpus tooling, hex-annotation tooling, CLI ergonomics, and docs fixes need only the DCO sign-off. See [docs/roadmap.md](docs/roadmap.md) for starter issues.
+IR schema tooling, validators, exporters, corpus tooling, hex-annotation tooling, CLI ergonomics, and docs fixes need only the DCO sign-off. See the [roadmap contributor entry points](docs/roadmap.md#contributor-entry-points) for bounded ways to contribute.
+
+---
+
+## Local CI gate
+
+Run the stable CI gate from the repository root:
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace -- -D warnings -W missing-docs
+cargo build --workspace
+cargo test --workspace
+```
+
+The excluded fuzz crate uses Rust nightly and `cargo-fuzz`. The scheduled [fuzz smoke workflow](.github/workflows/fuzz-smoke.yml) compiles every fuzz target without running it:
+
+```sh
+cargo +nightly fuzz build --fuzz-dir crates/cadmpeg-fuzz
+```
+
+See [`seeds/README.md`](seeds/README.md) for seed regeneration and local fuzz-run commands.
 
 ---
 
@@ -64,16 +85,18 @@ IR schema tooling, validators, exporters, corpus tooling, hex-annotation tooling
 
 - [ ] Commits are signed off (`git commit -s`).
 - [ ] For decoder/spec PRs: the provenance declaration is in the description.
-- [ ] `cargo fmt --all` is clean and `cargo clippy --workspace` has no warnings.
+- [ ] `cargo fmt --all --check` passes.
+- [ ] `cargo clippy --workspace -- -D warnings -W missing-docs` passes.
+- [ ] `cargo build --workspace` passes.
 - [ ] `cargo test --workspace` passes.
 - [ ] No CAD binaries committed outside the corpus donation pipeline or the generated fuzz seeds (see [`seeds/README.md`](seeds/README.md)).
-- [ ] Inferred/repaired values are labeled as such in the IR (decoder PRs).
+- [ ] IR exactness is classified as `ByteExact`, `Derived`, `Inferred`, or `Unknown` accurately (decoder PRs).
 
 ---
 
 ## Code style
 
-Rust code follows `rustfmt` defaults and must pass `clippy` with warnings denied (CI enforces this; see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Match the surrounding code's conventions. Decoder code should preserve byte provenance and make inferred values visible.
+Rust code follows `rustfmt` defaults and must pass `clippy` with warnings denied and `missing-docs` enabled (CI enforces this; see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Match the surrounding code's conventions. Decoder code must preserve byte provenance and classify exactness accurately.
 
 ---
 

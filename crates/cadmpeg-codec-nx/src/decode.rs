@@ -31,7 +31,9 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use crate::container::{self, Container};
 use crate::geometry;
 use crate::parasolid::{self, Stream, StreamKind};
-use crate::topology::Graph;
+use crate::topology::{Graph, Node};
+
+const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 
 /// Everything read from a `.prt`, shared by `inspect` and `decode`.
 pub struct Scan {
@@ -140,11 +142,18 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             ir.vertices.push(Vertex {
                 id: vid.clone(),
                 point: pid,
+                tolerance: None,
                 meta: byte_exact(&stream_name, pt.pos as u64, "point"),
             });
             if let Some(node) = graph.at_pos(pt.pos) {
                 if node.kind == 29 {
-                    points_by_xmt.insert(node.xmt, (ir.points.last().unwrap().id.clone(), vid));
+                    let point_id = ir
+                        .points
+                        .last()
+                        .expect("invariant: just pushed above")
+                        .id
+                        .clone();
+                    points_by_xmt.insert(node.xmt, (point_id, vid));
                 }
             }
             counts.points += 1;
@@ -157,7 +166,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 SurfaceGeometry::Cone { .. } => counts.cones += 1,
                 SurfaceGeometry::Sphere { .. } => counts.spheres += 1,
                 SurfaceGeometry::Torus { .. } => counts.tori += 1,
-                _ => {}
+                SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
             }
             let id = SurfaceId(format!("nx:s{si}:surf#{fi}"));
             ir.surfaces.push(Surface {
@@ -191,7 +200,9 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 CurveGeometry::Line { .. } => counts.lines += 1,
                 CurveGeometry::Circle { .. } => counts.circles += 1,
                 CurveGeometry::Ellipse { .. } => counts.ellipses += 1,
-                _ => {}
+                CurveGeometry::Parabola { .. }
+                | CurveGeometry::Hyperbola { .. }
+                | CurveGeometry::Nurbs(_) => {}
             }
             let id = CurveId(format!("nx:s{si}:crv#{ci}"));
             ir.curves.push(Curve {
@@ -296,6 +307,8 @@ fn emit_topology(
             id: shell_id.clone(),
             lump: lump_id.clone(),
             faces: Vec::new(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
             meta: byte_exact(stream_name, node.pos as u64, "shell"),
         });
         if let Some(parent) = ir.bodies.iter_mut().find(|candidate| candidate.id == body) {
@@ -312,6 +325,14 @@ fn emit_topology(
         let Some((_, vertex)) = points.get(&point_xmt) else {
             continue;
         };
+        if let Some(decoded_vertex) = ir
+            .vertices
+            .iter_mut()
+            .find(|candidate| candidate.id == *vertex)
+        {
+            decoded_vertex.tolerance = geometric_tolerance(node, 18);
+            decoded_vertex.meta = byte_exact(stream_name, node.pos as u64, "vertex");
+        }
         vertices.insert(node.xmt, vertex.clone());
     }
 
@@ -342,6 +363,7 @@ fn emit_topology(
             start,
             end,
             param_range: curve_xmt.and_then(|xmt| trim_ranges.get(&xmt)).copied(),
+            tolerance: geometric_tolerance(node, 10),
             meta: byte_exact(stream_name, node.pos as u64, "edge"),
         });
         edges.insert(node.xmt, id);
@@ -364,6 +386,7 @@ fn emit_topology(
             loops: Vec::new(),
             name: None,
             color: None,
+            tolerance: geometric_tolerance(node, 10),
             meta: byte_exact(stream_name, node.pos as u64, "face"),
         });
         if let Some(parent) = ir.shells.iter_mut().find(|candidate| candidate.id == shell) {
@@ -426,6 +449,7 @@ fn emit_topology(
             next,
             previous,
             partner,
+            radial_next: None,
             sense: sense(node.byte_at(22)),
             pcurve: None,
             meta: byte_exact(stream_name, node.pos as u64, "fin"),
@@ -437,6 +461,14 @@ fn emit_topology(
         {
             parent.coedges.push(id);
         }
+    }
+}
+
+fn geometric_tolerance(node: &Node, offset: usize) -> Option<f64> {
+    match node.f64_at(offset)? {
+        MISSING_TOLERANCE => None,
+        value if value.is_finite() && value.abs() < 1.0e3 => Some(value * 1000.0),
+        _ => None,
     }
 }
 
@@ -732,13 +764,15 @@ fn byte_exact(stream: &str, offset: u64, tag: &str) -> EntityMeta {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(bytes);
     let digest = h.finalize();
     let mut s = String::with_capacity(digest.len() * 2);
     for b in digest {
-        s.push_str(&format!("{b:02x}"));
+        let _ = write!(s, "{b:02x}");
     }
     s
 }

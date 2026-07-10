@@ -9,11 +9,11 @@
 
 use std::io::Cursor;
 
-use cadmpeg_codec_f3d::F3dCodec;
-use cadmpeg_codec_sldprt::SldprtCodec;
 use cadmpeg_codec_catia::CatiaCodec;
 use cadmpeg_codec_creo::CreoCodec;
+use cadmpeg_codec_f3d::F3dCodec;
 use cadmpeg_codec_nx::NxCodec;
+use cadmpeg_codec_sldprt::SldprtCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use libfuzzer_sys::fuzz_target;
 

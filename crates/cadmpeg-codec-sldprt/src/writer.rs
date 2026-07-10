@@ -21,8 +21,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             .findings
             .iter()
             .find(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-            .map(|finding| finding.message.as_str())
-            .unwrap_or("IR validation failed");
+            .map_or("IR validation failed", |finding| finding.message.as_str());
         return Err(CodecError::Malformed(detail.into()));
     }
     let retained_partition = retained_partition(ir);
@@ -35,8 +34,9 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             .findings
             .iter()
             .find(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-            .map(|finding| finding.message.as_str())
-            .unwrap_or("transformed IR validation failed");
+            .map_or("transformed IR validation failed", |finding| {
+                finding.message.as_str()
+            });
         return Err(CodecError::Malformed(detail.into()));
     }
     check_semantic_support(ir)?;
@@ -236,16 +236,18 @@ fn section_type_ids(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Result<Vec<u3
             source_ids
                 .get_mut(section)
                 .and_then(VecDeque::pop_front)
-                .map(Ok)
-                .unwrap_or_else(|| {
-                    0x20u32
-                        .checked_add(u32::try_from(index).map_err(|_| {
-                            CodecError::Malformed(
-                                "SLDPRT section count exceeds type-id space".into(),
-                            )
-                        })?)
-                        .ok_or_else(|| CodecError::Malformed("SLDPRT type-id overflow".into()))
-                })
+                .map_or_else(
+                    || {
+                        0x20u32
+                            .checked_add(u32::try_from(index).map_err(|_| {
+                                CodecError::Malformed(
+                                    "SLDPRT section count exceeds type-id space".into(),
+                                )
+                            })?)
+                            .ok_or_else(|| CodecError::Malformed("SLDPRT type-id overflow".into()))
+                    },
+                    Ok,
+                )
         })
         .collect()
 }
@@ -397,9 +399,9 @@ fn metadata_payloads(
                 }
                 objects.extend_from_slice(b"moBBoxCenterData_c");
                 objects.extend_from_slice(&1u32.to_le_bytes());
-                values.iter().for_each(|value| {
-                    objects.extend_from_slice(&(value * length_scale).to_le_bytes())
-                });
+                for value in values {
+                    objects.extend_from_slice(&(value * length_scale).to_le_bytes());
+                }
             }
             "default_reference_plane" => {
                 let [AttributeValue::Vector(origin), AttributeValue::Vector(frame)] =
@@ -415,12 +417,12 @@ fn metadata_payloads(
                     ));
                 }
                 objects.extend_from_slice(b"moDefaultRefPlnData_c");
-                origin.iter().for_each(|value| {
-                    objects.extend_from_slice(&(value * length_scale).to_le_bytes())
-                });
-                frame
-                    .iter()
-                    .for_each(|value| objects.extend_from_slice(&value.to_le_bytes()));
+                for value in origin {
+                    objects.extend_from_slice(&(value * length_scale).to_le_bytes());
+                }
+                for value in frame {
+                    objects.extend_from_slice(&value.to_le_bytes());
+                }
             }
             "part_record" => {
                 let [AttributeValue::Integer(id), AttributeValue::Integer(version)] =
@@ -773,7 +775,7 @@ fn material_payload(name: &str, color: Color) -> Vec<u8> {
         .to_le_bytes(),
     );
     out.extend_from_slice(&0u32.to_le_bytes());
-    out.extend_from_slice(&0x00c0c0c0u32.to_le_bytes());
+    out.extend_from_slice(&0x00c0_c0c0u32.to_le_bytes());
     out.extend_from_slice(&[0xff, 0xfe, 0xff, 0x00]);
     out.extend_from_slice(&[0xff, 0xfe, 0xff, name.len().min(u8::MAX as usize) as u8]);
     for unit in name.into_iter().take(u8::MAX as usize) {
@@ -840,8 +842,10 @@ fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8
             .surface_parameterizations
             .iter()
             .find(|frame| frame.surface == surface.id)
-            .map(|frame| frame.u_reference)
-            .unwrap_or_else(|| surface_reference(&surface.geometry));
+            .map_or_else(
+                || surface_reference(&surface.geometry),
+                |frame| frame.u_reference,
+            );
         let (kind, values) = surface_values(&surface.geometry, reference, length_scale)?;
         compact(&mut out, kind, surfaces[&surface.id], &values);
     }
@@ -891,7 +895,7 @@ fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8
             0,
             0,
             0,
-            edge.curve.as_ref().map(|id| curves[id]).unwrap_or(0),
+            edge.curve.as_ref().map_or(0, |id| curves[id]),
             0,
             0,
         ] {
@@ -917,7 +921,7 @@ fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8
             coedges[&coedge.previous],
             coedges[&coedge.next],
             vertices[start],
-            coedge.partner.as_ref().map(|id| coedges[id]).unwrap_or(0),
+            coedge.partner.as_ref().map_or(0, |id| coedges[id]),
             edges[&coedge.edge],
             0,
             0,
@@ -1124,7 +1128,7 @@ fn write_face_list(
         let mut refs = [0u16; 6];
         refs[0] = attrs.get(index + 1).copied().unwrap_or(0);
         if let Some(chunk) = chunks.get(index) {
-            refs[1..1 + chunk.len()].copy_from_slice(chunk);
+            refs[1..=chunk.len()].copy_from_slice(chunk);
         }
         entity51(out, 2, *attr, disc, &refs);
     }
@@ -1137,7 +1141,9 @@ fn entity51(out: &mut Vec<u8>, flags: u32, attr: u16, disc: u16, refs: &[u16; 6]
     be16(out, attr);
     be32(out, 1);
     be16(out, disc);
-    refs.iter().for_each(|reference| be16(out, *reference));
+    for reference in refs {
+        be16(out, *reference);
+    }
 }
 
 pub(super) fn surface_values(
@@ -1147,7 +1153,7 @@ pub(super) fn surface_values(
 ) -> Result<(u8, Vec<f64>), CodecError> {
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
-        SurfaceGeometry::Plane { origin, normal } => (
+        SurfaceGeometry::Plane { origin, normal, .. } => (
             0x32,
             vec![
                 scaled(origin.x),
@@ -1165,6 +1171,7 @@ pub(super) fn surface_values(
             origin,
             axis,
             radius,
+            ..
         } => (
             0x33,
             vec![
@@ -1185,6 +1192,7 @@ pub(super) fn surface_values(
             axis,
             radius,
             half_angle,
+            ..
         } => (
             0x34,
             vec![
@@ -1202,26 +1210,39 @@ pub(super) fn surface_values(
                 reference.z,
             ],
         ),
-        SurfaceGeometry::Sphere { center, radius } => (
-            0x35,
-            vec![
-                scaled(center.x),
-                scaled(center.y),
-                scaled(center.z),
-                scaled(*radius),
-                0.0,
-                0.0,
-                1.0,
-                reference.x,
-                reference.y,
-                reference.z,
-            ],
-        ),
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            radius,
+            ..
+        } => {
+            let axis = axis.unwrap_or(cadmpeg_ir::math::Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+            });
+            (
+                0x35,
+                vec![
+                    scaled(center.x),
+                    scaled(center.y),
+                    scaled(center.z),
+                    scaled(*radius),
+                    axis.x,
+                    axis.y,
+                    axis.z,
+                    reference.x,
+                    reference.y,
+                    reference.z,
+                ],
+            )
+        }
         SurfaceGeometry::Torus {
             center,
             axis,
             major_radius,
             minor_radius,
+            ..
         } => (
             0x36,
             vec![
@@ -1391,7 +1412,9 @@ fn f64_array(out: &mut Vec<u8>, kind: u8, attr: u16, values: &[f64]) {
     out.push(0x2b);
     be32(out, values.len() as u32);
     be16(out, attr);
-    values.iter().for_each(|value| bef64(out, *value));
+    for value in values {
+        bef64(out, *value);
+    }
 }
 
 fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16]) {
@@ -1399,7 +1422,9 @@ fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16]) {
     out.push(0x2b);
     be32(out, values.len() as u32);
     be16(out, attr);
-    values.iter().for_each(|value| be16(out, *value));
+    for value in values {
+        be16(out, *value);
+    }
 }
 
 pub(super) fn curve_values(
@@ -1463,6 +1488,11 @@ pub(super) fn curve_values(
                 scaled(*minor_radius),
             ],
         ),
+        CurveGeometry::Parabola { .. } | CurveGeometry::Hyperbola { .. } => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer does not support parabola or hyperbola curves".into(),
+            ))
+        }
         CurveGeometry::Nurbs(_) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
@@ -1474,13 +1504,39 @@ pub(super) fn curve_values(
 
 pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math::Vector3 {
     match geometry {
-        SurfaceGeometry::Plane { normal, .. } => orthogonal(*normal),
-        SurfaceGeometry::Cylinder { axis, .. }
-        | SurfaceGeometry::Cone { axis, .. }
-        | SurfaceGeometry::Torus { axis, .. } => orthogonal(*axis),
-        SurfaceGeometry::Sphere { .. }
-        | SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
+        SurfaceGeometry::Plane { normal, u_axis, .. } => {
+            u_axis.unwrap_or_else(|| orthogonal(*normal))
+        }
+        SurfaceGeometry::Cylinder {
+            axis,
+            ref_direction,
+            ..
+        }
+        | SurfaceGeometry::Cone {
+            axis,
+            ref_direction,
+            ..
+        }
+        | SurfaceGeometry::Torus {
+            axis,
+            ref_direction,
+            ..
+        } => ref_direction.unwrap_or_else(|| orthogonal(*axis)),
+        SurfaceGeometry::Sphere {
+            axis,
+            ref_direction,
+            ..
+        } => ref_direction.unwrap_or_else(|| {
+            axis.map_or(
+                cadmpeg_ir::math::Vector3 {
+                    x: 1.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                orthogonal,
+            )
+        }),
+        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
             x: 1.0,
             y: 0.0,
             z: 0.0,

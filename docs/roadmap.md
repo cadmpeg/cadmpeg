@@ -62,7 +62,7 @@ Build the evidence required to measure progress.
 - Cover controlled variations in geometry, topology, features, configurations, tessellation, appearance, and format versions.
 - Maintain a multidimensional support profile for each codec instead of relying on one highest fidelity level.
 - Publish the generated CAD IR JSON Schema and validate serialized artifacts against it.
-- Define semantic equality for IR documents independently of positional entity IDs.
+- Define semantic equality for IR documents independently of source-specific or regenerated IDs.
 - Define geometric error measures for curves, surfaces, tessellation, and transformed assemblies.
 - Record every source byte as typed data, structural padding, or an explicit opaque record.
 
@@ -102,7 +102,7 @@ This milestone is complete when unchanged files round-trip byte exactly, edited 
 
 Turn the IR into a translation model rather than a collection of decoded records.
 
-- Define format-neutral feature, sketch, assembly, annotation, and appearance semantics.
+- Complete and validate format-neutral feature, sketch, assembly, annotation, and appearance semantics.
 - Map equivalent native constructions between source and target formats.
 - Convert unsupported procedural constructions into bounded analytic or NURBS representations.
 - Reconcile units, absolute tolerances, angular tolerances, parameter ranges, orientation conventions, and kernel-specific topology rules.
@@ -151,7 +151,7 @@ Work now follows the `.sldprt` critical path:
 1. Build the public `.sldprt` corpus and its manifest verification tooling.
 2. Inventory every decoded, opaque, and dropped `.sldprt` record family.
 3. Close the remaining geometry, schema-specific sheet classification, multi-shell, periodic NURBS, and feature-semantic gaps.
-4. Define semantic IR identity so round trips and file revisions can be compared without positional-ID noise.
+4. Define semantic IR identity so round trips and file revisions can be compared without source-ID churn.
 5. Add geometric validation and explicit tolerance-delta reporting.
 6. Expand semantic writing and re-decode tests across supported SolidWorks versions.
 7. Keep decode and export losses aligned with the actual implementation.

@@ -176,7 +176,7 @@ fn try_decode_brep(
     active: &BrepFacts,
 ) -> Result<Option<(Brep, DecodeReport)>, CodecError> {
     // Only the documented BinaryFile8 record layout is decoded.
-    let width = active.header.as_ref().map(|h| h.width).unwrap_or(0);
+    let width = active.header.as_ref().map_or(0, |h| h.width);
     if width != 8 {
         return Ok(None);
     }

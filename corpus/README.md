@@ -1,14 +1,12 @@
 # cadmpeg corpus
 
-This directory is the pipeline for **openly-licensed CAD test files** that cadmpeg can decode against in the open.
-
-**At launch this directory contains zero CAD files.** We do not seed the corpus with files whose provenance we cannot verify. Every file that lands here arrives through the donation process below, dedicated to the public domain by someone who authored it.
+This directory accepts contributor-authored CAD fixtures dedicated to the public domain under CC0-1.0. CAD files enter it only through the donation process below.
 
 ---
 
 ## What we accept
 
-A donated file must meet **all** of these:
+A donated file must meet all of these requirements:
 
 1. **You authored it.** You created the file yourself in the CAD application you are declaring. Do not donate files made by others, customer parts, or anything you found, even if it seems freely available.
 2. **It contains no vendor library content.** Start from a blank or default template and model the geometry yourself. A file you authored can still embed vendor-copyrighted material: content-library parts, toolbox/standard components, vendor-supplied materials or appearance assets. Files that pull in such content are not accepted.
@@ -32,22 +30,23 @@ We do **not** accept vendor sample files, files under any non-CC0 terms, or file
 3. Add an entry to the corpus manifest describing it (format below), using [`manifest.example.toml`](manifest.example.toml) as a template.
 4. Open a pull request (or an issue, if the file is large and you need guidance on how to attach it) with the file and its manifest entry. Confirm explicitly in the PR/issue text: the CC0 dedication, that the file contains no vendor library content, and that your CAD license permits sharing it.
 
-Maintainers will verify the SHA-256, sanity-check the manifest, and confirm the CC0 dedication before merge.
+The first accepted donation creates `corpus/manifest.toml`. Each later donation adds a `[[file]]` entry. Manifest and donation verification is manual until verification tooling lands. Maintainers verify the SHA-256, format key, manifest fields, authorship declaration, CAD-license permission, absence of vendor library content, and CC0 dedication before merge.
 
 ---
 
 ## Manifest format
 
-The corpus manifest records, for each file: its filename, format, the authoring application and version, the CC0 dedication, the expected topology counts (if you know them), and its SHA-256. See [`manifest.example.toml`](manifest.example.toml) for a fully annotated, copyable template. A minimal entry:
+Valid format keys are `f3d`, `sldprt`, `catia`, `nx`, and `creo`. The manifest records each file's name, format key, authoring application and version, CC0 dedication, SHA-256, purpose, and optional expected topology. See [`manifest.example.toml`](manifest.example.toml) for an annotated template. A minimal entry:
 
 ```toml
 [[file]]
 filename = "bracket_single_body.f3d"
-format = "f3d"                       # f3d | sldprt | creo_prt | siemens_nx | ...
+format = "f3d"                       # f3d | sldprt | catia | nx | creo
 authoring_app = "Autodesk Fusion 360"
 authoring_app_version = "2.0.19426"
 license = "CC0-1.0"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+notes = "Minimal single prismatic body; exercises container and planar faces."
 
 # Optional: expected topology, so decoders can assert against it.
 [file.expected_topology]
@@ -57,10 +56,4 @@ edges = 12
 vertices = 8
 ```
 
-`expected_topology` is optional; include whatever you can determine from the authoring application. Accurate expected counts turn a donated file into a golden test.
-
----
-
-## `corpus/private/`: local golden testing
-
-`corpus/private/` is **gitignored** and never committed (see the repository [`.gitignore`](../.gitignore)). Use it to keep files you can decode against locally but cannot share publicly, for example your own parts you have not (or cannot) dedicate CC0. Golden tests that reference `corpus/private/` should skip gracefully when the directory is empty, so CI and fresh clones are unaffected.
+`expected_topology` is optional. Include only counts reported by the authoring application; do not guess.

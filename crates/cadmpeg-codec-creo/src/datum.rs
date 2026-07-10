@@ -3,12 +3,24 @@
 
 use crate::scalar;
 
+/// A model-space standard datum plane decoded from an `ActDatums`
+/// `act_datum_geoms -> srf_array` row (spec §6). Standard datum planes are
+/// axis-aligned: the normal is a unit basis vector and the plane equation is
+/// `x_k = offset` for the axis `k` given by `normal`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DatumPlane {
+    /// The row's `geom_id`, the datum's identifier in the `ActDatums`
+    /// `srf_array` namespace. `ref_planes` nested `plane_id` fields join
+    /// this identifier (spec §8.1).
     pub id: u32,
+    /// The plane's unit normal, one of the three standard basis vectors.
     pub normal: [f64; 3],
+    /// The plane's model-space offset along the axis identified by
+    /// `normal`: the constant coordinate shared by both `outline` corners.
     pub offset: f64,
+    /// The row's two `outline` corner points, in model-space XYZ.
     pub corners: [[f64; 3]; 2],
+    /// Byte offset of the row's `outline` field in the original stream.
     pub offset_in_payload: usize,
 }
 
@@ -41,7 +53,7 @@ pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
             .iter()
             .enumerate()
             .min_by(|a, b| a.1.total_cmp(b.1))
-            .unwrap();
+            .expect("invariant: `differences` is a fixed-size [f64; 3] array, so it is never empty and `min_by` always yields an element");
         if *difference > 1e-5 {
             continue;
         }
@@ -124,6 +136,7 @@ fn scalars(data: &[u8], mut offset: usize, count: usize) -> Option<Vec<f64>> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
     fn ieee8(value: f64) -> Vec<u8> {
         let mut raw = value.to_be_bytes();

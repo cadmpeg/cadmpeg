@@ -5,7 +5,7 @@
 //! one another by id rather than by nested ownership. Each entity kind gets its
 //! own newtype so the compiler rejects, say, passing a [`FaceId`] where an
 //! [`EdgeId`] is expected. Every id wraps a [`String`]: decoders mint ids that
-//! encode provenance (for example `f3d:smbh#42` for RecordTable index 42), and
+//! encode provenance (for example `f3d:smbh#42` for `RecordTable` index 42), and
 //! hand-built IR can use any stable unique string.
 
 use schemars::JsonSchema;
@@ -84,6 +84,14 @@ id_type!(
 id_type!(
     /// Identifies a [`crate::geometry::Pcurve`] carrier.
     PcurveId
+);
+id_type!(
+    /// Identifies a [`crate::geometry::ProceduralSurfaceV1`] construction.
+    ProceduralSurfaceId
+);
+id_type!(
+    /// Identifies a [`crate::geometry::ProceduralCurveV1`] construction.
+    ProceduralCurveId
 );
 id_type!(
     /// Identifies a [`crate::topology::Point`] carrier (a vertex position).

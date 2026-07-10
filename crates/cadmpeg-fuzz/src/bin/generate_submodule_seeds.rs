@@ -299,6 +299,10 @@ fn generate_ir_submodule_seeds() {
     }"#;
     write_seed("seeds/ir_diff", "minimal_left", minimal_ir.as_bytes());
     write_seed("seeds/ir_diff", "minimal_right", minimal_ir.as_bytes());
-    write_seed("seeds/ir_canonical_roundtrip", "minimal", minimal_ir.as_bytes());
+    write_seed(
+        "seeds/ir_canonical_roundtrip",
+        "minimal",
+        minimal_ir.as_bytes(),
+    );
     write_seed("seeds/step_writer_custom", "minimal", minimal_ir.as_bytes());
 }

@@ -9,6 +9,10 @@ const TRIM_KINDS: [u8; 14] = [
     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
 ];
 
+/// Reconstructed standard-nested (or FBB-only) topology: the counted spine's
+/// face boundaries recovered from the trim-mesh triangle packets, plus the
+/// physical edge rows and, for the standard family, the `05 08 01` vertex
+/// coordinate table (spec ?5).
 #[derive(Debug, Clone, PartialEq)]
 pub struct StandardTopology {
     faces: Vec<FaceTopology>,
@@ -18,21 +22,29 @@ pub struct StandardTopology {
 }
 
 impl StandardTopology {
+    /// Number of faces, equal to the largest contiguous `30 04 04 ff` FBB
+    /// run's row count (spec ?5.2).
     #[must_use]
     pub fn face_count(&self) -> usize {
         self.faces.len()
     }
 
+    /// Per-face reconstructed boundaries, in FBB row order (spec ?5.1: face
+    /// ordinal `i` binds to FBB row `i`).
     #[must_use]
     pub fn faces(&self) -> &[FaceTopology] {
         &self.faces
     }
 
+    /// The counted spine's physical edge rows, in table order (spec ?5.2).
     #[must_use]
     pub fn edge_rows(&self) -> &[EdgeRow] {
         &self.edge_rows
     }
 
+    /// The `05 08 01` vertex coordinate table, in table order. Empty for a
+    /// topology built by [`parse_fbb`], whose coordinate records are not
+    /// part of the counted spine.
     #[must_use]
     pub fn vertex_points(&self) -> &[[f64; 3]] {
         &self.vertex_points
@@ -153,28 +165,53 @@ fn unique_bijections(
     }
 }
 
+/// One row of the counted standard/FBB edge table: `02 <arity_u8>
+/// <payload[arity*2]>` (spec ?5.2), handles read big-endian.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EdgeRow {
+    /// Table-kind byte the row was parsed under (`0x01` or `0x02`; spec
+    /// ?5.2 `count_header`).
     pub kind: u8,
+    /// The row's BE handle sequence `[p0, interior?, p1]`; the first and
+    /// last entries are the row's graph endpoint ports (spec ?5.4).
     pub handles: Vec<u32>,
 }
 
+/// One face's reconstructed boundary cycles (spec ?5.3): one outer cycle
+/// plus one per hole, in the order recovered from the trim mesh.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FaceTopology {
+    /// The face's boundary cycles; loop count equals boundary-cycle count.
     pub boundaries: Vec<Boundary>,
 }
 
+/// One closed boundary cycle of a face's trim mesh, covered end-to-end by
+/// matched edge rows (spec ?5.3-?5.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Boundary {
+    /// The mesh-boundary handle cycle recovered from triangle-edge
+    /// incidence cancellation, rotated to start at its minimum handle.
     pub mesh_handles: Vec<u32>,
+    /// The physical edge uses covering this cycle, in cycle order.
     pub coedges: Vec<CoedgeUse>,
 }
 
+/// One physical edge's use within a face boundary, oriented by its match
+/// against the recovered boundary cycle (spec ?5.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CoedgeUse {
+    /// Index into [`StandardTopology::edge_rows`] for the matched edge
+    /// row.
     pub edge_row: usize,
+    /// `true` when the edge row's handle sequence matched the boundary
+    /// cycle in reverse; orientation comes from this match, not a stored
+    /// sense bit (spec ?5.4).
     pub reversed: bool,
+    /// Logical-vertex (union-find component) index at this coedge's start,
+    /// in boundary-cycle traversal direction.
     pub start_vertex: usize,
+    /// Logical-vertex (union-find component) index at this coedge's end,
+    /// in boundary-cycle traversal direction.
     pub end_vertex: usize,
 }
 
@@ -558,7 +595,7 @@ fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
         }
         let forward = counts.get(&(low, high)).copied().unwrap_or(0);
         let reverse = counts.get(&(high, low)).copied().unwrap_or(0);
-        if !matches!((forward, reverse), (1, 0) | (0, 1) | (1, 1)) {
+        if !matches!((forward, reverse), (1, 0 | 1) | (0, 1)) {
             return None;
         }
     }

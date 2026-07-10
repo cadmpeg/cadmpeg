@@ -4,6 +4,7 @@
 //! No external CAD file is used; every fixture is a hand-built PSB byte image
 //! exercising the `#UGC:2` framing, the `#\n#<name>\n` section-boundary rule, the
 //! ND/DEPDB layout signals, and the `srf_array`/`crv_array` count headers.
+#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

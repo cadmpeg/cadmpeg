@@ -206,6 +206,7 @@ fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Plane {
         origin: mm_point(origin),
         normal: vec3(normal),
+        u_axis: Some(vec3(x_axis)),
     })
 }
 
@@ -213,12 +214,14 @@ fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let origin = read_vec3(s, b + 19)?;
     let axis = read_vec3(s, b + 43)?;
     let radius = read_f64(s, b + 67)?;
-    if !is_unit(axis) || !model_scale(origin) || !in_radius(radius) {
+    let x_axis = read_vec3(s, b + 75)?;
+    if !is_unit(axis) || !is_unit(x_axis) || !model_scale(origin) || !in_radius(radius) {
         return None;
     }
     Some(SurfaceGeometry::Cylinder {
         origin: mm_point(origin),
         axis: vec3(axis),
+        ref_direction: Some(vec3(x_axis)),
         radius: radius * 1000.0,
     })
 }
@@ -229,7 +232,12 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let radius = read_f64(s, b + 67)?;
     let sin_half = read_f64(s, b + 75)?;
     let cos_half = read_f64(s, b + 83)?;
-    if !is_unit(axis) || !model_scale(origin) || !(0.0..=1.0e3).contains(&radius) {
+    let x_axis = read_vec3(s, b + 91)?;
+    if !is_unit(axis)
+        || !is_unit(x_axis)
+        || !model_scale(origin)
+        || !(0.0..=1.0e3).contains(&radius)
+    {
         return None;
     }
     // The cone's half-angle is carried as its sine/cosine; the identity gate
@@ -240,6 +248,7 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Cone {
         origin: mm_point(origin),
         axis: vec3(axis),
+        ref_direction: Some(vec3(x_axis)),
         radius: radius * 1000.0,
         half_angle: sin_half.abs().atan2(cos_half.abs()),
     })
@@ -249,11 +258,14 @@ fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let center = read_vec3(s, b + 19)?;
     let radius = read_f64(s, b + 43)?;
     let axis = read_vec3(s, b + 51)?;
-    if !is_unit(axis) || !model_scale(center) || !in_radius(radius) {
+    let x_axis = read_vec3(s, b + 75)?;
+    if !is_unit(axis) || !is_unit(x_axis) || !model_scale(center) || !in_radius(radius) {
         return None;
     }
     Some(SurfaceGeometry::Sphere {
         center: mm_point(center),
+        axis: Some(vec3(axis)),
+        ref_direction: Some(vec3(x_axis)),
         radius: radius * 1000.0,
     })
 }
@@ -263,14 +275,21 @@ fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let axis = read_vec3(s, b + 43)?;
     let major = read_f64(s, b + 67)?;
     let minor = read_f64(s, b + 75)?;
+    let x_axis = read_vec3(s, b + 83)?;
     // A horn torus (major == minor) is valid; both radii must be positive and in
     // range. `major` may be zero only for degenerate records, which are rejected.
-    if !is_unit(axis) || !model_scale(center) || !in_radius(major) || !in_radius(minor) {
+    if !is_unit(axis)
+        || !is_unit(x_axis)
+        || !model_scale(center)
+        || !in_radius(major)
+        || !in_radius(minor)
+    {
         return None;
     }
     Some(SurfaceGeometry::Torus {
         center: mm_point(center),
         axis: vec3(axis),
+        ref_direction: Some(vec3(x_axis)),
         major_radius: major * 1000.0,
         minor_radius: minor * 1000.0,
     })

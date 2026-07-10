@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fusion Design BulkStream parametric-construction records.
+//! Fusion Design `BulkStream` parametric-construction records.
 
 use std::collections::HashMap;
 
@@ -25,6 +25,10 @@ const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
     (b"vertex_recipe_data", ConstructionRecipeKind::Vertex),
 ];
 
+/// Decode every parametric construction-recipe record (`body_recipe_data`,
+/// `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`,
+/// `vertex_recipe_data`) from each design `BulkStream` entry in `scan`.
+/// `recipe_index` is assigned per `(kind, design_id)` group in stream order.
 pub fn decode_recipes(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -41,6 +45,10 @@ pub fn decode_recipes(
     Ok(out)
 }
 
+/// Decode the persistent u64 point and curve identity references
+/// (`pt_tag`, `crv_primary_id`, `crv_secondary_id`, each typed
+/// `IntrinsicMetaTypeuint64`) from every design `BulkStream` entry in `scan`,
+/// sorted by stream offset.
 pub fn decode_persistent_references(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -71,7 +79,10 @@ pub fn decode_persistent_references(
                 let Some(length_bytes) = bytes.get(type_offset..type_offset + 4) else {
                     continue;
                 };
-                if u32::from_le_bytes(length_bytes.try_into().unwrap()) != 23 {
+                if u32::from_le_bytes(length_bytes.try_into().expect(
+                    "invariant: length_bytes is a 4-byte slice from bytes.get(range) of length 4",
+                )) != 23
+                {
                     continue;
                 }
                 let type_name = b"IntrinsicMetaTypeuint64";
@@ -85,7 +96,9 @@ pub fn decode_persistent_references(
                 };
                 out.push(PersistentReference {
                     kind,
-                    value: u64::from_le_bytes(raw.try_into().unwrap()),
+                    value: u64::from_le_bytes(raw.try_into().expect(
+                        "invariant: raw is an 8-byte slice from bytes.get(range) of length 8",
+                    )),
                     meta: EntityMeta {
                         provenance: Provenance {
                             format: "f3d".into(),
@@ -103,6 +116,9 @@ pub fn decode_persistent_references(
     Ok(out)
 }
 
+/// Decode every `EDGE_REFERENCE_LOST` marker record from each design
+/// `BulkStream` entry in `scan`: the ASCII literal, a `u32` length of `3`, a
+/// three-digit class tag, and a `u32` record index.
 pub fn decode_lost_edge_references(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -126,7 +142,12 @@ pub fn decode_lost_edge_references(
             let Some(length) = bytes.get(payload..payload + 4) else {
                 continue;
             };
-            if u32::from_le_bytes(length.try_into().unwrap()) != 3 {
+            if u32::from_le_bytes(
+                length.try_into().expect(
+                    "invariant: length is a 4-byte slice from bytes.get(range) of length 4",
+                ),
+            ) != 3
+            {
                 continue;
             }
             let Some(class_tag) = bytes.get(payload + 4..payload + 7) else {
@@ -140,7 +161,9 @@ pub fn decode_lost_edge_references(
             };
             out.push(LostEdgeReference {
                 class_tag: String::from_utf8_lossy(class_tag).into_owned(),
-                record_index: u32::from_le_bytes(index.try_into().unwrap()),
+                record_index: u32::from_le_bytes(index.try_into().expect(
+                    "invariant: index is a 4-byte slice from bytes.get(range) of length 4",
+                )),
                 meta: EntityMeta {
                     provenance: Provenance {
                         format: "f3d".into(),
@@ -156,6 +179,11 @@ pub fn decode_lost_edge_references(
     Ok(out)
 }
 
+/// Decode every GUID-owned design object record from each design
+/// `MetaStream` entry in `scan` (spec §8.1): an ASCII type name, the design
+/// entity IDs it owns, its self GUID, an optional parent GUID, and a
+/// revision. Records whose type name does not match a known
+/// [`DesignObjectKind`] are skipped.
 pub fn decode_objects(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -180,8 +208,10 @@ pub fn decode_objects(
             let Some(count_raw) = bytes.get(after_name..after_name + 4) else {
                 break;
             };
-            let count = usize::try_from(u32::from_le_bytes(count_raw.try_into().unwrap()))
-                .unwrap_or(usize::MAX);
+            let count = usize::try_from(u32::from_le_bytes(count_raw.try_into().expect(
+                "invariant: count_raw is a 4-byte slice from bytes.get(range) of length 4",
+            )))
+            .unwrap_or(usize::MAX);
             let ids_end = after_name
                 .checked_add(4)
                 .and_then(|at| count.checked_mul(8).and_then(|size| at.checked_add(size)));
@@ -191,7 +221,12 @@ pub fn decode_objects(
             };
             let entity_ids = bytes[after_name + 4..ids_end]
                 .chunks_exact(8)
-                .map(|raw| u64::from_le_bytes(raw.try_into().unwrap()))
+                .map(|raw| {
+                    u64::from_le_bytes(
+                        raw.try_into()
+                            .expect("invariant: chunks_exact(8) yields 8-byte slices"),
+                    )
+                })
                 .collect();
             let Some((self_guid, after_self)) =
                 lp_ascii(&bytes, ids_end).filter(|(guid, _)| is_guid(guid))
@@ -210,7 +245,9 @@ pub fn decode_objects(
                 offset += 1;
                 continue;
             };
-            let revision = u32::from_le_bytes(revision_raw.try_into().unwrap());
+            let revision = u32::from_le_bytes(revision_raw.try_into().expect(
+                "invariant: revision_raw is a 4-byte slice from bytes.get(range) of length 4",
+            ));
             if revision > 10_000 {
                 offset += 1;
                 continue;
@@ -237,6 +274,10 @@ pub fn decode_objects(
     Ok(out)
 }
 
+/// Decode every self-validating per-entity design `BulkStream` header (spec
+/// §8.1): a three-digit class tag, an entity suffix, a UTF-16LE entity ID
+/// whose numeric suffix must match the header's entity suffix, and, for
+/// sketch-typed entities, the trailing reference-list header.
 pub fn decode_entity_headers(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -273,7 +314,9 @@ pub fn decode_entity_headers(
             let Some(entity_raw) = bytes.get(start + 7..start + 15) else {
                 break;
             };
-            let entity_suffix = u64::from_le_bytes(entity_raw.try_into().unwrap());
+            let entity_suffix = u64::from_le_bytes(entity_raw.try_into().expect(
+                "invariant: entity_raw is an 8-byte slice from bytes.get(range) of length 8",
+            ));
             if entity_suffix == 0
                 || entity_suffix >= 1 << 32
                 || bytes.get(start + 15..start + 20) != Some(&[0u8; 5])
@@ -297,16 +340,17 @@ pub fn decode_entity_headers(
             let object_kind = object_kinds.get(&entity_suffix).copied();
             let (record_reference, declared_reference_count, reference_indices, record_end) =
                 if object_kind == Some(DesignObjectKind::Sketch) {
-                    decode_reference_list(&bytes, end)
-                        .map(|list| {
+                    decode_reference_list(&bytes, end).map_or_else(
+                        || (None, None, Vec::new(), end),
+                        |list| {
                             (
                                 Some(list.record_reference),
                                 Some(list.declared_count),
                                 list.references,
                                 list.end,
                             )
-                        })
-                        .unwrap_or_else(|| (None, None, Vec::new(), end))
+                        },
+                    )
                 } else {
                     (None, None, Vec::new(), end)
                 };
@@ -335,6 +379,10 @@ pub fn decode_entity_headers(
     Ok(out)
 }
 
+/// Decode the indexed dynamic-class record headers (spec §8.1) that `entities`'
+/// reference-list entries point at: a `u32` record index and a three-digit
+/// class tag, for each record index named by any [`DesignEntityHeader`] in
+/// `entities`.
 pub fn decode_record_headers(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -348,6 +396,10 @@ pub fn decode_record_headers(
     decode_headers_for_indices(reader, scan, &wanted)
 }
 
+/// Decode the indexed dynamic-class record headers (spec §8.1) named by
+/// `indices` directly, bypassing entity reference lists. Used to fetch record
+/// headers referenced by records other than [`DesignEntityHeader`] (for
+/// example, sketch relation records).
 pub fn decode_related_record_headers(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -389,7 +441,10 @@ fn decode_headers_for_indices(
             let Some(raw) = bytes.get(after_tag..after_tag + 4) else {
                 break;
             };
-            let record_index = u32::from_le_bytes(raw.try_into().unwrap());
+            let record_index = u32::from_le_bytes(
+                raw.try_into()
+                    .expect("invariant: raw is a 4-byte slice from bytes.get(range) of length 4"),
+            );
             if wanted.contains(&record_index) && emitted.insert(record_index) {
                 out.push(DesignRecordHeader {
                     record_index,
@@ -412,6 +467,10 @@ fn decode_headers_for_indices(
     Ok(out)
 }
 
+/// Decode the sketch-relation body at each `records` entry's offset: the
+/// owning sketch relation's member reference list, owner reference, state,
+/// and return-member list. `records` supplies the byte offsets and class tags
+/// (typically from [`decode_related_record_headers`]).
 pub fn decode_sketch_relations(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -452,6 +511,10 @@ pub fn decode_sketch_relations(
     Ok(out)
 }
 
+/// Decode every sketch-point record (spec §8.1, `pt_tag`) from each design
+/// `BulkStream` entry in `scan`: the persistent point id, a paired record
+/// reference, and the sketch `(u, v)` coordinates, converted centimetre→
+/// millimetre. Records with non-finite coordinates are skipped.
 pub fn decode_sketch_points(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -547,6 +610,11 @@ fn decode_sketch_point_variant(
     ))
 }
 
+/// Decode every sketch-curve record (spec §8.1, `crv_primary_id`/
+/// `crv_secondary_id`) from each design `BulkStream` entry in `scan`: the
+/// curve's persistent primary/secondary identity, plus its analytic payload
+/// decoded as a NURBS carrier reference, circular arc, line, or referenced
+/// analytic wrapper — in that trial order.
 pub fn decode_sketch_curve_identities(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -580,7 +648,9 @@ pub fn decode_sketch_curve_identities(
                 continue;
             };
             if emitted.insert(record_index) {
-                let geometry_payload = payload.get(geometry_shift..).unwrap();
+                let geometry_payload = payload
+                    .get(geometry_shift..)
+                    .expect("invariant: geometry_shift (0 or 52) is <= payload.len() (checked >= 133 by the at + 133 <= bytes.len() loop guard)");
                 out.push(SketchCurveIdentity {
                     record_index,
                     class_tag,
@@ -689,8 +759,13 @@ fn decode_referenced_analytic(payload: &[u8]) -> Option<SketchCurveGeometry> {
 fn decode_sketch_nurbs(payload: &[u8]) -> Option<SketchCurveGeometry> {
     let base = 133usize;
     let prefix = payload.get(base..base + 8)?;
-    let carrier_reference =
-        (prefix != [0xff; 8]).then(|| u64::from_le_bytes(prefix.try_into().unwrap()));
+    let carrier_reference = (prefix != [0xff; 8]).then(|| {
+        u64::from_le_bytes(
+            prefix
+                .try_into()
+                .expect("invariant: prefix is an 8-byte slice from payload.get(range) of length 8"),
+        )
+    });
     if u32_at(payload, base + 8) != Some(3) || payload.get(base + 88) != Some(&1) {
         return None;
     }
@@ -900,6 +975,11 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
     })
 }
 
+/// Decode the `BodiesRoot` member list following the doubled `BodiesRoot`
+/// marker in each design `BulkStream` entry in `scan`: each member's entity
+/// suffix and flags. The decode is rejected (no members returned for that
+/// stream) unless the declared count is fully consumed and immediately
+/// followed by a zero byte.
 pub fn decode_body_members(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -927,7 +1007,10 @@ pub fn decode_body_members(
         let Some(count_raw) = bytes.get(count_offset..count_offset + 4) else {
             continue;
         };
-        let count = usize::try_from(u32::from_le_bytes(count_raw.try_into().unwrap()))
+        let count =
+            usize::try_from(u32::from_le_bytes(count_raw.try_into().expect(
+                "invariant: count_raw is a 4-byte slice from bytes.get(range) of length 4",
+            )))
             .unwrap_or(usize::MAX);
         if count > 100_000 {
             continue;
@@ -948,8 +1031,12 @@ pub fn decode_body_members(
                 break;
             };
             decoded.push(DesignBodyMember {
-                entity_suffix: u64::from_le_bytes(id_raw.try_into().unwrap()),
-                flags: u16::from_le_bytes(flags_raw.try_into().unwrap()),
+                entity_suffix: u64::from_le_bytes(id_raw.try_into().expect(
+                    "invariant: id_raw is an 8-byte slice from bytes.get(range) of length 8",
+                )),
+                flags: u16::from_le_bytes(flags_raw.try_into().expect(
+                    "invariant: flags_raw is a 2-byte slice from bytes.get(range) of length 2",
+                )),
                 meta: EntityMeta {
                     provenance: Provenance {
                         format: "f3d".into(),
@@ -995,7 +1082,7 @@ fn lp_ascii(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
     let end = offset.checked_add(4 + length)?;
     let raw = bytes.get(offset + 4..end)?;
     raw.iter()
-        .all(|byte| byte.is_ascii_graphic())
+        .all(u8::is_ascii_graphic)
         .then(|| (String::from_utf8_lossy(raw).into_owned(), end))
 }
 
@@ -1011,7 +1098,12 @@ fn lp_utf16(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
     let units = bytes
         .get(offset + 4..end)?
         .chunks_exact(2)
-        .map(|raw| u16::from_le_bytes(raw.try_into().unwrap()))
+        .map(|raw| {
+            u16::from_le_bytes(
+                raw.try_into()
+                    .expect("invariant: chunks_exact(2) yields 2-byte slices"),
+            )
+        })
         .collect::<Vec<_>>();
     Some((String::from_utf16(&units).ok()?, end))
 }
@@ -1044,7 +1136,12 @@ fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) 
             let record_index = offset
                 .checked_sub(16)
                 .and_then(|at| bytes.get(at..at + 4))
-                .map(|raw| i32::from_le_bytes(raw.try_into().unwrap()))
+                .map(|raw| {
+                    i32::from_le_bytes(
+                        raw.try_into()
+                            .expect("invariant: bytes.get(at..at+4) is a 4-byte slice"),
+                    )
+                })
                 .unwrap_or_default();
             out.push(ConstructionRecipe {
                 kind,

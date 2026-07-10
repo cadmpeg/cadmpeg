@@ -51,7 +51,7 @@ FOOTER region at the 48-bit offset: ASCII `FOOTER`, then `entry_count:u32 LE`, t
 
 `part/attrs` carries flags such as `NX_MaterialMissingAssignments=TRUE`. JT and LWPA payloads are preview meshes.
 
-`EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + ASCII)`. The string table contains child `.prt` names and paths. The occurrence-handle to child-`.prt` binding is unresolved.
+`EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + ASCII)`. The string table contains child `.prt` names and paths.
 
 Assembly `.prt` files contain no inline Parasolid partition, deltas, or plain cached-body streams. Their component geometry resides in the external child `.prt` files named by `EXTREFSTREAM`. Occurrence placement binds each external component instance.
 
@@ -69,7 +69,7 @@ The partition zlib stream is preceded by `c0 d1 f1 ed`. Small zlib streams use r
 
 Inflated prologue text classifies each stream:
 
-| Prologue evidence                                   | Stream kind         |
+| Prologue bytes                                      | Stream kind         |
 | --------------------------------------------------- | ------------------- |
 | contains `(partition)`                              | partition           |
 | contains `(deltas)`                                 | deltas              |
@@ -107,7 +107,7 @@ The wrapper `00 ce` instance owns the stream BODY (`child`), attribute-definitio
 
 ### 4.1 Fixed record families
 
-Lengths are logical, before escape/large-index shifts. Every code matches the published XT Node-Types table.
+Lengths are logical, before escape/large-index shifts. Each code is a Parasolid XT node type.
 
 | Type | Name    | Length | Type | Name          | Length     |
 | ---: | ------- | -----: | ---: | ------------- | ---------- |
@@ -363,7 +363,7 @@ live = partition ∪ delta_full − tombstones
 
 BODY (`00 0c`, xmt=3) records delimit snapshots. `node_id` is a monotonic per-body revision counter.
 
-`RMFastLoad` supplies an object-id set for active-body selection. When those IDs share the Parasolid kernel-node-id space, select the body whose FACE, EDGE, and VERTEX kernel node IDs have dominant membership, subject to a sufficient hit fraction and dominant margin. This selection chooses a body only; it does not restrict faces, edges, loops, or vertices to that body's `FACE.next` chain.
+`RMFastLoad` stores an object-id set alongside the partition and deltas body records.
 
 ---
 

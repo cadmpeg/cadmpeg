@@ -22,7 +22,7 @@
 //!
 //! The SAB record stream ([`sab`]) is framed token-by-token so record
 //! boundaries stay exact even across records this codec does not interpret. From
-//! that RecordTable ([`brep`]) it decodes the topology graph and the analytic
+//! that `RecordTable` ([`brep`]) it decodes the topology graph and the analytic
 //! carriers — `plane`, `cone`/cylinder, `sphere`, `torus`, `straight` line,
 //! `ellipse`/circle — with lengths converted centimetre→millimetre.
 //!

@@ -202,7 +202,7 @@ pub fn scan(body: &[u8]) -> Facts {
     }
 }
 
-/// Decode explicit MANIFOLD_SOLID_BREP entity-51 records.
+/// Decode explicit `MANIFOLD_SOLID_BREP` entity-51 records.
 fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
     let mut by_attr = HashMap::new();
     for record in entities {

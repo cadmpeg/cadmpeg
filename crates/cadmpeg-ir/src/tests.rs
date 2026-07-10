@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::unwrap_used)]
 //! Unit tests for the IR: the worked cube validates clean, JSON round-trips,
 //! and each validation check actually fires when its invariant is broken.
 
 use crate::examples::unit_cube;
-use crate::geometry::{Surface, SurfaceGeometry};
-use crate::ids::{CoedgeId, EdgeId, SurfaceId, UnknownId};
+use crate::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use crate::ids::{CoedgeId, CurveId, EdgeId, SurfaceId, UnknownId};
 use crate::math::{Point3, Vector3};
 use crate::provenance::{EntityMeta, Exactness};
 use crate::report::Check;
 use crate::unknown::UnknownRecord;
 use crate::validate::validate;
+use crate::{diff, CadIr};
 
 /// Replace the surface of the cube's first face with an unknown surface,
 /// optionally linking a preserved record, and return the face id and its
@@ -142,6 +144,25 @@ fn unit_cube_validates_clean() {
 }
 
 #[test]
+fn arena_registry_drives_counts_and_diff_dispatch() {
+    let ir = unit_cube();
+    let report = validate(&ir, Vec::new());
+    let diff_kinds = diff(&ir, &ir)
+        .per_arena
+        .into_iter()
+        .map(|arena| arena.kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(diff_kinds, CadIr::arena_names());
+    for name in CadIr::arena_names() {
+        assert!(
+            report.entity_counts.contains_key(*name),
+            "entity counts omitted registered arena {name}"
+        );
+    }
+}
+
+#[test]
 fn every_cube_edge_has_two_opposite_sense_coedges() {
     let ir = unit_cube();
     for edge in &ir.edges {
@@ -174,7 +195,6 @@ fn json_round_trips_and_is_deterministic() {
 fn appearance_asset_and_binding_round_trip() {
     use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use crate::ids::AppearanceId;
-    use crate::CadIr;
 
     let mut ir = unit_cube();
     let body = ir.bodies[0].id.clone();
@@ -277,6 +297,8 @@ fn signed_sphere_radius_is_valid() {
         id: SurfaceId("bad_sphere".into()),
         geometry: SurfaceGeometry::Sphere {
             center: Point3::new(0.0, 0.0, 0.0),
+            axis: None,
+            ref_direction: None,
             radius: -1.0,
         },
         meta: EntityMeta::synthetic(),
@@ -293,6 +315,66 @@ fn degenerate_plane_normal_is_flagged() {
     }
     let report = validate(&ir, Vec::new());
     assert!(report.findings.iter().any(|f| f.check == Check::Bounds));
+}
+
+#[test]
+fn new_topology_references_are_validated() {
+    let mut ir = unit_cube();
+    ir.shells[0].wire_edges.push(EdgeId("missing-wire".into()));
+    ir.shells[0]
+        .free_vertices
+        .push(crate::ids::VertexId("missing-free".into()));
+    ir.coedges[0].radial_next = Some(CoedgeId("missing-radial".into()));
+
+    let report = validate(&ir, Vec::new());
+    let messages = report
+        .findings
+        .iter()
+        .map(|finding| finding.message.as_str())
+        .collect::<Vec<_>>();
+    assert!(messages.iter().any(|message| message.contains("wire edge")));
+    assert!(messages
+        .iter()
+        .any(|message| message.contains("free vertex")));
+    assert!(messages
+        .iter()
+        .any(|message| message.contains("coedge(radial_next)")));
+}
+
+#[test]
+fn topology_tolerance_and_new_conics_are_bounds_checked() {
+    let mut ir = unit_cube();
+    ir.edges[0].tolerance = Some(-1.0);
+    ir.curves.push(Curve {
+        id: CurveId("bad-parabola".into()),
+        geometry: CurveGeometry::Parabola {
+            vertex: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            focal_distance: 0.0,
+        },
+        meta: EntityMeta::synthetic(),
+    });
+    ir.curves.push(Curve {
+        id: CurveId("bad-hyperbola".into()),
+        geometry: CurveGeometry::Hyperbola {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: -1.0,
+            minor_radius: 1.0,
+        },
+        meta: EntityMeta::synthetic(),
+    });
+
+    let report = validate(&ir, Vec::new());
+    for entity in ["e0", "bad-parabola", "bad-hyperbola"] {
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.check == Check::Bounds
+                && finding.entity.as_deref() == Some(entity)));
+    }
 }
 
 #[test]
