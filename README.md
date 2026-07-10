@@ -46,13 +46,6 @@ Windows:
 powershell -ExecutionPolicy Bypass -c "irm https://github.com/cadmpeg/cadmpeg/releases/latest/download/cadmpeg-installer.ps1 | iex"
 ```
 
-Run an end-to-end smoke test without a native CAD file:
-
-```sh
-cargo run -p cadmpeg-ir --example emit_cube > cube.cadir.json
-cadmpeg export cube.cadir.json -f step -o cube.step
-```
-
 Convert your own Fusion 360 file to STEP:
 
 ```sh
@@ -131,6 +124,13 @@ From the repository root:
 ```sh
 cargo build --workspace
 cargo test --workspace
+```
+
+Run an end-to-end smoke test without a native CAD file:
+
+```sh
+cargo run -p cadmpeg-ir --example emit_cube > cube.cadir.json
+cadmpeg export cube.cadir.json -f step -o cube.step
 ```
 
 AI-assisted contributions are welcome but please keep them concise and review the output before submission. The same clean-room rules in LEGAL.md apply, don't paste vendor SDK knowledge through a model.
