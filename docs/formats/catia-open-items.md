@@ -8,7 +8,13 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - Vertex-roster cardinality. The relationship between the `54` roster and `05 08 01` vertex-table cardinality has an unresolved exceptional case.
 - The non-surface grammar and role of outer `01 00 04 00 <tag>` rows are unresolved. A literal marker scan does not establish that each row belongs to the freeform-surface alias roster or a vertex-registration roster.
 
+## Container and roster (decoded-but-unresolved fields)
+
+- The extent-struct `flags` word is carried raw; its bit assignments are unresolved.
+
 ## Standard nested `V5_CFV2`
+
+- The `a5 03 32` header token byte at `record + 7` is a small repeating type code; its value space and semantics are unresolved.
 
 - The byte relation assigning logical vertex components to `05 08 01` allocation rows is unspecified.
 - Spline-region edge and vertex binding. A B-spline carrier lacks a closed-form locus for assigning an `a5 03 32` curve or pcurve to an edge and binding its endpoints.
@@ -31,6 +37,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The pole-reference program in non-inline `2145`, `2172`, and `219f` support records is unspecified.
 - The byte-semantic distinction between non-inner loop classes `0x41` and `0xc1` is unspecified.
 - The records or fields encoding body and shell membership are unspecified.
+- The six `0x10`-tagged `u32` reference tokens of the `5e 1a` edge-stride record (offsets `7, 12, 17, 22, 27, 32`) are carried raw; their referents are unresolved.
 
 ## E5 `0D 03`
 
@@ -39,6 +46,9 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - Plane-cap digon orientation and rank-deficient plane frames.
 - The two root `extra_orientation_signs`.
 - The E5 body and shell orientation equation remains incomplete because the two root `extra_orientation_signs` lack assigned roles.
+- Curve-support records: the mode byte following the pcurve reference lane and the bytes after the fixed header are carried raw; both are unresolved.
+- Bounds records: the trailing `u32` code after each bound parameter is unresolved.
+- Edge-use records: the trailing reference token after the parameter pair is unresolved.
 
 ## FBB-only and float-packed variants
 
