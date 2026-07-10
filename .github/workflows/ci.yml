@@ -59,5 +59,4 @@ jobs:
         run: cargo install cargo-fuzz --locked
 
       - name: Build fuzz targets (no run)
-        run: cargo fuzz build
-        working-directory: crates/cadmpeg-fuzz
+        run: cargo fuzz build --fuzz-dir crates/cadmpeg-fuzz
