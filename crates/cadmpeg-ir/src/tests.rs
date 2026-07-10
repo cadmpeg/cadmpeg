@@ -797,5 +797,9 @@ fn schema_generation_produces_definitions() {
     assert!(json.contains("Body"));
     assert!(json.contains("Coedge"));
     assert!(json.contains("SurfaceGeometry"));
-    assert!(!schema.definitions.is_empty());
+    let defs = schema
+        .get("$defs")
+        .and_then(serde_json::Value::as_object)
+        .expect("schema has a $defs object");
+    assert!(!defs.is_empty());
 }

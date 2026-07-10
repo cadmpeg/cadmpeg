@@ -6,9 +6,20 @@ on:
   pull_request:
     branches: [main]
 
+# Supersede in-flight runs when the same ref is pushed again; PR iteration
+# otherwise runs stale and current pipelines to completion side by side.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Throwaway runners get nothing from incremental compilation or debuginfo;
+  # both slow the build (debuginfo dominates MSVC link time in particular)
+  # and inflate the cargo cache.
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
   # Core gate: everything here must pass on stable.
@@ -35,10 +46,9 @@ jobs:
         # blocking; drop it once the workspace is fully documented.
         run: cargo clippy --workspace -- -D warnings -W missing-docs
 
-      - name: Build
-        run: cargo build --workspace
-
       - name: Test
+        # Builds the full workspace (libs, bins, test harnesses) before
+        # running, so a separate `cargo build` step would be redundant.
         run: cargo test --workspace
 
   # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
@@ -115,7 +125,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Audit dependencies
-        uses: rustsec/audit-check@v2
+      - name: Install cargo-audit
+        # Prebuilt binary; rustsec/audit-check compiled cargo-audit from
+        # source on every run and dominated the pipeline's wall-clock.
+        uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tool: cargo-audit
+
+      - name: Audit dependencies
+        run: cargo audit
