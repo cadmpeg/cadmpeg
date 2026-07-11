@@ -989,9 +989,14 @@ pub(crate) struct EmbeddedSurfaceOffset {
     pub(crate) scale: f64,
 }
 
-/// Non-null modern spring support context and direction enum.
+/// Spring support context, conditional null-carrier ranges, and direction enum.
 pub(crate) struct EmbeddedSpring {
-    pub(crate) context: EmbeddedIntersection,
+    pub(crate) surfaces: [Option<SurfaceGeometry>; 2],
+    pub(crate) pcurves: [Option<NurbsPcurve>; 2],
+    pub(crate) surface_parameter_ranges: [Option<[[f64; 2]; 2]>; 2],
+    pub(crate) first_pcurve_parameter_range: Option<[f64; 2]>,
+    pub(crate) parameter_range: [f64; 2],
+    pub(crate) discontinuities: [Vec<f64>; 3],
     pub(crate) direction: i64,
 }
 
@@ -1116,14 +1121,51 @@ fn decode_embedded_spring(bytes: &[u8], int_width: usize) -> Option<EmbeddedSpri
             && &window[3..] == name
     })?;
     let mut position = marker + name.len() + 3;
-    let surfaces = [
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-    ];
-    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = first_end;
-    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = second_end;
+    let mut surfaces = [None, None];
+    let mut surface_parameter_ranges = [None, None];
+    for side in 0..2 {
+        let saved = position;
+        if take_native_ident(bytes, &mut position).as_deref() == Some("null_surface") {
+            surface_parameter_ranges[side] = Some([
+                [
+                    take_range_value(bytes, &mut position)?,
+                    take_range_value(bytes, &mut position)?,
+                ],
+                [
+                    take_range_value(bytes, &mut position)?,
+                    take_range_value(bytes, &mut position)?,
+                ],
+            ]);
+        } else {
+            position = saved;
+            surfaces[side] = Some(decode_embedded_surface(bytes, &mut position, int_width)?);
+        }
+    }
+    let first_pcurve;
+    let first_pcurve_parameter_range;
+    let saved = position;
+    if take_native_ident(bytes, &mut position).as_deref() == Some("nullbs") {
+        first_pcurve = None;
+        first_pcurve_parameter_range = Some([
+            take_range_value(bytes, &mut position)?,
+            take_range_value(bytes, &mut position)?,
+        ]);
+    } else {
+        position = saved;
+        let (pcurve, end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+        position = end;
+        first_pcurve = Some(pcurve);
+        first_pcurve_parameter_range = None;
+    }
+    let saved = position;
+    let second_pcurve = if take_native_ident(bytes, &mut position).as_deref() == Some("nullbs") {
+        None
+    } else {
+        position = saved;
+        let (pcurve, end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+        position = end;
+        Some(pcurve)
+    };
     let parameter_range = [
         take_range_value(bytes, &mut position)?,
         take_range_value(bytes, &mut position)?,
@@ -1136,12 +1178,12 @@ fn decode_embedded_spring(bytes: &[u8], int_width: usize) -> Option<EmbeddedSpri
     take_bool(bytes, &mut position)?;
     let direction = take_tagged_int(bytes, &mut position, 0x15, int_width)?;
     Some(EmbeddedSpring {
-        context: EmbeddedIntersection {
-            surfaces,
-            pcurves: [first_pcurve, second_pcurve],
-            parameter_range,
-            discontinuities,
-        },
+        surfaces,
+        pcurves: [first_pcurve, second_pcurve],
+        surface_parameter_ranges,
+        first_pcurve_parameter_range,
+        parameter_range,
+        discontinuities,
         direction,
     })
 }

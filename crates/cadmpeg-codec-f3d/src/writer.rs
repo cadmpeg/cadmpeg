@@ -3596,22 +3596,84 @@ fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring { context, direction } =
-        &procedural.definition
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
+        context,
+        surface_parameter_ranges,
+        first_pcurve_parameter_range,
+        direction,
+    } = &procedural.definition
     {
-        if context
-            .sides
-            .iter()
-            .any(|side| side.surface.is_none() || side.pcurve.is_none())
-        {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D spring_int_cur null-support ranges are not yet writable".into(),
-            ));
-        }
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "spring_int_cur")?;
-        native_intcurve_support_context(bytes, target, context)?;
+        for (side_index, side) in context.sides.iter().enumerate() {
+            if let Some(surface_id) = &side.surface {
+                if surface_parameter_ranges[side_index].is_some() {
+                    return Err(CodecError::Malformed(
+                        "spring surface ranges require a null_surface support".into(),
+                    ));
+                }
+                let surface = target
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *surface_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "spring references missing support {surface_id}"
+                        ))
+                    })?;
+                native_embedded_surface(bytes, &surface.geometry)?;
+            } else {
+                native_ident(bytes, "null_surface")?;
+                let ranges = surface_parameter_ranges[side_index].ok_or_else(|| {
+                    CodecError::Malformed(
+                        "spring null_surface support requires U/V parameter ranges".into(),
+                    )
+                })?;
+                for range in ranges {
+                    for value in range {
+                        native_f64(bytes, value);
+                    }
+                }
+            }
+        }
+        for (side_index, side) in context.sides.iter().enumerate() {
+            if let Some(pcurve) = &side.pcurve {
+                if side_index == 0 && first_pcurve_parameter_range.is_some() {
+                    return Err(CodecError::Malformed(
+                        "spring first-pcurve range requires a nullbs support".into(),
+                    ));
+                }
+                native_nurbs_pcurve_block(bytes, pcurve)?;
+            } else {
+                native_ident(bytes, "nullbs")?;
+                if side_index == 0 {
+                    let range = first_pcurve_parameter_range.ok_or_else(|| {
+                        CodecError::Malformed(
+                            "spring first nullbs support requires a parameter range".into(),
+                        )
+                    })?;
+                    for value in range {
+                        native_f64(bytes, value);
+                    }
+                }
+            }
+        }
+        for value in context.parameter_range {
+            native_f64(bytes, value);
+        }
+        for discontinuities in &context.discontinuities {
+            native_i64(
+                bytes,
+                i64::try_from(discontinuities.len()).map_err(|_| {
+                    CodecError::NotImplemented("discontinuity count exceeds i64".into())
+                })?,
+            );
+            for value in discontinuities {
+                native_f64(bytes, *value);
+            }
+        }
         bytes.push(0x0b);
         native_enum(bytes, *direction);
         native_nurbs_curve(bytes, solved_cache)?;

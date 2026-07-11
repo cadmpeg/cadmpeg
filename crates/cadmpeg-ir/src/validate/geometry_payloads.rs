@@ -291,12 +291,39 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for procedural in &ir.model.procedural_curves {
-        if let ProceduralCurveDefinition::Spring { context, .. } = &procedural.definition {
-            if !support_context_is_finite(context) {
+        if let ProceduralCurveDefinition::Spring {
+            context,
+            surface_parameter_ranges,
+            first_pcurve_parameter_range,
+            ..
+        } = &procedural.definition
+        {
+            let surface_ranges_valid =
+                surface_parameter_ranges
+                    .iter()
+                    .enumerate()
+                    .all(|(side, ranges)| {
+                        ranges.is_some() == context.sides[side].surface.is_none()
+                            && ranges.is_none_or(|ranges| {
+                                ranges.into_iter().all(|range| {
+                                    range.iter().all(|value| value.is_finite())
+                                        && range[0] <= range[1]
+                                })
+                            })
+                    });
+            let first_pcurve_range_valid = first_pcurve_parameter_range.is_some()
+                == context.sides[0].pcurve.is_none()
+                && first_pcurve_parameter_range.is_none_or(|range| {
+                    range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+                });
+            if !support_context_is_finite(context)
+                || !surface_ranges_valid
+                || !first_pcurve_range_valid
+            {
                 bounds_err(
                     findings,
                     &procedural.id.0,
-                    "spring context is not finite and ordered",
+                    "spring context or conditional null-support ranges are invalid",
                 );
             }
             continue;

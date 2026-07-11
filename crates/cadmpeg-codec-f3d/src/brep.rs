@@ -1213,25 +1213,26 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         }
                     } else if let Some(embedded) = procedural.11 {
                         let support_ids: [Option<SurfaceId>; 2] = embedded
-                            .context
                             .surfaces
                             .into_iter()
                             .enumerate()
                             .map(|(side, geometry)| {
-                                let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
-                                ));
-                                out.surfaces.push(Surface {
-                                    id: id.clone(),
-                                    geometry,
-                                });
-                                Some(id)
+                                geometry.map(|geometry| {
+                                    let id = SurfaceId(format!(
+                                        "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    ));
+                                    out.surfaces.push(Surface {
+                                        id: id.clone(),
+                                        geometry,
+                                    });
+                                    id
+                                })
                             })
                             .collect::<Vec<_>>()
                             .try_into()
                             .expect("two fixed support sides");
-                        let pcurves = embedded.context.pcurves.map(|pcurve| {
-                            Some(PcurveGeometry::Nurbs {
+                        let pcurves = embedded.pcurves.map(|pcurve| {
+                            pcurve.map(|pcurve| PcurveGeometry::Nurbs {
                                 degree: pcurve.degree,
                                 knots: pcurve.knots,
                                 control_points: pcurve.control_points,
@@ -1247,9 +1248,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         pcurve: pcurves[side].clone(),
                                     }
                                 }),
-                                parameter_range: embedded.context.parameter_range,
-                                discontinuities: embedded.context.discontinuities,
+                                parameter_range: embedded.parameter_range,
+                                discontinuities: embedded.discontinuities,
                             },
+                            surface_parameter_ranges: embedded.surface_parameter_ranges,
+                            first_pcurve_parameter_range: embedded.first_pcurve_parameter_range,
                             direction: embedded.direction,
                         }
                     } else if let Some(embedded) = procedural.12 {

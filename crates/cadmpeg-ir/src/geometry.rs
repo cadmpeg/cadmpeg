@@ -552,6 +552,13 @@ pub enum ProceduralCurveDefinition {
     Spring {
         /// Ordered support surfaces, UV curves, interval, and discontinuities.
         context: IntcurveSupportContext,
+        /// Conditional U/V intervals, present exactly when the corresponding
+        /// support surface is the native `null_surface` sentinel.
+        surface_parameter_ranges: [Option<[[f64; 2]; 2]>; 2],
+        /// Conditional interval present exactly when the first support pcurve
+        /// is the native `nullbs` sentinel.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        first_pcurve_parameter_range: Option<[f64; 2]>,
         /// Native `CURV_DIR` enum value.
         direction: i64,
     },

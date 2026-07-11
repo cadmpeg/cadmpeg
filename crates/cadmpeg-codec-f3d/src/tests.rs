@@ -1013,6 +1013,59 @@ fn synthetic_geometry_with_spring_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+        .expect("generated edge reference offsets");
+    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "intcurve");
+    t_ident(&mut curve, "curve");
+    t_ref(&mut curve, -1);
+    t_long(&mut curve, -1);
+    t_ref(&mut curve, -1);
+    curve.push(0x0f);
+    t_ident(&mut curve, "spring_int_cur");
+    t_ident(&mut curve, "null_surface");
+    for value in [-2.0, 3.0, -4.0, 5.0] {
+        t_dbl(&mut curve, value);
+    }
+    t_ident(&mut curve, "null_surface");
+    for value in [-6.0, 7.0, -8.0, 9.0] {
+        t_dbl(&mut curve, value);
+    }
+    t_ident(&mut curve, "nullbs");
+    t_dbl(&mut curve, -10.0);
+    t_dbl(&mut curve, 11.0);
+    t_ident(&mut curve, "nullbs");
+    t_dbl(&mut curve, -1.0);
+    t_dbl(&mut curve, 2.0);
+    t_long(&mut curve, 1);
+    t_dbl(&mut curve, 0.25);
+    t_long(&mut curve, 0);
+    t_long(&mut curve, 2);
+    t_dbl(&mut curve, 0.5);
+    t_dbl(&mut curve, 0.75);
+    curve.push(0x0b);
+    curve.push(0x15);
+    curve.extend_from_slice(&4i64.to_le_bytes());
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut curve, 0.0004);
+    curve.push(0x10);
+    t_end(&mut curve);
+    bytes.splice(delta..delta, curve);
+    bytes
+}
+
 fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -8061,8 +8114,9 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("spring decode");
-    let ProceduralCurveDefinition::Spring { context, direction } =
-        &result.ir.model.procedural_curves[0].definition
+    let ProceduralCurveDefinition::Spring {
+        context, direction, ..
+    } = &result.ir.model.procedural_curves[0].definition
     else {
         panic!("expected spring construction")
     };
@@ -8086,6 +8140,59 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         round_trip.ir.model.procedural_curves[0].definition,
         ProceduralCurveDefinition::Spring { direction: -3, .. }
     ));
+}
+
+#[test]
+fn generated_null_support_spring_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_null_support_spring_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("null-support spring decode");
+    let ProceduralCurveDefinition::Spring {
+        context,
+        surface_parameter_ranges,
+        first_pcurve_parameter_range,
+        direction,
+    } = &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected spring construction")
+    };
+    assert_eq!(*direction, 4);
+    assert!(context
+        .sides
+        .iter()
+        .all(|side| side.surface.is_none() && side.pcurve.is_none()));
+    assert_eq!(
+        surface_parameter_ranges[0],
+        Some([[-2.0, 3.0], [-4.0, 5.0]])
+    );
+    assert_eq!(
+        surface_parameter_ranges[1],
+        Some([[-6.0, 7.0], [-8.0, 9.0]])
+    );
+    assert_eq!(*first_pcurve_parameter_range, Some([-10.0, 11.0]));
+    assert_eq!(context.parameter_range, [-1.0, 2.0]);
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less null-support spring encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less null-support spring round trip");
+    assert_eq!(
+        round_trip.ir.model.procedural_curves[0].definition,
+        source_less.model.procedural_curves[0].definition
+    );
 }
 
 #[test]
