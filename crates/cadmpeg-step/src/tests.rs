@@ -573,3 +573,73 @@ fn hidden_body_is_omitted_and_reported() {
     let s = export(&ir);
     assert!(s.contains("MANIFOLD_SOLID_BREP"));
 }
+
+#[test]
+fn body_color_becomes_styled_item_presentation() {
+    let mut ir = unit_cube();
+    ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
+        r: 0.25,
+        g: 0.5,
+        b: 0.75,
+        a: 1.0,
+    });
+    let s = export(&ir);
+    assert!(s.contains("COLOUR_RGB('',0.25,0.5,0.75)"));
+    assert!(s.contains("STYLED_ITEM"));
+    assert!(s.contains("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"));
+    // The styled item targets the solid instance.
+    let solid = s
+        .lines()
+        .find(|line| line.contains("MANIFOLD_SOLID_BREP"))
+        .and_then(|line| line.split(" =").next())
+        .unwrap()
+        .to_string();
+    let styled = s.lines().find(|line| line.contains("STYLED_ITEM")).unwrap();
+    assert!(styled.ends_with(&format!(",{solid});")));
+}
+
+#[test]
+fn face_appearance_binding_styles_the_advanced_face() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let face = ir.model.faces[0].id.clone();
+    ir.model.appearances.push(Appearance {
+        id: AppearanceId("test:appearance#black".to_string()),
+        name: None,
+        asset_guid: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.125,
+            g: 0.125,
+            b: 0.125,
+            a: 1.0,
+        }),
+        properties: Default::default(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:appearance-binding#face".to_string(),
+        target: AppearanceTarget::Face(face),
+        appearance: AppearanceId("test:appearance#black".to_string()),
+        source_entity_id: None,
+        object_type: None,
+        channels: Default::default(),
+    });
+    let s = export(&ir);
+    assert!(s.contains("COLOUR_RGB('',0.125,0.125,0.125)"));
+    let styled: Vec<&str> = s.lines().filter(|l| l.contains("STYLED_ITEM")).collect();
+    assert_eq!(styled.len(), 1);
+    // The styled item targets an ADVANCED_FACE instance.
+    let target = styled[0]
+        .rsplit_once(',')
+        .map(|(_, tail)| tail.trim_end_matches(");").to_string())
+        .unwrap();
+    let face_line = s
+        .lines()
+        .find(|line| line.starts_with(&format!("{target} = ADVANCED_FACE")));
+    assert!(face_line.is_some(), "styled item must reference a face");
+}

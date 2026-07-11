@@ -9084,3 +9084,98 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     .unwrap();
     assert!(other.is_empty(), "bindings for other blobs do not apply");
 }
+
+fn lp_utf16_bytes(value: &str) -> Vec<u8> {
+    let units: Vec<u8> = value.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let mut out = ((units.len() / 2) as u32).to_le_bytes().to_vec();
+    out.extend(units);
+    out
+}
+
+fn browser_body_record(entity: u64, name: Option<&str>, visual: &str) -> Vec<u8> {
+    let mut bytes = vec![0u8; 8];
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"299");
+    bytes.extend_from_slice(&entity.to_le_bytes());
+    bytes.extend(std::iter::repeat_n(0u8, 40));
+    bytes.extend(lp_utf16_bytes("D87FBE62-3B12-4CA8-9014-BAD31ABDB101"));
+    bytes.extend(lp_utf16_bytes("C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C"));
+    bytes.extend([0u8; 4]);
+    bytes.extend(lp_utf16_bytes("PrismMaterial-018"));
+    bytes.push(0x01);
+    bytes.extend_from_slice(&(entity - 100).to_le_bytes());
+    bytes.extend([0u8; 3]);
+    bytes.extend(lp_utf16_bytes("67a722bb-f14e-43d6-94b1-d0539bb8060c"));
+    bytes.push(0x01);
+    bytes.extend_from_slice(&(entity + 1).to_le_bytes());
+    bytes.extend([0u8; 2]);
+    if let Some(name) = name {
+        bytes.extend(lp_utf16_bytes(name));
+    }
+    bytes.extend([0u8; 12]);
+    bytes.extend_from_slice(&1f32.to_le_bytes());
+    bytes.extend([0x01, 0x01]);
+    bytes.extend([0u8; 10]);
+    bytes.extend(lp_utf16_bytes(visual));
+    bytes
+}
+
+#[test]
+fn browser_body_appearance_decodes_named_and_nameless_records() {
+    let visual = "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015";
+    let mut bytes = browser_body_record(200598, Some("Hexagon 1"), visual);
+    bytes.extend(browser_body_record(454966, None, visual));
+    let out = crate::materials::browser_body_appearances(&bytes);
+    assert_eq!(
+        out,
+        vec![
+            (200598, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
+            (454966, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn browser_body_appearance_requires_head_and_node_entity_agreement() {
+    let visual = "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015";
+    let mut bytes = browser_body_record(200598, Some("Hexagon 1"), visual);
+    // Corrupt the node entity so it no longer equals the head entity plus one.
+    let node = (200599u64).to_le_bytes();
+    let at = bytes
+        .windows(8)
+        .position(|window| window == node)
+        .expect("node entity bytes are present");
+    bytes[at..at + 8].copy_from_slice(&(999u64).to_le_bytes());
+    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
+}
+
+#[test]
+fn face_appearance_assignment_joins_face_guid_to_visual_guid() {
+    let mut bytes = vec![0u8; 8];
+    bytes.extend(lp_utf16_bytes("cd92d0f6-5b31-4bbf-84ae-4611f435537e"));
+    bytes.extend([0u8; 20]);
+    bytes.extend(lp_utf16_bytes(
+        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015_Post2015",
+    ));
+    bytes.extend([0u8; 6]);
+    bytes.extend(lp_utf16_bytes("BA5EE55E-9982-449B-9D66-9F036540E140"));
+    let out = crate::materials::face_appearance_assignments(&bytes);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].face_guid, "cd92d0f6-5b31-4bbf-84ae-4611f435537e");
+    assert_eq!(out[0].visual_guid, "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F");
+}
+
+#[test]
+fn face_appearance_assignment_rejects_entity_id_and_uppercase_targets() {
+    // A body-style assignment has an entity id, not a face GUID, before the
+    // visual GUID; an uppercase GUID is a marker constant, not a face GUID.
+    for target in ["0_985", "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C"] {
+        let mut bytes = vec![0u8; 8];
+        bytes.extend(lp_utf16_bytes(target));
+        bytes.extend(lp_utf16_bytes(
+            "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015",
+        ));
+        bytes.extend(lp_utf16_bytes("BA5EE55E-9982-449B-9D66-9F036540E140"));
+        assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
+    }
+}

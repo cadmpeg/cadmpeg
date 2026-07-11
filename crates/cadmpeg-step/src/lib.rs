@@ -29,9 +29,11 @@
 //!
 //! Review [`StepReport::losses`] before retaining the output. Export continues
 //! when an IR fact has no representation in this writer. Unknown-surface faces
-//! and edges without typed 3D curves are omitted; pcurves, presentation data,
-//! source attributes, passthrough records, and parametric history are also
-//! reported rather than emitted. Body transforms remain unapplied, leaving
+//! and edges without typed 3D curves are omitted; pcurves, source attributes,
+//! passthrough records, and parametric history are reported rather than
+//! emitted. Display colors on bodies and faces (direct or through appearance
+//! bindings) become `STYLED_ITEM` presentation; other appearance data is
+//! reduced to those base colors. Body transforms remain unapplied, leaving
 //! affected coordinates in body-local space.
 //!
 //! Coordinates are emitted unchanged under a millimetre length-unit context.
@@ -228,6 +230,15 @@ struct Builder<'a> {
     /// STEP surface exists to build an `ADVANCED_FACE` on. Deduplicated (a face
     /// is reached once per shell) and aggregated into a single counted loss.
     unknown_surface_faces: BTreeSet<String>,
+
+    /// Emitted `ADVANCED_FACE` instances keyed by IR face id, for presentation
+    /// styling.
+    face_step_refs: HashMap<String, Ref>,
+    /// Emitted solid instances paired with their owning IR body id, for
+    /// presentation styling.
+    body_solid_refs: Vec<(String, Ref)>,
+    /// Display colors that could not be attached to an emitted STEP item.
+    unstyled_colors: usize,
 }
 
 impl<'a> Builder<'a> {
@@ -263,6 +274,9 @@ impl<'a> Builder<'a> {
             vertex_refs: HashMap::new(),
             curveless_edges: BTreeSet::new(),
             unknown_surface_faces: BTreeSet::new(),
+            face_step_refs: HashMap::new(),
+            body_solid_refs: Vec::new(),
+            unstyled_colors: 0,
         }
     }
 
@@ -311,7 +325,148 @@ impl<'a> Builder<'a> {
             &format!("{product_def_shape},{absr}"),
         );
 
+        self.emit_presentation(context);
         self.note_unrepresented();
+    }
+
+    /// Emit `STYLED_ITEM` surface colors for every colored body and face.
+    ///
+    /// A body or face is colored by its own `color` field or, failing that,
+    /// by an appearance binding whose appearance carries a base color. Each
+    /// distinct color shares one `PRESENTATION_STYLE_ASSIGNMENT`; the styled
+    /// items are gathered into one
+    /// `MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION` in the
+    /// geometric context.
+    fn emit_presentation(&mut self, context: Ref) {
+        use cadmpeg_ir::appearance::AppearanceTarget;
+        use cadmpeg_ir::topology::Color;
+
+        let ir = self.ir;
+        let appearances: HashMap<&str, Option<Color>> = ir
+            .model
+            .appearances
+            .iter()
+            .map(|appearance| (appearance.id.as_str(), appearance.base_color))
+            .collect();
+        let mut body_colors: HashMap<&str, Color> = HashMap::new();
+        let mut face_colors: HashMap<&str, Color> = HashMap::new();
+        for binding in &ir.model.appearance_bindings {
+            let Some(color) = appearances
+                .get(binding.appearance.as_str())
+                .copied()
+                .flatten()
+            else {
+                continue;
+            };
+            match &binding.target {
+                AppearanceTarget::Body(id) => {
+                    body_colors.entry(id.as_str()).or_insert(color);
+                }
+                AppearanceTarget::Face(id) => {
+                    face_colors.entry(id.as_str()).or_insert(color);
+                }
+            }
+        }
+        for body in &ir.model.bodies {
+            if let Some(color) = body.color {
+                body_colors.insert(body.id.as_str(), color);
+            }
+        }
+        for face in &ir.model.faces {
+            if let Some(color) = face.color {
+                face_colors.insert(face.id.as_str(), color);
+            }
+        }
+
+        let mut style_refs: HashMap<String, Ref> = HashMap::new();
+        let mut styled = Vec::new();
+        let mut styled_bodies: BTreeSet<String> = BTreeSet::new();
+        let body_solids = self.body_solid_refs.clone();
+        for (body_id, solid) in &body_solids {
+            let Some(color) = body_colors.get(body_id.as_str()).copied() else {
+                continue;
+            };
+            let style = self.surface_style(color, &mut style_refs);
+            styled.push(
+                self.emitter
+                    .emit("STYLED_ITEM", &format!("'color',({style}),{solid}")),
+            );
+            styled_bodies.insert(body_id.clone());
+        }
+        let mut faces: Vec<(String, Ref)> = self
+            .face_step_refs
+            .iter()
+            .map(|(id, r)| (id.clone(), *r))
+            .collect();
+        faces.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut styled_faces: BTreeSet<String> = BTreeSet::new();
+        for (face_id, face) in &faces {
+            let Some(color) = face_colors.get(face_id.as_str()).copied() else {
+                continue;
+            };
+            let style = self.surface_style(color, &mut style_refs);
+            styled.push(
+                self.emitter
+                    .emit("STYLED_ITEM", &format!("'color',({style}),{face}")),
+            );
+            styled_faces.insert(face_id.clone());
+        }
+        // Colors with no emitted STEP item to attach to (hidden or skipped
+        // geometry) remain unrepresented.
+        self.unstyled_colors = body_colors
+            .keys()
+            .filter(|id| !styled_bodies.contains(**id as &str))
+            .count()
+            + face_colors
+                .keys()
+                .filter(|id| !styled_faces.contains(**id as &str))
+                .count();
+        if styled.is_empty() {
+            return;
+        }
+        self.emitter.emit(
+            "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION",
+            &format!("'',{},{context}", refs(&styled)),
+        );
+    }
+
+    /// Emit (or reuse) the `PRESENTATION_STYLE_ASSIGNMENT` chain for one
+    /// surface color.
+    fn surface_style(
+        &mut self,
+        color: cadmpeg_ir::topology::Color,
+        cache: &mut HashMap<String, Ref>,
+    ) -> Ref {
+        let rgb = format!(
+            "{},{},{}",
+            real(f64::from(color.r)),
+            real(f64::from(color.g)),
+            real(f64::from(color.b))
+        );
+        if let Some(style) = cache.get(&rgb) {
+            return *style;
+        }
+        let colour = self.emitter.emit("COLOUR_RGB", &format!("'',{rgb}"));
+        let fill_colour = self
+            .emitter
+            .emit("FILL_AREA_STYLE_COLOUR", &format!("'',{colour}"));
+        let fill = self
+            .emitter
+            .emit("FILL_AREA_STYLE", &format!("'',({fill_colour})"));
+        let style_fill = self
+            .emitter
+            .emit("SURFACE_STYLE_FILL_AREA", &fill.to_string());
+        let side = self
+            .emitter
+            .emit("SURFACE_SIDE_STYLE", &format!("'',({style_fill})"));
+        let usage = self
+            .emitter
+            .emit("SURFACE_STYLE_USAGE", &format!(".BOTH.,{side}"));
+        let assignment = self
+            .emitter
+            .emit("PRESENTATION_STYLE_ASSIGNMENT", &format!("({usage})"));
+        cache.insert(rgb, assignment);
+        assignment
     }
 
     /// Emit the `PRODUCT` → `PRODUCT_DEFINITION_SHAPE` chain, returning the
@@ -477,6 +632,7 @@ impl<'a> Builder<'a> {
                     &format!("'',{outer},{}", refs(&void_refs)),
                 )
             };
+            self.body_solid_refs.push((region.body.0.clone(), solid));
             solids.push(solid);
         }
         solids
@@ -544,10 +700,13 @@ impl<'a> Builder<'a> {
             return None;
         }
         let flag = if same_sense { ".T." } else { ".F." };
-        Some(self.emitter.emit(
+        let advanced_face = self.emitter.emit(
             "ADVANCED_FACE",
             &format!("'',{},{surf_ref},{flag}", refs(&bound_refs)),
-        ))
+        );
+        self.face_step_refs
+            .insert(face_id.to_string(), advanced_face);
+        Some(advanced_face)
     }
 
     fn emit_loop(&mut self, loop_id: &str) -> Option<Ref> {
@@ -733,37 +892,25 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        // Colors carried on bodies/faces are not mapped to STEP presentation
-        // (styled_item/colour_rgb) in this writer.
-        let colored = self
-            .ir
-            .model
-            .bodies
-            .iter()
-            .filter(|b| b.color.is_some())
-            .count()
-            + self
-                .ir
-                .model
-                .faces
-                .iter()
-                .filter(|f| f.color.is_some())
-                .count();
-        if colored > 0 {
+        if self.unstyled_colors > 0 {
             self.loss(
                 LossCategory::Attribute,
                 Severity::Info,
-                format!("{colored} display color(s) were not written to STEP presentation"),
+                format!(
+                    "{} display color(s) had no emitted STEP item and were not written \
+                     to STEP presentation",
+                    self.unstyled_colors
+                ),
             );
         }
-        if !self.ir.model.appearances.is_empty() || !self.ir.model.appearance_bindings.is_empty() {
+        if !self.ir.model.appearances.is_empty() {
             self.loss(
                 LossCategory::Material,
                 Severity::Info,
                 format!(
-                    "{} appearance asset(s) and {} binding(s) were not written to STEP presentation",
-                    self.ir.model.appearances.len(),
-                    self.ir.model.appearance_bindings.len()
+                    "{} appearance asset(s) were reduced to STYLED_ITEM base colors; \
+                     schemas, textures, and shader properties were not written to STEP",
+                    self.ir.model.appearances.len()
                 ),
             );
         }
