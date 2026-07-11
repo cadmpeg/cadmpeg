@@ -328,6 +328,8 @@ Evaluation formulas for all four carriers follow directly from the frame vectors
 
 **`helix_int_cur`**: finite angle interval, axis-start position, major-radius position vector, minor-radius position vector, pitch position vector, apex-factor double, and unit axis vector, followed by the solved curve cache. Position-vector components and the cache fit tolerance are lengths. The major and minor vectors have equal magnitude. Their orientation about the axis records handedness; the pitch vector records axial rise per revolution, and the apex factor records linear radial growth per revolution fraction.
 
+**`offset_int_cur`**: one subtype flag, source curve, start/end source-parameter doubles, model-space offset vector, then two `(string label, integer role code)` pairs, followed by the solved curve cache and its fit tolerance. The source curve and solved cache are distinct carriers. Offset-vector components and fit tolerance are lengths; parameters and role codes are unscaled.
+
 ### 7.4 Pcurves (2D UV trimming curves)
 
 A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at record-relative **+37**:
