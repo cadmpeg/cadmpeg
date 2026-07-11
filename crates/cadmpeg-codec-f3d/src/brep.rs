@@ -1469,26 +1469,28 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         if curve_record.head == "ellipse" {
                             // Native conic parameters are angles from the
                             // major axis, matching the IR carrier's own
-                            // parameterization directly.
-                            if (b - a).abs() >= std::f64::consts::TAU - 1.0e-12 {
+                            // parameterization directly. Wrap the arc start
+                            // into the canonical `[0, τ)` domain, preserving
+                            // the sweep; a full period keeps its start phase
+                            // so the range still anchors on the edge's
+                            // vertices.
+                            let sweep = b - a;
+                            a = a.rem_euclid(std::f64::consts::TAU);
+                            if std::f64::consts::TAU - a < 1.0e-9 {
                                 a = 0.0;
-                                b = std::f64::consts::TAU;
-                            } else {
-                                // Wrap the arc start into the canonical
-                                // `[0, τ)` domain, preserving the sweep.
-                                let sweep = b - a;
-                                a = a.rem_euclid(std::f64::consts::TAU);
-                                if std::f64::consts::TAU - a < 1.0e-9 {
-                                    a = 0.0;
-                                }
-                                b = a + sweep;
                             }
+                            b = a + sweep;
                         } else if curve_record.head == "straight" {
-                            // Native line parameters are arc lengths in
-                            // centimeters; the IR carrier's unit direction
+                            // Native line parameters are multiples of the
+                            // stored direction vector, whose length is the
+                            // parameter scale; the IR carrier's unit direction
                             // lives in millimeter space.
-                            a *= LEN_TO_MM;
-                            b *= LEN_TO_MM;
+                            let scale = collect_carrier(curve_record)
+                                .vectors
+                                .first()
+                                .map_or(1.0, |vector| norm3(*vector));
+                            a *= scale * LEN_TO_MM;
+                            b *= scale * LEN_TO_MM;
                         }
                     }
                     Some([a, b])
