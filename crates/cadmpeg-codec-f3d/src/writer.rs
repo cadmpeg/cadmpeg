@@ -9211,6 +9211,8 @@ mod tests {
         )
         .expect("generated cylinder edit");
         let decoded = sab::frame(&bytes, 0, bytes.len(), 8).expect("patched cylinder record");
+        // The patch preserves the record's native negative-cosine angle
+        // branch, so decode reports the inward-normal flag.
         assert!(matches!(
             crate::brep::decode_surface(&decoded[0]),
             Some((SurfaceGeometry::Cylinder {
@@ -9218,7 +9220,7 @@ mod tests {
                 axis,
                 ref_direction,
                 radius,
-            }, false))
+            }, true))
                 if origin == Point3::new(10.0, 20.0, 30.0)
                     && axis == Vector3::new(0.0, 1.0, 0.0)
                     && ref_direction == Vector3::new(1.0, 0.0, 0.0)

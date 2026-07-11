@@ -210,15 +210,22 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             let axis = *c.vectors.first()?;
             let axis = unit(axis);
             let major = c.vectors.get(1).copied();
-            // Doubles are (ratio, sine, cosine, r1). `ratio` (minor/major of an
-            // elliptical cone) is not modeled by the IR's circular cone carrier;
-            // all corpus cones are circular (ratio 1). `sine` selects cylinder
-            // vs cone; `r1` is the explicit base radius.
+            // Doubles are (ratio, sine, cosine, u_scale). `ratio` (minor/major
+            // of an elliptical cone) is not modeled by the IR's circular cone
+            // carrier; all corpus cones are circular (ratio 1). `sine` selects
+            // cylinder vs cone. The base radius is the major-axis vector's
+            // magnitude; the trailing `u_scale` double is the u-parameter
+            // scale, which usually coincides with the radius but diverges on
+            // offset-derived surfaces. The signed slope `sine / cosine` is the
+            // radius change per unit axis distance, and a negative `cosine`
+            // points the surface normal toward the axis.
             let sine = *c.doubles.get(1).unwrap_or(&0.0);
-            let r1 = c.doubles.get(3).copied();
-            let radius = r1
-                .map(|r| r * LEN_TO_MM)
-                .or_else(|| major.map(|vector| norm3(vector) * LEN_TO_MM))?;
+            let cosine = *c.doubles.get(2).unwrap_or(&1.0);
+            let u_scale = c.doubles.get(3).copied();
+            let radius = major
+                .map(|vector| norm3(vector) * LEN_TO_MM)
+                .filter(|radius| *radius > f64::EPSILON)
+                .or_else(|| u_scale.map(|r| r * LEN_TO_MM))?;
             let ref_direction = major.map_or_else(|| deterministic_ref_direction(axis), unit);
             if sine.abs() <= f64::EPSILON {
                 Some((
@@ -228,9 +235,18 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
                         ref_direction,
                         radius,
                     },
-                    false,
+                    cosine < 0.0,
                 ))
             } else {
+                // The IR cone's radius grows along `+axis`; a negative native
+                // slope shrinks it, so the axis flips to compensate. The
+                // outward normal is invariant under the flip; the inward
+                // normal of a negative `cosine` folds into the face sense.
+                let axis = if sine * cosine < 0.0 {
+                    Vector3::new(-axis.x, -axis.y, -axis.z)
+                } else {
+                    axis
+                };
                 Some((
                     SurfaceGeometry::Cone {
                         origin: scale_point(origin),
@@ -239,7 +255,7 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
                         radius,
                         half_angle: sine.abs().asin(),
                     },
-                    false,
+                    cosine < 0.0,
                 ))
             }
         }
@@ -447,6 +463,13 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             }
         }
     }
+    // Carriers whose native normal points opposite the IR carrier's normal;
+    // the reversal folds into the referencing faces' senses.
+    let inward_normal_surfaces: HashSet<i64> = surface_geo
+        .iter()
+        .filter(|(_, (_, inward))| *inward)
+        .map(|(&index, _)| index)
+        .collect();
 
     // Pass 2: keep every face whose surface reference resolves to a record,
     // then pull its supporting graph in by shell-reachability. A face on a
@@ -1352,13 +1375,16 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             };
             let loops = loop_chain(r, &by_index, &kept_loops);
             // The face record's sense is relative to its surface record's
-            // orientation. A reversed spline record flips the cache normal, and
-            // the IR stores the cache itself, so the reversal folds into the
-            // face sense to keep the IR self-consistent.
+            // orientation. A reversed spline record flips the cache normal,
+            // and a negative-cosine cone points its normal toward the axis;
+            // the IR stores the forward carrier in both cases, so the
+            // reversal folds into the face sense to keep the IR
+            // self-consistent.
             let mut sense = sense_at(r, 8);
             if by_index
                 .get(&surface)
                 .is_some_and(|surf| surf.head == "spline" && record_reversed(surf))
+                ^ inward_normal_surfaces.contains(&surface)
             {
                 sense = match sense {
                     Sense::Forward => Sense::Reversed,

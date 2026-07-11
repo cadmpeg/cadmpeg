@@ -6158,7 +6158,10 @@ fn analytic_carrier_decode_covers_each_shape() {
         other => panic!("expected cylinder, got {other:?}"),
     }
 
-    // cone with nonzero sine keeps the acute half-angle asin(|sine|).
+    // cone with nonzero sine keeps the acute half-angle asin(|sine|). A
+    // both-negative sine/cosine pair has a positive slope (the radius still
+    // grows along `+axis`, so the axis is kept), and the negative cosine
+    // marks the inward native normal for the face-sense fold.
     let mut cone = base();
     cone.extend([
         Token::Position([0.0, 0.0, 0.0]),
@@ -6169,14 +6172,48 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Double(-0.866_025_4),
         Token::Double(2.0),
     ]);
-    match decode_surface(&rec("cone", cone)).unwrap().0 {
+    let (geo, inward) = decode_surface(&rec("cone", cone)).unwrap();
+    assert!(inward, "negative cosine points the native normal inward");
+    match geo {
         SurfaceGeometry::Cone {
             half_angle,
+            axis,
             ref_direction,
             ..
         } => {
             assert!((half_angle - 0.5f64.asin()).abs() < 1e-12);
+            assert_eq!(axis.z, 1.0, "positive slope keeps the axis");
             assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
+        }
+        other => panic!("expected cone, got {other:?}"),
+    }
+
+    // A negative sine with positive cosine shrinks the radius along the
+    // native axis; the IR cone grows along `+axis`, so the axis flips. The
+    // radius comes from the major-axis vector, not the trailing u-parameter
+    // scale double, which diverges on offset-derived surfaces.
+    let mut shrinking = base();
+    shrinking.extend([
+        Token::Position([0.0, 0.0, 0.0]),
+        Token::Vector3([0.0, 0.0, 1.0]),
+        Token::Vector3([4.655, 0.0, 0.0]), // |major| = 4.655 cm
+        Token::Double(1.0),
+        Token::Double(-0.5), // sine
+        Token::Double(0.866_025_4),
+        Token::Double(5.055), // u-parameter scale, not the radius
+    ]);
+    let (geo, inward) = decode_surface(&rec("cone", shrinking)).unwrap();
+    assert!(!inward, "positive cosine keeps the outward normal");
+    match geo {
+        SurfaceGeometry::Cone {
+            half_angle,
+            axis,
+            radius,
+            ..
+        } => {
+            assert!((half_angle - 0.5f64.asin()).abs() < 1e-12);
+            assert_eq!(axis.z, -1.0, "negative slope flips the axis");
+            assert!((radius - 46.55).abs() < 1e-12);
         }
         other => panic!("expected cone, got {other:?}"),
     }

@@ -20,6 +20,7 @@ This document records F3D semantics that the format specification does not yet d
 - The `BinaryFile4` release word encodes the ASM major release ×100 (`22700` on ASM 227.5 streams); whether the minor release is ever encoded is unresolved.
 - The `BinaryFile4` entity-count word's counting rule (which records it counts) is unresolved.
 - The semantic meaning of `design_record_header_flag` is unspecified. Its relationship to UI visibility and explicit appearance assignment is unresolved.
+- The storage location of per-body UI visibility is unresolved. The `BodiesRoot` member `u16` flag word is zero for a shown body and for a hidden body in the same stream, so it does not carry visibility. A B-rep stream can contain solid bodies that Fusion does not display; without the visibility relation every body in the active stream decodes as model geometry.
 - The semantic role of the second `0x01`-marker u32 in an ACT counter/registry record is unresolved.
 - The terminating-group framing of multi-token `generic_tag_attrib_def` records is unresolved.
 - The Design `MetaStream` Dimension object is a registry with no owned entity IDs. The location and byte grammar of concrete dimensional constraints and parameter expressions are unresolved.
