@@ -391,6 +391,23 @@ fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
     }
 }
 
+/// Reverse a curve carrier to its opposite orientation, `C'(t) = C(-t)`.
+/// Lines negate their direction, conics negate their plane normal (flipping
+/// the angular sweep while keeping the zero-angle direction), and B-splines
+/// reverse poles and knots. Carriers without an orientation pass through.
+fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
+    match geometry {
+        CurveGeometry::Line { direction, .. } => {
+            *direction = Vector3::new(-direction.x, -direction.y, -direction.z);
+        }
+        CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => {
+            *axis = Vector3::new(-axis.x, -axis.y, -axis.z);
+        }
+        CurveGeometry::Nurbs(curve) => reverse_nurbs_curve(curve),
+        _ => {}
+    }
+}
+
 fn double_at(rec: &Record, i: usize) -> Option<f64> {
     match rec.chunk(i) {
         Some(Token::Double(d)) => Some(*d),
