@@ -8,7 +8,9 @@ use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
 };
 
-const MAGIC: &[u8] = b"3D Geometry File Format ";
+pub(crate) mod chunks;
+
+const MAGIC: &[u8] = chunks::MAGIC;
 
 /// Decoder and inspector for Rhino `.3dm` files.
 #[derive(Debug, Default, Clone, Copy)]
@@ -45,31 +47,4 @@ impl Codec for RhinoCodec {
 }
 
 #[cfg(test)]
-mod tests {
-    use cadmpeg_ir::codec::{Codec, Confidence};
-
-    use super::{RhinoCodec, MAGIC};
-
-    #[test]
-    fn detects_full_magic() {
-        assert_eq!(RhinoCodec.detect(MAGIC), Confidence::High);
-    }
-
-    #[test]
-    fn rejects_partial_and_incorrect_magic() {
-        assert_eq!(RhinoCodec.detect(&MAGIC[..MAGIC.len() - 1]), Confidence::No);
-
-        let mut incorrect = MAGIC.to_vec();
-        incorrect[3] = b'X';
-        assert_eq!(RhinoCodec.detect(&incorrect), Confidence::No);
-    }
-
-    #[test]
-    fn detects_magic_at_any_prefix_offset() {
-        let mut prefix = vec![0x00, 0x01, 0x02, 0x03];
-        prefix.extend_from_slice(MAGIC);
-        prefix.extend_from_slice(&[0x04, 0x05]);
-
-        assert_eq!(RhinoCodec.detect(&prefix), Confidence::High);
-    }
-}
+mod tests;
