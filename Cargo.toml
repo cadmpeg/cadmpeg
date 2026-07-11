@@ -18,7 +18,7 @@ members = [
 exclude = ["crates/cadmpeg-fuzz"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.4"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/cadmpeg/cadmpeg"
@@ -26,13 +26,13 @@ homepage = "https://github.com/cadmpeg/cadmpeg"
 rust-version = "1.88"
 
 [workspace.dependencies]
-cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.1.1" }
-cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.1.1" }
-cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.1.1" }
-cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.1.1" }
-cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.1.1" }
-cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.1.1" }
-cadmpeg-step = { path = "crates/cadmpeg-step", version = "0.1.1" }
+cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.1.4" }
+cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.1.4" }
+cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.1.4" }
+cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.1.4" }
+cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.1.4" }
+cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.1.4" }
+cadmpeg-step = { path = "crates/cadmpeg-step", version = "0.1.4" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
