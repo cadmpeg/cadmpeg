@@ -277,6 +277,32 @@ fn table(archive: ArchiveVersion, typecode: u32, records: &[Vec<u8>]) -> Vec<u8>
     long_chunk(archive, typecode, &body)
 }
 
+fn crc_table(archive: ArchiveVersion, typecode: u32, records: &[Vec<u8>]) -> Vec<u8> {
+    let mut body = records.concat();
+    body.extend(short_chunk(archive, super::chunks::TCODE_ENDOFTABLE, 0));
+    crc_chunk(archive, typecode | TCODE_CRC, &body)
+}
+
+fn object_record(archive: ArchiveVersion, object_type: i64, class_uuid: [u8; 16]) -> Vec<u8> {
+    let object_type = short_chunk(archive, 0x82a0_0071, object_type);
+    let mut uuid_body = class_uuid.to_vec();
+    uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
+    let uuid = long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data = crc_chunk(archive, 0x0002_fffc, &[]);
+    let class_end = short_chunk(archive, 0x8202_7fff, 0);
+    let class = crc_chunk(
+        archive,
+        0x0002_7ffa,
+        &[uuid, class_data, class_end].concat(),
+    );
+    let object_end = short_chunk(archive, 0x82a0_007f, 0);
+    crc_chunk(
+        archive,
+        0x2000_8070 | TCODE_CRC,
+        &[object_type, class, object_end].concat(),
+    )
+}
+
 fn minimal_document(version: &str, tables: &[Vec<u8>]) -> Vec<u8> {
     let archive = parse_header(&header(version)).unwrap().archive_version;
     let mut bytes = header(version);
@@ -294,8 +320,7 @@ fn minimal_document(version: &str, tables: &[Vec<u8>]) -> Vec<u8> {
 #[test]
 fn scans_metadata_tables_and_reports_offsets() {
     let archive = ArchiveVersion::V5;
-    let object_type = short_chunk(archive, 0x82a0_0071, 0x20);
-    let object = crc_chunk(archive, 0x2000_8070, &object_type);
+    let object = object_record(archive, 0x20, [0; 16]);
     let bytes = minimal_document(
         "50",
         &[
@@ -324,7 +349,15 @@ fn scans_metadata_tables_and_reports_offsets() {
 #[test]
 fn container_only_returns_empty_current_ir_for_full_bands() {
     for version in ["50", "60", "70", "80"] {
-        let bytes = minimal_document(version, &[]);
+        let archive = parse_header(&header(version)).unwrap().archive_version;
+        let bytes = minimal_document(
+            version,
+            &[
+                table(archive, 0x1000_0014, &[]),
+                table(archive, 0x1000_0015, &[]),
+                table(archive, 0x1000_0013, &[]),
+            ],
+        );
         let result = RhinoCodec
             .decode(
                 &mut Cursor::new(bytes),
@@ -338,6 +371,33 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
         assert!(result.ir.model.subds.is_empty());
         assert!(result.report.container_only);
         assert_eq!(result.report.format, "rhino");
+    }
+}
+
+#[test]
+fn container_only_returns_empty_current_ir_for_v3_and_v4() {
+    for version in ["3", "4"] {
+        let archive = parse_header(&header(version)).unwrap().archive_version;
+        let bytes = minimal_document(
+            version,
+            &[
+                table(archive, 0x1000_0014, &[]),
+                table(archive, 0x1000_0015, &[]),
+                table(archive, 0x1000_0013, &[]),
+            ],
+        );
+        let result = RhinoCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    container_only: true,
+                },
+            )
+            .unwrap();
+        assert_eq!(result.ir.ir_version, IR_VERSION);
+        assert!(result.ir.model.bodies.is_empty());
+        assert!(result.ir.model.subds.is_empty());
+        assert!(result.report.container_only);
     }
 }
 
@@ -383,16 +443,45 @@ fn requires_end_of_table_and_rejects_wrong_order() {
 }
 
 #[test]
+fn requires_properties_settings_and_object_tables() {
+    let archive = ArchiveVersion::V5;
+    for tables in [
+        vec![
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+        vec![
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+        vec![
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+        ],
+    ] {
+        let bytes = minimal_document("50", &tables);
+        assert!(matches!(
+            RhinoCodec.inspect(&mut Cursor::new(bytes)),
+            Err(CodecError::Malformed(message))
+                if message.contains("properties, settings, and object tables")
+        ));
+    }
+}
+
+#[test]
 fn crc_mismatch_is_a_summary_warning_and_later_record_survives() {
     let archive = ArchiveVersion::V5;
-    let object_type = short_chunk(archive, 0x82a0_0071, 0x08);
-    let mut bad_object = crc_chunk(archive, 0x2000_8070, &object_type);
+    let mut bad_object = object_record(archive, 0x08, [0; 16]);
     let crc_offset = bad_object.len() - 1;
     bad_object[crc_offset] ^= 1;
-    let good_object = crc_chunk(archive, 0x2000_8070, &object_type);
+    let good_object = object_record(archive, 0x08, [0; 16]);
     let bytes = minimal_document(
         "50",
-        &[table(archive, 0x1000_0013, &[bad_object, good_object])],
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[bad_object, good_object]),
+        ],
     );
     let summary = RhinoCodec.inspect(&mut Cursor::new(bytes)).unwrap();
     assert!(summary
@@ -400,7 +489,7 @@ fn crc_mismatch_is_a_summary_warning_and_later_record_survives() {
         .iter()
         .any(|note| note.contains("CRC mismatch")));
     assert_eq!(
-        summary.entries[0].attributes.get("record_count"),
+        summary.entries[2].attributes.get("record_count"),
         Some(&"2".to_string())
     );
 }
@@ -412,10 +501,94 @@ fn repeated_consecutive_user_tables_are_allowed() {
         "50",
         &[
             table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[]),
             table(archive, 0x1000_0017, &[]),
             table(archive, 0x1000_0017, &[]),
         ],
     );
     let summary = RhinoCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    assert_eq!(summary.entries.len(), 5);
+}
+
+#[test]
+fn obsolete_layerset_occupies_the_layer_group_compatibility_slot() {
+    let archive = ArchiveVersion::V5;
+    let valid = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0011, &[]),
+            table(archive, 0x1000_0024, &[]),
+            table(archive, 0x1000_0018, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    assert!(RhinoCodec.inspect(&mut Cursor::new(valid)).is_ok());
+
+    let invalid = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0024, &[]),
+            table(archive, 0x1000_0011, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    assert!(matches!(
+        RhinoCodec.inspect(&mut Cursor::new(invalid)),
+        Err(CodecError::Malformed(_))
+    ));
+}
+
+#[test]
+fn accepts_table_crc_with_its_declared_bound() {
+    let archive = ArchiveVersion::V5;
+    let bytes = minimal_document(
+        "50",
+        &[
+            crc_table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let summary = RhinoCodec.inspect(&mut Cursor::new(bytes)).unwrap();
     assert_eq!(summary.entries.len(), 3);
+}
+
+#[test]
+fn rejects_short_object_and_unknown_table_records() {
+    let archive = ArchiveVersion::V5;
+    let short_object = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(
+                archive,
+                0x1000_0013,
+                &[short_chunk(archive, 0x2000_8070, 0)],
+            ),
+        ],
+    );
+    assert!(matches!(
+        RhinoCodec.inspect(&mut Cursor::new(short_object)),
+        Err(CodecError::Malformed(_))
+    ));
+
+    let unknown = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[long_chunk(archive, 0x1234, &[1])]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let summary = RhinoCodec.inspect(&mut Cursor::new(unknown)).unwrap();
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note.contains("unknown bounded record")));
 }

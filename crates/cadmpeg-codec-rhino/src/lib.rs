@@ -10,6 +10,7 @@ use cadmpeg_ir::codec::{
 
 pub(crate) mod chunks;
 pub(crate) mod container;
+pub(crate) mod objects;
 
 const MAGIC: &[u8] = chunks::MAGIC;
 

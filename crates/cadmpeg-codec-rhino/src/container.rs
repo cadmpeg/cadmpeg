@@ -11,14 +11,15 @@ use cadmpeg_ir::units::Units;
 
 use crate::chunks::{
     chunk_at, parse_eof, parse_header, verify_checksum, ArchiveVersion, ChecksumStatus,
-    FramingError, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+    FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
+use crate::objects::{parse_object_record, ObjectDescriptor, Uuid};
 
 /// Maximum input accepted by the Rhino container scanner.
 ///
 /// The cap limits the one required in-memory input copy and is checked before
 /// converting the stream length to allocation-sized offsets.
-pub const INPUT_CAP: u64 = 256 * 1024 * 1024;
+pub(crate) const INPUT_CAP: u64 = 256 * 1024 * 1024;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
 const TCODE_PROPERTIES: u32 = 0x1000_0014;
@@ -40,8 +41,6 @@ const TCODE_HISTORY: u32 = 0x1000_0026;
 const TCODE_USER: u32 = 0x1000_0017;
 
 const TCODE_OBJECT_RECORD: u32 = 0x2000_8070;
-const TCODE_OBJECT_RECORD_TYPE: u32 = 0x82a0_0071;
-
 const TCODE_BITMAP_RECORD: u32 = 0x2000_8090;
 const TCODE_MATERIAL_RECORD: u32 = 0x2000_8040;
 const TCODE_LAYER_RECORD: u32 = 0x2000_8050;
@@ -108,6 +107,8 @@ pub(crate) struct Table {
     pub(crate) records: Vec<Record>,
     /// Object record typecode counts discovered without class parsing.
     pub(crate) object_typecodes: BTreeMap<u32, usize>,
+    /// Fully parsed object records in this table.
+    pub(crate) objects: Vec<ObjectDescriptor>,
 }
 
 /// The result of scanning a complete supported container.
@@ -121,6 +122,8 @@ pub(crate) struct Scan {
     pub(crate) comment: Record,
     /// Tables in source order.
     pub(crate) tables: Vec<Table>,
+    /// All object records in source order.
+    pub(crate) objects: Vec<ObjectDescriptor>,
     /// Validated EOF descriptor.
     pub(crate) eof_offset: usize,
     /// Recoverable checksum and unknown-record notes.
@@ -186,7 +189,9 @@ fn parse_record(
 }
 
 fn table_rank(typecode: u32) -> Option<u8> {
-    Some(match typecode {
+    // The obsolete layerset occupies the compatibility slot between layer and
+    // group; it is not a second layer table and cannot appear elsewhere.
+    Some(match typecode & !TCODE_CRC {
         TCODE_PROPERTIES => 1,
         TCODE_SETTINGS => 2,
         TCODE_BITMAP => 3,
@@ -206,6 +211,27 @@ fn table_rank(typecode: u32) -> Option<u8> {
         TCODE_USER => 17,
         _ => return None,
     })
+}
+
+fn table_base(typecode: u32) -> u32 {
+    typecode & !TCODE_CRC
+}
+
+fn record_is_allowed(table: u32, record: u32, short: bool) -> bool {
+    if !expected_record(table_base(table), record) {
+        return false;
+    }
+    if !short {
+        return true;
+    }
+    matches!(
+        record,
+        TCODE_WRITER_VERSION
+            | TCODE_CURRENT_LAYER
+            | TCODE_CURRENT_WIRE_DENSITY
+            | TCODE_CURRENT_FONT
+            | TCODE_CURRENT_DIMSTYLE
+    )
 }
 
 fn expected_record(table: u32, record: u32) -> bool {
@@ -280,37 +306,6 @@ fn known_record(record: u32) -> bool {
         || expected_record(TCODE_HISTORY, record)
 }
 
-fn scan_object_types(
-    data: &[u8],
-    object: &Record,
-    archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
-) -> Result<BTreeMap<u32, usize>, CodecError> {
-    let mut counts = BTreeMap::new();
-    let mut offset = object.body.start;
-    while offset < object.body.end {
-        let child = chunk_at(data, offset, object.body.end, archive, false)
-            .map_err(|error| malformed(&error))?;
-        if let Some(note) =
-            checksum_warning(data, child.typecode, offset, object.body.end, archive)?
-        {
-            warnings.push(note);
-        }
-        if child.typecode == TCODE_OBJECT_RECORD_TYPE {
-            if !child.short {
-                return Err(CodecError::Malformed(
-                    "object record type must be a short chunk".to_string(),
-                ));
-            }
-            let value = u32::try_from(child.value)
-                .map_err(|_| CodecError::Malformed("negative object record type".to_string()))?;
-            *counts.entry(value).or_insert(0) += 1;
-        }
-        offset = child.next_offset;
-    }
-    Ok(counts)
-}
-
 /// Scan a V3/V4 or V5–V8 Rhino container.
 pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
     let header = parse_header(&data).map_err(|error| malformed(&error))?;
@@ -329,16 +324,26 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
     let mut offset = comment.range.end;
     let mut last_rank = 0_u8;
     let mut saw_user = false;
+    let mut saw_properties = false;
+    let mut saw_settings = false;
+    let mut saw_objects = false;
+    let mut all_objects = Vec::new();
     while offset < data.len() {
         let chunk = chunk_at(&data, offset, data.len(), archive, false)
             .map_err(|error| malformed(&error))?;
         if chunk.typecode == TCODE_ENDOFFILE {
+            if !saw_properties || !saw_settings || !saw_objects {
+                return Err(CodecError::Malformed(
+                    "properties, settings, and object tables are required".to_string(),
+                ));
+            }
             parse_eof(&data, offset, archive).map_err(|error| malformed(&error))?;
             return Ok(Scan {
                 data,
                 archive,
                 comment,
                 tables,
+                objects: all_objects,
                 eof_offset: offset,
                 warnings,
             });
@@ -346,12 +351,18 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
         let rank = table_rank(chunk.typecode).ok_or_else(|| {
             CodecError::Malformed(format!("expected table or EOF at offset {offset}"))
         })?;
+        match table_base(chunk.typecode) {
+            TCODE_PROPERTIES => saw_properties = true,
+            TCODE_SETTINGS => saw_settings = true,
+            TCODE_OBJECTS => saw_objects = true,
+            _ => {}
+        }
         if chunk.short {
             return Err(CodecError::Malformed(
                 "table chunks must use long framing".to_string(),
             ));
         }
-        if chunk.typecode == TCODE_USER {
+        if table_base(chunk.typecode) == TCODE_USER {
             if !saw_user && rank < last_rank {
                 return Err(CodecError::Malformed(
                     "user table is out of order".to_string(),
@@ -369,6 +380,7 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
         }
         let mut records = Vec::new();
         let mut object_typecodes = BTreeMap::new();
+        let mut objects = Vec::new();
         let mut child_offset = chunk.body.start;
         let mut terminated = false;
         while child_offset < chunk.body.end {
@@ -394,11 +406,17 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
                 body: child.body,
                 short: child.short,
             };
-            if !expected_record(chunk.typecode, record.typecode) {
+            if !record_is_allowed(chunk.typecode, record.typecode, record.short) {
                 if known_record(record.typecode) {
                     return Err(CodecError::Malformed(format!(
-                        "record typecode {:#x} is invalid in table {:#x}",
+                        "record typecode {:#x} is invalid or short-framed in table {:#x}",
                         record.typecode, chunk.typecode
+                    )));
+                }
+                if record.short {
+                    return Err(CodecError::Malformed(format!(
+                        "unknown table record {:#x} is short-framed",
+                        record.typecode
                     )));
                 }
                 warnings.push(format!(
@@ -415,11 +433,13 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
             )? {
                 warnings.push(note);
             }
-            if chunk.typecode == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD {
-                for (typecode, count) in scan_object_types(&data, &record, archive, &mut warnings)?
-                {
-                    *object_typecodes.entry(typecode).or_insert(0) += count;
-                }
+            if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
+            {
+                let descriptor = parse_object_record(&data, &record, archive, &mut warnings)
+                    .map_err(|error| malformed(&error))?;
+                *object_typecodes.entry(descriptor.object_type).or_insert(0) += 1;
+                all_objects.push(descriptor.clone());
+                objects.push(descriptor);
             }
             records.push(record);
             child_offset = child.next_offset;
@@ -430,7 +450,9 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
                 chunk.typecode
             )));
         }
-        if let Some(note) = checksum_warning(&data, chunk.typecode, offset, data.len(), archive)? {
+        if let Some(note) =
+            checksum_warning(&data, chunk.typecode, offset, chunk.next_offset, archive)?
+        {
             warnings.push(note);
         }
         tables.push(Table {
@@ -439,6 +461,7 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
             body: chunk.body,
             records,
             object_typecodes,
+            objects,
         });
         offset = chunk.next_offset;
     }
@@ -465,6 +488,27 @@ pub(crate) fn summarize(scan: &Scan) -> ContainerSummary {
             compression: "none".to_string(),
             compressed_size: table.range.len() as u64,
             uncompressed_size: table.body.len() as u64,
+            attributes,
+        });
+    }
+    let mut classes = BTreeMap::<Uuid, (usize, usize)>::new();
+    for object in &scan.objects {
+        let entry = classes.entry(object.class_uuid).or_insert((0, 0));
+        entry.0 += 1;
+        entry.1 += object.range.len();
+    }
+    for (class_uuid, (count, bytes)) in classes {
+        let mut attributes = BTreeMap::new();
+        attributes.insert("class_uuid".to_string(), class_uuid.to_string());
+        attributes.insert("nil_uuid".to_string(), class_uuid.is_nil().to_string());
+        attributes.insert("count".to_string(), count.to_string());
+        attributes.insert("total_record_bytes".to_string(), bytes.to_string());
+        entries.push(ContainerEntry {
+            name: format!("class-{class_uuid}"),
+            role: "object-class".to_string(),
+            compression: "none".to_string(),
+            compressed_size: bytes as u64,
+            uncompressed_size: bytes as u64,
             attributes,
         });
     }
@@ -562,7 +606,17 @@ pub(crate) fn decode(
         )));
     }
     let scan = scan(data)?;
-    if container_only && scan.archive.supports_geometry() {
+    if container_only
+        && matches!(
+            scan.archive,
+            ArchiveVersion::V3
+                | ArchiveVersion::V4
+                | ArchiveVersion::V5
+                | ArchiveVersion::V6
+                | ArchiveVersion::V7
+                | ArchiveVersion::V8
+        )
+    {
         return Ok(container_only_result(&scan));
     }
     Err(CodecError::NotImplemented(

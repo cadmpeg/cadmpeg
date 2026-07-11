@@ -18,6 +18,12 @@ pub(crate) const TCODE_SHORT: u32 = 0x8000_0000;
 /// The bit marking a CRC-bearing chunk.
 pub(crate) const TCODE_CRC: u32 = 0x0000_8000;
 
+const TCODE_CLASS_WRAPPER: u32 = 0x0002_7ffa;
+const TCODE_CLASS_USERDATA: u32 = 0x0002_7ffd;
+const TCODE_CLASS_USERDATA_HEADER: u32 = 0x0002_fff9;
+const TCODE_CLASS_DATA: u32 = 0x0002_fffc;
+const TCODE_CLASS_END: u32 = 0x8202_7fff;
+
 /// Archive versions understood by the chunk layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ArchiveVersion {
@@ -78,11 +84,6 @@ impl ArchiveVersion {
     /// Returns whether chunks use eight-byte values.
     pub(crate) fn uses_eight_byte_values(self) -> bool {
         self.value() >= 50
-    }
-
-    /// Returns whether this version has the full geometry support gate.
-    pub(crate) fn supports_geometry(self) -> bool {
-        matches!(self, Self::V5 | Self::V6 | Self::V7 | Self::V8)
     }
 
     /// Returns whether V1's optional EOF marker is allowed.
@@ -381,7 +382,7 @@ pub(crate) fn checksum_kind(
             || typecode == TCODE_CLASS_UUID)
     {
         ChecksumKind::Crc16
-    } else if archive.value() >= 2 && typecode & TCODE_CRC != 0 {
+    } else if archive.value() >= 2 && (typecode & TCODE_CRC != 0 || class_uuid) {
         ChecksumKind::Crc32
     } else {
         ChecksumKind::None
@@ -421,7 +422,19 @@ pub(crate) fn chunk_at(
 ) -> Result<Chunk, FramingError> {
     let mut reader = BoundedReader::new(bytes, offset, parent_end)?;
     let typecode = reader.u32()?;
-    if typecode & 0x0000_4000 != 0 && typecode != TCODE_ENDOFFILE && typecode != TCODE_ENDOFTABLE {
+    if typecode & 0x0000_4000 != 0
+        && typecode != TCODE_ENDOFFILE
+        && typecode != TCODE_ENDOFTABLE
+        && !matches!(
+            typecode,
+            TCODE_CLASS_WRAPPER
+                | TCODE_CLASS_USERDATA
+                | TCODE_CLASS_USERDATA_HEADER
+                | TCODE_CLASS_UUID
+                | TCODE_CLASS_DATA
+                | TCODE_CLASS_END
+        )
+    {
         return Err(FramingError::InvalidTypecode(typecode));
     }
     let short = typecode & TCODE_SHORT != 0;
