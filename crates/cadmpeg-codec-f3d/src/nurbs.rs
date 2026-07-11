@@ -319,7 +319,7 @@ pub(crate) struct SurfacePatchLayout {
     pub(crate) degree_value_offsets: [usize; 2],
 }
 
-/// Unique native knot payloads and their expanded IR run lengths.
+/// Unique native knot payload offsets.
 pub(crate) struct KnotPatchLayout {
     /// Payload offsets for unique knot values.
     pub(crate) value_offsets: Vec<usize>,
