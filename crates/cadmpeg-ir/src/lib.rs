@@ -60,6 +60,8 @@ pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{Feature, FeatureDefinition, FeatureId};
 pub use native::{F3dNative, LossCount, Native, SldprtNative};
+/// Source location attached to a [`LossNote`].
+pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
     Check, DecodeReport, Finding, LossCategory, LossNote, Severity, ValidationReport,

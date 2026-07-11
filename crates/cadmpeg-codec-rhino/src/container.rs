@@ -13,7 +13,7 @@ use crate::chunks::{
     chunk_at, parse_eof, parse_header, verify_checksum, ArchiveVersion, ChecksumStatus,
     FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
-use crate::objects::{parse_object_record, ObjectDescriptor, Uuid};
+use crate::objects::{parse_object_record, resolve_identities, ObjectDescriptor, Uuid};
 
 /// Maximum input accepted by the Rhino container scanner.
 ///
@@ -92,10 +92,12 @@ pub(crate) struct Record {
     pub(crate) body: std::ops::Range<usize>,
     /// Whether the record is a short chunk.
     pub(crate) short: bool,
+    /// Inline value for a short chunk, or zero for a long chunk.
+    pub(crate) value: i64,
 }
 
 /// A table descriptor with explicit source ranges.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Table {
     /// Table typecode.
     pub(crate) typecode: u32,
@@ -112,7 +114,8 @@ pub(crate) struct Table {
 }
 
 /// The result of scanning a complete supported container.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub(crate) struct Scan {
     /// Complete input bytes.
     pub(crate) data: Vec<u8>,
@@ -128,6 +131,8 @@ pub(crate) struct Scan {
     pub(crate) eof_offset: usize,
     /// Recoverable checksum and unknown-record notes.
     pub(crate) warnings: Vec<String>,
+    /// Typed metadata decoded from property, setting, and layer records.
+    pub(crate) metadata: crate::settings::DocumentMetadata,
 }
 
 impl Scan {
@@ -185,6 +190,7 @@ fn parse_record(
         range: offset..chunk.next_offset,
         body: chunk.body,
         short: chunk.short,
+        value: chunk.value,
     })
 }
 
@@ -338,6 +344,18 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
                 ));
             }
             parse_eof(&data, offset, archive).map_err(|error| malformed(&error))?;
+            let metadata = crate::settings::parse_metadata(&data, archive, &tables, &mut warnings);
+            resolve_identities(&mut all_objects, &metadata, &mut warnings);
+            for table in &mut tables {
+                for object in &mut table.objects {
+                    if let Some(resolved) = all_objects
+                        .iter()
+                        .find(|candidate| candidate.range == object.range)
+                    {
+                        *object = resolved.clone();
+                    }
+                }
+            }
             return Ok(Scan {
                 data,
                 archive,
@@ -346,6 +364,7 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
                 objects: all_objects,
                 eof_offset: offset,
                 warnings,
+                metadata,
             });
         }
         let rank = table_rank(chunk.typecode).ok_or_else(|| {
@@ -405,6 +424,7 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
                 range: child_offset..child.next_offset,
                 body: child.body,
                 short: child.short,
+                value: child.value,
             };
             if !record_is_allowed(chunk.typecode, record.typecode, record.short) {
                 if known_record(record.typecode) {
@@ -619,7 +639,5 @@ pub(crate) fn decode(
     {
         return Ok(container_only_result(&scan));
     }
-    Err(CodecError::NotImplemented(
-        "Rhino entity decode is not implemented".to_string(),
-    ))
+    Ok(crate::decode::decode(&scan))
 }

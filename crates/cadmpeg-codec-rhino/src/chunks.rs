@@ -108,6 +108,8 @@ pub(crate) enum FramingError {
     InvalidHeader,
     /// A length or count was invalid.
     InvalidLength { offset: usize, value: i128 },
+    /// A structural framing rule was violated.
+    Structural { offset: usize, message: String },
     /// Arithmetic overflow occurred while deriving a boundary.
     Overflow { offset: usize },
     /// A derived boundary exceeded its containing bound.
@@ -133,6 +135,9 @@ impl fmt::Display for FramingError {
             Self::InvalidHeader => f.write_str("invalid 3DM header"),
             Self::InvalidLength { offset, value } => {
                 write!(f, "invalid length {value} at {offset}")
+            }
+            Self::Structural { offset, message } => {
+                write!(f, "framing error at {offset}: {message}")
             }
             Self::Overflow { offset } => write!(f, "offset arithmetic overflow at {offset}"),
             Self::OutOfBounds { offset, end, bound } => {
@@ -188,9 +193,6 @@ pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BoundedReader<'a> {
     bytes: &'a [u8],
-    #[cfg(test)]
-    #[allow(dead_code)]
-    start: usize,
     end: usize,
     position: usize,
 }
@@ -207,8 +209,6 @@ impl<'a> BoundedReader<'a> {
         }
         Ok(Self {
             bytes,
-            #[cfg(test)]
-            start,
             end,
             position: start,
         })
@@ -220,22 +220,21 @@ impl<'a> BoundedReader<'a> {
     }
 
     /// Returns the absolute end offset.
-    #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn end(&self) -> usize {
         self.end
     }
 
+    /// Returns a reader over the unread bounded bytes.
+    pub(crate) fn unread(&self) -> Result<Self, FramingError> {
+        Self::new(self.bytes, self.position, self.end)
+    }
+
     /// Returns the unread byte count.
-    #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn remaining(&self) -> usize {
         self.end - self.position
     }
 
     /// Skips exactly `count` bytes.
-    #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn skip(&mut self, count: usize) -> Result<(), FramingError> {
         let end = self
             .position
@@ -249,8 +248,6 @@ impl<'a> BoundedReader<'a> {
     }
 
     /// Reads a byte.
-    #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn u8(&mut self) -> Result<u8, FramingError> {
         let bytes = self.take(1)?;
         Ok(bytes[0])
@@ -282,6 +279,34 @@ impl<'a> BoundedReader<'a> {
         Ok(self.u64()? as i64)
     }
 
+    /// Reads a little-endian signed 16-bit value.
+    pub(crate) fn i16(&mut self) -> Result<i16, FramingError> {
+        let bytes = self.take(2)?;
+        Ok(i16::from_le_bytes(
+            bytes.try_into().expect("length checked"),
+        ))
+    }
+
+    /// Reads a little-endian IEEE-754 binary64 value.
+    pub(crate) fn f64(&mut self) -> Result<f64, FramingError> {
+        let bytes = self.take(8)?;
+        Ok(f64::from_le_bytes(
+            bytes.try_into().expect("length checked"),
+        ))
+    }
+
+    /// Reads an archive boolean encoded as one byte.
+    pub(crate) fn bool(&mut self) -> Result<bool, FramingError> {
+        match self.u8()? {
+            0 => Ok(false),
+            1 => Ok(true),
+            value => Err(FramingError::Structural {
+                offset: self.position - 1,
+                message: format!("boolean value {value} is not 0 or 1"),
+            }),
+        }
+    }
+
     /// Returns a bounded slice and advances the cursor.
     pub(crate) fn take(&mut self, count: usize) -> Result<&'a [u8], FramingError> {
         let end = self
@@ -307,24 +332,9 @@ impl<'a> BoundedReader<'a> {
             Ok(())
         }
     }
-
-    /// Creates a child reader for a validated range.
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn child(&self, start: usize, end: usize) -> Result<Self, FramingError> {
-        if start < self.start || end > self.end || start > end {
-            return Err(FramingError::OutOfBounds {
-                offset: start,
-                end,
-                bound: self.end,
-            });
-        }
-        Self::new(self.bytes, start, end)
-    }
 }
 
 /// Checks an untrusted signed count before converting it or allocating.
-#[cfg(test)]
 pub(crate) fn checked_count_bytes(
     count: i32,
     element_size: usize,
@@ -392,6 +402,8 @@ pub(crate) fn checksum_kind(
 /// A parsed chunk header and all ranges derived from its declared boundary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Chunk {
+    /// Offset of the chunk typecode.
+    pub(crate) header_start: usize,
     /// Raw typecode.
     pub(crate) typecode: u32,
     /// Whether the short bit is set.
@@ -410,6 +422,13 @@ pub(crate) struct Chunk {
     pub(crate) next_offset: usize,
     /// Checksum algorithm selected by the archive and typecode.
     pub(crate) checksum_kind: ChecksumKind,
+}
+
+impl Chunk {
+    /// Returns the complete chunk range, including header and checksum.
+    pub(crate) fn range(&self) -> std::ops::Range<usize> {
+        self.header_start..self.next_offset
+    }
 }
 
 /// Parses a chunk at `offset`, constrained by `parent_end`.
@@ -451,6 +470,7 @@ pub(crate) fn chunk_at(
     let body_start = reader.position();
     if short {
         return Ok(Chunk {
+            header_start: offset,
             typecode,
             short: true,
             value,
@@ -499,6 +519,7 @@ pub(crate) fn chunk_at(
     }
     let body_end = declared_end - checksum_width;
     Ok(Chunk {
+        header_start: offset,
         typecode,
         short: false,
         value,

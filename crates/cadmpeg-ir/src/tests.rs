@@ -14,7 +14,7 @@ use crate::ids::{CoedgeId, CurveId, EdgeId, ProceduralSurfaceId, SubdId, Unknown
 use crate::math::{Point3, Vector3};
 use crate::native::{F3dNative, SldprtNative};
 use crate::provenance::{Exactness, SourceObjectAssociation};
-use crate::report::Check;
+use crate::report::{Check, LossCategory, LossNote, Severity};
 use crate::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
@@ -23,7 +23,7 @@ use crate::tessellation::TessellationChannel;
 use crate::topology::Color;
 use crate::unknown::UnknownRecord;
 use crate::validate::validate;
-use crate::{diff, CadIr};
+use crate::{diff, CadIr, LossProvenance};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 
@@ -1000,4 +1000,29 @@ fn schema_generation_produces_definitions() {
         .and_then(serde_json::Value::as_object)
         .expect("schema has a $defs object");
     assert!(!defs.is_empty());
+}
+
+#[test]
+fn loss_provenance_root_alias_constructs_and_serializes() {
+    let note = LossNote {
+        category: LossCategory::Geometry,
+        severity: Severity::Warning,
+        message: "geometry was retained as metadata".into(),
+        provenance: Some(LossProvenance {
+            format: "rhino".into(),
+            stream: String::new(),
+            offset: 42,
+            tag: Some(
+                "OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020".into(),
+            ),
+        }),
+    };
+    let json = serde_json::to_value(&note).unwrap();
+    assert_eq!(json["provenance"]["format"], "rhino");
+    assert_eq!(json["provenance"]["stream"], "");
+    assert_eq!(json["provenance"]["offset"], 42);
+    assert_eq!(
+        json["provenance"]["tag"],
+        "OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020"
+    );
 }
