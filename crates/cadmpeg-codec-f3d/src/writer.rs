@@ -8234,6 +8234,7 @@ fn patch_compound_definition(
         ));
     };
     let end = record.offset + record.len;
+<<<<<<< Updated upstream
     let (mut position, int_width) = {
         let record_bytes = bytes
             .get(record.offset..end)
@@ -8270,6 +8271,43 @@ fn patch_compound_definition(
         patch_compound_double(bytes, record, &mut position, *value)?;
     }
     if bytes.get(record.offset + position) != Some(&0x04) {
+||||||| Stash base
+=======
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("compound record is truncated".into()))?;
+    let name = b"comp_int_cur";
+    let marker = record_bytes
+        .windows(name.len())
+        .position(|window| window == name)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "procedural curve record {} is not compound",
+                record.index
+            ))
+        })?;
+    let mut position = marker + name.len();
+    let int_width = [8usize, 4].into_iter().find(|width| {
+        record_bytes.get(position) == Some(&0x04)
+            && record_bytes
+                .get(position + 1..position + 1 + width)
+                .and_then(|raw| match width {
+                    8 => raw.try_into().ok().map(i64::from_le_bytes),
+                    4 => raw
+                        .try_into()
+                        .ok()
+                        .map(i32::from_le_bytes)
+                        .map(i64::from),
+                    _ => None,
+                })
+                == i64::try_from(parameters.len()).ok()
+    }).ok_or_else(|| CodecError::Malformed("compound parameter count is malformed".into()))?;
+    position += 1 + int_width;
+    for value in parameters {
+        patch_compound_double(bytes, record, &mut position, *value)?;
+    }
+    if record_bytes.get(position) != Some(&0x04) {
+>>>>>>> Stashed changes
         return Err(CodecError::Malformed(
             "compound component count is malformed".into(),
         ));

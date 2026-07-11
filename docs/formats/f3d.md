@@ -260,7 +260,7 @@ The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partn
 +89 chunk[9] sense byte     +90 0x07 'tangent'|'unknown' continuity text
 ```
 
-`+52` is end_vertex and `+79` is curve, not the other way round. `t_start`/`t_end` are stored parameters on the referenced curve. A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`. The continuity text is descriptive metadata, **not** a curve-type discriminator.
+`+52` is end_vertex and `+79` is curve, not the other way round. `t_start`/`t_end` are stored parameters on the edge's own parameterization: the referenced curve itself when the sense byte is forward (`0x0b`), its reverse `E(t) = C(−t)` when reversed (`0x0a`). A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`. The continuity text is descriptive metadata, **not** a curve-type discriminator.
 
 **Vertex (63 B):** `chunk[3]` @+36 = owning_edge, `chunk[4]` @+45 = index_flag (`0` = this is the owning edge's START vertex, `1` = its END vertex), `chunk[5]` @+54 = point ref. Each vertex has its own point entity; no deduplication.
 
@@ -276,7 +276,7 @@ Three sense bits compose into the winding:
 
 - **face.sense**: forward = surface's natural normal, reversed = flipped.
 - **coedge.sense**: loop-traversal direction relative to the edge curve parameterization.
-- **edge.sense**: the edge's own curve-parameterization sense.
+- **edge.sense**: the edge's own curve-parameterization sense. A reversed edge parameterizes as the negation of its curve (`E(t) = C(−t)`); its `t_start`/`t_end` and vertex order are on that reversed parameterization.
 
 **Winding rule:** `effective_curve_reversed = edge.sense_reversed XOR coedge.sense_reversed`. Each edge has two coedges with opposite `effective_curve_reversed`.
 
