@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 # Supersede in-flight runs when the same ref is pushed again; PR iteration
 # otherwise runs stale and current pipelines to completion side by side.
 concurrency:
