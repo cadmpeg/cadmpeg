@@ -105,7 +105,7 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
 - **Tessellation: None.** Fusion display meshes remain outside the IR tessellation arena.
 - **Design intent: Partial.** ASM history states, Design assignments, sketch-side records, construction recipes, persistent references, MetaStream identities, and ACT channels transfer. A complete replayable Fusion feature history remains open.
 - **Product structure: Partial.** Body transforms and root-component records transfer. Multi-component structure and constraints remain open.
-- **Presentation and metadata: Partial.** Linked source attributes, Protein appearance assets, material properties, and body bindings transfer. External material-library display names and some schema fields remain unresolved.
+- **Presentation and metadata: Partial.** Linked source attributes, Protein appearance assets, material properties, body bindings, and per-body display visibility transfer. External material-library display names and some schema fields remain unresolved.
 
 ### Write and round trip
 

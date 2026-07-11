@@ -67,7 +67,7 @@ body → region → shell → face → loop → coedge → edge → vertex → p
                            └── surface
 ```
 
-`Body.kind` is `solid`, `sheet`, `wire`, or `general`. A body owns regions. A region is a connected component of a body and owns shells. A shell owns at least one of faces, wire edges, or free vertices. A face is an oriented bounded portion of one surface and owns loops. A loop lists coedges in traversal order. A coedge is one oriented use of an edge by one loop. An edge joins two vertices and optionally references a curve and canonical parameter range. A vertex references a point carrier. Point remains a separate carrier because it has independent identity and provenance.
+`Body.kind` is `solid`, `sheet`, `wire`, or `general`. A body optionally records a display name, color, and `visible` — whether the source document displays it; exporters omit bodies with `visible: false` from display-oriented formats. A body owns regions. A region is a connected component of a body and owns shells. A shell owns at least one of faces, wire edges, or free vertices. A face is an oriented bounded portion of one surface and owns loops. A loop lists coedges in traversal order. A coedge is one oriented use of an edge by one loop. An edge joins two vertices and optionally references a curve and canonical parameter range. A vertex references a point carrier. Point remains a separate carrier because it has independent identity and provenance.
 
 | cadmpeg IR | ACIS/ASM | Parasolid        | STEP AP242                                                            |
 | ---------- | -------- | ---------------- | --------------------------------------------------------------------- |
