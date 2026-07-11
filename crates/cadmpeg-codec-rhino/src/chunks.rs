@@ -608,6 +608,7 @@ pub(crate) fn parse_eof(
             } else {
                 4
             }
+        || chunk.next_offset != bytes.len()
     {
         return Err(FramingError::MissingEof);
     }

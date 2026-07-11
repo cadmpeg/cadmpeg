@@ -381,3 +381,41 @@ fn requires_end_of_table_and_rejects_wrong_order() {
         Err(CodecError::Malformed(_))
     ));
 }
+
+#[test]
+fn crc_mismatch_is_a_summary_warning_and_later_record_survives() {
+    let archive = ArchiveVersion::V5;
+    let object_type = short_chunk(archive, 0x82a0_0071, 0x08);
+    let mut bad_object = crc_chunk(archive, 0x2000_8070, &object_type);
+    let crc_offset = bad_object.len() - 1;
+    bad_object[crc_offset] ^= 1;
+    let good_object = crc_chunk(archive, 0x2000_8070, &object_type);
+    let bytes = minimal_document(
+        "50",
+        &[table(archive, 0x1000_0013, &[bad_object, good_object])],
+    );
+    let summary = RhinoCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note.contains("CRC mismatch")));
+    assert_eq!(
+        summary.entries[0].attributes.get("record_count"),
+        Some(&"2".to_string())
+    );
+}
+
+#[test]
+fn repeated_consecutive_user_tables_are_allowed() {
+    let archive = ArchiveVersion::V5;
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0017, &[]),
+            table(archive, 0x1000_0017, &[]),
+        ],
+    );
+    let summary = RhinoCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    assert_eq!(summary.entries.len(), 3);
+}

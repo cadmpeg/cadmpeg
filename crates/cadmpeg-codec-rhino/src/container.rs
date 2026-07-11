@@ -29,6 +29,7 @@ const TCODE_MATERIAL: u32 = 0x1000_0010;
 const TCODE_LINETYPE: u32 = 0x1000_0023;
 const TCODE_LAYER: u32 = 0x1000_0011;
 const TCODE_GROUP: u32 = 0x1000_0018;
+const TCODE_OBSOLETE_LAYERSET: u32 = 0x1000_0024;
 const TCODE_FONT: u32 = 0x1000_0019;
 const TCODE_DIMSTYLE: u32 = 0x1000_0020;
 const TCODE_LIGHT: u32 = 0x1000_0012;
@@ -46,6 +47,7 @@ const TCODE_MATERIAL_RECORD: u32 = 0x2000_8040;
 const TCODE_LAYER_RECORD: u32 = 0x2000_8050;
 const TCODE_LIGHT_RECORD: u32 = 0x2000_8060;
 const TCODE_GROUP_RECORD: u32 = 0x2000_8073;
+const TCODE_OBSOLETE_LAYERSET_RECORD: u32 = 0x2000_8079;
 const TCODE_FONT_RECORD: u32 = 0x2000_8074;
 const TCODE_DIMSTYLE_RECORD: u32 = 0x2000_8075;
 const TCODE_INSTANCE_DEFINITION_RECORD: u32 = 0x2000_8076;
@@ -155,10 +157,11 @@ fn checksum_warning(
     data: &[u8],
     typecode: u32,
     offset: usize,
+    parent_end: usize,
     archive: ArchiveVersion,
 ) -> Result<Option<String>, CodecError> {
     let chunk =
-        chunk_at(data, offset, data.len(), archive, false).map_err(|error| malformed(&error))?;
+        chunk_at(data, offset, parent_end, archive, false).map_err(|error| malformed(&error))?;
     match verify_checksum(data, &chunk).map_err(|error| malformed(&error))? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {offset} for typecode {typecode:#x}: expected {expected:#x}, got {actual:#x}"
@@ -191,15 +194,16 @@ fn table_rank(typecode: u32) -> Option<u8> {
         TCODE_MATERIAL => 5,
         TCODE_LINETYPE => 6,
         TCODE_LAYER => 7,
-        TCODE_GROUP => 8,
-        TCODE_FONT => 9,
-        TCODE_DIMSTYLE => 10,
-        TCODE_LIGHT => 11,
-        TCODE_HATCH_PATTERN => 12,
-        TCODE_INSTANCE_DEFINITION => 13,
-        TCODE_OBJECTS => 14,
-        TCODE_HISTORY => 15,
-        TCODE_USER => 16,
+        TCODE_OBSOLETE_LAYERSET => 8,
+        TCODE_GROUP => 9,
+        TCODE_FONT => 10,
+        TCODE_DIMSTYLE => 11,
+        TCODE_LIGHT => 12,
+        TCODE_HATCH_PATTERN => 13,
+        TCODE_INSTANCE_DEFINITION => 14,
+        TCODE_OBJECTS => 15,
+        TCODE_HISTORY => 16,
+        TCODE_USER => 17,
         _ => return None,
     })
 }
@@ -211,6 +215,7 @@ fn expected_record(table: u32, record: u32) -> bool {
         TCODE_LAYER => record == TCODE_LAYER_RECORD,
         TCODE_LIGHT => record == TCODE_LIGHT_RECORD,
         TCODE_GROUP => record == TCODE_GROUP_RECORD,
+        TCODE_OBSOLETE_LAYERSET => record == TCODE_OBSOLETE_LAYERSET_RECORD,
         TCODE_FONT => record == TCODE_FONT_RECORD,
         TCODE_DIMSTYLE => record == TCODE_DIMSTYLE_RECORD,
         TCODE_INSTANCE_DEFINITION => record == TCODE_INSTANCE_DEFINITION_RECORD,
@@ -265,6 +270,7 @@ fn known_record(record: u32) -> bool {
         || expected_record(TCODE_LINETYPE, record)
         || expected_record(TCODE_LAYER, record)
         || expected_record(TCODE_GROUP, record)
+        || expected_record(TCODE_OBSOLETE_LAYERSET, record)
         || expected_record(TCODE_FONT, record)
         || expected_record(TCODE_DIMSTYLE, record)
         || expected_record(TCODE_LIGHT, record)
@@ -278,12 +284,18 @@ fn scan_object_types(
     data: &[u8],
     object: &Record,
     archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
 ) -> Result<BTreeMap<u32, usize>, CodecError> {
     let mut counts = BTreeMap::new();
     let mut offset = object.body.start;
     while offset < object.body.end {
         let child = chunk_at(data, offset, object.body.end, archive, false)
             .map_err(|error| malformed(&error))?;
+        if let Some(note) =
+            checksum_warning(data, child.typecode, offset, object.body.end, archive)?
+        {
+            warnings.push(note);
+        }
         if child.typecode == TCODE_OBJECT_RECORD_TYPE {
             if !child.short {
                 return Err(CodecError::Malformed(
@@ -310,7 +322,7 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
         ));
     }
     let mut warnings = Vec::new();
-    if let Some(note) = checksum_warning(&data, comment.typecode, 32, archive)? {
+    if let Some(note) = checksum_warning(&data, comment.typecode, 32, data.len(), archive)? {
         warnings.push(note);
     }
     let mut tables = Vec::new();
@@ -394,8 +406,18 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
                     record.typecode, chunk.typecode
                 ));
             }
+            if let Some(note) = checksum_warning(
+                &data,
+                record.typecode,
+                child_offset,
+                chunk.body.end,
+                archive,
+            )? {
+                warnings.push(note);
+            }
             if chunk.typecode == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD {
-                for (typecode, count) in scan_object_types(&data, &record, archive)? {
+                for (typecode, count) in scan_object_types(&data, &record, archive, &mut warnings)?
+                {
                     *object_typecodes.entry(typecode).or_insert(0) += count;
                 }
             }
@@ -408,7 +430,7 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
                 chunk.typecode
             )));
         }
-        if let Some(note) = checksum_warning(&data, chunk.typecode, offset, archive)? {
+        if let Some(note) = checksum_warning(&data, chunk.typecode, offset, data.len(), archive)? {
             warnings.push(note);
         }
         tables.push(Table {
