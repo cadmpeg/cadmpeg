@@ -366,8 +366,8 @@ fn encode_sketch_point(
     record[62..70].copy_from_slice(&point.persistent_id.to_le_bytes());
     record[70] = 1;
     record[71..75].copy_from_slice(&point.paired_reference.to_le_bytes());
-    record[96..104].copy_from_slice(&(point.coordinates.u / 10.0).to_le_bytes());
-    record[104..112].copy_from_slice(&(point.coordinates.v / 10.0).to_le_bytes());
+    record[89..97].copy_from_slice(&(point.coordinates.u / 10.0).to_le_bytes());
+    record[97..105].copy_from_slice(&(point.coordinates.v / 10.0).to_le_bytes());
     out.extend_from_slice(&record);
     Ok(())
 }

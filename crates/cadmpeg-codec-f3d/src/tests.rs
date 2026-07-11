@@ -3532,7 +3532,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         record_index: 100,
         class_tag: "360".into(),
         byte_offset: 0,
-        coordinate_offset: 96,
+        coordinate_offset: 89,
         persistent_id: 500,
         paired_reference: 101,
         coordinates: Point2::new(12.5, -25.0),
@@ -4864,8 +4864,8 @@ fn generated_design_bulkstream() -> Vec<u8> {
         point[62..70].copy_from_slice(&persistent_id.to_le_bytes());
         point[70] = 1;
         point[71..75].copy_from_slice(&(record_index + 1).to_le_bytes());
-        point[96..104].copy_from_slice(&coordinates[0].to_le_bytes());
-        point[104..112].copy_from_slice(&coordinates[1].to_le_bytes());
+        point[89..97].copy_from_slice(&coordinates[0].to_le_bytes());
+        point[97..105].copy_from_slice(&coordinates[1].to_le_bytes());
         out.extend_from_slice(&point);
     }
     let mut curve = vec![0u8; 229];
@@ -4923,8 +4923,8 @@ fn generated_design_bulkstream() -> Vec<u8> {
     alternate_point[114..122].copy_from_slice(&600u64.to_le_bytes());
     alternate_point[122] = 1;
     alternate_point[123..127].copy_from_slice(&701u32.to_le_bytes());
-    alternate_point[148..156].copy_from_slice(&(-4.0f64).to_le_bytes());
-    alternate_point[156..164].copy_from_slice(&5.0f64.to_le_bytes());
+    alternate_point[141..149].copy_from_slice(&(-4.0f64).to_le_bytes());
+    alternate_point[149..157].copy_from_slice(&5.0f64.to_le_bytes());
     out.extend_from_slice(&alternate_point);
 
     let mut alternate_curve = vec![0u8; 443];

@@ -557,7 +557,7 @@ pub(crate) fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>,
 /// Decode every sketch-point record ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata), `pt_tag`) from each design
 /// `BulkStream` entry in `scan`: the persistent point id, a paired record
 /// reference, and the sketch `(u, v)` coordinates, converted centimetre→
-/// millimetre. Records with non-finite coordinates are skipped.
+/// millimetre. Records whose scaled coordinates are non-finite are skipped.
 pub fn decode_sketch_points(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -589,7 +589,8 @@ pub fn decode_sketch_points(
                 at += 1;
                 continue;
             };
-            if !x.is_finite() || !y.is_finite() {
+            let (u, v) = (x * 10.0, y * 10.0);
+            if !u.is_finite() || !v.is_finite() {
                 at += 1;
                 continue;
             }
@@ -599,10 +600,10 @@ pub fn decode_sketch_points(
                     record_index,
                     class_tag,
                     byte_offset: at as u64,
-                    coordinate_offset: (96 + shift) as u32,
+                    coordinate_offset: (89 + shift) as u32,
                     persistent_id,
                     paired_reference,
-                    coordinates: Point2::new(x * 10.0, y * 10.0),
+                    coordinates: Point2::new(u, v),
                     raw_bytes: payload[..112 + shift].to_vec(),
                 });
             }
@@ -639,14 +640,18 @@ fn decode_sketch_point_variant(
         || u32_at(payload, 35 + shift) != Some(23)
         || payload.get(39 + shift..62 + shift) != Some(b"IntrinsicMetaTypeuint64")
         || payload.get(70 + shift) != Some(&1)
+        || !payload
+            .get(75 + shift..89 + shift)?
+            .iter()
+            .all(|&byte| byte <= 1)
     {
         return None;
     }
     Some((
         u64::from_le_bytes(payload.get(62 + shift..70 + shift)?.try_into().ok()?),
         u32_at(payload, 71 + shift)?,
-        f64_at(payload, 96 + shift)?,
-        f64_at(payload, 104 + shift)?,
+        f64_at(payload, 89 + shift)?,
+        f64_at(payload, 97 + shift)?,
     ))
 }
 
