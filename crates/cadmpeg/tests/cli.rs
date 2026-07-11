@@ -227,7 +227,9 @@ fn garbage_reports_supported_formats() {
         .args(["validate", input.to_str().unwrap()])
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("supported: f3d, sldprt, CATPart"));
+        .stderr(predicate::str::contains(
+            "supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM",
+        ));
 }
 
 #[test]

@@ -8,11 +8,15 @@ use crate::design::SketchRelation;
 use crate::examples::unit_cube;
 use crate::geometry::{Curve, CurveGeometry, SurfaceGeometry};
 use crate::history::{AsmHistoryRecord, Configuration, FeatureHistory, FeatureInputLane};
-use crate::ids::{CoedgeId, CurveId, EdgeId, UnknownId};
+use crate::ids::{CoedgeId, CurveId, EdgeId, SubdId, UnknownId};
 use crate::math::{Point3, Vector3};
 use crate::native::{F3dNative, SldprtNative};
-use crate::provenance::Exactness;
+use crate::provenance::{Exactness, SourceObjectAssociation};
 use crate::report::Check;
+use crate::subd::{
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
+    SubdVertexTag,
+};
 use crate::tessellation::TessellationChannel;
 use crate::unknown::UnknownRecord;
 use crate::validate::validate;
@@ -439,6 +443,7 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
             major_direction: Vector3::new(1.0, 0.0, 0.0),
             focal_distance: 0.0,
         },
+        source_object: None,
     });
     ir.model.curves.push(Curve {
         id: CurveId("synthetic:test:curve#bad-hyperbola".into()),
@@ -449,6 +454,7 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
             major_radius: -1.0,
             minor_radius: 1.0,
         },
+        source_object: None,
     });
 
     let report = validate(&ir, Vec::new());
@@ -470,7 +476,7 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
 #[test]
 fn wrong_document_version_is_flagged() {
     let mut ir = unit_cube();
-    ir.ir_version = "2".into();
+    ir.ir_version = "1".into();
     assert!(validate(&ir, Vec::new())
         .findings
         .iter()
@@ -499,6 +505,93 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
         assert!(!error.is_syntax());
         assert!(error.to_string().contains("unsupported ir_version"));
     }
+}
+
+#[test]
+fn subd_round_trip_and_directed_ring_validation() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:subd:surface#0".into()),
+        scheme: SubdScheme::CatmullClark,
+        vertices: vec![
+            SubdVertex {
+                point: Point3::new(0.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+            },
+            SubdVertex {
+                point: Point3::new(1.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+            },
+            SubdVertex {
+                point: Point3::new(0.0, 1.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+            },
+        ],
+        edges: vec![
+            SubdEdge {
+                vertices: [0, 1],
+                sharpness: [0.0, 0.25],
+                tag: SubdEdgeTag::Smooth,
+                sector_coefficients: [1.0, 1.0],
+            },
+            SubdEdge {
+                vertices: [1, 2],
+                sharpness: [0.25, 0.0],
+                tag: SubdEdgeTag::Crease,
+                sector_coefficients: [1.0, 1.0],
+            },
+            SubdEdge {
+                vertices: [2, 0],
+                sharpness: [0.0, 0.0],
+                tag: SubdEdgeTag::Smooth,
+                sector_coefficients: [1.0, 1.0],
+            },
+        ],
+        faces: vec![SubdFace {
+            edges: vec![
+                SubdEdgeUse {
+                    edge: 0,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 1,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 2,
+                    reversed: false,
+                },
+            ],
+        }],
+        source_object: None,
+    });
+    assert!(validate(&ir, Vec::new()).is_ok());
+    let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
+    assert_eq!(parsed, ir);
+    ir.model.subds[0].faces[0].edges[1].reversed = true;
+    assert!(!validate(&ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn source_association_is_a_free_carrier_root() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: CurveId("synthetic:source:curve#0".into()),
+        geometry: CurveGeometry::Unknown { record: None },
+        source_object: Some(SourceObjectAssociation {
+            format: "rhino".into(),
+            object_id: "00000000-0000-0000-0000-000000000000".into(),
+            name: Some("curve".into()),
+            color: None,
+            visible: Some(true),
+            layer: Some("layer-0".into()),
+            instance_path: Vec::new(),
+        }),
+    });
+    let report = validate(&ir, Vec::new());
+    assert!(report.is_ok(), "{:?}", report.findings);
+    let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
+    assert_eq!(parsed, ir);
 }
 
 #[test]

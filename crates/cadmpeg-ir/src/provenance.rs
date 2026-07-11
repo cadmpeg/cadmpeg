@@ -8,6 +8,39 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::topology::Color;
+
+/// Native object identity and effective display metadata for a free carrier.
+///
+/// `format` identifies the source format. `object_id` is the source format's
+/// native object identifier, not an IR arena identifier. `name`, `color`, and
+/// `visible` are the effective object display values. `layer` is the native
+/// layer identifier. `instance_path` contains native instance identifiers in
+/// outermost-to-innermost order; an empty path means that the object is not
+/// nested in an instance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SourceObjectAssociation {
+    /// Source format identifier.
+    pub format: String,
+    /// Native source object identifier.
+    pub object_id: String,
+    /// Effective source object name, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Effective source object color, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<Color>,
+    /// Effective source object visibility, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<bool>,
+    /// Native source layer identifier, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
+    /// Native instance identifiers from outermost to innermost.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub instance_path: Vec<String>,
+}
+
 /// Source location for an entity's bytes.
 ///
 /// `offset` is relative to `stream`; `tag` identifies the source record class

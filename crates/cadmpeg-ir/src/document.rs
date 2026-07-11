@@ -12,6 +12,7 @@ use crate::attributes::SourceAttribute;
 use crate::features::Feature;
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
+use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{Tolerances, Units};
@@ -31,6 +32,7 @@ macro_rules! arena_registry {
             points: Point, "Point arena.", [] => |e| e.id.0.clone();
             surfaces: Surface, "Surface arena.", [] => |e| e.id.0.clone();
             curves: Curve, "Curve arena.", [] => |e| e.id.0.clone();
+            subds: SubdSurface, "Subdivision surface arena.", [] => |e| e.id.0.clone();
             pcurves: Pcurve, "Pcurve arena.", [] => |e| e.id.0.clone();
             procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [] => |e| e.id.0.clone();
             procedural_curves: ProceduralCurve, "Procedural curve arena.", [] => |e| e.id.0.clone();
@@ -70,7 +72,7 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "1";
+pub const IR_VERSION: &str = "2";
 
 arena_registry!(declare_model);
 

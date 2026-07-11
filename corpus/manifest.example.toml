@@ -14,7 +14,7 @@
 # File name as committed in corpus/ (or the sharing location noted in the PR).
 filename = "bracket_single_body.f3d"
 
-# Codec format key: f3d | sldprt | catia | nx | creo.
+# Codec format key: f3d | sldprt | catia | nx | creo | rhino.
 format = "f3d"
 
 # The application you authored the file in, and its exact version. Version

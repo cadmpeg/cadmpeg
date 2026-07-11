@@ -91,6 +91,10 @@ id_type!(
     ProceduralCurveId
 );
 id_type!(
+    /// Identifies a [`crate::subd::SubdSurface`] carrier.
+    SubdId
+);
+id_type!(
     /// Identifies a [`crate::topology::Point`] carrier (a vertex position).
     PointId
 );

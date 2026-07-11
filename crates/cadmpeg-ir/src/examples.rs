@@ -125,6 +125,7 @@ pub fn unit_cube() -> CadIr {
                 origin: Point3::new(ax, ay, az),
                 direction: unit,
             },
+            source_object: None,
         });
         ir.model.edges.push(Edge {
             id: EdgeId(format!("synthetic:cube:edge#{i}")),
@@ -147,6 +148,7 @@ pub fn unit_cube() -> CadIr {
                 normal: Vector3::new(normal.0, normal.1, normal.2),
                 u_axis: derive_reference_direction(Vector3::new(normal.0, normal.1, normal.2)),
             },
+            source_object: None,
         });
 
         let loop_id = format!("synthetic:cube:loop#{name}");

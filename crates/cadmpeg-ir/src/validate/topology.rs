@@ -329,6 +329,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralSurfaceDefinition::Sum { first, second, .. } => {
+                for curve in [first, second] {
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::Blend {
                 supports, spine, ..
             } => {

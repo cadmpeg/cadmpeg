@@ -8,6 +8,7 @@
 
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{Point2, Point3, Vector3};
+use crate::provenance::SourceObjectAssociation;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -143,6 +144,9 @@ pub struct Surface {
     pub id: SurfaceId,
     /// Surface shape.
     pub geometry: SurfaceGeometry,
+    /// Native source-object identity and effective display metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_object: Option<SourceObjectAssociation>,
 }
 
 /// The analytic or free-form shape of a 3D curve carrier.
@@ -257,6 +261,9 @@ pub struct Curve {
     pub id: CurveId,
     /// Curve shape.
     pub geometry: CurveGeometry,
+    /// Native source-object identity and effective display metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_object: Option<SourceObjectAssociation>,
 }
 
 /// A neutral surface construction linked to its solved carrier.
@@ -292,6 +299,21 @@ pub enum ProceduralSurfaceDefinition {
         axis_origin: Point3,
         /// Unit direction of the revolution axis.
         axis_direction: Vector3,
+        /// Angular start and end parameters, in radians.
+        angular_interval: [f64; 2],
+        /// Directrix surface-parameter start and end values.
+        parameter_interval: [f64; 2],
+        /// Whether the source parameter directions are transposed.
+        transposed: bool,
+    },
+    /// Sum of two ordered curves from a base point.
+    Sum {
+        /// First curve, varying in the first surface parameter.
+        first: CurveId,
+        /// Second curve, varying in the second surface parameter.
+        second: CurveId,
+        /// Surface base point.
+        basepoint: Vector3,
     },
     /// Sweep of a profile along a spine.
     Sweep {

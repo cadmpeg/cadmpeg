@@ -17,6 +17,20 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .iter()
         .filter_map(|edge| edge.curve.as_ref().map(|id| id.0.as_str()))
         .collect::<HashSet<_>>();
+    surfaces.extend(
+        ir.model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.source_object.is_some())
+            .map(|surface| surface.id.0.as_str()),
+    );
+    curves.extend(
+        ir.model
+            .curves
+            .iter()
+            .filter(|curve| curve.source_object.is_some())
+            .map(|curve| curve.id.0.as_str()),
+    );
     let pcurves = ir
         .model
         .coedges
@@ -44,6 +58,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 surfaces.insert(&support.0);
             }
             ProceduralSurfaceDefinition::Ruled { first, second } => {
+                curves.extend([first.0.as_str(), second.0.as_str()]);
+            }
+            ProceduralSurfaceDefinition::Sum { first, second, .. } => {
                 curves.extend([first.0.as_str(), second.0.as_str()]);
             }
             ProceduralSurfaceDefinition::Blend {

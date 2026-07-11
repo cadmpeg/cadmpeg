@@ -3,6 +3,7 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
+use crate::subd::SubdSurface;
 
 pub(super) fn check_version(ir: &CadIr, findings: &mut Vec<Finding>) {
     if ir.ir_version != IR_VERSION {
