@@ -8,6 +8,8 @@ presence, and decodes standard datum planes into [`CadIr`].
 The `.prt` extension is also used by Siemens NX. Format detection uses the
 `#UGC:2` signature, not the extension.
 
+Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
+
 ## Installation
 
 ```sh

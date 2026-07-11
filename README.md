@@ -49,7 +49,7 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/cadmpeg/cadmpeg/re
 ## Quick start
 
 ```sh
-cadmpeg convert part.f3d -f step 
+cadmpeg convert part.f3d -f step
 ```
 
 The conversion reports validation results and any loss:
@@ -67,11 +67,11 @@ wrote part.step (2125 entities)
 
 The repository contains five native-format codecs:
 
-- **Fusion 360 `.f3d`:** partial B-rep, design-record, and appearance decode, plus selected native edits.
-- **SolidWorks `.sldprt`:** partial semantic read, native write, and round-trip support.
-- **Siemens NX `.prt`:** partial analytic, NURBS, trimmed-curve, and topology decode.
-- **CATIA V5 `.CATPart`:** partial analytic and freeform decode with conditional B-rep topology.
-- **Creo `.prt`:** container and prototype-structure decode with derived datum-plane carriers.
+- **Fusion 360 `.f3d` — [L4](docs/format-support.md#support-ladder):** readable design records; partial B-rep and appearance decode; native replay, patching, and generation.
+- **SolidWorks `.sldprt` — [L3](docs/format-support.md#support-ladder):** connected model read; native write and round-trip paths.
+- **Siemens NX `.prt` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology.
+- **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.
+- **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** container mastered; no placed model geometry.
 
 The pure-Rust STEP AP214 writer emits supported analytic and B-spline B-rep geometry and reports omitted or reduced IR content.
 

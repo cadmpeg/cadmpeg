@@ -33,21 +33,21 @@ Source decoders return `DecodeReport`, including `geometry_transferred`, notes, 
 
 STEP export returns substantive export loss notes for IR data that STEP does not carry. CADIR, F3D, and SLDPRT export command reports currently contain an empty export-loss list. CADIR is IR serialization; the native encoders reject unsupported inputs instead of producing a substantive loss report. Decode losses remain present in the command report when export or convert started from native CAD.
 
-The [format support profiles](format-support.md) record read, write, and round-trip capability by semantic domain.
+The [format support profiles](format-support.md) record read, write, and round-trip capability by semantic domain, summarized as one [ladder score](format-support.md#support-ladder) per codec.
 
 ## Crate map
 
-| Crate                  | Responsibility                                                                                                                                                                                          |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cadmpeg`              | CLI orchestration for `inspect`, `decode`, `validate`, `export`, `diff`, and `convert`; built-in codec registration; CADIR, STEP, and SLDPRT output dispatch.                                           |
-| `cadmpeg-ir`           | Layered version 1 IR model, canonical JSON, sparse provenance and exactness, native namespaces, structural diff, validation, codec traits, and report types.                                            |
+| Crate                  | Responsibility                                                                                                                                                                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cadmpeg`              | CLI orchestration for `inspect`, `decode`, `validate`, `export`, `diff`, and `convert`; built-in codec registration; CADIR, STEP, and SLDPRT output dispatch.                                                  |
+| `cadmpeg-ir`           | Layered version 1 IR model, canonical JSON, sparse provenance and exactness, native namespaces, structural diff, validation, codec traits, and report types.                                                   |
 | `cadmpeg-codec-f3d`    | `.f3d` ZIP inspection; ASM/SAB B-rep, analytic and cached NURBS geometry, pcurves, transforms, attributes, appearances, Design/ACT records, history decode, retained-source replay, and selected native edits. |
-| `cadmpeg-codec-sldprt` | SLDPRT block, directory, and cache-cell inspection; Parasolid analytic/NURBS B-rep, pcurves, appearances, feature lanes, history, and tessellation decode; retained-source and semantic SLDPRT writing. |
-| `cadmpeg-codec-catia`  | CATIA V5 `V5_CFV2` layout inspection; standard, zero-entity, E5, and object-stream carrier decode; conditional standard-nested topology reconstruction.                                                 |
-| `cadmpeg-codec-nx`     | NX `SPLMSSTR` extraction; Parasolid analytic and NURBS carriers, supported trimmed-curve bindings, and conditional topology reconstruction.                                                             |
-| `cadmpeg-codec-creo`   | Creo `#UGC:2`/PSB section and token decode, prototype and loop structure, opaque `VisibGeom` preservation, and derived `ActDatums` reference-plane carriers; no model B-rep transfer.                   |
-| `cadmpeg-step`         | Pure-Rust STEP AP214 writer for supported B-rep hierarchy, analytic, and B-spline carriers, with export loss notes.                                                                                     |
-| `cadmpeg-fuzz`         | `cargo-fuzz` targets and seed generators for untrusted decoder inputs. It is excluded from the default Cargo workspace because libFuzzer requires nightly; run it with `cargo +nightly fuzz ...`.       |
+| `cadmpeg-codec-sldprt` | SLDPRT block, directory, and cache-cell inspection; Parasolid analytic/NURBS B-rep, pcurves, appearances, feature lanes, history, and tessellation decode; retained-source and semantic SLDPRT writing.        |
+| `cadmpeg-codec-catia`  | CATIA V5 `V5_CFV2` layout inspection; standard, zero-entity, E5, and object-stream carrier decode; conditional standard-nested topology reconstruction.                                                        |
+| `cadmpeg-codec-nx`     | NX `SPLMSSTR` extraction; Parasolid analytic and NURBS carriers, supported trimmed-curve bindings, and conditional topology reconstruction.                                                                    |
+| `cadmpeg-codec-creo`   | Creo `#UGC:2`/PSB section and token decode, prototype and loop structure, opaque `VisibGeom` preservation, and derived `ActDatums` reference-plane carriers; no model B-rep transfer.                          |
+| `cadmpeg-step`         | Pure-Rust STEP AP214 writer for supported B-rep hierarchy, analytic, and B-spline carriers, with export loss notes.                                                                                            |
+| `cadmpeg-fuzz`         | `cargo-fuzz` targets and seed generators for untrusted decoder inputs. It is excluded from the default Cargo workspace because libFuzzer requires nightly; run it with `cargo +nightly fuzz ...`.              |
 
 ## Codec interface
 

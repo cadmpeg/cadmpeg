@@ -5,6 +5,8 @@
 layouts used by CATPart files and decodes supported analytic surfaces, NURBS
 surfaces, curves, vertices, and B-rep topology.
 
+Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder for the standard-nested layout; other layouts are L1.
+
 Add the codec and IR crates:
 
 ```sh

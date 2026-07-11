@@ -5,6 +5,10 @@
 //! `V5_CFV2` file signature, inspects catalogued logical streams, identifies the
 //! storage variant, and decodes the record families supported for that variant.
 //!
+//! Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! on the cadmpeg support ladder for the standard-nested layout; other layouts
+//! are L1.
+//!
 //! # Decode a part
 //!
 //! ```

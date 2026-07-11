@@ -6,6 +6,8 @@ extracts zlib-compressed Parasolid neutral-binary streams from the canonical
 part payload, and decodes supported geometry and topology. It does not read
 Creo files, which also use the `.prt` extension.
 
+Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
+
 ```sh
 cargo add cadmpeg-codec-nx cadmpeg-ir
 ```

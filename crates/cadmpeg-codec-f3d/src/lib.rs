@@ -8,6 +8,9 @@
 //! applies supported semantic edits to retained source data, or creates an
 //! archive from the supported source-less profile.
 //!
+//! Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! on the cadmpeg support ladder.
+//!
 //! # Decode
 //!
 //! ```no_run

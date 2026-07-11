@@ -6,6 +6,8 @@ container metadata, ASM B-rep topology, analytic and cached NURBS geometry,
 body transforms, design and sketch records, construction history, and
 appearances.
 
+Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
+
 ## Install
 
 ```sh

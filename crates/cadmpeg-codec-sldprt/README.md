@@ -9,6 +9,8 @@ ResolvedFeatures sketch-entity records.
 The crate handles part documents. It does not model SolidWorks assemblies or
 assembly constraints.
 
+Support level: [L3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
+
 ## Decode a part
 
 ```sh

@@ -2,6 +2,9 @@
 //! Inspect and structurally decode PTC Creo Parametric and Pro/ENGINEER `.prt`
 //! files stored in the PSB container.
 //!
+//! Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! on the cadmpeg support ladder.
+//!
 //! # Quick start
 //!
 //! [`CreoCodec`] implements [`cadmpeg_ir::codec::Codec`]. Use
