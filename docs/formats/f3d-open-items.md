@@ -4,6 +4,7 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Geometry carriers
 
+- A rational `exp_par_cur` pcurve byte grammar is not defined. Explicit F3D pcurves use the non-rational `nubs` carrier; analytic-face coedges store a null pcurve reference.
 - Law, taper, loft, skin, net, sweep, helix, vertex-blend, variable-blend, and compound-spline surface families lack defined carrier semantics. The primitive-reduction paths `plane/plane -> cylinder`, `plane/cylinder perpendicular -> torus`, and exact-circle-directrix cylinder also lack defined carrier semantics.
 - The full closed-sphere and closed-torus seam conventions remain unspecified.
 - The semantic role of the `POSITION` field after `cyl_spl_sur.extrusion_direction` is unresolved.

@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fusion Design `BulkStream` parametric-construction records.
+//! Decode Fusion Design object, sketch, identity, and construction records.
+//!
+//! These functions read Design `MetaStream.dat` and `BulkStream.dat` entries
+//! selected by [`crate::container`]. Returned records retain source offsets and
+//! stable identifiers for native regeneration.
 
 use std::collections::HashMap;
 
@@ -169,7 +173,7 @@ pub fn decode_lost_edge_references(
 }
 
 /// Decode every GUID-owned design object record from each design
-/// `MetaStream` entry in `scan` (spec §8.1): an ASCII type name, the design
+/// `MetaStream` entry in `scan` ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): an ASCII type name, the design
 /// entity IDs it owns, its self GUID, an optional parent GUID, and a
 /// revision. Records whose type name does not match a known
 /// [`DesignObjectKind`] are skipped.
@@ -266,7 +270,7 @@ pub fn decode_objects(
 }
 
 /// Decode every self-validating per-entity design `BulkStream` header (spec
-/// §8.1): a three-digit class tag, an entity suffix, a UTF-16LE entity ID
+/// [§8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): a three-digit class tag, an entity suffix, a UTF-16LE entity ID
 /// whose numeric suffix must match the header's entity suffix, and, for
 /// sketch-typed entities, the trailing reference-list header.
 pub fn decode_entity_headers(
@@ -376,7 +380,7 @@ pub fn decode_entity_headers(
     Ok(out)
 }
 
-/// Decode the indexed dynamic-class record headers (spec §8.1) that `entities`'
+/// Decode the indexed dynamic-class record headers ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)) that `entities`'
 /// reference-list entries point at: a `u32` record index and a three-digit
 /// class tag, for each record index named by any [`DesignEntityHeader`] in
 /// `entities`.
@@ -393,7 +397,7 @@ pub fn decode_record_headers(
     decode_headers_for_indices(reader, scan, &wanted)
 }
 
-/// Decode the indexed dynamic-class record headers (spec §8.1) named by
+/// Decode the indexed dynamic-class record headers ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)) named by
 /// `indices` directly, bypassing entity reference lists. Used to fetch record
 /// headers referenced by records other than [`DesignEntityHeader`] (for
 /// example, sketch relation records).
@@ -550,7 +554,7 @@ pub(crate) fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>,
     (kinds, state & !recognized)
 }
 
-/// Decode every sketch-point record (spec §8.1, `pt_tag`) from each design
+/// Decode every sketch-point record ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata), `pt_tag`) from each design
 /// `BulkStream` entry in `scan`: the persistent point id, a paired record
 /// reference, and the sketch `(u, v)` coordinates, converted centimetre→
 /// millimetre. Records with non-finite coordinates are skipped.
@@ -646,11 +650,10 @@ fn decode_sketch_point_variant(
     ))
 }
 
-/// Decode every sketch-curve record (spec §8.1, `crv_primary_id`/
+/// Decode every sketch-curve record ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata), `crv_primary_id`/
 /// `crv_secondary_id`) from each design `BulkStream` entry in `scan`: the
-/// curve's persistent primary/secondary identity, plus its analytic payload
-/// decoded as a NURBS carrier reference, circular arc, line, or referenced
-/// analytic wrapper — in that trial order.
+/// curve's persistent primary and secondary identities plus its NURBS, circular
+/// arc, line, or referenced analytic geometry.
 pub fn decode_sketch_curve_identities(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,

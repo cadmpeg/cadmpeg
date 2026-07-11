@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `.f3d` ZIP container enumeration and classification.
+//! Scan and classify the ZIP container inside a `.f3d` file.
 //!
-//! A `.f3d` is a ZIP archive (spec §1). This module enumerates its entries,
-//! classifies each by the naming families the spec documents, and — for BREP
-//! streams (`.smb`/`.smbh`) — decompresses them to read the ASM header and
-//! locate the `delta_state` history boundary. It does not decode the SAB record
-//! stream; that is the geometry layer, honestly stubbed in [`crate::decode`].
+//! [`scan`] retains the source archive, enumerates each entry, reads ASM headers
+//! from `.smb` and `.smbh` B-rep streams, and locates their `delta_state`
+//! history boundaries. [`select_active_brep`] chooses the `.smbh` stream when
+//! present and otherwise uses the first `.smb` construction snapshot.
+//! [`crate::decode`] passes the selected stream to the SAB and B-rep layers.
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read, SeekFrom};
@@ -30,7 +30,7 @@ pub mod role {
     pub const METASTREAM: &str = "metastream";
     /// A top-level or per-asset `Manifest.dat`.
     pub const MANIFEST: &str = "manifest";
-    /// A thumbnail/preview asset (never geometric evidence).
+    /// A thumbnail or preview asset.
     pub const PREVIEW: &str = "preview";
     /// An optional appearance/decal image blob.
     pub const IMAGE: &str = "image";
@@ -55,7 +55,7 @@ pub const DETECT_MARKERS: &[&[u8]] = &[
     b".smbh",
 ];
 
-/// Classify an entry by its name using the spec's naming families (§1, §7).
+/// Classify an entry by its name using the spec's naming families ([§1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#1-container-layer), [§7](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#7-geometry-carriers)).
 pub fn classify(name: &str) -> &'static str {
     if name.ends_with('/') {
         return role::DIRECTORY;
@@ -162,7 +162,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
                     asset_folder = Some(folder.to_string());
                 }
             }
-            // Decompress and read the honest header facts.
+            // Decompress and read the header fields.
             let mut buf = Vec::with_capacity(file.size() as usize);
             file.read_to_end(&mut buf)
                 .map_err(|e| CodecError::Malformed(format!("cannot read {name}: {e}")))?;
@@ -247,8 +247,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
     })
 }
 
-/// Build a [`ContainerSummary`] from a scan, including the active-BREP selection
-/// note (prefer `.smbh`; spec §3).
+/// Build a [`ContainerSummary`] with the active B-rep selection.
 pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let mut notes = Vec::new();
     if let Some(folder) = &scan.asset_folder {
@@ -281,10 +280,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     }
 }
 
-/// Decompress a single named ZIP entry to bytes. Used by geometry decode to
-/// re-read the active BREP stream after the initial classification scan (the
-/// reader is re-seeked and the archive re-opened, which is cheap for the ZIP
-/// central directory).
+/// Decompress a named ZIP entry.
 pub fn decompress_entry(reader: &mut dyn ReadSeek, name: &str) -> Result<Vec<u8>, CodecError> {
     reader
         .seek(std::io::SeekFrom::Start(0))
@@ -300,8 +296,7 @@ pub fn decompress_entry(reader: &mut dyn ReadSeek, name: &str) -> Result<Vec<u8>
     Ok(buf)
 }
 
-/// Pick the active BREP stream: prefer a `.smbh`, else the first `.smb`
-/// (spec §3). Returns `None` if there is no BREP stream.
+/// Select the first `.smbh` B-rep, falling back to the first `.smb`.
 pub fn select_active_brep(scan: &ContainerScan) -> Option<&BrepFacts> {
     scan.breps
         .iter()

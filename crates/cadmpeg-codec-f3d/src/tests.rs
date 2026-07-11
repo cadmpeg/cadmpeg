@@ -37,7 +37,7 @@ fn synthetic_smbh() -> Vec<u8> {
     b.extend_from_slice(&[0x0d, 0x04, b'b', b'o', b'd', b'y', 0x11]);
     let active_len = b.len();
 
-    // History boundary: 0x11 0x0d 0x0b "delta_state" ... (spec §4a).
+    // History boundary: 0x11 0x0d 0x0b "delta_state" ... ([spec §4a](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#2-b-rep-streams-and-history-partition)).
     b.extend_from_slice(&[0x11, 0x0d, 0x0b]);
     b.extend_from_slice(b"delta_state");
     b.extend_from_slice(&[0u8; 16]);
@@ -1940,6 +1940,122 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
 }
 
 #[test]
+fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::ids::CurveId;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let source = f3d_with_smbh(&synthetic_mixed_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated shared-edge decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let cone = SurfaceGeometry::Cone {
+        origin: Point3::new(1.0, 2.0, 3.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 8.0,
+        half_angle: 0.35,
+    };
+    let sphere = SurfaceGeometry::Sphere {
+        center: Point3::new(-1.0, 4.0, 2.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: -12.0,
+    };
+    source_less.model.surfaces[0].geometry = cone.clone();
+    source_less.model.surfaces[1].geometry = sphere.clone();
+    let curve_id = CurveId("generated:shared_ellipse#0".into());
+    let ellipse = CurveGeometry::Ellipse {
+        center: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        major_direction: Vector3::new(1.0, 0.0, 0.0),
+        major_radius: 9.0,
+        minor_radius: 4.0,
+    };
+    source_less.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: ellipse.clone(),
+    });
+    source_less.model.edges[0].curve = Some(curve_id);
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less multi-face analytic encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less multi-face analytic round trip");
+    assert_eq!(round_trip.ir.model.surfaces[0].geometry, cone);
+    assert_eq!(round_trip.ir.model.surfaces[1].geometry, sphere);
+    assert_eq!(round_trip.ir.model.curves[0].geometry, ellipse);
+}
+
+#[test]
+fn generated_source_less_writes_translational_extrusion_definition() {
+    let source = f3d_with_smbh(&synthetic_cyl_spl_sur_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated extrusion decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let expected = source_less.model.procedural_surfaces[0].clone();
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less extrusion encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less extrusion round trip");
+    assert_eq!(round_trip.ir.model.procedural_surfaces.len(), 1);
+    let actual = &round_trip.ir.model.procedural_surfaces[0];
+    assert_eq!(actual.definition, expected.definition);
+    assert_eq!(actual.cache_fit_tolerance, expected.cache_fit_tolerance);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
+        directrix,
+        direction,
+    } = &actual.definition
+    else {
+        panic!("expected extrusion definition")
+    };
+    assert!(round_trip
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id == *directrix));
+    assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
+}
+
+#[test]
+fn generated_source_less_writes_rolling_ball_blend_definition() {
+    let source = f3d_with_smbh(&synthetic_rb_blend_spl_sur_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated rolling-ball decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let expected = source_less.model.procedural_surfaces[0].clone();
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less rolling-ball encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less rolling-ball round trip");
+    assert_eq!(round_trip.ir.model.procedural_surfaces.len(), 1);
+    let actual = &round_trip.ir.model.procedural_surfaces[0];
+    assert_eq!(actual.definition, expected.definition);
+    assert_eq!(actual.cache_fit_tolerance, expected.cache_fit_tolerance);
+}
+
+#[test]
 fn generated_source_less_unit_cube_writes_body_transform() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let expected = cadmpeg_ir::transform::Transform {
@@ -1959,6 +2075,143 @@ fn generated_source_less_unit_cube_writes_body_transform() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less transformed cube round trip");
     assert_eq!(round_trip.ir.model.bodies[0].transform, Some(expected));
+}
+
+#[test]
+fn generated_source_less_unit_cube_writes_body_and_face_colors() {
+    use cadmpeg_ir::topology::Color;
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let body_color = Color {
+        r: 0.1,
+        g: 0.2,
+        b: 0.3,
+        a: 1.0,
+    };
+    let face_color = Color {
+        r: 0.65,
+        g: 0.45,
+        b: 0.25,
+        a: 1.0,
+    };
+    source_less.model.bodies[0].color = Some(body_color);
+    source_less.model.faces[2].color = Some(face_color);
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less colored cube encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less colored cube round trip");
+    assert_eq!(round_trip.ir.model.bodies[0].color, Some(body_color));
+    assert_eq!(round_trip.ir.model.faces[2].color, Some(face_color));
+    assert!(round_trip
+        .ir
+        .model
+        .faces
+        .iter()
+        .enumerate()
+        .all(|(ordinal, face)| ordinal == 2 || face.color.is_none()));
+}
+
+#[test]
+fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes() {
+    use cadmpeg_ir::attributes::AttributeTarget;
+    use cadmpeg_ir::design::{PersistentDesignLink, SketchCurveLink};
+    use cadmpeg_ir::topology::Color;
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    source_less.model.bodies[0].color = Some(Color {
+        r: 0.2,
+        g: 0.4,
+        b: 0.6,
+        a: 1.0,
+    });
+    source_less.model.faces[0].color = Some(Color {
+        r: 0.7,
+        g: 0.3,
+        b: 0.1,
+        a: 1.0,
+    });
+    let body_id = source_less.model.bodies[0].id.clone();
+    let face_id = source_less.model.faces[0].id.clone();
+    let edge_id = source_less.model.edges[0].id.clone();
+    let coedge_id = source_less.model.coedges[0].id.clone();
+    let native = source_less
+        .native
+        .f3d
+        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+    native.persistent_design_links = vec![
+        PersistentDesignLink {
+            id: "generated:persistent-design-link#0".into(),
+            target: AttributeTarget::Body(body_id.clone()),
+            design_id: "311".into(),
+            ordinal: 0,
+            is_current: false,
+        },
+        PersistentDesignLink {
+            id: "generated:persistent-design-link#1".into(),
+            target: AttributeTarget::Body(body_id),
+            design_id: "322".into(),
+            ordinal: 1,
+            is_current: true,
+        },
+        PersistentDesignLink {
+            id: "generated:persistent-design-link#2".into(),
+            target: AttributeTarget::Face(face_id),
+            design_id: "411".into(),
+            ordinal: 0,
+            is_current: true,
+        },
+        PersistentDesignLink {
+            id: "generated:persistent-design-link#3".into(),
+            target: AttributeTarget::Edge(edge_id),
+            design_id: "511".into(),
+            ordinal: 0,
+            is_current: true,
+        },
+    ];
+    native.sketch_curve_links = vec![SketchCurveLink {
+        id: "generated:sketch-curve-link#0".into(),
+        coedge: coedge_id,
+        sketch_curve_id: 113,
+        signed_reference: Some(1),
+        role: 2,
+        closure: 3,
+    }];
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less provenance attribute encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less provenance attribute round trip");
+    let native = f3d_native(&round_trip.ir);
+    assert_eq!(native.persistent_design_links.len(), 4);
+    assert_eq!(native.persistent_design_links[0].design_id, "311");
+    assert_eq!(native.persistent_design_links[1].design_id, "322");
+    assert!(native.persistent_design_links[1].is_current);
+    assert!(native.persistent_design_links.iter().any(|link| {
+        link.design_id == "411" && matches!(link.target, AttributeTarget::Face(_))
+    }));
+    assert!(native.persistent_design_links.iter().any(|link| {
+        link.design_id == "511" && matches!(link.target, AttributeTarget::Edge(_))
+    }));
+    assert_eq!(native.sketch_curve_links.len(), 1);
+    assert_eq!(native.sketch_curve_links[0].sketch_curve_id, 113);
+    assert_eq!(native.sketch_curve_links[0].signed_reference, Some(1));
+    assert_eq!(native.sketch_curve_links[0].role, 2);
+    assert_eq!(native.sketch_curve_links[0].closure, 3);
+    assert_eq!(
+        round_trip.ir.model.bodies[0].color,
+        source_less.model.bodies[0].color
+    );
+    assert_eq!(
+        round_trip.ir.model.faces[0].color,
+        source_less.model.faces[0].color
+    );
 }
 
 #[test]
@@ -2047,6 +2300,611 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     assert_eq!(actual.states[0].bulletin_boards[0].changes.len(), 2);
     assert_eq!(actual.states[0].records.len(), 1);
     assert_eq!(actual.states[0].records[0].name, "history_payload");
+}
+
+#[test]
+fn generated_source_less_writes_design_object_metastream() {
+    use cadmpeg_ir::design::{DesignObject, DesignObjectKind};
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let native = source_less
+        .native
+        .f3d
+        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+    native.design_objects = vec![
+        DesignObject {
+            id: "generated:design-object#0".into(),
+            byte_offset: 0,
+            kind: DesignObjectKind::Fusion,
+            entity_ids: vec![1, 2],
+            entity_id_offsets: Vec::new(),
+            self_guid: "11111111-2222-3333-4444-555555555555".into(),
+            self_guid_offset: 0,
+            parent_guid: None,
+            parent_guid_offset: None,
+            revision: 7,
+            revision_offset: 0,
+        },
+        DesignObject {
+            id: "generated:design-object#1".into(),
+            byte_offset: 0,
+            kind: DesignObjectKind::Sketch,
+            entity_ids: vec![277],
+            entity_id_offsets: Vec::new(),
+            self_guid: "22222222-3333-4444-5555-666666666666".into(),
+            self_guid_offset: 0,
+            parent_guid: Some("11111111-2222-3333-4444-555555555555".into()),
+            parent_guid_offset: None,
+            revision: 9,
+            revision_offset: 0,
+        },
+    ];
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less Design MetaStream encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less Design MetaStream round trip");
+    let objects = &f3d_native(&round_trip.ir).design_objects;
+    assert_eq!(objects.len(), 2);
+    assert_eq!(objects[0].kind, DesignObjectKind::Fusion);
+    assert_eq!(objects[0].entity_ids, [1, 2]);
+    assert_eq!(objects[0].revision, 7);
+    assert_eq!(objects[1].kind, DesignObjectKind::Sketch);
+    assert_eq!(objects[1].entity_ids, [277]);
+    assert_eq!(
+        objects[1].parent_guid.as_deref(),
+        Some("11111111-2222-3333-4444-555555555555")
+    );
+    assert_eq!(objects[1].revision, 9);
+}
+
+#[test]
+fn generated_source_less_writes_design_recipes_and_persistent_references() {
+    use cadmpeg_ir::design::{
+        ConstructionRecipe, ConstructionRecipeKind, LostEdgeReference, PersistentReference,
+        PersistentReferenceKind,
+    };
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let native = source_less
+        .native
+        .f3d
+        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+    native.construction_recipes = [
+        ConstructionRecipeKind::Body,
+        ConstructionRecipeKind::Face,
+        ConstructionRecipeKind::BoundedFace,
+        ConstructionRecipeKind::Edge,
+        ConstructionRecipeKind::Vertex,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(ordinal, kind)| ConstructionRecipe {
+        id: format!("generated:recipe#{ordinal}"),
+        byte_offset: 0,
+        record_index_offset: None,
+        kind,
+        design_id: Some(format!("{}", 320 + ordinal)),
+        design_id_offset: None,
+        design_id_binary_u32: false,
+        recipe_index: 0,
+        record_index: 100 + i32::try_from(ordinal).unwrap(),
+    })
+    .collect();
+    native.persistent_references = vec![
+        PersistentReference {
+            id: "generated:persistent-reference#0".into(),
+            byte_offset: 0,
+            value_offset: 0,
+            kind: PersistentReferenceKind::Point,
+            value: 700,
+        },
+        PersistentReference {
+            id: "generated:persistent-reference#1".into(),
+            byte_offset: 0,
+            value_offset: 0,
+            kind: PersistentReferenceKind::CurvePrimary,
+            value: 701,
+        },
+        PersistentReference {
+            id: "generated:persistent-reference#2".into(),
+            byte_offset: 0,
+            value_offset: 0,
+            kind: PersistentReferenceKind::CurveSecondary,
+            value: 702,
+        },
+    ];
+    native.lost_edge_references = vec![LostEdgeReference {
+        id: "generated:lost-edge-reference#0".into(),
+        byte_offset: 0,
+        class_tag_offset: 0,
+        class_tag: "419".into(),
+        record_index: 4646,
+        record_index_offset: 0,
+    }];
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less Design BulkStream encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less Design BulkStream round trip");
+    let native = f3d_native(&round_trip.ir);
+    assert_eq!(native.construction_recipes.len(), 5);
+    let body_recipe = native
+        .construction_recipes
+        .iter()
+        .find(|recipe| recipe.kind == ConstructionRecipeKind::Body)
+        .expect("body recipe");
+    assert_eq!(body_recipe.record_index, 100);
+    assert_eq!(body_recipe.design_id.as_deref(), Some("320"));
+    assert!(native
+        .construction_recipes
+        .iter()
+        .any(|recipe| recipe.kind == ConstructionRecipeKind::BoundedFace));
+    assert_eq!(native.persistent_references.len(), 3);
+    assert_eq!(native.persistent_references[0].value, 700);
+    assert_eq!(
+        native.persistent_references[1].kind,
+        PersistentReferenceKind::CurvePrimary
+    );
+    assert_eq!(native.lost_edge_references.len(), 1);
+    assert_eq!(native.lost_edge_references[0].class_tag, "419");
+    assert_eq!(native.lost_edge_references[0].record_index, 4646);
+}
+
+#[test]
+fn generated_source_less_writes_design_ownership_and_record_headers() {
+    use cadmpeg_ir::design::{
+        DesignBodyMember, DesignEntityHeader, DesignObject, DesignObjectKind, DesignRecordHeader,
+    };
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let native = source_less
+        .native
+        .f3d
+        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+    native.design_objects = vec![DesignObject {
+        id: "generated:design-object#0".into(),
+        byte_offset: 0,
+        kind: DesignObjectKind::Sketch,
+        entity_ids: vec![277],
+        entity_id_offsets: Vec::new(),
+        self_guid: "22222222-3333-4444-5555-666666666666".into(),
+        self_guid_offset: 0,
+        parent_guid: None,
+        parent_guid_offset: None,
+        revision: 4,
+        revision_offset: 0,
+    }];
+    native.design_body_members = vec![
+        DesignBodyMember {
+            id: "generated:body-member#0".into(),
+            byte_offset: 0,
+            entity_suffix: 985,
+            flags: 0,
+        },
+        DesignBodyMember {
+            id: "generated:body-member#1".into(),
+            byte_offset: 0,
+            entity_suffix: 8422,
+            flags: 3,
+        },
+    ];
+    native.design_entity_headers = vec![DesignEntityHeader {
+        id: "generated:entity-header#0".into(),
+        byte_offset: 0,
+        entity_suffix: 277,
+        entity_id: "0_277".into(),
+        class_tag: "269".into(),
+        optional_slot_present: true,
+        object_kind: Some(DesignObjectKind::Sketch),
+        record_reference: Some(584),
+        record_reference_offset: None,
+        declared_reference_count: Some(2),
+        reference_indices: vec![33, 44],
+        reference_offsets: Vec::new(),
+    }];
+    native.design_record_headers = vec![
+        DesignRecordHeader {
+            id: "generated:record-header#0".into(),
+            record_index: 33,
+            class_tag: "350".into(),
+            byte_offset: 0,
+        },
+        DesignRecordHeader {
+            id: "generated:record-header#1".into(),
+            record_index: 44,
+            class_tag: "351".into(),
+            byte_offset: 0,
+        },
+    ];
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less Design ownership encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less Design ownership round trip");
+    let native = f3d_native(&round_trip.ir);
+    assert_eq!(native.design_body_members.len(), 2);
+    assert_eq!(native.design_body_members[0].entity_suffix, 985);
+    assert_eq!(native.design_body_members[1].flags, 3);
+    assert_eq!(native.design_entity_headers.len(), 1);
+    assert_eq!(native.design_entity_headers[0].entity_id, "0_277");
+    assert_eq!(native.design_entity_headers[0].record_reference, Some(584));
+    assert_eq!(native.design_entity_headers[0].reference_indices, [33, 44]);
+    assert_eq!(native.design_record_headers.len(), 2);
+    assert_eq!(native.design_record_headers[0].record_index, 33);
+    assert_eq!(native.design_record_headers[1].class_tag, "351");
+}
+
+#[test]
+fn generated_source_less_writes_sketch_points_curves_and_constraints() {
+    use cadmpeg_ir::design::{
+        DesignEntityHeader, DesignObject, DesignObjectKind, SketchConstraintKind,
+        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+    };
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let native = source_less
+        .native
+        .f3d
+        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+    native.design_objects = vec![DesignObject {
+        id: "generated:sketch-object#0".into(),
+        byte_offset: 0,
+        kind: DesignObjectKind::Sketch,
+        entity_ids: vec![277],
+        entity_id_offsets: Vec::new(),
+        self_guid: "22222222-3333-4444-5555-666666666666".into(),
+        self_guid_offset: 0,
+        parent_guid: None,
+        parent_guid_offset: None,
+        revision: 1,
+        revision_offset: 0,
+    }];
+    native.design_entity_headers = vec![DesignEntityHeader {
+        id: "generated:sketch-header#0".into(),
+        byte_offset: 0,
+        entity_suffix: 277,
+        entity_id: "0_277".into(),
+        class_tag: "269".into(),
+        optional_slot_present: true,
+        object_kind: Some(DesignObjectKind::Sketch),
+        record_reference: Some(584),
+        record_reference_offset: None,
+        declared_reference_count: Some(1),
+        reference_indices: vec![33],
+        reference_offsets: Vec::new(),
+    }];
+    native.sketch_points = vec![SketchPoint {
+        id: "generated:sketch-point#0".into(),
+        record_index: 100,
+        class_tag: "360".into(),
+        byte_offset: 0,
+        coordinate_offset: 96,
+        persistent_id: 500,
+        paired_reference: 101,
+        coordinates: Point2::new(12.5, -25.0),
+        raw_bytes: Vec::new(),
+    }];
+    native.sketch_curve_identities = vec![
+        SketchCurveIdentity {
+            id: "generated:sketch-curve#0".into(),
+            record_index: 600,
+            class_tag: "361".into(),
+            byte_offset: 0,
+            geometry_offset: 133,
+            primary_id: 700,
+            secondary_id: 701,
+            geometry: Some(SketchCurveGeometry::Line {
+                start: Point3::new(10.0, 20.0, 0.0),
+                end: Point3::new(40.0, 20.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+            }),
+        },
+        SketchCurveIdentity {
+            id: "generated:sketch-curve#1".into(),
+            record_index: 601,
+            class_tag: "362".into(),
+            byte_offset: 0,
+            geometry_offset: 133,
+            primary_id: 702,
+            secondary_id: 703,
+            geometry: Some(SketchCurveGeometry::Arc {
+                center: Point3::new(5.0, 6.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                reference_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 30.0,
+                start_angle: 0.25,
+                end_angle: 2.5,
+            }),
+        },
+        SketchCurveIdentity {
+            id: "generated:sketch-curve#2".into(),
+            record_index: 602,
+            class_tag: "363".into(),
+            byte_offset: 0,
+            geometry_offset: 133,
+            primary_id: 704,
+            secondary_id: 705,
+            geometry: Some(SketchCurveGeometry::Nurbs {
+                carrier_reference: None,
+                subtype_class_tag: "365".into(),
+                subtype_record_index: 602,
+                degree: 2,
+                fit_tolerance: 1.0e-8,
+                scalar_width: 8,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                weights: vec![1.0, 0.8, 1.0],
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(10.0, 20.0, 0.0),
+                    Point3::new(30.0, 10.0, 0.0),
+                ],
+            }),
+        },
+    ];
+    native.sketch_relations = vec![SketchRelation {
+        id: "generated:sketch-relation#0".into(),
+        record_index: 33,
+        class_tag: "350".into(),
+        byte_offset: 0,
+        state_offset: 0,
+        owner_reference: 277,
+        auxiliary_references: vec![900],
+        members: vec![100, 600],
+        state: 0x11,
+        constraint_kinds: vec![
+            SketchConstraintKind::Coincident,
+            SketchConstraintKind::Parallel,
+        ],
+        unknown_constraint_bits: 0,
+        return_members: vec![600, 100],
+        raw_bytes: Vec::new(),
+    }];
+
+    let expected_geometries = native
+        .sketch_curve_identities
+        .iter()
+        .map(|curve| curve.geometry.clone().unwrap())
+        .collect::<Vec<_>>();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less sketch BulkStream encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less sketch BulkStream round trip");
+    let native = f3d_native(&round_trip.ir);
+    assert_eq!(native.sketch_points.len(), 1);
+    assert_eq!(native.sketch_points[0].persistent_id, 500);
+    assert_eq!(
+        native.sketch_points[0].coordinates,
+        Point2::new(12.5, -25.0)
+    );
+    assert_eq!(native.sketch_curve_identities.len(), 3);
+    for expected in expected_geometries {
+        assert!(native
+            .sketch_curve_identities
+            .iter()
+            .any(|curve| curve.geometry.as_ref() == Some(&expected)));
+    }
+    assert_eq!(native.sketch_relations.len(), 1);
+    assert_eq!(native.sketch_relations[0].members, [100, 600]);
+    assert_eq!(native.sketch_relations[0].auxiliary_references, [900]);
+    assert_eq!(native.sketch_relations[0].owner_reference, 277);
+    assert_eq!(native.sketch_relations[0].state, 0x11);
+    assert_eq!(native.sketch_relations[0].return_members, [600, 100]);
+}
+
+#[test]
+fn generated_source_less_writes_act_table_channels_and_root_component() {
+    use std::collections::BTreeMap;
+
+    use cadmpeg_ir::design::{ActEntity, ActGuid, ActRootComponent};
+
+    let appearance_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let physical_guid = "cccccccc-1111-2222-3333-dddddddddddd";
+    let standalone_guid = "eeeeeeee-1111-2222-3333-ffffffffffff";
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let native = source_less
+        .native
+        .f3d
+        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+    native.act_entities = vec![ActEntity {
+        id: "generated:act-entity#0".into(),
+        record_index: 7,
+        table_record_index_offset: None,
+        channel_record_index_offset: None,
+        entity_id: "0_985".into(),
+        table_entity_id_offset: None,
+        channel_entity_id_offset: None,
+        in_table: true,
+        channel_class_tag: Some("261".into()),
+        channels: BTreeMap::from([
+            ("Appearance".into(), appearance_guid.into()),
+            ("PhysicalMaterial".into(), physical_guid.into()),
+        ]),
+        channel_guid_offsets: BTreeMap::new(),
+    }];
+    native.act_guids = [standalone_guid, appearance_guid, physical_guid]
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, guid)| ActGuid {
+            id: format!("generated:act-guid#{ordinal}"),
+            byte_offset: 0,
+            guid_offset: 0,
+            ordinal: u32::try_from(ordinal).unwrap(),
+            guid: guid.into(),
+        })
+        .collect();
+    native.act_root_components = vec![ActRootComponent {
+        id: "generated:act-root#0".into(),
+        byte_offset: 0,
+        record_index: 9,
+        record_index_offset: 0,
+        class_tag: "267".into(),
+        instance_root_record: 12,
+        instance_root_record_offset: 0,
+        components_root_record: 7,
+        components_root_record_offset: 0,
+        registry_flag: 1,
+        registry_flag_offset: 0,
+        entity_id: "0_3".into(),
+        entity_id_offset: 0,
+        display_name: "Generated Design".into(),
+        display_name_offset: 0,
+    }];
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less ACT encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less ACT round trip");
+    let native = f3d_native(&round_trip.ir);
+    assert_eq!(native.act_entities.len(), 1);
+    assert!(native.act_entities[0].in_table);
+    assert_eq!(native.act_entities[0].record_index, 7);
+    assert_eq!(native.act_entities[0].entity_id, "0_985");
+    assert_eq!(
+        native.act_entities[0]
+            .channels
+            .get("Appearance")
+            .map(String::as_str),
+        Some(appearance_guid)
+    );
+    assert_eq!(native.act_guids.len(), 3);
+    assert!(native
+        .act_guids
+        .iter()
+        .any(|guid| guid.guid == standalone_guid));
+    assert_eq!(native.act_root_components.len(), 1);
+    assert_eq!(native.act_root_components[0].instance_root_record, 12);
+    assert_eq!(native.act_root_components[0].components_root_record, 7);
+    assert_eq!(
+        native.act_root_components[0].display_name,
+        "Generated Design"
+    );
+}
+
+#[test]
+fn generated_source_less_writes_protein_appearance_and_body_binding() {
+    use std::collections::BTreeMap;
+
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::design::{DesignMaterialAssignment, DesignObject, DesignObjectKind};
+    use cadmpeg_ir::ids::AppearanceId;
+    use cadmpeg_ir::topology::Color;
+
+    let visual_guid = "11111111-2222-3333-4444-555555555555";
+    let appearance_id = AppearanceId("generated:appearance#0".into());
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    source_less.model.appearances = vec![Appearance {
+        id: appearance_id.clone(),
+        name: Some("Prism-Generated".into()),
+        asset_guid: Some(visual_guid.into()),
+        visual_guid: Some(visual_guid.into()),
+        physical_token: Some("PrismMaterial-Generated".into()),
+        schema: Some("GenericSchema".into()),
+        category: Some("Plastic/Generated".into()),
+        base_color: Some(Color {
+            r: 0.15,
+            g: 0.35,
+            b: 0.75,
+            a: 1.0,
+        }),
+        properties: BTreeMap::from([
+            ("reflectivity_at_0deg".into(), 0.25),
+            ("refraction_index".into(), 1.5),
+        ]),
+    }];
+    source_less.model.appearance_bindings = vec![AppearanceBinding {
+        id: "generated:appearance-binding#0".into(),
+        target: AppearanceTarget::Body(source_less.model.bodies[0].id.clone()),
+        appearance: appearance_id,
+        source_entity_id: Some("0_985".into()),
+        object_type: Some("Body".into()),
+        channels: BTreeMap::new(),
+    }];
+    let native = source_less
+        .native
+        .f3d
+        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+    native.design_objects = vec![DesignObject {
+        id: "generated:body-object#0".into(),
+        byte_offset: 0,
+        kind: DesignObjectKind::Body,
+        entity_ids: vec![985],
+        entity_id_offsets: Vec::new(),
+        self_guid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into(),
+        self_guid_offset: 0,
+        parent_guid: None,
+        parent_guid_offset: None,
+        revision: 1,
+        revision_offset: 0,
+    }];
+    native.design_material_assignments = vec![DesignMaterialAssignment {
+        id: "generated:material-assignment#0".into(),
+        asm_body_key: 42,
+        entity_suffix: 985,
+        entity_suffix_offset: 0,
+        entity_id: "0_985".into(),
+        entity_id_offset: 0,
+        visual_guid: visual_guid.into(),
+        visual_guid_offset: 0,
+        physical_token: Some("PrismMaterial-Generated".into()),
+        physical_token_offset: None,
+        visual_preset: Some("Prism-Generated".into()),
+        visual_preset_offset: None,
+    }];
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less Protein appearance encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less Protein appearance round trip");
+    assert_eq!(round_trip.ir.model.appearances.len(), 1);
+    let appearance = &round_trip.ir.model.appearances[0];
+    assert_eq!(appearance.name.as_deref(), Some("Prism-Generated"));
+    assert_eq!(appearance.visual_guid.as_deref(), Some(visual_guid));
+    assert_eq!(appearance.schema.as_deref(), Some("GenericSchema"));
+    assert_eq!(appearance.category.as_deref(), Some("Plastic/Generated"));
+    assert_eq!(
+        appearance.base_color,
+        Some(Color {
+            r: 0.15,
+            g: 0.35,
+            b: 0.75,
+            a: 1.0,
+        })
+    );
+    assert_eq!(
+        appearance.properties.get("reflectivity_at_0deg"),
+        Some(&0.25)
+    );
+    assert_eq!(appearance.properties.get("refraction_index"), Some(&1.5));
+    assert_eq!(round_trip.ir.model.appearance_bindings.len(), 1);
+    assert!(matches!(
+        &round_trip.ir.model.appearance_bindings[0].target,
+        AppearanceTarget::Body(body) if body == &round_trip.ir.model.bodies[0].id
+    ));
+    assert_eq!(
+        f3d_native(&round_trip.ir).design_material_assignments[0].asm_body_key,
+        42
+    );
 }
 
 #[test]
@@ -3386,7 +4244,7 @@ fn asm_header_absent_on_non_asm_bytes() {
     assert!(!asm_header::has_asm_magic(b"PK\x03\x04"));
 }
 
-/// The `BinaryFile4` fixed header (spec §3): 15-byte magic, four little-endian
+/// The `BinaryFile4` fixed header ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)): 15-byte magic, four little-endian
 /// u32 words (release, record count, entity count, flags), then the same
 /// tagged string/double sequence as `BinaryFile8`.
 fn bf4_header_prefix(flags: u32) -> Vec<u8> {
@@ -3858,7 +4716,7 @@ fn decode_yields_metadata_and_honest_report() {
 #[test]
 fn smb_only_is_reported_as_construction_snapshot() {
     // With no .smbh present, only the .smb construction snapshot remains; it must
-    // be selected as a fallback but flagged as non-authoritative (spec §3).
+    // be selected as a fallback but flagged as non-authoritative ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)).
     let f3d = synthetic_f3d(false);
     let mut cur = Cursor::new(f3d);
     let scan = container::scan(&mut cur).unwrap();
