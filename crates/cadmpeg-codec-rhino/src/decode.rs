@@ -2165,6 +2165,210 @@ mod tests {
         }
     }
 
+    fn append_line_payload(
+        data: &mut Vec<u8>,
+        from: [f64; 3],
+        to: [f64; 3],
+        dimension: i32,
+    ) -> std::ops::Range<usize> {
+        let start = data.len();
+        data.push(0x10);
+        for value in from.into_iter().chain(to) {
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [0.0_f64, 1.0] {
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        data.extend_from_slice(&dimension.to_le_bytes());
+        start..data.len()
+    }
+
+    fn append_plane_payload(data: &mut Vec<u8>) -> std::ops::Range<usize> {
+        let start = data.len();
+        data.push(0x11);
+        for value in [
+            0.0_f64, 0.0, 0.0, // origin
+            1.0, 0.0, 0.0, // x
+            0.0, 1.0, 0.0, // y
+            0.0, 0.0, 1.0, // z
+            0.0, 0.0, 1.0, 0.0, // equation
+        ] {
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        for _ in 0..4 {
+            for value in [0.0_f64, 1.0] {
+                data.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        start..data.len()
+    }
+
+    fn class_uuid(wire: [u8; 16]) -> crate::objects::Uuid {
+        crate::objects::Uuid::from_wire(wire)
+    }
+
+    fn child(
+        class_uuid: crate::objects::Uuid,
+        class_data_range: std::ops::Range<usize>,
+        base_type: crate::brep::RawBrepBaseType,
+    ) -> crate::brep::RawBrepChild {
+        crate::brep::RawBrepChild {
+            class_uuid,
+            source_range: class_data_range.clone(),
+            class_data_range,
+            base_type,
+        }
+    }
+
+    fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
+        let line_uuid = class_uuid([
+            0xdb, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
+            0x22, 0xf0,
+        ]);
+        let plane_uuid = class_uuid([
+            0xdf, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
+            0x22, 0xf0,
+        ]);
+        let mut data = Vec::new();
+        let c3_ranges = [
+            append_line_payload(&mut data, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 3),
+            append_line_payload(&mut data, [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 3),
+            append_line_payload(&mut data, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0], 3),
+        ];
+        let c2_ranges = [
+            append_line_payload(&mut data, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 2),
+            append_line_payload(&mut data, [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 2),
+            append_line_payload(&mut data, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0], 2),
+        ];
+        let surface_range = append_plane_payload(&mut data);
+        let interval = crate::settings::Interval([0.0, 1.0]);
+        let endpoints = [[0, 1], [1, 2], [2, 0]];
+        let vertices = [[0, 2], [0, 1], [1, 2]]
+            .into_iter()
+            .enumerate()
+            .map(|(index, edges)| crate::brep::RawBrepVertex {
+                index: i32::try_from(index).expect("index"),
+                point: crate::settings::Point3([
+                    f64::from((index == 1) as u8),
+                    f64::from((index == 2) as u8),
+                    0.0,
+                ]),
+                edges: edges.into_iter().collect(),
+                tolerance: 0.01,
+                source_range: 0..0,
+            })
+            .collect();
+        let edges = endpoints
+            .into_iter()
+            .enumerate()
+            .map(|(index, vertices)| crate::brep::RawBrepEdge {
+                index: i32::try_from(index).expect("index"),
+                curve: i32::try_from(index).expect("index"),
+                proxy_reversed: 0,
+                proxy_domain: interval,
+                vertices,
+                trims: vec![i32::try_from(index).expect("index")],
+                tolerance: 0.01,
+                domain: interval,
+                source_range: 0..0,
+            })
+            .collect();
+        let trims = endpoints
+            .into_iter()
+            .enumerate()
+            .map(|(index, vertices)| crate::brep::RawBrepTrim {
+                index: i32::try_from(index).expect("index"),
+                curve: i32::try_from(index).expect("index"),
+                proxy_domain: interval,
+                edge: i32::try_from(index).expect("index"),
+                vertices,
+                reversed_3d: 0,
+                trim_type: 1,
+                iso: 0,
+                loop_index: 0,
+                tolerances: [0.02, 0.03],
+                domain: interval,
+                proxy_reversed: 0,
+                reserved: Vec::new(),
+                legacy_tolerances: [0.02, 0.03],
+                source_range: 0..0,
+            })
+            .collect();
+        (
+            data,
+            crate::brep::RawBrep {
+                minor: 2,
+                c2: crate::brep::RawBrepChildren {
+                    slots: c2_ranges
+                        .into_iter()
+                        .map(|range| {
+                            Some(child(line_uuid, range, crate::brep::RawBrepBaseType::Curve))
+                        })
+                        .collect(),
+                    source_range: 0..0,
+                    expected_type: crate::brep::RawBrepBaseType::Curve,
+                },
+                c3: crate::brep::RawBrepChildren {
+                    slots: c3_ranges
+                        .into_iter()
+                        .map(|range| {
+                            Some(child(line_uuid, range, crate::brep::RawBrepBaseType::Curve))
+                        })
+                        .collect(),
+                    source_range: 0..0,
+                    expected_type: crate::brep::RawBrepBaseType::Curve,
+                },
+                surfaces: crate::brep::RawBrepChildren {
+                    slots: vec![Some(child(
+                        plane_uuid,
+                        surface_range,
+                        crate::brep::RawBrepBaseType::Surface,
+                    ))],
+                    source_range: 0..0,
+                    expected_type: crate::brep::RawBrepBaseType::Surface,
+                },
+                vertices,
+                edges,
+                trims,
+                loops: vec![crate::brep::RawBrepLoop {
+                    index: 0,
+                    trims: vec![0, 1, 2],
+                    loop_type: 1,
+                    face: 0,
+                    source_range: 0..0,
+                }],
+                faces: vec![crate::brep::RawBrepFace {
+                    index: 0,
+                    loops: vec![0],
+                    surface: 0,
+                    reversed_surface: 0,
+                    material_channel: 0,
+                    uuid: None,
+                    color: None,
+                    source_range: 0..0,
+                }],
+                bounds: crate::settings::BoundingBox {
+                    minimum: crate::settings::Point3([0.0, 0.0, 0.0]),
+                    maximum: crate::settings::Point3([1.0, 1.0, 0.0]),
+                },
+                render_meshes: Vec::new(),
+                analysis_meshes: Vec::new(),
+                render_mesh_array_range: 0..0,
+                analysis_mesh_array_range: 0..0,
+                is_solid: Some(3),
+                face_sides: Vec::new(),
+                regions: Vec::new(),
+                region_wrapper_range: None,
+                source_range: 0..0,
+                vertex_array_range: 0..0,
+                edge_array_range: 0..0,
+                trim_array_range: 0..0,
+                loop_array_range: 0..0,
+                face_array_range: 0..0,
+            },
+        )
+    }
+
     #[test]
     fn fallback_discards_topology_and_unknown_record_self_link() {
         let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
@@ -2256,6 +2460,73 @@ mod tests {
         .apply(&mut candidate);
         assert!(!cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok());
         assert_eq!(live.model.curves.len(), 1);
+    }
+
+    #[test]
+    fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
+        let (data, raw) = source_shaped_plane_brep();
+        let association = SourceObjectAssociation {
+            format: "rhino".to_string(),
+            object_id: "plane-brep".to_string(),
+            name: Some("plane".to_string()),
+            color: None,
+            visible: Some(true),
+            layer: None,
+            instance_path: Vec::new(),
+        };
+        let unknown: UnknownId = "rhino:object:record#plane".into();
+        let staged = stage_brep(BrepTransferInput {
+            data: &data,
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_206_180),
+            raw: &raw,
+            key: "plane",
+            association: &association,
+            unknown: &unknown,
+            scale: 25.4,
+            semantic_error: None,
+        })
+        .expect("stage plane Brep");
+        assert_eq!(staged.kind, BrepTransferKind::FullTopology);
+        assert_eq!(
+            (
+                staged.bodies.len(),
+                staged.regions.len(),
+                staged.shells.len(),
+                staged.faces.len(),
+                staged.loops.len(),
+                staged.coedges.len(),
+                staged.edges.len(),
+                staged.vertices.len(),
+                staged.pcurves.len(),
+                staged.curves.len(),
+                staged.surfaces.len(),
+            ),
+            (1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 1)
+        );
+        assert_eq!(staged.points[1].position.x, 25.4);
+        assert_eq!(staged.vertices[0].tolerance, Some(0.254));
+        assert_eq!(staged.edges[0].tolerance, Some(0.254));
+        assert_eq!(staged.pcurves[0].fit_tolerance, Some(0.02));
+        let PcurveGeometry::Nurbs { control_points, .. } = &staged.pcurves[0].geometry else {
+            panic!("line C2 must be a NURBS pcurve");
+        };
+        assert_eq!(control_points[1].u, 1.0);
+        assert_eq!(staged.coedges[0].radial_next, staged.coedges[0].id);
+        let links = staged.links.clone();
+        let mut candidate = CadIr::empty(Units::default());
+        candidate.unknowns.push(UnknownRecord {
+            id: unknown.clone(),
+            offset: 0,
+            byte_len: 0,
+            sha256: sha256_hex(&[]),
+            data: Some(Vec::new()),
+            links: Vec::new(),
+        });
+        staged.apply(&mut candidate);
+        append_record_links(&mut candidate, &unknown, &links);
+        let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
+        assert!(report.is_ok(), "{report:?}");
     }
 
     #[test]
