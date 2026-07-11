@@ -32,13 +32,17 @@ jobs:
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
 
+      # `+nightly` overrides the repo's `rust-toolchain.toml` stable pin.
+      # cargo-fuzz needs nightly-only flags (`-Zsanitizer=address`, sancov
+      # coverage), and the proxy propagates `RUSTUP_TOOLCHAIN` to the inner
+      # `cargo build` it spawns.
       - name: Build fuzz targets (no run)
-        run: cargo fuzz build --fuzz-dir crates/cadmpeg-fuzz
+        run: cargo +nightly fuzz build --fuzz-dir crates/cadmpeg-fuzz
 
       - name: Run each fuzz target briefly
         run: |
-          for t in $(cargo fuzz list --fuzz-dir crates/cadmpeg-fuzz); do
-            cargo fuzz run "$t" --fuzz-dir crates/cadmpeg-fuzz -- -max_total_time=60
+          for t in $(cargo +nightly fuzz list --fuzz-dir crates/cadmpeg-fuzz); do
+            cargo +nightly fuzz run "$t" --fuzz-dir crates/cadmpeg-fuzz -- -max_total_time=60
           done
 
       - name: Upload crash artifacts
