@@ -6,11 +6,11 @@ Rhino 3DM is a little-endian chunk stream. The supported archive bands are:
 
 | Archive version | Band              | Chunk value width | Geometry policy                                        |
 | --------------: | ----------------- | ----------------: | ------------------------------------------------------ |
-|               1 | V1                |           4 bytes | header and flat-chunk inspection                       |
-|               2 | V2                |           4 bytes | container inspection; geometry outside scope           |
+|               1 | V1                |           4 bytes | header-only inspection; decode `NotImplemented`        |
+|               2 | V2                |           4 bytes | header-only inspection; decode `NotImplemented`        |
 |               3 | V3                |           4 bytes | metadata and object framing; geometry retained unknown |
 |               4 | V4                |           4 bytes | metadata and object framing; geometry retained unknown |
-|               5 | legacy V5 grammar |           4 bytes | container framing and metadata only                    |
+|               5 | legacy V5 grammar |           4 bytes | header-only inspection; decode `NotImplemented`        |
 |              50 | V5                |           8 bytes | built-in geometry decode                               |
 |              60 | V6                |           8 bytes | built-in geometry decode                               |
 |              70 | V7                |           8 bytes | built-in geometry decode                               |
@@ -20,16 +20,17 @@ The archive version is the decimal value in the header. Version `5` and version
 `50` are distinct. Any positive decimal version fitting the eight-byte header
 field is syntactically readable; geometry support is gated by the table above.
 The full geometry decoder accepts archive versions `50`, `60`, `70`, and `80`.
-Archive version `5` uses the four-byte container grammar and is inspectable for
-framing and metadata, but is not in the full-decode band.
+Archive version `5` uses the four-byte container grammar but is not an agreed
+metadata-decode band.
 
-V1 uses a flat chunk scan and may omit the end marker. V2 and later use the
-table sequence below and require an end-of-file chunk. V1 inspection is
-header-only. V2 inspection is header-only. Decode for V1 and V2 returns
-`NotImplemented`. V3 and V4 support chunk inspection, metadata, attributes, and
-object identity; their geometry payloads are retained as bounded unknown
-records. Version 5 supports container and metadata inspection only. Versions
-50, 60, 70, and 80 support full built-in geometry decode.
+V1 has a documented flat-chunk grammar and may omit the end marker. V2 and
+later use the table sequence below and require an end-of-file chunk. V1
+inspection is header-only. V2 inspection is header-only. Decode for V1 and V2
+returns `NotImplemented`. V3 and V4 support chunk inspection, metadata,
+attributes, and object identity; their geometry payloads are retained as
+bounded unknown records. Version 5 is header-only and decode returns
+`NotImplemented`. Versions 50, 60, 70, and 80 support full built-in geometry
+decode.
 
 ## 2. Header
 
@@ -2101,7 +2102,7 @@ limit.
 
 | Fixture             | Required bytes and assertion                                                                                                                               |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| archive scope       | headers 1/2/3/4/5/50/60/70/80; V1/V2 decode `NotImplemented`; V3/V4/V5 metadata-only; 50+ typed geometry                                                   |
+| archive scope       | headers 1/2/3/4/5/50/60/70/80; V1/V2/V5 header-only and decode `NotImplemented`; V3/V4 metadata; 50/60/70/80 typed geometry                                |
 | object filter       | type values 0, curve, mesh, SubD, extrusion, and combined curve                                                                                            | surface; zero filter selects all; intersection selects |
 | object framing      | class UUID body length 20, class-data CRC, userdata 2.1, class end, attributes, history, object end                                                        |
 | point/simple curves | point 1.0; cloud minors 0/1/2 with zero and full optional arrays; line dimensions 2/3; arc invalid dimension; polyline parameters; polycurve child failure |
