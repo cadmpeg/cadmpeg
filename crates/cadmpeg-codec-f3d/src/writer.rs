@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native F3D regeneration for supported semantic edits.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecError, DecodeOptions};
@@ -10,7 +10,10 @@ use cadmpeg_ir::design::{
     SketchCurveGeometry,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
+    ProceduralCurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::history::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
 };
@@ -54,8 +57,69 @@ pub fn write_semantic(
         ));
     }
     let edited_curves = validate_curve_edits(&baseline.ir.model.curves, &target.model.curves)?;
+    let nurbs_curve_edits = target
+        .model
+        .curves
+        .iter()
+        .filter_map(|curve| match &curve.geometry {
+            CurveGeometry::Nurbs(nurbs) if edited_curves.contains(curve.id.as_str()) => {
+                let before = baseline
+                    .ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|before| before.id == curve.id)?;
+                let CurveGeometry::Nurbs(before) = &before.geometry else {
+                    return None;
+                };
+                Some((
+                    curve.id.0.clone(),
+                    NurbsCurveEdit {
+                        curve: nurbs.clone(),
+                        periodic: (before.periodic != nurbs.periodic).then_some(nurbs.periodic),
+                    },
+                ))
+            }
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let pcurve_edits = validate_pcurve_edits(&baseline.ir.model.pcurves, &target.model.pcurves)?;
     let edited_surfaces =
         validate_surface_edits(&baseline.ir.model.surfaces, &target.model.surfaces)?;
+    let nurbs_surface_edits = target
+        .model
+        .surfaces
+        .iter()
+        .filter_map(|surface| match &surface.geometry {
+            SurfaceGeometry::Nurbs(nurbs) if edited_surfaces.contains(surface.id.as_str()) => {
+                let before = baseline
+                    .ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|before| before.id == surface.id)?;
+                let SurfaceGeometry::Nurbs(before) = &before.geometry else {
+                    return None;
+                };
+                Some((
+                    surface.id.0.clone(),
+                    NurbsSurfaceEdit {
+                        surface: nurbs.clone(),
+                        periodic: (before.u_periodic != nurbs.u_periodic
+                            || before.v_periodic != nurbs.v_periodic)
+                            .then_some([nurbs.u_periodic, nurbs.v_periodic]),
+                    },
+                ))
+            }
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let extrusion_direction_edits = validate_procedural_surface_edits(&baseline.ir, target)?;
+    let procedural_surface_fit_edits = validate_procedural_surface_fit_edits(&baseline.ir, target)?;
+    let procedural_curve_fit_edits = validate_procedural_curve_edits(
+        &baseline.ir.model.procedural_curves,
+        &target.model.procedural_curves,
+    )?;
     let sketch_point_edits = validate_sketch_point_edits(&baseline.ir, target)?;
     let sketch_curve_edits = validate_sketch_curve_edits(&baseline.ir, target)?;
     let sketch_relation_edits = validate_sketch_relation_edits(&baseline.ir, target)?;
@@ -66,7 +130,7 @@ pub fn write_semantic(
     let design_object_edits = validate_design_object_edits(&baseline.ir, target)?;
     let lost_edge_edits = validate_lost_edge_edits(&baseline.ir, target)?;
     let material_assignment_edits = validate_material_assignment_edits(&baseline.ir, target)?;
-    let protein_color_edits = validate_material_assignment_appearances(&baseline.ir, target)?;
+    let protein_appearance_edits = validate_material_assignment_appearances(&baseline.ir, target)?;
     let act_guid_edits = validate_act_guid_edits(&baseline.ir, target)?;
     let act_root_edits = validate_act_root_edits(&baseline.ir, target)?;
     let act_entity_edits = validate_act_entity_edits(&baseline.ir, target)?;
@@ -99,6 +163,10 @@ pub fn write_semantic(
         .model
         .surfaces
         .clone_from(&target.model.surfaces);
+    supported_target
+        .model
+        .pcurves
+        .clone_from(&target.model.pcurves);
     for body in &mut supported_target.model.bodies {
         if let Some(candidate) = target
             .model
@@ -124,6 +192,14 @@ pub fn write_semantic(
         .model
         .appearances
         .clone_from(&target.model.appearances);
+    supported_target
+        .model
+        .procedural_surfaces
+        .clone_from(&target.model.procedural_surfaces);
+    supported_target
+        .model
+        .procedural_curves
+        .clone_from(&target.model.procedural_curves);
     if let (Some(supported), Some(target_native)) = (
         supported_target.native.f3d.as_mut(),
         target.native.f3d.as_ref(),
@@ -309,6 +385,7 @@ pub fn write_semantic(
         .map_err(|error| CodecError::Malformed(format!("retained F3D ZIP is invalid: {error}")))?;
     let output = Cursor::new(Vec::new());
     let mut zip = zip::ZipWriter::new(output);
+    let mut patched_protein_appearances = BTreeSet::new();
     for index in 0..archive.len() {
         let mut entry = archive
             .by_index(index)
@@ -338,13 +415,22 @@ pub fn write_semantic(
                 &edge_range_edits,
                 &face_sense_edits,
                 &coedge_sense_edits,
+                &extrusion_direction_edits,
+                &nurbs_surface_edits,
+                &nurbs_curve_edits,
+                &pcurve_edits,
+                &procedural_curve_fit_edits,
+                &procedural_surface_fit_edits,
             )?;
             if let Some(edits) = history_state_edits.get(&name) {
                 patch_history_states(&mut bytes, edits)?;
             }
         } else {
-            if name.ends_with(".protein") && !protein_color_edits.is_empty() {
-                bytes = crate::materials::patch_protein_base_colors(&bytes, &protein_color_edits)?;
+            if name.ends_with(".protein") && !protein_appearance_edits.is_empty() {
+                let (patched_bytes, patched_guids) =
+                    crate::materials::patch_protein_appearances(&bytes, &protein_appearance_edits)?;
+                bytes = patched_bytes;
+                patched_protein_appearances.extend(patched_guids);
             }
             if let Some(edits) = sketch_point_edits.get(&name) {
                 patch_sketch_points(&mut bytes, edits)?;
@@ -390,6 +476,11 @@ pub fn write_semantic(
             .map_err(|error| CodecError::Malformed(format!("cannot write F3D entry: {error}")))?;
         zip.write_all(&bytes)?;
     }
+    if patched_protein_appearances.len() != protein_appearance_edits.len() {
+        return Err(CodecError::NotImplemented(
+            "one or more edited F3D appearances have no writable Protein carrier".into(),
+        ));
+    }
     let output = zip
         .finish()
         .map_err(|error| CodecError::Malformed(format!("cannot finish F3D ZIP: {error}")))?
@@ -402,10 +493,34 @@ type SketchPointEdit = (u64, u32, cadmpeg_ir::math::Point2);
 type PersistentReferenceEdit = (u64, u32, u64);
 type BodyMemberEdit = (u64, u64, u16);
 
+enum ProceduralSurfaceEdit {
+    ExtrusionDirection(Vector3),
+    BlendRadii([f64; 2]),
+}
+
+struct NurbsSurfaceEdit {
+    surface: NurbsSurface,
+    periodic: Option<[bool; 2]>,
+}
+
+struct NurbsCurveEdit {
+    curve: NurbsCurve,
+    periodic: Option<bool>,
+}
+
+#[derive(Clone)]
+struct NurbsPcurveEdit {
+    geometry: PcurveGeometry,
+    periodic: Option<bool>,
+    wrapper_reversed: Option<bool>,
+    parameter_range: Option<[f64; 2]>,
+    fit_tolerance: Option<f64>,
+}
+
 fn validate_material_assignment_appearances(
     baseline: &CadIr,
     target: &CadIr,
-) -> Result<BTreeMap<String, Color>, CodecError> {
+) -> Result<BTreeMap<String, crate::materials::ProteinAppearanceEdit>, CodecError> {
     let baseline_appearances = baseline
         .model
         .appearances
@@ -435,17 +550,24 @@ fn validate_material_assignment_appearances(
         .as_ref()
         .map(|native| &native.design_material_assignments[..])
         .unwrap_or_default();
-    let mut color_edits = BTreeMap::new();
+    let mut appearance_edits = BTreeMap::new();
     for (id, before) in baseline_appearances {
         let after = target_appearances[id];
         let mut normalized = after.clone();
         normalized.physical_token.clone_from(&before.physical_token);
         normalized.base_color = before.base_color;
+        normalized.properties.clone_from(&before.properties);
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
-                "F3D appearance edit changes fields outside physical token or Protein base color: {id}"
+                "F3D appearance edit changes fields outside physical token or Protein values: {id}"
             )));
         }
+        if before.properties.keys().ne(after.properties.keys()) {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D Protein property regeneration requires the unchanged property set: {id}"
+            )));
+        }
+        let mut edit = crate::materials::ProteinAppearanceEdit::default();
         if after.base_color != before.base_color {
             let color = after.base_color.ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot remove F3D appearance color: {id}"))
@@ -460,10 +582,33 @@ fn validate_material_assignment_appearances(
                     "F3D Protein color {id} must replace an existing opaque finite RGBA color"
                 )));
             }
+            edit.color = Some(color);
+        }
+        for (name, before_value) in &before.properties {
+            let after_value = after.properties[name];
+            if after_value == *before_value {
+                continue;
+            }
+            let valid = after_value.is_finite()
+                && match name.as_str() {
+                    "reflectivity_at_0deg" | "surface_roughness" => {
+                        (0.0..=1.0).contains(&after_value)
+                    }
+                    "refraction_index" => (1.0..=4.0).contains(&after_value),
+                    _ => false,
+                };
+            if !valid {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Protein property {id}.{name} is outside its writable range"
+                )));
+            }
+            edit.properties.insert(name.clone(), after_value);
+        }
+        if edit.color.is_some() || !edit.properties.is_empty() {
             let guid = after.visual_guid.clone().ok_or_else(|| {
                 CodecError::NotImplemented(format!("F3D appearance {id} has no visual GUID"))
             })?;
-            color_edits.insert(guid, color);
+            appearance_edits.insert(guid, edit);
         }
         if after.physical_token == before.physical_token {
             continue;
@@ -497,7 +642,7 @@ fn validate_material_assignment_appearances(
             )));
         }
     }
-    Ok(color_edits)
+    Ok(appearance_edits)
 }
 
 fn validate_material_assignment_edits(
@@ -2776,6 +2921,26 @@ fn validate_curve_edits(
                     && *minor_radius > 0.0
                     && *minor_radius <= *major_radius
             }
+            CurveGeometry::Nurbs(after) => {
+                let CurveGeometry::Nurbs(before) = before else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "F3D regeneration cannot change curve {id} into a NURBS carrier"
+                    )));
+                };
+                (id.starts_with("f3d:brep:entity#")
+                    || (id.starts_with("f3d:brep:procedural_surface#")
+                        && (id.ends_with(":directrix") || id.ends_with(":spine"))))
+                    && valid_edited_curve_structure(before, after)
+                    && before.weights.is_some() == after.weights.is_some()
+                    && before.control_points.len() == after.control_points.len()
+                    && after.control_points.iter().copied().all(finite_point)
+                    && after.weights.as_ref().is_none_or(|weights| {
+                        weights.len() == after.control_points.len()
+                            && weights
+                                .iter()
+                                .all(|weight| weight.is_finite() && *weight > 0.0)
+                    })
+            }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "F3D regeneration does not support edits to curve {id}"
@@ -2789,6 +2954,92 @@ fn validate_curve_edits(
         }
     }
     Ok(edited)
+}
+
+fn validate_pcurve_edits(
+    baseline: &[Pcurve],
+    target: &[Pcurve],
+) -> Result<BTreeMap<String, NurbsPcurveEdit>, CodecError> {
+    let baseline = baseline
+        .iter()
+        .map(|pcurve| (pcurve.id.as_str(), pcurve))
+        .collect::<BTreeMap<_, _>>();
+    let target = target
+        .iter()
+        .map(|pcurve| (pcurve.id.as_str(), pcurve))
+        .collect::<BTreeMap<_, _>>();
+    if baseline.keys().ne(target.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D pcurve regeneration requires the unchanged pcurve-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline {
+        let after = target[id];
+        if before == after {
+            continue;
+        }
+        let (
+            PcurveGeometry::Nurbs {
+                degree: before_degree,
+                knots: before_knots,
+                control_points: before_points,
+                weights: before_weights,
+                periodic: before_periodic,
+            },
+            PcurveGeometry::Nurbs {
+                degree: after_degree,
+                knots: after_knots,
+                control_points: after_points,
+                weights: after_weights,
+                periodic: after_periodic,
+            },
+        ) = (&before.geometry, &after.geometry)
+        else {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D regeneration does not support this pcurve edit: {id}"
+            )));
+        };
+        let valid = id.starts_with("f3d:brep:entity#")
+            && before_degree == after_degree
+            && valid_edited_knot_vector(before_knots, after_knots)
+            && before_points.len() == after_points.len()
+            && before_weights == after_weights
+            && after_points
+                .iter()
+                .all(|point| point.u.is_finite() && point.v.is_finite());
+        let contract_valid = before.wrapper_reversed.is_some() == after.wrapper_reversed.is_some()
+            && before.parameter_range.is_some() == after.parameter_range.is_some()
+            && before.fit_tolerance.is_some() == after.fit_tolerance.is_some()
+            && after
+                .parameter_range
+                .is_none_or(|range| range.into_iter().all(f64::is_finite) && range[0] <= range[1])
+            && after
+                .fit_tolerance
+                .is_none_or(|tolerance| tolerance.is_finite() && tolerance >= 0.0);
+        if !valid || !contract_valid {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D pcurve edit changes fixed cache structure: {id}"
+            )));
+        }
+        edits.insert(
+            id.to_owned(),
+            NurbsPcurveEdit {
+                geometry: after.geometry.clone(),
+                periodic: (before_periodic != after_periodic).then_some(*after_periodic),
+                wrapper_reversed: (before.wrapper_reversed != after.wrapper_reversed)
+                    .then_some(after.wrapper_reversed)
+                    .flatten(),
+                parameter_range: (before.parameter_range != after.parameter_range)
+                    .then_some(after.parameter_range)
+                    .flatten(),
+                fit_tolerance: (before.fit_tolerance != after.fit_tolerance)
+                    .then_some(after.fit_tolerance)
+                    .flatten(),
+            },
+        );
+    }
+    Ok(edits)
 }
 
 fn validate_surface_edits(
@@ -2876,6 +3127,39 @@ fn validate_surface_edits(
                     && radius.is_finite()
                     && *radius != 0.0
             }
+            SurfaceGeometry::Nurbs(after) => {
+                let SurfaceGeometry::Nurbs(before) = before else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "F3D regeneration cannot change surface {id} into a NURBS carrier"
+                    )));
+                };
+                (id.starts_with("f3d:brep:entity#")
+                    || (id.starts_with("f3d:brep:procedural_surface#")
+                        && (id.ends_with(":support#0") || id.ends_with(":support#1"))))
+                    && before.u_degree == after.u_degree
+                    && before.v_degree == after.v_degree
+                    && valid_edited_knot_vector(&before.u_knots, &after.u_knots)
+                    && valid_edited_knot_vector(&before.v_knots, &after.v_knots)
+                    && before.u_count == after.u_count
+                    && before.v_count == after.v_count
+                    && before.weights.is_some() == after.weights.is_some()
+                    && after.control_points.len()
+                        == usize::try_from(after.u_count)
+                            .ok()
+                            .and_then(|u| {
+                                usize::try_from(after.v_count)
+                                    .ok()
+                                    .and_then(|v| u.checked_mul(v))
+                            })
+                            .unwrap_or(usize::MAX)
+                    && after.control_points.iter().copied().all(finite_point)
+                    && after.weights.as_ref().is_none_or(|weights| {
+                        weights.len() == after.control_points.len()
+                            && weights
+                                .iter()
+                                .all(|weight| weight.is_finite() && *weight > 0.0)
+                    })
+            }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "F3D regeneration does not support edits to surface {id}"
@@ -2892,8 +3176,220 @@ fn validate_surface_edits(
     Ok(edited)
 }
 
+fn validate_procedural_surface_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<String, ProceduralSurfaceEdit>, CodecError> {
+    let baseline = baseline
+        .model
+        .procedural_surfaces
+        .iter()
+        .map(|surface| (surface.id.as_str(), surface))
+        .collect::<BTreeMap<_, _>>();
+    let target = target
+        .model
+        .procedural_surfaces
+        .iter()
+        .map(|surface| (surface.id.as_str(), surface))
+        .collect::<BTreeMap<_, _>>();
+    if baseline.keys().ne(target.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D procedural-surface regeneration requires the unchanged construction-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline {
+        let after = target[id];
+        if after == before {
+            continue;
+        }
+        if before.id != after.id || before.surface != after.surface {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D procedural-surface edit changes immutable carrier fields: {id}"
+            )));
+        }
+        let edit = match (&before.definition, &after.definition) {
+            (
+                ProceduralSurfaceDefinition::Extrusion {
+                    directrix: before_directrix,
+                    direction: before_direction,
+                },
+                ProceduralSurfaceDefinition::Extrusion {
+                    directrix: after_directrix,
+                    direction: after_direction,
+                },
+            ) if before_directrix == after_directrix => {
+                if !finite_vector(*after_direction) || after_direction.norm() == 0.0 {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D extrusion direction must be finite and nonzero: {id}"
+                    )));
+                }
+                (before_direction != after_direction)
+                    .then_some(ProceduralSurfaceEdit::ExtrusionDirection(*after_direction))
+            }
+            (
+                ProceduralSurfaceDefinition::Blend {
+                    supports: before_supports,
+                    spine: before_spine,
+                    radius: before_radius,
+                    cross_section: before_cross_section,
+                },
+                ProceduralSurfaceDefinition::Blend {
+                    supports: after_supports,
+                    spine: after_spine,
+                    radius: after_radius,
+                    cross_section: after_cross_section,
+                },
+            ) if before_supports == after_supports
+                && before_spine == after_spine
+                && before_cross_section == after_cross_section =>
+            {
+                let values = match after_radius {
+                    BlendRadiusLaw::Constant { signed_radius } => [*signed_radius; 2],
+                    BlendRadiusLaw::Linear { start, end } => [*start, *end],
+                    BlendRadiusLaw::Law { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "F3D explicit blend-law regeneration is unsupported: {id}"
+                        )));
+                    }
+                };
+                if !values.into_iter().all(f64::is_finite) || values.contains(&0.0) {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D rolling-ball radii must be finite and nonzero: {id}"
+                    )));
+                }
+                (before_radius != after_radius).then_some(ProceduralSurfaceEdit::BlendRadii(values))
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "F3D procedural-surface edit changes non-writable construction fields: {id}"
+                )));
+            }
+        };
+        if let Some(edit) = edit {
+            edits.insert(id.to_owned(), edit);
+        }
+    }
+    Ok(edits)
+}
+
+fn validate_procedural_surface_fit_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<String, f64>, CodecError> {
+    let baseline = baseline
+        .model
+        .procedural_surfaces
+        .iter()
+        .map(|surface| (surface.id.as_str(), surface))
+        .collect::<BTreeMap<_, _>>();
+    let target = target
+        .model
+        .procedural_surfaces
+        .iter()
+        .map(|surface| (surface.id.as_str(), surface))
+        .collect::<BTreeMap<_, _>>();
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline {
+        let after = target[id];
+        if after.cache_fit_tolerance == before.cache_fit_tolerance {
+            continue;
+        }
+        let tolerance = after.cache_fit_tolerance.ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "cannot remove F3D procedural-surface fit tolerance: {id}"
+            ))
+        })?;
+        if before.cache_fit_tolerance.is_none() || !tolerance.is_finite() || tolerance < 0.0 {
+            return Err(CodecError::Malformed(format!(
+                "F3D procedural-surface fit tolerance must replace a finite nonnegative value: {id}"
+            )));
+        }
+        edits.insert(id.to_owned(), tolerance);
+    }
+    Ok(edits)
+}
+
+fn validate_procedural_curve_edits(
+    baseline: &[ProceduralCurve],
+    target: &[ProceduralCurve],
+) -> Result<BTreeMap<String, f64>, CodecError> {
+    let baseline = baseline
+        .iter()
+        .map(|curve| (curve.id.as_str(), curve))
+        .collect::<BTreeMap<_, _>>();
+    let target = target
+        .iter()
+        .map(|curve| (curve.id.as_str(), curve))
+        .collect::<BTreeMap<_, _>>();
+    if baseline.keys().ne(target.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D procedural-curve regeneration requires the unchanged construction-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline {
+        let after = target[id];
+        let mut normalized = after.clone();
+        normalized.cache_fit_tolerance = before.cache_fit_tolerance;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D procedural-curve edit changes fields outside cache fit tolerance: {id}"
+            )));
+        }
+        if after.cache_fit_tolerance == before.cache_fit_tolerance {
+            continue;
+        }
+        let tolerance = after.cache_fit_tolerance.ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "cannot remove F3D procedural-curve fit tolerance: {id}"
+            ))
+        })?;
+        if before.cache_fit_tolerance.is_none() || !tolerance.is_finite() || tolerance < 0.0 {
+            return Err(CodecError::Malformed(format!(
+                "F3D procedural-curve fit tolerance must replace a finite nonnegative value: {id}"
+            )));
+        }
+        edits.insert(id.to_owned(), tolerance);
+    }
+    Ok(edits)
+}
+
 fn finite_point(point: Point3) -> bool {
     point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+}
+
+fn valid_edited_knot_vector(before: &[f64], after: &[f64]) -> bool {
+    before.len() == after.len()
+        && after.iter().all(|value| value.is_finite())
+        && after.windows(2).all(|pair| pair[0] <= pair[1])
+}
+
+fn valid_edited_curve_structure(before: &NurbsCurve, after: &NurbsCurve) -> bool {
+    (1..=20).contains(&after.degree)
+        && after.knots.len() == after.control_points.len() + after.degree as usize + 1
+        && after.iter_unique_knot_count() == before.iter_unique_knot_count()
+        && after.iter_knots_valid()
+}
+
+trait NurbsCurveValidationExt {
+    fn iter_unique_knot_count(&self) -> usize;
+    fn iter_knots_valid(&self) -> bool;
+}
+
+impl NurbsCurveValidationExt for NurbsCurve {
+    fn iter_unique_knot_count(&self) -> usize {
+        self.knots
+            .iter()
+            .enumerate()
+            .filter(|(index, value)| *index == 0 || self.knots[*index - 1] != **value)
+            .count()
+    }
+
+    fn iter_knots_valid(&self) -> bool {
+        self.knots.iter().all(|value| value.is_finite())
+            && self.knots.windows(2).all(|pair| pair[0] <= pair[1])
+    }
 }
 
 fn finite_vector(vector: Vector3) -> bool {
@@ -2923,6 +3419,12 @@ fn patch_geometry(
     edge_ranges: &BTreeMap<String, [f64; 2]>,
     face_senses: &BTreeMap<String, Sense>,
     coedge_senses: &BTreeMap<String, Sense>,
+    procedural_surface_edits: &BTreeMap<String, ProceduralSurfaceEdit>,
+    nurbs_surfaces: &BTreeMap<String, NurbsSurfaceEdit>,
+    nurbs_curves: &BTreeMap<String, NurbsCurveEdit>,
+    pcurves: &BTreeMap<String, NurbsPcurveEdit>,
+    procedural_curve_fits: &BTreeMap<String, f64>,
+    procedural_surface_fits: &BTreeMap<String, f64>,
 ) -> Result<(), CodecError> {
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
@@ -2947,6 +3449,12 @@ fn patch_geometry(
         edge_ranges,
         face_senses,
         coedge_senses,
+        procedural_surface_edits,
+        nurbs_surfaces,
+        nurbs_curves,
+        pcurves,
+        procedural_curve_fits,
+        procedural_surface_fits,
         header_scale,
     )
 }
@@ -2967,6 +3475,12 @@ fn patch_framed_geometry(
     edge_ranges: &BTreeMap<String, [f64; 2]>,
     face_senses: &BTreeMap<String, Sense>,
     coedge_senses: &BTreeMap<String, Sense>,
+    procedural_surface_edits: &BTreeMap<String, ProceduralSurfaceEdit>,
+    nurbs_surfaces: &BTreeMap<String, NurbsSurfaceEdit>,
+    nurbs_curves: &BTreeMap<String, NurbsCurveEdit>,
+    pcurves: &BTreeMap<String, NurbsPcurveEdit>,
+    procedural_curve_fits: &BTreeMap<String, f64>,
+    procedural_surface_fits: &BTreeMap<String, f64>,
     header_scale: f64,
 ) -> Result<(), CodecError> {
     let records_by_index = records
@@ -2983,6 +3497,19 @@ fn patch_framed_geometry(
                     body.ref_at(5)
                         .map(|reference| (reference as usize, *transform))
                 })
+        })
+        .collect::<BTreeMap<_, _>>();
+    let ref_pcurve_geometry = records
+        .iter()
+        .filter(|record| record.head == "pcurve")
+        .filter_map(|record| {
+            let edit = pcurves.get(&format!("f3d:brep:entity#{}", record.index))?;
+            let target = usize::try_from(record.ref_at(4)?).ok()?;
+            let mut geometry = edit.clone();
+            geometry.wrapper_reversed = None;
+            geometry.parameter_range = None;
+            geometry.fit_tolerance = None;
+            Some((target, geometry))
         })
         .collect::<BTreeMap<_, _>>();
     let mut color_records = BTreeMap::new();
@@ -3025,6 +3552,66 @@ fn patch_framed_geometry(
             continue;
         }
         let id = format!("f3d:brep:entity#{}", record.index);
+        if let Some(edit) = ref_pcurve_geometry.get(&record.index) {
+            patch_nurbs_pcurve_record(bytes, record, edit)?;
+        }
+        if let Some(edit) = pcurves.get(&id) {
+            if record.ref_at(4).is_some() {
+                patch_ref_pcurve_contract(bytes, record, edit)?;
+            } else {
+                patch_nurbs_pcurve_record(bytes, record, edit)?;
+            }
+        }
+        if let Some(edit) = nurbs_curves.get(&id) {
+            patch_nurbs_curve_record(bytes, record, edit, false)?;
+        }
+        let procedural_curve_id = format!("f3d:brep:procedural_curve#{}", record.index);
+        if let Some(tolerance) = procedural_curve_fits.get(&procedural_curve_id) {
+            patch_procedural_curve_fit(bytes, record, *tolerance)?;
+        }
+        let directrix_id = format!("f3d:brep:procedural_surface#{}:directrix", record.index);
+        if let Some(edit) = nurbs_curves.get(&directrix_id) {
+            patch_nurbs_curve_record(bytes, record, edit, false)?;
+        }
+        let spine_id = format!("f3d:brep:procedural_surface#{}:spine", record.index);
+        if let Some(edit) = nurbs_curves.get(&spine_id) {
+            patch_nurbs_curve_record(bytes, record, edit, true)?;
+        }
+        if let Some(edit) = nurbs_surfaces.get(&id) {
+            patch_nurbs_surface_record(bytes, record, edit, None)?;
+        }
+        for side in 0..2 {
+            let support_id = format!(
+                "f3d:brep:procedural_surface#{}:support#{side}",
+                record.index
+            );
+            if let Some(edit) = nurbs_surfaces.get(&support_id) {
+                patch_nurbs_surface_record(bytes, record, edit, Some(side))?;
+            }
+        }
+        let procedural_id = format!("f3d:brep:procedural_surface#{}", record.index);
+        if let Some(tolerance) = procedural_surface_fits.get(&procedural_id) {
+            patch_procedural_surface_fit(bytes, record, *tolerance)?;
+        }
+        if let Some(edit) = procedural_surface_edits.get(&procedural_id) {
+            if record.head != "spline" {
+                return Err(CodecError::Malformed(format!(
+                    "F3D extrusion carrier {procedural_id} is not a spline record"
+                )));
+            }
+            match edit {
+                ProceduralSurfaceEdit::ExtrusionDirection(direction) => patch_vec3_token(
+                    bytes,
+                    record,
+                    0x14,
+                    0,
+                    [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
+                )?,
+                ProceduralSurfaceEdit::BlendRadii(radii) => {
+                    patch_blend_radius_tokens(bytes, record, *radii)?;
+                }
+            }
+        }
         if record.head == "face" {
             if let Some(sense) = face_senses.get(&id) {
                 patch_sense_token(bytes, record, 0, *sense)?;
@@ -3321,6 +3908,487 @@ fn patch_vec3_token(
     Ok(())
 }
 
+fn patch_blend_radius_tokens(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    radii: [f64; 2],
+) -> Result<(), CodecError> {
+    let boundary = sab::payload_token_offsets(bytes, record, 8, 0x15)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?
+        .into_iter()
+        .find(|offset| {
+            bytes
+                .get(offset + 1..offset + 9)
+                .and_then(|value| value.try_into().ok())
+                .map(i64::from_le_bytes)
+                == Some(-1)
+        })
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "spline record {} lacks the blend-radius boundary",
+                record.index
+            ))
+        })?;
+    let offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?
+        .into_iter()
+        .filter(|offset| *offset < boundary)
+        .collect::<Vec<_>>();
+    let pair = offsets
+        .get(offsets.len().saturating_sub(2)..)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "spline record {} lacks rolling-ball radius doubles",
+                record.index
+            ))
+        })?;
+    if pair.len() != 2 {
+        return Err(CodecError::Malformed(format!(
+            "spline record {} has an incomplete rolling-ball radius pair",
+            record.index
+        )));
+    }
+    for (offset, radius) in pair.iter().zip(radii) {
+        bytes[*offset + 1..*offset + 9].copy_from_slice(&(radius / 10.0).to_le_bytes());
+    }
+    Ok(())
+}
+
+fn patch_nurbs_surface_record(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    edit: &NurbsSurfaceEdit,
+    surface_ordinal: Option<usize>,
+) -> Result<(), CodecError> {
+    let surface = &edit.surface;
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("NURBS surface record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("NURBS surface record is truncated".into()))?;
+    let layout = surface_ordinal
+        .map_or_else(
+            || crate::nurbs::final_surface_patch_layout(record_bytes),
+            |ordinal| crate::nurbs::surface_patch_layout_at(record_bytes, ordinal),
+        )
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "spline record {} has no writable surface cache",
+                record.index
+            ))
+        })?;
+    let u_count = usize::try_from(surface.u_count)
+        .map_err(|_| CodecError::Malformed("NURBS u pole count exceeds address space".into()))?;
+    let v_count = usize::try_from(surface.v_count)
+        .map_err(|_| CodecError::Malformed("NURBS v pole count exceeds address space".into()))?;
+    if layout.u_count != u_count
+        || layout.v_count != v_count
+        || layout.rational != surface.weights.is_some()
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "spline record {} changed NURBS cache structure",
+            record.index
+        )));
+    }
+    patch_knot_structure(bytes, record.offset, &layout.u_knots, &surface.u_knots)?;
+    patch_knot_structure(bytes, record.offset, &layout.v_knots, &surface.v_knots)?;
+    for (offset, degree) in layout
+        .degree_value_offsets
+        .into_iter()
+        .zip([surface.u_degree, surface.v_degree])
+    {
+        let at = record.offset + offset;
+        bytes[at..at + 8].copy_from_slice(&i64::from(degree).to_le_bytes());
+    }
+    if let Some(periodic) = edit.periodic {
+        for (offset, periodic) in layout.periodic_value_offsets.into_iter().zip(periodic) {
+            let at = record.offset + offset;
+            let value = if periodic { 2i64 } else { 0i64 };
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    let components = if layout.rational { 4 } else { 3 };
+    if layout.control_value_offsets.len() != u_count * v_count * components {
+        return Err(CodecError::Malformed(format!(
+            "spline record {} has an inconsistent NURBS control layout",
+            record.index
+        )));
+    }
+    let weights = surface.weights.as_deref();
+    let mut ordinal = 0usize;
+    for v in 0..v_count {
+        for u in 0..u_count {
+            let ir_index = u * v_count + v;
+            let point = surface.control_points[ir_index];
+            let values = [
+                point.x / 10.0,
+                point.y / 10.0,
+                point.z / 10.0,
+                weights.map_or(0.0, |weights| weights[ir_index]),
+            ];
+            for value in values.into_iter().take(components) {
+                let at = record.offset + layout.control_value_offsets[ordinal];
+                bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                ordinal += 1;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn patch_procedural_surface_fit(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    tolerance: f64,
+) -> Result<(), CodecError> {
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("procedural-surface record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("procedural-surface record is truncated".into()))?;
+    let layout = crate::nurbs::final_surface_patch_layout(record_bytes).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "spline record {} has no solved surface cache",
+            record.index
+        ))
+    })?;
+    if record_bytes.get(layout.end) != Some(&0x06) {
+        return Err(CodecError::NotImplemented(format!(
+            "spline record {} has no writable fit-tolerance carrier",
+            record.index
+        )));
+    }
+    let at = record.offset + layout.end + 1;
+    bytes[at..at + 8].copy_from_slice(&(tolerance / 10.0).to_le_bytes());
+    Ok(())
+}
+
+fn patch_nurbs_curve_record(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    edit: &NurbsCurveEdit,
+    final_cache: bool,
+) -> Result<(), CodecError> {
+    let curve = &edit.curve;
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("NURBS curve record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("NURBS curve record is truncated".into()))?;
+    let layout = if final_cache {
+        crate::nurbs::final_curve_patch_layout(record_bytes)
+    } else {
+        crate::nurbs::first_curve_patch_layout(record_bytes)
+    }
+    .ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "spline record {} has no writable curve cache",
+            record.index
+        ))
+    })?;
+    if layout.control_count != curve.control_points.len()
+        || layout.rational != curve.weights.is_some()
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "spline record {} changed NURBS curve structure",
+            record.index
+        )));
+    }
+    patch_knot_structure(bytes, record.offset, &layout.knots, &curve.knots)?;
+    let degree_at = record.offset + layout.degree_value_offset;
+    bytes[degree_at..degree_at + 8].copy_from_slice(&i64::from(curve.degree).to_le_bytes());
+    if let Some(periodic) = edit.periodic {
+        let periodic = if periodic { 2i64 } else { 0i64 };
+        let periodic_at = record.offset + layout.periodic_value_offset;
+        bytes[periodic_at..periodic_at + 8].copy_from_slice(&periodic.to_le_bytes());
+    }
+    let components = if layout.rational { 4 } else { 3 };
+    if layout.control_value_offsets.len() != curve.control_points.len() * components {
+        return Err(CodecError::Malformed(format!(
+            "spline record {} has an inconsistent NURBS curve layout",
+            record.index
+        )));
+    }
+    let weights = curve.weights.as_deref();
+    let mut ordinal = 0usize;
+    for (index, point) in curve.control_points.iter().enumerate() {
+        let values = [
+            point.x / 10.0,
+            point.y / 10.0,
+            point.z / 10.0,
+            weights.map_or(0.0, |weights| weights[index]),
+        ];
+        for value in values.into_iter().take(components) {
+            let at = record.offset + layout.control_value_offsets[ordinal];
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+            ordinal += 1;
+        }
+    }
+    Ok(())
+}
+
+fn patch_procedural_curve_fit(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    tolerance: f64,
+) -> Result<(), CodecError> {
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("procedural-curve record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("procedural-curve record is truncated".into()))?;
+    let layout = crate::nurbs::first_curve_patch_layout(record_bytes).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "intcurve record {} has no solved curve cache",
+            record.index
+        ))
+    })?;
+    if record_bytes.get(layout.end) != Some(&0x06) {
+        return Err(CodecError::NotImplemented(format!(
+            "intcurve record {} has no writable fit-tolerance carrier",
+            record.index
+        )));
+    }
+    let at = record.offset + layout.end + 1;
+    bytes[at..at + 8].copy_from_slice(&(tolerance / 10.0).to_le_bytes());
+    Ok(())
+}
+
+fn patch_nurbs_pcurve_record(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    edit: &NurbsPcurveEdit,
+) -> Result<(), CodecError> {
+    let geometry = &edit.geometry;
+    let PcurveGeometry::Nurbs {
+        control_points,
+        weights,
+        ..
+    } = geometry
+    else {
+        return Err(CodecError::NotImplemented(format!(
+            "pcurve record {} is not a writable NURBS cache",
+            record.index
+        )));
+    };
+    if weights.is_some() {
+        return Err(CodecError::NotImplemented(format!(
+            "pcurve record {} has an unsupported rational cache",
+            record.index
+        )));
+    }
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("NURBS pcurve record extent overflows address space".into())
+    })?;
+    let layout = crate::nurbs::final_pcurve_patch_layout(
+        bytes
+            .get(record.offset..end)
+            .ok_or_else(|| CodecError::Malformed("NURBS pcurve record is truncated".into()))?,
+    )
+    .ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "pcurve record {} has no writable UV cache",
+            record.index
+        ))
+    })?;
+    if layout.control_count != control_points.len()
+        || layout.control_value_offsets.len() != control_points.len() * 2
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "pcurve record {} changed UV cache structure",
+            record.index
+        )));
+    }
+    let PcurveGeometry::Nurbs { knots, .. } = geometry else {
+        unreachable!()
+    };
+    patch_knot_values(bytes, record.offset, &layout.knots, knots)?;
+    if let Some(periodic) = edit.periodic {
+        let value = if periodic { 2i64 } else { 0i64 };
+        let at = record.offset + layout.periodic_value_offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    if let Some(reversed) = edit.wrapper_reversed {
+        let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x0a)
+            .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        offsets.extend(
+            sab::payload_token_offsets(bytes, record, 8, 0x0b)
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
+        );
+        offsets.sort_unstable();
+        let offset = *offsets.first().ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "pcurve record {} lacks wrapper-reversal carrier",
+                record.index
+            ))
+        })?;
+        bytes[offset] = if reversed { 0x0a } else { 0x0b };
+    }
+    if let Some(range) = edit.parameter_range {
+        let offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+            .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        let pair = offsets
+            .get(offsets.len().saturating_sub(2)..)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "pcurve record {} lacks parameter-range carriers",
+                    record.index
+                ))
+            })?;
+        if pair.len() != 2 {
+            return Err(CodecError::Malformed(format!(
+                "pcurve record {} has an incomplete parameter range",
+                record.index
+            )));
+        }
+        for (offset, value) in pair.iter().zip(range) {
+            bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    if let Some(tolerance) = edit.fit_tolerance {
+        if bytes.get(record.offset + layout.control_end) != Some(&0x06) {
+            return Err(CodecError::NotImplemented(format!(
+                "pcurve record {} has no writable fit-tolerance carrier",
+                record.index
+            )));
+        }
+        let at = record.offset + layout.control_end + 1;
+        bytes[at..at + 8].copy_from_slice(&tolerance.to_le_bytes());
+    }
+    for (point, offsets) in control_points
+        .iter()
+        .zip(layout.control_value_offsets.chunks_exact(2))
+    {
+        for (value, offset) in [point.u, point.v].into_iter().zip(offsets) {
+            let at = record.offset + offset;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    Ok(())
+}
+
+fn patch_ref_pcurve_contract(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    edit: &NurbsPcurveEdit,
+) -> Result<(), CodecError> {
+    if edit.wrapper_reversed.is_some() || edit.fit_tolerance.is_some() {
+        return Err(CodecError::NotImplemented(format!(
+            "ref-form pcurve record {} cannot carry wrapper or inline fit edits",
+            record.index
+        )));
+    }
+    let Some(range) = edit.parameter_range else {
+        return Ok(());
+    };
+    let offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    if offsets.len() != 2 {
+        return Err(CodecError::Malformed(format!(
+            "ref-form pcurve record {} lacks its two-value parameter range",
+            record.index
+        )));
+    }
+    for (offset, value) in offsets.into_iter().zip(range) {
+        bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+    }
+    Ok(())
+}
+
+fn patch_knot_values(
+    bytes: &mut [u8],
+    record_offset: usize,
+    layout: &crate::nurbs::KnotPatchLayout,
+    expanded: &[f64],
+) -> Result<(), CodecError> {
+    if layout.value_offsets.len() != layout.expanded_run_lengths.len()
+        || layout.expanded_run_lengths.iter().sum::<usize>() != expanded.len()
+    {
+        return Err(CodecError::NotImplemented(
+            "F3D NURBS knot edit changes multiplicity structure".into(),
+        ));
+    }
+    let mut position = 0usize;
+    let mut previous = None;
+    for (offset, run_length) in layout
+        .value_offsets
+        .iter()
+        .zip(&layout.expanded_run_lengths)
+    {
+        let run = &expanded[position..position + *run_length];
+        let value = *run.first().ok_or_else(|| {
+            CodecError::NotImplemented("F3D NURBS knot run cannot be empty".into())
+        })?;
+        if run.iter().any(|candidate| *candidate != value)
+            || previous.is_some_and(|previous| previous >= value)
+        {
+            return Err(CodecError::NotImplemented(
+                "F3D NURBS knot edit changes multiplicity structure".into(),
+            ));
+        }
+        let at = record_offset + *offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        previous = Some(value);
+        position += *run_length;
+    }
+    Ok(())
+}
+
+fn patch_knot_structure(
+    bytes: &mut [u8],
+    record_offset: usize,
+    layout: &crate::nurbs::KnotPatchLayout,
+    knots: &[f64],
+) -> Result<(), CodecError> {
+    let mut runs: Vec<(f64, usize)> = Vec::new();
+    for knot in knots {
+        if let Some((value, count)) = runs.last_mut() {
+            if *value == *knot {
+                *count += 1;
+                continue;
+            }
+        }
+        runs.push((*knot, 1));
+    }
+    if runs.len() != layout.value_offsets.len() || runs.len() != layout.multiplicity_offsets.len() {
+        return Err(CodecError::NotImplemented(
+            "F3D NURBS curve edit changes the unique-knot count".into(),
+        ));
+    }
+    for (ordinal, ((value, expanded_count), (value_offset, multiplicity_offset))) in runs
+        .into_iter()
+        .zip(
+            layout
+                .value_offsets
+                .iter()
+                .zip(&layout.multiplicity_offsets),
+        )
+        .enumerate()
+    {
+        let endpoint_extra = usize::from(ordinal == 0 || ordinal + 1 == layout.value_offsets.len());
+        let stored = expanded_count
+            .checked_sub(endpoint_extra)
+            .filter(|count| *count > 0)
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "F3D NURBS curve knot multiplicity is not writable".into(),
+                )
+            })?;
+        let stored = i64::try_from(stored).map_err(|_| {
+            CodecError::Malformed("F3D NURBS curve knot multiplicity exceeds i64".into())
+        })?;
+        let value_at = record_offset + *value_offset;
+        bytes[value_at..value_at + 8].copy_from_slice(&value.to_le_bytes());
+        let multiplicity_at = record_offset + *multiplicity_offset;
+        bytes[multiplicity_at..multiplicity_at + 8].copy_from_slice(&stored.to_le_bytes());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3348,6 +4416,12 @@ mod tests {
             &records,
             &BTreeMap::new(),
             &lines,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -3413,6 +4487,12 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated sphere edit");
@@ -3468,6 +4548,12 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &tori,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -3539,6 +4625,12 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated cylinder edit");
@@ -3592,6 +4684,12 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &conics,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),

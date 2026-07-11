@@ -808,6 +808,9 @@ fn derive_planar_pcurves(
                 origin: start,
                 direction: cadmpeg_ir::math::Point2::new(du / norm, dv / norm),
             },
+            wrapper_reversed: None,
+            parameter_range: None,
+            fit_tolerance: None,
         };
         derived.push((coedge.id.clone(), id, pcurve));
     }
@@ -948,7 +951,17 @@ fn derive_cylindrical_pcurves(
             "sldprt:brep:pcurve#cylinder:{}",
             coedge.id.0.rsplit('#').next().unwrap_or("0")
         ));
-        derived.push((coedge.id.clone(), id.clone(), Pcurve { id, geometry }));
+        derived.push((
+            coedge.id.clone(),
+            id.clone(),
+            Pcurve {
+                id,
+                geometry,
+                wrapper_reversed: None,
+                parameter_range: None,
+                fit_tolerance: None,
+            },
+        ));
     }
     for (coedge_id, id, pcurve) in derived {
         if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == coedge_id) {
@@ -1060,7 +1073,17 @@ fn derive_spherical_pcurves(
             "sldprt:brep:pcurve#sphere:{}",
             coedge.id.0.rsplit('#').next().unwrap_or("0")
         ));
-        derived.push((coedge.id.clone(), id.clone(), Pcurve { id, geometry }));
+        derived.push((
+            coedge.id.clone(),
+            id.clone(),
+            Pcurve {
+                id,
+                geometry,
+                wrapper_reversed: None,
+                parameter_range: None,
+                fit_tolerance: None,
+            },
+        ));
     }
     for (coedge_id, id, pcurve) in derived {
         if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == coedge_id) {
@@ -1184,7 +1207,17 @@ fn derive_nurbs_boundary_pcurves(
             "sldprt:brep:pcurve#nurbs-boundary:{}",
             coedge.id.0.rsplit('#').next().unwrap_or("0")
         ));
-        derived.push((coedge.id.clone(), id.clone(), Pcurve { id, geometry }));
+        derived.push((
+            coedge.id.clone(),
+            id.clone(),
+            Pcurve {
+                id,
+                geometry,
+                wrapper_reversed: None,
+                parameter_range: None,
+                fit_tolerance: None,
+            },
+        ));
     }
     for (coedge_id, id, pcurve) in derived {
         if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == coedge_id) {

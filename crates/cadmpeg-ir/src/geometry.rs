@@ -477,6 +477,9 @@ pub enum PcurveGeometry {
         /// Per-pole weights; `None` ⇒ non-rational.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         weights: Option<Vec<f64>>,
+        /// Whether the parameter-space curve is periodic.
+        #[serde(default)]
+        periodic: bool,
     },
 }
 
@@ -489,4 +492,13 @@ pub struct Pcurve {
     pub id: PcurveId,
     /// Parameter-space shape.
     pub geometry: PcurveGeometry,
+    /// Inline `exp_par_cur` parameterization reversal; absent on ref-form pcurves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wrapper_reversed: Option<bool>,
+    /// Native parameter interval on which this pcurve is evaluated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_range: Option<[f64; 2]>,
+    /// Parameter-space fit tolerance following the solved UV cache.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fit_tolerance: Option<f64>,
 }

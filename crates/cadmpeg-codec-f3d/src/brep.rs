@@ -513,6 +513,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         knots: decoded.knots,
                                         control_points: decoded.control_points,
                                         weights: None,
+                                        periodic: decoded.periodic,
                                     },
                                 );
                                 kept_pcurves.insert(pc);
@@ -716,6 +717,37 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 out.pcurves.push(Pcurve {
                     id: PcurveId(id(i)),
                     geometry,
+                    wrapper_reversed: match r.chunk(4) {
+                        Some(Token::True) if matches!(r.chunk(3), Some(Token::Long(0))) => {
+                            Some(true)
+                        }
+                        Some(Token::False) if matches!(r.chunk(3), Some(Token::Long(0))) => {
+                            Some(false)
+                        }
+                        _ => None,
+                    },
+                    parameter_range: if matches!(
+                        r.chunk(4),
+                        Some(Token::True | Token::False | Token::Ref(_))
+                    ) {
+                        let values = r
+                            .tokens
+                            .iter()
+                            .filter_map(|token| match token {
+                                Token::Double(value) => Some(*value),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>();
+                        values
+                            .get(values.len().saturating_sub(2)..)
+                            .filter(|values| values.len() == 2)
+                            .map(|values| [values[0], values[1]])
+                    } else {
+                        None
+                    },
+                    fit_tolerance: matches!(r.chunk(4), Some(Token::True | Token::False))
+                        .then(|| nurbs::decode_pcurve_fit_tolerance(record_slice(r, bytes)))
+                        .flatten(),
                 });
             }
         }

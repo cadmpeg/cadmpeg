@@ -16,10 +16,16 @@ use crate::container::{self, role, ContainerScan};
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
 
-pub(crate) fn patch_protein_base_colors(
+#[derive(Default)]
+pub(crate) struct ProteinAppearanceEdit {
+    pub(crate) color: Option<Color>,
+    pub(crate) properties: BTreeMap<String, f64>,
+}
+
+pub(crate) fn patch_protein_appearances(
     protein: &[u8],
-    edits: &BTreeMap<String, Color>,
-) -> Result<Vec<u8>, CodecError> {
+    edits: &BTreeMap<String, ProteinAppearanceEdit>,
+) -> Result<(Vec<u8>, std::collections::BTreeSet<String>), CodecError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
         CodecError::Malformed(format!("cannot open nested Protein ZIP: {error}"))
     })?;
@@ -42,20 +48,16 @@ pub(crate) fn patch_protein_base_colors(
         })?;
         zip.write_all(&bytes)?;
     }
-    if patched.len() != edits.len() {
-        return Err(CodecError::NotImplemented(
-            "one or more edited F3D appearances have no writable Protein color carrier".into(),
-        ));
-    }
-    Ok(zip
+    let bytes = zip
         .finish()
         .map_err(|error| CodecError::Malformed(format!("cannot finish Protein ZIP: {error}")))?
-        .into_inner())
+        .into_inner();
+    Ok((bytes, patched))
 }
 
 fn patch_instance_colors(
     bytes: &mut [u8],
-    edits: &BTreeMap<String, Color>,
+    edits: &BTreeMap<String, ProteinAppearanceEdit>,
     patched: &mut std::collections::BTreeSet<String>,
 ) -> Result<(), CodecError> {
     let logical = dechunk(bytes).ok_or_else(|| {
@@ -76,32 +78,60 @@ fn patch_instance_colors(
             .ok_or_else(|| CodecError::Malformed("Protein appearance GUID is truncated".into()))?;
         let _ = take_lp(record, &mut position);
         let _ = take_lp(record, &mut position);
-        let Some(color) = edits.get(&guid) else {
+        let Some(edit) = edits.get(&guid) else {
             continue;
         };
-        let relative = match schema.as_str() {
-            "GenericSchema" => position + 112 + generic_connection_delta(record, position),
-            "PrismOpaqueSchema" | "PrismMetalSchema" => position + 8,
-            "PrismTransparentSchema" => position + 121,
-            _ => {
-                return Err(CodecError::NotImplemented(format!(
-                    "Protein schema {schema} has no writable color carrier"
-                )))
-            }
-        };
-        for (ordinal, value) in [color.r, color.g, color.b, color.a].into_iter().enumerate() {
-            let logical_offset = start + relative + ordinal * 8;
-            for byte in 0..8 {
-                let physical =
-                    logical_to_physical(bytes, logical_offset + byte).ok_or_else(|| {
-                        CodecError::Malformed(
-                            "Protein color offset is outside paged storage".into(),
-                        )
-                    })?;
-                bytes[physical] = f64::from(value).to_le_bytes()[byte];
+        let delta = generic_connection_delta(record, position);
+        if let Some(color) = edit.color {
+            let relative = match schema.as_str() {
+                "GenericSchema" => position + 112 + delta,
+                "PrismOpaqueSchema" | "PrismMetalSchema" => position + 8,
+                "PrismTransparentSchema" => position + 121,
+                _ => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "Protein schema {schema} has no writable color carrier"
+                    )))
+                }
+            };
+            for (ordinal, value) in [color.r, color.g, color.b, color.a].into_iter().enumerate() {
+                patch_logical_f64(bytes, start + relative + ordinal * 8, f64::from(value))?;
             }
         }
+        for (name, value) in &edit.properties {
+            let relative = match (schema.as_str(), name.as_str()) {
+                ("GenericSchema", "reflectivity_at_0deg") => position + 175 + delta,
+                ("GenericSchema", "refraction_index") => position + 201 + delta,
+                ("PrismOpaqueSchema", "surface_roughness") => {
+                    find(record, b"\x0e\x20\x00\x00", position)
+                        .map(|marker| marker + 4)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("Protein roughness carrier is absent".into())
+                        })?
+                }
+                ("PrismTransparentSchema", "refraction_index") => position + 169,
+                _ => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "Protein schema {schema} property {name} has no writable carrier"
+                    )))
+                }
+            };
+            patch_logical_f64(bytes, start + relative, *value)?;
+        }
         patched.insert(guid);
+    }
+    Ok(())
+}
+
+fn patch_logical_f64(
+    bytes: &mut [u8],
+    logical_offset: usize,
+    value: f64,
+) -> Result<(), CodecError> {
+    for (ordinal, byte) in value.to_le_bytes().into_iter().enumerate() {
+        let physical = logical_to_physical(bytes, logical_offset + ordinal).ok_or_else(|| {
+            CodecError::Malformed("Protein scalar offset is outside paged storage".into())
+        })?;
+        bytes[physical] = byte;
     }
     Ok(())
 }
