@@ -37,11 +37,16 @@ struct ClassOutcome {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ObjectStatus {
+enum GeometryStatus {
     Retained,
-    AttributeDegraded,
     Decoded,
     Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ObjectStatus {
+    geometry: GeometryStatus,
+    attribute_degraded: bool,
 }
 
 /// Mutable decode state shared by metadata and future geometry phases.
@@ -122,17 +127,17 @@ impl<'a> DecodeContext<'a> {
 
     /// Marks one retained object as successfully decoded.
     pub(crate) fn mark_decoded(&mut self, source_order: usize) -> bool {
-        self.transition(source_order, ObjectStatus::Decoded)
+        self.transition(source_order, GeometryStatus::Decoded)
     }
 
     /// Marks one object as retained without typed geometry.
     pub(crate) fn mark_retained(&mut self, source_order: usize) -> bool {
-        self.transition(source_order, ObjectStatus::Retained)
+        self.transition(source_order, GeometryStatus::Retained)
     }
 
     /// Marks one framed object as failed after a skippable payload error.
     pub(crate) fn mark_failed(&mut self, source_order: usize) -> bool {
-        self.transition(source_order, ObjectStatus::Failed)
+        self.transition(source_order, GeometryStatus::Failed)
     }
 
     /// Decode and atomically commit supported simple geometry.
@@ -160,6 +165,7 @@ impl<'a> DecodeContext<'a> {
                 object.class_uuid,
                 object.class_data_range.clone(),
                 scale,
+                self.archive(),
             );
             match decoded {
                 Ok(value) => {
@@ -170,8 +176,22 @@ impl<'a> DecodeContext<'a> {
                     }
                 }
                 Err(error) => {
-                    self.scan_warning(source_order, &format!("simple geometry failed: {error}"));
-                    self.mark_failed(source_order);
+                    let future = matches!(
+                        error,
+                        crate::curves::GeometryError::UnsupportedVersion { .. }
+                    );
+                    self.scan_warning(
+                        source_order,
+                        &format!(
+                            "simple geometry {}: {error}",
+                            if future { "retained" } else { "failed" }
+                        ),
+                    );
+                    if future {
+                        self.mark_retained(source_order);
+                    } else {
+                        self.mark_failed(source_order);
+                    }
                 }
             }
         }
@@ -309,10 +329,9 @@ impl<'a> DecodeContext<'a> {
                 links: Vec::new(),
             });
             self.unknown_ids.push(id);
-            self.statuses.push(if object.attributes_degraded {
-                ObjectStatus::AttributeDegraded
-            } else {
-                ObjectStatus::Retained
+            self.statuses.push(ObjectStatus {
+                geometry: GeometryStatus::Retained,
+                attribute_degraded: object.attributes_degraded,
             });
         }
     }
@@ -352,9 +371,8 @@ impl<'a> DecodeContext<'a> {
             .map_or_else(|| source_order.to_string(), |(_, key)| key.to_string());
         let association = source_association(identity);
         let unknown = self.unknown_ids[source_order].clone();
-        let model = &mut self.ir.model;
         match decoded {
-            crate::curves::DecodedGeometry::Point(position) => {
+            crate::curves::DecodedGeometry::Point { position, scaled } => {
                 let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}").into();
                 let region_id: cadmpeg_ir::ids::RegionId =
                     format!("rhino:object:region#{key}").into();
@@ -362,33 +380,36 @@ impl<'a> DecodeContext<'a> {
                 let point_id: cadmpeg_ir::ids::PointId = format!("rhino:object:point#{key}").into();
                 let vertex_id: cadmpeg_ir::ids::VertexId =
                     format!("rhino:object:vertex#{key}").into();
-                model.points.push(Point {
+                self.ir.model.points.push(Point {
                     id: point_id.clone(),
                     position,
                 });
-                model.vertices.push(Vertex {
+                self.ir.model.vertices.push(Vertex {
                     id: vertex_id.clone(),
-                    point: point_id,
+                    point: point_id.clone(),
                     tolerance: None,
                 });
-                model.shells.push(Shell {
+                self.ir.model.shells.push(Shell {
                     id: shell_id.clone(),
                     region: region_id.clone(),
                     faces: Vec::new(),
                     wire_edges: Vec::new(),
-                    free_vertices: vec![vertex_id],
+                    free_vertices: vec![vertex_id.clone()],
                 });
-                model.regions.push(Region {
+                self.ir.model.regions.push(Region {
                     id: region_id.clone(),
                     body: body_id.clone(),
-                    shells: vec![shell_id],
+                    shells: vec![shell_id.clone()],
                 });
-                model.bodies.push(body(
+                self.ir.model.bodies.push(body(
                     identity,
                     body_id.clone(),
-                    vec![region_id],
+                    vec![region_id.clone()],
                     &association,
                 ));
+                self.annotate_point_topology(
+                    &point_id, &vertex_id, &shell_id, &region_id, &body_id, scaled,
+                );
                 self.append_link(source_order, body_id.to_string());
             }
             crate::curves::DecodedGeometry::PointCloud(cloud) => {
@@ -402,98 +423,116 @@ impl<'a> DecodeContext<'a> {
                         format!("rhino:object:point#{key}.{index}").into();
                     let vertex_id: cadmpeg_ir::ids::VertexId =
                         format!("rhino:object:vertex#{key}.{index}").into();
-                    model.points.push(Point {
+                    self.ir.model.points.push(Point {
                         id: point_id.clone(),
                         position,
                     });
-                    model.vertices.push(Vertex {
+                    self.ir.model.vertices.push(Vertex {
                         id: vertex_id.clone(),
                         point: point_id,
                         tolerance: None,
                     });
                     vertices.push(vertex_id);
                 }
-                model.shells.push(Shell {
+                self.ir.model.shells.push(Shell {
                     id: shell_id.clone(),
                     region: region_id.clone(),
                     faces: Vec::new(),
                     wire_edges: Vec::new(),
                     free_vertices: vertices,
                 });
-                model.regions.push(Region {
+                self.ir.model.regions.push(Region {
                     id: region_id.clone(),
                     body: body_id.clone(),
                     shells: vec![shell_id],
                 });
-                model.bodies.push(body(
+                self.ir.model.bodies.push(body(
                     identity,
                     body_id.clone(),
                     vec![region_id],
                     &association,
                 ));
+                let point_ids: Vec<String> = self
+                    .ir
+                    .model
+                    .points
+                    .iter()
+                    .filter(|point| {
+                        point
+                            .id
+                            .as_str()
+                            .starts_with(&format!("rhino:object:point#{key}."))
+                    })
+                    .map(|point| point.id.to_string())
+                    .collect();
+                for point_id in point_ids {
+                    self.ir.annotations.exactness.insert(
+                        point_id,
+                        ExactnessNote {
+                            entity: Exactness::Derived,
+                            fields: BTreeMap::new(),
+                        },
+                    );
+                }
                 self.append_link(source_order, body_id.to_string());
             }
-            crate::curves::DecodedGeometry::Curve { geometry, compound } => {
-                let parent_id: cadmpeg_ir::ids::CurveId =
-                    format!("rhino:object:curve#{key}").into();
-                let mut component_ids = Vec::new();
-                if let Some(compound) = compound {
-                    for (index, geometry) in compound.children.into_iter().enumerate() {
-                        let id: cadmpeg_ir::ids::CurveId =
-                            format!("rhino:object:curve#{key}.component-{index}").into();
-                        model.curves.push(Curve {
-                            id: id.clone(),
-                            geometry,
-                            source_object: Some(association.clone()),
-                        });
-                        self.ir.annotations.exactness.insert(
-                            id.to_string(),
-                            ExactnessNote {
-                                entity: Exactness::Derived,
-                                fields: BTreeMap::new(),
-                            },
-                        );
-                        component_ids.push(id);
-                    }
-                    let geometry = CurveGeometry::Unknown {
-                        record: Some(unknown),
-                    };
-                    model.curves.push(Curve {
-                        id: parent_id.clone(),
-                        geometry,
-                        source_object: Some(association),
-                    });
-                    model.procedural_curves.push(ProceduralCurve {
-                        id: format!("rhino:object:procedural-curve#{key}").into(),
-                        curve: parent_id.clone(),
-                        definition: ProceduralCurveDefinition::Compound {
-                            parameters: compound.parameters.clone(),
-                            component_parameters: compound.parameters
-                                [..compound.parameters.len() - 1]
-                                .to_vec(),
-                            components: component_ids,
-                        },
-                        cache_fit_tolerance: None,
-                    });
-                } else {
-                    model.curves.push(Curve {
-                        id: parent_id.clone(),
-                        geometry,
-                        source_object: Some(association),
-                    });
-                }
-                self.ir.annotations.exactness.insert(
-                    parent_id.to_string(),
-                    ExactnessNote {
-                        entity: Exactness::Derived,
-                        fields: BTreeMap::new(),
-                    },
+            crate::curves::DecodedGeometry::Curve { curve } => {
+                let warnings = curve_warnings(&curve);
+                self.phase_warnings.extend(
+                    warnings
+                        .into_iter()
+                        .map(|warning| format!("{}: {warning}", identity.source_id)),
+                );
+                let parent_id = commit_curve_tree(
+                    &mut self.ir,
+                    curve,
+                    &key,
+                    &association,
+                    Some(unknown),
+                    "root",
                 );
                 self.append_link(source_order, parent_id.to_string());
             }
         }
         self.geometry_transferred = true;
         true
+    }
+
+    fn annotate_point_topology(
+        &mut self,
+        point: &cadmpeg_ir::ids::PointId,
+        vertex: &cadmpeg_ir::ids::VertexId,
+        shell: &cadmpeg_ir::ids::ShellId,
+        region: &cadmpeg_ir::ids::RegionId,
+        body: &cadmpeg_ir::ids::BodyId,
+        scaled: bool,
+    ) {
+        let point_exactness = if scaled {
+            Exactness::Derived
+        } else {
+            Exactness::ByteExact
+        };
+        self.ir.annotations.exactness.insert(
+            point.to_string(),
+            ExactnessNote {
+                entity: point_exactness,
+                fields: BTreeMap::new(),
+            },
+        );
+        for id in [
+            vertex.to_string(),
+            shell.to_string(),
+            region.to_string(),
+            body.to_string(),
+        ] {
+            self.ir.annotations.exactness.insert(
+                id,
+                ExactnessNote {
+                    entity: Exactness::Derived,
+                    fields: BTreeMap::new(),
+                },
+            );
+        }
     }
 
     fn keep_phase_api_reachable(&mut self) {
@@ -509,36 +548,103 @@ impl<'a> DecodeContext<'a> {
         let _ = self.mark_failed(invalid);
     }
 
-    fn transition(&mut self, source_order: usize, next: ObjectStatus) -> bool {
-        let Some(current) = self.statuses.get(source_order).copied() else {
+    fn transition(&mut self, source_order: usize, next: GeometryStatus) -> bool {
+        let Some(status) = self.statuses.get(source_order).copied() else {
             return false;
         };
-        if current == next || matches!(current, ObjectStatus::Decoded | ObjectStatus::Failed) {
+        let current = status.geometry;
+        if current == next || matches!(current, GeometryStatus::Decoded | GeometryStatus::Failed) {
             return false;
         }
         let object = &self.scan.objects[source_order];
         let class = object.class_uuid.to_string();
         let outcome = self.outcomes.get_mut(&class).expect("status class exists");
         match current {
-            ObjectStatus::Retained => outcome.retained -= 1,
-            ObjectStatus::AttributeDegraded => {
-                outcome.retained -= 1;
-                outcome.attribute_degraded -= 1;
-            }
-            ObjectStatus::Decoded | ObjectStatus::Failed => unreachable!(),
+            GeometryStatus::Retained => outcome.retained -= 1,
+            GeometryStatus::Decoded | GeometryStatus::Failed => unreachable!(),
         }
         match next {
-            ObjectStatus::Retained => outcome.retained += 1,
-            ObjectStatus::AttributeDegraded => {
-                outcome.retained += 1;
-                outcome.attribute_degraded += 1;
-            }
-            ObjectStatus::Decoded => outcome.decoded += 1,
-            ObjectStatus::Failed => outcome.failed_framed += 1,
+            GeometryStatus::Retained => outcome.retained += 1,
+            GeometryStatus::Decoded => outcome.decoded += 1,
+            GeometryStatus::Failed => outcome.failed_framed += 1,
         }
-        self.statuses[source_order] = next;
+        self.statuses[source_order].geometry = next;
         true
     }
+}
+
+fn curve_warnings(curve: &crate::curves::DecodedCurve) -> Vec<String> {
+    let mut warnings = curve.warnings.clone();
+    if let Some(compound) = &curve.compound {
+        for child in &compound.children {
+            warnings.extend(curve_warnings(child));
+        }
+    }
+    warnings
+}
+
+fn commit_curve_tree(
+    ir: &mut CadIr,
+    curve: crate::curves::DecodedCurve,
+    key: &str,
+    association: &SourceObjectAssociation,
+    record: Option<UnknownId>,
+    path: &str,
+) -> cadmpeg_ir::ids::CurveId {
+    let mut component_ids = Vec::new();
+    if let Some(compound) = &curve.compound {
+        for (index, child) in compound.children.iter().cloned().enumerate() {
+            let child_path = format!("{path}.component-{index}");
+            component_ids.push(commit_curve_tree(
+                ir,
+                child,
+                key,
+                association,
+                None,
+                &child_path,
+            ));
+        }
+    }
+    let id: cadmpeg_ir::ids::CurveId = if path == "root" {
+        format!("rhino:object:curve#{key}").into()
+    } else {
+        format!("rhino:object:curve#{key}.{path}").into()
+    };
+    let geometry = if curve.compound.is_some() {
+        CurveGeometry::Unknown { record }
+    } else {
+        curve.geometry
+    };
+    ir.model.curves.push(Curve {
+        id: id.clone(),
+        geometry,
+        source_object: Some(association.clone()),
+    });
+    ir.annotations.exactness.insert(
+        id.to_string(),
+        ExactnessNote {
+            entity: Exactness::Derived,
+            fields: BTreeMap::new(),
+        },
+    );
+    if let Some(compound) = curve.compound {
+        let procedure_id: cadmpeg_ir::ids::ProceduralCurveId = if path == "root" {
+            format!("rhino:object:procedural-curve#{key}").into()
+        } else {
+            format!("rhino:object:procedural-curve#{key}.{path}").into()
+        };
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: procedure_id,
+            curve: id.clone(),
+            definition: ProceduralCurveDefinition::Compound {
+                parameters: compound.parameters.clone(),
+                component_parameters: compound.parameters[..compound.parameters.len() - 1].to_vec(),
+                components: component_ids,
+            },
+            cache_fit_tolerance: None,
+        });
+    }
+    id
 }
 
 fn source_association(identity: &crate::objects::SourceIdentity) -> SourceObjectAssociation {

@@ -464,19 +464,23 @@ pub(crate) fn parse_class_wrapper(
     if let Some(note) = checksum_warning(bytes, &data_chunk)? {
         warnings.push(note);
     }
-    let end_chunk = child(
-        bytes,
-        data_chunk.next_offset,
-        wrapper.body.end,
-        archive,
-        false,
-    )?;
-    require_short_zero(&end_chunk, CLASS_END)?;
-    if end_chunk.next_offset != wrapper.body.end || wrapper.next_offset != body.end {
-        return Err(malformed_at(
-            end_chunk.header_start,
-            "class wrapper has trailing bytes",
-        ));
+    let mut offset = data_chunk.next_offset;
+    let mut end_seen = false;
+    while offset < wrapper.body.end {
+        let item = child(bytes, offset, wrapper.body.end, archive, false)?;
+        if item.typecode == CLASS_USERDATA {
+            require_long(&item, CLASS_USERDATA)?;
+            let _ = parse_userdata(bytes, &item, archive, warnings)?;
+            offset = item.next_offset;
+        } else {
+            require_short_zero(&item, CLASS_END)?;
+            offset = item.next_offset;
+            end_seen = true;
+            break;
+        }
+    }
+    if !end_seen || offset != wrapper.body.end || wrapper.next_offset != body.end {
+        return Err(malformed_at(offset, "class wrapper has trailing bytes"));
     }
     Ok(ClassDescriptor {
         class_uuid,
