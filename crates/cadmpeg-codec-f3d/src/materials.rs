@@ -965,28 +965,38 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut offset = 0usize;
     while offset + 4 <= bytes.len() {
-        let count = u32::from_le_bytes(
-            bytes[offset..offset + 4]
-                .try_into()
-                .expect("invariant: bytes[offset..offset+4] is a 4-byte slice"),
-        ) as usize;
-        let byte_len = count.saturating_mul(2);
-        if (2..=256).contains(&count) && offset + 4 + byte_len <= bytes.len() {
-            let units: Vec<u16> = bytes[offset + 4..offset + 4 + byte_len]
-                .chunks_exact(2)
-                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-                .collect();
-            if let Ok(value) = String::from_utf16(&units) {
-                if value.chars().all(|ch| !ch.is_control()) {
-                    out.push((offset, value));
-                    offset += 4 + byte_len;
-                    continue;
-                }
-            }
+        if let Some((value, record_len)) = lp_utf16_string_at(bytes, offset) {
+            out.push((offset, value));
+            offset += record_len;
+        } else {
+            offset += 1;
         }
-        offset += 1;
     }
     out
+}
+
+/// Decode one LP-UTF16 string at `offset`, validating unit by unit so a
+/// non-string byte window bails out before allocating.
+fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
+    let count = u32::from_le_bytes(bytes.get(offset..offset + 4)?.try_into().ok()?) as usize;
+    if !(2..=256).contains(&count) {
+        return None;
+    }
+    let byte_len = count * 2;
+    let payload = bytes.get(offset + 4..offset + 4 + byte_len)?;
+    let mut value = String::new();
+    for unit in char::decode_utf16(
+        payload
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]])),
+    ) {
+        let ch = unit.ok()?;
+        if ch.is_control() {
+            return None;
+        }
+        value.push(ch);
+    }
+    Some((value, 4 + byte_len))
 }
 
 fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize)> {
