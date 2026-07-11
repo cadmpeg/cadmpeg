@@ -1000,6 +1000,20 @@ pub(crate) struct EmbeddedSpring {
     pub(crate) direction: i64,
 }
 
+pub(crate) enum EmbeddedDeformableData {
+    VectorField {
+        vectors: [Vector3; 4],
+        parameter_pairs: Vec<[f64; 2]>,
+    },
+    Surface(SurfaceGeometry),
+}
+
+pub(crate) struct EmbeddedDeformable {
+    pub(crate) extension: i64,
+    pub(crate) bend: NurbsCurve,
+    pub(crate) data: EmbeddedDeformableData,
+}
+
 /// A procedural curve cache together with its native subtype and fit contract.
 pub struct DecodedProceduralCurve {
     /// The cached B-spline curve (control points scaled centimetre→
@@ -1033,6 +1047,8 @@ pub struct DecodedProceduralCurve {
     pub(crate) embedded_surface_offset: Option<EmbeddedSurfaceOffset>,
     /// Modern non-null `spring_int_cur` construction.
     pub(crate) embedded_spring: Option<EmbeddedSpring>,
+    /// Embedded bend curve and discriminator payload of a `defm_int_cur`.
+    pub(crate) embedded_deformable: Option<EmbeddedDeformable>,
     /// Embedded support context and source of a `proj_int_cur`.
     pub(crate) embedded_projection: Option<EmbeddedProjection>,
     /// `surface_fit_tolerance` of the cached B-spline block, if present
@@ -1089,6 +1105,7 @@ fn decode_procedural_curve_recursive(
             embedded_silhouette: decode_embedded_silhouette(bytes, int_width),
             embedded_surface_offset: decode_embedded_surface_offset(bytes, int_width),
             embedded_spring: decode_embedded_spring(bytes, int_width),
+            embedded_deformable: decode_embedded_deformable(bytes, int_width),
             embedded_projection: decode_embedded_projection(bytes, int_width),
             cache_fit_tolerance,
         });
@@ -1110,6 +1127,54 @@ fn decode_procedural_curve_recursive(
         }
     }
     None
+}
+
+fn decode_embedded_deformable(bytes: &[u8], int_width: usize) -> Option<EmbeddedDeformable> {
+    let name = b"defm_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let mut position = marker + name.len() + 3;
+    let extension = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    let bend = decode_curve_block(bytes, position, int_width)?;
+    position = bend.end;
+    let mode = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    let data = match mode {
+        8 => {
+            let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
+            for vector in &mut vectors {
+                let value = take_native_vec3(bytes, &mut position, 0x14)?;
+                *vector = Vector3::new(value[0], value[1], value[2]);
+            }
+            let count = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+            let count = usize::try_from(count).ok()?;
+            let mut parameter_pairs = Vec::with_capacity(count);
+            for _ in 0..count {
+                parameter_pairs.push([
+                    take_f64(bytes, &mut position)?,
+                    take_f64(bytes, &mut position)?,
+                ]);
+            }
+            EmbeddedDeformableData::VectorField {
+                vectors,
+                parameter_pairs,
+            }
+        }
+        5 => EmbeddedDeformableData::Surface(decode_embedded_surface(
+            bytes,
+            &mut position,
+            int_width,
+        )?),
+        _ => return None,
+    };
+    Some(EmbeddedDeformable {
+        extension,
+        bend: bend.curve,
+        data,
+    })
 }
 
 fn decode_embedded_spring(bytes: &[u8], int_width: usize) -> Option<EmbeddedSpring> {

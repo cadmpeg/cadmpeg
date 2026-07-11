@@ -114,6 +114,12 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
+            ProceduralCurveDefinition::Deformable { bend, data, .. } => {
+                curves.insert(&bend.0);
+                if let crate::geometry::DeformableCurveData::Surface { surface } = data {
+                    surfaces.insert(&surface.0);
+                }
+            }
             ProceduralCurveDefinition::Projection {
                 context, source, ..
             } => {

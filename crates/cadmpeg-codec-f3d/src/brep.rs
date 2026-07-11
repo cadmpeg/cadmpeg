@@ -647,6 +647,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                         decoded.embedded_silhouette,
                                                         decoded.embedded_surface_offset,
                                                         decoded.embedded_spring,
+                                                        decoded.embedded_deformable,
                                                         decoded.embedded_projection,
                                                         decoded.cache_fit_tolerance,
                                                     ),
@@ -750,6 +751,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                             decoded.embedded_silhouette,
                                                             decoded.embedded_surface_offset,
                                                             decoded.embedded_spring,
+                                                            decoded.embedded_deformable,
                                                             decoded.embedded_projection,
                                                             decoded.cache_fit_tolerance,
                                                         ),
@@ -1256,6 +1258,36 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             direction: embedded.direction,
                         }
                     } else if let Some(embedded) = procedural.12 {
+                        let bend = CurveId(format!("f3d:brep:procedural_curve#{i}:bend"));
+                        out.curves.push(Curve {
+                            id: bend.clone(),
+                            geometry: CurveGeometry::Nurbs(embedded.bend),
+                        });
+                        let data = match embedded.data {
+                            nurbs::EmbeddedDeformableData::VectorField {
+                                vectors,
+                                parameter_pairs,
+                            } => cadmpeg_ir::geometry::DeformableCurveData::VectorField {
+                                vectors,
+                                parameter_pairs,
+                            },
+                            nurbs::EmbeddedDeformableData::Surface(geometry) => {
+                                let surface = SurfaceId(format!(
+                                    "f3d:brep:procedural_curve#{i}:deformation_surface"
+                                ));
+                                out.surfaces.push(Surface {
+                                    id: surface.clone(),
+                                    geometry,
+                                });
+                                cadmpeg_ir::geometry::DeformableCurveData::Surface { surface }
+                            }
+                        };
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable {
+                            extension: embedded.extension,
+                            bend,
+                            data,
+                        }
+                    } else if let Some(embedded) = procedural.13 {
                         let surfaces: [Option<SurfaceId>; 2] = embedded
                             .surfaces
                             .into_iter()
@@ -1334,7 +1366,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         id: format!("f3d:brep:procedural_curve#{i}").into(),
                         curve: CurveId(id(i)),
                         definition,
-                        cache_fit_tolerance: procedural.13,
+                        cache_fit_tolerance: procedural.14,
                     });
                 }
             }

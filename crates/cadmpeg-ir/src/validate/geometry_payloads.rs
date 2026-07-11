@@ -291,6 +291,29 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for procedural in &ir.model.procedural_curves {
+        if let ProceduralCurveDefinition::Deformable { data, .. } = &procedural.definition {
+            if let crate::geometry::DeformableCurveData::VectorField {
+                vectors,
+                parameter_pairs,
+            } = data
+            {
+                let vectors_finite = vectors.iter().all(|vector| {
+                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+                });
+                let pairs_finite = parameter_pairs
+                    .iter()
+                    .flatten()
+                    .all(|value| value.is_finite());
+                if !vectors_finite || !pairs_finite {
+                    bounds_err(
+                        findings,
+                        &procedural.id.0,
+                        "deformable vector-field payload is not finite",
+                    );
+                }
+            }
+            continue;
+        }
         if let ProceduralCurveDefinition::Spring {
             context,
             surface_parameter_ranges,

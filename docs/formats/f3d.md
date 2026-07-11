@@ -354,6 +354,8 @@ Evaluation formulas for all four carriers follow directly from the frame vectors
 
 **`spring_int_cur`**: two ordered support surfaces followed by two ordered BS2 curves, the native curve interval, three discontinuity arrays, one ASM extension flag, and a `CURV_DIR` enum. A `null_surface` is followed immediately by its U and V intervals. A `nullbs` in the first BS2 position is followed immediately by its parameter interval; a `nullbs` in the second position has no conditional interval. The solved cache and fit tolerance follow.
 
+**`defm_int_cur`**: one ASM extension integer, an embedded bend curve, and an integer discriminator. Discriminator 8 is followed by four ordered vectors, a pair count, and two doubles per pair. Discriminator 5 is followed by one embedded support surface. The solved cache and fit tolerance follow either branch.
+
 An embedded freeform support surface is encoded as the `spline` surface discriminator followed by its `nubs`/`nurbs` surface block. Its paired BS2 curve is a direct `nubs`/`nurbs` curve block. Surface control points use length scaling; UV poles, knots, weights, intervals, and discontinuities are unscaled.
 
 Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus` discriminator followed by the same position, orientation, radius, angle, and flag payload used by the corresponding top-level carrier. A zero cone sine denotes a cylinder. Signed sphere and torus radii retain their signs.

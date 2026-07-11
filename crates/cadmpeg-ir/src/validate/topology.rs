@@ -430,6 +430,16 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralCurveDefinition::Deformable { bend, data, .. } => {
+                if !ids.curves.contains(&bend.0) {
+                    ref_error(findings, &procedural.id.0, "curve", &bend.0);
+                }
+                if let crate::geometry::DeformableCurveData::Surface { surface } = data {
+                    if !ids.surfaces.contains(&surface.0) {
+                        ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                    }
+                }
+            }
             ProceduralCurveDefinition::Projection {
                 context, source, ..
             } => {

@@ -465,6 +465,24 @@ pub enum SilhouetteKind {
     },
 }
 
+/// Discriminator-specific payload of a deformable native intcurve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DeformableCurveData {
+    /// Mode 8 vector field followed by ordered scalar pairs.
+    VectorField {
+        /// Four ordered native vectors.
+        vectors: [Vector3; 4],
+        /// Ordered pairs from the mode-8 scalar table.
+        parameter_pairs: Vec<[f64; 2]>,
+    },
+    /// Mode 5 supporting surface.
+    Surface {
+        /// Embedded deformation support surface.
+        surface: SurfaceId,
+    },
+}
+
 /// Neutral semantics for a procedural curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -561,6 +579,15 @@ pub enum ProceduralCurveDefinition {
         first_pcurve_parameter_range: Option<[f64; 2]>,
         /// Native `CURV_DIR` enum value.
         direction: i64,
+    },
+    /// Deformation of an embedded bend curve.
+    Deformable {
+        /// Native ASM extension integer preceding the bend curve.
+        extension: i64,
+        /// Embedded bend curve.
+        bend: CurveId,
+        /// Mode 8 vector field or mode 5 support surface.
+        data: DeformableCurveData,
     },
     /// Projection of a source curve onto a support surface.
     Projection {

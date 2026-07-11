@@ -3387,6 +3387,68 @@ fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable {
+        extension,
+        bend,
+        data,
+    } = &procedural.definition
+    {
+        let bend = target
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *bend)
+            .ok_or_else(|| CodecError::Malformed("deformable bend curve is missing".into()))?;
+        let CurveGeometry::Nurbs(bend) = &bend.geometry else {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D defm_int_cur requires a NURBS bend curve".into(),
+            ));
+        };
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "defm_int_cur")?;
+        native_i64(bytes, *extension);
+        native_nurbs_curve(bytes, bend)?;
+        match data {
+            cadmpeg_ir::geometry::DeformableCurveData::VectorField {
+                vectors,
+                parameter_pairs,
+            } => {
+                native_i64(bytes, 8);
+                for vector in vectors {
+                    native_vector(bytes, [vector.x, vector.y, vector.z]);
+                }
+                native_i64(
+                    bytes,
+                    i64::try_from(parameter_pairs.len()).map_err(|_| {
+                        CodecError::NotImplemented(
+                            "deformable parameter-pair count exceeds i64".into(),
+                        )
+                    })?,
+                );
+                for pair in parameter_pairs {
+                    native_f64(bytes, pair[0]);
+                    native_f64(bytes, pair[1]);
+                }
+            }
+            cadmpeg_ir::geometry::DeformableCurveData::Surface { surface } => {
+                native_i64(bytes, 5);
+                let surface = target
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|candidate| candidate.id == *surface)
+                    .ok_or_else(|| {
+                        CodecError::Malformed("deformable support surface is missing".into())
+                    })?;
+                native_embedded_surface(bytes, &surface.geometry)?;
+            }
+        }
+        native_nurbs_curve(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        bytes.push(0x10);
+        return Ok(true);
+    }
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
         context,
         source,

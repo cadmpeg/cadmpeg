@@ -1066,6 +1066,63 @@ fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_geometry_with_deformable_curve_smbh(mode: i64) -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+        .expect("generated edge reference offsets");
+    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "intcurve");
+    t_ident(&mut curve, "curve");
+    t_ref(&mut curve, -1);
+    t_long(&mut curve, -1);
+    t_ref(&mut curve, -1);
+    curve.push(0x0f);
+    t_ident(&mut curve, "defm_int_cur");
+    t_long(&mut curve, 0);
+    curve.extend_from_slice(&generated_curve_block());
+    t_long(&mut curve, mode);
+    match mode {
+        8 => {
+            for vector in [
+                [1.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
+                [7.0, 8.0, 9.0],
+                [10.0, 11.0, 12.0],
+            ] {
+                t_vec(&mut curve, vector);
+            }
+            t_long(&mut curve, 2);
+            for value in [-1.0, 0.25, 2.0, 3.5] {
+                t_dbl(&mut curve, value);
+            }
+        }
+        5 => {
+            t_ident(&mut curve, "plane");
+            t_pos(&mut curve, [1.0, 2.0, 3.0]);
+            t_vec(&mut curve, [0.0, 0.0, 1.0]);
+            t_vec(&mut curve, [1.0, 0.0, 0.0]);
+            curve.push(0x0b);
+        }
+        _ => unreachable!(),
+    }
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut curve, 0.0005);
+    curve.push(0x10);
+    t_end(&mut curve);
+    bytes.splice(delta..delta, curve);
+    bytes
+}
+
 fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -8193,6 +8250,94 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
         round_trip.ir.model.procedural_curves[0].definition,
         source_less.model.procedural_curves[0].definition
     );
+}
+
+#[test]
+fn generated_deformable_curves_decode_and_write_source_less() {
+    use cadmpeg_ir::geometry::{DeformableCurveData, ProceduralCurveDefinition};
+
+    for mode in [8, 5] {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(
+                    &synthetic_geometry_with_deformable_curve_smbh(mode),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("deformable decode");
+        let ProceduralCurveDefinition::Deformable {
+            extension,
+            bend,
+            data,
+        } = &result.ir.model.procedural_curves[0].definition
+        else {
+            panic!("expected deformable construction")
+        };
+        assert_eq!(*extension, 0);
+        assert!(result.ir.model.curves.iter().any(|curve| curve.id == *bend));
+        match (mode, data) {
+            (
+                8,
+                DeformableCurveData::VectorField {
+                    vectors,
+                    parameter_pairs,
+                },
+            ) => {
+                assert_eq!(vectors[3], cadmpeg_ir::math::Vector3::new(10.0, 11.0, 12.0));
+                assert_eq!(parameter_pairs, &[[-1.0, 0.25], [2.0, 3.5]]);
+            }
+            (5, DeformableCurveData::Surface { surface }) => {
+                assert!(result
+                    .ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .any(|item| item.id == *surface));
+            }
+            _ => panic!("wrong deformable discriminator payload"),
+        }
+        let expected_data = data.clone();
+
+        let mut source_less = result.ir;
+        source_less.source = None;
+        source_less.unknowns.clear();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less deformable encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("source-less deformable round trip");
+        let ProceduralCurveDefinition::Deformable {
+            extension: round_extension,
+            bend: round_bend,
+            data: round_data,
+        } = &round_trip.ir.model.procedural_curves[0].definition
+        else {
+            panic!("expected round-trip deformable construction")
+        };
+        assert_eq!(*round_extension, 0);
+        match (&expected_data, round_data) {
+            (DeformableCurveData::VectorField { .. }, DeformableCurveData::VectorField { .. }) => {
+                assert_eq!(round_data, &expected_data)
+            }
+            (DeformableCurveData::Surface { .. }, DeformableCurveData::Surface { surface }) => {
+                assert!(round_trip
+                    .ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .any(|item| item.id == *surface))
+            }
+            _ => panic!("round-trip deformable discriminator changed"),
+        }
+        assert!(round_trip
+            .ir
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.id == *round_bend));
+    }
 }
 
 #[test]
