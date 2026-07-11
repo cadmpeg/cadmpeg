@@ -1,33 +1,51 @@
 // SPDX-License-Identifier: Apache-2.0
-//! # cadmpeg-codec-catia
+//! Reads CATIA V5 `.CATPart` files into [`cadmpeg_ir::CadIr`].
 //!
-//! Decoder for Dassault Systèmes CATIA V5 `.CATPart` files.
+//! [`CatiaCodec`] implements the shared [`Codec`] interface. It detects the
+//! `V5_CFV2` file signature, inspects catalogued logical streams, identifies the
+//! storage variant, and decodes the record families supported for that variant.
 //!
-//! ## What is implemented
+//! Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! on the cadmpeg support ladder for the standard-nested layout; other layouts
+//! are L1.
 //!
-//! A `.CATPart` is a `V5_CFV2` container: an outer file header with a big-endian
-//! directory offset/length pair, and (for most parts) a nested `V5_CFV2`
-//! sub-container whose `CATIA_V5 CB0001` directory catalogues named logical
-//! streams as extent lists. The geometry is stored in one of **five distinct
-//! families**, each with its own decode path. This codec:
+//! # Decode a part
 //!
-//! - [`CatiaCodec::detect`] recognizes the unique `V5_CFV2\0` outer magic;
-//! - [`CatiaCodec::inspect`] parses the outer header, reconstructs the inner
-//!   stream directory, enumerates its named streams, and identifies the storage
-//!   variant (spec §1) — this works for every variant;
-//! - [`CatiaCodec::decode`] decodes standard-nested `05 08 01` vertex points,
-//!   tag-bridged planes, and inline analytic carriers from `SurfacicReps`; it
-//!   also decodes directly framed analytic carriers in zero-entity `a9 03`
-//!   streams, E5 circle/cone/torus carriers, and `a8`/`a5` freeform NURBS
-//!   carrier pools where present.
+//! ```
+//! use std::fs::File;
 //!
-//! ## What is decoded, and what is reported as loss
+//! use cadmpeg_codec_catia::CatiaCodec;
+//! use cadmpeg_ir::{Codec, DecodeOptions};
 //!
-//! Standard-nested geometry decodes vertices, analytic carriers, compatible
-//! circle/line carriers, and faces when their stored senses are available.
-//! Zero-entity, E5, and object-stream families transfer their directly framed
-//! carriers. Remaining carrier-to-topology bindings are reported as loss rather
-//! than fabricated.
+//! # fn run() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut input = File::open("part.CATPart")?;
+//! let decoded = CatiaCodec.decode(&mut input, &DecodeOptions::default())?;
+//! println!("{} surfaces", decoded.ir.model.surfaces.len());
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! Read `decoded.report.losses` before consuming model relationships. A partial
+//! decode preserves the native payload in an unknown record and reports the
+//! model layers that remain unresolved.
+//!
+//! # Format model
+//!
+//! Most `CATPart` files contain an outer `V5_CFV2` header and a nested container.
+//! Its `CATIA_V5 CB0001` directory maps named logical streams to physical extent
+//! lists. [`container`] reconstructs these streams before [`decode`] selects a
+//! decoder using [`variant::Variant`].
+//!
+//! Standard nested parts can produce analytic surfaces, curves, vertices,
+//! bodies, faces, loops, coedges, and edges when the stored trim and endpoint
+//! relations resolve to one graph. Other recognized layouts expose supported
+//! analytic or NURBS carriers and selected bindings. The codec does not write
+//! `CATPart` files or decode assemblies, design history, tessellation,
+//! appearances, materials, persistent tags, or general document metadata.
+//!
+//! The low-level [`geometry`], [`topology`], [`b5`], [`e5`], and
+//! [`zero_entity`] modules expose record decoders for applications that need
+//! format-level access.
 
 pub mod b5;
 pub mod container;

@@ -3,22 +3,18 @@
 //!
 //! Carriers are stored in their own arenas and referenced by id from the
 //! topology graph (a face references a [`Surface`], an edge a [`Curve`], a
-//! coedge a [`Pcurve`]). This mirrors the ACIS/ASM model where geometry is
-//! shared by reference — the f3d spec notes ~35% of faces share a surface
-//! entity by reference id (see the f3d program notes on sequential-ID surface
-//! sharing).
+//! coedge a [`Pcurve`]). One carrier may therefore support several topological
+//! entities.
 
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{Point2, Point3, Vector3};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// A NURBS surface or curve knot/pole payload.
+/// A tensor-product NURBS surface.
 ///
-/// Fields follow the ASM `nubs`/`nurbs` block grammar: degrees, full (clamped)
-/// knot vectors per parametric direction, a flat control-point list in
-/// row-major (u-major) order, and optional per-pole weights (absent ⇒
-/// non-rational). Pole counts equal `knots.len() - degree - 1` per direction.
+/// Control points use u-major order. `weights == None` denotes a non-rational
+/// surface. Validation checks knot, count, control-point, and weight lengths.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct NurbsSurface {
     /// Degree in the u parametric direction.
@@ -35,7 +31,7 @@ pub struct NurbsSurface {
     pub v_count: u32,
     /// Control points, u-major: index `i*v_count + j` is pole `(i, j)`.
     pub control_points: Vec<Point3>,
-    /// Per-pole weights (same order as `control_points`); `None` ⇒ non-rational.
+    /// Per-pole weights in control-point order; `None` denotes non-rational.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weights: Option<Vec<f64>>,
     /// Whether the surface is periodic in u.
@@ -53,19 +49,14 @@ pub struct NurbsCurve {
     pub knots: Vec<f64>,
     /// Control points in parameter order.
     pub control_points: Vec<Point3>,
-    /// Per-pole weights; `None` ⇒ non-rational.
+    /// Per-pole weights; `None` denotes non-rational.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weights: Option<Vec<f64>>,
     /// Whether the curve is periodic.
     pub periodic: bool,
 }
 
-/// The analytic or free-form shape of a surface carrier.
-///
-/// The analytic variants (plane…torus) correspond to the ASM analytic surface
-/// carriers; [`SurfaceGeometry::Nurbs`] covers spline surfaces and reduced
-/// blends. Feature-specific blend subtypes are decoded into NURBS rather than
-/// modeled as distinct IR variants in v0.
+/// Analytic, NURBS, or opaque surface geometry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SurfaceGeometry {
@@ -130,15 +121,9 @@ pub enum SurfaceGeometry {
     },
     /// Free-form NURBS surface.
     Nurbs(NurbsSurface),
-    /// The face's topology is known but its surface geometry was not decoded
-    /// into a typed carrier (e.g. a spline or procedural surface the decoder
-    /// recognizes as a record but cannot yet interpret). The face keeps its
-    /// loops and trims; only the underlying shape is opaque.
+    /// Surface geometry that has no typed neutral representation.
     ///
-    /// `record` links to the preserved raw bytes in the [`crate::unknown`]
-    /// arena so a re-encode path can recover the original record. It is
-    /// `Option` because a surface can be known-unknown even when the decoder
-    /// did not (or could not) retain the bytes.
+    /// `record` links to retained source bytes when available.
     ///
     /// A [`Surface`] carrying this variant should have entity exactness
     /// [`Exactness::Unknown`](crate::provenance::Exactness::Unknown) in the
@@ -151,7 +136,7 @@ pub enum SurfaceGeometry {
     },
 }
 
-/// A surface carrier: geometry plus id and provenance.
+/// An identified surface carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Surface {
     /// Arena id.
@@ -219,6 +204,11 @@ pub enum CurveGeometry {
         /// Semi-conjugate radius.
         minor_radius: f64,
     },
+    /// A curve collapsed to one model-space point at a topological singularity.
+    Degenerate {
+        /// The collapsed curve point.
+        point: Point3,
+    },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
     /// Native curve carrier whose shape is not decoded.
@@ -269,10 +259,7 @@ pub struct Curve {
     pub geometry: CurveGeometry,
 }
 
-/// A v1 source-native surface construction retained beside its solved carrier.
-///
-/// This type is parallel to [`ProceduralSurface`]; the v0 carrier remains
-/// unchanged during the additive migration.
+/// A neutral surface construction linked to its solved carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ProceduralSurface {
     /// Stable construction identity.
@@ -286,7 +273,7 @@ pub struct ProceduralSurface {
     pub cache_fit_tolerance: Option<f64>,
 }
 
-/// Neutral v1 taxonomy for source-native surface constructions.
+/// Neutral semantics for a procedural surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralSurfaceDefinition {
@@ -370,7 +357,7 @@ pub enum BlendCrossSection {
     Polynomial,
 }
 
-/// Radius law for a v1 procedural blend.
+/// Radius law for a procedural blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BlendRadiusLaw {
@@ -393,10 +380,7 @@ pub enum BlendRadiusLaw {
     },
 }
 
-/// A v1 source-native curve construction retained beside its solved carrier.
-///
-/// This type is parallel to [`ProceduralCurve`]; the v0 carrier remains
-/// unchanged during the additive migration.
+/// A neutral curve construction linked to its solved carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ProceduralCurve {
     /// Stable construction identity.
@@ -410,10 +394,38 @@ pub struct ProceduralCurve {
     pub cache_fit_tolerance: Option<f64>,
 }
 
-/// Neutral v1 taxonomy for source-native curve constructions.
+/// Neutral semantics for a procedural curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralCurveDefinition {
+    /// An exact native intcurve whose solved NURBS cache is authoritative.
+    Exact,
+    /// Ordered compound of native child curves with construction parameters.
+    Compound {
+        /// Leading native parameter array.
+        parameters: Vec<f64>,
+        /// One native scalar paired with each child curve.
+        component_parameters: Vec<f64>,
+        /// Ordered child curves forming the compound construction.
+        components: Vec<CurveId>,
+    },
+    /// Circular or conical helix around an axis.
+    Helix {
+        /// Native angular parameter interval.
+        angle_range: [f64; 2],
+        /// Axis origin at the start of the helix.
+        center: Point3,
+        /// Major profile-radius vector.
+        major: Vector3,
+        /// Minor profile-radius vector; its orientation records handedness.
+        minor: Vector3,
+        /// Axial rise vector per full revolution.
+        pitch: Vector3,
+        /// Linear radial growth per revolution fraction; zero is cylindrical.
+        apex_factor: f64,
+        /// Unit helix axis direction.
+        axis: Vector3,
+    },
     /// Intersection of two support surfaces.
     Intersection {
         /// The two intersecting surfaces; `None` when a side was not resolved.
@@ -440,6 +452,26 @@ pub enum ProceduralCurveDefinition {
         /// to a support surface; `None` for a free-space offset.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         support: Option<SurfaceId>,
+    },
+    /// Free-space vector offset of a source curve over a parameter interval.
+    VectorOffset {
+        /// Curve being offset.
+        source: CurveId,
+        /// Native parameter interval on the source curve.
+        parameter_range: [f64; 2],
+        /// Model-space offset vector.
+        offset: Vector3,
+        /// Native role labels following the offset vector.
+        labels: [String; 2],
+        /// Native integer role codes paired with `labels`.
+        codes: [i64; 2],
+    },
+    /// A parameter sub-range of a parent curve.
+    Subset {
+        /// Parent curve being restricted.
+        source: CurveId,
+        /// Native parameter interval retained from the parent.
+        parameter_range: [f64; 2],
     },
     /// Spine or center curve of a blend surface.
     BlendSpine {
@@ -474,19 +506,31 @@ pub enum PcurveGeometry {
         knots: Vec<f64>,
         /// Control points in (u, v) parameter space.
         control_points: Vec<Point2>,
-        /// Per-pole weights; `None` ⇒ non-rational.
+        /// Per-pole weights; `None` denotes non-rational.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         weights: Option<Vec<f64>>,
+        /// Whether the parameter-space curve is periodic.
+        #[serde(default)]
+        periodic: bool,
     },
 }
 
 /// A pcurve carrier: the 2D image of a coedge in its face's surface parameter
 /// space. Referenced by a coedge; the owning surface establishes whether a
-/// parameter dimension is a length (relevant to unit scaling, see f3d spec §6).
+/// parameter dimension is a length (relevant to unit scaling, see [F3D spec §6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#6-topology-records)).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Pcurve {
     /// Arena id.
     pub id: PcurveId,
     /// Parameter-space shape.
     pub geometry: PcurveGeometry,
+    /// Inline `exp_par_cur` parameterization reversal; absent on ref-form pcurves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wrapper_reversed: Option<bool>,
+    /// Native parameter interval on which this pcurve is evaluated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_range: Option<[f64; 2]>,
+    /// Parameter-space fit tolerance following the solved UV cache.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fit_tolerance: Option<f64>,
 }

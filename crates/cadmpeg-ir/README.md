@@ -1,10 +1,9 @@
 # cadmpeg-ir
 
-`cadmpeg-ir` is the common data model used by every cadmpeg codec. Use it to
-work with decoded CAD data without coupling your code to one source format.
-
-The crate includes the `CadIr` document type, codec traits, canonical JSON,
-validation, structural diffing, and source annotations.
+`cadmpeg-ir` defines the format-neutral document exchanged by cadmpeg codecs.
+It provides the `CadIr` data model, codec interfaces, validation, structural
+diffing, JSON serialization, and explicit representations of source fidelity
+and decode loss.
 
 ## Install
 
@@ -12,7 +11,28 @@ validation, structural diffing, and source annotations.
 cargo add cadmpeg-ir
 ```
 
-## Use
+## Model
+
+A `CadIr` document contains:
+
+- canonical units and document tolerances;
+- flat, ID-referenced arenas for topology, geometry, construction features,
+  tessellation, appearance, and source attributes;
+- sparse provenance and exactness annotations;
+- independently versioned source-native namespaces;
+- retained records whose bytes could not be mapped to typed entities.
+
+The topology graph follows
+`body → region → shell → face → loop → coedge → edge → vertex`. Faces reference
+surface carriers, edges reference curve carriers, coedges may reference
+parameter-space curves, and vertices reference points. IDs are globally unique
+within a document. Arena order is canonical after `CadIr::finalize`.
+
+Coordinates and linear quantities use millimeters. Angular quantities use
+radians. Constructors do not enforce document invariants; call `validate`
+after construction or transformation.
+
+## Construct and consume a document
 
 Create and validate an empty current-version document:
 
@@ -20,14 +40,23 @@ Create and validate an empty current-version document:
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{validate, CadIr};
 
-let ir = CadIr::empty(Units::default());
-let report = validate(&ir);
+let mut ir = CadIr::empty(Units::default());
+// Populate ir.model arenas and use typed IDs to connect entities.
+ir.finalize();
+let report = validate(&ir, Vec::new());
 
-assert_eq!(report.error_count(), 0);
+assert!(report.is_ok());
 assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);
 ```
 
-Format crates implement the object-safe `Codec` trait:
+`CadIr::to_canonical_json` emits pretty JSON after the caller establishes
+canonical arena order. `CadIr::from_json` parses only the IR version supported
+by the current crate. `diff` compares units, tolerances, annotations, and entity
+arenas by stable identity.
+
+Format crates implement the object-safe `Codec` trait. A consumer can select a
+codec by detection confidence, inspect a container without decoding geometry,
+then decode the selected source:
 
 ```rust
 use cadmpeg_ir::{Codec, Confidence};
@@ -37,15 +66,24 @@ fn accepts(codec: &dyn Codec, prefix: &[u8]) -> bool {
 }
 ```
 
+`DecodeResult` contains the finalized document and a `DecodeReport`.
+`CodecError` represents operation failure such as wrong format, malformed
+container, unsupported capability, or I/O failure. Successful decoding can
+still be incomplete: `LossNote` records transferred information that was
+approximated or omitted, while `UnknownRecord` retains an uninterpreted source
+record by location, digest, links, and optional bytes.
+
+Entity and field fidelity belongs in `Annotations`. Missing exactness entries
+mean byte-exact. Other entries distinguish deterministic derivation, inference,
+and unknown origin. Provenance entries identify source streams and byte
+offsets.
+
 ## Scope
 
-Version 1 covers units, tolerances, B-rep topology, analytic and spline
-geometry, tessellation, appearance, and design records. Entity IDs connect flat
-arenas, which keeps serialized documents stable and easy to diff.
-
-Assembly structure is reserved. Feature history currently stores ordered
-operations rather than a model that cadmpeg can replay. `UnknownRecord` keeps
-source records that a codec cannot map yet.
+IR version 1 covers B-rep topology, analytic and NURBS geometry, procedural
+construction links, tessellation, appearance, attributes, and neutral feature
+records. Native namespaces retain format-specific design and history records.
+Assembly instancing, component trees, and joint constraints are reserved.
 
 ## Documentation
 

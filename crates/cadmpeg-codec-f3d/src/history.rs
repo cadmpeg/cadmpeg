@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! ASM construction-history container and `delta_state` headers.
+//! Decode the ASM construction-history partition after the active model slice.
+//!
+//! [`decode`] reads `delta_state` headers, bulletin-board entity changes, and
+//! history records while retaining source bytes for records without typed
+//! semantics.
 
 use cadmpeg_ir::history::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
@@ -10,7 +14,7 @@ const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
 
 /// Decode the construction-history tail of an ASM stream: every `delta_state`
-/// record (spec §2.3) from `bytes`, each with its `BulletinBoard` chain of
+/// record ([spec §2.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#23-delta_state-records)) from `bytes`, each with its `BulletinBoard` chain of
 /// per-entity insert/delete/update changes and the raw history-entity records
 /// framed between it and the next `delta_state`. `stream` is the source ZIP
 /// entry name, recorded in each decoded item's provenance. Returns `None` when

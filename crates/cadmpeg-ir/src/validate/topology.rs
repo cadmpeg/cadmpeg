@@ -358,6 +358,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ref_error(findings, &procedural.curve.0, "curve", &procedural.curve.0);
         }
         match &procedural.definition {
+            ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
+            ProceduralCurveDefinition::Compound { components, .. } => {
+                for component in components {
+                    if !ids.curves.contains(&component.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &component.0);
+                    }
+                }
+            }
             ProceduralCurveDefinition::Intersection { supports } => {
                 for support in supports.iter().flatten() {
                     if !ids.surfaces.contains(&support.0) {
@@ -385,6 +393,16 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     if !ids.surfaces.contains(&support.0) {
                         ref_error(findings, &procedural.id.0, "surface", &support.0);
                     }
+                }
+            }
+            ProceduralCurveDefinition::VectorOffset { source, .. } => {
+                if !ids.curves.contains(&source.0) {
+                    ref_error(findings, &procedural.id.0, "curve", &source.0);
+                }
+            }
+            ProceduralCurveDefinition::Subset { source, .. } => {
+                if !ids.curves.contains(&source.0) {
+                    ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
             }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {

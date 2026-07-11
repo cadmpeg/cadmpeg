@@ -1,18 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! SAB (ACIS binary) token stream framing.
+//! Frame SAB (ACIS binary) token streams.
 //!
-//! The active model slice of an ASM `.smbh`/`.smb` stream is a tag-typed token
-//! stream: every value is introduced by a one-byte tag whose payload width is
-//! either fixed or carried by a length prefix (see the tag table below). Records
-//! are delimited by the `0x11` terminator at subtype-nesting depth 0; subtype
-//! scopes are brace-balanced by `0x0f`/`0x10`. A record's name is the `-`-joined
-//! chain of `0x0e` sub-identifiers terminated by one `0x0d` identifier.
+//! The active slice of an ASM `.smbh` or `.smb` stream uses one-byte type tags.
+//! Payloads have fixed widths or length prefixes. A `0x11` tag terminates a
+//! record at subtype depth zero, while `0x0f` and `0x10` delimit subtype scopes.
+//! Record names join a chain of `0x0e` sub-identifiers ending in one `0x0d`
+//! identifier.
 //!
-//! This module turns those bytes into a [`Vec<Record>`], the `RecordTable` that
-//! topology and geometry decoding index into. Because every token's width is
-//! known, the framer stays byte-synchronized even across records whose interior
-//! payload this codec does not interpret (splines, attributes) — it can still
-//! find their boundaries and preserve them.
+//! [`frame`] returns the indexed [`Record`] table consumed by
+//! [`crate::brep`]. Framing every token preserves byte synchronization and
+//! record extents without requiring semantic decoding of each payload.
 
 /// A decoded SAB token. Only the payload this codec consumes is retained with a
 /// typed value; all tokens are still framed so record boundaries stay exact.
@@ -318,11 +315,11 @@ pub(crate) fn payload_token_offsets(
     Ok(offsets)
 }
 
-/// Frame the active slice `bytes[start..limit]` into the `RecordTable`.
+/// Frame `bytes[start..limit]` into an indexed record table.
 ///
 /// `ref_width` is the stream's reference width (8 for `BinaryFile8`). Framing
-/// stops at `limit`, at end of stream, or when it reaches the `delta_state`
-/// history boundary record — the active model slice is everything before it.
+/// stops at `limit`, the end of the byte slice, or the `delta_state` history
+/// boundary.
 pub fn frame(
     bytes: &[u8],
     start: usize,

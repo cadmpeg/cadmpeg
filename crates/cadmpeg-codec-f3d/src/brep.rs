@@ -1,32 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
-//! B-rep topology and analytic geometry decode from a framed SAB `RecordTable`.
+//! Build B-rep topology and geometry from a framed SAB record table.
 //!
-//! Given the [`crate::sab`] `RecordTable` of an active model slice, this builds
-//! the IR topology graph (`body → region → shell → face → loop → coedge → edge →
-//! vertex → point`) and the analytic surface/curve carriers it references
-//! (`plane`, `cone`/cylinder, `sphere`, `torus`, `straight` line,
-//! `ellipse`/circle). Fusion `BinaryFile8` model-space lengths are centimetres
-//! and are converted to millimetres (×10) at read time; unit vectors, ratios,
-//! and angles are not scaled.
+//! [`decode`] follows the topology chain from bodies through vertices and
+//! points. It creates analytic carriers for planes, cylinders, cones, spheres,
+//! tori, lines, circles, and ellipses. [`crate::nurbs`] supplies cached NURBS
+//! surfaces, 3D curves, and pcurves for spline and procedural records.
 //!
-//! Free-form spline surfaces and procedural `intcurve` curves are subtype-
-//! dispatched constructions this codec does not evaluate, but they carry an
-//! inline cached B-spline block ([`crate::nurbs`]) that is decoded into a NURBS
-//! carrier where present. A face whose surface cache is a decodable B-spline
-//! gets a [`SurfaceGeometry::Nurbs`] carrier; one whose cache is absent or an
-//! unparsed procedural form keeps its loops and trims but carries a
-//! [`SurfaceGeometry::Unknown`] surface linking to the preserved record bytes
-//! ([`UnknownRecord`]). An edge whose 3D curve cache decodes gets a
-//! [`CurveGeometry::Nurbs`]; otherwise it is emitted with no attributed curve.
-//! What is not understood is reported, never fabricated.
+//! Faces retain their loops and trims when a referenced surface has no decoded
+//! shape; the emitted [`SurfaceGeometry::Unknown`] links to the corresponding
+//! [`UnknownRecord`]. Edges retain vertices and parameter ranges when their 3D
+//! curve carrier is unavailable. [`Stats`] records these transfer losses for
+//! the decode report.
+//!
+//! ASM model-space lengths become millimetres. Unit vectors, ratios, angles,
+//! knots, weights, and UV parameters keep their native scale.
 
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::design::{PersistentDesignLink, SketchCurveLink};
 use cadmpeg_ir::geometry::{
-    BlendSupport, Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    BlendSupport, Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     AttributeId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId,
@@ -104,7 +99,7 @@ pub struct AnnotationRecord {
     pub derived_fields: Vec<&'static str>,
 }
 
-/// Counts of what could not be transferred faithfully.
+/// Counts used to construct the B-rep loss report.
 #[derive(Default)]
 pub struct Stats {
     /// Faces resting on a spline/procedural surface whose shape was not decoded
@@ -186,7 +181,7 @@ fn is_analytic_surface(head: &str) -> bool {
 
 /// Whether a record name heads an analytic curve carrier.
 fn is_analytic_curve(head: &str) -> bool {
-    matches!(head, "straight" | "ellipse")
+    matches!(head, "straight" | "ellipse" | "degenerate_curve")
 }
 
 /// Decode an analytic surface carrier. Signed sphere and torus radii remain in
@@ -353,6 +348,9 @@ pub(crate) fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
                 })
             }
         }
+        "degenerate_curve" => Some(CurveGeometry::Degenerate {
+            point: scale_point(base),
+        }),
         _ => None,
     }
 }
@@ -361,6 +359,35 @@ fn sense_at(rec: &Record, i: usize) -> Sense {
     match rec.chunk(i) {
         Some(Token::True) => Sense::Reversed,
         _ => Sense::Forward,
+    }
+}
+
+/// The record-level sense bit of an `intcurve` or `spline` carrier: the boolean
+/// token immediately before the record's subtype scope ([spec §7.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#76-intcurve-and-spline-subtypes)). `true`
+/// marks geometry as the reverse of its cached definition. A reversed intcurve
+/// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
+/// spline surface flips the cache normal.
+fn record_reversed(rec: &Record) -> bool {
+    for token in &rec.tokens {
+        match token {
+            Token::True => return true,
+            Token::False | Token::SubtypeOpen => return false,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Reparameterize a cached B-spline to its record's reversed sense,
+/// `C'(t) = C(-t)`, by reversing poles and weights and negating reversed knots.
+fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
+    curve.control_points.reverse();
+    if let Some(weights) = curve.weights.as_mut() {
+        weights.reverse();
+    }
+    curve.knots.reverse();
+    for knot in &mut curve.knots {
+        *knot = -*knot;
     }
 }
 
@@ -512,7 +539,8 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         degree: decoded.degree,
                                         knots: decoded.knots,
                                         control_points: decoded.control_points,
-                                        weights: None,
+                                        weights: decoded.weights,
+                                        periodic: decoded.periodic,
                                     },
                                 );
                                 kept_pcurves.insert(pc);
@@ -555,14 +583,23 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                     bytes,
                                                 )
                                             {
-                                                curve_geo.insert(
-                                                    cv,
-                                                    CurveGeometry::Nurbs(decoded.curve),
-                                                );
+                                                let mut curve = decoded.curve;
+                                                // A reversed intcurve parameterizes
+                                                // as the negation of its cache; the
+                                                // edge's stored range is on the
+                                                // reversed parameterization.
+                                                if record_reversed(crec) {
+                                                    reverse_nurbs_curve(&mut curve);
+                                                }
+                                                curve_geo.insert(cv, CurveGeometry::Nurbs(curve));
                                                 procedural_curve_defs.insert(
                                                     cv,
                                                     (
                                                         decoded.native_kind,
+                                                        decoded.definition,
+                                                        decoded.vector_offset,
+                                                        decoded.subset,
+                                                        decoded.compound,
                                                         decoded.cache_fit_tolerance,
                                                     ),
                                                 );
@@ -586,6 +623,101 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 }
             }
             loop_ref = lp.ref_at(3);
+        }
+    }
+
+    let mut wire_edges_by_shell = HashMap::<i64, Vec<i64>>::new();
+    for shell in records.iter().filter(|record| record.head == "shell") {
+        let shell_index = shell.index as i64;
+        let mut wire_ref = shell.ref_at(6);
+        let mut wire_guard = HashSet::new();
+        while let Some(wire_index) = wire_ref.filter(|index| wire_guard.insert(*index)) {
+            let Some(wire) = by_index
+                .get(&wire_index)
+                .filter(|record| record.head == "wire")
+            else {
+                break;
+            };
+            if let Some(first_coedge) = wire.ref_at(4) {
+                let mut coedge_ref = Some(first_coedge);
+                let mut coedge_guard = HashSet::new();
+                while let Some(coedge_index) =
+                    coedge_ref.filter(|index| coedge_guard.insert(*index))
+                {
+                    let Some(coedge) = by_index
+                        .get(&coedge_index)
+                        .filter(|record| record.head == "coedge")
+                    else {
+                        break;
+                    };
+                    if let Some(edge_index) = coedge.ref_at(6) {
+                        let edges = wire_edges_by_shell.entry(shell_index).or_default();
+                        if !edges.contains(&edge_index) {
+                            edges.push(edge_index);
+                        }
+                        if let Some(edge) = by_index.get(&edge_index) {
+                            if edge.head == "edge" && kept_edges.insert(edge_index) {
+                                for slot in [3usize, 5] {
+                                    if let Some(vertex_index) = edge.ref_at(slot) {
+                                        if let Some(vertex) = by_index.get(&vertex_index) {
+                                            if vertex.head == "vertex" {
+                                                kept_vertices.insert(vertex_index);
+                                                if let Some(point_index) = vertex.ref_at(5) {
+                                                    kept_points.insert(point_index);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if let Some(curve_index) = edge.ref_at(8) {
+                                    match curve_geo.entry(curve_index) {
+                                        std::collections::hash_map::Entry::Occupied(_) => {
+                                            kept_curves.insert(curve_index);
+                                        }
+                                        std::collections::hash_map::Entry::Vacant(entry) => {
+                                            if let Some(curve_record) = by_index.get(&curve_index) {
+                                                if let Some(decoded) =
+                                                    nurbs::decode_procedural_curve_resolving_refs(
+                                                        record_slice(curve_record, bytes),
+                                                        bytes,
+                                                    )
+                                                {
+                                                    let mut curve = decoded.curve;
+                                                    if record_reversed(curve_record) {
+                                                        reverse_nurbs_curve(&mut curve);
+                                                    }
+                                                    entry.insert(CurveGeometry::Nurbs(curve));
+                                                    procedural_curve_defs.insert(
+                                                        curve_index,
+                                                        (
+                                                            decoded.native_kind,
+                                                            decoded.definition,
+                                                            decoded.vector_offset,
+                                                            decoded.subset,
+                                                            decoded.compound,
+                                                            decoded.cache_fit_tolerance,
+                                                        ),
+                                                    );
+                                                    kept_curves.insert(curve_index);
+                                                    out.stats.nurbs_curves += 1;
+                                                } else {
+                                                    undecoded_carriers.insert(curve_index);
+                                                    out.stats.procedural_curve_edges += 1;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    coedge_ref = coedge.ref_at(3);
+                    if coedge_ref == Some(first_coedge) {
+                        break;
+                    }
+                }
+            }
+            wire_ref = wire.ref_at(3);
         }
     }
 
@@ -695,13 +827,65 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     geometry,
                 });
                 if let Some(procedural) = procedural_curve_defs.remove(&i) {
+                    let definition = if let Some((source, parameter_range, offset, labels, codes)) =
+                        procedural.2
+                    {
+                        let source_id = CurveId(format!("f3d:brep:procedural_curve#{i}:source"));
+                        out.curves.push(Curve {
+                            id: source_id.clone(),
+                            geometry: CurveGeometry::Nurbs(source),
+                        });
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
+                            source: source_id,
+                            parameter_range,
+                            offset,
+                            labels,
+                            codes,
+                        }
+                    } else if let Some((source, parameter_range)) = procedural.3 {
+                        let source_id = CurveId(format!("f3d:brep:procedural_curve#{i}:source"));
+                        out.curves.push(Curve {
+                            id: source_id.clone(),
+                            geometry: CurveGeometry::Nurbs(source),
+                        });
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                            source: source_id,
+                            parameter_range,
+                        }
+                    } else if let Some((parameters, component_parameters, components)) =
+                        procedural.4
+                    {
+                        let components = components
+                            .into_iter()
+                            .enumerate()
+                            .map(|(component, curve)| {
+                                let id = CurveId(format!(
+                                    "f3d:brep:procedural_curve#{i}:component#{component}"
+                                ));
+                                out.curves.push(Curve {
+                                    id: id.clone(),
+                                    geometry: CurveGeometry::Nurbs(curve),
+                                });
+                                id
+                            })
+                            .collect();
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
+                            parameters,
+                            component_parameters,
+                            components,
+                        }
+                    } else {
+                        procedural.1.unwrap_or(
+                            cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
+                                record: None,
+                            },
+                        )
+                    };
                     out.procedural_curves.push(ProceduralCurve {
                         id: format!("f3d:brep:procedural_curve#{i}").into(),
                         curve: CurveId(id(i)),
-                        definition: cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
-                            record: None,
-                        },
-                        cache_fit_tolerance: procedural.1,
+                        definition,
+                        cache_fit_tolerance: procedural.5,
                     });
                 }
             }
@@ -716,6 +900,37 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 out.pcurves.push(Pcurve {
                     id: PcurveId(id(i)),
                     geometry,
+                    wrapper_reversed: match r.chunk(4) {
+                        Some(Token::True) if matches!(r.chunk(3), Some(Token::Long(0))) => {
+                            Some(true)
+                        }
+                        Some(Token::False) if matches!(r.chunk(3), Some(Token::Long(0))) => {
+                            Some(false)
+                        }
+                        _ => None,
+                    },
+                    parameter_range: if matches!(
+                        r.chunk(4),
+                        Some(Token::True | Token::False | Token::Ref(_))
+                    ) {
+                        let values = r
+                            .tokens
+                            .iter()
+                            .filter_map(|token| match token {
+                                Token::Double(value) => Some(*value),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>();
+                        values
+                            .get(values.len().saturating_sub(2)..)
+                            .filter(|values| values.len() == 2)
+                            .map(|values| [values[0], values[1]])
+                    } else {
+                        None
+                    },
+                    fit_tolerance: matches!(r.chunk(4), Some(Token::True | Token::False))
+                        .then(|| nurbs::decode_pcurve_fit_tolerance(record_slice(r, bytes)))
+                        .flatten(),
                 });
             }
         }
@@ -850,11 +1065,25 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 continue;
             };
             let loops = loop_chain(r, &by_index, &kept_loops);
+            // The face record's sense is relative to its surface record's
+            // orientation. A reversed spline record flips the cache normal, and
+            // the IR stores the cache itself, so the reversal folds into the
+            // face sense to keep the IR self-consistent.
+            let mut sense = sense_at(r, 8);
+            if by_index
+                .get(&surface)
+                .is_some_and(|surf| surf.head == "spline" && record_reversed(surf))
+            {
+                sense = match sense {
+                    Sense::Forward => Sense::Reversed,
+                    Sense::Reversed => Sense::Forward,
+                };
+            }
             out.faces.push(Face {
                 id: FaceId(id(i)),
                 shell: ShellId(id(owner)),
                 surface: SurfaceId(id(surface)),
-                sense: sense_at(r, 8),
+                sense,
                 loops,
                 name: None,
                 color: attribute_color(r),
@@ -875,7 +1104,12 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     id: ShellId(id(i)),
                     region: RegionId(id(owner)),
                     faces,
-                    wire_edges: Vec::new(),
+                    wire_edges: wire_edges_by_shell
+                        .get(&i)
+                        .into_iter()
+                        .flatten()
+                        .map(|edge| EdgeId(id(*edge)))
+                        .collect(),
                     free_vertices: Vec::new(),
                 });
             }
@@ -1190,7 +1424,65 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         });
     }
 
+    classify_body_kinds(&mut out);
+
     out
+}
+
+fn classify_body_kinds(out: &mut Brep) {
+    for body in &mut out.bodies {
+        let shell_ids = out
+            .regions
+            .iter()
+            .filter(|region| region.body == body.id)
+            .flat_map(|region| &region.shells)
+            .collect::<HashSet<_>>();
+        let face_ids = out
+            .shells
+            .iter()
+            .filter(|shell| shell_ids.contains(&shell.id))
+            .flat_map(|shell| &shell.faces)
+            .collect::<HashSet<_>>();
+        let has_wire_edges = out
+            .shells
+            .iter()
+            .filter(|shell| shell_ids.contains(&shell.id))
+            .any(|shell| !shell.wire_edges.is_empty());
+        if face_ids.is_empty() {
+            body.kind = cadmpeg_ir::topology::BodyKind::Wire;
+            continue;
+        }
+        if has_wire_edges {
+            body.kind = cadmpeg_ir::topology::BodyKind::General;
+            continue;
+        }
+        let loop_ids = out
+            .faces
+            .iter()
+            .filter(|face| face_ids.contains(&face.id))
+            .flat_map(|face| &face.loops)
+            .collect::<HashSet<_>>();
+        let coedge_ids = out
+            .loops
+            .iter()
+            .filter(|loop_| loop_ids.contains(&loop_.id))
+            .flat_map(|loop_| &loop_.coedges)
+            .collect::<HashSet<_>>();
+        let mut edge_use_counts = HashMap::<&EdgeId, usize>::new();
+        for coedge in out
+            .coedges
+            .iter()
+            .filter(|coedge| coedge_ids.contains(&coedge.id))
+        {
+            *edge_use_counts.entry(&coedge.edge).or_default() += 1;
+        }
+        body.kind =
+            if !edge_use_counts.is_empty() && edge_use_counts.values().all(|count| *count == 2) {
+                cadmpeg_ir::topology::BodyKind::Solid
+            } else {
+                cadmpeg_ir::topology::BodyKind::Sheet
+            };
+    }
 }
 
 fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {

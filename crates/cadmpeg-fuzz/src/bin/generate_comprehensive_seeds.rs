@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Comprehensive seed generator for all codec fuzz targets.
-//! Includes deep topology, NURBS, and variant-specific fixtures.
-//! Run: cargo run --bin generate_comprehensive_seeds
+//! Writes deep topology, NURBS, and format-variant container seeds for
+//! SolidWorks, CATIA, Creo, and NX. Existing F3D seeds remain unchanged.
 
 use std::fs;
 use std::io::{Cursor, Write};
@@ -23,7 +22,7 @@ fn main() {
 }
 
 // ============================================================================
-// F3D seeds (reuse existing)
+// F3D seeds
 // ============================================================================
 
 fn generate_f3d_seeds() {
@@ -31,7 +30,7 @@ fn generate_f3d_seeds() {
 }
 
 // ============================================================================
-// SLDPRT seeds - comprehensive
+// SLDPRT seeds
 // ============================================================================
 
 fn generate_sldprt_seeds() {

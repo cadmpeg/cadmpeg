@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! ASM `BinaryFile` header parsing and history-partition location.
+//! Parse ASM `BinaryFile4` and `BinaryFile8` headers and locate history data.
 //!
-//! Implements only what the f3d container spec §3 (ASM binary header) and §4
-//! (history partition) establish, and nothing past it: the tag-level SAB record
-//! stream is intentionally not decoded here.
+//! [`parse`] reads format words, product strings, scale, and tolerances.
+//! [`record_stream_start`] locates the first SAB record, and
+//! [`first_delta_state_offset`] marks the end of the active solved-model slice.
 //!
 //! `BinaryFile8` layout: `0..16` magic `ASM BinaryFile8<`, `16..24` zero,
 //! `24..32` big-endian u64 per-file version word, `32..40` big-endian `3`,
@@ -12,9 +12,9 @@
 //! the schema word's low byte (`0x07`) is reused as the first string's tag.
 //!
 //! `BinaryFile4` layout: `0..15` magic `ASM BinaryFile4` (no `<`), then four
-//! little-endian u32 words — `15..19` ASM release, `19..23` record count,
-//! `23..27` entity count, `27..31` flags (bit 0 set when the stream carries a
-//! history partition). The string region begins at byte 31.
+//! little-endian u32 words: `15..19` ASM release, `19..23` record count,
+//! `23..27` entity count, `27..31` flags. Bit 0 marks a history partition. The
+//! string region begins at byte 31.
 //!
 //! In both widths, three `0x06`-tagged little-endian f64s (`scale`, `resabs`,
 //! `resnor`) follow the strings, then the SAB record stream.
@@ -50,7 +50,7 @@ pub struct AsmHeader {
     pub product_version: Option<String>,
     /// `save_date`, the last export/save time string.
     pub save_date: Option<String>,
-    /// Kernel `scale` slot (metadata, not a coordinate multiplier — spec §3).
+    /// Kernel `scale` metadata slot. Coordinate decoding does not apply it.
     pub scale: Option<f64>,
     /// Absolute distance tolerance `resabs`.
     pub linear: Option<f64>,
@@ -64,7 +64,7 @@ const MAGIC_PREFIX: &[u8] = b"ASM BinaryFile";
 /// Byte offset at which the three `0x07`-tagged product strings begin in a
 /// `BinaryFile8` header. The three big-endian header words sit at offsets 24,
 /// 32, and 40; the word at 40 is the constant schema version `7`, so its low
-/// byte at offset 47 is `0x07` — and that byte doubles as the first string's
+/// byte at offset 47 is `0x07`; that byte also serves as the first string's
 /// `TAG_UTF8_U8` tag. The string region therefore begins at 47, one byte before
 /// the nominal end of the word block.
 const BF8_STRING_REGION_START: usize = 47;
@@ -198,13 +198,13 @@ fn read_string_region(bytes: &[u8], start: usize) -> (Vec<String>, Vec<f64>, usi
     (strings, doubles, cur)
 }
 
-/// The literal record-name leaf of a construction-history node (spec §4a). The
+/// The literal record-name leaf of a construction-history node ([spec §4a](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#2-b-rep-streams-and-history-partition)). The
 /// active model slice contains none of these; the first occurrence marks the
 /// history boundary.
 const DELTA_STATE: &[u8] = b"delta_state";
 
 /// Byte offset of the first `delta_state` marker, i.e. the end of the active
-/// solved-model slice (spec §4a). `None` if the stream carries no history
+/// solved-model slice ([spec §4a](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#2-b-rep-streams-and-history-partition)). `None` if the stream carries no history
 /// partition (as `.smb` construction snapshots do not).
 pub fn first_delta_state_offset(bytes: &[u8]) -> Option<usize> {
     bytes

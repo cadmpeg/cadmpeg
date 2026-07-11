@@ -354,6 +354,9 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) {
             *axis = transform_vector(transform, *axis);
             *major_direction = transform_vector(transform, *major_direction);
         }
+        CurveGeometry::Degenerate { point } => {
+            *point = transform_point(transform, *point);
+        }
         CurveGeometry::Unknown { .. } => {}
     }
 }

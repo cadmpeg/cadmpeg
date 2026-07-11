@@ -1,22 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Parasolid B-rep decode: compact analytic carriers, world points, and the
-//! typed topology chain.
+//! Parasolid B-rep record decoding.
 //!
-//! The class-definition body of a Parasolid `partition`/`deltas` stream carries
-//! two things this codec reads: **compact analytic carriers** (fixed-layout
-//! surface/curve placement records, spec §8.1) and the **typed topology chain**
-//! (`face → bridge → surface`, `loop → coedge → edge-use → curve`, `coedge →
-//! vertex-use → world point`, spec §5). Carriers are located by their tag and a
-//! `0x2b`/`0x2d` orientation-marker gate and keyed by their attribute id; the
-//! topology records reference carriers and each other by attribute id resolved
-//! within the record's site.
+//! This module resolves topology and geometry carriers by stream-local
+//! attribute id. [`decode`] handles one stream; [`decode_bodies`] combines
+//! related partition and deltas streams before building the graph.
 //!
-//! Model-space lengths are metres and convert to millimetres (×1000) at the IR
-//! boundary; directions, normals, axes, reference directions, and ratios are
-//! dimensionless and never scaled (spec §12). What cannot be typed is preserved:
-//! a face on an unrecognized surface keeps its topology with a
-//! [`SurfaceGeometry::Unknown`] carrier linking to the record bytes, and the
-//! omission is counted, never fabricated.
+//! The decoded chain connects face bridges to support surfaces and loop heads,
+//! coedges to edge uses and curves, and vertex uses to world points. Supported
+//! carriers include lines, circles, ellipses, planes, cylinders, cones, spheres,
+//! tori, and NURBS curves and surfaces. The decoder converts model-space metres
+//! to millimetres and leaves dimensionless vectors and ratios unchanged.
+//!
+//! [`Brep::stats`] counts carriers and grouping that could not be transferred
+//! directly. Untyped carriers use opaque IR geometry while resolvable topology
+//! remains available.
 
 use std::collections::HashMap;
 
@@ -27,7 +24,7 @@ mod entity;
 mod spline;
 mod topology;
 
-/// Millimetres per Parasolid model-space length unit (metres), spec §12.
+/// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
 pub(crate) const LEN_TO_MM: f64 = 1000.0;
 
 pub use self::graph::{decode, decode_bodies, Brep, Stats};
@@ -81,12 +78,12 @@ fn unit(v: &[f64]) -> Vector3 {
     }
 }
 
-// ---- compact analytic carriers (spec §8.1) -----------------------------------
+// ---- compact analytic carriers ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records)) -----------------------------------
 
 /// Analytic surface/curve tags and the count of trailing f64 values each holds.
 ///
 /// The generic record is `00 TT [ff]? attr:u16 ordinal:u32 refs:u16[5]
-/// marker:u8(0x2b|0x2d) values:f64[n]` (spec §8.1). Offsets below are measured
+/// marker:u8(0x2b|0x2d) values:f64[n]` ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records)). Offsets below are measured
 /// from the tag byte; the optional `0xff` shifts everything after it by one.
 pub(crate) mod tag {
     pub const LINE: u8 = 0x1e;
@@ -123,7 +120,7 @@ pub(crate) struct Carrier {
     pub end: usize,
     pub geometry: CarrierGeometry,
     /// True for the cone/torus layouts confirmed from a single field-order
-    /// sample (spec §8.1 confidence caveat).
+    /// sample ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records) confidence caveat).
     pub single_sample: bool,
     pub frame: Option<(Point3, Vector3, Vector3)>,
 }
@@ -285,7 +282,7 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<(CarrierGeometry, bool)> {
 /// Scan the whole stream body for compact analytic carriers, keyed by attribute
 /// id. When two carriers share an attr (a partition base and a deltas variant),
 /// the first (partition-order) wins, matching the "weak deltas must not
-/// overwrite a stronger partition record" rule (spec §4.2).
+/// overwrite a stronger partition record" rule ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#42-deltas-encodings)).
 pub(crate) fn scan_carriers(body: &[u8]) -> HashMap<u16, Carrier> {
     let mut out: HashMap<u16, Carrier> = HashMap::new();
     let mut i = 0usize;

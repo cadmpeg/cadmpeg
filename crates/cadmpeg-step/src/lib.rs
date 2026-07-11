@@ -1,26 +1,46 @@
 // SPDX-License-Identifier: Apache-2.0
-//! # cadmpeg-step
+//! Writes [`cadmpeg_ir::CadIr`] documents as ISO 10303-21 STEP AP214 exchange
+//! files.
 //!
-//! A pure-Rust ISO 10303-21 (STEP) writer that serializes the cadmpeg IR
-//! ([`cadmpeg_ir::CadIr`]) into an AP214 `ADVANCED_BREP_SHAPE_REPRESENTATION`
-//! `.step` file directly from the IR graph.
+//! [`write_step`] emits a Part 21 `AUTOMOTIVE_DESIGN` file containing an
+//! `ADVANCED_BREP_SHAPE_REPRESENTATION`. It writes the product-definition and
+//! representation-context records needed to connect the file metadata to the
+//! boundary representation. Each reachable IR region becomes a
+//! `MANIFOLD_SOLID_BREP` or, when the region has inner shells, a
+//! `BREP_WITH_VOIDS`.
 //!
-//! ## What it emits
+//! # Export workflow
 //!
-//! The product-structure boilerplate mainstream kernels expect (`PRODUCT`,
-//! `PRODUCT_DEFINITION`, `SHAPE_DEFINITION_REPRESENTATION`, a unit-bearing
-//! `GEOMETRIC_REPRESENTATION_CONTEXT`), then one `MANIFOLD_SOLID_BREP` (or
-//! `BREP_WITH_VOIDS`) per IR region, down through `CLOSED_SHELL` → `ADVANCED_FACE`
-//! → `FACE_OUTER_BOUND`/`FACE_BOUND` → `EDGE_LOOP` → `ORIENTED_EDGE` →
-//! `EDGE_CURVE` → `VERTEX_POINT`, with analytic and NURBS surfaces/curves.
+//! Construct or decode a [`cadmpeg_ir::CadIr`], choose the header metadata in
+//! [`StepWriteOptions`], then write to any [`std::io::Write`] sink:
 //!
-//! ## Honest loss reporting
+//! ```
+//! use cadmpeg_ir::examples::unit_cube;
+//! use cadmpeg_step::{write_step, StepWriteOptions};
 //!
-//! Following the project ethos, [`write_step`] returns a [`StepReport`] listing
-//! every entity written and every IR fact that could not be represented (as
-//! [`cadmpeg_ir::LossNote`]s). Unrepresentable inputs are reported, never
-//! replaced with fabricated placeholder geometry; the writer only errors on an
-//! I/O failure of the underlying sink.
+//! let ir = unit_cube();
+//! let mut bytes = Vec::new();
+//! let report = write_step(&ir, &mut bytes, &StepWriteOptions::default())?;
+//!
+//! assert!(bytes.starts_with(b"ISO-10303-21;"));
+//! assert!(report.total_entities > 0);
+//! # Ok::<(), cadmpeg_step::StepError>(())
+//! ```
+//!
+//! Review [`StepReport::losses`] before retaining the output. Export continues
+//! when an IR fact has no representation in this writer. Unknown-surface faces
+//! and edges without typed 3D curves are omitted; pcurves, presentation data,
+//! source attributes, passthrough records, and parametric history are also
+//! reported rather than emitted. Body transforms remain unapplied, leaving
+//! affected coordinates in body-local space.
+//!
+//! Coordinates are emitted unchanged under a millimetre length-unit context.
+//! Callers must convert non-millimetre geometry before export. Analytic curves
+//! and surfaces map to their corresponding STEP carriers. Rational and
+//! non-rational NURBS use the `*_WITH_KNOTS` entities.
+//!
+//! [`StepError`] represents output-sink failures. Since the writer streams the
+//! header and DATA section, such a failure can leave partial output.
 
 mod geometry;
 mod writer;
@@ -35,20 +55,29 @@ use cadmpeg_ir::CadIr;
 
 use writer::{real, refs, string, Emitter, Ref};
 
-/// Options controlling the STEP HEADER metadata. All fields have neutral
-/// defaults so `StepWriteOptions::default()` produces a valid header.
+/// Metadata written to the STEP `FILE_NAME` header record.
+///
+/// Default values produce deterministic output. They identify the file as
+/// `cadmpeg_model`, leave the author and organization empty, use `cadmpeg` as
+/// the originating system, and substitute `1970-01-01T00:00:00` for the empty
+/// timestamp.
 #[derive(Debug, Clone)]
 pub struct StepWriteOptions {
-    /// `PRODUCT` id and name, and the `FILE_NAME` name field.
+    /// The `FILE_NAME` name field.
+    ///
+    /// The STEP `PRODUCT` id and name come from the first IR body name, or
+    /// `cadmpeg_model` when that body has no name.
     pub product_name: String,
-    /// `FILE_NAME` author entry.
+    /// The sole entry in the `FILE_NAME` author list.
     pub author: String,
-    /// `FILE_NAME` organization entry.
+    /// The sole entry in the `FILE_NAME` organization list.
     pub organization: String,
-    /// `FILE_NAME` timestamp (ISO 8601). Left to the caller so output can be
-    /// deterministic in tests; when empty a fixed placeholder is written.
+    /// The `FILE_NAME` timestamp.
+    ///
+    /// Supply an ISO 8601 value. An empty string is written as
+    /// `1970-01-01T00:00:00`.
     pub timestamp: String,
-    /// `FILE_NAME` originating system field.
+    /// The `FILE_NAME` originating-system field.
     pub originating_system: String,
 }
 
@@ -64,19 +93,29 @@ impl Default for StepWriteOptions {
     }
 }
 
-/// The result of a STEP export: what was written and what was lost.
+/// Summary of a completed STEP export.
+///
+/// A report is returned only after the entire file reaches the output sink.
+/// Loss notes describe omitted or reduced IR content and do not prevent export.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StepReport {
-    /// Count of instances written, keyed by leading entity keyword (sorted).
+    /// DATA instance counts keyed by entity keyword.
+    ///
+    /// Keys are sorted. Complex rational B-spline instances are counted under
+    /// their `B_SPLINE_*_WITH_KNOTS` keyword.
     pub entity_counts: BTreeMap<String, usize>,
-    /// Total number of instances in the DATA section.
+    /// Total DATA instances, including product, context, and geometry records.
     pub total_entities: usize,
-    /// Explicit notes for IR facts that could not be represented in STEP.
+    /// Omitted, normalized, or reduced IR content.
+    ///
+    /// Notes use [`cadmpeg_ir::LossNote`] categories and severities. Callers
+    /// should inspect the complete list rather than relying only on
+    /// [`Self::error_count`].
     pub losses: Vec<LossNote>,
 }
 
 impl StepReport {
-    /// Number of loss notes at or above [`Severity::Error`].
+    /// Counts loss notes whose severity is at least [`Severity::Error`].
     pub fn error_count(&self) -> usize {
         self.losses
             .iter()
@@ -85,18 +124,29 @@ impl StepReport {
     }
 }
 
-/// Errors from the STEP writer. The writer performs partial, loss-reported
-/// export rather than failing on unrepresentable geometry, so the only error is
-/// a failure of the output sink.
+/// Failure returned while streaming STEP output.
+///
+/// Unsupported or reduced IR content appears in [`StepReport::losses`] after a
+/// successful write.
 #[derive(Debug, thiserror::Error)]
 pub enum StepError {
-    /// Writing to the output sink failed.
+    /// The output sink rejected a write.
     #[error("failed to write STEP output: {0}")]
     Io(#[from] std::io::Error),
 }
 
-/// Serialize `ir` as an AP214 STEP file into `w`, returning a report of what was
-/// written and what was lost.
+/// Serializes an IR document as an ISO 10303-21 STEP AP214 file.
+///
+/// The output declares the `AUTOMOTIVE_DESIGN` schema and a millimetre length
+/// unit. Coordinate values are not rescaled. The IR linear tolerance becomes
+/// the representation context's uncertainty value.
+///
+/// Geometry conversion completes before this function writes the header. It
+/// then streams the header, DATA instances, and closing records to `w`. An I/O
+/// error can therefore leave a partial file and returns no report.
+///
+/// On success, the report contains DATA entity counts and loss notes for
+/// omitted or reduced content.
 pub fn write_step(
     ir: &CadIr,
     w: &mut impl Write,
@@ -149,8 +199,7 @@ fn write_header(w: &mut impl Write, opts: &StepWriteOptions) -> std::io::Result<
     Ok(())
 }
 
-/// Builds the DATA-section instance graph, holding the emitter, the id→instance
-/// caches, and the accumulating loss notes.
+/// Builds the DATA instance graph and accumulates export losses.
 struct Builder<'a> {
     ir: &'a CadIr,
     emitter: Emitter,
@@ -346,10 +395,9 @@ impl<'a> Builder<'a> {
         )
     }
 
-    /// Emit the length unit matching the IR's declared unit and return its
-    /// reference. mm/cm/m are SI units; inch is a conversion-based unit relative
-    /// to the metre. Coordinate values are written as stored (not rescaled), so
-    /// the declared unit and the stored numbers stay consistent.
+    /// Emit the millimetre length unit used by the representation context.
+    ///
+    /// Coordinate values are written unchanged.
     fn emit_length_unit(&mut self) -> Ref {
         self.emitter.emit_raw(
             "LENGTH_UNIT",

@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode a `.f3d` into an IR document, transferring the B-rep topology graph
-//! and analytic geometry the SAB decoder understands and reporting the rest as
-//! explicit loss.
+//! Assemble a `.f3d` archive into a [`CadIr`] document and [`DecodeReport`].
 //!
-//! The container layer (ZIP entries, ASM header, `delta_state` boundary, active
-//! BREP selection) is decoded by [`crate::container`]. This module frames the
-//! active BREP's SAB record stream ([`crate::sab`]) and builds the IR B-rep
-//! graph, analytic/cached NURBS carriers, pcurves, attributes, transforms, and
-//! Protein/Design appearances ([`crate::brep`], [`crate::materials`]). Remaining
-//! unsupported records are accounted for in the [`DecodeReport`]. When the stream is not a
-//! decodable `BinaryFile4`/`BinaryFile8` SAB, or framing fails, decode falls
-//! back to the container-metadata IR (active BREP preserved as an
-//! [`UnknownRecord`]) and says so.
+//! [`crate::container`] scans the ZIP, reads ASM headers, finds the history
+//! boundary, and selects the active B-rep. This module frames that B-rep with
+//! [`crate::sab`], builds topology and geometry through [`crate::brep`], then
+//! adds design, sketch, history, ACT, and appearance data.
+//!
+//! A framing failure or a stream without decoded geometry produces a
+//! metadata-only document. The report marks geometry and topology as blocking,
+//! and retained source data remains available for native replay.
 
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
@@ -26,7 +23,7 @@ use crate::brep::{self, Brep};
 use crate::container::{self, BrepFacts, ContainerScan};
 use crate::{asm_header, materials, sab};
 
-/// Decode a `.f3d` reader into an IR + report.
+/// Decode a `.f3d` reader into a document and its loss report.
 pub fn decode(
     reader: &mut dyn ReadSeek,
     options: &DecodeOptions,
@@ -41,10 +38,8 @@ pub fn decode(
         return Ok(DecodeResult::new(ir, report));
     }
 
-    // Attempt a real geometry decode of the active BREP. `try_decode_brep`
-    // yields `Some` only when it actually produced carriers/points; a stream
-    // that frames but carries no geometry falls through to the honest metadata
-    // path rather than reporting an empty graph as a geometry transfer.
+    // `try_decode_brep` returns `Some` after producing carriers or points.
+    // A framed stream with no geometry uses the metadata-only path.
     if let Some(active) = container::select_active_brep(&scan).cloned() {
         if let Some((mut brep, mut report)) = try_decode_brep(reader, &scan, &active)? {
             let decoded_materials = materials::decode_with_bodies(reader, &scan, &brep.body_keys)?;
@@ -180,7 +175,7 @@ pub fn decode(
         }
     }
 
-    // No decodable SAB stream: honest container-metadata fallback.
+    // No decodable SAB stream: use container metadata.
     let mut ir = build_metadata_ir(&scan);
     if let Some(active) = container::select_active_brep(&scan) {
         if let Some(history) = decode_asm_history(reader, active)? {

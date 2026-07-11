@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fusion `.protein` appearance asset decoding.
+//! Decode Fusion `.protein` appearance assets and bind them to B-rep bodies.
+//!
+//! Material and appearance semantics are defined in [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
+//! [`decode`] reads appearance records without resolving body bindings.
+//! [`decode_with_bodies`] joins Protein assets, Design assignments, ACT
+//! channels, and ASM body keys through the design-entity join backbone in
+//! [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read, Write};
@@ -16,10 +22,151 @@ use crate::container::{self, role, ContainerScan};
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
 
-pub(crate) fn patch_protein_base_colors(
+pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
+    let schema = appearance.schema.as_deref().unwrap_or("GenericSchema");
+    let guid = appearance
+        .visual_guid
+        .as_deref()
+        .or(appearance.asset_guid.as_deref())
+        .ok_or_else(|| {
+            CodecError::Malformed("source-less appearance lacks an asset GUID".into())
+        })?;
+    let name = appearance.name.as_deref().unwrap_or("Prism-001");
+    let mut logical = RECORD_MARKER.to_vec();
+    for value in [schema, guid, name, "00000000-0000-0000-0000-000000000000"] {
+        push_lp(&mut logical, value)?;
+    }
+    let value_block = logical.len();
+    match schema {
+        "GenericSchema" => {
+            logical.resize(value_block + 209, 0);
+            write_color(&mut logical, value_block + 112, appearance.base_color)?;
+            if let Some(value) = appearance.properties.get("reflectivity_at_0deg") {
+                logical[value_block + 171..value_block + 175].copy_from_slice(b"\x0c\x00\x00\x00");
+                logical[value_block + 175..value_block + 183].copy_from_slice(&value.to_le_bytes());
+            }
+            if let Some(value) = appearance.properties.get("refraction_index") {
+                logical[value_block + 197..value_block + 201].copy_from_slice(b"\x0c\x00\x00\x00");
+                logical[value_block + 201..value_block + 209].copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        "PrismOpaqueSchema" | "PrismMetalSchema" => {
+            logical.resize(value_block + 96, 0);
+            write_color(&mut logical, value_block + 8, appearance.base_color)?;
+            if let Some(value) = appearance.properties.get("surface_roughness") {
+                logical[value_block + 64..value_block + 68].copy_from_slice(b"\x0e\x20\x00\x00");
+                logical[value_block + 68..value_block + 76].copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        "PrismTransparentSchema" => {
+            logical.resize(value_block + 177, 0);
+            write_color(&mut logical, value_block + 121, appearance.base_color)?;
+            if let Some(value) = appearance.properties.get("refraction_index") {
+                logical[value_block + 169..value_block + 177].copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        "PhysMatSchema"
+        | "StructuralMetalSchema"
+        | "StructuralPlasticSchema"
+        | "ThermalSolidSchema" => logical.resize(value_block + 8, 0),
+        _ => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less Protein schema {schema} is unsupported"
+            )))
+        }
+    }
+    let instance = page_logical(&logical)?;
+    let mut catalog = RECORD_MARKER.to_vec();
+    for value in [
+        schema,
+        name,
+        "Default",
+        appearance.category.as_deref().unwrap_or("Generated"),
+    ] {
+        push_lp(&mut catalog, value)?;
+    }
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("AssetData/InstanceProperties.bin", options)
+        .map_err(|error| {
+            CodecError::Malformed(format!("cannot create Protein instance: {error}"))
+        })?;
+    zip.write_all(&instance)?;
+    zip.start_file("AssetData/DefinitionIteratorProperties.bin", options)
+        .map_err(|error| {
+            CodecError::Malformed(format!("cannot create Protein catalog: {error}"))
+        })?;
+    zip.write_all(&catalog)?;
+    Ok(zip
+        .finish()
+        .map_err(|error| CodecError::Malformed(format!("cannot finish Protein asset: {error}")))?
+        .into_inner())
+}
+
+fn push_lp(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+    let length = u32::try_from(value.len())
+        .map_err(|_| CodecError::Malformed("Protein string exceeds u32::MAX".into()))?;
+    out.extend_from_slice(&length.to_le_bytes());
+    out.extend_from_slice(value.as_bytes());
+    Ok(())
+}
+
+fn write_color(out: &mut [u8], offset: usize, color: Option<Color>) -> Result<(), CodecError> {
+    let color = color.ok_or_else(|| {
+        CodecError::Malformed("visual source-less Protein appearance lacks base_color".into())
+    })?;
+    for (ordinal, value) in [color.r, color.g, color.b, color.a].into_iter().enumerate() {
+        if !value.is_finite() {
+            return Err(CodecError::Malformed(
+                "Protein base color must contain finite channels".into(),
+            ));
+        }
+        let at = offset + ordinal * 8;
+        out[at..at + 8].copy_from_slice(&f64::from(value).to_le_bytes());
+    }
+    Ok(())
+}
+
+fn page_logical(logical: &[u8]) -> Result<Vec<u8>, CodecError> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(PAGE_SIZE as u32).to_le_bytes());
+    bytes.extend_from_slice(&[0xff; 8]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    let first = logical.len().min(PAGE_SIZE - 4);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&logical[..first]);
+    bytes.resize(16 + PAGE_SIZE, 0);
+    let mut rest = &logical[first..];
+    while rest.len() > PAGE_SIZE - 8 {
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(b"\x80\x00\x00\x00");
+        bytes.extend_from_slice(&rest[..PAGE_SIZE - 8]);
+        rest = &rest[PAGE_SIZE - 8..];
+    }
+    if !rest.is_empty() {
+        bytes.extend_from_slice(&[0xff; 4]);
+        let length = u16::try_from(rest.len())
+            .map_err(|_| CodecError::Malformed("Protein tail page exceeds u16::MAX".into()))?;
+        bytes.extend_from_slice(&length.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(rest);
+        let end = 16 + (bytes.len() - 16).next_multiple_of(PAGE_SIZE);
+        bytes.resize(end, 0);
+    }
+    Ok(bytes)
+}
+
+#[derive(Default)]
+pub(crate) struct ProteinAppearanceEdit {
+    pub(crate) color: Option<Color>,
+    pub(crate) properties: BTreeMap<String, f64>,
+}
+
+pub(crate) fn patch_protein_appearances(
     protein: &[u8],
-    edits: &BTreeMap<String, Color>,
-) -> Result<Vec<u8>, CodecError> {
+    edits: &BTreeMap<String, ProteinAppearanceEdit>,
+) -> Result<(Vec<u8>, std::collections::BTreeSet<String>), CodecError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
         CodecError::Malformed(format!("cannot open nested Protein ZIP: {error}"))
     })?;
@@ -42,20 +189,16 @@ pub(crate) fn patch_protein_base_colors(
         })?;
         zip.write_all(&bytes)?;
     }
-    if patched.len() != edits.len() {
-        return Err(CodecError::NotImplemented(
-            "one or more edited F3D appearances have no writable Protein color carrier".into(),
-        ));
-    }
-    Ok(zip
+    let bytes = zip
         .finish()
         .map_err(|error| CodecError::Malformed(format!("cannot finish Protein ZIP: {error}")))?
-        .into_inner())
+        .into_inner();
+    Ok((bytes, patched))
 }
 
 fn patch_instance_colors(
     bytes: &mut [u8],
-    edits: &BTreeMap<String, Color>,
+    edits: &BTreeMap<String, ProteinAppearanceEdit>,
     patched: &mut std::collections::BTreeSet<String>,
 ) -> Result<(), CodecError> {
     let logical = dechunk(bytes).ok_or_else(|| {
@@ -76,32 +219,60 @@ fn patch_instance_colors(
             .ok_or_else(|| CodecError::Malformed("Protein appearance GUID is truncated".into()))?;
         let _ = take_lp(record, &mut position);
         let _ = take_lp(record, &mut position);
-        let Some(color) = edits.get(&guid) else {
+        let Some(edit) = edits.get(&guid) else {
             continue;
         };
-        let relative = match schema.as_str() {
-            "GenericSchema" => position + 112 + generic_connection_delta(record, position),
-            "PrismOpaqueSchema" | "PrismMetalSchema" => position + 8,
-            "PrismTransparentSchema" => position + 121,
-            _ => {
-                return Err(CodecError::NotImplemented(format!(
-                    "Protein schema {schema} has no writable color carrier"
-                )))
-            }
-        };
-        for (ordinal, value) in [color.r, color.g, color.b, color.a].into_iter().enumerate() {
-            let logical_offset = start + relative + ordinal * 8;
-            for byte in 0..8 {
-                let physical =
-                    logical_to_physical(bytes, logical_offset + byte).ok_or_else(|| {
-                        CodecError::Malformed(
-                            "Protein color offset is outside paged storage".into(),
-                        )
-                    })?;
-                bytes[physical] = f64::from(value).to_le_bytes()[byte];
+        let delta = generic_connection_delta(record, position);
+        if let Some(color) = edit.color {
+            let relative = match schema.as_str() {
+                "GenericSchema" => position + 112 + delta,
+                "PrismOpaqueSchema" | "PrismMetalSchema" => position + 8,
+                "PrismTransparentSchema" => position + 121,
+                _ => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "Protein schema {schema} has no writable color carrier"
+                    )))
+                }
+            };
+            for (ordinal, value) in [color.r, color.g, color.b, color.a].into_iter().enumerate() {
+                patch_logical_f64(bytes, start + relative + ordinal * 8, f64::from(value))?;
             }
         }
+        for (name, value) in &edit.properties {
+            let relative = match (schema.as_str(), name.as_str()) {
+                ("GenericSchema", "reflectivity_at_0deg") => position + 175 + delta,
+                ("GenericSchema", "refraction_index") => position + 201 + delta,
+                ("PrismOpaqueSchema", "surface_roughness") => {
+                    find(record, b"\x0e\x20\x00\x00", position)
+                        .map(|marker| marker + 4)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("Protein roughness carrier is absent".into())
+                        })?
+                }
+                ("PrismTransparentSchema", "refraction_index") => position + 169,
+                _ => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "Protein schema {schema} property {name} has no writable carrier"
+                    )))
+                }
+            };
+            patch_logical_f64(bytes, start + relative, *value)?;
+        }
         patched.insert(guid);
+    }
+    Ok(())
+}
+
+fn patch_logical_f64(
+    bytes: &mut [u8],
+    logical_offset: usize,
+    value: f64,
+) -> Result<(), CodecError> {
+    for (ordinal, byte) in value.to_le_bytes().into_iter().enumerate() {
+        let physical = logical_to_physical(bytes, logical_offset + ordinal).ok_or_else(|| {
+            CodecError::Malformed("Protein scalar offset is outside paged storage".into())
+        })?;
+        bytes[physical] = byte;
     }
     Ok(())
 }
@@ -131,10 +302,10 @@ fn logical_to_physical(bytes: &[u8], logical_offset: usize) -> Option<usize> {
     None
 }
 
-/// Decoded appearance assets and body bindings from a single `decode` pass:
-/// the merged `.protein`/design/ACT appearance records ([`Appearance`]) and
-/// the body-to-appearance bindings resolved through the design-entity join
-/// backbone (spec §8.2).
+/// Appearance assets and body bindings from one material decode.
+///
+/// Bindings follow the design-entity join backbone in
+/// [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
 #[derive(Default)]
 pub struct DecodedMaterials {
     /// Merged appearance records, deduplicated by [`AppearanceId`].
@@ -143,10 +314,12 @@ pub struct DecodedMaterials {
     pub bindings: Vec<AppearanceBinding>,
 }
 
-/// Decode all `.protein` appearance assets and design/ACT appearance
-/// assignments reachable from `scan`, without resolving ASM body-key bindings
-/// (spec §8.2's `asm_body_key` join is skipped; callers with body keys should
-/// use [`decode_with_bodies`]).
+/// Decode `.protein` assets and Design and ACT assignments without ASM body
+/// bindings.
+///
+/// The [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)
+/// `asm_body_key` join is skipped. Use [`decode_with_bodies`] when ASM body keys
+/// are available.
 pub fn decode(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -154,9 +327,10 @@ pub fn decode(
     decode_with_bodies(reader, scan, &std::collections::HashMap::new())
 }
 
-/// Decode appearance assets and bindings, resolving each binding's body
-/// through `body_keys` (`BodyId` → `asm_body_key`, the ASM `Body.chunk[1]`
-/// value) to close the design-entity join backbone described in spec §8.2.
+/// Decode appearance assets and resolve body bindings through
+/// `body_keys` (`BodyId` to the ASM `Body.chunk[1]` value), closing the
+/// design-entity join backbone in
+/// [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
 pub fn decode_with_bodies<S: std::hash::BuildHasher>(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,

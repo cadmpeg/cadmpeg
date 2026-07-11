@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Generates hand-crafted seed corpus for the f3d_container fuzz target.
-//! Run: cargo run --bin generate_seeds
+//! Writes structural seeds for the `f3d_container` fuzz target.
 
 use std::fs;
 use std::io::{Cursor, Write};

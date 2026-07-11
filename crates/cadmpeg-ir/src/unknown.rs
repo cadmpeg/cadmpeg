@@ -1,18 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Passthrough for bytes the decoder recognized as a record but did not
-//! interpret.
-//!
-//! Honest decoding means never dropping data on the floor. When a decoder
-//! encounters a record it cannot (yet) map to a typed IR entity, it emits an
-//! [`UnknownRecord`] carrying the raw byte span's location, a content hash, and
-//! any ids it *could* attribute, so nothing silently disappears and a later
-//! decoder version can resolve it.
+//! Retained source records without a typed IR interpretation.
 
 use crate::ids::UnknownId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// A recognized-but-uninterpreted record preserved verbatim by reference.
+/// A recognized source record represented by location, digest, links, and
+/// optional retained bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct UnknownRecord {
     /// Arena id.
@@ -31,9 +25,7 @@ pub struct UnknownRecord {
     )]
     #[schemars(with = "Option<String>")]
     pub data: Option<Vec<u8>>,
-    /// Ids of other IR entities this record is known to relate to (e.g. an
-    /// attribute's owner), when the decoder can attribute them. Free-form
-    /// string ids so a link can point into any arena.
+    /// Related entity IDs from any document arena.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<String>,
 }

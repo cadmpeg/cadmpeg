@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode a `.CATPart` into an IR document, transferring the standard-nested
-//! geometry this codec understands and reporting every other variant and every
-//! unrecovered layer as explicit loss.
+//! High-level CATPart-to-IR decoding.
 //!
-//! The container layer (outer header, inner directory, BREP-stream reconstruction,
-//! variant identification) is decoded by [`crate::container`]. For the
-//! standard-nested variant this module reads the exact vertex point cloud and the
-//! analytic curved-surface carriers ([`crate::geometry`]) into free carrier
-//! arenas; the face→loop→edge topology graph is not reconstructed and is reported.
-//! Every other variant is honestly detected, named, and left as container-only,
-//! with its BREP/preamble bytes preserved as an [`UnknownRecord`].
+//! [`decode`] scans the container, selects a decoder from the identified storage
+//! variant, and returns the transferred model with a [`DecodeReport`]. Standard
+//! nested streams can produce connected B-rep topology when carrier senses,
+//! trim cycles, support rows, and endpoint assignments all resolve. Zero-entity,
+//! E5, FBB-only, and object-stream paths transfer the geometry and bindings
+//! supported by their record families.
+//!
+//! Partial paths preserve the reconstructed B-rep stream or complete file as an
+//! [`UnknownRecord`]. Their report identifies unresolved model layers.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -37,7 +37,10 @@ use crate::geometry;
 use crate::topology;
 use crate::variant::Variant;
 
-/// Decode a `.CATPart` reader into an IR + report.
+/// Decodes a `.CATPart` reader into an IR document and decode report.
+///
+/// When [`DecodeOptions::container_only`] is set, the result contains source
+/// metadata and container diagnostics without entity decoding.
 pub fn decode(
     reader: &mut dyn ReadSeek,
     options: &DecodeOptions,

@@ -3,8 +3,6 @@
 //!
 //! Feeds arbitrary bytes through `SldprtCodec::detect`, `inspect`, and `decode`.
 //! Contract: no input may panic. Malformed input must surface as `CodecError`.
-//!
-//! Run: cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz sldprt_container
 
 #![no_main]
 

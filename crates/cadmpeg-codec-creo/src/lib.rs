@@ -1,39 +1,54 @@
 // SPDX-License-Identifier: Apache-2.0
-//! # cadmpeg-codec-creo
+//! Inspect and structurally decode PTC Creo Parametric and Pro/ENGINEER `.prt`
+//! files stored in the PSB container.
 //!
-//! Decoder for PTC Creo Parametric / Pro-ENGINEER `.prt` (PSB) files.
+//! Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! on the cadmpeg support ladder.
 //!
-//! ## What this format is
+//! # Quick start
 //!
-//! `.prt` is an overloaded extension: Creo/Pro-E and Siemens NX both use it, so
-//! detection is **magic-based** on the `#UGC:2` ASCII framing, never on the file
-//! extension. The container is PSB ("Pro/E Session Binary"): an ASCII header and
-//! table of contents followed by a run of named binary sections.
+//! [`CreoCodec`] implements [`cadmpeg_ir::codec::Codec`]. Use
+//! [`CreoCodec::inspect`] to enumerate sections and read container diagnostics:
 //!
-//! ## What is implemented
+//! ```no_run
+//! use std::fs::File;
 //!
-//! Creo PSB is characterized well enough to walk the container and read the
-//! surface/curve namespace headers, but per-instance model-space geometry is
-//! gated behind several undecoded PSB layers, and `VisibGeom` stores surface
-//! *prototypes* (first-instance templates), not per-instance geometry. This codec
-//! is therefore, by design, the lowest-fidelity of the family: a solid `inspect`
-//! is the deliverable.
+//! use cadmpeg_codec_creo::CreoCodec;
+//! use cadmpeg_ir::codec::Codec;
 //!
-//! - [`CreoCodec::detect`] recognizes the `#UGC:2` container magic;
-//! - [`CreoCodec::inspect`] parses the header/TOC, enumerates and classifies the
-//!   named sections (spec §2.2), identifies the ND vs DEPDB layout family (spec
-//!   §1), reads the byte-backed `srf_array`/`crv_array` namespace counts (spec §4,
-//!   §5), and flags the JPEG thumbnail;
-//! - [`CreoCodec::decode`] performs an honest structural decode: it emits the
-//!   container facts and namespace census, decodes datum planes as derived plane
-//!   carriers (`geometry_transferred` is true only when at least one transfers),
-//!   preserves the PSB geometry sections as
-//!   [`cadmpeg_ir::unknown::UnknownRecord`]s, and reports each gate as a counted
-//!   loss note. It never presents prototype geometry as per-instance geometry.
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut input = File::open("part.prt")?;
+//! let summary = CreoCodec.inspect(&mut input)?;
+//! println!("{} sections", summary.entries.len());
+//! # Ok(())
+//! # }
+//! ```
 //!
-//! The PSB primitive layer — compact integers, structural tokens, and the 3-byte
-//! compact-float short form (spec §3) — is decoded and unit-tested in [`psb`], and
-//! used by [`container`] to read the namespace count headers.
+//! Use [`CreoCodec::decode`] for a [`cadmpeg_ir::document::CadIr`] document and
+//! its [`cadmpeg_ir::report::DecodeReport`].
+//!
+//! # Format model
+//!
+//! A PSB file begins with the `#UGC:2` ASCII signature, an ASCII header and
+//! table of contents, then named binary sections. Detection uses this signature
+//! because Siemens NX also uses the `.prt` extension.
+//!
+//! [`container`] identifies ND and DEPDB layouts, classifies sections, reads
+//! surface and curve namespace counts, and discovers typed namespace rows.
+//! [`psb`] and [`scalar`] expose the context-independent primitive decoders.
+//! [`surface`], [`curve`], and [`topology`] expose the typed structural model.
+//!
+//! # Decode scope
+//!
+//! Decode transfers standard model-space datum planes from `ActDatums` as
+//! derived, unbounded plane surfaces. It preserves PSB geometry sections as
+//! [`cadmpeg_ir::unknown::UnknownRecord`] values.
+//!
+//! Surface prototype parameters describe family templates rather than placed
+//! instances. Per-instance coordinates, curve geometry, face bindings, and
+//! feature evaluation are incomplete, so the codec does not emit a body B-rep.
+//! The decode report identifies these losses and reports whether any datum
+//! planes were transferred.
 
 pub mod container;
 pub mod curve;
@@ -48,7 +63,7 @@ use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
 };
 
-/// The Creo Parametric `.prt` (PSB) codec.
+/// Codec for Creo Parametric and Pro/ENGINEER PSB `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CreoCodec;
 

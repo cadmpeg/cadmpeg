@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fuzz target for full decode pipeline with mutated inputs.
-//!
-//! Takes a base container file and applies byte-level mutations to test
-//! error propagation through the entire decode stack.
-//! Contract: no input may panic.
+//! Mutates container bytes, then runs detection, inspection, and decoding with
+//! every binary CAD codec. The first input byte selects deterministic mutation
+//! and truncation strategies. Codec errors are expected; panics are failures.
 
 #![no_main]
 
@@ -23,7 +21,6 @@ fn mutate_bytes(data: &[u8], seed: u8) -> Vec<u8> {
         return mutated;
     }
 
-    // Apply mutations based on seed
     let num_mutations = (seed % 10) as usize + 1;
     for i in 0..num_mutations {
         let pos = ((seed as usize).wrapping_mul(i + 1)) % mutated.len();
@@ -37,7 +34,6 @@ fn mutate_bytes(data: &[u8], seed: u8) -> Vec<u8> {
         }
     }
 
-    // Truncate based on seed
     if seed % 3 == 0 && mutated.len() > 10 {
         let truncate_at = (seed as usize % (mutated.len() - 10)) + 10;
         mutated.truncate(truncate_at);
@@ -55,7 +51,6 @@ fuzz_target!(|data: &[u8]| {
     let file_data = &data[1..];
     let mutated = mutate_bytes(file_data, seed);
 
-    // Try all codecs - each should handle malformed input gracefully
     let codecs: Vec<Box<dyn Codec>> = vec![
         Box::new(F3dCodec),
         Box::new(SldprtCodec),
@@ -65,14 +60,11 @@ fuzz_target!(|data: &[u8]| {
     ];
 
     for codec in codecs {
-        // Detection should never panic
         let _ = codec.detect(&mutated);
 
-        // Inspection should never panic
         let mut inspect_cur = Cursor::new(&mutated);
         let _ = codec.inspect(&mut inspect_cur);
 
-        // Decode should never panic
         let mut decode_cur = Cursor::new(&mutated);
         let _ = codec.decode(&mut decode_cur, &DecodeOptions::default());
     }

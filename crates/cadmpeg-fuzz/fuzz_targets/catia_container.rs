@@ -3,8 +3,6 @@
 //!
 //! Feeds arbitrary bytes through `CatiaCodec::detect`, `inspect`, and `decode`.
 //! Contract: no input may panic. Malformed input must surface as `CodecError`.
-//!
-//! Run: cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz catia_container
 
 #![no_main]
 

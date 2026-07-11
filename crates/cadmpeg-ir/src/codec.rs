@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The codec contract: how a format plugin detects, inspects, and decodes a
-//! source file into the IR.
+//! Interfaces for detecting, inspecting, decoding, and encoding CAD formats.
 //!
-//! The trait is object-safe so a CLI can hold a registry of `Box<dyn Codec>`
-//! and dispatch by detection confidence. I/O is expressed as `&mut dyn
-//! ReadSeek` because container formats (ZIP, OLE2) need seeking.
+//! [`Codec`] is object-safe for runtime codec registries. Detection consumes a
+//! byte prefix, inspection summarizes a seekable container, and decoding
+//! produces a finalized [`CadIr`] plus a [`DecodeReport`].
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -15,7 +14,7 @@ use crate::report::DecodeReport;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Blanket read+seek trait so codecs can take a `&mut dyn ReadSeek`.
+/// Object-safe input bound combining [`Read`] and [`Seek`].
 pub trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek> ReadSeek for T {}
 
@@ -27,7 +26,7 @@ impl<T: Read + Seek> ReadSeek for T {}
 pub enum Confidence {
     /// Definitely not this format.
     No,
-    /// Weak signal (e.g. a generic container magic that many formats share).
+    /// Weak signal, such as a generic container signature.
     Low,
     /// Plausible but not conclusive.
     Medium,
@@ -46,12 +45,10 @@ impl fmt::Display for Confidence {
     }
 }
 
-/// One entry (stream/segment) in a container summary.
+/// One stream or segment in a container summary.
 ///
-/// `role` is a codec-defined classification label (e.g. `"brep-smbh"`,
-/// `"protein-assets"`); `attributes` carries any extra facts the codec
-/// extracted (e.g. an ASM header's magic and version), kept as sorted strings
-/// so the summary is generic and canonically serializable.
+/// `role` and `attributes` are codec-defined. The ordered attribute map keeps
+/// the format-independent summary deterministic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ContainerEntry {
     /// Entry name/path within the container.
@@ -78,7 +75,7 @@ pub struct ContainerSummary {
     pub container_kind: String,
     /// Enumerated entries.
     pub entries: Vec<ContainerEntry>,
-    /// Free-form notes (e.g. selected active BREP entry, caveats).
+    /// Codec-defined informational notes.
     pub notes: Vec<String>,
 }
 
@@ -99,7 +96,7 @@ pub struct DecodeResult {
 }
 
 impl DecodeResult {
-    /// Build a decode result after canonicalizing every document arena.
+    /// Build a result after canonicalizing the document's arena order.
     pub fn new(mut ir: CadIr, report: DecodeReport) -> Self {
         ir.finalize();
         Self { ir, report }
@@ -115,8 +112,7 @@ pub enum CodecError {
     /// The container was structurally malformed.
     #[error("malformed container: {0}")]
     Malformed(String),
-    /// A required capability is not implemented yet; carries a plain-English
-    /// explanation of *what* and *why*, surfaced verbatim to the user.
+    /// The codec does not implement a required capability.
     #[error("not implemented yet: {0}")]
     NotImplemented(String),
     /// Underlying I/O failure.
@@ -124,7 +120,7 @@ pub enum CodecError {
     Io(#[from] std::io::Error),
 }
 
-/// A format plugin.
+/// Decoder and container inspector for one source format.
 pub trait Codec {
     /// Stable short id for this codec, e.g. `"f3d"`.
     fn id(&self) -> &'static str;
@@ -135,9 +131,7 @@ pub trait Codec {
     /// Enumerate the container's streams/segments without decoding geometry.
     fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>;
 
-    /// Decode into the IR, reporting loss. Implementations that cannot transfer
-    /// geometry must still return a `DecodeResult` whose report makes that
-    /// explicit.
+    /// Decode the source and report any incomplete or approximate transfer.
     fn decode(
         &self,
         reader: &mut dyn ReadSeek,

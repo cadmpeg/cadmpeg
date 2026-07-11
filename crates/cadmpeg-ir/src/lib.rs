@@ -1,31 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
-//! # cadmpeg-ir
+//! Format-neutral CAD documents and the codec interfaces that produce them.
 //!
-//! The provenance-rich intermediate representation (IR) and codec contract at
-//! the heart of the cadmpeg CAD transcoder.
+//! [`CadIr`] stores units, tolerances, and flat entity arenas connected by
+//! typed IDs. Its B-rep topology follows
+//! `body → region → shell → face → loop → coedge → edge → vertex`; topology
+//! references geometry carriers instead of nesting them. The document also
+//! carries neutral construction features, tessellation, appearance, source
+//! attributes, source-native namespaces, and uninterpreted [`UnknownRecord`]s.
 //!
-//! ## What the IR is
+//! Start a hand-built document with [`CadIr::empty`], populate its arenas,
+//! call [`CadIr::finalize`] to establish canonical identity order, then call
+//! [`validate()`] to check structural and numeric invariants. Use
+//! [`CadIr::to_canonical_json`] and [`CadIr::from_json`] for the versioned JSON
+//! form, and [`diff()`] for identity-based structural comparison.
 //!
-//! A decoded CAD document is a [`CadIr`]: units, tolerances, and an exact B-rep
-//! stored as flat, id-referenced arenas following the ACIS/ASM topology
-//! hierarchy `body → region → shell → face → loop → coedge → edge → vertex`, with
-//! geometry attached by reference (surfaces, curves, pcurves, points). In v1,
-//! entity provenance and exactness are stored in the sparse document-wide
-//! [`Annotations`] tables, keyed by globally unique entity id. Records the
-//! decoder recognized but could not interpret are preserved as
-//! [`UnknownRecord`]s rather than dropped.
+//! Format crates implement [`Codec`]. Detection selects a codec from a byte
+//! prefix, inspection enumerates a container, and decoding returns a
+//! [`DecodeResult`]. Operation failures use [`CodecError`]. A successful decode
+//! reports partial transfer through [`DecodeReport`] and [`LossNote`].
 //!
-//! ## What is deliberately reserved
+//! [`Annotations`] records source locations and fidelity by globally unique
+//! entity ID. An omitted exactness entry means byte-exact; explicit entries
+//! distinguish derived, inferred, and unknown values. Native namespaces and
+//! unknown records retain source-specific data outside the neutral model.
 //!
-//! Feature history is represented as ordered, source-provenanced operations.
-//! Assembly structure remains reserved. See `docs/cad-ir.md`.
-//!
-//! ## The codec contract
-//!
-//! Format plugins implement [`Codec`]: [`Codec::detect`], [`Codec::inspect`]
-//! (container enumeration), and [`Codec::decode`] (into a [`DecodeResult`] with
-//! an honest [`DecodeReport`]). [`validate`] checks a document with in-IR
-//! arithmetic only.
+//! Assembly instancing, component trees, and joint constraints are reserved.
 
 pub mod annotations;
 pub mod appearance;
@@ -69,8 +68,7 @@ pub use validate::validate;
 
 pub mod unknown;
 
-/// Generate the JSON Schema for [`CadIr`] via `schemars`. Used by tooling and
-/// documentation to publish the IR contract.
+/// Generate the JSON Schema for the current [`CadIr`] representation.
 pub fn cadir_json_schema() -> schemars::Schema {
     schemars::schema_for!(CadIr)
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Loss notes and report types shared by decoding and validation.
+//! Decode loss and validation findings.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 pub enum Severity {
     /// Informational; no action needed.
     Info,
-    /// Something imperfect but non-fatal (e.g. a normalization).
+    /// Non-fatal approximation or normalization.
     Warning,
     /// A correctness problem in the produced IR or export.
     Error,
@@ -71,9 +71,7 @@ impl fmt::Display for LossCategory {
     }
 }
 
-/// A single, attributable statement that some information was not carried
-/// through faithfully. This is how the transcoder reports loss explicitly
-/// rather than silently normalizing.
+/// One attributable instance of incomplete or approximate transfer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LossNote {
     /// Affected subsystem.
@@ -87,15 +85,14 @@ pub struct LossNote {
     pub provenance: Option<Provenance>,
 }
 
-/// Report produced by a decode: what was transferred and what was lost.
+/// Transfer status and loss details from a successful decode.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DecodeReport {
     /// Source format id.
     pub format: String,
     /// Whether the decode stopped at the container layer (no entity decode).
     pub container_only: bool,
-    /// Whether B-rep geometry was actually transferred into the IR. `false`
-    /// means the IR has no geometry even if the container was inspected.
+    /// Whether the decoder transferred B-rep geometry into the IR.
     pub geometry_transferred: bool,
     /// Explicit loss notes.
     pub losses: Vec<LossNote>,
@@ -194,15 +191,14 @@ pub struct Finding {
     pub entity: Option<String>,
 }
 
-/// Report produced by validating an IR document. Carries per-category entity
-/// counts, the findings list, and any propagated loss notes.
+/// Entity counts, findings, and propagated decode losses for one document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ValidationReport {
     /// Count of entities per arena, keyed by entity kind (sorted).
     pub entity_counts: BTreeMap<String, usize>,
     /// Findings, in discovery order.
     pub findings: Vec<Finding>,
-    /// Loss notes carried alongside validation (e.g. from a prior decode).
+    /// Loss notes supplied to validation.
     #[serde(default)]
     pub losses: Vec<LossNote>,
 }

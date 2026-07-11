@@ -12,7 +12,7 @@ const TRIM_KINDS: [u8; 14] = [
 /// Reconstructed standard-nested (or FBB-only) topology: the counted spine's
 /// face boundaries recovered from the trim-mesh triangle packets, plus the
 /// physical edge rows and, for the standard family, the `05 08 01` vertex
-/// coordinate table (spec ?5).
+/// coordinate table ([spec ?5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#5-standard-nested-v5_cfv2-topology-spine)).
 #[derive(Debug, Clone, PartialEq)]
 pub struct StandardTopology {
     faces: Vec<FaceTopology>,
@@ -23,20 +23,20 @@ pub struct StandardTopology {
 
 impl StandardTopology {
     /// Number of faces, equal to the largest contiguous `30 04 04 ff` FBB
-    /// run's row count (spec ?5.2).
+    /// run's row count ([spec ?5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)).
     #[must_use]
     pub fn face_count(&self) -> usize {
         self.faces.len()
     }
 
-    /// Per-face reconstructed boundaries, in FBB row order (spec ?5.1: face
+    /// Per-face reconstructed boundaries, in FBB row order ([spec ?5.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#51-positional-binding): face
     /// ordinal `i` binds to FBB row `i`).
     #[must_use]
     pub fn faces(&self) -> &[FaceTopology] {
         &self.faces
     }
 
-    /// The counted spine's physical edge rows, in table order (spec ?5.2).
+    /// The counted spine's physical edge rows, in table order ([spec ?5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)).
     #[must_use]
     pub fn edge_rows(&self) -> &[EdgeRow] {
         &self.edge_rows
@@ -166,18 +166,18 @@ fn unique_bijections(
 }
 
 /// One row of the counted standard/FBB edge table: `02 <arity_u8>
-/// <payload[arity*2]>` (spec ?5.2), handles read big-endian.
+/// <payload[arity*2]>` ([spec ?5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)), handles read big-endian.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EdgeRow {
     /// Table-kind byte the row was parsed under (`0x01` or `0x02`; spec
     /// ?5.2 `count_header`).
     pub kind: u8,
     /// The row's BE handle sequence `[p0, interior?, p1]`; the first and
-    /// last entries are the row's graph endpoint ports (spec ?5.4).
+    /// last entries are the row's graph endpoint ports ([spec ?5.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#54-physical-edge-identity-and-portvertex-collapse)).
     pub handles: Vec<u32>,
 }
 
-/// One face's reconstructed boundary cycles (spec ?5.3): one outer cycle
+/// One face's reconstructed boundary cycles ([spec ?5.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#53-trim-records-indexed-triangle-mesh-packets)): one outer cycle
 /// plus one per hole, in the order recovered from the trim mesh.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FaceTopology {
@@ -186,7 +186,7 @@ pub struct FaceTopology {
 }
 
 /// One closed boundary cycle of a face's trim mesh, covered end-to-end by
-/// matched edge rows (spec ?5.3-?5.4).
+/// matched edge rows ([spec ?5.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#53-trim-records-indexed-triangle-mesh-packets)?[?5.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#54-physical-edge-identity-and-portvertex-collapse)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Boundary {
     /// The mesh-boundary handle cycle recovered from triangle-edge
@@ -197,7 +197,7 @@ pub struct Boundary {
 }
 
 /// One physical edge's use within a face boundary, oriented by its match
-/// against the recovered boundary cycle (spec ?5.4).
+/// against the recovered boundary cycle ([spec ?5.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#54-physical-edge-identity-and-portvertex-collapse)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CoedgeUse {
     /// Index into [`StandardTopology::edge_rows`] for the matched edge
@@ -205,7 +205,7 @@ pub struct CoedgeUse {
     pub edge_row: usize,
     /// `true` when the edge row's handle sequence matched the boundary
     /// cycle in reverse; orientation comes from this match, not a stored
-    /// sense bit (spec ?5.4).
+    /// sense bit ([spec ?5.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#54-physical-edge-identity-and-portvertex-collapse)).
     pub reversed: bool,
     /// Logical-vertex (union-find component) index at this coedge's start,
     /// in boundary-cycle traversal direction.

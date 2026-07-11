@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for the `.f3d` container parser.
 //!
-//! Feeds arbitrary bytes through detection, container inspection, and decode.
-//! The contract under test is *robustness*: no input may panic. Malformed input
-//! must surface as a `CodecError`, never an abort. Run with:
-//! `cargo +nightly fuzz run f3d_container`.
+//! Runs arbitrary bytes through detection, container inspection, and decoding.
+//! Codec errors are expected for malformed input; panics and aborts are
+//! failures.
 #![no_main]
 
 use std::io::Cursor;

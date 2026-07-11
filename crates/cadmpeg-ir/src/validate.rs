@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Validation of an IR document using only in-IR arithmetic.
+//! Structural and numeric validation for [`CadIr`].
 //!
-//! These checks need no geometry kernel: referential integrity of the topology
-//! graph, loop-ring closure, coedge pairing, unit presence, and cheap geometric
-//! sanity (non-degenerate directions, positive radii, well-formed NURBS pole
-//! counts). Anything requiring true geometric evaluation (does a pcurve lie on
-//! its surface, do faces actually bound a closed solid) is out of scope and is
-//! deliberately *not* faked here.
+//! Validation checks schema version, identity and arena order, references,
+//! topology rings, carrier reachability, annotations, native links, parameter
+//! domains, payload integrity, tessellation, and numeric bounds. It does not
+//! evaluate geometric coincidence, surface membership, or solid closure.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -49,8 +47,7 @@ fn nonpositive(x: f64) -> bool {
     !(x.is_finite() && x > 0.0)
 }
 
-/// Validate `ir`, returning a report. `losses` are propagated into the report
-/// unchanged (e.g. loss notes from the decode that produced `ir`).
+/// Validate `ir` and copy `losses` into the returned report unchanged.
 pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     let mut findings = Vec::new();
 

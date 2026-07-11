@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Implementations of the CLI verbs.
+//! Command execution, artifact writing, and human-readable reports.
 
 use std::fmt;
 use std::fs::File;
@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_ir::report::{DecodeReport, ValidationReport};
-use cadmpeg_ir::{validate, CadIr};
+use cadmpeg_ir::{validate, CadIr, Encoder};
 use cadmpeg_step::StepReport;
 
 use crate::loader::{self, read_prefix};
@@ -19,13 +19,22 @@ use crate::{DecodeArgs, ForcedInput, Format};
 const CLI_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug)]
+/// Error whose result is meaningful to the caller rather than operational.
+///
+/// The executable maps this error to exit status 1.
 pub struct SemanticFailure(String);
 
+/// Safety and reporting options for `convert`.
 pub struct ConvertSettings {
+    /// Replace an existing output or report file.
     pub force: bool,
+    /// Optional path for the versioned JSON command report.
     pub report: Option<PathBuf>,
+    /// Export despite CADIR validation errors.
     pub allow_invalid: bool,
+    /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
+    /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
 
@@ -41,6 +50,7 @@ fn semantic(message: impl Into<String>) -> anyhow::Error {
     SemanticFailure(message.into()).into()
 }
 
+/// Inspect a native container and print its entries.
 pub fn inspect(
     registry: &Registry,
     path: &Path,
@@ -108,6 +118,7 @@ pub fn inspect(
     Ok(())
 }
 
+/// Decode a native CAD file and write canonical CADIR JSON.
 pub fn decode(
     registry: &Registry,
     path: &Path,
@@ -134,6 +145,7 @@ pub fn decode(
     Ok(())
 }
 
+/// Load and validate CADIR, printing a human-readable or JSON report.
 pub fn validate_cmd(
     registry: &Registry,
     path: &Path,
@@ -170,13 +182,19 @@ pub fn validate_cmd(
     Ok(())
 }
 
+/// Safety and reporting options for `export`.
 pub struct ExportSettings {
+    /// Replace an existing output or report file.
     pub force: bool,
+    /// Optional path for the versioned JSON command report.
     pub report: Option<PathBuf>,
+    /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
+    /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
 
+/// Decode if needed and export without validating CADIR.
 pub fn export(
     registry: &Registry,
     path: &Path,
@@ -231,6 +249,7 @@ pub fn export(
     )
 }
 
+/// Decode if needed, validate CADIR, and export.
 pub fn convert(
     registry: &Registry,
     path: &Path,
@@ -297,6 +316,7 @@ pub fn convert(
     )
 }
 
+/// Structurally compare two decoded models.
 pub fn diff(
     registry: &Registry,
     a: &Path,
@@ -435,7 +455,6 @@ fn run_f3d_export(
     input: &Path,
     force: bool,
 ) -> Result<ExportResult> {
-    use cadmpeg_ir::Encoder;
     let mut bytes = Vec::new();
     cadmpeg_codec_f3d::F3dCodec.encode(ir, &mut bytes)?;
     if let Some(path) = out {
@@ -453,7 +472,6 @@ fn run_sldprt_export(
     input: &Path,
     force: bool,
 ) -> Result<ExportResult> {
-    use cadmpeg_ir::Encoder;
     let mut bytes = Vec::new();
     cadmpeg_codec_sldprt::SldprtCodec.encode(ir, &mut bytes)?;
     if let Some(path) = out {

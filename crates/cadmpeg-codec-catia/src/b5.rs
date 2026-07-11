@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
-/// surfaces bound through the in-stream `object_id` map (spec §6.6),
+/// surfaces bound through the in-stream `object_id` map ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)),
 /// together with the `05 08 01` vertex points used to bind edge endpoints.
 #[derive(Debug, Clone, PartialEq)]
 pub struct B5Graph {
@@ -14,7 +14,7 @@ pub struct B5Graph {
     /// records not otherwise resolved into `faces`/`loops`/etc.
     pub records: Vec<B5Record>,
     /// `b5 03 5f` face nodes, in stream declaration order (equal to STEP
-    /// `ADVANCED_FACE` order, spec §6.6).
+    /// `ADVANCED_FACE` order, [spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
     pub faces: Vec<B5Face>,
     /// `b5 03 62` loop nodes, keyed by `object_id`.
     pub loops: BTreeMap<u32, B5Loop>,
@@ -58,7 +58,7 @@ pub enum B5Profile {
     },
 }
 
-/// A resolved `b5 03` surface node (spec §6.6).
+/// A resolved `b5 03` surface node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
 pub enum B5Surface {
     /// `b5 03 27`: a plane spanned by `origin`, `direction_u`, and
@@ -105,13 +105,13 @@ pub enum B5Surface {
 }
 
 /// A resolved `b5 03 21` pcurve node: a 2D B-spline curve in a surface's
-/// parameter space (spec §6.6).
+/// parameter space ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
 pub struct B5Pcurve {
     /// This record's stream `object_id`.
     pub object_id: u32,
     /// `object_id` of the owning surface, taken directly from the pcurve's
-    /// `catia_support_ref` (spec §6.6).
+    /// `catia_support_ref` ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
     pub surface: u32,
     /// B-spline degree.
     pub degree: u32,
@@ -128,7 +128,7 @@ pub struct B5Pcurve {
     pub lifted_endpoints: Option<[[f64; 3]; 2]>,
 }
 
-/// One length-framed `b5 03` record as found by the stream walk (spec §6).
+/// One length-framed `b5 03` record as found by the stream walk ([spec §6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#6-object-stream-record-framing-a5-03-a8-03-b5-03)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B5Record {
     /// Byte offset of the `b5 03` marker in the source stream.
@@ -137,13 +137,13 @@ pub struct B5Record {
     /// `0x62` loop, `0x21` pcurve, `0x27`/`0x28`/`0x2d` surface, `0x5e`
     /// edge, `0x18` line pcurve, `0x0e`/`0x0f` profile, ...).
     pub class: u8,
-    /// Dense creation-order `object_id` stored inline at `+4` (spec §6.5).
+    /// Dense creation-order `object_id` stored inline at `+4` ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#65-a8-03-common-object-stream-freeform-class)).
     pub object_id: u32,
     /// Raw record payload after the 8-byte header.
     pub payload: Vec<u8>,
 }
 
-/// A resolved `b5 03 5f` face node (spec §6.6).
+/// A resolved `b5 03 5f` face node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B5Face {
     /// This record's stream `object_id`.
@@ -157,7 +157,7 @@ pub struct B5Face {
 }
 
 /// A resolved `b5 03 62` loop node: payload `<0x80 + n_refs>
-/// (pcurve_ref edge_ref)* surface_ref` (spec §6.6).
+/// (pcurve_ref edge_ref)* surface_ref` ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B5Loop {
     /// This record's stream `object_id`.

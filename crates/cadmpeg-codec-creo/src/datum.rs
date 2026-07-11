@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Model-space standard datum planes from `ActDatums`.
+//! Standard model-space datum planes stored in `ActDatums`.
 
 use crate::scalar;
 
-/// A model-space standard datum plane decoded from an `ActDatums`
-/// `act_datum_geoms -> srf_array` row (spec §6). Standard datum planes are
-/// axis-aligned: the normal is a unit basis vector and the plane equation is
-/// `x_k = offset` for the axis `k` given by `normal`.
+/// An axis-aligned model-space datum plane.
+///
+/// The plane comes from an `ActDatums` `act_datum_geoms -> srf_array` row. Its
+/// normal is a basis vector and its equation is `x_k = offset` for that axis.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DatumPlane {
     /// The row's `geom_id`, the datum's identifier in the `ActDatums`
     /// `srf_array` namespace. `ref_planes` nested `plane_id` fields join
-    /// this identifier (spec §8.1).
+    /// this identifier ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#81-scalar-and-datum-tokens)).
     pub id: u32,
     /// The plane's unit normal, one of the three standard basis vectors.
     pub normal: [f64; 3],
@@ -24,9 +24,9 @@ pub struct DatumPlane {
     pub offset_in_payload: usize,
 }
 
-/// Decode positional datum planes whose two outline corners have one constant
-/// coordinate. This is model-space geometry; ordinary `srf_array` rows do not
-/// use this promotion rule.
+/// Decode datum rows whose outline corners share one coordinate.
+///
+/// This promotion applies only to model-space `ActDatums` outlines.
 pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
     let mut result = Vec::new();
     for offset in 0..payload.len().saturating_sub(6) {
@@ -73,9 +73,7 @@ pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
     result
 }
 
-/// Decode a named standard datum whose constant coordinate is represented by a
-/// standalone zero in both outline corners. Nonzero outline values are not
-/// needed to establish the zero-offset plane.
+/// Decode a named zero-offset datum from matching zero outline coordinates.
 pub fn named_zero_plane(payload: &[u8]) -> Option<DatumPlane> {
     let marker = b"outline\0\xf9\x02\x03";
     let outline = find(payload, marker, 0)?;

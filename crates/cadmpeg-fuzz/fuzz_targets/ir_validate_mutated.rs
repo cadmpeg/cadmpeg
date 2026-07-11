@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fuzz target for IR validation with mutated documents.
-//!
-//! Takes a base IR JSON document and applies random mutations to create
-//! semantically invalid but structurally valid JSON. Tests that validation
-//! catches these issues without panicking.
-//! Contract: no input may panic.
+//! Parses IR JSON, applies one of 15 deterministic semantic mutations selected
+//! by the first input byte, and validates the result. Validation findings are
+//! expected; panics are failures.
 
 #![no_main]
 
@@ -17,7 +14,6 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
 
-    // Split data: first byte determines mutation strategy, rest is JSON
     let strategy = data[0];
     let json_bytes = &data[1..];
 
@@ -31,7 +27,6 @@ fuzz_target!(|data: &[u8]| {
         Err(_) => return,
     };
 
-    // Apply mutations based on strategy
     match strategy % 15 {
         0 => {
             // Mutate vertex positions with NaN/infinity
@@ -138,6 +133,5 @@ fuzz_target!(|data: &[u8]| {
         _ => {}
     }
 
-    // Validate - should catch issues without panicking
     let _ = validate(&ir, Vec::new());
 });

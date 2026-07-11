@@ -1,22 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Standard-nested geometry decode: the exact vertex point cloud and the
-//! analytic surface carriers, read from the reconstructed BREP stream.
+//! Geometry record decoders shared by the storage-variant paths.
 //!
-//! Two things reconstruct with high confidence on the standard-nested family and
-//! are read verbatim here:
+//! Standard nested streams store vertex coordinates in `05 08 01` records and
+//! analytic face carriers in `SurfacicReps`. Curved carrier parameters are
+//! inline; planes use a tag-linked parameter record. The module also decodes E5
+//! and zero-entity analytic carriers, object-stream and consolidated NURBS
+//! surfaces, UV pcurves, and selected edge-support records.
 //!
-//! - **Vertices** — `05 08 01 <x><y><z>` records, each three little-endian `f32`
-//!   in millimetres at identity world placement (spec §12). One record per
-//!   topology vertex; coordinates are STEP `VERTEX_POINT` positions directly.
-//! - **Analytic surface carriers** — the per-face `00 33 <kind>` records in
-//!   `SurfacicReps`, whose curved kinds (cylinder, cone, sphere, torus) carry
-//!   their parameters inline as big-endian `f32`. The plane kind stores its
-//!   parameters in a separate tag-bridged record that this codec does not resolve,
-//!   so plane faces are reported (not fabricated).
-//!
-//! Nothing is scaled: CATIA lengths are already millimetres. The face→loop→edge
-//! topology graph, the port→vertex incidence collapse, and the plane-normal /
-//! orientation sign bits are not reconstructed here; they are the reported gaps.
+//! Length values enter the IR in millimetres. Functions validate framing,
+//! finite numeric payloads, structural counts, and family-specific invariants
+//! before returning a carrier.
 
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -94,7 +87,7 @@ pub fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
 ///
 /// Non-finite and out-of-range candidates are filtered (real part coordinates sit
 /// well under 10 metres, and the 3-byte signature occurs incidentally in packed
-/// sub-streams); records are not deduplicated — the raw 1:1 count matches the
+/// sub-streams). Records retain their raw 1:1 correspondence with the
 /// STEP `VERTEX_POINT` count.
 pub fn vertices(brep: &[u8]) -> Vec<Point3> {
     let mut out = Vec::new();
@@ -116,7 +109,7 @@ pub fn vertices(brep: &[u8]) -> Vec<Point3> {
 }
 
 /// Locate every per-face analytic surface record by the strict 5-byte template
-/// `[target_u24 le][00][prebyte] 00 33 <kind>` (spec §5.8). The strict template
+/// `[target_u24 le][00][prebyte] 00 33 <kind>` ([spec §5.8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#58-analytic-surface-records-in-surfacicreps)). The strict template
 /// rejects collisional `00 33` matches inside other binary data.
 pub fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
     let mut out = Vec::new();
@@ -408,13 +401,13 @@ pub struct A8Surface {
 
 /// A decoded consolidated `a5 03 32` explicit 3D spline support: a swept band
 /// around a freeform curve, reconstructed as a per-span quintic Hermite jet
-/// and, from the same jet, a rolling-ball fillet surface (spec §6.2).
+/// and, from the same jet, a rolling-ball fillet surface ([spec §6.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#62-a5-03-32-freeform-3d-curve-rolling-ball-fillet)).
 #[derive(Debug, Clone)]
 pub struct A5FreeformCurve {
     /// Offset of the `a5 03 32` marker in the source buffer.
     pub pos: usize,
     /// Header token byte at `record + 7`; a small repeating type code, not
-    /// a per-record object id (spec §6).
+    /// a per-record object id ([spec §6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#6-object-stream-record-framing-a5-03-a8-03-b5-03)).
     pub header_token: u8,
     /// B-spline degree; always `5`.
     pub degree: u32,
@@ -433,13 +426,13 @@ pub struct A5FreeformCurve {
     pub radius_min: f64,
     /// Maximum per-site rolling-ball radius across `sites`.
     pub radius_max: f64,
-    /// `true` when `radius_max - radius_min < 1e-9`: the fillet has a
-    /// constant radius rather than a variable one.
+    /// `true` when `radius_max - radius_min < 1e-9`, indicating a constant
+    /// fillet radius.
     pub radius_constant: bool,
 }
 
 /// One 80-byte rolling-ball jet site from an [`A5FreeformCurve`] (spec
-/// §6.2): `Limit1 [0:3], Limit2 [3:6], Center [6:9], theta [9]`, satisfying
+/// [§6.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#62-a5-03-32-freeform-3d-curve-rolling-ball-fillet)): `Limit1 [0:3], Limit2 [3:6], Center [6:9], theta [9]`, satisfying
 /// `|Center-Limit1| == |Center-Limit2| == radius` and `theta =
 /// 2*arcsin(|Limit2-Limit1| / (2*radius))`.
 #[derive(Debug, Clone)]
@@ -457,12 +450,12 @@ pub struct RollingBallSite {
 }
 
 /// A decoded common object-stream `a8 03 20` pcurve: a degree-5 C2 B-spline
-/// UV jet in a surface's parameter space (spec §6.5).
+/// UV jet in a surface's parameter space ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#65-a8-03-common-object-stream-freeform-class)).
 #[derive(Debug, Clone)]
 pub struct A8Pcurve {
     /// Offset of the `a8 03 20` marker in the source buffer.
     pub pos: usize,
-    /// Inline persistent object id stored at `record + 7` (spec §6.5).
+    /// Inline persistent object id stored at `record + 7` ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#65-a8-03-common-object-stream-freeform-class)).
     pub object_id: u32,
     /// Referenced owning-surface object id (`0x18`-tagged u16 or
     /// `0x38`-tagged u24 reference).
@@ -779,7 +772,7 @@ pub enum StandardCurveGeometry {
 }
 
 /// One row of the standard positional edge-support/incidence table (spec
-/// §5.5): `60 <tag:u24le> <curve_body> <face_ref> <face_ref>`, one row per
+/// [§5.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#55-0x60-curve-support-edge-incidence-table)): `60 <tag:u24le> <curve_body> <face_ref> <face_ref>`, one row per
 /// spine edge.
 #[derive(Debug, Clone)]
 pub struct StandardCurveSupport {
@@ -1161,7 +1154,7 @@ fn e5_torus(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
 
 /// Decode analytic surface carriers in a zero-entity `a9 03` stream.  The
 /// record's second tag byte is also its length code (`length = tag + 12`), so
-/// this walks framed records rather than searching payloads for signatures.
+/// the decoder walks framed records.
 pub fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
     let mut out = Vec::new();
     let mut p = 0usize;
@@ -1192,8 +1185,8 @@ pub fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
 }
 
 /// Decode the inline zero-entity non-rational NURBS carrier.  Its pole grid
-/// follows the nominal framed record length, so this deliberately receives the
-/// full preamble rather than the length-limited payload slice.
+/// follows the nominal framed record length, so this function receives the full
+/// preamble.
 fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
     let (u_distinct, after_u) = f64_run_to_one(data, record.checked_add(23)?)?;
     let (u_mults, after_u_mults) = u32_tokens(data, after_u, u_distinct.len())?;
@@ -1314,7 +1307,7 @@ fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
 
 /// Decode the analytic parameters carried inline in a curved surface's kind
 /// record. The big-endian `f32` payload begins immediately after the 3-byte
-/// `00 33 <kind>` marker (spec §5.8). Returns `None` for the plane kind (its
+/// `00 33 <kind>` marker ([spec §5.8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#58-analytic-surface-records-in-surfacicreps)). Returns `None` for the plane kind (its
 /// parameters are in a separate bridged record) and for any non-finite or
 /// out-of-range payload.
 pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeometry> {

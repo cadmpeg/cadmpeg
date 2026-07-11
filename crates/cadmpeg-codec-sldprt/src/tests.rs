@@ -99,7 +99,7 @@ fn parasolid_with_body(description: &str, schema: &str, body: &[u8]) -> Vec<u8> 
 // ---- Parasolid record builders ----------------------------------------------
 //
 // Each helper emits one fixed-width record in the exact byte layout the decoder
-// parses (spec §5, §8.1), so the geometry test exercises the real record scanner
+// parses ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records), [§8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records)), so the geometry test exercises the real record scanner
 // and chain walk rather than a mock.
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];

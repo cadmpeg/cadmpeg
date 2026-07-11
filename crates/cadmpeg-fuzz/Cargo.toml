@@ -2,13 +2,12 @@
 [package]
 name = "cadmpeg-fuzz"
 version = "0.0.0"
-description = "Fuzz targets for cadmpeg binary CAD decoders"
+description = "libFuzzer harnesses for cadmpeg codecs, IR operations, and STEP export"
 edition = "2021"
 license = "Apache-2.0"
 publish = false
 
-# Declare an independent workspace so this crate (excluded from the root
-# workspace) builds standalone under `cargo +nightly fuzz`.
+# `cargo-fuzz` builds this crate outside the repository workspace.
 [workspace]
 
 [package.metadata]
@@ -91,7 +90,7 @@ test = false
 doc = false
 bench = false
 
-# F3D sub-module targets
+# F3D parser targets
 [[bin]]
 name = "f3d_asm_header"
 path = "fuzz_targets/f3d_asm_header.rs"
@@ -127,7 +126,7 @@ test = false
 doc = false
 bench = false
 
-# SolidWorks sub-module targets
+# SolidWorks parser targets
 [[bin]]
 name = "sldprt_parasolid"
 path = "fuzz_targets/sldprt_parasolid.rs"
@@ -142,7 +141,7 @@ test = false
 doc = false
 bench = false
 
-# CATIA sub-module targets
+# CATIA parser targets
 [[bin]]
 name = "catia_geometry_vertices"
 path = "fuzz_targets/catia_geometry_vertices.rs"
@@ -199,7 +198,7 @@ test = false
 doc = false
 bench = false
 
-# Creo sub-module targets
+# Creo parser targets
 [[bin]]
 name = "creo_psb_tokens"
 path = "fuzz_targets/creo_psb_tokens.rs"
@@ -242,7 +241,7 @@ test = false
 doc = false
 bench = false
 
-# NX sub-module targets
+# NX parser targets
 [[bin]]
 name = "nx_parasolid"
 path = "fuzz_targets/nx_parasolid.rs"
@@ -285,7 +284,7 @@ test = false
 doc = false
 bench = false
 
-# IR sub-module targets
+# IR and STEP targets
 [[bin]]
 name = "ir_diff"
 path = "fuzz_targets/ir_diff.rs"
@@ -307,7 +306,7 @@ test = false
 doc = false
 bench = false
 
-# Integration and robustness targets
+# Mutating cross-layer targets
 [[bin]]
 name = "step_geometry_degenerate"
 path = "fuzz_targets/step_geometry_degenerate.rs"

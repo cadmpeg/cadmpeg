@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Typed topology record parsing (spec §5).
+//! Typed topology record parsing ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
 //!
 //! Six fixed-width record families live at Parasolid stream scope and form the
 //! B-rep chain
@@ -13,7 +13,7 @@
 //! ```
 //!
 //! Every record opens with `00 TT`, an optional `0xff`, then a big-endian `attr`
-//! (u16) and — for most families — an `ordinal`/`seq` (u32). The magic
+//! (u16) and, for most families, an `ordinal`/`seq` (u32). The magic
 //! `c2 bc 92 8f 99 6e 00 00` anchors the bridge, edge-use, and vertex-use
 //! parses. Records are keyed by `attr` within one stream (one site); attribute
 //! ids collide across sites, so this codec resolves references only within the
@@ -23,7 +23,7 @@ use std::collections::HashMap;
 
 use super::{f64_be, u16_be};
 
-/// The magic anchoring magic-bearing topology records (spec §5).
+/// The magic anchoring magic-bearing topology records ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
 pub const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
 /// A parsed topology record. Only the fields the chain walk needs are kept.

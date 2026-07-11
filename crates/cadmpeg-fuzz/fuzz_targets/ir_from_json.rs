@@ -4,8 +4,6 @@
 //! Feeds arbitrary bytes through UTF-8 decoding and JSON deserialization of the
 //! IR document. Contract: no input may panic. Malformed JSON must surface as
 //! `serde_json::Error`.
-//!
-//! Run: cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz ir_from_json
 
 #![no_main]
 

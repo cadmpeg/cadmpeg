@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! CLI integration tests exercising `cadmpeg` end to end via `assert_cmd`.
+//! End-to-end command behavior and output-contract tests.
 
 #![allow(clippy::unwrap_used)]
 

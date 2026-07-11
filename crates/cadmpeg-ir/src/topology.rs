@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The B-rep topology graph.
+//! Boundary-representation topology.
 //!
-//! Layout follows the ASM/ACIS hierarchy documented in the f3d topology spec:
-//! `body → region → shell → face → loop → coedge → edge → vertex`, with geometry
-//! attached by reference (`face → surface`, `edge → curve`, `coedge → pcurve`,
-//! `vertex → point`). Entities are stored in flat arenas on
-//! [`crate::document::CadIr`] and refer to each other by id.
+//! Flat arenas in [`crate::document::Model`] store the hierarchy
+//! `body → region → shell → face → loop → coedge → edge → vertex`. Faces,
+//! edges, coedges, and vertices reference surface, curve, pcurve, and point
+//! carriers by typed ID.
 
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -29,9 +28,10 @@ pub struct Color {
     pub a: f32,
 }
 
-/// Orientation of an entity relative to the geometry it references. On a coedge
-/// it says whether the coedge runs along or against its edge's curve; on a face
-/// whether the face normal agrees with its surface normal.
+/// Orientation relative to referenced geometry.
+///
+/// For a coedge this compares traversal with its edge curve. For a face it
+/// compares the face normal with its surface normal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Sense {
@@ -142,8 +142,10 @@ pub struct Loop {
     pub coedges: Vec<CoedgeId>,
 }
 
-/// A coedge: one side of an edge as used by a particular loop. Each edge is
-/// participates in a closed radial ring around its edge.
+/// One use of an edge by a loop.
+///
+/// Coedges form a loop ring through `next` and `previous`, and a radial ring
+/// around their shared edge through `radial_next`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Coedge {
     /// Arena id.

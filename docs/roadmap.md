@@ -21,7 +21,7 @@ Native write support alone does not establish complete format support. A complet
 
 A complete decode converts understood data into typed IR. Any remaining source data survives as a named opaque record with byte provenance. No source content disappears without a loss entry.
 
-The [format support profiles](format-support.md) track each semantic domain across read, write, and round-trip capability. No single highest level substitutes for complete support.
+The [support ladder](format-support.md#support-ladder) scores each codec per envelope; the per-domain profiles behind it identify the failing gates. A ladder score is strict: complete support is L9 proven.
 
 ## Fidelity contract
 

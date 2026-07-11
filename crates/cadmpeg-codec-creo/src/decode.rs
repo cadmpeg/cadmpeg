@@ -1,21 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode a `.prt` into an IR document.
+//! Conversion from a PSB container to [`CadIr`].
 //!
-//! Creo PSB is, at the current state of the art, a container + namespace spec
-//! rather than a geometry decoder (spec §9). Per-instance model-space geometry is
-//! gated behind several undecoded PSB layers: the general 8-byte world-coordinate
-//! float token, the `0x26` per-instance torus/sphere override region, and the
-//! round/fillet feature evaluator. `VisibGeom` stores one *prototype per surface
-//! family* (a first-instance template), not per-instance located geometry (spec
-//! §4.2). Emitting a prototype surface into the IR would present template values
-//! as if they were located model geometry, which the IR's carrier vocabulary
-//! cannot honestly qualify — so this codec transfers **no** geometry.
+//! Decode transfers standard datum planes as derived plane surfaces and
+//! preserves each geometry section as an [`UnknownRecord`]. Source metadata
+//! records the layout, namespace census, active units, and counts of decoded
+//! structural rows.
 //!
-//! What it does instead is an honest structural decode: it enumerates the
-//! container (spec §2), reads the byte-backed `srf_array`/`crv_array` namespace
-//! counts (spec §4, §5), preserves the PSB geometry sections as
-//! [`UnknownRecord`]s so no recognized data is silently dropped, and reports each
-//! specific gate as a counted loss note.
+//! Surface and curve namespaces contain useful topology and prototype data, but
+//! the placed body model is incomplete. The report therefore records blocking
+//! geometry and topology losses instead of emitting a partial B-rep.
 
 use std::collections::BTreeMap;
 
@@ -33,7 +26,11 @@ use cadmpeg_ir::Exactness;
 
 use crate::container::{self, role, ContainerScan};
 
-/// Decode a `.prt` reader into an IR + report.
+/// Decode a `.prt` stream into an IR document and loss report.
+///
+/// The stream is read from its beginning. `options.container_only` is reflected
+/// in the report, but the current decoder always performs the same structural
+/// scan.
 pub fn decode(
     reader: &mut dyn ReadSeek,
     options: &DecodeOptions,
@@ -45,8 +42,7 @@ pub fn decode(
     Ok(DecodeResult::new(ir, report))
 }
 
-/// Build the metadata IR: source attributes plus the PSB geometry sections
-/// preserved verbatim as unknown passthrough records.
+/// Build source metadata, preserved geometry records, and datum-plane surfaces.
 fn build_ir(scan: &ContainerScan) -> CadIr {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
@@ -170,7 +166,7 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     }
 }
 
-/// The loss report. Geometry is never transferred; the report names each gate.
+/// Build diagnostics for data that cannot be represented in the emitted IR.
 fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let geom_sections = scan
@@ -225,8 +221,8 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
         message: format!(
             "No model B-rep geometry was transferred. VisibGeom stores one surface prototype per family \
              (a first-instance template), not per-instance located geometry, so its prototype \
-             scalars cannot be emitted as model surfaces without mislabeling most instances (spec \
-             §4.2). {geom_sections} PSB geometry section(s) were preserved verbatim as unknown \
+             scalars cannot be emitted as model surfaces without mislabeling most instances \
+             ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). {geom_sections} PSB geometry section(s) were preserved verbatim as unknown \
              records."
         ),
         provenance: None,

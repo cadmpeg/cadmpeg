@@ -1,36 +1,71 @@
 // SPDX-License-Identifier: Apache-2.0
-//! # cadmpeg-codec-f3d
+//! Read and write Autodesk Fusion `.f3d` archives.
 //!
-//! Container-level codec for Autodesk Fusion 360 `.f3d` files.
+//! [`F3dCodec`] implements [`Codec`] and [`Encoder`]. Decoding produces a
+//! [`CadIr`] document with B-rep topology, analytic and cached NURBS geometry,
+//! body transforms, design and sketch records, construction history, and
+//! appearances. Encoding replays an unchanged decoded archive byte for byte,
+//! applies supported semantic edits to retained source data, or creates an
+//! archive from the supported source-less profile.
 //!
-//! ## What is implemented
+//! Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! on the cadmpeg support ladder.
 //!
-//! A `.f3d` is a ZIP archive whose entries follow documented naming families
-//! (BREP streams, `.protein` material ZIPs, design/ACT/browser bulk & meta
-//! streams, manifests, previews). This codec:
+//! # Decode
 //!
-//! - [`F3dCodec::detect`] recognizes the ZIP magic plus f3d marker strings;
-//! - [`F3dCodec::inspect`] enumerates and classifies every entry and reads the
-//!   ASM `BinaryFile` header of each BREP stream (magic/width, version words,
-//!   `product_family`/`product_version`/`save_date`, `scale`/`resabs`/`resnor`)
-//!   and locates the `delta_state` history boundary;
-//! - [`F3dCodec::decode`] frames the active BREP's SAB record stream and builds
-//!   the IR B-rep graph (`body → region → shell → face → loop → coedge → edge →
-//!   vertex → point`) plus the analytic surface/curve carriers it references.
+//! ```no_run
+//! use cadmpeg_codec_f3d::F3dCodec;
+//! use cadmpeg_ir::{Codec, DecodeOptions};
+//! use std::fs::File;
 //!
-//! ## What is decoded, and what is reported as loss
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut input = File::open("part.f3d")?;
+//! let result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
+//! for loss in &result.report.losses {
+//!     eprintln!("{:?}: {}", loss.severity, loss.message);
+//! }
+//! # Ok(())
+//! # }
+//! ```
 //!
-//! The SAB record stream ([`sab`]) is framed token-by-token so record
-//! boundaries stay exact even across records this codec does not interpret. From
-//! that `RecordTable` ([`brep`]) it decodes the topology graph and the analytic
-//! carriers — `plane`, `cone`/cylinder, `sphere`, `torus`, `straight` line,
-//! `ellipse`/circle — with lengths converted centimetre→millimetre.
+//! [`Codec::inspect`] classifies the ZIP entries and reads ASM B-rep headers
+//! without building geometry. `DecodeOptions::container_only` provides the
+//! corresponding metadata-only `CadIr`.
 //!
-//! Cached spline/procedural surfaces and curves, UV pcurves, linked ASM
-//! attributes, body transforms, nested Protein appearance assets, and Design
-//! body assignments are transferred. Unsupported source records remain
-//! explicit in the [`cadmpeg_ir::report::DecodeReport`]. When the active stream
-//! is not a decodable `BinaryFile8` SAB, decode falls back to container metadata.
+//! # Encode
+//!
+//! ```no_run
+//! use cadmpeg_codec_f3d::F3dCodec;
+//! use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+//! use std::fs::File;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut input = File::open("part.f3d")?;
+//! let mut result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
+//! // Edit supported fields in result.ir.
+//! let mut output = File::create("part-edited.f3d")?;
+//! F3dCodec.encode(&result.ir, &mut output)?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Data flow
+//!
+//! [`container`] selects the authoritative `.smbh` B-rep, or the first `.smb`
+//! construction snapshot when no `.smbh` exists. [`sab`] frames its active
+//! record slice. [`brep`] builds the topology chain from bodies through
+//! vertices and points, while [`nurbs`] decodes cached spline carriers.
+//! [`design`], [`history`], and [`materials`] populate source-native records and
+//! appearance bindings.
+//!
+//! ASM model-space lengths become millimetres. Directions, ratios, angles,
+//! knots, weights, and UV parameters retain their native scale.
+//!
+//! Inspect [`cadmpeg_ir::report::DecodeReport::losses`] before consuming a
+//! decode. A stream that cannot produce geometry returns container metadata,
+//! retained source data, and blocking geometry and topology losses. Referenced
+//! carrier bytes needed for passthrough remain available as
+//! [`cadmpeg_ir::unknown::UnknownRecord`] values.
 
 mod act;
 pub mod asm_header;
@@ -59,7 +94,12 @@ const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 pub struct F3dCodec;
 
 impl F3dCodec {
-    /// Replay an unchanged decoded F3D archive byte-for-byte.
+    /// Write a decoded F3D document, replaying its source bytes when its
+    /// semantic content is unchanged.
+    ///
+    /// Supported edits regenerate affected records within the retained archive.
+    /// The method returns [`CodecError::NotImplemented`] when `ir` has no F3D
+    /// semantic baseline or retained source image.
     pub fn write_preserved(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
         let expected = ir
             .source
@@ -138,7 +178,15 @@ impl Encoder for F3dCodec {
     }
 
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-        self.write_preserved(ir, writer)
+        if ir
+            .unknowns
+            .iter()
+            .any(|record| record.id.0 == "f3d:file:source-image#0")
+        {
+            self.write_preserved(ir, writer)
+        } else {
+            writer::write_new(ir, writer)
+        }
     }
 }
 

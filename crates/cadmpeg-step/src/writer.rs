@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Low-level Part 21 instance emitter: id allocation, real/string encoding, and
-//! deduplication of leaf geometry (points and directions).
+//! Encodes Part 21 DATA instances.
+//!
+//! The emitter allocates instance names, formats scalar values, counts entity
+//! types, and interns repeated points and directions.
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-/// A STEP instance name (`#42`). Newtype so the graph builder cannot confuse an
-/// instance id with an ordinary integer.
+/// A STEP instance name such as `#42`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ref(pub u64);
 
@@ -16,14 +17,12 @@ impl std::fmt::Display for Ref {
     }
 }
 
-/// Accumulates DATA-section instances, handing out sequential ids and tallying
-/// how many of each entity type were written (for the export report).
+/// Accumulates DATA instances in allocation order and counts their entity types.
 pub struct Emitter {
     next: u64,
     lines: Vec<String>,
     counts: BTreeMap<String, usize>,
-    /// Interned leaf primitives, keyed by their fully-encoded parameter text, so
-    /// repeated points/directions collapse to a single instance.
+    /// Leaf instances keyed by encoded type and parameters.
     interned: HashMap<String, Ref>,
 }
 
@@ -37,9 +36,10 @@ impl Emitter {
         }
     }
 
-    /// Write one instance `#id = TYPE(params);` and return its reference. `type_`
-    /// is the entity keyword used both in the output and as the report tally key;
-    /// for a complex (AND-combined) instance pass the leading keyword to tally.
+    /// Append `#id = TYPE(params);` and return the allocated reference.
+    ///
+    /// `type_` is also the entity-count key. Complex instances use their leading
+    /// keyword as the key.
     pub fn emit(&mut self, type_: &str, params: &str) -> Ref {
         let id = self.next;
         self.next += 1;
@@ -48,8 +48,9 @@ impl Emitter {
         Ref(id)
     }
 
-    /// Emit a raw pre-formatted instance body (already including `TYPE(...)` or a
-    /// complex `( ... )` grouping). `tally` names it in the report.
+    /// Append a preformatted entity or complex-instance body.
+    ///
+    /// `tally` supplies its entity-count key.
     pub fn emit_raw(&mut self, tally: &str, body: &str) -> Ref {
         let id = self.next;
         self.next += 1;
@@ -58,9 +59,7 @@ impl Emitter {
         Ref(id)
     }
 
-    /// Emit `type_`, reusing an existing instance when an identical one (same
-    /// encoded params) was already interned. Use only for value-like leaves
-    /// (`CARTESIAN_POINT`, `DIRECTION`) where sharing is always sound.
+    /// Emit a value-like leaf or reuse an identical encoded instance.
     pub fn emit_interned(&mut self, type_: &str, params: &str) -> Ref {
         let key = format!("{type_}|{params}");
         if let Some(r) = self.interned.get(&key) {
@@ -79,16 +78,16 @@ impl Emitter {
         self.lines.len()
     }
 
-    /// The DATA-section body, one instance per line.
+    /// Consume the emitter and return one encoded DATA instance per element.
     pub fn into_lines(self) -> Vec<String> {
         self.lines
     }
 }
 
-/// Format an `f64` as a Part 21 real literal. A STEP real must always carry a
-/// decimal point (`0.`, `1.`, `2.5`, `1.E-06`); Rust's default `f64` formatting
-/// drops it for integral values, so we re-add it. Non-finite values are clamped
-/// to `0.` — callers should have reported the loss before reaching here.
+/// Format an `f64` as a Part 21 real literal.
+///
+/// The result always contains a decimal point, including scientific notation.
+/// Non-finite inputs become `0.`.
 pub fn real(v: f64) -> String {
     if !v.is_finite() {
         return "0.".to_string();
@@ -117,9 +116,10 @@ pub fn real(v: f64) -> String {
     s
 }
 
-/// Encode a Rust string as a Part 21 single-quoted string literal. Apostrophes
-/// double; non-ASCII and control characters use the `\X2\..\X0\` extended
-/// notation so the file stays 7-bit clean per ISO 10303-21.
+/// Encode a Rust string as a Part 21 single-quoted string literal.
+///
+/// Apostrophes are doubled. Non-ASCII and control characters use
+/// `\X2\..\X0\` UTF-16 hexadecimal notation, keeping the encoded file 7-bit.
 pub fn string(s: &str) -> String {
     use std::fmt::Write as _;
 
@@ -145,7 +145,7 @@ pub fn string(s: &str) -> String {
     out
 }
 
-/// Join instance references as a Part 21 aggregate: `(#1,#2,#3)`.
+/// Join instance references into a Part 21 aggregate such as `(#1,#2,#3)`.
 pub fn refs(items: &[Ref]) -> String {
     let mut out = String::from("(");
     for (i, r) in items.iter().enumerate() {

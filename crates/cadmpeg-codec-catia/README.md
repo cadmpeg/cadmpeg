@@ -1,54 +1,75 @@
 # cadmpeg-codec-catia
 
-`cadmpeg-codec-catia` opens `.CATPart` files and loads available model data
-into `CadIr`. It recognizes the known `V5_CFV2` storage layouts and reads
-analytic geometry, spline geometry, and topology where the file records provide
-the needed links.
+`cadmpeg-codec-catia` reads CATIA V5 `.CATPart` files into
+[`CadIr`](https://docs.rs/cadmpeg-ir). It recognizes the `V5_CFV2` container
+layouts used by CATPart files and decodes supported analytic surfaces, NURBS
+surfaces, curves, vertices, and B-rep topology.
 
-## Install
+Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder for the standard-nested layout; other layouts are L1.
+
+Add the codec and IR crates:
 
 ```sh
 cargo add cadmpeg-codec-catia cadmpeg-ir
 ```
 
-## Use
+Decode a part with the shared codec interface:
 
 ```rust,no_run
+use std::fs::File;
+
 use cadmpeg_codec_catia::CatiaCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
-use std::fs::File;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.CATPart")?;
-    let result = CatiaCodec.decode(&mut input, &DecodeOptions::default())?;
+    let decoded = CatiaCodec.decode(&mut input, &DecodeOptions::default())?;
 
     println!(
         "{} bodies, {} surfaces",
-        result.ir.model.bodies.len(),
-        result.ir.model.surfaces.len()
+        decoded.ir.model.bodies.len(),
+        decoded.ir.model.surfaces.len()
     );
+    for loss in &decoded.report.losses {
+        eprintln!("{:?}: {}", loss.severity, loss.message);
+    }
     Ok(())
 }
 ```
 
-`CatiaCodec::inspect` identifies the storage layout and lists its logical
-streams without decoding geometry.
+The decode report is part of the result. Check it before assuming that every
+native relationship or attribute has an IR representation.
 
-## Coverage
+## Storage and model coverage
 
-Standard nested files have the broadest coverage, including connected B-rep
-topology when trim and endpoint records resolve. Other layouts currently yield
-smaller sets of analytic or spline geometry.
+A CATPart starts with an outer `V5_CFV2` container. Most files also contain a
+nested `V5_CFV2` directory whose physical extents reconstruct logical streams
+such as `MainDataStream` and `SurfacicReps`. The codec identifies the storage
+variant before selecting a record decoder.
 
-The crate does not yet read tessellation, design history, assemblies,
-appearances, or persistent attributes, and it does not write `.CATPart` files.
-See [format support][support] for the detailed matrix.
+Standard nested parts have the broadest model coverage. The decoder emits
+analytic carrier surfaces and vertices, binds faces when stored senses resolve,
+and emits loops, coedges, edges, and endpoint assignments when the trim,
+support, and vertex tables form a complete unambiguous graph. FBB-only,
+zero-entity, E5, and object-stream layouts can yield analytic or NURBS carriers
+and selected edge bindings. Unresolved native bytes remain attached to the IR
+as unknown records, and the report describes missing geometry, topology, or
+attributes.
 
-## Documentation
+Use `CatiaCodec::inspect` to identify the storage variant and list catalogued
+logical streams without decoding entities. Set `DecodeOptions::container_only`
+when only source metadata and container diagnostics are needed.
+
+The crate reads parts only. It does not write `.CATPart` files or decode
+assemblies, design history, tessellation, appearances, materials, persistent
+object tags, or general document metadata. The [format support matrix][support]
+tracks coverage by model layer.
+
+## Reference
 
 - [API documentation][docs]
-- [Format support][support]
-- [Format notes][spec]
+- [CATIA format model][spec]
+- [Format support matrix][support]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]
 
