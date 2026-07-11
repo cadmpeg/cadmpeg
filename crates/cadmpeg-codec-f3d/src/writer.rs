@@ -7190,6 +7190,18 @@ fn validate_procedural_curve_edits(
             ) if before_source == after_source && before.definition != after.definition => {
                 Some(after.definition.clone())
             }
+            (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
+                    components: before_components,
+                    ..
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
+                    components: after_components,
+                    ..
+                },
+            ) if before_components == after_components && before.definition != after.definition => {
+                Some(after.definition.clone())
+            }
             (before, after) if before == after => None,
             _ => {
                 return Err(CodecError::NotImplemented(format!(
@@ -7453,6 +7465,9 @@ fn patch_framed_geometry(
                     }
                     cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { .. } => {
                         patch_subset_definition(bytes, record, definition)?;
+                    }
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound { .. } => {
+                        patch_compound_definition(bytes, record, definition)?;
                     }
                     _ => unreachable!("procedural edit validation limits writable definitions"),
                 }
@@ -8200,6 +8215,87 @@ fn patch_subset_definition(
         }
         bytes[tag + 1..tag + 9].copy_from_slice(&value.to_le_bytes());
     }
+    Ok(())
+}
+
+fn patch_compound_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> Result<(), CodecError> {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
+        parameters,
+        component_parameters,
+        ..
+    } = definition
+    else {
+        return Err(CodecError::Malformed(
+            "compound patch received another definition".into(),
+        ));
+    };
+    let end = record.offset + record.len;
+    let (mut position, int_width) = {
+        let record_bytes = bytes
+            .get(record.offset..end)
+            .ok_or_else(|| CodecError::Malformed("compound record is truncated".into()))?;
+        let name = b"comp_int_cur";
+        let marker = record_bytes
+            .windows(name.len())
+            .position(|window| window == name)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "procedural curve record {} is not compound",
+                    record.index
+                ))
+            })?;
+        let mut position = marker + name.len();
+        let int_width = [8usize, 4]
+            .into_iter()
+            .find(|width| {
+                record_bytes.get(position) == Some(&0x04)
+                    && record_bytes
+                        .get(position + 1..position + 1 + width)
+                        .and_then(|raw| match width {
+                            8 => raw.try_into().ok().map(i64::from_le_bytes),
+                            4 => raw.try_into().ok().map(i32::from_le_bytes).map(i64::from),
+                            _ => None,
+                        })
+                        == i64::try_from(parameters.len()).ok()
+            })
+            .ok_or_else(|| CodecError::Malformed("compound parameter count is malformed".into()))?;
+        position += 1 + int_width;
+        (position, int_width)
+    };
+    for value in parameters {
+        patch_compound_double(bytes, record, &mut position, *value)?;
+    }
+    if bytes.get(record.offset + position) != Some(&0x04) {
+        return Err(CodecError::Malformed(
+            "compound component count is malformed".into(),
+        ));
+    }
+    position += 1 + int_width;
+    for value in component_parameters {
+        patch_compound_double(bytes, record, &mut position, *value)?;
+    }
+    Ok(())
+}
+
+fn patch_compound_double(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    position: &mut usize,
+    value: f64,
+) -> Result<(), CodecError> {
+    let tag = record.offset + *position;
+    if bytes.get(tag) != Some(&0x06) {
+        return Err(CodecError::Malformed(format!(
+            "compound record {} parameter payload is malformed",
+            record.index
+        )));
+    }
+    bytes[tag + 1..tag + 9].copy_from_slice(&value.to_le_bytes());
+    *position += 9;
     Ok(())
 }
 

@@ -738,6 +738,35 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         }
     }
 
+    // An edge whose sense boolean is reversed traverses its curve as
+    // `C(-t)`, with the edge parameters on the reversed parameterization.
+    // The IR keeps every edge forward on its curve (the STEP writer's
+    // `same_sense = .T.` contract), so carriers referenced only by reversed
+    // edges are reversed in place; a carrier shared across both senses keeps
+    // its forward orientation and reversed edges point at a `:reversed`
+    // clone emitted beside it.
+    let mut reversed_curve_refs: HashSet<i64> = HashSet::new();
+    let mut forward_curve_refs: HashSet<i64> = HashSet::new();
+    for r in records {
+        if r.head != "edge" || !kept_edges.contains(&(r.index as i64)) {
+            continue;
+        }
+        let Some(curve) = r.ref_at(8).filter(|c| kept_curves.contains(c)) else {
+            continue;
+        };
+        match sense_at(r, 9) {
+            Sense::Reversed => reversed_curve_refs.insert(curve),
+            Sense::Forward => forward_curve_refs.insert(curve),
+        };
+    }
+    let reversed_curve_id = |c: i64| {
+        if reversed_curve_refs.contains(&c) && forward_curve_refs.contains(&c) {
+            CurveId(format!("{}:reversed", id(c)))
+        } else {
+            CurveId(id(c))
+        }
+    };
+
     // Pass 3: emit carriers, points, and the reachable topology graph in
     // RecordTable order for deterministic output.
     for r in records {
@@ -836,9 +865,21 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 });
             }
             _ if kept_curves.contains(&i) => {
-                let Some(geometry) = curve_geo.remove(&i) else {
+                let Some(mut geometry) = curve_geo.remove(&i) else {
                     continue;
                 };
+                if reversed_curve_refs.contains(&i) {
+                    if forward_curve_refs.contains(&i) {
+                        let mut reversed = geometry.clone();
+                        reverse_curve_geometry(&mut reversed);
+                        out.curves.push(Curve {
+                            id: CurveId(format!("{}:reversed", id(i))),
+                            geometry: reversed,
+                        });
+                    } else {
+                        reverse_curve_geometry(&mut geometry);
+                    }
+                }
                 out.curves.push(Curve {
                     id: CurveId(id(i)),
                     geometry,
@@ -1019,9 +1060,17 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 }
                 _ => None,
             };
+            // A reversed edge's raw parameters already live on the reversed
+            // parameterization its (reversed) carrier now exposes, so the
+            // range transforms identically for both senses; only the carrier
+            // link differs when the curve is shared across senses.
+            let curve = curve.map(|c| match sense_at(r, 9) {
+                Sense::Reversed => reversed_curve_id(c),
+                Sense::Forward => CurveId(id(c)),
+            });
             out.edges.push(Edge {
                 id: EdgeId(id(i)),
-                curve: curve.map(|c| CurveId(id(c))),
+                curve,
                 start: VertexId(id(start)),
                 end: VertexId(id(end)),
                 param_range,
