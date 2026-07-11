@@ -469,7 +469,11 @@ impl<'a> DecodeContext<'a> {
                     self.ir.annotations.exactness.insert(
                         point_id,
                         ExactnessNote {
-                            entity: Exactness::Derived,
+                            entity: if cloud.scaled {
+                                Exactness::Derived
+                            } else {
+                                Exactness::ByteExact
+                            },
                             fields: BTreeMap::new(),
                         },
                     );

@@ -47,6 +47,8 @@ pub(crate) enum DecodedGeometry {
 pub(crate) struct PointCloud {
     /// Ordered points.
     pub(crate) points: Vec<Point3>,
+    /// Whether a unit conversion was applied.
+    pub(crate) scaled: bool,
 }
 
 /// A validated polycurve construction.
@@ -175,14 +177,14 @@ fn decode_inner(
     Ok(result)
 }
 
-fn read_point(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Point3, FramingError> {
+fn read_point(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Point3, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let point = native_point(reader)?;
     Ok(scale_point(point, scale))
 }
 
-fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, FramingError> {
+fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let minor = version & 0x0f;
@@ -240,10 +242,13 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
         ));
     }
     let _ = (normals, colors, values, flags, native_plane);
-    Ok(PointCloud { points })
+    Ok(PointCloud {
+        points,
+        scaled: scale != 1.0,
+    })
 }
 
-fn read_line(reader: &mut BoundedReader<'_>, scale: f64) -> Result<NurbsCurve, FramingError> {
+fn read_line(reader: &mut BoundedReader<'_>, scale: f64) -> Result<NurbsCurve, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let from = scale_point(native_point(reader)?, scale);
@@ -262,7 +267,7 @@ fn read_line(reader: &mut BoundedReader<'_>, scale: f64) -> Result<NurbsCurve, F
     })
 }
 
-fn read_polyline(reader: &mut BoundedReader<'_>, scale: f64) -> Result<NurbsCurve, FramingError> {
+fn read_polyline(reader: &mut BoundedReader<'_>, scale: f64) -> Result<NurbsCurve, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let point_count = count(reader, 24)?;
@@ -316,7 +321,7 @@ fn read_polyline(reader: &mut BoundedReader<'_>, scale: f64) -> Result<NurbsCurv
 fn read_arc(
     reader: &mut BoundedReader<'_>,
     scale: f64,
-) -> Result<(CurveGeometry, Vec<String>), FramingError> {
+) -> Result<(CurveGeometry, Vec<String>), GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let circle = read_circle(reader, scale)?;
@@ -360,7 +365,7 @@ struct Circle {
     radius: f64,
 }
 
-fn read_circle(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Circle, FramingError> {
+fn read_circle(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Circle, GeometryError> {
     let native = plane(reader)?;
     let radius = reader.f64()?;
     let zero = native_point(reader)?;
@@ -552,7 +557,7 @@ fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3
 fn read_vectors(
     reader: &mut BoundedReader<'_>,
     expected: usize,
-) -> Result<Vec<Vector3>, FramingError> {
+) -> Result<Vec<Vector3>, GeometryError> {
     let count = count(reader, 24)?;
     if count != 0 && count != expected {
         return Err(error(
@@ -582,7 +587,7 @@ fn scale_point(value: NativePoint3, scale: f64) -> Point3 {
 fn finite_interval(
     value: crate::settings::Interval,
     offset: usize,
-) -> Result<[f64; 2], FramingError> {
+) -> Result<[f64; 2], GeometryError> {
     if value.0[0].is_finite() && value.0[1].is_finite() {
         Ok(value.0)
     } else {
@@ -590,7 +595,7 @@ fn finite_interval(
     }
 }
 
-fn count(reader: &mut BoundedReader<'_>, width: usize) -> Result<usize, FramingError> {
+fn count(reader: &mut BoundedReader<'_>, width: usize) -> Result<usize, GeometryError> {
     let raw = reader.i32()?;
     let bytes = checked_count_bytes(
         raw,
@@ -602,11 +607,14 @@ fn count(reader: &mut BoundedReader<'_>, width: usize) -> Result<usize, FramingE
     Ok(bytes / width)
 }
 
-fn require_major(version: u8, offset: usize) -> Result<(), FramingError> {
+fn require_major(version: u8, offset: usize) -> Result<(), GeometryError> {
     if version >> 4 == 1 {
         Ok(())
     } else {
-        Err(error(offset, "unsupported simple-geometry payload version"))
+        Err(unsupported(
+            offset,
+            "unsupported simple-geometry payload version",
+        ))
     }
 }
 
@@ -650,7 +658,11 @@ fn close_native_point(
         .all(|(actual, expected)| (*actual - expected).abs() <= 1.0e-8)
 }
 
-fn error(offset: usize, message: &str) -> FramingError {
+fn error(offset: usize, message: &str) -> GeometryError {
+    GeometryError::Malformed(framing_error(offset, message))
+}
+
+fn framing_error(offset: usize, message: &str) -> FramingError {
     FramingError::Structural {
         offset,
         message: message.to_string(),
@@ -658,7 +670,7 @@ fn error(offset: usize, message: &str) -> FramingError {
 }
 
 fn malformed(offset: usize, message: &str) -> GeometryError {
-    GeometryError::Malformed(error(offset, message))
+    error(offset, message)
 }
 
 fn unsupported(offset: usize, message: &str) -> GeometryError {
@@ -723,5 +735,30 @@ mod tests {
         let arc = arc_nurbs(&circle, [0.0, 3.0 * PI], [0.0, 3.0], 3.0 * PI);
         assert_eq!(arc.control_points.len(), 2 * 6 + 1);
         assert_eq!(arc.knots.len(), arc.control_points.len() + 3);
+    }
+
+    #[test]
+    fn bounded_line_accepts_both_serialized_dimensions() {
+        for dimension in [2_i32, 3] {
+            let mut bytes = vec![0x10];
+            for value in [0.0_f64, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 5.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            bytes.extend(dimension.to_le_bytes());
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
+            let curve = read_line(&mut reader, 1.0).expect("valid line");
+            assert_eq!(curve.knots, vec![2.0, 2.0, 5.0, 5.0]);
+        }
+    }
+
+    #[test]
+    fn future_polycurve_version_is_structured_as_unsupported() {
+        let bytes = [0x20];
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
+        let result = read_polycurve(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0);
+        assert!(matches!(
+            result,
+            Err(GeometryError::UnsupportedVersion { .. })
+        ));
     }
 }

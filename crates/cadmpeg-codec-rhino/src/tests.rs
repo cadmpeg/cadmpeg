@@ -1461,6 +1461,29 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
 }
 
 #[test]
+fn geometry_decode_does_not_clear_attribute_degradation() {
+    let archive = ArchiveVersion::V5;
+    let object = object_record(archive, 1, [0; 16]);
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[object]),
+        ],
+    );
+    let mut scan = super::container::scan(bytes).unwrap();
+    scan.objects[0].attributes_degraded = true;
+    let mut context = super::decode::DecodeContext::new(&scan);
+    assert!(context.mark_decoded(0));
+    let result = context.commit();
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::Attribute
+            && loss.message.contains("degraded attributes")
+    }));
+}
+
+#[test]
 fn report_attributes_aggregated_class_losses_to_first_object_record() {
     let archive = ArchiveVersion::V5;
     let class_uuid = [7; 16];
