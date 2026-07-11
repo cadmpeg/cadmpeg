@@ -889,6 +889,28 @@ fn synthetic_geometry_with_projection_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_geometry_with_early_close_projection_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_projection_smbh();
+    let solved = bytes
+        .windows(b"\x0d\x04nubs".len())
+        .rposition(|window| window == b"\x0d\x04nubs")
+        .expect("generated solved curve cache");
+    let source = bytes[..solved]
+        .windows(b"\x0d\x04nubs".len())
+        .rposition(|window| window == b"\x0d\x04nubs")
+        .expect("generated projection source curve");
+    let source_end = source + generated_curve_block().len();
+    bytes.splice(source_end..solved, [0x0a, 0x10]);
+    let solved = bytes
+        .windows(b"\x0d\x04nubs".len())
+        .rposition(|window| window == b"\x0d\x04nubs")
+        .expect("shifted solved curve cache");
+    let fit_end = solved + generated_curve_block().len() + 9;
+    assert_eq!(bytes[fit_end], 0x10);
+    bytes.remove(fit_end);
+    bytes
+}
+
 fn synthetic_geometry_with_three_surface_intersection_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_analytic_offset_supports_smbh();
     let subtype = bytes
@@ -7927,6 +7949,45 @@ fn generated_projection_decodes_and_writes_source_less() {
             role: "surf2".into(),
         }
     );
+}
+
+#[test]
+fn generated_early_close_projection_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProjectionTail};
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_early_close_projection_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("early-close projection decode");
+    assert!(matches!(
+        result.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::Projection {
+            tail: ProjectionTail::EarlyClose { flag: true },
+            ..
+        }
+    ));
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less early-close projection encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less early-close projection round trip");
+    assert!(matches!(
+        round_trip.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::Projection {
+            tail: ProjectionTail::EarlyClose { flag: true },
+            ..
+        }
+    ));
 }
 
 #[test]

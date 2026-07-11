@@ -3474,9 +3474,10 @@ fn native_procedural_curve(
         native_nurbs_curve(bytes, source)?;
         match tail {
             cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "source-less F3D early-close projection flag {flag} requires an external solved-cache carrier"
-                )));
+                bytes.push(native_bool(*flag));
+                bytes.push(0x10);
+                native_nurbs_curve(bytes, solved_cache)?;
+                native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
             }
             cadmpeg_ir::geometry::ProjectionTail::Ranged {
                 flag,
