@@ -180,7 +180,11 @@ pub struct Edge {
     pub start: VertexId,
     /// End vertex.
     pub end: VertexId,
-    /// Parameter range `[t_start, t_end]` on the curve, when known.
+    /// Parameter range `[t_start, t_end]` on the curve's own
+    /// parameterization, when known: the start vertex lies at `t_start`.
+    /// Conic parameters are angles from the reference direction; line
+    /// parameters are signed distances along the unit direction in the
+    /// document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub param_range: Option<[f64; 2]>,
     /// Optional geometric tolerance in the document's length unit.

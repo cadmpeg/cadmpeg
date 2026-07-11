@@ -1154,17 +1154,16 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .transpose()?
             .unwrap_or(-1);
         let mut range = edge.param_range.unwrap_or([0.0, 1.0]);
+        // Conic edge parameters are angles in both the IR and the native
+        // stream; line parameters are arc lengths, millimeters in the IR
+        // and centimeters natively.
         if edge.curve.as_ref().is_some_and(|curve_id| {
             model.curves.iter().any(|curve| {
-                curve.id == *curve_id
-                    && matches!(
-                        curve.geometry,
-                        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
-                    )
+                curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Line { .. })
             })
         }) {
-            range[0] -= std::f64::consts::FRAC_PI_2;
-            range[1] -= std::f64::consts::FRAC_PI_2;
+            range[0] /= 10.0;
+            range[1] /= 10.0;
         }
         native_ident(&mut records, "edge")?;
         native_ref(&mut records, -1);
@@ -2959,17 +2958,16 @@ fn encode_source_less_edges_vertices_points(
             .transpose()?
             .unwrap_or(-1);
         let mut range = edge.param_range.unwrap_or([0.0, 1.0]);
+        // Conic edge parameters are angles in both the IR and the native
+        // stream; line parameters are arc lengths, millimeters in the IR
+        // and centimeters natively.
         if edge.curve.as_ref().is_some_and(|curve_id| {
             model.curves.iter().any(|curve| {
-                curve.id == *curve_id
-                    && matches!(
-                        curve.geometry,
-                        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
-                    )
+                curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Line { .. })
             })
         }) {
-            range[0] -= std::f64::consts::FRAC_PI_2;
-            range[1] -= std::f64::consts::FRAC_PI_2;
+            range[0] /= 10.0;
+            range[1] /= 10.0;
         }
         native_ident(records, "edge")?;
         native_ref(
@@ -3920,8 +3918,27 @@ pub fn write_semantic(
         &baseline.ir.model.faces,
         &target.model.faces,
     )?);
-    let edge_range_edits =
+    let mut edge_range_edits =
         validate_edge_range_edits(&baseline.ir.model.edges, &target.model.edges)?;
+    // IR line-edge parameters are millimeter arc lengths; the native stream
+    // stores centimeters. Conic parameters are angles in both.
+    for (edge_id, range) in &mut edge_range_edits {
+        let is_line = target
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.id.as_str() == edge_id)
+            .and_then(|edge| edge.curve.as_ref())
+            .is_some_and(|curve_id| {
+                target.model.curves.iter().any(|curve| {
+                    curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Line { .. })
+                })
+            });
+        if is_line {
+            range[0] /= 10.0;
+            range[1] /= 10.0;
+        }
+    }
     let face_sense_edits =
         validate_face_sense_edits(&baseline.ir.model.faces, &target.model.faces)?;
     let coedge_sense_edits =

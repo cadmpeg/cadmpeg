@@ -1035,12 +1035,9 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 (Some(mut a), Some(mut b)) => {
                     if let Some(curve_record) = curve.and_then(|curve| by_index.get(&curve)) {
                         if curve_record.head == "ellipse" {
-                            let carrier = collect_carrier(curve_record);
-                            let ratio = carrier.doubles.first().copied().unwrap_or(1.0);
-                            if ratio > 0.0 {
-                                a += std::f64::consts::FRAC_PI_2;
-                                b += std::f64::consts::FRAC_PI_2;
-                            }
+                            // Native conic parameters are angles from the
+                            // major axis, matching the IR carrier's own
+                            // parameterization directly.
                             if (b - a).abs() >= std::f64::consts::TAU - 1.0e-12 {
                                 a = 0.0;
                                 b = std::f64::consts::TAU;
@@ -1054,6 +1051,12 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 }
                                 b = a + sweep;
                             }
+                        } else if curve_record.head == "straight" {
+                            // Native line parameters are arc lengths in
+                            // centimeters; the IR carrier's unit direction
+                            // lives in millimeter space.
+                            a *= LEN_TO_MM;
+                            b *= LEN_TO_MM;
                         }
                     }
                     Some([a, b])

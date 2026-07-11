@@ -4991,8 +4991,8 @@ fn decodes_binaryfile4_geometry_with_lump_topology() {
     assert_eq!(result.ir.model.edges.len(), 3);
     assert_eq!(result.ir.model.points.len(), 3);
 
-    // The circle arc's stored [-π, -π/2] range is shifted by the ratio-sign
-    // phase convention (+π/2) and wrapped into the canonical [0, τ] domain.
+    // The circle arc's stored [-π, -π/2] range is wrapped into the canonical
+    // [0, τ] domain with its sweep preserved.
     let arc = result
         .ir
         .model
@@ -5001,8 +5001,8 @@ fn decodes_binaryfile4_geometry_with_lump_topology() {
         .find(|edge| edge.curve.is_some())
         .expect("edge on the ellipse carrier");
     let [start, end] = arc.param_range.expect("arc range");
-    assert!((start - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-9);
-    assert!((end - std::f64::consts::TAU).abs() < 1e-9);
+    assert!((start - std::f64::consts::PI).abs() < 1e-9);
+    assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-9);
 }
 
 #[test]
@@ -5024,8 +5024,8 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
         .find(|edge| edge.curve.is_some())
         .expect("edge on the ellipse carrier");
     let [start, end] = arc.param_range.expect("arc range");
-    assert!((start - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-9);
-    assert!((end - std::f64::consts::TAU).abs() < 1e-9);
+    assert!((start - std::f64::consts::PI).abs() < 1e-9);
+    assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-9);
 
     let curve_id = arc.curve.as_ref().expect("curve link");
     let carrier = result

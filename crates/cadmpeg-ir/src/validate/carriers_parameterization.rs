@@ -157,7 +157,10 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             let tau = std::f64::consts::TAU;
             match curve {
                 CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
-                    valid &= start >= 0.0 && end <= tau;
+                    // Canonical periodic domain: the start angle wrapped into
+                    // one turn, the sweep at most a full turn. An arc crossing
+                    // the seam ends past `τ`.
+                    valid &= (0.0..tau).contains(&start) && end - start <= tau;
                 }
                 CurveGeometry::Nurbs(nurbs) => {
                     if let (Some(first), Some(last)) = (nurbs.knots.first(), nurbs.knots.last()) {
