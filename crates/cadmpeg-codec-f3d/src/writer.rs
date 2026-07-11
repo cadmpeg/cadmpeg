@@ -723,6 +723,7 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     validate_source_less_body_kinds(model)?;
     if model.faces.len() > 1
         || model.loops.len() > 1
+        || model.surfaces.len() > 1
         || model
             .shells
             .iter()
@@ -3386,6 +3387,52 @@ fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
+        context,
+        source,
+        tail,
+    } = &procedural.definition
+    {
+        let source = target
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *source)
+            .ok_or_else(|| CodecError::Malformed("projection source curve is missing".into()))?;
+        let CurveGeometry::Nurbs(source) = &source.geometry else {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D projection requires a NURBS source curve".into(),
+            ));
+        };
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "proj_int_cur")?;
+        native_intcurve_support_context(bytes, target, context)?;
+        bytes.push(0x0b);
+        native_nurbs_curve(bytes, source)?;
+        match tail {
+            cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less F3D early-close projection flag {flag} requires an external solved-cache carrier"
+                )));
+            }
+            cadmpeg_ir::geometry::ProjectionTail::Ranged {
+                flag,
+                parameter_range,
+                role,
+            } => {
+                bytes.push(native_bool(*flag));
+                for value in parameter_range {
+                    native_f64(bytes, *value);
+                }
+                native_string(bytes, role)?;
+                native_nurbs_curve(bytes, solved_cache)?;
+                native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+                bytes.push(0x10);
+            }
+        }
+        return Ok(true);
+    }
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
         parameters,
         component_parameters,
@@ -3431,6 +3478,91 @@ fn native_procedural_curve(
                 ));
             };
             native_nurbs_curve(bytes, component)?;
+        }
+        native_nurbs_curve(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        bytes.push(0x10);
+        return Ok(true);
+    }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context } =
+        &procedural.definition
+    {
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "int_int_cur")?;
+        native_intcurve_support_context(bytes, target, context)?;
+        bytes.push(0x0b);
+        native_nurbs_curve(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        bytes.push(0x10);
+        return Ok(true);
+    }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { family, context } =
+        &procedural.definition
+    {
+        let name = match family {
+            cadmpeg_ir::geometry::SurfaceCurveFamily::Blend => "blend_int_cur",
+            cadmpeg_ir::geometry::SurfaceCurveFamily::SurfaceConstrained => "surf_int_cur",
+            cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric => "par_int_cur",
+            cadmpeg_ir::geometry::SurfaceCurveFamily::Skin => "skin_int_cur",
+        };
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, name)?;
+        native_intcurve_support_context(bytes, target, context)?;
+        native_nurbs_curve(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        bytes.push(0x10);
+        return Ok(true);
+    }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
+        context,
+        selector,
+        third,
+    } = &procedural.definition
+    {
+        let surface_id = third.surface.as_ref().ok_or_else(|| {
+            CodecError::NotImplemented(
+                "source-less F3D sss_int_cur requires a third support surface".into(),
+            )
+        })?;
+        let surface = target
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == *surface_id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "three-surface intersection references missing support {surface_id}"
+                ))
+            })?;
+        let pcurve = third.pcurve.as_ref().ok_or_else(|| {
+            CodecError::NotImplemented(
+                "source-less F3D sss_int_cur requires a third support pcurve".into(),
+            )
+        })?;
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "sss_int_cur")?;
+        native_intcurve_support_context(bytes, target, context)?;
+        native_i64(bytes, *selector);
+        native_embedded_surface(bytes, &surface.geometry)?;
+        native_nurbs_pcurve_block(bytes, pcurve)?;
+        native_nurbs_curve(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        bytes.push(0x10);
+        return Ok(true);
+    }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
+        &procedural.definition
+    {
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "off_int_cur")?;
+        native_intcurve_support_context(bytes, target, context)?;
+        bytes.push(0x0b);
+        for offset in offsets {
+            native_f64(bytes, *offset / 10.0);
         }
         native_nurbs_curve(bytes, solved_cache)?;
         native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
@@ -3534,6 +3666,165 @@ fn native_procedural_curve(
     Ok(true)
 }
 
+fn native_embedded_surface(
+    bytes: &mut Vec<u8>,
+    geometry: &SurfaceGeometry,
+) -> Result<(), CodecError> {
+    match geometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            native_ident(bytes, "plane")?;
+            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            native_vector(bytes, [normal.x, normal.y, normal.z]);
+            native_vector(bytes, [u_axis.x, u_axis.y, u_axis.z]);
+            bytes.push(0x0b);
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => native_embedded_cone(bytes, *origin, *axis, *ref_direction, *radius, 0.0)?,
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            half_angle,
+        } => native_embedded_cone(bytes, *origin, *axis, *ref_direction, *radius, *half_angle)?,
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            native_ident(bytes, "sphere")?;
+            native_point(bytes, [center.x / 10.0, center.y / 10.0, center.z / 10.0]);
+            native_f64(bytes, *radius / 10.0);
+            native_vector(bytes, [ref_direction.x, ref_direction.y, ref_direction.z]);
+            native_vector(bytes, [axis.x, axis.y, axis.z]);
+            bytes.extend_from_slice(&[0x0b; 5]);
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            native_ident(bytes, "torus")?;
+            native_point(bytes, [center.x / 10.0, center.y / 10.0, center.z / 10.0]);
+            native_vector(bytes, [axis.x, axis.y, axis.z]);
+            native_f64(bytes, *major_radius / 10.0);
+            native_f64(bytes, *minor_radius / 10.0);
+            native_vector(bytes, [ref_direction.x, ref_direction.y, ref_direction.z]);
+            bytes.extend_from_slice(&[0x0b; 5]);
+        }
+        SurfaceGeometry::Nurbs(surface) => {
+            native_ident(bytes, "spline")?;
+            native_nurbs_surface(bytes, surface)?;
+        }
+        SurfaceGeometry::Unknown { .. } => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D embedded unknown support surfaces are unsupported".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn native_intcurve_support_context(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    context: &cadmpeg_ir::geometry::IntcurveSupportContext,
+) -> Result<(), CodecError> {
+    let null_supports = context
+        .sides
+        .iter()
+        .all(|side| side.surface.is_none() && side.pcurve.is_none());
+    if null_supports {
+        for name in ["null_surface", "null_surface", "nullbs", "nullbs"] {
+            native_ident(bytes, name)?;
+        }
+    } else {
+        if context
+            .sides
+            .iter()
+            .any(|side| side.surface.is_none() || side.pcurve.is_none())
+        {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D mixed null/non-null intcurve supports are not yet writable".into(),
+            ));
+        }
+        for side in &context.sides {
+            let surface_id = side.surface.as_ref().expect("non-null supports checked");
+            let surface = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == *surface_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "intcurve references missing support {surface_id}"
+                    ))
+                })?;
+            native_embedded_surface(bytes, &surface.geometry)?;
+        }
+        for side in &context.sides {
+            native_nurbs_pcurve_block(
+                bytes,
+                side.pcurve.as_ref().expect("non-null supports checked"),
+            )?;
+        }
+    }
+    for value in context.parameter_range {
+        native_f64(bytes, value);
+    }
+    for discontinuities in &context.discontinuities {
+        native_i64(
+            bytes,
+            i64::try_from(discontinuities.len()).map_err(|_| {
+                CodecError::NotImplemented("discontinuity count exceeds i64".into())
+            })?,
+        );
+        for value in discontinuities {
+            native_f64(bytes, *value);
+        }
+    }
+    Ok(())
+}
+
+fn native_embedded_cone(
+    bytes: &mut Vec<u8>,
+    origin: cadmpeg_ir::math::Point3,
+    axis: Vector3,
+    ref_direction: Vector3,
+    radius: f64,
+    half_angle: f64,
+) -> Result<(), CodecError> {
+    native_ident(bytes, "cone")?;
+    native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+    native_vector(bytes, [axis.x, axis.y, axis.z]);
+    native_vector(
+        bytes,
+        [
+            ref_direction.x * radius / 10.0,
+            ref_direction.y * radius / 10.0,
+            ref_direction.z * radius / 10.0,
+        ],
+    );
+    native_f64(bytes, 1.0);
+    bytes.extend_from_slice(&[0x0b, 0x0b]);
+    native_f64(bytes, half_angle.sin());
+    native_f64(bytes, half_angle.cos());
+    native_f64(bytes, radius / 10.0);
+    bytes.extend_from_slice(&[0x0b; 5]);
+    Ok(())
+}
+
 fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError> {
     let PcurveGeometry::Nurbs {
         degree,
@@ -3594,6 +3885,53 @@ fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError>
     });
     native_f64(bytes, range[0]);
     native_f64(bytes, range[1]);
+    Ok(())
+}
+
+fn native_nurbs_pcurve_block(
+    bytes: &mut Vec<u8>,
+    geometry: &PcurveGeometry,
+) -> Result<(), CodecError> {
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    } = geometry
+    else {
+        return Err(CodecError::NotImplemented(
+            "embedded F3D support pcurves require NURBS geometry".into(),
+        ));
+    };
+    let degree_usize = usize::try_from(*degree)
+        .map_err(|_| CodecError::NotImplemented("F3D pcurve degree exceeds usize".into()))?;
+    if knots.len() != control_points.len() + degree_usize + 1
+        || weights
+            .as_ref()
+            .is_some_and(|weights| weights.len() != control_points.len())
+    {
+        return Err(CodecError::Malformed(
+            "embedded F3D support pcurve has inconsistent cardinality".into(),
+        ));
+    }
+    native_ident(bytes, if weights.is_some() { "nurbs" } else { "nubs" })?;
+    native_i64(bytes, i64::from(*degree));
+    native_enum(bytes, if *periodic { 2 } else { 0 });
+    native_i64(
+        bytes,
+        i64::try_from(unique_knot_count(knots)).map_err(|_| {
+            CodecError::NotImplemented("F3D pcurve unique-knot count exceeds i64".into())
+        })?,
+    );
+    native_nurbs_knots(bytes, knots)?;
+    for (index, point) in control_points.iter().enumerate() {
+        native_f64(bytes, point.u);
+        native_f64(bytes, point.v);
+        if let Some(weights) = weights.as_ref() {
+            native_f64(bytes, weights[index]);
+        }
+    }
     Ok(())
 }
 
@@ -7208,6 +7546,25 @@ fn validate_procedural_curve_edits(
                 Some(after.definition.clone())
             }
             (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
+                    context: before_context,
+                    ..
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
+                    context: after_context,
+                    ..
+                },
+            ) if before_context.sides == after_context.sides
+                && before_context
+                    .discontinuities
+                    .iter()
+                    .map(Vec::len)
+                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                && before.definition != after.definition =>
+            {
+                Some(after.definition.clone())
+            }
+            (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
                     components: before_components,
                     ..
@@ -7485,6 +7842,9 @@ fn patch_framed_geometry(
                     }
                     cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound { .. } => {
                         patch_compound_definition(bytes, record, definition)?;
+                    }
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { .. } => {
+                        patch_two_sided_offset_definition(bytes, record, definition)?;
                     }
                     _ => unreachable!("procedural edit validation limits writable definitions"),
                 }
@@ -8251,7 +8611,6 @@ fn patch_compound_definition(
         ));
     };
     let end = record.offset + record.len;
-<<<<<<< Updated upstream
     let (mut position, int_width) = {
         let record_bytes = bytes
             .get(record.offset..end)
@@ -8288,43 +8647,6 @@ fn patch_compound_definition(
         patch_compound_double(bytes, record, &mut position, *value)?;
     }
     if bytes.get(record.offset + position) != Some(&0x04) {
-||||||| Stash base
-=======
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("compound record is truncated".into()))?;
-    let name = b"comp_int_cur";
-    let marker = record_bytes
-        .windows(name.len())
-        .position(|window| window == name)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "procedural curve record {} is not compound",
-                record.index
-            ))
-        })?;
-    let mut position = marker + name.len();
-    let int_width = [8usize, 4].into_iter().find(|width| {
-        record_bytes.get(position) == Some(&0x04)
-            && record_bytes
-                .get(position + 1..position + 1 + width)
-                .and_then(|raw| match width {
-                    8 => raw.try_into().ok().map(i64::from_le_bytes),
-                    4 => raw
-                        .try_into()
-                        .ok()
-                        .map(i32::from_le_bytes)
-                        .map(i64::from),
-                    _ => None,
-                })
-                == i64::try_from(parameters.len()).ok()
-    }).ok_or_else(|| CodecError::Malformed("compound parameter count is malformed".into()))?;
-    position += 1 + int_width;
-    for value in parameters {
-        patch_compound_double(bytes, record, &mut position, *value)?;
-    }
-    if record_bytes.get(position) != Some(&0x04) {
->>>>>>> Stashed changes
         return Err(CodecError::Malformed(
             "compound component count is malformed".into(),
         ));
@@ -8334,6 +8656,95 @@ fn patch_compound_definition(
         patch_compound_double(bytes, record, &mut position, *value)?;
     }
     Ok(())
+}
+
+fn patch_two_sided_offset_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> Result<(), CodecError> {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
+        definition
+    else {
+        return Err(CodecError::Malformed(
+            "two-sided offset patch received another definition".into(),
+        ));
+    };
+    let end = record.offset + record.len;
+    let (mut position, int_width) = {
+        let record_bytes = bytes
+            .get(record.offset..end)
+            .ok_or_else(|| CodecError::Malformed("two-sided offset record is truncated".into()))?;
+        let name = b"off_int_cur";
+        let marker = record_bytes
+            .windows(name.len())
+            .position(|window| window == name)
+            .ok_or_else(|| CodecError::Malformed("record is not an off_int_cur".into()))?;
+        let mut position = marker + name.len();
+        for expected in ["null_surface", "null_surface", "nullbs", "nullbs"] {
+            if record_bytes.get(position) != Some(&0x0d) {
+                return Err(CodecError::Malformed(
+                    "two-sided offset support prefix is malformed".into(),
+                ));
+            }
+            let length = usize::from(*record_bytes.get(position + 1).ok_or_else(|| {
+                CodecError::Malformed("two-sided offset support prefix is truncated".into())
+            })?);
+            let start = position + 2;
+            let stop = start + length;
+            if record_bytes.get(start..stop) != Some(expected.as_bytes()) {
+                return Err(CodecError::NotImplemented(
+                    "retained editing of non-null two-sided offset supports is not yet writable"
+                        .into(),
+                ));
+            }
+            position = stop;
+        }
+        position += 18;
+        let int_width = [8usize, 4]
+            .into_iter()
+            .find(|width| {
+                record_bytes.get(position) == Some(&0x04)
+                    && read_native_int(record_bytes, position + 1, *width)
+                        == i64::try_from(context.discontinuities[0].len()).ok()
+            })
+            .ok_or_else(|| {
+                CodecError::Malformed("two-sided offset discontinuity count is malformed".into())
+            })?;
+        (position, int_width)
+    };
+    let mut parameter_position = position - 18;
+    for value in context.parameter_range {
+        patch_compound_double(bytes, record, &mut parameter_position, value)?;
+    }
+    for discontinuities in &context.discontinuities {
+        position += 1 + int_width;
+        for value in discontinuities {
+            patch_compound_double(bytes, record, &mut position, *value)?;
+        }
+    }
+    position += 1;
+    for offset in offsets {
+        patch_compound_double(bytes, record, &mut position, *offset / 10.0)?;
+    }
+    Ok(())
+}
+
+fn read_native_int(bytes: &[u8], position: usize, width: usize) -> Option<i64> {
+    match width {
+        8 => bytes
+            .get(position..position + 8)?
+            .try_into()
+            .ok()
+            .map(i64::from_le_bytes),
+        4 => bytes
+            .get(position..position + 4)?
+            .try_into()
+            .ok()
+            .map(i32::from_le_bytes)
+            .map(i64::from),
+        _ => None,
+    }
 }
 
 fn patch_compound_double(

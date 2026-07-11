@@ -23,7 +23,9 @@
 //! 8. Record bytes omit the stream width, so each decoder tests both layouts
 //! and validates tags, degrees, counts, and block extents.
 
-use cadmpeg_ir::geometry::{BlendCrossSection, BlendRadiusLaw, NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::{
+    BlendCrossSection, BlendRadiusLaw, NurbsCurve, NurbsSurface, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 /// Millimetres per ASM model-space length unit (centimetres).
@@ -585,6 +587,14 @@ pub(crate) fn decode_pcurve_fit_tolerance(record: &[u8]) -> Option<f64> {
 }
 
 fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<NurbsPcurve> {
+    decode_pcurve_block_with_end(b, marker_pos, int_width).map(|(pcurve, _)| pcurve)
+}
+
+fn decode_pcurve_block_with_end(
+    b: &[u8],
+    marker_pos: usize,
+    int_width: usize,
+) -> Option<(NurbsPcurve, usize)> {
     let (_cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker_len;
     let degree = take_tagged_int(b, &mut pos, 0x04, int_width)?;
@@ -620,13 +630,16 @@ fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<
             pos += 9;
         }
     }
-    Some(NurbsPcurve {
-        degree: degree as u32,
-        knots,
-        control_points,
-        weights,
-        periodic: is_periodic(closure),
-    })
+    Some((
+        NurbsPcurve {
+            degree: degree as u32,
+            knots,
+            control_points,
+            weights,
+            periodic: is_periodic(closure),
+        },
+        pos,
+    ))
 }
 
 /// Decode the face-surface cache of a spline surface record: the LAST valid
@@ -915,6 +928,47 @@ pub(crate) type SubsetDefinition = (NurbsCurve, [f64; 2]);
 /// Parameter arrays and child curves decoded from a `comp_int_cur` construction.
 pub(crate) type CompoundDefinition = (Vec<f64>, Vec<f64>, Vec<NurbsCurve>);
 
+/// Embedded freeform support carriers and tail fields of an `off_int_cur`.
+pub(crate) struct EmbeddedTwoSidedOffset {
+    /// Two ordered embedded support surfaces.
+    pub(crate) surfaces: [SurfaceGeometry; 2],
+    /// Two ordered embedded NURBS parameter curves.
+    pub(crate) pcurves: [NurbsPcurve; 2],
+    /// Shared native parameter interval.
+    pub(crate) parameter_range: [f64; 2],
+    /// Three discontinuity arrays.
+    pub(crate) discontinuities: [Vec<f64>; 3],
+    /// Signed side offsets in document length units.
+    pub(crate) offsets: [f64; 2],
+}
+
+/// Embedded support carriers and shared fields of an `int_int_cur`.
+pub(crate) struct EmbeddedIntersection {
+    pub(crate) surfaces: [SurfaceGeometry; 2],
+    pub(crate) pcurves: [NurbsPcurve; 2],
+    pub(crate) parameter_range: [f64; 2],
+    pub(crate) discontinuities: [Vec<f64>; 3],
+}
+
+/// Three ordered support carriers and selector of an `sss_int_cur`.
+pub(crate) struct EmbeddedThreeSurfaceIntersection {
+    pub(crate) surfaces: [SurfaceGeometry; 3],
+    pub(crate) pcurves: [NurbsPcurve; 3],
+    pub(crate) parameter_range: [f64; 2],
+    pub(crate) discontinuities: [Vec<f64>; 3],
+    pub(crate) selector: i64,
+}
+
+/// Embedded support context, source curve, and tail of a `proj_int_cur`.
+pub(crate) struct EmbeddedProjection {
+    pub(crate) surfaces: [SurfaceGeometry; 2],
+    pub(crate) pcurves: [NurbsPcurve; 2],
+    pub(crate) parameter_range: [f64; 2],
+    pub(crate) discontinuities: [Vec<f64>; 3],
+    pub(crate) source: NurbsCurve,
+    pub(crate) tail: cadmpeg_ir::geometry::ProjectionTail,
+}
+
 /// A procedural curve cache together with its native subtype and fit contract.
 pub struct DecodedProceduralCurve {
     /// The cached B-spline curve (control points scaled centimetre→
@@ -931,6 +985,19 @@ pub struct DecodedProceduralCurve {
     pub subset: Option<SubsetDefinition>,
     /// Parameter arrays and ordered child curves of a `comp_int_cur` construction.
     pub compound: Option<CompoundDefinition>,
+    /// Non-null embedded NURBS support carriers of an `off_int_cur`.
+    pub(crate) embedded_two_sided_offset: Option<EmbeddedTwoSidedOffset>,
+    /// Embedded support context of an `int_int_cur`.
+    pub(crate) embedded_intersection: Option<EmbeddedIntersection>,
+    /// Three embedded support pairs of an `sss_int_cur`.
+    pub(crate) embedded_three_surface_intersection: Option<EmbeddedThreeSurfaceIntersection>,
+    /// Prefix-only surface-curve family and support context.
+    pub(crate) embedded_surface_curve: Option<(
+        cadmpeg_ir::geometry::SurfaceCurveFamily,
+        EmbeddedIntersection,
+    )>,
+    /// Embedded support context and source of a `proj_int_cur`.
+    pub(crate) embedded_projection: Option<EmbeddedProjection>,
     /// `surface_fit_tolerance` of the cached B-spline block, if present
     /// ([spec §7.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#75-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
     pub cache_fit_tolerance: Option<f64>,
@@ -967,7 +1034,7 @@ fn decode_procedural_curve_recursive(
         let definition = if native_kind == "exact_int_cur" {
             Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact)
         } else {
-            decode_helix_definition(bytes)
+            decode_helix_definition(bytes).or_else(|| decode_two_sided_offset(bytes, int_width))
         };
         return Some(DecodedProceduralCurve {
             curve: decoded.curve,
@@ -976,6 +1043,13 @@ fn decode_procedural_curve_recursive(
             vector_offset: decode_vector_offset_definition(bytes, int_width),
             subset: decode_subset_definition(bytes, int_width),
             compound: decode_compound_definition(bytes, int_width),
+            embedded_two_sided_offset: decode_embedded_two_sided_offset(bytes, int_width),
+            embedded_intersection: decode_embedded_intersection(bytes, int_width),
+            embedded_three_surface_intersection: decode_embedded_three_surface_intersection(
+                bytes, int_width,
+            ),
+            embedded_surface_curve: decode_embedded_surface_curve(bytes, int_width),
+            embedded_projection: decode_embedded_projection(bytes, int_width),
             cache_fit_tolerance,
         });
     }
@@ -996,6 +1070,430 @@ fn decode_procedural_curve_recursive(
         }
     }
     None
+}
+
+fn decode_embedded_surface_curve(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<(
+    cadmpeg_ir::geometry::SurfaceCurveFamily,
+    EmbeddedIntersection,
+)> {
+    use cadmpeg_ir::geometry::SurfaceCurveFamily;
+    let names = [
+        (b"blend_int_cur".as_slice(), SurfaceCurveFamily::Blend),
+        (
+            b"surf_int_cur".as_slice(),
+            SurfaceCurveFamily::SurfaceConstrained,
+        ),
+        (b"par_int_cur".as_slice(), SurfaceCurveFamily::Parametric),
+        (b"skin_int_cur".as_slice(), SurfaceCurveFamily::Skin),
+    ];
+    let (marker, name, family) = names.into_iter().find_map(|(name, family)| {
+        bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|marker| (marker, name, family))
+    })?;
+    let mut position = marker + name.len() + 3;
+    let surfaces = [
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+    ];
+    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = first_end;
+    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = second_end;
+    let parameter_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+    ];
+    Some((
+        family,
+        EmbeddedIntersection {
+            surfaces,
+            pcurves: [first_pcurve, second_pcurve],
+            parameter_range,
+            discontinuities,
+        },
+    ))
+}
+
+fn decode_embedded_three_surface_intersection(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<EmbeddedThreeSurfaceIntersection> {
+    let name = b"sss_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let mut position = marker + name.len() + 3;
+    let first = decode_embedded_surface(bytes, &mut position, int_width)?;
+    let second = decode_embedded_surface(bytes, &mut position, int_width)?;
+    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = first_end;
+    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = second_end;
+    let parameter_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+    ];
+    let selector = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    let third = decode_embedded_surface(bytes, &mut position, int_width)?;
+    let (third_pcurve, _) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    Some(EmbeddedThreeSurfaceIntersection {
+        surfaces: [first, second, third],
+        pcurves: [first_pcurve, second_pcurve, third_pcurve],
+        parameter_range,
+        discontinuities,
+        selector,
+    })
+}
+
+fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<EmbeddedProjection> {
+    let name = b"proj_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let mut position = marker + name.len() + 3;
+    let surfaces = [
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+    ];
+    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = first_end;
+    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = second_end;
+    let parameter_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+    ];
+    take_bool(bytes, &mut position)?;
+    let source = decode_curve_block(bytes, position, int_width)?;
+    position = source.end;
+    let flag = take_bool(bytes, &mut position)?;
+    let tail = if bytes.get(position) == Some(&0x10) {
+        cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag }
+    } else {
+        cadmpeg_ir::geometry::ProjectionTail::Ranged {
+            flag,
+            parameter_range: [
+                take_range_value(bytes, &mut position)?,
+                take_range_value(bytes, &mut position)?,
+            ],
+            role: take_native_string(bytes, &mut position)?,
+        }
+    };
+    Some(EmbeddedProjection {
+        surfaces,
+        pcurves: [first_pcurve, second_pcurve],
+        parameter_range,
+        discontinuities,
+        source: source.curve,
+        tail,
+    })
+}
+
+fn decode_embedded_intersection(bytes: &[u8], int_width: usize) -> Option<EmbeddedIntersection> {
+    let names: [&[u8]; 2] = [b"int_int_cur", b"surf_surf_int_cur"];
+    let (marker, name) = names.into_iter().find_map(|name| {
+        bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|marker| (marker, name))
+    })?;
+    let mut position = marker + name.len() + 3;
+    let surfaces = [
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+    ];
+    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = first_end;
+    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = second_end;
+    let parameter_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+    ];
+    take_bool(bytes, &mut position)?;
+    Some(EmbeddedIntersection {
+        surfaces,
+        pcurves: [first_pcurve, second_pcurve],
+        parameter_range,
+        discontinuities,
+    })
+}
+
+fn decode_embedded_two_sided_offset(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<EmbeddedTwoSidedOffset> {
+    let name = b"off_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let mut position = marker + name.len() + 3;
+    let first_surface = decode_embedded_surface(bytes, &mut position, int_width)?;
+    let second_surface = decode_embedded_surface(bytes, &mut position, int_width)?;
+    let surfaces = [first_surface, second_surface];
+    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = first_end;
+    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = second_end;
+    let pcurves = [first_pcurve, second_pcurve];
+    let parameter_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+    ];
+    if !matches!(bytes.get(position), Some(0x0a | 0x0b)) {
+        return None;
+    }
+    position += 1;
+    let offsets = [
+        take_range_value(bytes, &mut position)? * LEN_TO_MM,
+        take_range_value(bytes, &mut position)? * LEN_TO_MM,
+    ];
+    Some(EmbeddedTwoSidedOffset {
+        surfaces,
+        pcurves,
+        parameter_range,
+        discontinuities,
+        offsets,
+    })
+}
+
+fn decode_embedded_surface(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<SurfaceGeometry> {
+    let kind = take_native_ident(bytes, position)?;
+    if kind == "spline" {
+        let decoded = decode_surface_block(bytes, *position, int_width)?;
+        *position = decoded.end;
+        return Some(SurfaceGeometry::Nurbs(decoded.surface));
+    }
+    let point = take_native_vec3(bytes, position, 0x13)?;
+    let point = Point3::new(
+        point[0] * LEN_TO_MM,
+        point[1] * LEN_TO_MM,
+        point[2] * LEN_TO_MM,
+    );
+    match kind.as_str() {
+        "plane" => {
+            let normal = normalized(take_native_vec3(bytes, position, 0x14)?)?;
+            let u_axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
+            take_bool(bytes, position)?;
+            Some(SurfaceGeometry::Plane {
+                origin: point,
+                normal,
+                u_axis,
+            })
+        }
+        "cone" => {
+            let axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
+            let major = take_native_vec3(bytes, position, 0x14)?;
+            let ref_direction = normalized(major)?;
+            take_f64(bytes, position)?;
+            take_bool(bytes, position)?;
+            take_bool(bytes, position)?;
+            let sine = take_f64(bytes, position)?;
+            take_f64(bytes, position)?;
+            let radius = take_f64(bytes, position)? * LEN_TO_MM;
+            for _ in 0..5 {
+                take_bool(bytes, position)?;
+            }
+            if sine.abs() <= f64::EPSILON {
+                Some(SurfaceGeometry::Cylinder {
+                    origin: point,
+                    axis,
+                    ref_direction,
+                    radius,
+                })
+            } else {
+                Some(SurfaceGeometry::Cone {
+                    origin: point,
+                    axis,
+                    ref_direction,
+                    radius,
+                    half_angle: sine.abs().asin(),
+                })
+            }
+        }
+        "sphere" => {
+            let radius = take_f64(bytes, position)? * LEN_TO_MM;
+            let ref_direction = normalized(take_native_vec3(bytes, position, 0x14)?)?;
+            let axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
+            for _ in 0..5 {
+                take_bool(bytes, position)?;
+            }
+            Some(SurfaceGeometry::Sphere {
+                center: point,
+                axis,
+                ref_direction,
+                radius,
+            })
+        }
+        "torus" => {
+            let axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
+            let major_radius = take_f64(bytes, position)? * LEN_TO_MM;
+            let minor_radius = take_f64(bytes, position)? * LEN_TO_MM;
+            let ref_direction = normalized(take_native_vec3(bytes, position, 0x14)?)?;
+            for _ in 0..5 {
+                take_bool(bytes, position)?;
+            }
+            Some(SurfaceGeometry::Torus {
+                center: point,
+                axis,
+                ref_direction,
+                major_radius,
+                minor_radius,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn take_f64(bytes: &[u8], position: &mut usize) -> Option<f64> {
+    if bytes.get(*position) != Some(&0x06) {
+        return None;
+    }
+    let value = read_f64(bytes, *position + 1)?;
+    *position += 9;
+    Some(value)
+}
+
+fn take_bool(bytes: &[u8], position: &mut usize) -> Option<bool> {
+    let value = match bytes.get(*position)? {
+        0x0a => true,
+        0x0b => false,
+        _ => return None,
+    };
+    *position += 1;
+    Some(value)
+}
+
+fn normalized(value: [f64; 3]) -> Option<Vector3> {
+    let length = value
+        .iter()
+        .map(|component| component * component)
+        .sum::<f64>()
+        .sqrt();
+    (length.is_finite() && length > 0.0)
+        .then(|| Vector3::new(value[0] / length, value[1] / length, value[2] / length))
+}
+
+fn decode_two_sided_offset(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
+    use cadmpeg_ir::geometry::{
+        IntcurveSupportContext, IntcurveSupportSide, ProceduralCurveDefinition,
+    };
+
+    let name = b"off_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let mut position = marker + name.len() + 3;
+    for expected in ["null_surface", "null_surface", "nullbs", "nullbs"] {
+        if take_native_ident(bytes, &mut position)?.as_str() != expected {
+            return None;
+        }
+    }
+    let parameter_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+    ];
+    if !matches!(bytes.get(position), Some(0x0a | 0x0b)) {
+        return None;
+    }
+    position += 1;
+    let offsets = [
+        take_range_value(bytes, &mut position)? * LEN_TO_MM,
+        take_range_value(bytes, &mut position)? * LEN_TO_MM,
+    ];
+    Some(ProceduralCurveDefinition::TwoSidedOffset {
+        context: IntcurveSupportContext {
+            sides: [
+                IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                },
+                IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                },
+            ],
+            parameter_range,
+            discontinuities,
+        },
+        offsets,
+    })
+}
+
+fn take_native_ident(bytes: &[u8], position: &mut usize) -> Option<String> {
+    if !matches!(bytes.get(*position), Some(0x0d | 0x0e)) {
+        return None;
+    }
+    let length = usize::from(*bytes.get(*position + 1)?);
+    let start = *position + 2;
+    let end = start.checked_add(length)?;
+    let value = String::from_utf8(bytes.get(start..end)?.to_vec()).ok()?;
+    *position = end;
+    Some(value)
 }
 
 fn decode_compound_definition(bytes: &[u8], int_width: usize) -> Option<CompoundDefinition> {

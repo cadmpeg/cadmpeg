@@ -511,7 +511,14 @@ fn procedural_construction_reduction_is_reported() {
             id: ProceduralCurveId("generated_int_cur".into()),
             curve: ir.model.curves[0].id.clone(),
             definition: cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
-                supports: [None, None],
+                context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                    sides: std::array::from_fn(|_| cadmpeg_ir::geometry::IntcurveSupportSide {
+                        surface: None,
+                        pcurve: None,
+                    }),
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: std::array::from_fn(|_| Vec::new()),
+                },
             },
             cache_fit_tolerance: Some(0.01),
         });

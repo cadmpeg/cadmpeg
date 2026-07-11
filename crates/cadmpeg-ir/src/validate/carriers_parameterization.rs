@@ -66,16 +66,36 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralCurveDefinition::Compound { components, .. } => {
                 curves.extend(components.iter().map(|component| component.0.as_str()));
             }
-            ProceduralCurveDefinition::Intersection { supports } => {
-                for support in supports.iter().flatten() {
-                    surfaces.insert(&support.0);
+            ProceduralCurveDefinition::Intersection { context } => {
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                }
+            }
+            ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
+                for side in context.sides.iter().chain(std::iter::once(third)) {
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                }
+            }
+            ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(&surface.0);
+                    }
                 }
             }
             ProceduralCurveDefinition::Projection {
-                source, support, ..
+                context, source, ..
             } => {
                 curves.insert(&source.0);
-                surfaces.insert(&support.0);
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                }
             }
             ProceduralCurveDefinition::Offset {
                 source, support, ..
@@ -83,6 +103,13 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 curves.insert(&source.0);
                 if let Some(support) = support {
                     surfaces.insert(&support.0);
+                }
+            }
+            ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(surface.0.as_str());
+                    }
                 }
             }
             ProceduralCurveDefinition::VectorOffset { source, .. } => {

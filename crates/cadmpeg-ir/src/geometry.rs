@@ -394,6 +394,62 @@ pub struct ProceduralCurve {
     pub cache_fit_tolerance: Option<f64>,
 }
 
+/// One paired surface and parameter-space curve in an intcurve construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct IntcurveSupportSide {
+    /// Supporting surface, absent for the native `null_surface` sentinel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<SurfaceId>,
+    /// UV curve on `surface`, absent for the native `nullbs` sentinel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve: Option<PcurveGeometry>,
+}
+
+/// Shared prefix carried by surface-related native intcurve constructions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct IntcurveSupportContext {
+    /// Two ordered `(surface, pcurve)` support sides.
+    pub sides: [IntcurveSupportSide; 2],
+    /// Native parameter interval for the solved curve.
+    pub parameter_range: [f64; 2],
+    /// Three ordered native discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
+}
+
+/// Mutually exclusive tail forms of a native projected intcurve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ProjectionTail {
+    /// The ASM flag is followed immediately by the subtype close.
+    EarlyClose {
+        /// Native ASM projection flag.
+        flag: bool,
+    },
+    /// The ASM flag is followed by a retained source interval and role text.
+    Ranged {
+        /// Native ASM projection flag.
+        flag: bool,
+        /// Native parameter interval on the projected source curve.
+        parameter_range: [f64; 2],
+        /// Projection role, such as `surf1` or `surf2`.
+        role: String,
+    },
+}
+
+/// Native prefix-only surface-curve construction family.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceCurveFamily {
+    /// Blend edge curve whose construction details live on its blend support.
+    Blend,
+    /// Curve constrained to a support surface.
+    SurfaceConstrained,
+    /// Parametric curve on a support surface.
+    Parametric,
+    /// Skin curve on a support surface.
+    Skin,
+}
+
 /// Neutral semantics for a procedural curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -428,19 +484,33 @@ pub enum ProceduralCurveDefinition {
     },
     /// Intersection of two support surfaces.
     Intersection {
-        /// The two intersecting surfaces; `None` when a side was not resolved.
-        supports: [Option<SurfaceId>; 2],
+        /// Shared surfaces, UV curves, interval, and discontinuity metadata.
+        context: IntcurveSupportContext,
+    },
+    /// Intersection constrained by a third ordered support surface.
+    ThreeSurfaceIntersection {
+        /// Shared first two surfaces, UV curves, interval, and discontinuities.
+        context: IntcurveSupportContext,
+        /// Native selector preceding the third support pair.
+        selector: i64,
+        /// Third `(surface, pcurve)` support pair.
+        third: IntcurveSupportSide,
+    },
+    /// Surface-related curve whose native subtype has no tail beyond the shared prefix.
+    SurfaceCurve {
+        /// Native prefix-only family.
+        family: SurfaceCurveFamily,
+        /// Shared surfaces, UV curves, interval, and discontinuities.
+        context: IntcurveSupportContext,
     },
     /// Projection of a source curve onto a support surface.
     Projection {
+        /// Shared surfaces, UV curves, interval, and discontinuity metadata.
+        context: IntcurveSupportContext,
         /// Curve being projected.
         source: CurveId,
-        /// Surface the source curve is projected onto.
-        support: SurfaceId,
-        /// Projection direction, when the source recorded one; `None` for a
-        /// normal (closest-point) projection.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<Vector3>,
+        /// Native post-source tail form.
+        tail: ProjectionTail,
     },
     /// Offset from a source curve.
     Offset {
@@ -452,6 +522,13 @@ pub enum ProceduralCurveDefinition {
         /// to a support surface; `None` for a free-space offset.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         support: Option<SurfaceId>,
+    },
+    /// Intersection of two surfaces after applying independent signed offsets.
+    TwoSidedOffset {
+        /// Shared surfaces, UV curves, interval, and discontinuity metadata.
+        context: IntcurveSupportContext,
+        /// Signed offset distance for each support side, in document length units.
+        offsets: [f64; 2],
     },
     /// Free-space vector offset of a source curve over a parameter interval.
     VectorOffset {

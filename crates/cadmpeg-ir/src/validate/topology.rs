@@ -366,21 +366,45 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
-            ProceduralCurveDefinition::Intersection { supports } => {
-                for support in supports.iter().flatten() {
-                    if !ids.surfaces.contains(&support.0) {
-                        ref_error(findings, &procedural.id.0, "surface", &support.0);
+            ProceduralCurveDefinition::Intersection { context } => {
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
+                    }
+                }
+            }
+            ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
+                for side in context.sides.iter().chain(std::iter::once(third)) {
+                    if let Some(surface) = &side.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
+                    }
+                }
+            }
+            ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
                     }
                 }
             }
             ProceduralCurveDefinition::Projection {
-                source, support, ..
+                context, source, ..
             } => {
                 if !ids.curves.contains(&source.0) {
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
-                if !ids.surfaces.contains(&support.0) {
-                    ref_error(findings, &procedural.id.0, "surface", &support.0);
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
+                    }
                 }
             }
             ProceduralCurveDefinition::Offset {
@@ -392,6 +416,15 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 if let Some(support) = support {
                     if !ids.surfaces.contains(&support.0) {
                         ref_error(findings, &procedural.id.0, "surface", &support.0);
+                    }
+                }
+            }
+            ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
                     }
                 }
             }

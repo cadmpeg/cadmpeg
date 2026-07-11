@@ -291,6 +291,72 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for procedural in &ir.model.procedural_curves {
+        if let ProceduralCurveDefinition::SurfaceCurve { context, .. } = &procedural.definition {
+            if !support_context_is_finite(context) {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "surface-curve context is not finite and ordered",
+                );
+            }
+            continue;
+        }
+        if let ProceduralCurveDefinition::ThreeSurfaceIntersection { context, .. } =
+            &procedural.definition
+        {
+            if !support_context_is_finite(context) {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "three-surface intersection context is not finite and ordered",
+                );
+            }
+            continue;
+        }
+        if let ProceduralCurveDefinition::Projection { context, tail, .. } = &procedural.definition
+        {
+            let tail_finite = match tail {
+                crate::geometry::ProjectionTail::EarlyClose { .. } => true,
+                crate::geometry::ProjectionTail::Ranged {
+                    parameter_range, ..
+                } => {
+                    parameter_range.iter().all(|value| value.is_finite())
+                        && parameter_range[0] <= parameter_range[1]
+                }
+            };
+            if !support_context_is_finite(context) || !tail_finite {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "projection fields are not finite and ordered",
+                );
+            }
+            continue;
+        }
+        if let ProceduralCurveDefinition::Intersection { context } = &procedural.definition {
+            if !support_context_is_finite(context) {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "intersection support context is not finite and ordered",
+                );
+            }
+            continue;
+        }
+        if let ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
+            &procedural.definition
+        {
+            let finite =
+                support_context_is_finite(context) && offsets.iter().all(|value| value.is_finite());
+            if !finite {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "two-sided offset fields are not finite and ordered",
+                );
+            }
+            continue;
+        }
         if let ProceduralCurveDefinition::Compound {
             parameters,
             component_parameters,
@@ -391,6 +457,19 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
     }
+}
+
+fn support_context_is_finite(context: &crate::geometry::IntcurveSupportContext) -> bool {
+    context
+        .parameter_range
+        .iter()
+        .all(|value| value.is_finite())
+        && context.parameter_range[0] <= context.parameter_range[1]
+        && context
+            .discontinuities
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite())
 }
 
 pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], dir: &str) {

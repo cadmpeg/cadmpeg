@@ -334,6 +334,24 @@ Evaluation formulas for all four carriers follow directly from the frame vectors
 
 **`exact_int_cur`**: the solved `nubs`/`nurbs` curve cache is the authoritative exact construction payload, followed by its fit tolerance. No weaker analytic carrier is implied by the subtype. A zero fit tolerance denotes an exact cache.
 
+**`comp_int_cur`**: a counted leading parameter array, component count, one parameter double per component, one ASM extension flag, then exactly that many ordered child curves. The final curve cache and fit tolerance follow the child curves. Component parameters and the leading parameter array are unscaled; child and solved NURBS control points and fit tolerance use the standard length scaling.
+
+**Surface-related intcurve prefix**: two ordered support surfaces, two ordered BS2 parameter curves paired by side, one native parameter interval, then three counted discontinuity arrays. `null_surface` and `nullbs` are explicit absence sentinels. The interval and discontinuity values are unscaled.
+
+**`off_int_cur`**: the surface-related prefix, one ASM extension flag, then signed left/right offset lengths. The solved curve cache and fit tolerance follow the offsets. The two offsets correspond to the two ordered support sides.
+
+**`int_int_cur`**: the surface-related prefix followed by one ASM extension flag, then the solved curve cache and fit tolerance. The construction is the intersection of the two ordered support surfaces; the paired BS2 curves retain its parameterization on each support.
+
+**`proj_int_cur`**: the surface-related prefix, one ASM extension flag, the source curve, and a second boolean flag. In the ranged form, a source-parameter interval and projection-role string (`surf1` or `surf2`) follow the flag before the solved cache. In the early-close form the subtype closes immediately after the flag and the solved carrier is external to that subtype payload.
+
+**`sss_int_cur`**: the surface-related prefix, an integer selector, then a third support surface and its paired BS2 parameter curve. The solved cache and fit tolerance follow the third support pair. All three support sides retain their serialized order.
+
+**Prefix-only surface curves**: `blend_int_cur`, `surf_int_cur`, `par_int_cur`, and `skin_int_cur` contain the surface-related prefix with no subtype-specific tail, followed by the solved cache and fit tolerance. The subtype name distinguishes blend-edge, surface-constrained, parametric, and skin construction semantics.
+
+An embedded freeform support surface is encoded as the `spline` surface discriminator followed by its `nubs`/`nurbs` surface block. Its paired BS2 curve is a direct `nubs`/`nurbs` curve block. Surface control points use length scaling; UV poles, knots, weights, intervals, and discontinuities are unscaled.
+
+Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus` discriminator followed by the same position, orientation, radius, angle, and flag payload used by the corresponding top-level carrier. A zero cone sine denotes a cylinder. Signed sphere and torus radii retain their signs.
+
 ### 7.4 Pcurves (2D UV trimming curves)
 
 A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at record-relative **+37**:
