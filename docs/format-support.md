@@ -64,8 +64,8 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
 
 ### Write and round trip
 
-- **Native write: Partial.** An unchanged retained source archive writes byte for byte. The writer patches model points, common analytic B-rep curves and surfaces, sketch points, sketch lines, arcs and NURBS, and sketch constraint masks in their original records.
-- **Write limits:** Writing requires a retained source archive and the original entity and record layouts. Source-less generation, topology changes, and edits outside the listed fields are rejected.
+- **Native write: Partial.** An unchanged retained source archive writes byte for byte. The writer patches model points, common analytic and NURBS B-rep curves and surfaces, pcurves, procedural caches, sketch geometry, constraints, history fields, design records, and supported appearance properties in their original records. Source-less generation writes multi-body B-reps with analytic or rational/non-rational NURBS carriers, inline non-rational NURBS pcurves, placements, and typed ASM history streams with bulletin boards and state-local records.
+- **Write limits:** General writing requires a retained source archive and the original entity and record layouts. Source-less generation supports multiple placed bodies, regions, and shells with plane, cylinder, torus, or rational/non-rational NURBS faces; multiple loops; shared radial edges; line, circle, or rational/non-rational NURBS edge curves; and inline non-rational NURBS pcurves. Other analytic carriers remain limited to one-face archives. Wire topology and edits outside the listed fields are rejected.
 - **Round trip: Partial.** Generated fixtures cover byte-exact replay and each writable geometry and sketch family.
 
 See [`formats/f3d.md`](formats/f3d.md) and [`formats/f3d-open-items.md`](formats/f3d-open-items.md).

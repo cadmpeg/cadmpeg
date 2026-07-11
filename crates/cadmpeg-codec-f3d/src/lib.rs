@@ -138,7 +138,15 @@ impl Encoder for F3dCodec {
     }
 
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-        self.write_preserved(ir, writer)
+        if ir
+            .unknowns
+            .iter()
+            .any(|record| record.id.0 == "f3d:file:source-image#0")
+        {
+            self.write_preserved(ir, writer)
+        } else {
+            writer::write_new(ir, writer)
+        }
     }
 }
 

@@ -94,7 +94,6 @@ fn marker_positions(b: &[u8]) -> Vec<usize> {
 struct KnotLayout {
     value_offsets: Vec<usize>,
     multiplicity_offsets: Vec<usize>,
-    expanded_run_lengths: Vec<usize>,
 }
 
 fn read_knots(
@@ -123,11 +122,9 @@ fn read_knots(
         return None;
     }
     let mut expanded = Vec::new();
-    let mut expanded_run_lengths = Vec::new();
     for (i, (kv, m)) in knots.iter().zip(&mults).enumerate() {
         let extra = i64::from(i == 0 || i == n - 1);
         let run_length = usize::try_from((*m + extra).max(0)).ok()?;
-        expanded_run_lengths.push(run_length);
         for _ in 0..run_length {
             expanded.push(*kv);
         }
@@ -138,7 +135,6 @@ fn read_knots(
         KnotLayout {
             value_offsets,
             multiplicity_offsets,
-            expanded_run_lengths,
         },
     ))
 }
@@ -296,14 +292,12 @@ pub(crate) struct SurfacePatchLayout {
     pub(crate) degree_value_offsets: [usize; 2],
 }
 
-/// Unique native knot payloads and their expanded IR run lengths.
+/// Unique native knot payload offsets.
 pub(crate) struct KnotPatchLayout {
     /// Payload offsets for unique knot values.
     pub(crate) value_offsets: Vec<usize>,
     /// Payload offsets for stored multiplicities.
     pub(crate) multiplicity_offsets: Vec<usize>,
-    /// Repetition count of each unique value in the expanded IR vector.
-    pub(crate) expanded_run_lengths: Vec<usize>,
 }
 
 impl From<KnotLayout> for KnotPatchLayout {
@@ -311,7 +305,6 @@ impl From<KnotLayout> for KnotPatchLayout {
         Self {
             value_offsets: value.value_offsets,
             multiplicity_offsets: value.multiplicity_offsets,
-            expanded_run_lengths: value.expanded_run_lengths,
         }
     }
 }
@@ -471,6 +464,8 @@ pub struct NurbsPcurve {
 
 /// Writable value offsets for one non-rational 2D pcurve cache.
 pub(crate) struct PcurvePatchLayout {
+    /// Tagged-integer payload offset for the curve degree.
+    pub(crate) degree_value_offset: usize,
     /// Tagged-double payload offsets in `(u, v)` pole order.
     pub(crate) control_value_offsets: Vec<usize>,
     /// Number of UV control points.
@@ -493,6 +488,7 @@ pub(crate) fn final_pcurve_patch_layout(record: &[u8]) -> Option<PcurvePatchLayo
                 return None;
             }
             let mut pos = marker_pos + marker_len;
+            let degree_value_offset = pos + 1;
             let degree = take_tagged_i64(record, &mut pos, 0x04)?;
             if !(1..=20).contains(&degree) {
                 return None;
@@ -514,6 +510,7 @@ pub(crate) fn final_pcurve_patch_layout(record: &[u8]) -> Option<PcurvePatchLayo
                 pos += 9;
             }
             Some(PcurvePatchLayout {
+                degree_value_offset,
                 control_value_offsets: offsets,
                 control_count,
                 knots: knot_layout.into(),

@@ -39,9 +39,10 @@ The decoder handles common analytic and NURBS geometry, connected B-rep
 topology, body transforms, material data, and a growing set of design and
 sketch records.
 
-The writer can replay an unchanged archive byte for byte. It can also update
-the B-rep points, curves, surfaces, sketch geometry, and sketch constraints it
-understands while retaining the rest of the archive.
+The writer can replay an unchanged archive byte for byte and update supported
+B-rep, sketch, history, design, and appearance fields while retaining the rest
+of the archive. Source-less writing currently covers one canonical polygonal
+face with selected analytic surface and edge carriers.
 
 Display meshes, full component structure, assembly constraints, and replayable
 feature history remain outside the current coverage. See

@@ -24,6 +24,1574 @@ use zip::write::SimpleFileOptions;
 
 use crate::{asm_header, decode, sab, F3dCodec};
 
+/// Write a canonical source-less F3D archive for the currently supported
+/// native construction profile.
+pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+    let smbh = encode_planar_triangle_smbh(target)?;
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    archive
+        .start_file("Manifest.dat", options)
+        .map_err(|error| CodecError::Malformed(format!("cannot create F3D manifest: {error}")))?;
+    archive.write_all(b"cadmpeg-generated-f3d")?;
+    archive
+        .start_file(
+            "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+            options,
+        )
+        .map_err(|error| CodecError::Malformed(format!("cannot create F3D BREP entry: {error}")))?;
+    archive.write_all(&smbh)?;
+    let bytes = archive
+        .finish()
+        .map_err(|error| CodecError::Malformed(format!("cannot finish F3D archive: {error}")))?
+        .into_inner();
+    writer.write_all(&bytes)?;
+    Ok(())
+}
+
+fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let model = &target.model;
+    if model.faces.len() > 1 || model.loops.len() > 1 {
+        return encode_multi_face_shell_smbh(target);
+    }
+    if model.bodies.is_empty()
+        || model.regions.is_empty()
+        || model.shells.is_empty()
+        || model.faces.len() != 1
+        || model.loops.len() != 1
+        || model.coedges.len() < 3
+        || model.edges.len() != model.coedges.len()
+        || model.vertices.len() != model.coedges.len()
+        || model.points.len() != model.coedges.len()
+        || model.surfaces.len() != 1
+    {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D generation currently requires one polygonal planar face".into(),
+        ));
+    }
+    let body = &model.bodies[0];
+    let region = &model.regions[0];
+    let shell = &model.shells[0];
+    let face = &model.faces[0];
+    let loop_ = &model.loops[0];
+    let surface_geometry = &model.surfaces[0].geometry;
+    if body.regions.as_slice() != [region.id.clone()]
+        || region.body != body.id
+        || region.shells.as_slice() != [shell.id.clone()]
+        || shell.region != region.id
+        || shell.faces.as_slice() != [face.id.clone()]
+        || !shell.wire_edges.is_empty()
+        || !shell.free_vertices.is_empty()
+        || face.shell != shell.id
+        || face.surface != model.surfaces[0].id
+        || face.loops.as_slice() != [loop_.id.clone()]
+        || loop_.face != face.id
+        || loop_.coedges.len() != model.coedges.len()
+        || body.transform.is_some()
+    {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D generation requires one directly owned polygonal face".into(),
+        ));
+    }
+
+    let coedges = loop_
+        .coedges
+        .iter()
+        .map(|id| {
+            model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("loop references missing coedge {id}"))
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for (index, coedge) in coedges.iter().enumerate() {
+        let next = coedges[(index + 1) % coedges.len()];
+        let previous = coedges[(index + coedges.len() - 1) % coedges.len()];
+        if coedge.owner_loop != loop_.id
+            || coedge.next != next.id
+            || coedge.previous != previous.id
+            || coedge.radial_next != coedge.id
+        {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D generation requires a laminar polygon coedge ring".into(),
+            ));
+        }
+    }
+
+    let curve_start = 7i64;
+    let pcurve_start = native_record_index(curve_start, model.curves.len())?;
+    let coedge_start = native_record_index(pcurve_start, model.pcurves.len())?;
+    let edge_start = native_record_index(coedge_start, coedges.len())?;
+    let vertex_start = native_record_index(edge_start, model.edges.len())?;
+    let point_start = native_record_index(vertex_start, model.vertices.len())?;
+
+    let mut records = Vec::new();
+    native_ident(&mut records, "asmheader")?;
+    native_string(&mut records, "231.6.3.65535")?;
+    records.push(0x11);
+
+    native_ident(&mut records, "body")?;
+    native_ref(&mut records, -1);
+    native_i64(&mut records, 1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, 2);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, -1);
+    records.push(0x11);
+
+    native_ident(&mut records, "region")?;
+    native_ref(&mut records, -1);
+    native_i64(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, 3);
+    native_ref(&mut records, 1);
+    records.push(0x11);
+
+    native_ident(&mut records, "shell")?;
+    native_ref(&mut records, -1);
+    native_i64(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, 4);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, 2);
+    records.push(0x11);
+
+    native_ident(&mut records, "face")?;
+    native_ref(&mut records, -1);
+    native_i64(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, 5);
+    native_ref(&mut records, 3);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, 6);
+    records.push(native_bool(face.sense == Sense::Reversed));
+    records.push(0x0b);
+    records.push(0x11);
+
+    native_ident(&mut records, "loop")?;
+    native_ref(&mut records, -1);
+    native_i64(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, coedge_start);
+    native_ref(&mut records, 4);
+    records.push(0x11);
+
+    match *surface_geometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            native_surface_base(&mut records, "plane")?;
+            native_point(
+                &mut records,
+                [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+            );
+            native_vector(&mut records, [normal.x, normal.y, normal.z]);
+            native_vector(&mut records, [u_axis.x, u_axis.y, u_axis.z]);
+            records.push(0x0b);
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            native_surface_base(&mut records, "cone")?;
+            native_point(
+                &mut records,
+                [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+            );
+            native_vector(&mut records, [axis.x, axis.y, axis.z]);
+            native_vector(
+                &mut records,
+                [
+                    ref_direction.x * radius / 10.0,
+                    ref_direction.y * radius / 10.0,
+                    ref_direction.z * radius / 10.0,
+                ],
+            );
+            native_f64(&mut records, 1.0);
+            records.extend_from_slice(&[0x0b, 0x0b]);
+            native_f64(&mut records, 0.0);
+            native_f64(&mut records, 1.0);
+            native_f64(&mut records, radius / 10.0);
+            records.extend_from_slice(&[0x0b; 5]);
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            half_angle,
+        } => {
+            native_surface_base(&mut records, "cone")?;
+            native_point(
+                &mut records,
+                [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+            );
+            native_vector(&mut records, [axis.x, axis.y, axis.z]);
+            native_vector(
+                &mut records,
+                [
+                    ref_direction.x * radius / 10.0,
+                    ref_direction.y * radius / 10.0,
+                    ref_direction.z * radius / 10.0,
+                ],
+            );
+            native_f64(&mut records, 1.0);
+            records.extend_from_slice(&[0x0b, 0x0b]);
+            native_f64(&mut records, half_angle.sin());
+            native_f64(&mut records, half_angle.cos());
+            native_f64(&mut records, radius / 10.0);
+            records.extend_from_slice(&[0x0b; 5]);
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            native_surface_base(&mut records, "sphere")?;
+            native_point(
+                &mut records,
+                [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+            );
+            native_f64(&mut records, radius / 10.0);
+            native_vector(
+                &mut records,
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+            );
+            native_vector(&mut records, [axis.x, axis.y, axis.z]);
+            records.extend_from_slice(&[0x0b; 5]);
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            native_surface_base(&mut records, "torus")?;
+            native_point(
+                &mut records,
+                [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+            );
+            native_vector(&mut records, [axis.x, axis.y, axis.z]);
+            native_f64(&mut records, major_radius / 10.0);
+            native_f64(&mut records, minor_radius / 10.0);
+            native_vector(
+                &mut records,
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+            );
+            records.extend_from_slice(&[0x0b; 5]);
+        }
+        SurfaceGeometry::Nurbs(ref surface) => {
+            native_surface_base(&mut records, "spline")?;
+            native_nurbs_surface(&mut records, surface)?;
+        }
+        SurfaceGeometry::Unknown { .. } => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D generation does not support this surface carrier".into(),
+            ));
+        }
+    }
+    records.push(0x11);
+
+    for curve in &model.curves {
+        match curve.geometry {
+            CurveGeometry::Line { origin, direction } => {
+                native_curve_base(&mut records, "straight")?;
+                native_point(
+                    &mut records,
+                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                );
+                native_vector(&mut records, [direction.x, direction.y, direction.z]);
+            }
+            CurveGeometry::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            } => {
+                native_curve_base(&mut records, "ellipse")?;
+                native_point(
+                    &mut records,
+                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                );
+                native_vector(&mut records, [axis.x, axis.y, axis.z]);
+                native_vector(
+                    &mut records,
+                    [
+                        ref_direction.x * radius / 10.0,
+                        ref_direction.y * radius / 10.0,
+                        ref_direction.z * radius / 10.0,
+                    ],
+                );
+                native_f64(&mut records, 1.0);
+            }
+            CurveGeometry::Ellipse {
+                center,
+                axis,
+                major_direction,
+                major_radius,
+                minor_radius,
+            } => {
+                if major_radius == 0.0 {
+                    return Err(CodecError::Malformed(
+                        "source-less F3D ellipse has zero major radius".into(),
+                    ));
+                }
+                native_curve_base(&mut records, "ellipse")?;
+                native_point(
+                    &mut records,
+                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                );
+                native_vector(&mut records, [axis.x, axis.y, axis.z]);
+                native_vector(
+                    &mut records,
+                    [
+                        major_direction.x * major_radius / 10.0,
+                        major_direction.y * major_radius / 10.0,
+                        major_direction.z * major_radius / 10.0,
+                    ],
+                );
+                native_f64(&mut records, minor_radius / major_radius);
+            }
+            CurveGeometry::Nurbs(ref curve) => {
+                native_curve_base(&mut records, "intcurve")?;
+                native_nurbs_curve(&mut records, curve)?;
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D generation does not support this curve carrier".into(),
+                ));
+            }
+        }
+        records.push(0x11);
+    }
+
+    for pcurve in &model.pcurves {
+        native_pcurve(&mut records, pcurve)?;
+        records.push(0x11);
+    }
+
+    for (index, coedge) in coedges.iter().enumerate() {
+        let edge_index = model
+            .edges
+            .iter()
+            .position(|edge| edge.id == coedge.edge)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("coedge references missing edge {}", coedge.edge))
+            })?;
+        native_ident(&mut records, "coedge")?;
+        native_ref(&mut records, -1);
+        native_i64(&mut records, -1);
+        native_ref(&mut records, -1);
+        native_ref(
+            &mut records,
+            native_record_index(coedge_start, (index + 1) % coedges.len())?,
+        );
+        native_ref(
+            &mut records,
+            native_record_index(coedge_start, (index + coedges.len() - 1) % coedges.len())?,
+        );
+        native_ref(&mut records, -1);
+        native_ref(&mut records, native_record_index(edge_start, edge_index)?);
+        records.push(native_bool(coedge.sense == Sense::Reversed));
+        native_ref(&mut records, 5);
+        native_i64(&mut records, 0);
+        let pcurve_ref = coedge
+            .pcurve
+            .as_ref()
+            .map(|pcurve_id| {
+                model
+                    .pcurves
+                    .iter()
+                    .position(|pcurve| pcurve.id == *pcurve_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "coedge references missing pcurve {pcurve_id}"
+                        ))
+                    })
+                    .and_then(|ordinal| native_record_index(pcurve_start, ordinal))
+            })
+            .transpose()?
+            .unwrap_or(-1);
+        native_ref(&mut records, pcurve_ref);
+        records.push(0x11);
+    }
+
+    for edge in &model.edges {
+        let start = model
+            .vertices
+            .iter()
+            .position(|vertex| vertex.id == edge.start)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("edge references missing vertex {}", edge.start))
+            })?;
+        let end = model
+            .vertices
+            .iter()
+            .position(|vertex| vertex.id == edge.end)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("edge references missing vertex {}", edge.end))
+            })?;
+        let curve_ref = edge
+            .curve
+            .as_ref()
+            .map(|curve_id| {
+                model
+                    .curves
+                    .iter()
+                    .position(|curve| curve.id == *curve_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!("edge references missing curve {curve_id}"))
+                    })
+                    .and_then(|ordinal| native_record_index(curve_start, ordinal))
+            })
+            .transpose()?
+            .unwrap_or(-1);
+        let mut range = edge.param_range.unwrap_or([0.0, 1.0]);
+        if edge.curve.as_ref().is_some_and(|curve_id| {
+            model.curves.iter().any(|curve| {
+                curve.id == *curve_id
+                    && matches!(
+                        curve.geometry,
+                        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
+                    )
+            })
+        }) {
+            range[0] -= std::f64::consts::FRAC_PI_2;
+            range[1] -= std::f64::consts::FRAC_PI_2;
+        }
+        native_ident(&mut records, "edge")?;
+        native_ref(&mut records, -1);
+        native_i64(&mut records, -1);
+        native_ref(&mut records, -1);
+        native_ref(&mut records, native_record_index(vertex_start, start)?);
+        native_f64(&mut records, range[0]);
+        native_ref(&mut records, native_record_index(vertex_start, end)?);
+        native_f64(&mut records, range[1]);
+        native_ref(&mut records, -1);
+        native_ref(&mut records, curve_ref);
+        records.push(0x0b);
+        native_string(&mut records, "unknown")?;
+        records.push(0x11);
+    }
+
+    for (vertex_index, vertex) in model.vertices.iter().enumerate() {
+        let point = model
+            .points
+            .iter()
+            .position(|point| point.id == vertex.point)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("vertex references missing point {}", vertex.point))
+            })?;
+        let owning_edge = model
+            .edges
+            .iter()
+            .position(|edge| edge.start == vertex.id || edge.end == vertex.id)
+            .ok_or_else(|| CodecError::Malformed(format!("vertex {} has no edge", vertex.id)))?;
+        native_ident(&mut records, "vertex")?;
+        native_ref(&mut records, -1);
+        native_i64(&mut records, -1);
+        native_ref(&mut records, -1);
+        native_ref(&mut records, native_record_index(edge_start, owning_edge)?);
+        native_i64(
+            &mut records,
+            i64::try_from(vertex_index)
+                .map_err(|_| CodecError::NotImplemented("F3D vertex ordinal exceeds i64".into()))?,
+        );
+        native_ref(&mut records, native_record_index(point_start, point)?);
+        records.push(0x11);
+    }
+
+    for point in &model.points {
+        native_ident(&mut records, "point")?;
+        native_ref(&mut records, -1);
+        native_i64(&mut records, -1);
+        native_ref(&mut records, -1);
+        native_point(
+            &mut records,
+            [
+                point.position.x / 10.0,
+                point.position.y / 10.0,
+                point.position.z / 10.0,
+            ],
+        );
+        native_i64(&mut records, 1);
+        records.push(0x11);
+    }
+    native_history_tail(&mut records, target)?;
+
+    let mut bytes = native_smbh_header()?;
+    bytes.extend_from_slice(&records);
+    Ok(bytes)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NativeRecordPlan {
+    body: i64,
+    region: i64,
+    shell: i64,
+    face: i64,
+    loop_: i64,
+    surface: i64,
+    curve: i64,
+    pcurve: i64,
+    coedge: i64,
+    edge: i64,
+    vertex: i64,
+    point: i64,
+    transform: i64,
+}
+
+impl NativeRecordPlan {
+    fn for_model(model: &cadmpeg_ir::document::Model) -> Result<Self, CodecError> {
+        let body_start = 1;
+        let region_start = native_record_index(body_start, model.bodies.len())?;
+        let shell_start = native_record_index(region_start, model.regions.len())?;
+        let face_start = native_record_index(shell_start, model.shells.len())?;
+        let loop_start = native_record_index(face_start, model.faces.len())?;
+        let surface_start = native_record_index(loop_start, model.loops.len())?;
+        let curve_start = native_record_index(surface_start, model.surfaces.len())?;
+        let pcurve_start = native_record_index(curve_start, model.curves.len())?;
+        let coedge_start = native_record_index(pcurve_start, model.pcurves.len())?;
+        let edge_start = native_record_index(coedge_start, model.coedges.len())?;
+        let vertex_start = native_record_index(edge_start, model.edges.len())?;
+        let point_start = native_record_index(vertex_start, model.vertices.len())?;
+        let transform_start = native_record_index(point_start, model.points.len())?;
+        Ok(Self {
+            body: body_start,
+            region: region_start,
+            shell: shell_start,
+            face: face_start,
+            loop_: loop_start,
+            surface: surface_start,
+            curve: curve_start,
+            pcurve: pcurve_start,
+            coedge: coedge_start,
+            edge: edge_start,
+            vertex: vertex_start,
+            point: point_start,
+            transform: transform_start,
+        })
+    }
+}
+
+fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let model = &target.model;
+    if model.bodies.is_empty()
+        || model.regions.is_empty()
+        || model.shells.is_empty()
+        || model.faces.is_empty()
+        || model.loops.len() < model.faces.len()
+        || model.surfaces.len() != model.faces.len()
+    {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D generation requires owned face topology".into(),
+        ));
+    }
+
+    let plan = NativeRecordPlan::for_model(model)?;
+    let NativeRecordPlan {
+        body: body_start,
+        region: region_start,
+        shell: shell_start,
+        face: face_start,
+        loop_: loop_start,
+        surface: surface_start,
+        curve: curve_start,
+        pcurve: pcurve_start,
+        coedge: coedge_start,
+        edge: edge_start,
+        vertex: vertex_start,
+        point: point_start,
+        transform: transform_start,
+    } = plan;
+
+    let mut records = Vec::new();
+    native_ident(&mut records, "asmheader")?;
+    native_string(&mut records, "231.6.3.65535")?;
+    records.push(0x11);
+    for (body_ordinal, body) in model.bodies.iter().enumerate() {
+        let first_region = body
+            .regions
+            .first()
+            .ok_or_else(|| CodecError::Malformed(format!("body {} has no region", body.id)))?;
+        let region_ordinal = model
+            .regions
+            .iter()
+            .position(|region| region.id == *first_region)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("body references missing region {first_region}"))
+            })?;
+        let transform_ordinal = model.bodies[..body_ordinal]
+            .iter()
+            .filter(|candidate| candidate.transform.is_some())
+            .count();
+        native_ident(&mut records, "body")?;
+        native_ref(&mut records, -1);
+        native_i64(
+            &mut records,
+            i64::try_from(body_ordinal + 1)
+                .map_err(|_| CodecError::NotImplemented("F3D body ordinal exceeds i64".into()))?,
+        );
+        native_ref(&mut records, -1);
+        native_ref(
+            &mut records,
+            native_record_index(region_start, region_ordinal)?,
+        );
+        native_ref(&mut records, -1);
+        native_ref(
+            &mut records,
+            if body.transform.is_some() {
+                native_record_index(transform_start, transform_ordinal)?
+            } else {
+                -1
+            },
+        );
+        records.push(0x11);
+    }
+    for region in &model.regions {
+        let body_ordinal = model
+            .bodies
+            .iter()
+            .position(|body| body.id == region.body)
+            .ok_or_else(|| CodecError::Malformed(format!("region {} has no body", region.id)))?;
+        let body = &model.bodies[body_ordinal];
+        let ordinal = body
+            .regions
+            .iter()
+            .position(|id| *id == region.id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("body does not own region {}", region.id))
+            })?;
+        let first_shell = region
+            .shells
+            .first()
+            .ok_or_else(|| CodecError::Malformed(format!("region {} has no shell", region.id)))?;
+        let shell_ordinal = model
+            .shells
+            .iter()
+            .position(|shell| shell.id == *first_shell)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("region references missing shell {first_shell}"))
+            })?;
+        let next = if ordinal + 1 == body.regions.len() {
+            -1
+        } else {
+            let id = &body.regions[ordinal + 1];
+            let position = model
+                .regions
+                .iter()
+                .position(|item| item.id == *id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("body references missing region {id}"))
+                })?;
+            native_record_index(region_start, position)?
+        };
+        native_ident(&mut records, "region")?;
+        native_ref(&mut records, next);
+        native_i64(&mut records, -1);
+        native_ref(&mut records, -1);
+        native_ref(&mut records, -1);
+        native_ref(
+            &mut records,
+            native_record_index(shell_start, shell_ordinal)?,
+        );
+        native_ref(&mut records, native_record_index(body_start, body_ordinal)?);
+        records.push(0x11);
+    }
+    for shell in &model.shells {
+        let region_ordinal = model
+            .regions
+            .iter()
+            .position(|region| region.id == shell.region)
+            .ok_or_else(|| CodecError::Malformed(format!("shell {} has no region", shell.id)))?;
+        let region = &model.regions[region_ordinal];
+        let ordinal = region
+            .shells
+            .iter()
+            .position(|id| *id == shell.id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("region does not own shell {}", shell.id))
+            })?;
+        let first_face = shell
+            .faces
+            .first()
+            .ok_or_else(|| CodecError::Malformed(format!("shell {} has no face", shell.id)))?;
+        let face_ordinal = model
+            .faces
+            .iter()
+            .position(|face| face.id == *first_face)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("shell references missing face {first_face}"))
+            })?;
+        let next = if ordinal + 1 == region.shells.len() {
+            -1
+        } else {
+            let id = &region.shells[ordinal + 1];
+            let position = model
+                .shells
+                .iter()
+                .position(|item| item.id == *id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("region references missing shell {id}"))
+                })?;
+            native_record_index(shell_start, position)?
+        };
+        native_ident(&mut records, "shell")?;
+        native_ref(&mut records, next);
+        native_i64(&mut records, -1);
+        native_ref(&mut records, -1);
+        native_ref(&mut records, -1);
+        native_ref(&mut records, -1);
+        native_ref(&mut records, native_record_index(face_start, face_ordinal)?);
+        native_ref(&mut records, -1);
+        native_ref(
+            &mut records,
+            native_record_index(region_start, region_ordinal)?,
+        );
+        records.push(0x11);
+    }
+
+    for face in &model.faces {
+        let shell_ordinal = model
+            .shells
+            .iter()
+            .position(|shell| shell.id == face.shell)
+            .ok_or_else(|| CodecError::Malformed(format!("face {} has no shell", face.id)))?;
+        let shell = &model.shells[shell_ordinal];
+        let ordinal = shell
+            .faces
+            .iter()
+            .position(|id| *id == face.id)
+            .ok_or_else(|| CodecError::Malformed(format!("shell does not own face {}", face.id)))?;
+        if face.loops.is_empty() {
+            return Err(CodecError::NotImplemented(
+                "source-less multi-loop F3D requires every face to own a loop".into(),
+            ));
+        }
+        let loop_position = model
+            .loops
+            .iter()
+            .position(|loop_| loop_.id == face.loops[0])
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("face references missing loop {}", face.loops[0]))
+            })?;
+        let surface_position = model
+            .surfaces
+            .iter()
+            .position(|surface| surface.id == face.surface)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("face references missing surface {}", face.surface))
+            })?;
+        native_ident(&mut records, "face")?;
+        native_ref(&mut records, -1);
+        native_i64(&mut records, -1);
+        native_ref(&mut records, -1);
+        native_ref(
+            &mut records,
+            if ordinal + 1 == shell.faces.len() {
+                -1
+            } else {
+                let id = &shell.faces[ordinal + 1];
+                let position = model
+                    .faces
+                    .iter()
+                    .position(|item| item.id == *id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!("shell references missing face {id}"))
+                    })?;
+                native_record_index(face_start, position)?
+            },
+        );
+        native_ref(
+            &mut records,
+            native_record_index(loop_start, loop_position)?,
+        );
+        native_ref(
+            &mut records,
+            native_record_index(shell_start, shell_ordinal)?,
+        );
+        native_ref(&mut records, -1);
+        native_ref(
+            &mut records,
+            native_record_index(surface_start, surface_position)?,
+        );
+        records.push(native_bool(face.sense == Sense::Reversed));
+        records.push(0x0b);
+        records.push(0x11);
+    }
+
+    for loop_ in &model.loops {
+        let face_position = model
+            .faces
+            .iter()
+            .position(|face| face.id == loop_.face)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("loop references missing face {}", loop_.face))
+            })?;
+        let first = loop_
+            .coedges
+            .first()
+            .ok_or_else(|| CodecError::Malformed(format!("loop {} has no coedges", loop_.id)))?;
+        let coedge_position = model
+            .coedges
+            .iter()
+            .position(|coedge| coedge.id == *first)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("loop references missing coedge {first}"))
+            })?;
+        native_ident(&mut records, "loop")?;
+        native_ref(&mut records, -1);
+        native_i64(&mut records, -1);
+        native_ref(&mut records, -1);
+        let face = &model.faces[face_position];
+        let ordinal = face
+            .loops
+            .iter()
+            .position(|id| *id == loop_.id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("face {} does not own loop {}", face.id, loop_.id))
+            })?;
+        let next_loop = if ordinal + 1 == face.loops.len() {
+            -1
+        } else {
+            let next_id = &face.loops[ordinal + 1];
+            let position = model
+                .loops
+                .iter()
+                .position(|candidate| candidate.id == *next_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("face references missing loop {next_id}"))
+                })?;
+            native_record_index(loop_start, position)?
+        };
+        native_ref(&mut records, next_loop);
+        native_ref(
+            &mut records,
+            native_record_index(coedge_start, coedge_position)?,
+        );
+        native_ref(
+            &mut records,
+            native_record_index(face_start, face_position)?,
+        );
+        records.push(0x11);
+    }
+
+    for surface in &model.surfaces {
+        match surface.geometry {
+            SurfaceGeometry::Plane {
+                origin,
+                normal,
+                u_axis,
+            } => {
+                native_surface_base(&mut records, "plane")?;
+                native_point(
+                    &mut records,
+                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                );
+                native_vector(&mut records, [normal.x, normal.y, normal.z]);
+                native_vector(&mut records, [u_axis.x, u_axis.y, u_axis.z]);
+                records.push(0x0b);
+            }
+            SurfaceGeometry::Cylinder {
+                origin,
+                axis,
+                ref_direction,
+                radius,
+            } => {
+                native_surface_base(&mut records, "cone")?;
+                native_point(
+                    &mut records,
+                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                );
+                native_vector(&mut records, [axis.x, axis.y, axis.z]);
+                native_vector(
+                    &mut records,
+                    [
+                        ref_direction.x * radius / 10.0,
+                        ref_direction.y * radius / 10.0,
+                        ref_direction.z * radius / 10.0,
+                    ],
+                );
+                native_f64(&mut records, 1.0);
+                records.extend_from_slice(&[0x0b, 0x0b]);
+                native_f64(&mut records, 0.0);
+                native_f64(&mut records, 1.0);
+                native_f64(&mut records, radius / 10.0);
+                records.extend_from_slice(&[0x0b; 5]);
+            }
+            SurfaceGeometry::Nurbs(ref surface) => {
+                native_surface_base(&mut records, "spline")?;
+                native_nurbs_surface(&mut records, surface)?;
+            }
+            SurfaceGeometry::Torus {
+                center,
+                axis,
+                ref_direction,
+                major_radius,
+                minor_radius,
+            } => {
+                native_surface_base(&mut records, "torus")?;
+                native_point(
+                    &mut records,
+                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                );
+                native_vector(&mut records, [axis.x, axis.y, axis.z]);
+                native_f64(&mut records, major_radius / 10.0);
+                native_f64(&mut records, minor_radius / 10.0);
+                native_vector(
+                    &mut records,
+                    [ref_direction.x, ref_direction.y, ref_direction.z],
+                );
+                records.extend_from_slice(&[0x0b; 5]);
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(
+                    "source-less multi-face F3D does not support this surface carrier".into(),
+                ));
+            }
+        }
+        records.push(0x11);
+    }
+
+    for curve in &model.curves {
+        match curve.geometry {
+            CurveGeometry::Line { origin, direction } => {
+                native_curve_base(&mut records, "straight")?;
+                native_point(
+                    &mut records,
+                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                );
+                native_vector(&mut records, [direction.x, direction.y, direction.z]);
+            }
+            CurveGeometry::Nurbs(ref curve) => {
+                native_curve_base(&mut records, "intcurve")?;
+                native_nurbs_curve(&mut records, curve)?;
+            }
+            CurveGeometry::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            } => {
+                native_curve_base(&mut records, "ellipse")?;
+                native_point(
+                    &mut records,
+                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                );
+                native_vector(&mut records, [axis.x, axis.y, axis.z]);
+                native_vector(
+                    &mut records,
+                    [
+                        ref_direction.x * radius / 10.0,
+                        ref_direction.y * radius / 10.0,
+                        ref_direction.z * radius / 10.0,
+                    ],
+                );
+                native_f64(&mut records, 1.0);
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(
+                    "source-less multi-face F3D does not support this curve carrier".into(),
+                ));
+            }
+        }
+        records.push(0x11);
+    }
+
+    for pcurve in &model.pcurves {
+        native_pcurve(&mut records, pcurve)?;
+        records.push(0x11);
+    }
+
+    for coedge in &model.coedges {
+        let next = model.coedges.iter().position(|item| item.id == coedge.next);
+        let previous = model
+            .coedges
+            .iter()
+            .position(|item| item.id == coedge.previous);
+        let radial = model
+            .coedges
+            .iter()
+            .position(|item| item.id == coedge.radial_next);
+        let edge = model.edges.iter().position(|item| item.id == coedge.edge);
+        let owner = model
+            .loops
+            .iter()
+            .position(|item| item.id == coedge.owner_loop);
+        let (Some(next), Some(previous), Some(radial), Some(edge), Some(owner)) =
+            (next, previous, radial, edge, owner)
+        else {
+            return Err(CodecError::Malformed(format!(
+                "coedge {} has an unresolved topology reference",
+                coedge.id
+            )));
+        };
+        native_ident(&mut records, "coedge")?;
+        native_ref(&mut records, -1);
+        native_i64(&mut records, -1);
+        native_ref(&mut records, -1);
+        native_ref(&mut records, native_record_index(coedge_start, next)?);
+        native_ref(&mut records, native_record_index(coedge_start, previous)?);
+        native_ref(
+            &mut records,
+            if radial
+                == model
+                    .coedges
+                    .iter()
+                    .position(|item| item.id == coedge.id)
+                    .unwrap_or(radial)
+            {
+                -1
+            } else {
+                native_record_index(coedge_start, radial)?
+            },
+        );
+        native_ref(&mut records, native_record_index(edge_start, edge)?);
+        records.push(native_bool(coedge.sense == Sense::Reversed));
+        native_ref(&mut records, native_record_index(loop_start, owner)?);
+        native_i64(&mut records, 0);
+        let pcurve_ref = coedge
+            .pcurve
+            .as_ref()
+            .map(|pcurve_id| {
+                model
+                    .pcurves
+                    .iter()
+                    .position(|pcurve| pcurve.id == *pcurve_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "coedge references missing pcurve {pcurve_id}"
+                        ))
+                    })
+                    .and_then(|ordinal| native_record_index(pcurve_start, ordinal))
+            })
+            .transpose()?
+            .unwrap_or(-1);
+        native_ref(&mut records, pcurve_ref);
+        records.push(0x11);
+    }
+
+    encode_source_less_edges_vertices_points(
+        &mut records,
+        model,
+        curve_start,
+        edge_start,
+        vertex_start,
+        point_start,
+    )?;
+    for transform in model.bodies.iter().filter_map(|body| body.transform) {
+        native_transform(&mut records, transform)?;
+        records.push(0x11);
+    }
+    native_history_tail(&mut records, target)?;
+    let mut bytes = native_smbh_header()?;
+    bytes.extend_from_slice(&records);
+    Ok(bytes)
+}
+
+fn encode_source_less_edges_vertices_points(
+    records: &mut Vec<u8>,
+    model: &cadmpeg_ir::document::Model,
+    curve_start: i64,
+    edge_start: i64,
+    vertex_start: i64,
+    point_start: i64,
+) -> Result<(), CodecError> {
+    for edge in &model.edges {
+        let start = model.vertices.iter().position(|item| item.id == edge.start);
+        let end = model.vertices.iter().position(|item| item.id == edge.end);
+        let (Some(start), Some(end)) = (start, end) else {
+            return Err(CodecError::Malformed(format!(
+                "edge {} has an unresolved vertex",
+                edge.id
+            )));
+        };
+        let curve_ref = edge
+            .curve
+            .as_ref()
+            .map(|curve_id| {
+                model
+                    .curves
+                    .iter()
+                    .position(|curve| curve.id == *curve_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!("edge references missing curve {curve_id}"))
+                    })
+                    .and_then(|ordinal| native_record_index(curve_start, ordinal))
+            })
+            .transpose()?
+            .unwrap_or(-1);
+        let mut range = edge.param_range.unwrap_or([0.0, 1.0]);
+        if edge.curve.as_ref().is_some_and(|curve_id| {
+            model.curves.iter().any(|curve| {
+                curve.id == *curve_id
+                    && matches!(
+                        curve.geometry,
+                        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
+                    )
+            })
+        }) {
+            range[0] -= std::f64::consts::FRAC_PI_2;
+            range[1] -= std::f64::consts::FRAC_PI_2;
+        }
+        native_ident(records, "edge")?;
+        native_ref(records, -1);
+        native_i64(records, -1);
+        native_ref(records, -1);
+        native_ref(records, native_record_index(vertex_start, start)?);
+        native_f64(records, range[0]);
+        native_ref(records, native_record_index(vertex_start, end)?);
+        native_f64(records, range[1]);
+        native_ref(records, -1);
+        native_ref(records, curve_ref);
+        records.push(0x0b);
+        native_string(records, "unknown")?;
+        records.push(0x11);
+    }
+    for vertex in &model.vertices {
+        let point = model.points.iter().position(|item| item.id == vertex.point);
+        let edge = model
+            .edges
+            .iter()
+            .position(|item| item.start == vertex.id || item.end == vertex.id);
+        let (Some(point), Some(edge)) = (point, edge) else {
+            return Err(CodecError::Malformed(format!(
+                "vertex {} has an unresolved carrier",
+                vertex.id
+            )));
+        };
+        native_ident(records, "vertex")?;
+        native_ref(records, -1);
+        native_i64(records, -1);
+        native_ref(records, -1);
+        native_ref(records, native_record_index(edge_start, edge)?);
+        native_i64(records, 0);
+        native_ref(records, native_record_index(point_start, point)?);
+        records.push(0x11);
+    }
+    for point in &model.points {
+        native_ident(records, "point")?;
+        native_ref(records, -1);
+        native_i64(records, -1);
+        native_ref(records, -1);
+        native_point(
+            records,
+            [
+                point.position.x / 10.0,
+                point.position.y / 10.0,
+                point.position.z / 10.0,
+            ],
+        );
+        native_i64(records, 1);
+        records.push(0x11);
+    }
+    Ok(())
+}
+
+fn native_smbh_header() -> Result<Vec<u8>, CodecError> {
+    let mut bytes = b"ASM BinaryFile8<".to_vec();
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.extend_from_slice(&7u64.to_be_bytes());
+    bytes.extend_from_slice(&3u64.to_be_bytes());
+    bytes.extend_from_slice(&[0; 7]);
+    native_string(&mut bytes, "Autodesk Neutron")?;
+    native_string(&mut bytes, "ASM 231.6.3.65535 OSX")?;
+    native_string(&mut bytes, "Thu Jan  1 00:00:00 1970")?;
+    native_f64(&mut bytes, 60.0);
+    native_f64(&mut bytes, 1e-6);
+    native_f64(&mut bytes, 1e-10);
+    Ok(bytes)
+}
+
+fn native_ident(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+    native_text(bytes, 0x0d, value)
+}
+
+fn native_subident(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+    native_text(bytes, 0x0e, value)
+}
+
+fn native_curve_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), CodecError> {
+    native_subident(bytes, kind)?;
+    native_ident(bytes, "curve")?;
+    native_ref(bytes, -1);
+    native_i64(bytes, -1);
+    native_ref(bytes, -1);
+    Ok(())
+}
+
+fn native_surface_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), CodecError> {
+    native_subident(bytes, kind)?;
+    native_ident(bytes, "surface")?;
+    native_ref(bytes, -1);
+    native_i64(bytes, -1);
+    native_ref(bytes, -1);
+    Ok(())
+}
+
+fn native_nurbs_surface(bytes: &mut Vec<u8>, surface: &NurbsSurface) -> Result<(), CodecError> {
+    let u_count = usize::try_from(surface.u_count)
+        .map_err(|_| CodecError::NotImplemented("F3D NURBS u count exceeds usize".into()))?;
+    let v_count = usize::try_from(surface.v_count)
+        .map_err(|_| CodecError::NotImplemented("F3D NURBS v count exceeds usize".into()))?;
+    if surface.control_points.len() != u_count.saturating_mul(v_count)
+        || surface
+            .weights
+            .as_ref()
+            .is_some_and(|weights| weights.len() != surface.control_points.len())
+    {
+        return Err(CodecError::Malformed(
+            "source-less F3D NURBS surface has inconsistent control-grid cardinality".into(),
+        ));
+    }
+    native_ident(
+        bytes,
+        if surface.weights.is_some() {
+            "nurbs"
+        } else {
+            "nubs"
+        },
+    )?;
+    native_i64(bytes, i64::from(surface.u_degree));
+    native_i64(bytes, i64::from(surface.v_degree));
+    native_enum(bytes, if surface.u_periodic { 2 } else { 0 });
+    native_enum(bytes, if surface.v_periodic { 2 } else { 0 });
+    native_enum(bytes, 0);
+    native_enum(bytes, 0);
+    native_nurbs_knot_counts(bytes, [&surface.u_knots, &surface.v_knots])?;
+    native_nurbs_knots(bytes, &surface.u_knots)?;
+    native_nurbs_knots(bytes, &surface.v_knots)?;
+    for v in 0..v_count {
+        for u in 0..u_count {
+            let index = u * v_count + v;
+            let point = surface.control_points[index];
+            native_f64(bytes, point.x / 10.0);
+            native_f64(bytes, point.y / 10.0);
+            native_f64(bytes, point.z / 10.0);
+            if let Some(weights) = surface.weights.as_ref() {
+                native_f64(bytes, weights[index]);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn native_nurbs_curve(bytes: &mut Vec<u8>, curve: &NurbsCurve) -> Result<(), CodecError> {
+    let degree = usize::try_from(curve.degree)
+        .map_err(|_| CodecError::NotImplemented("F3D NURBS curve degree exceeds usize".into()))?;
+    if curve.knots.len() != curve.control_points.len() + degree + 1
+        || curve
+            .weights
+            .as_ref()
+            .is_some_and(|weights| weights.len() != curve.control_points.len())
+    {
+        return Err(CodecError::Malformed(
+            "source-less F3D NURBS curve has inconsistent cardinality".into(),
+        ));
+    }
+    native_ident(
+        bytes,
+        if curve.weights.is_some() {
+            "nurbs"
+        } else {
+            "nubs"
+        },
+    )?;
+    native_i64(bytes, i64::from(curve.degree));
+    native_enum(bytes, if curve.periodic { 2 } else { 0 });
+    native_i64(
+        bytes,
+        i64::try_from(unique_knot_count(&curve.knots))
+            .map_err(|_| CodecError::NotImplemented("F3D unique-knot count exceeds i64".into()))?,
+    );
+    native_nurbs_knots(bytes, &curve.knots)?;
+    for (index, point) in curve.control_points.iter().enumerate() {
+        native_f64(bytes, point.x / 10.0);
+        native_f64(bytes, point.y / 10.0);
+        native_f64(bytes, point.z / 10.0);
+        if let Some(weights) = curve.weights.as_ref() {
+            native_f64(bytes, weights[index]);
+        }
+    }
+    Ok(())
+}
+
+fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError> {
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    } = &pcurve.geometry
+    else {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D analytic pcurves are unsupported".into(),
+        ));
+    };
+    if weights.is_some() {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D rational pcurves are unsupported".into(),
+        ));
+    }
+    let degree_usize = usize::try_from(*degree)
+        .map_err(|_| CodecError::NotImplemented("F3D pcurve degree exceeds usize".into()))?;
+    if knots.len() != control_points.len() + degree_usize + 1 {
+        return Err(CodecError::Malformed(
+            "source-less F3D pcurve has inconsistent cardinality".into(),
+        ));
+    }
+    native_ident(bytes, "pcurve")?;
+    native_ref(bytes, -1);
+    native_i64(bytes, -1);
+    native_ref(bytes, -1);
+    native_i64(bytes, 0);
+    bytes.push(native_bool(pcurve.wrapper_reversed.unwrap_or(false)));
+    bytes.push(0x0f);
+    native_ident(bytes, "exp_par_cur")?;
+    native_ident(bytes, "nubs")?;
+    native_i64(bytes, i64::from(*degree));
+    native_enum(bytes, if *periodic { 2 } else { 0 });
+    native_i64(
+        bytes,
+        i64::try_from(unique_knot_count(knots)).map_err(|_| {
+            CodecError::NotImplemented("F3D pcurve unique-knot count exceeds i64".into())
+        })?,
+    );
+    native_nurbs_knots(bytes, knots)?;
+    for point in control_points {
+        native_f64(bytes, point.u);
+        native_f64(bytes, point.v);
+    }
+    native_f64(bytes, pcurve.fit_tolerance.unwrap_or(0.0));
+    bytes.push(0x10);
+    bytes.extend_from_slice(&[0x0b; 4]);
+    let range = pcurve.parameter_range.unwrap_or_else(|| {
+        [
+            knots.first().copied().unwrap_or(0.0),
+            knots.last().copied().unwrap_or(0.0),
+        ]
+    });
+    native_f64(bytes, range[0]);
+    native_f64(bytes, range[1]);
+    Ok(())
+}
+
+fn native_nurbs_knot_counts(bytes: &mut Vec<u8>, knots: [&[f64]; 2]) -> Result<(), CodecError> {
+    for knots in knots {
+        native_i64(
+            bytes,
+            i64::try_from(unique_knot_count(knots)).map_err(|_| {
+                CodecError::NotImplemented("F3D unique-knot count exceeds i64".into())
+            })?,
+        );
+    }
+    Ok(())
+}
+
+fn native_nurbs_knots(bytes: &mut Vec<u8>, knots: &[f64]) -> Result<(), CodecError> {
+    let mut runs = Vec::<(f64, usize)>::new();
+    for knot in knots {
+        if let Some((value, count)) = runs.last_mut() {
+            if *value == *knot {
+                *count += 1;
+                continue;
+            }
+        }
+        runs.push((*knot, 1));
+    }
+    let run_count = runs.len();
+    for (index, (value, expanded)) in runs.into_iter().enumerate() {
+        let endpoint_extra = usize::from(index == 0 || index + 1 == run_count);
+        let stored = expanded
+            .checked_sub(endpoint_extra)
+            .filter(|value| *value > 0)
+            .ok_or_else(|| {
+                CodecError::Malformed("F3D NURBS endpoint multiplicity is invalid".into())
+            })?;
+        native_f64(bytes, value);
+        native_i64(
+            bytes,
+            i64::try_from(stored).map_err(|_| {
+                CodecError::NotImplemented("F3D knot multiplicity exceeds i64".into())
+            })?,
+        );
+    }
+    Ok(())
+}
+
+fn native_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+    native_text(bytes, 0x07, value)
+}
+
+fn native_text(bytes: &mut Vec<u8>, tag: u8, value: &str) -> Result<(), CodecError> {
+    let length = u8::try_from(value.len())
+        .map_err(|_| CodecError::NotImplemented("F3D native text exceeds 255 bytes".into()))?;
+    bytes.extend_from_slice(&[tag, length]);
+    bytes.extend_from_slice(value.as_bytes());
+    Ok(())
+}
+
+fn native_ref(bytes: &mut Vec<u8>, value: i64) {
+    bytes.push(0x0c);
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn native_record_index(base: i64, ordinal: usize) -> Result<i64, CodecError> {
+    let ordinal = i64::try_from(ordinal)
+        .map_err(|_| CodecError::NotImplemented("F3D record ordinal exceeds i64".into()))?;
+    base.checked_add(ordinal)
+        .ok_or_else(|| CodecError::NotImplemented("F3D record index exceeds i64".into()))
+}
+
+fn native_i64(bytes: &mut Vec<u8>, value: i64) {
+    bytes.push(0x04);
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn native_enum(bytes: &mut Vec<u8>, value: i64) {
+    bytes.push(0x15);
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn native_f64(bytes: &mut Vec<u8>, value: f64) {
+    bytes.push(0x06);
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn native_point(bytes: &mut Vec<u8>, point: [f64; 3]) {
+    bytes.push(0x13);
+    for value in point {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+fn native_vector(bytes: &mut Vec<u8>, vector: [f64; 3]) {
+    bytes.push(0x14);
+    for value in vector {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+fn native_transform(bytes: &mut Vec<u8>, transform: Transform) -> Result<(), CodecError> {
+    native_ident(bytes, "transform")?;
+    for vector in [
+        [
+            transform.rows[0][0],
+            transform.rows[1][0],
+            transform.rows[2][0],
+        ],
+        [
+            transform.rows[0][1],
+            transform.rows[1][1],
+            transform.rows[2][1],
+        ],
+        [
+            transform.rows[0][2],
+            transform.rows[1][2],
+            transform.rows[2][2],
+        ],
+        [
+            transform.rows[0][3] / 600.0,
+            transform.rows[1][3] / 600.0,
+            transform.rows[2][3] / 600.0,
+        ],
+    ] {
+        native_vector(bytes, vector);
+    }
+    native_f64(bytes, transform.rows[3][3]);
+    Ok(())
+}
+
+fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
+    let histories = target
+        .native
+        .f3d
+        .as_ref()
+        .map_or(&[][..], |native| native.asm_histories.as_slice());
+    if histories.is_empty() {
+        native_ident(bytes, "delta_state")?;
+        return Ok(());
+    }
+    if histories.len() != 1 {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D generation supports one ASM history stream".into(),
+        ));
+    }
+    let history = &histories[0];
+    for name in ["Begin", "of", "ASM", "History"] {
+        native_subident(bytes, name)?;
+    }
+    native_ident(bytes, "Data")?;
+    native_ident(bytes, "history_stream")?;
+    native_i64(
+        bytes,
+        history.states.first().map_or(0, |state| state.state_id),
+    );
+    native_i64(bytes, history.stream_size.unwrap_or(0));
+    native_i64(bytes, 0);
+    native_i64(bytes, history.high_water_mark.unwrap_or(0));
+    for reference in [-1, 0, 1, -1] {
+        native_ref(bytes, reference);
+    }
+    bytes.push(0x11);
+    for state in &history.states {
+        native_ident(bytes, "delta_state")?;
+        native_i64(bytes, state.state_id);
+        native_i64(bytes, state.version_flag);
+        native_i64(bytes, state.state_flag);
+        native_ref(bytes, state.previous_ref.unwrap_or(-1));
+        native_ref(bytes, state.next_ref.unwrap_or(-1));
+        native_ref(bytes, state.node_index);
+        native_ref(bytes, state.partner_ref.unwrap_or(-1));
+        native_ref(bytes, state.owner_ref);
+        bytes.push(0x0b);
+        for board in &state.bulletin_boards {
+            native_i64(bytes, 1);
+            native_ref(bytes, board.owner_ref);
+            native_i64(bytes, board.number);
+            for change in &board.changes {
+                native_i64(bytes, 1);
+                native_ref(bytes, change.old_ref.unwrap_or(-1));
+                native_ref(bytes, change.new_ref.unwrap_or(-1));
+            }
+            native_i64(bytes, 0);
+        }
+        native_i64(bytes, 0);
+        bytes.push(0x11);
+        for record in &state.records {
+            bytes.extend_from_slice(&record.raw_bytes);
+        }
+    }
+    Ok(())
+}
+
+fn native_bool(value: bool) -> u8 {
+    if value {
+        0x0a
+    } else {
+        0x0b
+    }
+}
+
 /// Regenerate an F3D archive for supported analytic B-rep carrier edits.
 pub fn write_semantic(
     target: &CadIr,
@@ -2981,7 +4549,7 @@ fn validate_pcurve_edits(
         }
         let (
             PcurveGeometry::Nurbs {
-                degree: before_degree,
+                degree: _,
                 knots: before_knots,
                 control_points: before_points,
                 weights: before_weights,
@@ -3001,8 +4569,12 @@ fn validate_pcurve_edits(
             )));
         };
         let valid = id.starts_with("f3d:brep:entity#")
-            && before_degree == after_degree
-            && valid_edited_knot_vector(before_knots, after_knots)
+            && valid_edited_nurbs_direction(
+                before_knots,
+                *after_degree,
+                after_knots,
+                after_points.len(),
+            )
             && before_points.len() == after_points.len()
             && before_weights == after_weights
             && after_points
@@ -3136,10 +4708,18 @@ fn validate_surface_edits(
                 (id.starts_with("f3d:brep:entity#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":support#0") || id.ends_with(":support#1"))))
-                    && before.u_degree == after.u_degree
-                    && before.v_degree == after.v_degree
-                    && valid_edited_knot_vector(&before.u_knots, &after.u_knots)
-                    && valid_edited_knot_vector(&before.v_knots, &after.v_knots)
+                    && valid_edited_nurbs_direction(
+                        &before.u_knots,
+                        after.u_degree,
+                        &after.u_knots,
+                        usize::try_from(after.u_count).unwrap_or(usize::MAX),
+                    )
+                    && valid_edited_nurbs_direction(
+                        &before.v_knots,
+                        after.v_degree,
+                        &after.v_knots,
+                        usize::try_from(after.v_count).unwrap_or(usize::MAX),
+                    )
                     && before.u_count == after.u_count
                     && before.v_count == after.v_count
                     && before.weights.is_some() == after.weights.is_some()
@@ -3359,37 +4939,37 @@ fn finite_point(point: Point3) -> bool {
     point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
 }
 
-fn valid_edited_knot_vector(before: &[f64], after: &[f64]) -> bool {
-    before.len() == after.len()
-        && after.iter().all(|value| value.is_finite())
-        && after.windows(2).all(|pair| pair[0] <= pair[1])
-}
-
 fn valid_edited_curve_structure(before: &NurbsCurve, after: &NurbsCurve) -> bool {
-    (1..=20).contains(&after.degree)
-        && after.knots.len() == after.control_points.len() + after.degree as usize + 1
-        && after.iter_unique_knot_count() == before.iter_unique_knot_count()
-        && after.iter_knots_valid()
+    valid_edited_nurbs_direction(
+        &before.knots,
+        after.degree,
+        &after.knots,
+        after.control_points.len(),
+    )
 }
 
-trait NurbsCurveValidationExt {
-    fn iter_unique_knot_count(&self) -> usize;
-    fn iter_knots_valid(&self) -> bool;
+fn valid_edited_nurbs_direction(
+    before_knots: &[f64],
+    after_degree: u32,
+    after_knots: &[f64],
+    control_count: usize,
+) -> bool {
+    let Ok(degree) = usize::try_from(after_degree) else {
+        return false;
+    };
+    (1..=20).contains(&after_degree)
+        && after_knots.len() == control_count + degree + 1
+        && unique_knot_count(after_knots) == unique_knot_count(before_knots)
+        && after_knots.iter().all(|value| value.is_finite())
+        && after_knots.windows(2).all(|pair| pair[0] <= pair[1])
 }
 
-impl NurbsCurveValidationExt for NurbsCurve {
-    fn iter_unique_knot_count(&self) -> usize {
-        self.knots
-            .iter()
-            .enumerate()
-            .filter(|(index, value)| *index == 0 || self.knots[*index - 1] != **value)
-            .count()
-    }
-
-    fn iter_knots_valid(&self) -> bool {
-        self.knots.iter().all(|value| value.is_finite())
-            && self.knots.windows(2).all(|pair| pair[0] <= pair[1])
-    }
+fn unique_knot_count(knots: &[f64]) -> usize {
+    knots
+        .iter()
+        .enumerate()
+        .filter(|(index, value)| *index == 0 || knots[*index - 1] != **value)
+        .count()
 }
 
 fn finite_vector(vector: Vector3) -> bool {
@@ -4165,6 +5745,7 @@ fn patch_nurbs_pcurve_record(
 ) -> Result<(), CodecError> {
     let geometry = &edit.geometry;
     let PcurveGeometry::Nurbs {
+        degree,
         control_points,
         weights,
         ..
@@ -4206,7 +5787,9 @@ fn patch_nurbs_pcurve_record(
     let PcurveGeometry::Nurbs { knots, .. } = geometry else {
         unreachable!()
     };
-    patch_knot_values(bytes, record.offset, &layout.knots, knots)?;
+    patch_knot_structure(bytes, record.offset, &layout.knots, knots)?;
+    let at = record.offset + layout.degree_value_offset;
+    bytes[at..at + 8].copy_from_slice(&i64::from(*degree).to_le_bytes());
     if let Some(periodic) = edit.periodic {
         let value = if periodic { 2i64 } else { 0i64 };
         let at = record.offset + layout.periodic_value_offset;
@@ -4295,45 +5878,6 @@ fn patch_ref_pcurve_contract(
     }
     for (offset, value) in offsets.into_iter().zip(range) {
         bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
-    }
-    Ok(())
-}
-
-fn patch_knot_values(
-    bytes: &mut [u8],
-    record_offset: usize,
-    layout: &crate::nurbs::KnotPatchLayout,
-    expanded: &[f64],
-) -> Result<(), CodecError> {
-    if layout.value_offsets.len() != layout.expanded_run_lengths.len()
-        || layout.expanded_run_lengths.iter().sum::<usize>() != expanded.len()
-    {
-        return Err(CodecError::NotImplemented(
-            "F3D NURBS knot edit changes multiplicity structure".into(),
-        ));
-    }
-    let mut position = 0usize;
-    let mut previous = None;
-    for (offset, run_length) in layout
-        .value_offsets
-        .iter()
-        .zip(&layout.expanded_run_lengths)
-    {
-        let run = &expanded[position..position + *run_length];
-        let value = *run.first().ok_or_else(|| {
-            CodecError::NotImplemented("F3D NURBS knot run cannot be empty".into())
-        })?;
-        if run.iter().any(|candidate| *candidate != value)
-            || previous.is_some_and(|previous| previous >= value)
-        {
-            return Err(CodecError::NotImplemented(
-                "F3D NURBS knot edit changes multiplicity structure".into(),
-            ));
-        }
-        let at = record_offset + *offset;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-        previous = Some(value);
-        position += *run_length;
     }
     Ok(())
 }
