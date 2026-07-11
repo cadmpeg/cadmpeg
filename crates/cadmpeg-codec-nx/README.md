@@ -74,6 +74,11 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0. See the
 [API documentation][docs], [repository][repo], and [clean-room and legal
 policy][legal].
 
+Siemens NX and Parasolid and other product names are trademarks of their
+respective owners. cadmpeg uses them only to identify the file formats this
+codec targets and is not affiliated with, endorsed by, or sponsored by any CAD
+vendor. See the [clean-room and legal policy][legal].
+
 [docs]: https://docs.rs/cadmpeg-codec-nx
 [ir]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/document/struct.CadIr.html
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md

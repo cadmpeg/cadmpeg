@@ -35,7 +35,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 
 | Codec                                      | Score          | Extras above score                                                                                    |
 | ------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
-| Fusion 360 `.f3d`                          | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
+| Autodesk Fusion `.f3d`                     | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
 | SolidWorks `.sldprt`                       | **L3 tested**  | feature metadata and input lanes, tessellation, native replay + bounded generation                    |
 | CATIA V5 `.CATPart` (standard-nested band) | **L2 claimed** | conditionally connected B-rep                                                                         |
 | Siemens NX `.prt`                          | **L2 claimed** | conditional connected B-rep, external-dependency inspection                                           |
@@ -58,7 +58,7 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 
 ## At a glance
 
-- **Fusion 360 `.f3d` (L4 tested):** design records, partial B-rep and appearance reads, byte-exact replay, native patching, and source-less generation.
+- **Autodesk Fusion `.f3d` (L4 tested):** design records, partial B-rep and appearance reads, byte-exact replay, native patching, and source-less generation.
 - **SolidWorks `.sldprt` (L3 tested):** connected model reads, feature metadata, native writes, and round trips.
 - **CATIA V5 `.CATPart` (L2 claimed for the standard-nested band):** exact carriers and conditionally connected topology. Other layout bands score L1. Read only.
 - **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.

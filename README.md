@@ -4,7 +4,7 @@
 
 cadmpeg aims to do for CAD files what FFmpeg does for media: provide one open toolchain for reading, inspecting, converting, and building on all CAD formats. It decodes vendor files into a documented intermediate representation (IR), validates the result, and exports neutral formats.
 
-cadmpeg is early. End-to-end Fusion 360 `.f3d` to STEP path is about 70% complete, while codecs for SolidWorks, CATIA, NX, and Creo are in much earlier stages. Long-term goal is one inspectable pipeline for every major CAD format.
+cadmpeg is early. End-to-end Autodesk Fusion `.f3d` to STEP path is about 70% complete, while codecs for SolidWorks, CATIA, NX, and Creo are in much earlier stages. Long-term goal is one inspectable pipeline for every major CAD format.
 
 [Try it](#quick-start) · [Format support](docs/format-support.md) · [Donate a test file](corpus/README.md) · [Contribute](CONTRIBUTING.md)
 
@@ -67,7 +67,7 @@ wrote part.step (2125 entities)
 
 The repository contains five native-format codecs:
 
-- **Fusion 360 `.f3d` — [L4](docs/format-support.md#support-ladder):** readable design records; partial B-rep and appearance decode; native replay, patching, and generation.
+- **Autodesk Fusion `.f3d` — [L4](docs/format-support.md#support-ladder):** readable design records; partial B-rep and appearance decode; native replay, patching, and generation.
 - **SolidWorks `.sldprt` — [L3](docs/format-support.md#support-ladder):** connected model read; native write and round-trip paths.
 - **Siemens NX `.prt` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology.
 - **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.
@@ -139,4 +139,4 @@ AI-assisted contributions are welcome but please keep them concise and review th
 
 Code is licensed under the [Apache License 2.0](LICENSE). Documentation and format specifications are licensed under [Creative Commons Attribution 4.0 International](LICENSE-docs). Contributions use the same terms.
 
-SolidWorks, CATIA, Fusion 360, Creo, NX, Parasolid, and other product names are trademarks of their respective owners. cadmpeg uses them only to identify the file formats its decoders target. cadmpeg is an independent project and is not affiliated with, endorsed by, or sponsored by any CAD vendor. See [LEGAL.md](LEGAL.md).
+SolidWorks, CATIA, Autodesk Fusion, Creo, NX, Parasolid, and other product names are trademarks of their respective owners. cadmpeg uses them only to identify the file formats its decoders target. cadmpeg is an independent project and is not affiliated with, endorsed by, or sponsored by any CAD vendor. See [LEGAL.md](LEGAL.md).

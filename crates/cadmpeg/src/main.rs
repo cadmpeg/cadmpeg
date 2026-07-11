@@ -37,7 +37,7 @@ enum Format {
     Cadir,
     /// ISO 10303-21 STEP AP214.
     Step,
-    /// Fusion 360 `.f3d`.
+    /// Autodesk Fusion `.f3d`.
     F3d,
     /// `SolidWorks` `.sldprt`.
     Sldprt,
@@ -76,7 +76,7 @@ impl Format {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum InputFormat {
-    /// Fusion 360 `.f3d`.
+    /// Autodesk Fusion `.f3d`.
     F3d,
     /// `SolidWorks` `.sldprt`.
     Sldprt,

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fusion 360 native design and construction-history records.
+//! Autodesk Fusion native design and construction-history records.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ use crate::design::{
 };
 use crate::history::AsmHistory;
 
-/// Current schema version for the Fusion 360 native namespace.
+/// Current schema version for the Autodesk Fusion native namespace.
 pub const F3D_NATIVE_VERSION: u32 = 1;
 
 macro_rules! f3d_arenas {
@@ -51,7 +51,7 @@ macro_rules! sort_f3d_arenas {
     };
 }
 
-/// Fusion 360 records retained outside the format-neutral model.
+/// Autodesk Fusion records retained outside the format-neutral model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct F3dNative {
     /// Schema version this namespace was written under; see [`F3D_NATIVE_VERSION`].

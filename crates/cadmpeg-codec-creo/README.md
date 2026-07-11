@@ -63,6 +63,11 @@ supported.
 
 Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
+PTC Creo Parametric and Pro/ENGINEER and other product names are trademarks of
+their respective owners. cadmpeg uses them only to identify the file formats
+this codec targets and is not affiliated with, endorsed by, or sponsored by any
+CAD vendor. See the [clean-room and legal policy][legal].
+
 [docs]: https://docs.rs/cadmpeg-codec-creo
 [DecodeReport]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.DecodeReport.html
 [CadIr]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/document/struct.CadIr.html

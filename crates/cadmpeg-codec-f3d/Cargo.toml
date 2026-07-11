@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-f3d"
-description = "Decode and encode Fusion .f3d B-rep, design, and appearance data."
+description = "Decode and encode Autodesk Fusion .f3d B-rep, design, and appearance data."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

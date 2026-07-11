@@ -117,7 +117,7 @@ A translation path is complete when converted geometry stays within its declared
 
 Apply the same read, write, and translation gates to every supported format:
 
-- Fusion 360 `.f3d`
+- Autodesk Fusion `.f3d`
 - Siemens NX `.prt`
 - CATIA V5 `.CATPart`
 - Creo Parametric `.prt`

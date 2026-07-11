@@ -97,6 +97,11 @@ replayable feature history are outside current support. The
 
 Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
+Autodesk and Autodesk Fusion and other product names are trademarks of their
+respective owners. cadmpeg uses them only to identify the file formats this
+codec targets and is not affiliated with, endorsed by, or sponsored by any CAD
+vendor. See the [clean-room and legal policy][legal].
+
 [docs]: https://docs.rs/cadmpeg-codec-f3d
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
 [repo]: https://github.com/cadmpeg/cadmpeg

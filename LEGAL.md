@@ -53,7 +53,7 @@ If you cannot sign that sentence, the contribution is not acceptable in its curr
 
 ## Trademarks
 
-Format names and CAD application names (SolidWorks, Fusion 360, Creo, NX, and others) are trademarks of their respective owners. cadmpeg uses them only nominatively, to say which files a decoder targets. cadmpeg is not affiliated with, endorsed by, or sponsored by any of these vendors.
+Format names and CAD application names (SolidWorks, Autodesk Fusion, Creo, NX, and others) are trademarks of their respective owners. cadmpeg uses them only nominatively, to say which files a decoder targets. cadmpeg is not affiliated with, endorsed by, or sponsored by any of these vendors.
 
 ---
 

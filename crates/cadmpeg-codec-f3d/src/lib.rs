@@ -89,7 +89,7 @@ use std::io::Write;
 /// The ZIP local-file-header magic.
 const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 
-/// The Fusion 360 `.f3d` container codec.
+/// The Autodesk Fusion `.f3d` container codec.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct F3dCodec;
 
