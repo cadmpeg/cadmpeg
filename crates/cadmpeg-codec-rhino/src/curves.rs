@@ -22,6 +22,9 @@ const LINE: &str = "4ed7d4db-e947-11d3-bfe5-0010830122f0";
 const ARC: &str = "cf33be2a-09b4-11d4-bffb-0010830122f0";
 const POLYLINE: &str = "4ed7d4e6-e947-11d3-bfe5-0010830122f0";
 const POLYCURVE: &str = "4ed7d4e0-e947-11d3-bfe5-0010830122f0";
+const NURBS_CURVE: &str = crate::surfaces::NURBS_CURVE;
+const NURBS_SURFACE: &str = crate::surfaces::NURBS_SURFACE;
+const PLANE_SURFACE: &str = crate::surfaces::PLANE_SURFACE;
 
 /// A decoded point or curve before it is inserted into the IR arenas.
 #[derive(Debug, Clone)]
@@ -39,6 +42,11 @@ pub(crate) enum DecodedGeometry {
     Curve {
         /// Decoded curve tree.
         curve: DecodedCurve,
+    },
+    /// A decoded surface carrier.
+    Surface {
+        /// Decoded surface geometry.
+        surface: crate::surfaces::DecodedSurface,
     },
 }
 
@@ -101,7 +109,15 @@ impl From<FramingError> for GeometryError {
 pub(crate) fn supported_class(uuid: Uuid) -> bool {
     matches!(
         uuid.to_string().as_str(),
-        POINT | POINT_CLOUD | LINE | ARC | POLYLINE | POLYCURVE
+        POINT
+            | POINT_CLOUD
+            | LINE
+            | ARC
+            | POLYLINE
+            | POLYCURVE
+            | NURBS_CURVE
+            | NURBS_SURFACE
+            | PLANE_SURFACE
     )
 }
 
@@ -127,8 +143,13 @@ fn decode_inner(
     if depth > MAX_CURVE_DEPTH {
         return Err(malformed(range.start, "curve recursion limit exceeded"));
     }
-    let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let name = class_uuid.to_string();
+    if matches!(name.as_str(), NURBS_SURFACE | PLANE_SURFACE) {
+        return Ok(DecodedGeometry::Surface {
+            surface: crate::surfaces::decode(data, name.as_str(), range, scale)?,
+        });
+    }
+    let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let result = match name.as_str() {
         POINT => {
             let position = read_point(&mut reader, scale)?;
@@ -166,6 +187,16 @@ fn decode_inner(
             let curve = read_polycurve(data, &mut reader, scale, archive, depth)?;
             DecodedGeometry::Curve { curve }
         }
+        NURBS_CURVE => DecodedGeometry::Curve {
+            curve: DecodedCurve {
+                geometry: CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve(
+                    &mut reader,
+                    scale,
+                )?),
+                compound: None,
+                warnings: Vec::new(),
+            },
+        },
         _ => return Err(unsupported(range.start, "unsupported Rhino geometry class")),
     };
     if reader.remaining() != 0 {
@@ -427,7 +458,7 @@ fn read_polycurve(
     }
     reader.i32()?;
     reader.i32()?;
-    let _ = bbox(reader)?;
+    reader.skip(48)?;
     let parameter_count = count(reader, 8)?;
     if parameter_count != segment_count + 1 {
         return Err(malformed(
@@ -658,7 +689,7 @@ fn close_native_point(
         .all(|(actual, expected)| (*actual - expected).abs() <= 1.0e-8)
 }
 
-fn error(offset: usize, message: &str) -> GeometryError {
+pub(crate) fn error(offset: usize, message: &str) -> GeometryError {
     GeometryError::Malformed(framing_error(offset, message))
 }
 
@@ -673,7 +704,7 @@ fn malformed(offset: usize, message: &str) -> GeometryError {
     error(offset, message)
 }
 
-fn unsupported(offset: usize, message: &str) -> GeometryError {
+pub(crate) fn unsupported(offset: usize, message: &str) -> GeometryError {
     GeometryError::UnsupportedVersion {
         offset,
         message: message.to_string(),

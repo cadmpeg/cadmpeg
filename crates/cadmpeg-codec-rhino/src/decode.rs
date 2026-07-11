@@ -7,9 +7,12 @@ use std::fmt::Write;
 use cadmpeg_ir::annotations::ExactnessNote;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface,
+};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{Body, BodyKind, Color, Point, Region, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -150,7 +153,42 @@ impl<'a> DecodeContext<'a> {
         }
         for source_order in 0..self.scan.objects.len() {
             let object = &self.scan.objects[source_order];
-            if !crate::curves::supported_class(object.class_uuid) {
+            if crate::brep::supported_class(object.class_uuid) {
+                let result = crate::brep::parse(
+                    &self.scan.data,
+                    object.class_data_range.clone(),
+                    self.archive(),
+                    self.scan.metadata.properties.writer_version,
+                );
+                match result {
+                    Ok(_) => {
+                        self.scan_warning(
+                            source_order,
+                            "Brep parsed and validated; topology emission is deferred",
+                        );
+                    }
+                    Err(error) => {
+                        let future = matches!(
+                            error,
+                            crate::curves::GeometryError::UnsupportedVersion { .. }
+                        );
+                        self.scan_warning(
+                            source_order,
+                            &format!(
+                                "Brep {}: {error}",
+                                if future { "retained" } else { "failed" }
+                            ),
+                        );
+                        if !future {
+                            self.mark_failed(source_order);
+                        }
+                    }
+                }
+                continue;
+            }
+            if !crate::curves::supported_class(object.class_uuid)
+                && !crate::mesh::supported_class(object.class_uuid)
+            {
                 continue;
             }
             let Some(scale) = self.unit_scale() else {
@@ -160,6 +198,56 @@ impl<'a> DecodeContext<'a> {
                 );
                 continue;
             };
+            if crate::mesh::supported_class(object.class_uuid) {
+                let Some(identity) = object.identity.as_ref() else {
+                    self.scan_warning(
+                        source_order,
+                        "mesh retained because identity is unavailable",
+                    );
+                    continue;
+                };
+                let key = identity
+                    .source_id
+                    .rsplit_once('#')
+                    .map_or_else(|| source_order.to_string(), |(_, key)| key.to_string());
+                let decoded = crate::mesh::decode(
+                    &self.scan.data,
+                    object.class_data_range.clone(),
+                    self.archive(),
+                    self.scan.metadata.properties.writer_version,
+                    Some(source_association(identity)),
+                    format!("rhino:object:tessellation#{key}"),
+                    scale,
+                );
+                match decoded {
+                    Ok(mesh) => {
+                        if self.commit_mesh(source_order, mesh) {
+                            self.mark_decoded(source_order);
+                        } else {
+                            self.mark_failed(source_order);
+                        }
+                    }
+                    Err(error) => {
+                        let future = matches!(
+                            error,
+                            crate::curves::GeometryError::UnsupportedVersion { .. }
+                        );
+                        self.scan_warning(
+                            source_order,
+                            &format!(
+                                "mesh {}: {error}",
+                                if future { "retained" } else { "failed" }
+                            ),
+                        );
+                        if future {
+                            self.mark_retained(source_order);
+                        } else {
+                            self.mark_failed(source_order);
+                        }
+                    }
+                }
+                continue;
+            }
             let decoded = crate::curves::decode(
                 &self.scan.data,
                 object.class_uuid,
@@ -497,6 +585,28 @@ impl<'a> DecodeContext<'a> {
                 );
                 self.append_link(source_order, parent_id.to_string());
             }
+            crate::curves::DecodedGeometry::Surface { surface } => {
+                let crate::surfaces::DecodedSurface::Typed { geometry, derived } = surface;
+                let surface_id: cadmpeg_ir::ids::SurfaceId =
+                    format!("rhino:object:surface#{key}").into();
+                self.ir.model.surfaces.push(Surface {
+                    id: surface_id.clone(),
+                    geometry,
+                    source_object: Some(association.clone()),
+                });
+                self.ir.annotations.exactness.insert(
+                    surface_id.to_string(),
+                    ExactnessNote {
+                        entity: if derived {
+                            Exactness::Derived
+                        } else {
+                            Exactness::ByteExact
+                        },
+                        fields: BTreeMap::new(),
+                    },
+                );
+                self.append_link(source_order, surface_id.to_string());
+            }
         }
         self.geometry_transferred = true;
         true
@@ -537,6 +647,43 @@ impl<'a> DecodeContext<'a> {
                 },
             );
         }
+    }
+
+    fn commit_mesh(&mut self, source_order: usize, mesh: crate::mesh::DecodedMesh) -> bool {
+        let Some(object) = self.scan.objects.get(source_order) else {
+            return false;
+        };
+        let Some(identity) = object.identity.as_ref() else {
+            return false;
+        };
+        self.phase_warnings.extend(
+            mesh.warnings
+                .into_iter()
+                .map(|warning| format!("{}: {warning}", identity.source_id)),
+        );
+        let id = mesh.tessellation.id.clone();
+        self.ir.model.tessellations.push(Tessellation {
+            id: id.clone(),
+            source_object: Some(source_association(identity)),
+            vertices: mesh.tessellation.vertices,
+            triangles: mesh.tessellation.triangles,
+            strip_lengths: mesh.tessellation.strip_lengths,
+            normals: mesh.tessellation.normals,
+            channels: mesh.tessellation.channels,
+        });
+        self.ir.annotations.exactness.insert(
+            id.clone(),
+            ExactnessNote {
+                entity: if mesh.scaled {
+                    Exactness::Derived
+                } else {
+                    Exactness::ByteExact
+                },
+                fields: BTreeMap::new(),
+            },
+        );
+        self.append_link(source_order, id);
+        true
     }
 
     fn keep_phase_api_reachable(&mut self) {

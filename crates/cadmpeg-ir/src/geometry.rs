@@ -46,7 +46,7 @@ pub struct NurbsSurface {
 pub struct NurbsCurve {
     /// Curve degree.
     pub degree: u32,
-    /// Full (clamped) knot vector.
+    /// Full knot vector.
     pub knots: Vec<f64>,
     /// Control points in parameter order.
     pub control_points: Vec<Point3>,

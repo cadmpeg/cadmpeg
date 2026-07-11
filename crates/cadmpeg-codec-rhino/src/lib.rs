@@ -8,12 +8,15 @@ use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
 };
 
+pub(crate) mod brep;
 pub(crate) mod chunks;
 pub(crate) mod container;
 pub(crate) mod curves;
 pub(crate) mod decode;
+pub(crate) mod mesh;
 pub(crate) mod objects;
 pub(crate) mod settings;
+pub(crate) mod surfaces;
 
 const MAGIC: &[u8] = chunks::MAGIC;
 

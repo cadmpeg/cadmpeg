@@ -224,6 +224,11 @@ impl<'a> BoundedReader<'a> {
         self.end
     }
 
+    /// Returns the complete backing byte slice.
+    pub(crate) fn backing_bytes(&self) -> &'a [u8] {
+        self.bytes
+    }
+
     /// Returns a reader over the unread bounded bytes.
     pub(crate) fn unread(&self) -> Result<Self, FramingError> {
         Self::new(self.bytes, self.position, self.end)
@@ -305,6 +310,14 @@ impl<'a> BoundedReader<'a> {
                 message: format!("boolean value {value} is not 0 or 1"),
             }),
         }
+    }
+
+    /// Reads a little-endian IEEE-754 binary32 value.
+    pub(crate) fn f32(&mut self) -> Result<f32, FramingError> {
+        let bytes = self.take(4)?;
+        Ok(f32::from_le_bytes(
+            bytes.try_into().expect("length checked"),
+        ))
     }
 
     /// Returns a bounded slice and advances the cursor.
