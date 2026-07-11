@@ -4,6 +4,7 @@
 //! This module deliberately stops at a validated native representation.  No
 //! topology IDs or IR carriers are created here.
 
+use std::collections::BTreeSet;
 use std::ops::Range;
 
 use crate::chunks::{
@@ -22,13 +23,18 @@ pub(crate) const MAX_BREP_DEPTH: usize = 32;
 const ANONYMOUS: u32 = 0x4000_8000;
 const ON_UNSET_VALUE: f64 = 1.234_321_012_343_21e308;
 const ON_UNSET_NEGATIVE_VALUE: f64 = -ON_UNSET_VALUE;
+type RegionRead = (
+    Vec<RawBrepFaceSide>,
+    Vec<RawBrepRegion>,
+    Option<Range<usize>>,
+);
 
 /// The base class family expected by a polymorphic Brep slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RawBrepBaseType {
-    /// A curve-derived OpenNURBS class.
+    /// A curve-derived `OpenNURBS` class.
     Curve,
-    /// A surface-derived OpenNURBS class.
+    /// A surface-derived `OpenNURBS` class.
     Surface,
     /// A class outside the expected family.
     Other,
@@ -233,12 +239,18 @@ pub(crate) struct RawBrep {
     pub(crate) render_meshes: Vec<RawBrepMeshSlot>,
     /// Analysis mesh cache slots.
     pub(crate) analysis_meshes: Vec<RawBrepMeshSlot>,
+    /// Complete render-mesh side-wrapper range.
+    pub(crate) render_mesh_array_range: Range<usize>,
+    /// Complete analysis-mesh side-wrapper range.
+    pub(crate) analysis_mesh_array_range: Range<usize>,
     /// Raw solid state, normalized only by validation.
     pub(crate) is_solid: Option<i32>,
     /// Region face sides.
     pub(crate) face_sides: Vec<RawBrepFaceSide>,
     /// Regions.
     pub(crate) regions: Vec<RawBrepRegion>,
+    /// Complete region-topology wrapper range.
+    pub(crate) region_wrapper_range: Option<Range<usize>>,
     /// Complete payload range.
     pub(crate) source_range: Range<usize>,
     /// Complete vertex-array wrapper range.
@@ -262,13 +274,29 @@ pub(crate) struct ValidatedRawBrep {
     pub(crate) warnings: Vec<String>,
 }
 
+/// Result of parsing a structurally framed Brep payload.
+#[derive(Debug)]
+pub(crate) enum BrepParse {
+    /// The payload passed semantic topology validation.
+    Valid(ValidatedRawBrep),
+    /// The payload was framed and decoded, but its topology is invalid.
+    SemanticInvalid {
+        /// The decoded raw payload retained for geometry fallback.
+        raw: RawBrep,
+        /// The semantic validation failure.
+        error: GeometryError,
+        /// Recoverable optional-channel warnings found before validation.
+        warnings: Vec<String>,
+    },
+}
+
 /// Parses and validates one `ON_Brep` class-data payload.
 pub(crate) fn parse(
     bytes: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-) -> Result<ValidatedRawBrep, GeometryError> {
+) -> Result<BrepParse, GeometryError> {
     let mut reader = BoundedReader::new(bytes, range.start, range.end)?;
     let version_offset = reader.position();
     let version = reader.u8()?;
@@ -289,14 +317,16 @@ pub(crate) fn parse(
     let (loops, loop_array_range) = read_loops(bytes, &mut reader, archive)?;
     let (faces, face_array_range) = read_faces(bytes, &mut reader, archive)?;
     let bounds = bbox(&mut reader)?;
-    let (render_meshes, analysis_meshes) = if minor >= 1 {
-        (
-            read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?,
-            read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?,
-        )
-    } else {
-        (Vec::new(), Vec::new())
-    };
+    let (render_meshes, render_mesh_array_range, analysis_meshes, analysis_mesh_array_range) =
+        if minor >= 1 {
+            let (render, render_range) =
+                read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
+            let (analysis, analysis_range) =
+                read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
+            (render, render_range, analysis, analysis_range)
+        } else {
+            (Vec::new(), 0..0, Vec::new(), 0..0)
+        };
     let is_solid = if minor >= 2 {
         let value = reader.i32()?;
         if (0..=3).contains(&value) {
@@ -310,10 +340,10 @@ pub(crate) fn parse(
     } else {
         None
     };
-    let (face_sides, regions) = if minor >= 3 {
+    let (face_sides, regions, region_wrapper_range) = if minor >= 3 {
         read_regions(bytes, &mut reader, archive, faces.len(), &mut warnings)?
     } else {
-        (Vec::new(), Vec::new())
+        (Vec::new(), Vec::new(), None)
     };
     if reader.remaining() != 0 {
         return Err(error(
@@ -334,9 +364,12 @@ pub(crate) fn parse(
         bounds,
         render_meshes,
         analysis_meshes,
+        render_mesh_array_range,
+        analysis_mesh_array_range,
         is_solid,
         face_sides,
         regions,
+        region_wrapper_range,
         source_range: range,
         vertex_array_range,
         edge_array_range,
@@ -344,9 +377,17 @@ pub(crate) fn parse(
         loop_array_range,
         face_array_range,
     };
-    let mut validated = validate(raw)?;
-    validated.warnings.splice(0..0, warnings);
-    Ok(validated)
+    match validate(raw.clone()) {
+        Ok(mut validated) => {
+            validated.warnings.splice(0..0, warnings);
+            Ok(BrepParse::Valid(validated))
+        }
+        Err(error) => Ok(BrepParse::SemanticInvalid {
+            raw,
+            error,
+            warnings,
+        }),
+    }
 }
 
 /// Returns whether a UUID is `ON_Brep`.
@@ -642,7 +683,7 @@ fn read_mesh_sides(
     archive: ArchiveVersion,
     face_count: usize,
     warnings: &mut Vec<String>,
-) -> Result<Vec<RawBrepMeshSlot>, GeometryError> {
+) -> Result<(Vec<RawBrepMeshSlot>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
     let parsed = (|| {
@@ -687,20 +728,23 @@ fn read_mesh_sides(
             result.push(RawBrepMeshSlot { mesh, present });
         }
         finish_anonymous(bytes, reader, &chunk, child)?;
-        Ok(result)
+        Ok((result, chunk.range()))
     })();
     match parsed {
         Ok(result) => Ok(result),
         Err(error) => {
             reader.skip(chunk.next_offset - reader.position())?;
             warnings.push(format!("Brep mesh cache degraded: {error}"));
-            Ok(vec![
-                RawBrepMeshSlot {
-                    mesh: None,
-                    present: false,
-                };
-                face_count
-            ])
+            Ok((
+                vec![
+                    RawBrepMeshSlot {
+                        mesh: None,
+                        present: false,
+                    };
+                    face_count
+                ],
+                chunk.range(),
+            ))
         }
     }
 }
@@ -711,7 +755,7 @@ fn read_regions(
     archive: ArchiveVersion,
     face_count: usize,
     warnings: &mut Vec<String>,
-) -> Result<(Vec<RawBrepFaceSide>, Vec<RawBrepRegion>), GeometryError> {
+) -> Result<RegionRead, GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut outer = body_reader(bytes, &chunk)?;
     let parsed = (|| {
@@ -721,7 +765,7 @@ fn read_regions(
                 "unsupported Brep region wrapper",
             ));
         }
-        if outer.bool()? == false {
+        if !outer.bool()? {
             if outer.remaining() != 0 {
                 return Err(error(outer.position(), "region wrapper has trailing bytes"));
             }
@@ -748,20 +792,20 @@ fn read_regions(
     })();
     reader.skip(chunk.next_offset - reader.position())?;
     match parsed {
-        Ok(value) => {
+        Ok((sides, regions)) => {
             if matches!(
                 verify_checksum(bytes, &chunk)?,
                 ChecksumStatus::Mismatch { .. }
             ) {
                 warnings.push("Brep region wrapper checksum mismatch".to_string());
             }
-            Ok(value)
+            Ok((sides, regions, Some(chunk.range())))
         }
         Err(error) => {
             warnings.push(format!(
                 "invalid optional Brep region topology discarded: {error}"
             ));
-            Ok((Vec::new(), Vec::new()))
+            Ok((Vec::new(), Vec::new(), Some(chunk.range())))
         }
     }
 }
@@ -998,6 +1042,12 @@ fn validate(mut raw: RawBrep) -> Result<ValidatedRawBrep, GeometryError> {
                 "face surface reference is invalid",
             ));
         }
+        if face.reversed_surface != 0 && face.reversed_surface != 1 {
+            return Err(error(
+                face.source_range.start,
+                "invalid face surface reversal",
+            ));
+        }
         refs(&face.loops, raw.loops.len(), "face loop")?;
         if face.loops.is_empty() {
             return Err(error(face.source_range.start, "face has no loops"));
@@ -1105,6 +1155,7 @@ fn validate_regions(raw: &RawBrep) -> Result<(), GeometryError> {
             ));
         }
     }
+    let mut listed_sides = BTreeSet::new();
     for (index, region) in raw.regions.iter().enumerate() {
         if region.index != index as i32 || !matches!(region.region_type, 0 | 1) {
             return Err(error(region.source_range.start, "region record is invalid"));
@@ -1112,17 +1163,27 @@ fn validate_regions(raw: &RawBrep) -> Result<(), GeometryError> {
         if region.region_type == 0 {
             infinite += 1;
         }
-        let mut seen = Vec::new();
         for side in &region.sides {
             refs(&[*side], raw.face_sides.len(), "region side")?;
-            if seen.contains(side) || raw.face_sides[*side as usize].region != index as i32 {
+            if !listed_sides.insert(*side) || raw.face_sides[*side as usize].region != index as i32
+            {
                 return Err(error(
                     region.source_range.start,
                     "region membership is not reciprocal",
                 ));
             }
-            seen.push(*side);
         }
+    }
+    if raw
+        .face_sides
+        .iter()
+        .filter(|side| side.region >= 0)
+        .any(|side| !listed_sides.contains(&side.index))
+    {
+        return Err(error(
+            raw.source_range.start,
+            "region membership is not reciprocal",
+        ));
     }
     if infinite != 1 {
         return Err(error(
@@ -1273,8 +1334,9 @@ fn validate_edge_incidences(raw: &RawBrep) -> Result<(), GeometryError> {
 }
 
 fn unique(values: &[i32], label: &str) -> Result<(), GeometryError> {
-    for (index, value) in values.iter().enumerate() {
-        if values[..index].contains(value) {
+    let mut seen = BTreeSet::new();
+    for value in values {
+        if !seen.insert(*value) {
             return Err(error(0, &format!("{label} reference is duplicated")));
         }
     }
@@ -1458,6 +1520,209 @@ mod tests {
         record
     }
 
+    fn raw_child(base_type: RawBrepBaseType) -> RawBrepChild {
+        RawBrepChild {
+            class_uuid: Uuid::nil(),
+            class_data_range: 0..0,
+            source_range: 0..0,
+            base_type,
+        }
+    }
+
+    fn one_face_raw() -> RawBrep {
+        let interval = Interval([0.0, 1.0]);
+        let vertices = [[0, 2], [0, 1], [1, 2]]
+            .into_iter()
+            .enumerate()
+            .map(|(index, edges)| RawBrepVertex {
+                index: i32::try_from(index).expect("index"),
+                point: Point3([
+                    f64::from((index == 1) as u8),
+                    f64::from((index == 2) as u8),
+                    0.0,
+                ]),
+                edges: edges.into_iter().collect(),
+                tolerance: 0.0,
+                source_range: 0..0,
+            })
+            .collect();
+        let endpoints = [[0, 1], [1, 2], [2, 0]];
+        let edges = endpoints
+            .into_iter()
+            .enumerate()
+            .map(|(index, vertices)| RawBrepEdge {
+                index: i32::try_from(index).expect("index"),
+                curve: 0,
+                proxy_reversed: 0,
+                proxy_domain: interval,
+                vertices,
+                trims: vec![i32::try_from(index).expect("index")],
+                tolerance: 0.0,
+                domain: interval,
+                source_range: 0..0,
+            })
+            .collect();
+        let trims = endpoints
+            .into_iter()
+            .enumerate()
+            .map(|(index, vertices)| RawBrepTrim {
+                index: i32::try_from(index).expect("index"),
+                curve: 0,
+                proxy_domain: interval,
+                edge: i32::try_from(index).expect("index"),
+                vertices,
+                reversed_3d: 0,
+                trim_type: 1,
+                iso: 0,
+                loop_index: 0,
+                tolerances: [0.0, 0.0],
+                domain: interval,
+                proxy_reversed: 0,
+                reserved: Vec::new(),
+                legacy_tolerances: [0.0, 0.0],
+                source_range: 0..0,
+            })
+            .collect();
+        RawBrep {
+            minor: 0,
+            c2: RawBrepChildren {
+                slots: vec![Some(raw_child(RawBrepBaseType::Curve))],
+                source_range: 0..0,
+                expected_type: RawBrepBaseType::Curve,
+            },
+            c3: RawBrepChildren {
+                slots: vec![Some(raw_child(RawBrepBaseType::Curve))],
+                source_range: 0..0,
+                expected_type: RawBrepBaseType::Curve,
+            },
+            surfaces: RawBrepChildren {
+                slots: vec![Some(raw_child(RawBrepBaseType::Surface))],
+                source_range: 0..0,
+                expected_type: RawBrepBaseType::Surface,
+            },
+            vertices,
+            edges,
+            trims,
+            loops: vec![RawBrepLoop {
+                index: 0,
+                trims: vec![0, 1, 2],
+                loop_type: 1,
+                face: 0,
+                source_range: 0..0,
+            }],
+            faces: vec![RawBrepFace {
+                index: 0,
+                loops: vec![0],
+                surface: 0,
+                reversed_surface: 0,
+                material_channel: 0,
+                uuid: None,
+                color: None,
+                source_range: 0..0,
+            }],
+            bounds: BoundingBox {
+                minimum: Point3([0.0, 0.0, 0.0]),
+                maximum: Point3([1.0, 1.0, 0.0]),
+            },
+            render_meshes: Vec::new(),
+            analysis_meshes: Vec::new(),
+            render_mesh_array_range: 0..0,
+            analysis_mesh_array_range: 0..0,
+            is_solid: None,
+            face_sides: Vec::new(),
+            regions: Vec::new(),
+            region_wrapper_range: None,
+            source_range: 0..0,
+            vertex_array_range: 0..0,
+            edge_array_range: 0..0,
+            trim_array_range: 0..0,
+            loop_array_range: 0..0,
+            face_array_range: 0..0,
+        }
+    }
+
+    fn degenerate_trim_raw(trim_type: i32, curve: i32) -> RawBrep {
+        let interval = Interval([0.0, 1.0]);
+        RawBrep {
+            minor: 0,
+            c2: RawBrepChildren {
+                slots: vec![Some(raw_child(RawBrepBaseType::Curve))],
+                source_range: 0..0,
+                expected_type: RawBrepBaseType::Curve,
+            },
+            c3: RawBrepChildren {
+                slots: Vec::new(),
+                source_range: 0..0,
+                expected_type: RawBrepBaseType::Curve,
+            },
+            surfaces: RawBrepChildren {
+                slots: vec![Some(raw_child(RawBrepBaseType::Surface))],
+                source_range: 0..0,
+                expected_type: RawBrepBaseType::Surface,
+            },
+            vertices: vec![RawBrepVertex {
+                index: 0,
+                point: Point3([0.0, 0.0, 0.0]),
+                edges: Vec::new(),
+                tolerance: 0.0,
+                source_range: 0..0,
+            }],
+            edges: Vec::new(),
+            trims: vec![RawBrepTrim {
+                index: 0,
+                curve,
+                proxy_domain: interval,
+                edge: -1,
+                vertices: [0, 0],
+                reversed_3d: 0,
+                trim_type,
+                iso: 0,
+                loop_index: 0,
+                tolerances: [0.0, 0.0],
+                domain: interval,
+                proxy_reversed: 0,
+                reserved: Vec::new(),
+                legacy_tolerances: [0.0, 0.0],
+                source_range: 0..0,
+            }],
+            loops: vec![RawBrepLoop {
+                index: 0,
+                trims: vec![0],
+                loop_type: 1,
+                face: 0,
+                source_range: 0..0,
+            }],
+            faces: vec![RawBrepFace {
+                index: 0,
+                loops: vec![0],
+                surface: 0,
+                reversed_surface: 0,
+                material_channel: 0,
+                uuid: None,
+                color: None,
+                source_range: 0..0,
+            }],
+            bounds: BoundingBox {
+                minimum: Point3([0.0, 0.0, 0.0]),
+                maximum: Point3([0.0, 0.0, 0.0]),
+            },
+            render_meshes: Vec::new(),
+            analysis_meshes: Vec::new(),
+            render_mesh_array_range: 0..0,
+            analysis_mesh_array_range: 0..0,
+            is_solid: None,
+            face_sides: Vec::new(),
+            regions: Vec::new(),
+            region_wrapper_range: None,
+            source_range: 0..0,
+            vertex_array_range: 0..0,
+            edge_array_range: 0..0,
+            trim_array_range: 0..0,
+            loop_array_range: 0..0,
+            face_array_range: 0..0,
+        }
+    }
+
     #[test]
     fn brep_major_is_structured_as_unsupported() {
         let error =
@@ -1521,7 +1786,7 @@ mod tests {
         let bytes = anonymous(&[0, 2]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         let mut warnings = Vec::new();
-        let slots = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
+        let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("degraded cache");
         assert!(slots[0].mesh.is_none());
         assert!(!warnings.is_empty());
@@ -1574,7 +1839,7 @@ mod tests {
             body.extend(raw_element);
             body
         });
-        let side_array = anonymous(&[0, 0, 0, 0, 0, 0, 0, 0]);
+        let side_array = anonymous(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         let nested = anonymous(&{
             let mut body = 1_i32.to_le_bytes().to_vec();
             body.extend_from_slice(&0_i32.to_le_bytes());
@@ -1591,10 +1856,113 @@ mod tests {
         });
         let mut reader = BoundedReader::new(&outer, 0, outer.len()).expect("reader");
         let mut warnings = Vec::new();
-        let (_, regions) = read_regions(&outer, &mut reader, ArchiveVersion::V5, 0, &mut warnings)
-            .expect("regions");
+        let (_, regions, _) =
+            read_regions(&outer, &mut reader, ArchiveVersion::V5, 0, &mut warnings)
+                .expect("regions");
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(regions.len(), 1);
         assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
+    fn valid_one_face_raw_brep_validates_all_reciprocal_links() {
+        assert!(validate(one_face_raw()).is_ok());
+    }
+
+    #[test]
+    fn singular_trim_accepts_c2_without_a_real_edge() {
+        assert!(validate(degenerate_trim_raw(4, 0)).is_ok());
+    }
+
+    #[test]
+    fn point_on_surface_trim_accepts_no_c2_or_real_edge() {
+        assert!(validate(degenerate_trim_raw(6, -1)).is_ok());
+    }
+
+    #[test]
+    fn point_on_surface_trim_rejects_an_attributed_c2() {
+        assert!(validate(degenerate_trim_raw(6, 0)).is_err());
+    }
+
+    #[test]
+    fn valid_region_topology_survives_semantic_validation() {
+        let mut raw = one_face_raw();
+        raw.minor = 3;
+        raw.face_sides = vec![
+            RawBrepFaceSide {
+                index: 0,
+                region: 1,
+                face: 0,
+                direction: 1,
+                source_range: 0..0,
+            },
+            RawBrepFaceSide {
+                index: 1,
+                region: 0,
+                face: 0,
+                direction: -1,
+                source_range: 0..0,
+            },
+        ];
+        raw.regions = vec![
+            RawBrepRegion {
+                index: 0,
+                region_type: 0,
+                sides: vec![1],
+                bounds: raw.bounds,
+                source_range: 0..0,
+            },
+            RawBrepRegion {
+                index: 1,
+                region_type: 1,
+                sides: vec![0],
+                bounds: raw.bounds,
+                source_range: 0..0,
+            },
+        ];
+        let validated = validate(raw).expect("valid regions");
+        assert_eq!(validated.raw.regions.len(), 2);
+        assert!(validated.warnings.is_empty());
+    }
+
+    #[test]
+    fn invalid_region_reciprocity_degrades_to_incidence_without_topology_failure() {
+        let mut raw = one_face_raw();
+        raw.minor = 3;
+        raw.face_sides = vec![
+            RawBrepFaceSide {
+                index: 0,
+                region: 1,
+                face: 0,
+                direction: 1,
+                source_range: 0..0,
+            },
+            RawBrepFaceSide {
+                index: 1,
+                region: 0,
+                face: 0,
+                direction: -1,
+                source_range: 0..0,
+            },
+        ];
+        raw.regions = vec![
+            RawBrepRegion {
+                index: 0,
+                region_type: 0,
+                sides: vec![0],
+                bounds: raw.bounds,
+                source_range: 0..0,
+            },
+            RawBrepRegion {
+                index: 1,
+                region_type: 1,
+                sides: vec![1],
+                bounds: raw.bounds,
+                source_range: 0..0,
+            },
+        ];
+        let validated = validate(raw).expect("optional regions degrade");
+        assert!(validated.raw.regions.is_empty());
+        assert_eq!(validated.warnings.len(), 1);
     }
 }

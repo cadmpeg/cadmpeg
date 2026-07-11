@@ -59,6 +59,21 @@ pub(crate) fn read_nurbs_curve(
     reader: &mut BoundedReader<'_>,
     scale: f64,
 ) -> Result<NurbsCurve, GeometryError> {
+    read_nurbs_curve_inner(reader, scale, Some(3))
+}
+
+/// Reads an `OpenNURBS` NURBS curve whose poles are two-dimensional UV values.
+pub(crate) fn read_nurbs_curve_2d(
+    reader: &mut BoundedReader<'_>,
+) -> Result<NurbsCurve, GeometryError> {
+    read_nurbs_curve_inner(reader, 1.0, Some(2))
+}
+
+fn read_nurbs_curve_inner(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+    expected_dimension: Option<i32>,
+) -> Result<NurbsCurve, GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
     let major = version >> 4;
@@ -82,7 +97,11 @@ pub(crate) fn read_nurbs_curve(
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
-    if dimension != 3 || !(rational == 0 || rational == 1) || cv_count < order {
+    if expected_dimension.is_some_and(|expected| dimension != expected)
+        || !(2..=3).contains(&dimension)
+        || !(rational == 0 || rational == 1)
+        || cv_count < order
+    {
         return Err(error(reader.position(), "invalid NURBS curve header"));
     }
     let stored_knot_count = checked_count(reader, 8)?;
@@ -99,7 +118,8 @@ pub(crate) fn read_nurbs_curve(
     if stored_cv_count != cv_count {
         return Err(error(reader.position(), "NURBS curve CV count mismatch"));
     }
-    let (control_points, weights) = read_poles(reader, stored_cv_count, rational != 0, scale)?;
+    let (control_points, weights) =
+        read_curve_poles(reader, stored_cv_count, rational != 0, dimension, scale)?;
     if minor >= 1 {
         reader.bool()?;
     }
@@ -112,6 +132,41 @@ pub(crate) fn read_nurbs_curve(
         weights,
         periodic,
     })
+}
+
+fn read_curve_poles(
+    reader: &mut BoundedReader<'_>,
+    count: usize,
+    rational: bool,
+    dimension: i32,
+    scale: f64,
+) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError> {
+    let mut points = Vec::with_capacity(count);
+    let mut weights = rational.then(|| Vec::with_capacity(count));
+    for _ in 0..count {
+        let x = reader.f64()?;
+        let y = reader.f64()?;
+        let z = if dimension == 3 { reader.f64()? } else { 0.0 };
+        let weight = rational.then(|| reader.f64()).transpose()?;
+        if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+            return Err(error(reader.position(), "NURBS pole is not finite"));
+        }
+        let point = if let Some(weight) = weight {
+            if !weight.is_finite() || weight == 0.0 {
+                return Err(error(reader.position(), "NURBS weight is invalid"));
+            }
+            weights.as_mut().expect("rational weights").push(weight);
+            [x / weight, y / weight, z / weight]
+        } else {
+            [x, y, z]
+        };
+        points.push(Point3::new(
+            point[0] * scale,
+            point[1] * scale,
+            point[2] * scale,
+        ));
+    }
+    Ok((points, weights))
 }
 
 fn read_nurbs_surface(
@@ -416,7 +471,8 @@ fn close(a: Vector3, b: Vector3) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        periodic_knots, read_nurbs_curve, read_nurbs_surface, read_plane_surface, reconstruct_knots,
+        periodic_knots, read_nurbs_curve, read_nurbs_curve_2d, read_nurbs_surface,
+        read_plane_surface, reconstruct_knots,
     };
     use crate::chunks::{ArchiveVersion, BoundedReader};
 
@@ -452,6 +508,31 @@ mod tests {
         }
         if version & 0x0f >= 1 {
             bytes.push(0);
+        }
+        bytes
+    }
+
+    fn curve_2d_payload(rational: bool) -> Vec<u8> {
+        let mut bytes = vec![0x10];
+        push_i32(&mut bytes, 2);
+        push_i32(&mut bytes, i32::from(rational));
+        push_i32(&mut bytes, 3);
+        push_i32(&mut bytes, 6);
+        push_i32(&mut bytes, 0);
+        push_i32(&mut bytes, 0);
+        bytes.extend([0; 48]);
+        let knots = [0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0];
+        push_i32(&mut bytes, knots.len() as i32);
+        for knot in knots {
+            push_f64(&mut bytes, knot);
+        }
+        push_i32(&mut bytes, 6);
+        for index in 0..6 {
+            push_f64(&mut bytes, index as f64);
+            push_f64(&mut bytes, 2.0 * index as f64);
+            if rational {
+                push_f64(&mut bytes, if index == 0 { 2.0 } else { 1.0 });
+            }
         }
         bytes
     }
@@ -575,6 +656,33 @@ mod tests {
         bytes[weight_offset..weight_offset + 8].copy_from_slice(&0.0_f64.to_le_bytes());
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
         assert!(read_nurbs_curve(&mut reader, 1.0).is_err());
+    }
+
+    #[test]
+    fn c2_nurbs_reads_two_dimensions_without_scaling_uv() {
+        let bytes = curve_2d_payload(true);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+        let curve = read_nurbs_curve_2d(&mut reader).unwrap();
+        assert_eq!(reader.remaining(), 0);
+        assert_eq!(curve.control_points[1].x, 1.0);
+        assert_eq!(curve.control_points[1].y, 2.0);
+        assert_eq!(curve.weights.as_ref().unwrap()[0], 2.0);
+        assert_eq!(
+            curve.knots,
+            vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0]
+        );
+    }
+
+    #[test]
+    fn c2_nurbs_preserves_periodic_parameterization() {
+        let mut bytes = curve_2d_payload(false);
+        let knots: [f64; 7] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let start = 1 + 24 + 48 + 4;
+        for (index, knot) in knots.into_iter().enumerate() {
+            bytes[start + index * 8..start + index * 8 + 8].copy_from_slice(&knot.to_le_bytes());
+        }
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+        assert!(read_nurbs_curve_2d(&mut reader).unwrap().periodic);
     }
 
     #[test]

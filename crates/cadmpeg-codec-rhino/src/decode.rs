@@ -1,19 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 use cadmpeg_ir::annotations::ExactnessNote;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface,
+    Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
+    ProceduralCurveDefinition, Surface,
 };
 use cadmpeg_ir::ids::UnknownId;
+use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
-use cadmpeg_ir::topology::{Body, BodyKind, Color, Point, Region, Shell, Vertex};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::LossProvenance;
@@ -113,6 +117,9 @@ impl<'a> DecodeContext<'a> {
         let Some(id) = self.unknown_ids.get(source_order) else {
             return false;
         };
+        if link == id.to_string() {
+            return false;
+        }
         let Some(record) = self.ir.unknowns.iter_mut().find(|record| record.id == *id) else {
             return false;
         };
@@ -154,36 +161,7 @@ impl<'a> DecodeContext<'a> {
         for source_order in 0..self.scan.objects.len() {
             let object = &self.scan.objects[source_order];
             if crate::brep::supported_class(object.class_uuid) {
-                let result = crate::brep::parse(
-                    &self.scan.data,
-                    object.class_data_range.clone(),
-                    self.archive(),
-                    self.scan.metadata.properties.writer_version,
-                );
-                match result {
-                    Ok(_) => {
-                        self.scan_warning(
-                            source_order,
-                            "Brep parsed and validated; topology emission is deferred",
-                        );
-                    }
-                    Err(error) => {
-                        let future = matches!(
-                            error,
-                            crate::curves::GeometryError::UnsupportedVersion { .. }
-                        );
-                        self.scan_warning(
-                            source_order,
-                            &format!(
-                                "Brep {}: {error}",
-                                if future { "retained" } else { "failed" }
-                            ),
-                        );
-                        if !future {
-                            self.mark_failed(source_order);
-                        }
-                    }
-                }
+                self.decode_brep(source_order, object);
                 continue;
             }
             if !crate::curves::supported_class(object.class_uuid)
@@ -686,6 +664,134 @@ impl<'a> DecodeContext<'a> {
         true
     }
 
+    fn decode_brep(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        let parsed = crate::brep::parse(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            self.archive(),
+            self.scan.metadata.properties.writer_version,
+        );
+        let parsed = match parsed {
+            Ok(value) => value,
+            Err(error) => {
+                let future = matches!(
+                    error,
+                    crate::curves::GeometryError::UnsupportedVersion { .. }
+                );
+                self.scan_warning(
+                    source_order,
+                    &format!(
+                        "Brep {}: {error}",
+                        if future { "retained" } else { "failed" }
+                    ),
+                );
+                if !future {
+                    self.mark_failed(source_order);
+                }
+                return;
+            }
+        };
+        let (raw, warnings, semantic_error) = match parsed {
+            crate::brep::BrepParse::Valid(value) => (value.raw, value.warnings, None),
+            crate::brep::BrepParse::SemanticInvalid {
+                raw,
+                error,
+                warnings,
+            } => (raw, warnings, Some(error)),
+        };
+        for warning in warnings {
+            self.scan_warning(source_order, &warning);
+        }
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "Brep retained because identity is unavailable",
+            );
+            return;
+        };
+        let Some(scale) = self.unit_scale() else {
+            self.scan_warning(
+                source_order,
+                "Brep retained because document units are unavailable",
+            );
+            return;
+        };
+        let association = source_association(identity);
+        let key = identity
+            .source_id
+            .rsplit_once('#')
+            .map_or_else(|| source_order.to_string(), |(_, key)| key.to_string());
+        let transfer = BrepTransferInput {
+            data: &self.scan.data,
+            archive: self.archive(),
+            writer_version: self.scan.metadata.properties.writer_version,
+            raw: &raw,
+            key: &key,
+            association: &association,
+            unknown: &self.unknown_ids[source_order],
+            scale,
+            semantic_error: semantic_error.as_ref(),
+        };
+        match stage_brep(transfer) {
+            Ok(staged) => {
+                let mut candidate = self.ir.clone();
+                let links = staged.links.clone();
+                let warnings = staged.warnings.clone();
+                let full_topology = matches!(staged.kind, BrepTransferKind::FullTopology);
+                let emitted_geometry = !staged.curves.is_empty() || !staged.surfaces.is_empty();
+                let cache_only =
+                    !full_topology && !emitted_geometry && !staged.tessellations.is_empty();
+                let fallback = staged.clone().free_carrier_fallback("IR validation");
+                staged.apply(&mut candidate);
+                append_record_links(&mut candidate, &self.unknown_ids[source_order], &links);
+                if cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok() {
+                    self.ir = candidate;
+                    for warning in warnings {
+                        self.scan_warning(source_order, &warning);
+                    }
+                    if cache_only {
+                        self.scan_warning(
+                            source_order,
+                            "Brep emitted cache tessellations without decoded geometry",
+                        );
+                    }
+                    self.geometry_transferred |= full_topology || emitted_geometry;
+                    if full_topology {
+                        self.mark_decoded(source_order);
+                    } else {
+                        self.scan_warning(
+                            source_order,
+                            "Brep topology invalid; decoded child carriers retained",
+                        );
+                        self.mark_retained(source_order);
+                    }
+                } else {
+                    self.scan_warning(source_order, "Brep transfer rejected by IR validation");
+                    let fallback_links = fallback.links.clone();
+                    let mut fallback_candidate = self.ir.clone();
+                    fallback.apply(&mut fallback_candidate);
+                    append_record_links(
+                        &mut fallback_candidate,
+                        &self.unknown_ids[source_order],
+                        &fallback_links,
+                    );
+                    if cadmpeg_ir::validate::validate(&fallback_candidate, Vec::new()).is_ok() {
+                        self.ir = fallback_candidate;
+                        self.geometry_transferred |= emitted_geometry;
+                    }
+                    self.mark_retained(source_order);
+                }
+            }
+            Err(error) => {
+                self.scan_warning(
+                    source_order,
+                    &format!("Brep geometry/topology degraded: {error}"),
+                );
+                self.mark_retained(source_order);
+            }
+        }
+    }
+
     fn keep_phase_api_reachable(&mut self) {
         let invalid = usize::MAX;
         let _ = self.archive();
@@ -722,6 +828,977 @@ impl<'a> DecodeContext<'a> {
         self.statuses[source_order].geometry = next;
         true
     }
+}
+
+fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
+    let Some(record) = ir.unknowns.iter_mut().find(|record| record.id == *unknown) else {
+        return;
+    };
+    for link in links {
+        if link != &unknown.to_string() && !record.links.contains(link) {
+            record.links.push(link.clone());
+        }
+    }
+    record.links.sort();
+}
+
+#[derive(Debug, Clone, Default)]
+struct StagedBrep {
+    kind: BrepTransferKind,
+    bodies: Vec<Body>,
+    regions: Vec<Region>,
+    shells: Vec<Shell>,
+    faces: Vec<Face>,
+    loops: Vec<Loop>,
+    coedges: Vec<Coedge>,
+    edges: Vec<Edge>,
+    vertices: Vec<Vertex>,
+    points: Vec<Point>,
+    surfaces: Vec<Surface>,
+    curves: Vec<Curve>,
+    procedural_curves: Vec<ProceduralCurve>,
+    pcurves: Vec<Pcurve>,
+    tessellations: Vec<Tessellation>,
+    exactness: Vec<(String, Exactness)>,
+    links: Vec<String>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum BrepTransferKind {
+    #[default]
+    FullTopology,
+    FreeCarrierFallback,
+}
+
+#[derive(Clone, Copy)]
+struct BrepTransferInput<'a> {
+    data: &'a [u8],
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
+    raw: &'a crate::brep::RawBrep,
+    key: &'a str,
+    association: &'a SourceObjectAssociation,
+    unknown: &'a UnknownId,
+    scale: f64,
+    semantic_error: Option<&'a crate::curves::GeometryError>,
+}
+
+impl StagedBrep {
+    fn apply(self, ir: &mut CadIr) {
+        ir.model.bodies.extend(self.bodies);
+        ir.model.regions.extend(self.regions);
+        ir.model.shells.extend(self.shells);
+        ir.model.faces.extend(self.faces);
+        ir.model.loops.extend(self.loops);
+        ir.model.coedges.extend(self.coedges);
+        ir.model.edges.extend(self.edges);
+        ir.model.vertices.extend(self.vertices);
+        ir.model.points.extend(self.points);
+        ir.model.surfaces.extend(self.surfaces);
+        ir.model.curves.extend(self.curves);
+        ir.model.procedural_curves.extend(self.procedural_curves);
+        ir.model.pcurves.extend(self.pcurves);
+        ir.model.tessellations.extend(self.tessellations);
+        for (id, exactness) in self.exactness {
+            ir.annotations.exactness.insert(
+                id,
+                ExactnessNote {
+                    entity: exactness,
+                    fields: BTreeMap::new(),
+                },
+            );
+        }
+    }
+
+    fn free_carrier_fallback(mut self, cause: impl Into<String>) -> Self {
+        self.kind = BrepTransferKind::FreeCarrierFallback;
+        let emitted: BTreeSet<String> = self
+            .curves
+            .iter()
+            .map(|value| value.id.to_string())
+            .chain(self.surfaces.iter().map(|value| value.id.to_string()))
+            .chain(self.tessellations.iter().map(|value| value.id.clone()))
+            .chain(
+                self.procedural_curves
+                    .iter()
+                    .map(|value| value.id.to_string()),
+            )
+            .collect();
+        self.links.retain(|id| emitted.contains(id));
+        self.exactness.retain(|(id, _)| emitted.contains(id));
+        self.bodies.clear();
+        self.regions.clear();
+        self.shells.clear();
+        self.faces.clear();
+        self.loops.clear();
+        self.coedges.clear();
+        self.edges.clear();
+        self.vertices.clear();
+        self.points.clear();
+        self.pcurves.clear();
+        self.warnings
+            .push(format!("Brep topology fallback: {}", cause.into()));
+        self
+    }
+}
+
+fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves::GeometryError> {
+    let BrepTransferInput {
+        data,
+        archive,
+        writer_version,
+        raw,
+        key,
+        association,
+        unknown,
+        scale,
+        semantic_error,
+    } = input;
+    let mut staged = StagedBrep {
+        kind: BrepTransferKind::FullTopology,
+        ..StagedBrep::default()
+    };
+    let mut c3 = BTreeMap::new();
+    let mut surfaces = BTreeMap::new();
+    let mut child_failed = false;
+    let mut child_cause = None;
+    for (kind, slots) in [
+        ("render", &raw.render_meshes),
+        ("analysis", &raw.analysis_meshes),
+    ] {
+        for (index, slot) in slots.iter().enumerate() {
+            let Some(child) = slot.mesh.as_ref() else {
+                continue;
+            };
+            let id = format!("rhino:object:tessellation#{key}.{kind}-{index}");
+            match crate::mesh::decode(
+                data,
+                child.class_data_range.clone(),
+                archive,
+                writer_version,
+                Some(association.clone()),
+                id,
+                scale,
+            ) {
+                Ok(mesh) => {
+                    staged.warnings.extend(mesh.warnings.clone());
+                    staged.exactness.push((
+                        mesh.tessellation.id.clone(),
+                        if mesh.scaled {
+                            Exactness::Derived
+                        } else {
+                            Exactness::ByteExact
+                        },
+                    ));
+                    staged.links.push(mesh.tessellation.id.clone());
+                    staged.tessellations.push(mesh.tessellation);
+                }
+                Err(error) => staged
+                    .warnings
+                    .push(format!("invalid {kind} mesh cache slot {index}: {error}")),
+            }
+        }
+    }
+    for (index, child) in raw
+        .c3
+        .slots
+        .iter()
+        .enumerate()
+        .filter_map(|(index, child)| child.as_ref().map(|child| (index, child)))
+    {
+        let decoded = crate::curves::decode(
+            data,
+            child.class_uuid,
+            child.class_data_range.clone(),
+            scale,
+            archive,
+        );
+        match decoded {
+            Ok(crate::curves::DecodedGeometry::Curve { curve }) => {
+                staged.warnings.extend(
+                    curve_warnings(&curve)
+                        .into_iter()
+                        .map(|warning| format!("C3 slot {index}: {warning}")),
+                );
+                let id = stage_curve_tree(
+                    &mut staged,
+                    curve,
+                    key,
+                    &format!("c3-{index}"),
+                    association,
+                    unknown,
+                );
+                c3.insert(index as i32, id);
+            }
+            Ok(_) => {
+                child_failed = true;
+                child_cause = Some(format!("C3 slot {index} is not a curve"));
+            }
+            Err(error) => {
+                child_failed = true;
+                child_cause = Some(format!("C3 slot {index}: {error}"));
+            }
+        }
+    }
+    for (index, child) in raw
+        .surfaces
+        .slots
+        .iter()
+        .enumerate()
+        .filter_map(|(index, child)| child.as_ref().map(|child| (index, child)))
+    {
+        let decoded = crate::curves::decode(
+            data,
+            child.class_uuid,
+            child.class_data_range.clone(),
+            scale,
+            archive,
+        );
+        match decoded {
+            Ok(crate::curves::DecodedGeometry::Surface { surface }) => {
+                let crate::surfaces::DecodedSurface::Typed { geometry, derived } = surface;
+                let id: cadmpeg_ir::ids::SurfaceId =
+                    format!("rhino:object:surface#{key}.slot-{index}").into();
+                staged.surfaces.push(Surface {
+                    id: id.clone(),
+                    geometry,
+                    source_object: Some(association.clone()),
+                });
+                staged.exactness.push((
+                    id.to_string(),
+                    if derived {
+                        Exactness::Derived
+                    } else {
+                        Exactness::ByteExact
+                    },
+                ));
+                surfaces.insert(index as i32, id);
+            }
+            Ok(_) => {
+                child_failed = true;
+                child_cause = Some(format!("surface slot {index} is not a surface"));
+            }
+            Err(error) => {
+                child_failed = true;
+                child_cause = Some(format!("surface slot {index}: {error}"));
+            }
+        }
+    }
+    if semantic_error.is_some() || child_failed {
+        staged.links.extend(
+            staged
+                .curves
+                .iter()
+                .map(|curve| curve.id.to_string())
+                .chain(staged.surfaces.iter().map(|surface| surface.id.to_string())),
+        );
+        return Ok(staged.free_carrier_fallback(
+            semantic_error
+                .map(ToString::to_string)
+                .or(child_cause)
+                .unwrap_or_else(|| "child geometry decode failed".to_string()),
+        ));
+    }
+    let (c2, pcurves) = match decode_pcurves(data, archive, raw, key) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(staged.free_carrier_fallback(format!("C2 curve decode failed: {error}")));
+        }
+    };
+    staged.pcurves = pcurves;
+    let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}").into();
+    let mut vertex_ids = Vec::with_capacity(raw.vertices.len());
+    for (index, vertex) in raw.vertices.iter().enumerate() {
+        let point_id: cadmpeg_ir::ids::PointId =
+            format!("rhino:object:point#{key}.vertex-{index}").into();
+        let vertex_id: cadmpeg_ir::ids::VertexId =
+            format!("rhino:object:vertex#{key}.slot-{index}").into();
+        staged.points.push(Point {
+            id: point_id.clone(),
+            position: Point3::new(
+                vertex.point.0[0] * scale,
+                vertex.point.0[1] * scale,
+                vertex.point.0[2] * scale,
+            ),
+        });
+        staged.vertices.push(Vertex {
+            id: vertex_id.clone(),
+            point: point_id,
+            tolerance: scaled_tolerance(vertex.tolerance, scale),
+        });
+        vertex_ids.push(vertex_id);
+    }
+    let mut edge_ids = Vec::with_capacity(raw.edges.len());
+    for (index, edge) in raw.edges.iter().enumerate() {
+        let id: cadmpeg_ir::ids::EdgeId = format!("rhino:object:edge#{key}.slot-{index}").into();
+        let curve = c3.get(&edge.curve).cloned();
+        staged.edges.push(Edge {
+            id: id.clone(),
+            curve,
+            start: vertex_ids[edge.vertices[0] as usize].clone(),
+            end: vertex_ids[edge.vertices[1] as usize].clone(),
+            param_range: Some(edge_param_range(edge)),
+            tolerance: scaled_tolerance(edge.tolerance, scale),
+        });
+        edge_ids.push(id);
+    }
+    let components = face_components(raw);
+    let grouping = region_shell_groups(raw, &components);
+    if grouping.fallback {
+        staged.warnings.push(
+            "Brep 3.3 region topology was not representable; incidence-derived shells used"
+                .to_string(),
+        );
+    }
+    let mut face_ids = Vec::with_capacity(raw.faces.len());
+    for (index, face) in raw.faces.iter().enumerate() {
+        let surface = surfaces.get(&face.surface).cloned().ok_or_else(|| {
+            crate::curves::error(face.source_range.start, "surface child missing")
+        })?;
+        let component = grouping.face_groups[index];
+        let serialized_sense = grouping.directions.as_ref().map(|values| values[index]);
+        let id: cadmpeg_ir::ids::FaceId = format!("rhino:object:face#{key}.slot-{index}").into();
+        staged.faces.push(Face {
+            id: id.clone(),
+            shell: format!("rhino:object:shell#{key}.component-{component}").into(),
+            surface,
+            sense: face_sense(face.reversed_surface != 0, serialized_sense),
+            loops: Vec::new(),
+            name: None,
+            color: face.color.map(color),
+            tolerance: None,
+        });
+        face_ids.push(id);
+    }
+    let mut synthetic_edges = BTreeMap::new();
+    for (index, loop_record) in raw.loops.iter().enumerate() {
+        let id: cadmpeg_ir::ids::LoopId = format!("rhino:object:loop#{key}.slot-{index}").into();
+        let face_id = face_ids[loop_record.face as usize].clone();
+        let mut coedges = Vec::with_capacity(loop_record.trims.len());
+        let coedge_start = staged.coedges.len();
+        for trim_index in &loop_record.trims {
+            let trim = &raw.trims[*trim_index as usize];
+            let coedge_id: cadmpeg_ir::ids::CoedgeId =
+                format!("rhino:object:coedge#{key}.slot-{trim_index}").into();
+            let edge_id = if trim.edge >= 0 {
+                edge_ids.get(trim.edge as usize).cloned().ok_or_else(|| {
+                    crate::curves::error(trim.source_range.start, "trim edge missing")
+                })?
+            } else {
+                let synthetic_id: cadmpeg_ir::ids::EdgeId =
+                    format!("rhino:object:edge#{key}.singular-{trim_index}").into();
+                if !synthetic_edges.contains_key(trim_index) {
+                    staged.edges.push(Edge {
+                        id: synthetic_id.clone(),
+                        curve: None,
+                        start: vertex_ids[trim.vertices[0] as usize].clone(),
+                        end: vertex_ids[trim.vertices[0] as usize].clone(),
+                        param_range: None,
+                        tolerance: scaled_tolerance(trim.tolerances[1], scale),
+                    });
+                    synthetic_edges.insert(*trim_index, synthetic_id.clone());
+                }
+                synthetic_id
+            };
+            let pcurve = if trim.trim_type == 6 {
+                None
+            } else {
+                Some(c2.get(trim_index).cloned().ok_or_else(|| {
+                    crate::curves::error(trim.source_range.start, "trim C2 missing")
+                })?)
+            };
+            staged.coedges.push(Coedge {
+                id: coedge_id.clone(),
+                owner_loop: id.clone(),
+                edge: edge_id,
+                next: coedge_id.clone(),
+                previous: coedge_id.clone(),
+                radial_next: coedge_id.clone(),
+                sense: coedge_sense(trim.reversed_3d != 0),
+                pcurve,
+            });
+            coedges.push(coedge_id);
+        }
+        for offset in 0..coedges.len() {
+            let next = coedges[(offset + 1) % coedges.len()].clone();
+            let previous = coedges[(offset + coedges.len() - 1) % coedges.len()].clone();
+            staged.coedges[coedge_start + offset].next = next;
+            staged.coedges[coedge_start + offset].previous = previous;
+        }
+        staged.loops.push(Loop {
+            id: id.clone(),
+            face: face_id.clone(),
+            coedges,
+        });
+        staged.faces[loop_record.face as usize].loops.push(id);
+    }
+    let coedge_positions: BTreeMap<cadmpeg_ir::ids::CoedgeId, usize> = staged
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(index, coedge)| (coedge.id.clone(), index))
+        .collect();
+    for edge_index in 0..raw.edges.len() {
+        let uses: Vec<_> = raw.edges[edge_index]
+            .trims
+            .iter()
+            .map(|trim| format!("rhino:object:coedge#{key}.slot-{trim}").into())
+            .collect::<Vec<cadmpeg_ir::ids::CoedgeId>>();
+        if uses.is_empty() {
+            continue;
+        }
+        for (offset, id) in uses.iter().enumerate() {
+            let next = uses[(offset + 1) % uses.len()].clone();
+            staged.coedges[*coedge_positions.get(id).expect("coedge staged")].radial_next = next;
+        }
+    }
+    let mut regions = Vec::new();
+    let mut region_shell_ids: BTreeMap<i32, Vec<cadmpeg_ir::ids::ShellId>> = BTreeMap::new();
+    for (component, faces) in grouping.shell_faces.iter().enumerate() {
+        let region_label = grouping.region_labels[component];
+        let region_id: cadmpeg_ir::ids::RegionId =
+            format!("rhino:object:region#{key}.slot-{region_label}").into();
+        let shell_id: cadmpeg_ir::ids::ShellId =
+            format!("rhino:object:shell#{key}.component-{component}").into();
+        region_shell_ids
+            .entry(region_label)
+            .or_default()
+            .push(shell_id.clone());
+        staged.shells.push(Shell {
+            id: shell_id,
+            region: region_id.clone(),
+            faces: faces.iter().map(|index| face_ids[*index].clone()).collect(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        if !regions.iter().any(|region: &Region| region.id == region_id) {
+            regions.push(Region {
+                id: region_id,
+                body: body_id.clone(),
+                shells: Vec::new(),
+            });
+        }
+    }
+    for (label, shell_ids) in region_shell_ids {
+        if let Some(region) = regions
+            .iter_mut()
+            .find(|region| region.id == format!("rhino:object:region#{key}.slot-{label}").into())
+        {
+            region.shells = shell_ids;
+        }
+    }
+    staged.regions = regions;
+    staged.bodies.push(Body {
+        id: body_id.clone(),
+        kind: brep_body_kind(raw.minor, raw.is_solid),
+        regions: staged
+            .regions
+            .iter()
+            .map(|region| region.id.clone())
+            .collect(),
+        transform: None,
+        name: association.name.clone(),
+        color: association.color,
+        visible: association.visible,
+    });
+    staged.links.extend(
+        staged
+            .curves
+            .iter()
+            .map(|curve| curve.id.to_string())
+            .chain(staged.surfaces.iter().map(|surface| surface.id.to_string())),
+    );
+    staged.links.push(body_id.to_string());
+    for id in staged
+        .bodies
+        .iter()
+        .map(|value| value.id.to_string())
+        .chain(staged.regions.iter().map(|value| value.id.to_string()))
+        .chain(staged.shells.iter().map(|value| value.id.to_string()))
+        .chain(staged.faces.iter().map(|value| value.id.to_string()))
+        .chain(staged.loops.iter().map(|value| value.id.to_string()))
+        .chain(staged.coedges.iter().map(|value| value.id.to_string()))
+        .chain(staged.edges.iter().map(|value| value.id.to_string()))
+        .chain(staged.vertices.iter().map(|value| value.id.to_string()))
+        .chain(staged.points.iter().map(|value| value.id.to_string()))
+        .chain(staged.pcurves.iter().map(|value| value.id.to_string()))
+    {
+        staged.exactness.push((id, Exactness::Derived));
+    }
+    let _ = writer_version;
+    Ok(staged)
+}
+
+fn edge_param_range(edge: &crate::brep::RawBrepEdge) -> [f64; 2] {
+    if edge.proxy_reversed != 0 {
+        [edge.proxy_domain.0[1], edge.proxy_domain.0[0]]
+    } else {
+        edge.proxy_domain.0
+    }
+}
+
+fn face_sense(face_reversed: bool, region_direction: Option<i32>) -> Sense {
+    if region_direction.map_or(face_reversed, |direction| direction < 0) {
+        Sense::Reversed
+    } else {
+        Sense::Forward
+    }
+}
+
+fn coedge_sense(reversed_3d: bool) -> Sense {
+    if reversed_3d {
+        Sense::Reversed
+    } else {
+        Sense::Forward
+    }
+}
+
+fn brep_body_kind(minor: u8, is_solid: Option<i32>) -> BodyKind {
+    match is_solid {
+        Some(1 | 2) if minor >= 2 => BodyKind::Solid,
+        Some(3) => BodyKind::General,
+        _ => BodyKind::Sheet,
+    }
+}
+
+fn stage_curve_tree(
+    staged: &mut StagedBrep,
+    curve: crate::curves::DecodedCurve,
+    key: &str,
+    path: &str,
+    association: &SourceObjectAssociation,
+    unknown: &UnknownId,
+) -> cadmpeg_ir::ids::CurveId {
+    let mut component_ids = Vec::new();
+    if let Some(compound) = &curve.compound {
+        for (index, child) in compound.children.iter().cloned().enumerate() {
+            component_ids.push(stage_curve_tree(
+                staged,
+                child,
+                key,
+                &format!("{path}.component-{index}"),
+                association,
+                unknown,
+            ));
+        }
+    }
+    let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#{key}.{path}").into();
+    let geometry = if curve.compound.is_some() {
+        CurveGeometry::Unknown {
+            record: Some(unknown.clone()),
+        }
+    } else {
+        curve.geometry
+    };
+    staged.curves.push(Curve {
+        id: id.clone(),
+        geometry,
+        source_object: Some(association.clone()),
+    });
+    staged.exactness.push((id.to_string(), Exactness::Derived));
+    staged.links.push(id.to_string());
+    if let Some(compound) = curve.compound {
+        let procedure_id: cadmpeg_ir::ids::ProceduralCurveId =
+            format!("rhino:object:procedural-curve#{key}.{path}").into();
+        staged
+            .exactness
+            .push((procedure_id.to_string(), Exactness::Derived));
+        staged_links_procedure(
+            staged,
+            ProceduralCurve {
+                id: procedure_id,
+                curve: id.clone(),
+                definition: ProceduralCurveDefinition::Compound {
+                    parameters: compound.parameters.clone(),
+                    component_parameters: compound.parameters[..compound.parameters.len() - 1]
+                        .to_vec(),
+                    components: component_ids,
+                },
+                cache_fit_tolerance: None,
+            },
+        );
+    }
+    id
+}
+
+fn staged_links_procedure(staged: &mut StagedBrep, procedure: ProceduralCurve) {
+    staged.links.push(procedure.id.to_string());
+    staged.procedural_curves.push(procedure);
+}
+
+fn decode_pcurves(
+    data: &[u8],
+    archive: ArchiveVersion,
+    raw: &crate::brep::RawBrep,
+    key: &str,
+) -> Result<(BTreeMap<i32, cadmpeg_ir::ids::PcurveId>, Vec<Pcurve>), crate::curves::GeometryError> {
+    let mut ids = BTreeMap::new();
+    let mut values = Vec::new();
+    let mut decoded_slots = BTreeMap::<i32, NurbsCurve>::new();
+    for (index, trim) in raw.trims.iter().enumerate() {
+        if trim.trim_type == 6 {
+            continue;
+        }
+        let nurbs = if let Some(nurbs) = decoded_slots.get(&trim.curve) {
+            nurbs.clone()
+        } else {
+            let child = raw
+                .c2
+                .slots
+                .get(trim.curve as usize)
+                .and_then(Option::as_ref)
+                .ok_or_else(|| {
+                    crate::curves::error(trim.source_range.start, "trim C2 slot missing")
+                })?;
+            let decoded = crate::curves::decode_2d(
+                data,
+                child.class_uuid,
+                child.class_data_range.clone(),
+                archive,
+            )?;
+            let crate::curves::DecodedGeometry::Curve { curve } = decoded else {
+                return Err(crate::curves::error(
+                    trim.source_range.start,
+                    "C2 child is not a curve",
+                ));
+            };
+            let nurbs = c2_curve_to_nurbs(curve, trim.source_range.start)?;
+            decoded_slots.insert(trim.curve, nurbs.clone());
+            nurbs
+        };
+        let control_points = nurbs
+            .control_points
+            .into_iter()
+            .map(|point| Point2::new(point.x, point.y))
+            .collect();
+        let id: cadmpeg_ir::ids::PcurveId =
+            format!("rhino:object:pcurve#{key}.trim-{index}").into();
+        values.push(Pcurve {
+            id: id.clone(),
+            geometry: PcurveGeometry::Nurbs {
+                degree: nurbs.degree,
+                knots: nurbs.knots,
+                control_points,
+                weights: nurbs.weights,
+                periodic: nurbs.periodic,
+            },
+            wrapper_reversed: Some(trim.proxy_reversed != 0),
+            parameter_range: Some(trim.domain.0),
+            fit_tolerance: finite_tolerance(trim.tolerances[0]),
+        });
+        ids.insert(index as i32, id);
+    }
+    Ok((ids, values))
+}
+
+fn c2_curve_to_nurbs(
+    curve: crate::curves::DecodedCurve,
+    offset: usize,
+) -> Result<NurbsCurve, crate::curves::GeometryError> {
+    let Some(compound) = curve.compound else {
+        return match curve.geometry {
+            CurveGeometry::Nurbs(nurbs) => Ok(nurbs),
+            _ => Err(crate::curves::error(
+                offset,
+                "C2 child has no parameter-space representation",
+            )),
+        };
+    };
+    if compound.children.len().checked_add(1) != Some(compound.parameters.len()) {
+        return Err(crate::curves::error(
+            offset,
+            "C2 polycurve parameter count mismatch",
+        ));
+    }
+    let mut segments = Vec::with_capacity(compound.children.len());
+    for (index, child) in compound.children.into_iter().enumerate() {
+        let target = [compound.parameters[index], compound.parameters[index + 1]];
+        if !target[0].is_finite() || !target[1].is_finite() || target[0] >= target[1] {
+            return Err(crate::curves::error(
+                offset,
+                "C2 polycurve segment domain is invalid",
+            ));
+        }
+        segments.push(remap_nurbs_domain(
+            c2_curve_to_nurbs(child, offset)?,
+            target,
+            offset,
+        )?);
+    }
+    merge_nurbs_segments(segments, offset)
+}
+
+fn remap_nurbs_domain(
+    mut curve: NurbsCurve,
+    target: [f64; 2],
+    offset: usize,
+) -> Result<NurbsCurve, crate::curves::GeometryError> {
+    let degree = usize::try_from(curve.degree)
+        .map_err(|_| crate::curves::error(offset, "C2 degree does not fit memory"))?;
+    let end_index = curve
+        .knots
+        .len()
+        .checked_sub(degree + 1)
+        .ok_or_else(|| crate::curves::error(offset, "C2 knot vector is invalid"))?;
+    let source = [
+        *curve
+            .knots
+            .get(degree)
+            .ok_or_else(|| crate::curves::error(offset, "C2 knot vector is invalid"))?,
+        curve.knots[end_index],
+    ];
+    let denominator = source[1] - source[0];
+    if !denominator.is_finite() || denominator <= 0.0 {
+        return Err(crate::curves::error(offset, "C2 curve domain is invalid"));
+    }
+    let scale = (target[1] - target[0]) / denominator;
+    for knot in &mut curve.knots {
+        *knot = target[0] + (*knot - source[0]) * scale;
+        if !knot.is_finite() {
+            return Err(crate::curves::error(offset, "C2 knot remap overflowed"));
+        }
+    }
+    Ok(curve)
+}
+
+fn merge_nurbs_segments(
+    mut segments: Vec<NurbsCurve>,
+    offset: usize,
+) -> Result<NurbsCurve, crate::curves::GeometryError> {
+    let Some(first) = segments.first() else {
+        return Err(crate::curves::error(offset, "C2 polycurve has no segments"));
+    };
+    if segments.len() == 1 {
+        return Ok(segments.remove(0));
+    }
+    let degree = first.degree;
+    if segments.iter().any(|segment| segment.degree != degree) {
+        return Err(crate::curves::error(
+            offset,
+            "C2 polycurve segments have unequal degrees",
+        ));
+    }
+    let multiplicity = usize::try_from(degree)
+        .ok()
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| crate::curves::error(offset, "C2 degree overflow"))?;
+    for segment in &segments {
+        if segment.knots.len() < multiplicity {
+            return Err(crate::curves::error(
+                offset,
+                "C2 polycurve segment knot vector is invalid",
+            ));
+        }
+        let start = segment.knots.get(multiplicity - 1).copied();
+        let end = segment
+            .knots
+            .len()
+            .checked_sub(multiplicity)
+            .and_then(|index| segment.knots.get(index))
+            .copied();
+        if start.is_none()
+            || end.is_none()
+            || segment.knots[..multiplicity]
+                .iter()
+                .any(|value| Some(*value) != start)
+            || segment.knots[segment.knots.len() - multiplicity..]
+                .iter()
+                .any(|value| Some(*value) != end)
+        {
+            return Err(crate::curves::error(
+                offset,
+                "C2 polycurve segment is not endpoint-clamped",
+            ));
+        }
+    }
+    let rational = segments.iter().any(|segment| segment.weights.is_some());
+    let control_count = segments.iter().try_fold(0_usize, |total, segment| {
+        total.checked_add(segment.control_points.len())
+    });
+    let knot_count = segments
+        .iter()
+        .try_fold(0_usize, |total, segment| {
+            total.checked_add(segment.knots.len())
+        })
+        .and_then(|total| {
+            (segments.len() - 1)
+                .checked_mul(multiplicity)
+                .and_then(|duplicate_count| total.checked_sub(duplicate_count))
+        })
+        .ok_or_else(|| crate::curves::error(offset, "C2 polycurve size overflow"))?;
+    let mut control_points = Vec::with_capacity(
+        control_count.ok_or_else(|| crate::curves::error(offset, "C2 polycurve size overflow"))?,
+    );
+    let mut knots = Vec::with_capacity(knot_count);
+    let mut weights = rational.then(|| Vec::with_capacity(control_points.capacity()));
+    for (index, segment) in segments.into_iter().enumerate() {
+        if let Some(target) = &mut weights {
+            match segment.weights {
+                Some(values) => target.extend(values),
+                None => target.extend(std::iter::repeat_n(1.0, segment.control_points.len())),
+            }
+        }
+        control_points.extend(segment.control_points);
+        knots.extend(
+            segment
+                .knots
+                .into_iter()
+                .skip(if index == 0 { 0 } else { multiplicity }),
+        );
+    }
+    Ok(NurbsCurve {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic: false,
+    })
+}
+
+fn finite_tolerance(value: f64) -> Option<f64> {
+    (value.is_finite() && value >= 0.0).then_some(value)
+}
+
+fn scaled_tolerance(value: f64, scale: f64) -> Option<f64> {
+    (value.is_finite() && (0.0..1.0e307).contains(&value)).then_some(value * scale)
+}
+
+fn face_components(raw: &crate::brep::RawBrep) -> Vec<usize> {
+    let mut parent: Vec<usize> = (0..raw.faces.len()).collect();
+    for edge in &raw.edges {
+        let faces: Vec<usize> = edge
+            .trims
+            .iter()
+            .map(|trim| raw.loops[raw.trims[*trim as usize].loop_index as usize].face as usize)
+            .collect();
+        for pair in faces.windows(2) {
+            let left = disjoint_root(&mut parent, pair[0]);
+            let right = disjoint_root(&mut parent, pair[1]);
+            parent[left] = right;
+        }
+    }
+    let roots: Vec<usize> = (0..parent.len())
+        .map(|index| disjoint_root(&mut parent, index))
+        .collect();
+    let mut labels = BTreeMap::new();
+    roots
+        .into_iter()
+        .map(|value| {
+            let next = labels.len();
+            *labels.entry(value).or_insert(next)
+        })
+        .collect()
+}
+
+struct ShellGrouping {
+    face_groups: Vec<usize>,
+    region_labels: Vec<i32>,
+    shell_faces: Vec<Vec<usize>>,
+    directions: Option<Vec<i32>>,
+    fallback: bool,
+}
+
+fn region_shell_groups(raw: &crate::brep::RawBrep, components: &[usize]) -> ShellGrouping {
+    if raw.minor < 3 || raw.regions.is_empty() {
+        let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for (face, component) in components.iter().copied().enumerate() {
+            groups.entry(component).or_default().push(face);
+        }
+        let mut shell_faces = Vec::new();
+        let mut face_groups = vec![0; components.len()];
+        let mut region_labels = Vec::new();
+        for (group, (component, faces)) in groups.into_iter().enumerate() {
+            for face in &faces {
+                face_groups[*face] = group;
+            }
+            let _ = component;
+            shell_faces.push(faces);
+            region_labels.push(group as i32);
+        }
+        return ShellGrouping {
+            face_groups,
+            region_labels,
+            shell_faces,
+            directions: None,
+            fallback: false,
+        };
+    }
+    let mut grouped: BTreeMap<(i32, usize), Vec<usize>> = BTreeMap::new();
+    let mut directions = vec![0; raw.faces.len()];
+    let solid_regions: BTreeSet<i32> = raw
+        .regions
+        .iter()
+        .filter(|region| region.region_type == 1)
+        .map(|region| region.index)
+        .collect();
+    for face in 0..raw.faces.len() {
+        let bounded_sides: Vec<_> = raw
+            .face_sides
+            .iter()
+            .filter(|side| side.face == face as i32)
+            .filter(|side| solid_regions.contains(&side.region))
+            .collect();
+        if bounded_sides.len() != 1 {
+            return region_shell_groups_without_records(components);
+        }
+        let side = bounded_sides[0];
+        let region = side.region;
+        directions[face] = side.direction;
+        grouped
+            .entry((region, components[face]))
+            .or_default()
+            .push(face);
+    }
+    let mut face_groups = vec![0; components.len()];
+    let mut region_labels = Vec::new();
+    let mut shell_faces = Vec::new();
+    for (group, ((region, _component), faces)) in grouped.into_iter().enumerate() {
+        for face in &faces {
+            face_groups[*face] = group;
+        }
+        region_labels.push(region);
+        shell_faces.push(faces);
+    }
+    ShellGrouping {
+        face_groups,
+        region_labels,
+        shell_faces,
+        directions: Some(directions),
+        fallback: false,
+    }
+}
+
+fn region_shell_groups_without_records(components: &[usize]) -> ShellGrouping {
+    let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (face, component) in components.iter().copied().enumerate() {
+        groups.entry(component).or_default().push(face);
+    }
+    let mut face_groups = vec![0; components.len()];
+    let mut region_labels = Vec::new();
+    let mut shell_faces = Vec::new();
+    for (group, (_component, faces)) in groups.into_iter().enumerate() {
+        for face in &faces {
+            face_groups[*face] = group;
+        }
+        region_labels.push(group as i32);
+        shell_faces.push(faces);
+    }
+    ShellGrouping {
+        face_groups,
+        region_labels,
+        shell_faces,
+        directions: None,
+        fallback: true,
+    }
+}
+
+fn disjoint_root(parent: &mut [usize], mut value: usize) -> usize {
+    while parent[value] != value {
+        parent[value] = parent[parent[value]];
+        value = parent[value];
+    }
+    value
 }
 
 fn curve_warnings(curve: &crate::curves::DecodedCurve) -> Vec<String> {
@@ -996,4 +2073,388 @@ fn sha256_hex(bytes: &[u8]) -> String {
         write!(&mut result, "{byte:02x}").expect("writing to a String cannot fail");
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+    use cadmpeg_ir::math::Point3;
+
+    fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
+        NurbsCurve {
+            degree: 1,
+            knots: vec![start, start, end, end],
+            control_points: vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
+            weights: rational.then(|| vec![2.0, 1.0]),
+            periodic: false,
+        }
+    }
+
+    fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
+        crate::curves::DecodedCurve {
+            geometry: CurveGeometry::Nurbs(curve),
+            compound: None,
+            warnings: Vec::new(),
+        }
+    }
+
+    fn region_raw(
+        face_sides: Vec<crate::brep::RawBrepFaceSide>,
+        regions: Vec<crate::brep::RawBrepRegion>,
+    ) -> crate::brep::RawBrep {
+        let empty_curves = || crate::brep::RawBrepChildren {
+            slots: Vec::new(),
+            source_range: 0..0,
+            expected_type: crate::brep::RawBrepBaseType::Curve,
+        };
+        crate::brep::RawBrep {
+            minor: 3,
+            c2: empty_curves(),
+            c3: empty_curves(),
+            surfaces: crate::brep::RawBrepChildren {
+                slots: Vec::new(),
+                source_range: 0..0,
+                expected_type: crate::brep::RawBrepBaseType::Surface,
+            },
+            vertices: Vec::new(),
+            edges: Vec::new(),
+            trims: Vec::new(),
+            loops: Vec::new(),
+            faces: vec![crate::brep::RawBrepFace {
+                index: 0,
+                loops: Vec::new(),
+                surface: 0,
+                reversed_surface: 0,
+                material_channel: 0,
+                uuid: None,
+                color: None,
+                source_range: 0..0,
+            }],
+            bounds: crate::settings::BoundingBox {
+                minimum: crate::settings::Point3([0.0, 0.0, 0.0]),
+                maximum: crate::settings::Point3([1.0, 1.0, 1.0]),
+            },
+            render_meshes: Vec::new(),
+            analysis_meshes: Vec::new(),
+            render_mesh_array_range: 0..0,
+            analysis_mesh_array_range: 0..0,
+            is_solid: None,
+            face_sides,
+            regions,
+            region_wrapper_range: Some(0..0),
+            source_range: 0..0,
+            vertex_array_range: 0..0,
+            edge_array_range: 0..0,
+            trim_array_range: 0..0,
+            loop_array_range: 0..0,
+            face_array_range: 0..0,
+        }
+    }
+
+    fn region(index: i32, region_type: i32) -> crate::brep::RawBrepRegion {
+        crate::brep::RawBrepRegion {
+            index,
+            region_type,
+            sides: Vec::new(),
+            bounds: crate::settings::BoundingBox {
+                minimum: crate::settings::Point3([0.0, 0.0, 0.0]),
+                maximum: crate::settings::Point3([1.0, 1.0, 1.0]),
+            },
+            source_range: 0..0,
+        }
+    }
+
+    #[test]
+    fn fallback_discards_topology_and_unknown_record_self_link() {
+        let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
+        let surface_id: cadmpeg_ir::ids::SurfaceId = "rhino:object:surface#x.slot-0".into();
+        let mut staged = StagedBrep {
+            curves: vec![Curve {
+                id: curve_id.clone(),
+                geometry: CurveGeometry::Unknown { record: None },
+                source_object: None,
+            }],
+            surfaces: vec![Surface {
+                id: surface_id.clone(),
+                geometry: cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: None },
+                source_object: None,
+            }],
+            links: vec![
+                curve_id.to_string(),
+                surface_id.to_string(),
+                "rhino:object:body#x".to_string(),
+                "rhino:object:record#x".to_string(),
+            ],
+            bodies: vec![Body {
+                id: "rhino:object:body#x".into(),
+                kind: BodyKind::Sheet,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            }],
+            ..StagedBrep::default()
+        };
+        staged = staged.free_carrier_fallback("C2 failure");
+        assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
+        assert!(staged.bodies.is_empty());
+        assert_eq!(
+            staged.links,
+            vec![curve_id.to_string(), surface_id.to_string()]
+        );
+        assert!(staged.warnings.iter().any(|warning| warning.contains("C2")));
+    }
+
+    #[test]
+    fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
+        let unknown: UnknownId = "rhino:object:record#x".into();
+        let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
+        let mut candidate = CadIr::empty(Units::default());
+        candidate.unknowns.push(UnknownRecord {
+            id: unknown.clone(),
+            offset: 0,
+            byte_len: 0,
+            sha256: sha256_hex(&[]),
+            data: Some(Vec::new()),
+            links: Vec::new(),
+        });
+        let staged = StagedBrep {
+            kind: BrepTransferKind::FreeCarrierFallback,
+            curves: vec![Curve {
+                id: curve_id.clone(),
+                geometry: CurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false)),
+                source_object: None,
+            }],
+            links: vec![unknown.to_string(), curve_id.to_string()],
+            ..StagedBrep::default()
+        };
+        let links = staged.links.clone();
+        staged.apply(&mut candidate);
+        append_record_links(&mut candidate, &unknown, &links);
+        assert_eq!(candidate.unknowns[0].links, vec![curve_id.to_string()]);
+        let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
+        assert!(report.is_ok(), "{report:?}");
+    }
+
+    #[test]
+    fn colliding_staged_ids_fail_only_the_cloned_candidate() {
+        let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
+        let curve = Curve {
+            id: curve_id,
+            geometry: CurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false)),
+            source_object: None,
+        };
+        let mut live = CadIr::empty(Units::default());
+        live.model.curves.push(curve.clone());
+        let mut candidate = live.clone();
+        StagedBrep {
+            curves: vec![curve],
+            ..StagedBrep::default()
+        }
+        .apply(&mut candidate);
+        assert!(!cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok());
+        assert_eq!(live.model.curves.len(), 1);
+    }
+
+    #[test]
+    fn disconnected_incidence_produces_deterministic_shell_groups() {
+        let grouping = region_shell_groups_without_records(&[1, 0, 1, 0]);
+        assert!(grouping.fallback);
+        assert!(grouping.directions.is_none());
+        assert_eq!(grouping.face_groups, vec![1, 0, 1, 0]);
+        assert_eq!(grouping.region_labels, vec![0, 1]);
+        assert_eq!(grouping.shell_faces, vec![vec![1, 3], vec![0, 2]]);
+    }
+
+    #[test]
+    fn tolerance_scaling_rejects_unset_and_preserves_zero() {
+        assert_eq!(scaled_tolerance(0.0, 25.4), Some(0.0));
+        assert_eq!(scaled_tolerance(0.5, 25.4), Some(12.7));
+        assert_eq!(finite_tolerance(0.5), Some(0.5));
+        assert_eq!(finite_tolerance(-1.0), None);
+    }
+
+    #[test]
+    fn edge_domain_maps_proxy_subdomain_and_reversal_to_c3() {
+        let edge = crate::brep::RawBrepEdge {
+            index: 0,
+            curve: 0,
+            proxy_reversed: 0,
+            proxy_domain: crate::settings::Interval([3.0, 7.0]),
+            vertices: [0, 1],
+            trims: Vec::new(),
+            tolerance: 0.0,
+            domain: crate::settings::Interval([100.0, 200.0]),
+            source_range: 0..0,
+        };
+        assert_eq!(edge_param_range(&edge), [3.0, 7.0]);
+        let reversed = crate::brep::RawBrepEdge {
+            proxy_reversed: 1,
+            ..edge
+        };
+        assert_eq!(edge_param_range(&reversed), [7.0, 3.0]);
+    }
+
+    #[test]
+    fn coedge_and_edge_proxy_reversals_are_independent() {
+        for trim_reversed in [false, true] {
+            for _edge_proxy_reversed in [false, true] {
+                assert_eq!(
+                    coedge_sense(trim_reversed),
+                    if trim_reversed {
+                        Sense::Reversed
+                    } else {
+                        Sense::Forward
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn face_reversal_and_region_direction_have_exact_precedence() {
+        assert_eq!(face_sense(false, None), Sense::Forward);
+        assert_eq!(face_sense(true, None), Sense::Reversed);
+        assert_eq!(face_sense(true, Some(1)), Sense::Forward);
+        assert_eq!(face_sense(false, Some(-1)), Sense::Reversed);
+    }
+
+    #[test]
+    fn inward_and_outward_serialized_solids_both_remain_solids() {
+        assert_eq!(brep_body_kind(2, Some(1)), BodyKind::Solid);
+        assert_eq!(brep_body_kind(2, Some(2)), BodyKind::Solid);
+        assert_eq!(brep_body_kind(2, Some(3)), BodyKind::General);
+        assert_eq!(brep_body_kind(1, Some(1)), BodyKind::Sheet);
+    }
+
+    #[test]
+    fn representable_region_uses_bounded_membership_and_serialized_direction() {
+        let raw = region_raw(
+            vec![
+                crate::brep::RawBrepFaceSide {
+                    index: 0,
+                    region: 1,
+                    face: 0,
+                    direction: 1,
+                    source_range: 0..0,
+                },
+                crate::brep::RawBrepFaceSide {
+                    index: 1,
+                    region: 0,
+                    face: 0,
+                    direction: -1,
+                    source_range: 0..0,
+                },
+            ],
+            vec![region(0, 0), region(1, 1)],
+        );
+        let grouping = region_shell_groups(&raw, &[0]);
+        assert!(!grouping.fallback);
+        assert_eq!(grouping.face_groups, vec![0]);
+        assert_eq!(grouping.region_labels, vec![1]);
+        assert_eq!(grouping.shell_faces, vec![vec![0]]);
+        assert_eq!(grouping.directions, Some(vec![1]));
+    }
+
+    #[test]
+    fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
+        let raw = region_raw(
+            vec![
+                crate::brep::RawBrepFaceSide {
+                    index: 0,
+                    region: 1,
+                    face: 0,
+                    direction: 1,
+                    source_range: 0..0,
+                },
+                crate::brep::RawBrepFaceSide {
+                    index: 1,
+                    region: 2,
+                    face: 0,
+                    direction: -1,
+                    source_range: 0..0,
+                },
+            ],
+            vec![region(0, 0), region(1, 1), region(2, 1)],
+        );
+        let grouping = region_shell_groups(&raw, &[0]);
+        assert!(grouping.fallback);
+        assert_eq!(grouping.region_labels, vec![0]);
+        assert_eq!(grouping.shell_faces, vec![vec![0]]);
+        assert!(grouping.directions.is_none());
+    }
+
+    #[test]
+    fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
+        let compound = crate::curves::DecodedCurve {
+            geometry: CurveGeometry::Unknown { record: None },
+            compound: Some(crate::curves::Compound {
+                children: vec![
+                    decoded_nurbs(line_nurbs(0.0, 1.0, true)),
+                    decoded_nurbs(line_nurbs(-2.0, 2.0, false)),
+                ],
+                parameters: vec![10.0, 20.0, 40.0],
+            }),
+            warnings: Vec::new(),
+        };
+        let merged = c2_curve_to_nurbs(compound, 0).expect("merge");
+        assert_eq!(merged.knots, vec![10.0, 10.0, 20.0, 20.0, 40.0, 40.0]);
+        assert_eq!(merged.control_points.len(), 4);
+        assert_eq!(merged.weights, Some(vec![2.0, 1.0, 1.0, 1.0]));
+        assert!(!merged.periodic);
+    }
+
+    #[test]
+    fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
+        let nested = crate::curves::DecodedCurve {
+            geometry: CurveGeometry::Unknown { record: None },
+            compound: Some(crate::curves::Compound {
+                children: vec![
+                    decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+                    decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+                ],
+                parameters: vec![0.0, 1.0, 2.0],
+            }),
+            warnings: Vec::new(),
+        };
+        let outer = crate::curves::DecodedCurve {
+            geometry: CurveGeometry::Unknown { record: None },
+            compound: Some(crate::curves::Compound {
+                children: vec![nested],
+                parameters: vec![5.0, 9.0],
+            }),
+            warnings: Vec::new(),
+        };
+        let merged = c2_curve_to_nurbs(outer, 0).expect("nested merge");
+        assert_eq!(merged.knots, vec![5.0, 5.0, 7.0, 7.0, 9.0, 9.0]);
+    }
+
+    #[test]
+    fn incompatible_c2_polycurve_degrades_before_pcurve_emission() {
+        let quadratic = NurbsCurve {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.5, 1.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+            ],
+            weights: Some(vec![1.0, 0.5, 1.0]),
+            periodic: false,
+        };
+        let compound = crate::curves::DecodedCurve {
+            geometry: CurveGeometry::Unknown { record: None },
+            compound: Some(crate::curves::Compound {
+                children: vec![
+                    decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+                    decoded_nurbs(quadratic),
+                ],
+                parameters: vec![0.0, 1.0, 2.0],
+            }),
+            warnings: Vec::new(),
+        };
+        assert!(c2_curve_to_nurbs(compound, 0).is_err());
+    }
 }

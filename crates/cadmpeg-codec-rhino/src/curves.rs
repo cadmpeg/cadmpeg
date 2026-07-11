@@ -132,6 +132,16 @@ pub(crate) fn decode(
     decode_inner(data, class_uuid, range, scale, archive, 0)
 }
 
+/// Decodes a Brep C2 curve in surface parameter space.
+pub(crate) fn decode_2d(
+    data: &[u8],
+    class_uuid: Uuid,
+    range: Range<usize>,
+    archive: ArchiveVersion,
+) -> Result<DecodedGeometry, GeometryError> {
+    decode_inner_2d(data, class_uuid, range, archive, 0)
+}
+
 fn decode_inner(
     data: &[u8],
     class_uuid: Uuid,
@@ -161,13 +171,13 @@ fn decode_inner(
         POINT_CLOUD => DecodedGeometry::PointCloud(read_cloud(&mut reader, scale)?),
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve {
-                geometry: CurveGeometry::Nurbs(read_line(&mut reader, scale)?),
+                geometry: CurveGeometry::Nurbs(read_line(&mut reader, scale, Some(3))?),
                 compound: None,
                 warnings: Vec::new(),
             },
         },
         ARC => {
-            let (geometry, warnings) = read_arc(&mut reader, scale)?;
+            let (geometry, warnings) = read_arc(&mut reader, scale, None, false)?;
             DecodedGeometry::Curve {
                 curve: DecodedCurve {
                     geometry,
@@ -178,7 +188,7 @@ fn decode_inner(
         }
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve {
-                geometry: CurveGeometry::Nurbs(read_polyline(&mut reader, scale)?),
+                geometry: CurveGeometry::Nurbs(read_polyline(&mut reader, scale, Some(3))?),
                 compound: None,
                 warnings: Vec::new(),
             },
@@ -206,6 +216,132 @@ fn decode_inner(
         ));
     }
     Ok(result)
+}
+
+fn decode_inner_2d(
+    data: &[u8],
+    class_uuid: Uuid,
+    range: Range<usize>,
+    archive: ArchiveVersion,
+    depth: usize,
+) -> Result<DecodedGeometry, GeometryError> {
+    if depth > MAX_CURVE_DEPTH {
+        return Err(malformed(range.start, "C2 curve recursion limit exceeded"));
+    }
+    let name = class_uuid.to_string();
+    let mut reader = BoundedReader::new(data, range.start, range.end)?;
+    let result = match name.as_str() {
+        NURBS_CURVE => DecodedGeometry::Curve {
+            curve: DecodedCurve {
+                geometry: CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve_2d(&mut reader)?),
+                compound: None,
+                warnings: Vec::new(),
+            },
+        },
+        LINE => DecodedGeometry::Curve {
+            curve: DecodedCurve {
+                geometry: CurveGeometry::Nurbs(read_line(&mut reader, 1.0, Some(2))?),
+                compound: None,
+                warnings: Vec::new(),
+            },
+        },
+        POLYLINE => DecodedGeometry::Curve {
+            curve: DecodedCurve {
+                geometry: CurveGeometry::Nurbs(read_polyline(&mut reader, 1.0, Some(2))?),
+                compound: None,
+                warnings: Vec::new(),
+            },
+        },
+        ARC => {
+            let (geometry, warnings) = read_arc(&mut reader, 1.0, Some(2), true)?;
+            DecodedGeometry::Curve {
+                curve: DecodedCurve {
+                    geometry,
+                    compound: None,
+                    warnings,
+                },
+            }
+        }
+        POLYCURVE => {
+            let curve = read_polycurve_2d(data, &mut reader, archive, depth)?;
+            DecodedGeometry::Curve { curve }
+        }
+        _ => return Err(unsupported(range.start, "unsupported Rhino C2 curve class")),
+    };
+    if reader.remaining() != 0 {
+        return Err(malformed(
+            reader.position(),
+            "C2 curve payload has trailing bytes",
+        ));
+    }
+    Ok(result)
+}
+
+fn read_polycurve_2d(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+    depth: usize,
+) -> Result<DecodedCurve, GeometryError> {
+    let version = reader.u8()?;
+    if version >> 4 != 1 {
+        return Err(unsupported(
+            reader.position() - 1,
+            "unsupported C2 polycurve payload version",
+        ));
+    }
+    let segment_count = count(reader, 1)?;
+    if segment_count == 0 {
+        return Err(malformed(reader.position(), "C2 polycurve has no segments"));
+    }
+    reader.i32()?;
+    reader.i32()?;
+    reader.skip(48)?;
+    let parameter_count = count(reader, 8)?;
+    if parameter_count != segment_count + 1 {
+        return Err(malformed(
+            reader.position(),
+            "C2 polycurve parameter count mismatch",
+        ));
+    }
+    let mut parameters = Vec::with_capacity(parameter_count);
+    for _ in 0..parameter_count {
+        let value = reader.f64()?;
+        if !value.is_finite() || parameters.last().is_some_and(|last| value < *last) {
+            return Err(malformed(
+                reader.position(),
+                "C2 polycurve parameters are invalid",
+            ));
+        }
+        parameters.push(value);
+    }
+    let mut children = Vec::with_capacity(segment_count);
+    for _ in 0..segment_count {
+        let start = reader.position();
+        let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
+        let class =
+            parse_class_wrapper(data, start..wrapper.next_offset, archive, &mut Vec::new())?;
+        reader.skip(wrapper.next_offset - start)?;
+        let child = decode_inner_2d(
+            data,
+            class.class_uuid,
+            class.class_data_range,
+            archive,
+            depth + 1,
+        )?;
+        let DecodedGeometry::Curve { curve } = child else {
+            return Err(malformed(start, "C2 polycurve child is not a curve"));
+        };
+        children.push(curve);
+    }
+    Ok(DecodedCurve {
+        geometry: CurveGeometry::Unknown { record: None },
+        compound: Some(Compound {
+            children,
+            parameters,
+        }),
+        warnings: Vec::new(),
+    })
 }
 
 fn read_point(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Point3, GeometryError> {
@@ -279,14 +415,22 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
     })
 }
 
-fn read_line(reader: &mut BoundedReader<'_>, scale: f64) -> Result<NurbsCurve, GeometryError> {
+fn read_line(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+    expected_dimension: Option<i32>,
+) -> Result<NurbsCurve, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let from = scale_point(native_point(reader)?, scale);
     let to = scale_point(native_point(reader)?, scale);
     let domain = finite_interval(interval(reader)?, reader.position())?;
     let dimension = reader.i32()?;
-    if !(dimension == 2 || dimension == 3) || from == to || domain[0] >= domain[1] {
+    if expected_dimension.is_some_and(|expected| dimension != expected)
+        || !(dimension == 2 || dimension == 3)
+        || from == to
+        || domain[0] >= domain[1]
+    {
         return Err(error(reader.position(), "invalid bounded line"));
     }
     Ok(NurbsCurve {
@@ -298,7 +442,11 @@ fn read_line(reader: &mut BoundedReader<'_>, scale: f64) -> Result<NurbsCurve, G
     })
 }
 
-fn read_polyline(reader: &mut BoundedReader<'_>, scale: f64) -> Result<NurbsCurve, GeometryError> {
+fn read_polyline(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+    expected_dimension: Option<i32>,
+) -> Result<NurbsCurve, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let point_count = count(reader, 24)?;
@@ -331,7 +479,9 @@ fn read_polyline(reader: &mut BoundedReader<'_>, scale: f64) -> Result<NurbsCurv
         parameters.push(value);
     }
     let dimension = reader.i32()?;
-    if dimension != 2 && dimension != 3 {
+    if expected_dimension.is_some_and(|expected| dimension != expected)
+        || dimension != 2 && dimension != 3
+    {
         return Err(error(reader.position(), "polyline dimension is invalid"));
     }
     let mut knots = Vec::with_capacity(point_count + 2);
@@ -352,6 +502,8 @@ fn read_polyline(reader: &mut BoundedReader<'_>, scale: f64) -> Result<NurbsCurv
 fn read_arc(
     reader: &mut BoundedReader<'_>,
     scale: f64,
+    expected_dimension: Option<i32>,
+    force_nurbs: bool,
 ) -> Result<(CurveGeometry, Vec<String>), GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
@@ -360,6 +512,9 @@ fn read_arc(
     let domain = finite_interval(interval(reader)?, reader.position())?;
     let dimension = reader.i32()?;
     let mut warnings = Vec::new();
+    if expected_dimension.is_some_and(|expected| dimension != expected) {
+        return Err(error(reader.position(), "arc dimension is invalid"));
+    }
     if dimension != 2 && dimension != 3 {
         warnings.push(format!("arc dimension {dimension} normalized to native 3D"));
     }
@@ -370,7 +525,7 @@ fn read_arc(
     if delta <= 0.0 || delta > TAU + 1.0e-10 {
         return Err(error(reader.position(), "arc angle span is invalid"));
     }
-    if canonical_circle(&circle, angle, domain, delta) {
+    if !force_nurbs && canonical_circle(&circle, angle, domain, delta) {
         return Ok((
             CurveGeometry::Circle {
                 center: circle.center,
@@ -777,7 +932,7 @@ mod tests {
             }
             bytes.extend(dimension.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-            let curve = read_line(&mut reader, 1.0).expect("valid line");
+            let curve = read_line(&mut reader, 1.0, None).expect("valid line");
             assert_eq!(curve.knots, vec![2.0, 2.0, 5.0, 5.0]);
         }
     }
