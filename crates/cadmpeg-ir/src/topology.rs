@@ -75,6 +75,10 @@ pub struct Body {
     /// Optional display color.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<Color>,
+    /// Whether the source document displays the body. `None` when the source
+    /// format does not record body visibility.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<bool>,
 }
 
 /// A connected region of a body.

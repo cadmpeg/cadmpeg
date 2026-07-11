@@ -8467,3 +8467,64 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
     // references a surface that exists in the arena.
     assert_eq!(result.ir.model.surfaces.len(), 2);
 }
+
+#[test]
+fn body_visibility_maps_asm_keys_through_member_nodes() {
+    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
+        let units: Vec<u16> = value.encode_utf16().collect();
+        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
+        for unit in units {
+            out.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+
+    let mut bulk = Vec::new();
+    // Body-binding record: pair count, (ASM key, member) pairs, the 12-byte
+    // tail, then the blob name.
+    bulk.extend_from_slice(&2u32.to_le_bytes());
+    for (key, member) in [(3u64, 269u64), (6, 533)] {
+        bulk.extend_from_slice(&key.to_le_bytes());
+        bulk.extend_from_slice(&member.to_le_bytes());
+    }
+    bulk.extend_from_slice(&1793u64.to_le_bytes());
+    bulk.extend_from_slice(&0u32.to_le_bytes());
+    lp_utf16(&mut bulk, "BREP.synthetic.smbh");
+    // Browser-node records: GUID, hidden flag, `01 01` marker, member id.
+    for (guid, hidden, member) in [
+        ("b412e170-dc0c-4932-b699-43fc72cc8b13", 0u8, 269u64),
+        ("d4b1078c-43bf-4f6d-a50a-963f94273901", 1, 533),
+    ] {
+        lp_utf16(&mut bulk, guid);
+        bulk.push(hidden);
+        bulk.extend_from_slice(&[0x01, 0x01]);
+        bulk.extend_from_slice(&member.to_le_bytes());
+    }
+
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&bulk).unwrap();
+    let bytes = zip.finish().unwrap().into_inner();
+
+    let mut cursor = Cursor::new(bytes);
+    let scan = container::scan(&mut cursor).unwrap();
+    let visibility = crate::design::decode_body_visibility(
+        &mut cursor,
+        &scan,
+        "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+    )
+    .unwrap();
+    assert_eq!(visibility.get(&3), Some(&true), "flag 0 decodes visible");
+    assert_eq!(visibility.get(&6), Some(&false), "flag 1 decodes hidden");
+
+    let other = crate::design::decode_body_visibility(
+        &mut cursor,
+        &scan,
+        "FusionAssetName[Active]/Breps.BlobParts/BREP.other.smbh",
+    )
+    .unwrap();
+    assert!(other.is_empty(), "bindings for other blobs do not apply");
+}

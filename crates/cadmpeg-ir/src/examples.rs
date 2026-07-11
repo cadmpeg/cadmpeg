@@ -229,6 +229,7 @@ pub fn unit_cube() -> CadIr {
         transform: None,
         name: Some("unit cube".into()),
         color: None,
+        visible: None,
     });
 
     let mut annotations = AnnotationBuilder::new();

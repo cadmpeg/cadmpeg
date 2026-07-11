@@ -405,13 +405,34 @@ impl<'a> Builder<'a> {
         )
     }
 
-    /// Emit one solid per region across all bodies; returns the solid references.
+    /// Emit one solid per region across all displayed bodies; returns the
+    /// solid references. Bodies the source document hides are omitted.
     fn emit_solids(&mut self) -> Vec<Ref> {
         let mut solids = Vec::new();
         // `ir` is a shared `&CadIr`; binding it locally lets us read the arenas
         // while still calling `&mut self` helpers (loss/emit).
         let ir = self.ir;
+        let hidden: BTreeSet<&str> = ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| body.visible == Some(false))
+            .map(|body| body.id.0.as_str())
+            .collect();
+        if !hidden.is_empty() {
+            self.loss(
+                LossCategory::Metadata,
+                Severity::Info,
+                format!(
+                    "{} hidden body(ies) were omitted from STEP output",
+                    hidden.len()
+                ),
+            );
+        }
         for body in &ir.model.bodies {
+            if hidden.contains(body.id.0.as_str()) {
+                continue;
+            }
             if let Some(t) = &body.transform {
                 if !is_identity(&t.rows) {
                     self.loss(
@@ -429,6 +450,9 @@ impl<'a> Builder<'a> {
         }
 
         for region in &ir.model.regions {
+            if hidden.contains(region.body.0.as_str()) {
+                continue;
+            }
             let shell_refs: Vec<Ref> = region
                 .shells
                 .iter()

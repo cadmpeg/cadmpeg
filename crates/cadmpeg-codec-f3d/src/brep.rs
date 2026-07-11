@@ -1454,6 +1454,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         .and_then(|transform| decode_transform(transform, header_scale)),
                     name: None,
                     color: attribute_color(r),
+                    visible: None,
                 });
             }
             _ => {}

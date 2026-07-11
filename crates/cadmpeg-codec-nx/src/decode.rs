@@ -380,6 +380,7 @@ fn attach_free_topology(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
         transform: None,
         name: None,
         color: None,
+        visible: None,
     });
 }
 
@@ -410,6 +411,7 @@ fn emit_topology(
             transform: None,
             name: None,
             color: None,
+            visible: None,
         });
     }
 

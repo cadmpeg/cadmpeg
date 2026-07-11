@@ -43,6 +43,17 @@ pub fn decode(
     if let Some(active) = container::select_active_brep(&scan).cloned() {
         if let Some((mut brep, mut report)) = try_decode_brep(reader, &scan, &active)? {
             let decoded_materials = materials::decode_with_bodies(reader, &scan, &brep.body_keys)?;
+            let body_visibility =
+                crate::design::decode_body_visibility(reader, &scan, &active.name)?;
+            for body in &mut brep.bodies {
+                if let Some(visible) = brep
+                    .body_keys
+                    .get(&body.id)
+                    .and_then(|key| body_visibility.get(key))
+                {
+                    body.visible = Some(*visible);
+                }
+            }
             let annotation_records = std::mem::take(&mut brep.annotation_records);
             let mut ir = build_geometry_ir(&scan, &active, brep);
             if let Some(history) = decode_asm_history(reader, &active)? {

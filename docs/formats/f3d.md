@@ -428,6 +428,8 @@ The design `BulkStream` caches each body's axis-aligned bounding box as six f64 
 
 The design BulkStream BREP body map is `u32 count`, followed by `count` pairs of `u64 asm_body_key, u64 entity_suffix`, then `u64 trailing_record_ref`, `u32 pad`, `u32 char_count`, and UTF-16LE `BREP.<uuid>.smbh`. `asm_body_key` is the ASM body `flags` field. `entity_suffix` is the numeric suffix of the design entity ID.
 
+A browser-node record stores a length-prefixed 36-character UTF-16LE node GUID, a one-byte hidden flag, the `0x01 0x01` marker, and the node's `u64` design-entity suffix. Flag `1` hides the entity in the document display; `0` shows it. **Body visibility join:** ASM `asm_body_key` → BREP body map `entity_suffix` → browser-node hidden flag.
+
 A sketch entity container follows its self-validating entity header and UTF-16LE entity ID with `u32 record_reference`, `u32 zero`, `0x01`, `u32 reference_count`, then `reference_count` entries of `0x01 + u32 record_index + six zero bytes`. The referenced records contain the sketch's geometry and relations.
 
 An indexed Design record header is `u32 class_tag_length`, a three-digit ASCII dynamic-class tag, then `u32 record_index`. `record_index` is a logical reference value; it is independent of the header's byte offset in the `BulkStream`.

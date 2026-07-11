@@ -123,6 +123,7 @@ fn edgeless_doc() -> CadIr {
         transform: None,
         name: None,
         color: None,
+        visible: None,
     });
     ir
 }
@@ -550,4 +551,25 @@ fn parametric_history_reduction_is_reported() {
     assert!(report.losses.iter().any(|loss| loss
         .message
         .contains("parametric design/history record(s) were not represented in STEP")));
+}
+
+#[test]
+fn hidden_body_is_omitted_and_reported() {
+    let mut ir = unit_cube();
+    ir.model.bodies[0].visible = Some(false);
+    let mut buf = Vec::new();
+    let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
+    let s = String::from_utf8(buf).unwrap();
+    assert!(!s.contains("MANIFOLD_SOLID_BREP"));
+    assert!(!s.contains("ADVANCED_FACE"));
+    assert!(report
+        .losses
+        .iter()
+        .any(|l| l.message.contains("hidden body(ies) were omitted")));
+
+    // An explicitly visible body exports unchanged.
+    let mut ir = unit_cube();
+    ir.model.bodies[0].visible = Some(true);
+    let s = export(&ir);
+    assert!(s.contains("MANIFOLD_SOLID_BREP"));
 }

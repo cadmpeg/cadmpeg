@@ -685,53 +685,15 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
 }
 
 fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize)> {
-    let mut out = std::collections::HashMap::new();
-    let needle: Vec<u8> = "BREP.".encode_utf16().flat_map(u16::to_le_bytes).collect();
-    for offset in bytes
-        .windows(needle.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == needle).then_some(offset))
-    {
-        let Some(block_end) = offset.checked_sub(16) else {
-            continue;
-        };
-        for count in 1usize..=64 {
-            let Some(count_pos) = block_end.checked_sub(count * 16 + 4) else {
-                break;
-            };
-            if u32::from_le_bytes(
-                bytes[count_pos..count_pos + 4]
-                    .try_into()
-                    .expect("invariant: bytes[count_pos..count_pos+4] is a 4-byte slice"),
-            ) as usize
-                != count
-            {
-                continue;
-            }
-            for (index, pair) in bytes[count_pos + 4..count_pos + 4 + count * 16]
-                .chunks_exact(16)
-                .enumerate()
-            {
-                out.insert(
-                    u64::from_le_bytes(
-                        pair[..8]
-                            .try_into()
-                            .expect("invariant: pair is a 16-byte slice, so pair[..8] is 8 bytes"),
-                    ),
-                    (
-                        u64::from_le_bytes(
-                            pair[8..].try_into().expect(
-                                "invariant: pair is a 16-byte slice, so pair[8..] is 8 bytes",
-                            ),
-                        ),
-                        count_pos + 4 + index * 16 + 8,
-                    ),
-                );
-            }
-            break;
-        }
-    }
-    out
+    crate::design::body_bindings(bytes)
+        .into_iter()
+        .map(|binding| {
+            (
+                binding.asm_key,
+                (binding.entity_suffix, binding.entity_suffix_offset),
+            )
+        })
+        .collect()
 }
 
 fn instance_properties(protein: &[u8]) -> Option<Vec<u8>> {

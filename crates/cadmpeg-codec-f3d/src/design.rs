@@ -1267,3 +1267,162 @@ fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<(String, usize)> {
         )
     })
 }
+
+/// One `(asm_body_key, entity_suffix)` pair from a Design `BulkStream` BREP
+/// body-map record, with the named B-rep blob the key resolves in and the
+/// suffix's byte offset for native patching.
+pub(crate) struct BodyBinding {
+    /// Basename of the B-rep blob entry the ASM key resolves in.
+    pub blob_name: String,
+    /// The referenced ASM body key.
+    pub asm_key: u64,
+    /// The body's design-entity suffix.
+    pub entity_suffix: u64,
+    /// Byte offset of `entity_suffix` within the stream.
+    pub entity_suffix_offset: usize,
+}
+
+/// Parse every BREP body-map record in a Design `BulkStream`: a `u32` pair
+/// count, `count` pairs of `(u64 asm_body_key, u64 entity_suffix)`, the
+/// trailing record ref and pad, then the length-prefixed UTF-16 blob name
+/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+pub(crate) fn body_bindings(bytes: &[u8]) -> Vec<BodyBinding> {
+    let needle: Vec<u8> = "BREP.".encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let mut out = Vec::new();
+    for offset in bytes
+        .windows(needle.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == needle).then_some(offset))
+    {
+        let Some(name_chars) = offset
+            .checked_sub(4)
+            .and_then(|at| read_u32(bytes, at))
+            .map(|chars| chars as usize)
+        else {
+            continue;
+        };
+        let Some(blob_name) = bytes
+            .get(offset..offset + name_chars * 2)
+            .map(utf16_le_string)
+        else {
+            continue;
+        };
+        // 16 bytes separate the pairs from the name: the 12-byte record tail
+        // and the name's u32 length prefix.
+        let Some(pairs_end) = offset.checked_sub(16) else {
+            continue;
+        };
+        // The pair count precedes the pairs; scanning ascending is unambiguous
+        // because the high halves of the little-endian ids are zero.
+        for count in 1usize..=64 {
+            let span = 16 * count;
+            let Some(count_at) = pairs_end.checked_sub(span + 4) else {
+                break;
+            };
+            if read_u32(bytes, count_at) != Some(count as u32) {
+                continue;
+            }
+            for pair in 0..count {
+                let at = count_at + 4 + pair * 16;
+                if let (Some(key), Some(suffix)) = (read_u64(bytes, at), read_u64(bytes, at + 8)) {
+                    out.push(BodyBinding {
+                        blob_name: blob_name.clone(),
+                        asm_key: key,
+                        entity_suffix: suffix,
+                        entity_suffix_offset: at + 8,
+                    });
+                }
+            }
+            break;
+        }
+    }
+    out
+}
+
+/// Decode per-body display visibility from the Design `BulkStream`.
+///
+/// The BREP body-map record resolves ASM body keys of `active_brep_entry` to
+/// design-entity suffixes, and each entity's browser-node record carries a
+/// hidden flag directly after the node GUID
+/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+/// The result maps each ASM body key to its display visibility; bodies
+/// without records are absent.
+pub fn decode_body_visibility(
+    reader: &mut dyn ReadSeek,
+    scan: &ContainerScan,
+    active_brep_entry: &str,
+) -> Result<HashMap<u64, bool>, CodecError> {
+    let Some(basename) = active_brep_entry
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+    else {
+        return Ok(HashMap::new());
+    };
+    let mut out = HashMap::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+    {
+        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let hidden_by_entity = browser_node_hidden_flags(&bytes);
+        for binding in body_bindings(&bytes) {
+            if binding.blob_name != basename {
+                continue;
+            }
+            if let Some(hidden) = hidden_by_entity.get(&binding.entity_suffix) {
+                out.insert(binding.asm_key, !hidden);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Scan for browser-node records: a length-prefixed 36-character UTF-16 GUID,
+/// one hidden-flag byte, the `01 01` marker, and the `u64` design-entity
+/// suffix.
+fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, bool> {
+    const GUID_CHARS: usize = 36;
+    const GUID_BYTES: usize = GUID_CHARS * 2;
+    let mut out = HashMap::new();
+    let mut at = 0usize;
+    while at + 4 + GUID_BYTES + 3 + 8 <= bytes.len() {
+        if read_u32(bytes, at) != Some(GUID_CHARS as u32)
+            || !is_utf16_guid(&bytes[at + 4..at + 4 + GUID_BYTES])
+        {
+            at += 1;
+            continue;
+        }
+        let flag_at = at + 4 + GUID_BYTES;
+        if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
+            if let (flag @ (0 | 1), Some(member)) = (bytes[flag_at], read_u64(bytes, flag_at + 3)) {
+                out.insert(member, flag == 1);
+            }
+        }
+        at += 1;
+    }
+    out
+}
+
+fn utf16_le_string(bytes: &[u8]) -> String {
+    let units: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect();
+    String::from_utf16_lossy(&units)
+}
+
+fn is_utf16_guid(bytes: &[u8]) -> bool {
+    bytes
+        .chunks_exact(2)
+        .all(|pair| pair[1] == 0 && (pair[0].is_ascii_hexdigit() || pair[0] == b'-'))
+}
+
+fn read_u32(bytes: &[u8], at: usize) -> Option<u32> {
+    Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
+}
+
+fn read_u64(bytes: &[u8], at: usize) -> Option<u64> {
+    Some(u64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
+}

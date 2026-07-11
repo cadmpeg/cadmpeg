@@ -289,6 +289,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             transform: None,
             name: None,
             color: None,
+            visible: None,
         });
     }
     link_payload_carriers(&mut ir, &mut annotations);
@@ -664,6 +665,7 @@ fn attach_standard_faces(
             transform: None,
             name: None,
             color: None,
+            visible: None,
         });
         annotate(
             annotations,

@@ -607,6 +607,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             transform: None,
             name: None,
             color: None,
+            visible: None,
         });
     }
 
