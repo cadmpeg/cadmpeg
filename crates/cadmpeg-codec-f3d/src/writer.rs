@@ -712,6 +712,15 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
     let model = &target.model;
+    if model.faces.is_empty()
+        && model
+            .shells
+            .iter()
+            .any(|shell| !shell.wire_edges.is_empty())
+    {
+        return encode_wire_body_smbh(target);
+    }
+    validate_source_less_body_kinds(model)?;
     if model.faces.len() > 1
         || model.loops.len() > 1
         || model
@@ -1203,7 +1212,7 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     }
     native_history_tail(&mut records, target)?;
 
-    let mut bytes = native_smbh_header()?;
+    let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
     Ok(bytes)
 }
@@ -1266,6 +1275,221 @@ impl NativeRecordPlan {
     }
 }
 
+fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
+    let model = &target.model;
+    if model.bodies.len() != 1
+        || model.regions.len() != 1
+        || model.shells.len() != 1
+        || !model.faces.is_empty()
+        || !model.loops.is_empty()
+        || !model.coedges.is_empty()
+        || !model.surfaces.is_empty()
+        || !model.pcurves.is_empty()
+        || !model.shells[0].free_vertices.is_empty()
+        || model.shells[0].wire_edges.len() != model.edges.len()
+        || model.shells[0]
+            .wire_edges
+            .iter()
+            .zip(&model.edges)
+            .any(|(id, edge)| *id != edge.id)
+        || model.bodies[0].kind != cadmpeg_ir::topology::BodyKind::Wire
+    {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D wire generation requires one face-less wire shell".into(),
+        ));
+    }
+    let body = &model.bodies[0];
+    let region = &model.regions[0];
+    let shell = &model.shells[0];
+    if body.regions.as_slice() != [region.id.clone()]
+        || region.body != body.id
+        || region.shells.as_slice() != [shell.id.clone()]
+        || shell.region != region.id
+        || shell
+            .wire_edges
+            .iter()
+            .any(|edge| !model.edges.iter().any(|candidate| candidate.id == *edge))
+    {
+        return Err(CodecError::Malformed(
+            "source-less F3D wire ownership is inconsistent".into(),
+        ));
+    }
+    let body_start = 1i64;
+    let region_start = 2i64;
+    let shell_start = 3i64;
+    let wire_start = 4i64;
+    let wire_coedge_start = 5i64;
+    let curve_start = native_record_index(wire_coedge_start, model.edges.len())?;
+    let edge_start = native_record_index(curve_start, model.curves.len())?;
+    let vertex_start = native_record_index(edge_start, model.edges.len())?;
+    let point_start = native_record_index(vertex_start, model.vertices.len())?;
+    let transform_start = native_record_index(point_start, model.points.len())?;
+    let transform_count = usize::from(body.transform.is_some());
+    let attribute_start = native_record_index(transform_start, transform_count)?;
+
+    let mut records = Vec::new();
+    native_ident(&mut records, "asmheader")?;
+    native_string(&mut records, "231.6.3.65535")?;
+    records.push(0x11);
+    native_ident(&mut records, "body")?;
+    native_ref(
+        &mut records,
+        owner_color_or_body_tag_ref(target, body, 0, attribute_start)?,
+    );
+    native_i64(&mut records, source_less_body_key(target, body, 0)?);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, region_start);
+    native_ref(&mut records, wire_start);
+    native_ref(
+        &mut records,
+        if body.transform.is_some() {
+            transform_start
+        } else {
+            -1
+        },
+    );
+    records.push(0x11);
+
+    native_ident(&mut records, "region")?;
+    native_ref(&mut records, -1);
+    native_i64(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, shell_start);
+    native_ref(&mut records, body_start);
+    records.push(0x11);
+
+    native_ident(&mut records, "shell")?;
+    native_ref(&mut records, -1);
+    native_i64(&mut records, -1);
+    for reference in [-1, -1, -1, -1, wire_start, region_start] {
+        native_ref(&mut records, reference);
+    }
+    records.push(0x11);
+
+    native_ident(&mut records, "wire")?;
+    native_ref(&mut records, -1);
+    native_i64(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, -1);
+    native_ref(&mut records, wire_coedge_start);
+    native_ref(&mut records, shell_start);
+    native_ref(&mut records, -1);
+    records.push(0x0b);
+    records.push(0x11);
+
+    for (ordinal, edge_id) in shell.wire_edges.iter().enumerate() {
+        let edge_ordinal = model
+            .edges
+            .iter()
+            .position(|edge| edge.id == *edge_id)
+            .expect("wire edge ownership was validated");
+        let next = (ordinal + 1) % shell.wire_edges.len();
+        let previous = (ordinal + shell.wire_edges.len() - 1) % shell.wire_edges.len();
+        native_ident(&mut records, "coedge")?;
+        native_ref(&mut records, -1);
+        native_i64(&mut records, -1);
+        native_ref(&mut records, -1);
+        native_ref(&mut records, native_record_index(wire_coedge_start, next)?);
+        native_ref(
+            &mut records,
+            native_record_index(wire_coedge_start, previous)?,
+        );
+        native_ref(&mut records, -1);
+        native_ref(&mut records, native_record_index(edge_start, edge_ordinal)?);
+        records.push(0x0b);
+        native_ref(&mut records, wire_start);
+        native_i64(&mut records, 0);
+        native_ref(&mut records, -1);
+        records.push(0x11);
+    }
+    encode_source_less_curves(&mut records, model)?;
+    encode_source_less_edges_vertices_points(
+        &mut records,
+        target,
+        curve_start,
+        edge_start,
+        vertex_start,
+        point_start,
+        attribute_start,
+        Some(wire_coedge_start),
+    )?;
+    if let Some(transform) = body.transform {
+        native_transform(&mut records, transform)?;
+        records.push(0x11);
+    }
+    encode_source_less_attributes(&mut records, target, attribute_start)?;
+    native_history_tail(&mut records, target)?;
+    let mut bytes = native_smbh_header(target)?;
+    bytes.extend_from_slice(&records);
+    Ok(bytes)
+}
+
+fn encode_source_less_curves(
+    records: &mut Vec<u8>,
+    model: &cadmpeg_ir::document::Model,
+) -> Result<(), CodecError> {
+    for curve in &model.curves {
+        match curve.geometry {
+            CurveGeometry::Line { origin, direction } => {
+                native_curve_base(records, "straight")?;
+                native_point(records, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+                native_vector(records, [direction.x, direction.y, direction.z]);
+            }
+            CurveGeometry::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            } => {
+                native_curve_base(records, "ellipse")?;
+                native_point(records, [center.x / 10.0, center.y / 10.0, center.z / 10.0]);
+                native_vector(records, [axis.x, axis.y, axis.z]);
+                native_vector(
+                    records,
+                    [
+                        ref_direction.x * radius / 10.0,
+                        ref_direction.y * radius / 10.0,
+                        ref_direction.z * radius / 10.0,
+                    ],
+                );
+                native_f64(records, 1.0);
+            }
+            CurveGeometry::Ellipse {
+                center,
+                axis,
+                major_direction,
+                major_radius,
+                minor_radius,
+            } if major_radius != 0.0 => {
+                native_curve_base(records, "ellipse")?;
+                native_point(records, [center.x / 10.0, center.y / 10.0, center.z / 10.0]);
+                native_vector(records, [axis.x, axis.y, axis.z]);
+                native_vector(
+                    records,
+                    [
+                        major_direction.x * major_radius / 10.0,
+                        major_direction.y * major_radius / 10.0,
+                        major_direction.z * major_radius / 10.0,
+                    ],
+                );
+                native_f64(records, minor_radius / major_radius);
+            }
+            CurveGeometry::Nurbs(ref curve) => {
+                native_curve_base(records, "intcurve")?;
+                native_nurbs_curve(records, curve)?;
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D wire curve carrier is unsupported".into(),
+                ))
+            }
+        }
+        records.push(0x11);
+    }
+    Ok(())
+}
+
 fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
@@ -1280,6 +1504,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             "source-less F3D generation requires owned face topology".into(),
         ));
     }
+    validate_source_less_body_kinds(model)?;
 
     let plan = NativeRecordPlan::for_model(model)?;
     let NativeRecordPlan {
@@ -1858,6 +2083,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         vertex_start,
         point_start,
         attribute_start,
+        None,
     )?;
     for transform in model.bodies.iter().filter_map(|body| body.transform) {
         native_transform(&mut records, transform)?;
@@ -1865,9 +2091,67 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     }
     encode_source_less_attributes(&mut records, target, attribute_start)?;
     native_history_tail(&mut records, target)?;
-    let mut bytes = native_smbh_header()?;
+    let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
     Ok(bytes)
+}
+
+fn validate_source_less_body_kinds(model: &cadmpeg_ir::document::Model) -> Result<(), CodecError> {
+    for body in &model.bodies {
+        if matches!(
+            body.kind,
+            cadmpeg_ir::topology::BodyKind::Wire | cadmpeg_ir::topology::BodyKind::General
+        ) {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D wire/general body {} requires native wire topology",
+                body.id
+            )));
+        }
+        let shell_ids = model
+            .regions
+            .iter()
+            .filter(|region| region.body == body.id)
+            .flat_map(|region| &region.shells)
+            .collect::<BTreeSet<_>>();
+        let face_ids = model
+            .shells
+            .iter()
+            .filter(|shell| shell_ids.contains(&shell.id))
+            .flat_map(|shell| &shell.faces)
+            .collect::<BTreeSet<_>>();
+        let loop_ids = model
+            .faces
+            .iter()
+            .filter(|face| face_ids.contains(&face.id))
+            .flat_map(|face| &face.loops)
+            .collect::<BTreeSet<_>>();
+        let coedge_ids = model
+            .loops
+            .iter()
+            .filter(|loop_| loop_ids.contains(&loop_.id))
+            .flat_map(|loop_| &loop_.coedges)
+            .collect::<BTreeSet<_>>();
+        let mut uses = BTreeMap::<&cadmpeg_ir::ids::EdgeId, usize>::new();
+        for coedge in model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge_ids.contains(&coedge.id))
+        {
+            *uses.entry(&coedge.edge).or_default() += 1;
+        }
+        let derived = if !uses.is_empty() && uses.values().all(|count| *count == 2) {
+            cadmpeg_ir::topology::BodyKind::Solid
+        } else {
+            cadmpeg_ir::topology::BodyKind::Sheet
+        };
+        if body.kind != derived {
+            return Err(CodecError::Malformed(format!(
+                "body {} declares {:?} but its incidence graph is {:?}",
+                body.id, body.kind, derived
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn source_less_body_key(
@@ -2320,6 +2604,7 @@ fn native_color_attribute(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn encode_source_less_edges_vertices_points(
     records: &mut Vec<u8>,
     target: &CadIr,
@@ -2328,6 +2613,7 @@ fn encode_source_less_edges_vertices_points(
     vertex_start: i64,
     point_start: i64,
     attribute_start: i64,
+    edge_owner_start: Option<i64>,
 ) -> Result<(), CodecError> {
     let model = &target.model;
     for (edge_ordinal, edge) in model.edges.iter().enumerate() {
@@ -2379,7 +2665,13 @@ fn encode_source_less_edges_vertices_points(
         native_f64(records, range[0]);
         native_ref(records, native_record_index(vertex_start, end)?);
         native_f64(records, range[1]);
-        native_ref(records, -1);
+        native_ref(
+            records,
+            edge_owner_start
+                .map(|start| native_record_index(start, edge_ordinal))
+                .transpose()?
+                .unwrap_or(-1),
+        );
         native_ref(records, curve_ref);
         records.push(0x0b);
         native_string(records, "unknown")?;
@@ -2425,7 +2717,16 @@ fn encode_source_less_edges_vertices_points(
     Ok(())
 }
 
-fn native_smbh_header() -> Result<Vec<u8>, CodecError> {
+fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
+    if !target.tolerances.linear.is_finite()
+        || target.tolerances.linear <= 0.0
+        || !target.tolerances.angular.is_finite()
+        || target.tolerances.angular <= 0.0
+    {
+        return Err(CodecError::Malformed(
+            "source-less F3D tolerances must be finite and positive".into(),
+        ));
+    }
     let mut bytes = b"ASM BinaryFile8<".to_vec();
     bytes.extend_from_slice(&[0; 8]);
     bytes.extend_from_slice(&7u64.to_be_bytes());
@@ -2435,8 +2736,8 @@ fn native_smbh_header() -> Result<Vec<u8>, CodecError> {
     native_string(&mut bytes, "ASM 231.6.3.65535 OSX")?;
     native_string(&mut bytes, "Thu Jan  1 00:00:00 1970")?;
     native_f64(&mut bytes, 60.0);
-    native_f64(&mut bytes, 1e-6);
-    native_f64(&mut bytes, 1e-10);
+    native_f64(&mut bytes, target.tolerances.linear);
+    native_f64(&mut bytes, target.tolerances.angular);
     Ok(bytes)
 }
 
