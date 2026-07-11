@@ -291,6 +291,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for procedural in &ir.model.procedural_curves {
+        if let ProceduralCurveDefinition::Subset {
+            parameter_range, ..
+        } = &procedural.definition
+        {
+            if !parameter_range.iter().all(|value| value.is_finite())
+                || parameter_range[0] > parameter_range[1]
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "subset-curve range is not finite and ordered",
+                );
+            }
+            continue;
+        }
         if let ProceduralCurveDefinition::VectorOffset {
             parameter_range,
             offset,

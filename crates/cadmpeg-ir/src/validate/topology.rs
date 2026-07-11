@@ -393,6 +393,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
             }
+            ProceduralCurveDefinition::Subset { source, .. } => {
+                if !ids.curves.contains(&source.0) {
+                    ref_error(findings, &procedural.id.0, "curve", &source.0);
+                }
+            }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {
                 if let Some(surface) = blend_surface {
                     if !ids.surfaces.contains(&surface.0) {

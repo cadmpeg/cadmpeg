@@ -607,6 +607,39 @@ fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+        .expect("generated edge reference offsets");
+    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "intcurve");
+    t_ident(&mut curve, "curve");
+    t_ref(&mut curve, -1);
+    t_long(&mut curve, -1);
+    t_ref(&mut curve, -1);
+    curve.push(0x0f);
+    t_ident(&mut curve, "subset_int_cur");
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut curve, -1.5);
+    t_dbl(&mut curve, 3.5);
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut curve, 0.0006);
+    curve.push(0x10);
+    t_end(&mut curve);
+    bytes.splice(delta..delta, curve);
+    bytes
+}
+
 fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -6817,6 +6850,86 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         round_trip.ir.model.procedural_curves[0].cache_fit_tolerance,
         Some(0.008)
     );
+}
+
+#[test]
+fn generated_subset_curve_decodes_edits_and_writes_source_less() {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated subset decode");
+    let ProceduralCurveDefinition::Subset {
+        source,
+        parameter_range,
+    } = &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected subset construction")
+    };
+    assert_eq!(*parameter_range, [-1.5, 3.5]);
+    assert!(result
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id == *source));
+    assert!(
+        (result.ir.model.procedural_curves[0]
+            .cache_fit_tolerance
+            .expect("subset fit tolerance")
+            - 0.006)
+            .abs()
+            < 1e-12
+    );
+
+    let mut edited = result.ir.clone();
+    let ProceduralCurveDefinition::Subset {
+        parameter_range, ..
+    } = &mut edited.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    *parameter_range = [-2.0, 4.0];
+    let expected_edit = edited.model.procedural_curves[0].definition.clone();
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("subset regeneration");
+    let regenerated = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated subset decode");
+    assert_eq!(
+        regenerated.ir.model.procedural_curves[0].definition,
+        expected_edit
+    );
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less subset encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less subset round trip");
+    let ProceduralCurveDefinition::Subset {
+        source,
+        parameter_range,
+    } = &round_trip.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected round-trip subset")
+    };
+    assert_eq!(*parameter_range, [-1.5, 3.5]);
+    assert!(round_trip
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id == *source));
 }
 
 #[test]

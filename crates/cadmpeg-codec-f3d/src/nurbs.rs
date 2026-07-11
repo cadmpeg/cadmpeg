@@ -901,6 +901,9 @@ pub fn decode_curve_cache_resolving_refs(
 /// Source curve and tail fields decoded from an `offset_int_cur` construction.
 pub(crate) type VectorOffsetDefinition = (NurbsCurve, [f64; 2], Vector3, [String; 2], [i64; 2]);
 
+/// Parent curve and retained range decoded from a `subset_int_cur` construction.
+pub(crate) type SubsetDefinition = (NurbsCurve, [f64; 2]);
+
 /// A procedural curve cache together with its native subtype and fit contract.
 pub struct DecodedProceduralCurve {
     /// The cached B-spline curve (control points scaled centimetre→
@@ -913,6 +916,8 @@ pub struct DecodedProceduralCurve {
     pub definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
     /// Source curve and tail fields of an `offset_int_cur` construction.
     pub vector_offset: Option<VectorOffsetDefinition>,
+    /// Parent curve and retained range of a `subset_int_cur` construction.
+    pub subset: Option<SubsetDefinition>,
     /// `surface_fit_tolerance` of the cached B-spline block, if present
     /// ([spec §7.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#75-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
     pub cache_fit_tolerance: Option<f64>,
@@ -950,6 +955,7 @@ fn decode_procedural_curve_recursive(
                 .unwrap_or_else(|| "intcurve".to_string()),
             definition: decode_helix_definition(bytes),
             vector_offset: decode_vector_offset_definition(bytes, int_width),
+            subset: decode_subset_definition(bytes, int_width),
             cache_fit_tolerance,
         });
     }
@@ -970,6 +976,25 @@ fn decode_procedural_curve_recursive(
         }
     }
     None
+}
+
+fn decode_subset_definition(bytes: &[u8], int_width: usize) -> Option<SubsetDefinition> {
+    let name = b"subset_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let start = marker + name.len() + 3;
+    let source_marker = marker_positions(&bytes[start..]).into_iter().next()? + start;
+    let source = decode_curve_block(bytes, source_marker, int_width)?;
+    let mut position = source.end;
+    let range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    Some((source.curve, range))
 }
 
 fn decode_vector_offset_definition(

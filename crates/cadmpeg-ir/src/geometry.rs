@@ -455,6 +455,13 @@ pub enum ProceduralCurveDefinition {
         /// Native integer role codes paired with `labels`.
         codes: [i64; 2],
     },
+    /// A parameter sub-range of a parent curve.
+    Subset {
+        /// Parent curve being restricted.
+        source: CurveId,
+        /// Native parameter interval retained from the parent.
+        parameter_range: [f64; 2],
+    },
     /// Spine or center curve of a blend surface.
     BlendSpine {
         /// The blend surface this curve is the spine of, when known.

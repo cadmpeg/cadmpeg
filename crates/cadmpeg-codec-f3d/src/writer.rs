@@ -3412,6 +3412,33 @@ fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+        source,
+        parameter_range,
+    } = &procedural.definition
+    {
+        let source = target
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *source)
+            .ok_or_else(|| CodecError::Malformed("subset source curve is missing".into()))?;
+        let CurveGeometry::Nurbs(source) = &source.geometry else {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D subset requires a NURBS source curve".into(),
+            ));
+        };
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "subset_int_cur")?;
+        native_nurbs_curve(bytes, source)?;
+        native_f64(bytes, parameter_range[0]);
+        native_f64(bytes, parameter_range[1]);
+        native_nurbs_curve(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        bytes.push(0x10);
+        return Ok(true);
+    }
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
         angle_range,
         center,
@@ -7088,6 +7115,18 @@ fn validate_procedural_curve_edits(
             {
                 Some(after.definition.clone())
             }
+            (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                    source: before_source,
+                    ..
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                    source: after_source,
+                    ..
+                },
+            ) if before_source == after_source && before.definition != after.definition => {
+                Some(after.definition.clone())
+            }
             (before, after) if before == after => None,
             _ => {
                 return Err(CodecError::NotImplemented(format!(
@@ -7348,6 +7387,9 @@ fn patch_framed_geometry(
                     }
                     cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset { .. } => {
                         patch_vector_offset_definition(bytes, record, definition)?;
+                    }
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { .. } => {
+                        patch_subset_definition(bytes, record, definition)?;
                     }
                     _ => unreachable!("procedural edit validation limits writable definitions"),
                 }
@@ -8051,6 +8093,51 @@ fn patch_vector_offset_definition(
         0,
         [offset.x / 10.0, offset.y / 10.0, offset.z / 10.0],
     )
+}
+
+fn patch_subset_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> Result<(), CodecError> {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+        parameter_range, ..
+    } = definition
+    else {
+        return Err(CodecError::Malformed(
+            "subset patch received another definition".into(),
+        ));
+    };
+    let end = record.offset + record.len;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("subset record is truncated".into()))?;
+    if !record_bytes
+        .windows(b"subset_int_cur".len())
+        .any(|window| window == b"subset_int_cur")
+    {
+        return Err(CodecError::Malformed(format!(
+            "procedural curve record {} is not a subset",
+            record.index
+        )));
+    }
+    let source = crate::nurbs::first_curve_patch_layout(record_bytes).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "subset record {} has no parent curve",
+            record.index
+        ))
+    })?;
+    for (ordinal, value) in parameter_range.iter().copied().enumerate() {
+        let tag = record.offset + source.end + ordinal * 9;
+        if bytes.get(tag) != Some(&0x06) {
+            return Err(CodecError::Malformed(format!(
+                "subset record {} has no parameter range",
+                record.index
+            )));
+        }
+        bytes[tag + 1..tag + 9].copy_from_slice(&value.to_le_bytes());
+    }
+    Ok(())
 }
 
 fn patch_nurbs_pcurve_record(

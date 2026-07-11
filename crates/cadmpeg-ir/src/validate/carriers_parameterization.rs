@@ -85,6 +85,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralCurveDefinition::VectorOffset { source, .. } => {
                 curves.insert(&source.0);
             }
+            ProceduralCurveDefinition::Subset { source, .. } => {
+                curves.insert(&source.0);
+            }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {
                 if let Some(surface) = blend_surface {
                     surfaces.insert(&surface.0);
