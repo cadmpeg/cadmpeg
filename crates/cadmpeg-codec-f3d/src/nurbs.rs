@@ -904,6 +904,9 @@ pub(crate) type VectorOffsetDefinition = (NurbsCurve, [f64; 2], Vector3, [String
 /// Parent curve and retained range decoded from a `subset_int_cur` construction.
 pub(crate) type SubsetDefinition = (NurbsCurve, [f64; 2]);
 
+/// Parameter arrays and child curves decoded from a `comp_int_cur` construction.
+pub(crate) type CompoundDefinition = (Vec<f64>, Vec<f64>, Vec<NurbsCurve>);
+
 /// A procedural curve cache together with its native subtype and fit contract.
 pub struct DecodedProceduralCurve {
     /// The cached B-spline curve (control points scaled centimetre→
@@ -918,6 +921,8 @@ pub struct DecodedProceduralCurve {
     pub vector_offset: Option<VectorOffsetDefinition>,
     /// Parent curve and retained range of a `subset_int_cur` construction.
     pub subset: Option<SubsetDefinition>,
+    /// Parameter arrays and ordered child curves of a `comp_int_cur` construction.
+    pub compound: Option<CompoundDefinition>,
     /// `surface_fit_tolerance` of the cached B-spline block, if present
     /// ([spec §7.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#75-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
     pub cache_fit_tolerance: Option<f64>,
@@ -949,13 +954,20 @@ fn decode_procedural_curve_recursive(
         let cache_fit_tolerance = (bytes.get(decoded.end) == Some(&0x06))
             .then(|| read_f64(bytes, decoded.end + 1).map(|value| value * LEN_TO_MM))
             .flatten();
+        let native_kind =
+            first_construction_subtype(bytes).unwrap_or_else(|| "intcurve".to_string());
+        let definition = if native_kind == "exact_int_cur" {
+            Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact)
+        } else {
+            decode_helix_definition(bytes)
+        };
         return Some(DecodedProceduralCurve {
             curve: decoded.curve,
-            native_kind: first_construction_subtype(bytes)
-                .unwrap_or_else(|| "intcurve".to_string()),
-            definition: decode_helix_definition(bytes),
+            native_kind,
+            definition,
             vector_offset: decode_vector_offset_definition(bytes, int_width),
             subset: decode_subset_definition(bytes, int_width),
+            compound: decode_compound_definition(bytes, int_width),
             cache_fit_tolerance,
         });
     }
@@ -976,6 +988,57 @@ fn decode_procedural_curve_recursive(
         }
     }
     None
+}
+
+fn decode_compound_definition(bytes: &[u8], int_width: usize) -> Option<CompoundDefinition> {
+    let name = b"comp_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let mut position = marker + name.len() + 3;
+    let parameters = take_float_array(bytes, &mut position, int_width)?;
+    let count = usize::try_from(take_tagged_int(bytes, &mut position, 0x04, int_width)?).ok()?;
+    if count == 0 {
+        return None;
+    }
+    let mut component_parameters = Vec::with_capacity(count);
+    for _ in 0..count {
+        if bytes.get(position) != Some(&0x06) {
+            return None;
+        }
+        component_parameters.push(read_f64(bytes, position + 1)?);
+        position += 9;
+    }
+    if !matches!(bytes.get(position), Some(0x0a | 0x0b)) {
+        return None;
+    }
+    position += 1;
+    let mut components = Vec::with_capacity(count);
+    for _ in 0..count {
+        let relative = marker_positions(bytes.get(position..)?)
+            .into_iter()
+            .next()?;
+        let decoded = decode_curve_block(bytes, position + relative, int_width)?;
+        components.push(decoded.curve);
+        position = decoded.end;
+    }
+    Some((parameters, component_parameters, components))
+}
+
+fn take_float_array(bytes: &[u8], position: &mut usize, int_width: usize) -> Option<Vec<f64>> {
+    let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        if bytes.get(*position) != Some(&0x06) {
+            return None;
+        }
+        values.push(read_f64(bytes, *position + 1)?);
+        *position += 9;
+    }
+    Some(values)
 }
 
 fn decode_subset_definition(bytes: &[u8], int_width: usize) -> Option<SubsetDefinition> {

@@ -640,6 +640,76 @@ fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+        .expect("generated edge reference offsets");
+    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "intcurve");
+    t_ident(&mut curve, "curve");
+    t_ref(&mut curve, -1);
+    t_long(&mut curve, -1);
+    t_ref(&mut curve, -1);
+    curve.push(0x0f);
+    t_ident(&mut curve, "exact_int_cur");
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut curve, 0.0004);
+    curve.push(0x10);
+    t_end(&mut curve);
+    bytes.splice(delta..delta, curve);
+    bytes
+}
+
+fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+        .expect("generated edge reference offsets");
+    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "intcurve");
+    t_ident(&mut curve, "curve");
+    t_ref(&mut curve, -1);
+    t_long(&mut curve, -1);
+    t_ref(&mut curve, -1);
+    curve.push(0x0f);
+    t_ident(&mut curve, "comp_int_cur");
+    t_long(&mut curve, 3);
+    for value in [0.0, 0.5, 1.0] {
+        t_dbl(&mut curve, value);
+    }
+    t_long(&mut curve, 2);
+    t_dbl(&mut curve, -2.0);
+    t_dbl(&mut curve, 4.0);
+    curve.push(0x0b);
+    curve.extend_from_slice(&generated_curve_block());
+    curve.extend_from_slice(&generated_curve_block());
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut curve, 0.0003);
+    curve.push(0x10);
+    t_end(&mut curve);
+    bytes.splice(delta..delta, curve);
+    bytes
+}
+
 fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -6930,6 +7000,100 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .curves
         .iter()
         .any(|curve| curve.id == *source));
+}
+
+#[test]
+fn generated_exact_intcurve_preserves_native_construction_source_less() {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_exact_curve_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated exact intcurve decode");
+    assert_eq!(
+        result.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::Exact
+    );
+    assert_eq!(
+        result.ir.model.procedural_curves[0].cache_fit_tolerance,
+        Some(0.004)
+    );
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less exact intcurve encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less exact intcurve round trip");
+    assert_eq!(
+        round_trip.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::Exact
+    );
+    assert_eq!(
+        round_trip.ir.model.procedural_curves[0].cache_fit_tolerance,
+        Some(0.004)
+    );
+}
+
+#[test]
+fn generated_compound_intcurve_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_compound_curve_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated compound intcurve decode");
+    let ProceduralCurveDefinition::Compound {
+        parameters,
+        component_parameters,
+        components,
+    } = &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected compound construction")
+    };
+    assert_eq!(parameters, &[0.0, 0.5, 1.0]);
+    assert_eq!(component_parameters, &[-2.0, 4.0]);
+    assert_eq!(components.len(), 2);
+    assert!(components.iter().all(|component| result
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id == *component)));
+    assert_eq!(
+        result.ir.model.procedural_curves[0].cache_fit_tolerance,
+        Some(0.003)
+    );
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less compound intcurve encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less compound intcurve round trip");
+    let ProceduralCurveDefinition::Compound {
+        parameters,
+        component_parameters,
+        components,
+    } = &round_trip.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected round-trip compound construction")
+    };
+    assert_eq!(parameters, &[0.0, 0.5, 1.0]);
+    assert_eq!(component_parameters, &[-2.0, 4.0]);
+    assert_eq!(components.len(), 2);
 }
 
 #[test]

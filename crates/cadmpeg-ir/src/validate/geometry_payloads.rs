@@ -291,6 +291,32 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for procedural in &ir.model.procedural_curves {
+        if let ProceduralCurveDefinition::Compound {
+            parameters,
+            component_parameters,
+            components,
+        } = &procedural.definition
+        {
+            if components.is_empty() || component_parameters.len() != components.len() {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "compound components are empty or do not match component parameters",
+                );
+            }
+            if parameters
+                .iter()
+                .chain(component_parameters)
+                .any(|value| !value.is_finite())
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "compound parameters are not finite",
+                );
+            }
+            continue;
+        }
         if let ProceduralCurveDefinition::Subset {
             parameter_range, ..
         } = &procedural.definition

@@ -398,6 +398,17 @@ pub struct ProceduralCurve {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralCurveDefinition {
+    /// An exact native intcurve whose solved NURBS cache is authoritative.
+    Exact,
+    /// Ordered compound of native child curves with construction parameters.
+    Compound {
+        /// Leading native parameter array.
+        parameters: Vec<f64>,
+        /// One native scalar paired with each child curve.
+        component_parameters: Vec<f64>,
+        /// Ordered child curves forming the compound construction.
+        components: Vec<CurveId>,
+    },
     /// Circular or conical helix around an axis.
     Helix {
         /// Native angular parameter interval.

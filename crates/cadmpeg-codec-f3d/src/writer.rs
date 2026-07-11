@@ -3376,6 +3376,69 @@ fn native_procedural_curve(
     ) {
         return Ok(false);
     }
+    if matches!(
+        procedural.definition,
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
+    ) {
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "exact_int_cur")?;
+        native_nurbs_curve(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        bytes.push(0x10);
+        return Ok(true);
+    }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
+        parameters,
+        component_parameters,
+        components,
+    } = &procedural.definition
+    {
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "comp_int_cur")?;
+        native_i64(
+            bytes,
+            i64::try_from(parameters.len()).map_err(|_| {
+                CodecError::NotImplemented("compound parameter count exceeds i64".into())
+            })?,
+        );
+        for value in parameters {
+            native_f64(bytes, *value);
+        }
+        native_i64(
+            bytes,
+            i64::try_from(components.len()).map_err(|_| {
+                CodecError::NotImplemented("compound component count exceeds i64".into())
+            })?,
+        );
+        for value in component_parameters {
+            native_f64(bytes, *value);
+        }
+        bytes.push(0x0b);
+        for component in components {
+            let component = target
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *component)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "compound curve references missing component {component}"
+                    ))
+                })?;
+            let CurveGeometry::Nurbs(component) = &component.geometry else {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D compound curves require NURBS components".into(),
+                ));
+            };
+            native_nurbs_curve(bytes, component)?;
+        }
+        native_nurbs_curve(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        bytes.push(0x10);
+        return Ok(true);
+    }
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
         source,
         parameter_range,

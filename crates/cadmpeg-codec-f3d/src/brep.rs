@@ -599,6 +599,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                         decoded.definition,
                                                         decoded.vector_offset,
                                                         decoded.subset,
+                                                        decoded.compound,
                                                         decoded.cache_fit_tolerance,
                                                     ),
                                                 );
@@ -693,6 +694,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                             decoded.definition,
                                                             decoded.vector_offset,
                                                             decoded.subset,
+                                                            decoded.compound,
                                                             decoded.cache_fit_tolerance,
                                                         ),
                                                     );
@@ -850,6 +852,28 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             source: source_id,
                             parameter_range,
                         }
+                    } else if let Some((parameters, component_parameters, components)) =
+                        procedural.4
+                    {
+                        let components = components
+                            .into_iter()
+                            .enumerate()
+                            .map(|(component, curve)| {
+                                let id = CurveId(format!(
+                                    "f3d:brep:procedural_curve#{i}:component#{component}"
+                                ));
+                                out.curves.push(Curve {
+                                    id: id.clone(),
+                                    geometry: CurveGeometry::Nurbs(curve),
+                                });
+                                id
+                            })
+                            .collect();
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
+                            parameters,
+                            component_parameters,
+                            components,
+                        }
                     } else {
                         procedural.1.unwrap_or(
                             cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
@@ -861,7 +885,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         id: format!("f3d:brep:procedural_curve#{i}").into(),
                         curve: CurveId(id(i)),
                         definition,
-                        cache_fit_tolerance: procedural.4,
+                        cache_fit_tolerance: procedural.5,
                     });
                 }
             }

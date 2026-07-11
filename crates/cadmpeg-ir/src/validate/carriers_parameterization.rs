@@ -62,7 +62,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
     for procedural in &ir.model.procedural_curves {
         curves.insert(&procedural.curve.0);
         match &procedural.definition {
-            ProceduralCurveDefinition::Helix { .. } => {}
+            ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
+            ProceduralCurveDefinition::Compound { components, .. } => {
+                curves.extend(components.iter().map(|component| component.0.as_str()));
+            }
             ProceduralCurveDefinition::Intersection { supports } => {
                 for support in supports.iter().flatten() {
                     surfaces.insert(&support.0);
