@@ -7068,9 +7068,13 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
         .curves
         .iter()
         .any(|curve| curve.id == *component)));
-    assert_eq!(
-        result.ir.model.procedural_curves[0].cache_fit_tolerance,
-        Some(0.003)
+    assert!(
+        (result.ir.model.procedural_curves[0]
+            .cache_fit_tolerance
+            .expect("compound fit tolerance")
+            - 0.003)
+            .abs()
+            < 1e-12
     );
 
     let mut source_less = result.ir;
