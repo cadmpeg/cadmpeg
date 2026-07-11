@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reads Rhino `.3dm` files into [`cadmpeg_ir::document::CadIr`].
 //!
-//! The codec currently provides format detection only. Inspection and decoding
-//! are reserved for later implementation phases.
+//! The codec provides bounded 3DM container inspection and container-only
+//! decoding for the full-decode archive bands.
 
 use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
 };
 
 pub(crate) mod chunks;
+pub(crate) mod container;
 
 const MAGIC: &[u8] = chunks::MAGIC;
 
@@ -29,20 +30,16 @@ impl Codec for RhinoCodec {
         }
     }
 
-    fn inspect(&self, _reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        Err(CodecError::NotImplemented(
-            "Rhino 3DM inspection is not implemented".to_string(),
-        ))
+    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
+        container::inspect(reader)
     }
 
     fn decode(
         &self,
-        _reader: &mut dyn ReadSeek,
-        _options: &DecodeOptions,
+        reader: &mut dyn ReadSeek,
+        options: &DecodeOptions,
     ) -> Result<DecodeResult, CodecError> {
-        Err(CodecError::NotImplemented(
-            "Rhino 3DM decoding is not implemented".to_string(),
-        ))
+        container::decode(reader, options.container_only)
     }
 }
 

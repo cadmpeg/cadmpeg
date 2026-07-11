@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::codec::{Codec, Confidence};
+use std::io::Cursor;
+
+use cadmpeg_ir::codec::{Codec, CodecError, Confidence, DecodeOptions};
+use cadmpeg_ir::IR_VERSION;
 
 use super::chunks::{
     anonymous_version, checked_count_bytes, chunk_at, crc16, packed_version, parse_eof,
@@ -26,6 +29,12 @@ fn long_chunk(archive: ArchiveVersion, typecode: u32, body: &[u8]) -> Vec<u8> {
     }
     bytes.extend(body);
     bytes
+}
+
+fn crc_chunk(archive: ArchiveVersion, typecode: u32, body: &[u8]) -> Vec<u8> {
+    let mut payload = body.to_vec();
+    payload.extend(crc32fast::hash(body).to_le_bytes());
+    long_chunk(archive, typecode, &payload)
 }
 
 fn eof(archive: ArchiveVersion, file_size: usize) -> Vec<u8> {
@@ -250,4 +259,125 @@ fn checked_counts_never_allocate_from_invalid_values() {
     assert!(checked_count_bytes(-1, 4, 12, 100, 0).is_err());
     assert!(checked_count_bytes(4, 4, 12, 100, 0).is_err());
     assert!(checked_count_bytes(3, 4, 12, 2, 0).is_err());
+}
+
+fn short_chunk(archive: ArchiveVersion, typecode: u32, value: i64) -> Vec<u8> {
+    let mut bytes = (typecode | TCODE_SHORT).to_le_bytes().to_vec();
+    if archive.uses_eight_byte_values() {
+        bytes.extend(value.to_le_bytes());
+    } else {
+        bytes.extend((value as i32).to_le_bytes());
+    }
+    bytes
+}
+
+fn table(archive: ArchiveVersion, typecode: u32, records: &[Vec<u8>]) -> Vec<u8> {
+    let mut body = records.concat();
+    body.extend(short_chunk(archive, super::chunks::TCODE_ENDOFTABLE, 0));
+    long_chunk(archive, typecode, &body)
+}
+
+fn minimal_document(version: &str, tables: &[Vec<u8>]) -> Vec<u8> {
+    let archive = parse_header(&header(version)).unwrap().archive_version;
+    let mut bytes = header(version);
+    bytes.extend(long_chunk(archive, 1, b"comment"));
+    for table in tables {
+        bytes.extend(table);
+    }
+    let eof_offset = bytes.len();
+    bytes.extend(eof(archive, 0));
+    let marker = eof(archive, bytes.len());
+    bytes[eof_offset..].copy_from_slice(&marker);
+    bytes
+}
+
+#[test]
+fn scans_metadata_tables_and_reports_offsets() {
+    let archive = ArchiveVersion::V5;
+    let object_type = short_chunk(archive, 0x82a0_0071, 0x20);
+    let object = crc_chunk(archive, 0x2000_8070, &object_type);
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[object]),
+        ],
+    );
+    let summary = RhinoCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    assert_eq!(summary.container_kind, "3dm-chunks");
+    assert_eq!(summary.entries.len(), 3);
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note == "archive version 50"));
+    assert_eq!(
+        summary.entries[2].attributes.get("record_count"),
+        Some(&"1".to_string())
+    );
+    assert_eq!(
+        summary.entries[2].attributes.get("object_typecode_0x20"),
+        Some(&"1".to_string())
+    );
+}
+
+#[test]
+fn container_only_returns_empty_current_ir_for_full_bands() {
+    for version in ["50", "60", "70", "80"] {
+        let bytes = minimal_document(version, &[]);
+        let result = RhinoCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    container_only: true,
+                },
+            )
+            .unwrap();
+        assert_eq!(result.ir.ir_version, IR_VERSION);
+        assert!(result.ir.model.bodies.is_empty());
+        assert!(result.ir.model.subds.is_empty());
+        assert!(result.report.container_only);
+        assert_eq!(result.report.format, "rhino");
+    }
+}
+
+#[test]
+fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
+    for version in ["1", "2", "5", "999"] {
+        let bytes = header(version);
+        let summary = RhinoCodec.inspect(&mut Cursor::new(bytes.clone())).unwrap();
+        assert!(summary.entries.is_empty());
+        assert_eq!(summary.container_kind, "3dm-chunks");
+        let result = RhinoCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                container_only: true,
+            },
+        );
+        assert!(matches!(result, Err(CodecError::NotImplemented(_))));
+    }
+}
+
+#[test]
+fn requires_end_of_table_and_rejects_wrong_order() {
+    let archive = ArchiveVersion::V5;
+    let mut missing = header("50");
+    missing.extend(long_chunk(archive, 1, b"comment"));
+    missing.extend(long_chunk(archive, 0x1000_0014, &[]));
+    assert!(matches!(
+        RhinoCodec.inspect(&mut Cursor::new(missing)),
+        Err(CodecError::Malformed(_))
+    ));
+
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0014, &[]),
+        ],
+    );
+    assert!(matches!(
+        RhinoCodec.inspect(&mut Cursor::new(bytes)),
+        Err(CodecError::Malformed(_))
+    ));
 }

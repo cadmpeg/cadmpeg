@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino 3DM headers, chunks, checksums, and bounded readers.
 
-#![allow(dead_code)]
-
 use std::fmt;
 
 /// The fixed ASCII prefix of a 3DM file header.
 pub(crate) const MAGIC: &[u8; 24] = b"3D Geometry File Format ";
 /// The end-of-file chunk typecode.
 pub(crate) const TCODE_ENDOFFILE: u32 = 0x0000_7fff;
+/// The short table terminator typecode.
+pub(crate) const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
 /// The legacy summary chunk typecode.
 pub(crate) const TCODE_SUMMARY: u32 = 0x0000_0002;
 /// The V1 class UUID chunk typecode.
@@ -187,6 +187,8 @@ pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BoundedReader<'a> {
     bytes: &'a [u8],
+    #[cfg(test)]
+    #[allow(dead_code)]
     start: usize,
     end: usize,
     position: usize,
@@ -204,6 +206,7 @@ impl<'a> BoundedReader<'a> {
         }
         Ok(Self {
             bytes,
+            #[cfg(test)]
             start,
             end,
             position: start,
@@ -216,16 +219,22 @@ impl<'a> BoundedReader<'a> {
     }
 
     /// Returns the absolute end offset.
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn end(&self) -> usize {
         self.end
     }
 
     /// Returns the unread byte count.
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn remaining(&self) -> usize {
         self.end - self.position
     }
 
     /// Skips exactly `count` bytes.
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn skip(&mut self, count: usize) -> Result<(), FramingError> {
         let end = self
             .position
@@ -239,6 +248,8 @@ impl<'a> BoundedReader<'a> {
     }
 
     /// Reads a byte.
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn u8(&mut self) -> Result<u8, FramingError> {
         let bytes = self.take(1)?;
         Ok(bytes[0])
@@ -297,6 +308,8 @@ impl<'a> BoundedReader<'a> {
     }
 
     /// Creates a child reader for a validated range.
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn child(&self, start: usize, end: usize) -> Result<Self, FramingError> {
         if start < self.start || end > self.end || start > end {
             return Err(FramingError::OutOfBounds {
@@ -310,6 +323,7 @@ impl<'a> BoundedReader<'a> {
 }
 
 /// Checks an untrusted signed count before converting it or allocating.
+#[cfg(test)]
 pub(crate) fn checked_count_bytes(
     count: i32,
     element_size: usize,
@@ -407,7 +421,7 @@ pub(crate) fn chunk_at(
 ) -> Result<Chunk, FramingError> {
     let mut reader = BoundedReader::new(bytes, offset, parent_end)?;
     let typecode = reader.u32()?;
-    if typecode & 0x0000_4000 != 0 && typecode != TCODE_ENDOFFILE {
+    if typecode & 0x0000_4000 != 0 && typecode != TCODE_ENDOFFILE && typecode != TCODE_ENDOFTABLE {
         return Err(FramingError::InvalidTypecode(typecode));
     }
     let short = typecode & TCODE_SHORT != 0;
@@ -551,11 +565,13 @@ pub(crate) fn verify_checksum(bytes: &[u8], chunk: &Chunk) -> Result<ChecksumSta
 }
 
 /// Decodes a packed one-byte payload version.
+#[cfg(test)]
 pub(crate) fn packed_version(value: u8) -> (i32, i32) {
     (i32::from(value >> 4), i32::from(value & 0x0f))
 }
 
 /// Decodes an anonymous little-endian `(i32 major, i32 minor)` version.
+#[cfg(test)]
 pub(crate) fn anonymous_version(
     reader: &mut BoundedReader<'_>,
 ) -> Result<(i32, i32), FramingError> {
