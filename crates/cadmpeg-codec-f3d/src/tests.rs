@@ -2106,6 +2106,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
                 origin: start,
                 direction,
             },
+            source_object: None,
         });
         source_less.model.edges[index].curve = Some(id);
         source_less.model.edges[index].param_range = Some([0.0, length]);
@@ -2174,6 +2175,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
     source_less.model.edges[0].param_range = Some([0.25, 1.75]);
@@ -2213,6 +2215,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
     source_less.model.edges[0].param_range = Some([0.5, 2.0]);
@@ -2453,6 +2456,7 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
     source_less.model.edges[0].param_range = Some([-1.0, 2.0]);
@@ -2572,6 +2576,7 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected_curve.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
 
@@ -2768,6 +2773,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected_curve.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
     let pcurve_id = PcurveId("generated:pcurve#0".into());
@@ -2866,6 +2872,7 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected_curve.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
     source_less.model.edges[0].param_range = Some([0.25, 1.5]);
@@ -2921,6 +2928,7 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: ellipse.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
 

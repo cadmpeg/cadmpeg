@@ -191,6 +191,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: surf.geometry,
+                source_object: None,
             });
             if let Some(node) = graph.at_pos(surf.pos) {
                 surfaces_by_xmt.insert(node.xmt, id);
@@ -210,6 +211,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: surf.geometry,
+                source_object: None,
             });
             if let Some(node) = graph.at_pos(surf.pos) {
                 surfaces_by_xmt.insert(node.xmt, id);
@@ -235,6 +237,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry: crv.geometry,
+                source_object: None,
             });
             if let Some(node) = graph.at_pos(crv.pos) {
                 curves_by_xmt.insert(node.xmt, id);
@@ -254,6 +257,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry: crv.geometry,
+                source_object: None,
             });
             if let Some(node) = graph.at_pos(crv.pos) {
                 curves_by_xmt.insert(node.xmt, id);

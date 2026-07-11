@@ -822,6 +822,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 out.surfaces.push(Surface {
                     id: SurfaceId(id(i)),
                     geometry,
+                    source_object: None,
                 });
                 if let Some(procedural) = procedural_surface_defs.remove(&i) {
                     let definition = match procedural.definition {
@@ -834,6 +835,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             out.curves.push(Curve {
                                 id: directrix_id.clone(),
                                 geometry: CurveGeometry::Nurbs(directrix),
+                                source_object: None,
                             });
                             ProceduralSurfaceDefinition::Extrusion {
                                 directrix: directrix_id,
@@ -855,6 +857,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     out.surfaces.push(Surface {
                                         id: support_id.clone(),
                                         geometry: SurfaceGeometry::Nurbs(support),
+                                        source_object: None,
                                     });
                                     resolved_supports[side] = Some(BlendSupport {
                                         surface: support_id,
@@ -868,6 +871,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 out.curves.push(Curve {
                                     id: spine_id.clone(),
                                     geometry: CurveGeometry::Nurbs(spine),
+                                    source_object: None,
                                 });
                                 spine_id
                             });
@@ -903,6 +907,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     geometry: SurfaceGeometry::Unknown {
                         record: Some(UnknownId(unknown_record_id(r))),
                     },
+                    source_object: None,
                 });
             }
             _ if kept_curves.contains(&i) => {
@@ -916,6 +921,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         out.curves.push(Curve {
                             id: CurveId(format!("{}:reversed", id(i))),
                             geometry: reversed,
+                            source_object: None,
                         });
                     } else {
                         reverse_curve_geometry(&mut geometry);
@@ -924,6 +930,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 out.curves.push(Curve {
                     id: CurveId(id(i)),
                     geometry,
+                    source_object: None,
                 });
                 if let Some(procedural) = procedural_curve_defs.remove(&i) {
                     let definition = if let Some((source, parameter_range, offset, labels, codes)) =
@@ -933,6 +940,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         out.curves.push(Curve {
                             id: source_id.clone(),
                             geometry: CurveGeometry::Nurbs(source),
+                            source_object: None,
                         });
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
                             source: source_id,
@@ -946,6 +954,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         out.curves.push(Curve {
                             id: source_id.clone(),
                             geometry: CurveGeometry::Nurbs(source),
+                            source_object: None,
                         });
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                             source: source_id,
@@ -963,6 +972,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
                                     geometry,
+                                    source_object: None,
                                 });
                                 Some(id)
                             })
@@ -1003,6 +1013,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
                                     geometry,
+                                    source_object: None,
                                 });
                                 Some(id)
                             })
@@ -1042,6 +1053,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
                                     geometry,
+                                    source_object: None,
                                 });
                                 id
                             })
@@ -1084,6 +1096,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
                                     geometry,
+                                    source_object: None,
                                 });
                                 Some(id)
                             })
@@ -1125,6 +1138,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
                                     geometry,
+                                    source_object: None,
                                 });
                                 Some(id)
                             })
@@ -1145,6 +1159,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         out.surfaces.push(Surface {
                             id: cast_surface.clone(),
                             geometry: embedded.cast_surface,
+                            source_object: None,
                         });
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
                             context: cadmpeg_ir::geometry::IntcurveSupportContext {
@@ -1174,6 +1189,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
                                     geometry,
+                                    source_object: None,
                                 });
                                 Some(id)
                             })
@@ -1193,6 +1209,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         out.curves.push(Curve {
                             id: base.clone(),
                             geometry: CurveGeometry::Nurbs(embedded.base),
+                            source_object: None,
                         });
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
                             context: cadmpeg_ir::geometry::IntcurveSupportContext {
@@ -1226,6 +1243,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     out.surfaces.push(Surface {
                                         id: id.clone(),
                                         geometry,
+                                        source_object: None,
                                     });
                                     id
                                 })
@@ -1262,6 +1280,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         out.curves.push(Curve {
                             id: bend.clone(),
                             geometry: CurveGeometry::Nurbs(embedded.bend),
+                            source_object: None,
                         });
                         let data = match embedded.data {
                             nurbs::EmbeddedDeformableData::VectorField {
@@ -1278,6 +1297,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 out.surfaces.push(Surface {
                                     id: surface.clone(),
                                     geometry,
+                                    source_object: None,
                                 });
                                 cadmpeg_ir::geometry::DeformableCurveData::Surface { surface }
                             }
@@ -1299,6 +1319,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
                                     geometry,
+                                    source_object: None,
                                 });
                                 Some(id)
                             })
@@ -1318,6 +1339,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         out.curves.push(Curve {
                             id: source.clone(),
                             geometry: CurveGeometry::Nurbs(embedded.source),
+                            source_object: None,
                         });
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
                             context: cadmpeg_ir::geometry::IntcurveSupportContext {
@@ -1346,6 +1368,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 out.curves.push(Curve {
                                     id: id.clone(),
                                     geometry: CurveGeometry::Nurbs(curve),
+                                    source_object: None,
                                 });
                                 id
                             })

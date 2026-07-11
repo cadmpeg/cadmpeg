@@ -48,7 +48,9 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::{Coedge, Edge, Point, Sense, Vertex};
 use cadmpeg_ir::CadIr;
@@ -777,15 +779,29 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.ir.model.procedural_surfaces.is_empty()
-            || !self.ir.model.procedural_curves.is_empty()
-        {
+        let procedural_surface_count = self
+            .ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .filter(|procedural| match &procedural.definition {
+                ProceduralSurfaceDefinition::Extrusion { .. }
+                | ProceduralSurfaceDefinition::Revolution { .. }
+                | ProceduralSurfaceDefinition::Sum { .. }
+                | ProceduralSurfaceDefinition::Sweep { .. }
+                | ProceduralSurfaceDefinition::Offset { .. }
+                | ProceduralSurfaceDefinition::Ruled { .. }
+                | ProceduralSurfaceDefinition::Blend { .. }
+                | ProceduralSurfaceDefinition::Unknown { .. } => true,
+            })
+            .count();
+        if procedural_surface_count > 0 || !self.ir.model.procedural_curves.is_empty() {
             self.loss(
                 LossCategory::Geometry,
                 Severity::Info,
                 format!(
                     "{} procedural surface definition(s) and {} procedural curve definition(s) were reduced to their solved STEP carriers",
-                    self.ir.model.procedural_surfaces.len(),
+                    procedural_surface_count,
                     self.ir.model.procedural_curves.len()
                 ),
             );

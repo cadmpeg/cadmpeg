@@ -75,6 +75,8 @@ pub struct SubdEdge {
 pub enum SubdEdgeTag {
     /// Smooth edge.
     Smooth,
+    /// Smooth-X edge with the source's distinct subdivision behavior.
+    SmoothX,
     /// Crease edge.
     Crease,
 }

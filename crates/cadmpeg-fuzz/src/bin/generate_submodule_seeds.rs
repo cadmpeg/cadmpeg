@@ -290,13 +290,12 @@ fn generate_nx_submodule_seeds() {
 // ============================================================================
 
 fn generate_ir_submodule_seeds() {
-    for stale in [
-        "seeds/ir_diff/minimal_left",
-        "seeds/ir_diff/minimal_right",
-        "seeds/ir_canonical_roundtrip/minimal",
-        "seeds/step_writer_custom/minimal",
+    for directory in [
+        "seeds/ir_diff",
+        "seeds/ir_canonical_roundtrip",
+        "seeds/step_writer_custom",
     ] {
-        let _ = fs::remove_file(stale);
+        clear_seed_directory(directory);
     }
 
     let empty = cadmpeg_ir::CadIr::empty(Default::default())
@@ -314,11 +313,25 @@ fn generate_ir_submodule_seeds() {
         write_seed("seeds/ir_diff", name, &input);
     }
 
-    for (name, data) in [("empty_v1.json", &empty), ("unit_cube_v1.json", &cube)] {
+    for (name, data) in [("empty_v2.json", &empty), ("unit_cube_v2.json", &cube)] {
         write_seed("seeds/ir_canonical_roundtrip", name, data.as_bytes());
 
         let mut custom = vec![0; 8];
         custom.extend_from_slice(data.as_bytes());
         write_seed("seeds/step_writer_custom", name, &custom);
+    }
+}
+
+fn clear_seed_directory(directory: &str) {
+    let path = Path::new(directory);
+    fs::create_dir_all(path).unwrap();
+    for entry in fs::read_dir(path).unwrap() {
+        let entry = entry.unwrap();
+        let entry_path = entry.path();
+        if entry_path.is_dir() {
+            fs::remove_dir_all(entry_path).unwrap();
+        } else {
+            fs::remove_file(entry_path).unwrap();
+        }
     }
 }

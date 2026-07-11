@@ -320,6 +320,7 @@ fn build_geometry_ir(
                 .tessellations
                 .push(cadmpeg_ir::tessellation::Tessellation {
                     id,
+                    source_object: None,
                     vertices: mesh.vertices,
                     triangles: mesh.triangles,
                     strip_lengths: mesh.strip_lengths,

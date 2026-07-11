@@ -26,9 +26,13 @@ fn check_source(
     if source.color.is_some_and(|color| {
         [color.r, color.g, color.b, color.a]
             .iter()
-            .any(|v| !v.is_finite())
+            .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
     }) {
-        bounds_err(findings, owner, "source association color is not finite");
+        bounds_err(
+            findings,
+            owner,
+            "source association color is not finite or outside [0, 1]",
+        );
     }
 }
 
@@ -63,11 +67,8 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
         for (index, edge) in subd.edges.iter().enumerate() {
             if edge.vertices[0] == edge.vertices[1]
                 || edge.vertices.iter().any(|v| *v as usize >= vertex_count)
-                || edge
-                    .sharpness
-                    .iter()
-                    .chain(edge.sector_coefficients.iter())
-                    .any(|v| !v.is_finite())
+                || edge.sharpness.iter().any(|v| !v.is_finite() || *v < 0.0)
+                || edge.sector_coefficients.iter().any(|v| !v.is_finite())
             {
                 bounds_err(
                     findings,
@@ -77,11 +78,11 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         for (face_index, face) in subd.faces.iter().enumerate() {
-            if face.edges.is_empty() {
+            if face.edges.len() < 3 {
                 bounds_err(
                     findings,
                     &subd.id.0,
-                    &format!("SubD face {face_index} has an empty ring"),
+                    &format!("SubD face {face_index} has fewer than three edge uses"),
                 );
                 continue;
             }
@@ -129,7 +130,7 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
             let valid = [angular_interval, parameter_interval]
                 .into_iter()
                 .all(|interval| {
-                    interval[0].is_finite() && interval[1].is_finite() && interval[0] <= interval[1]
+                    interval[0].is_finite() && interval[1].is_finite() && interval[0] < interval[1]
                 });
             if !valid {
                 bounds_err(

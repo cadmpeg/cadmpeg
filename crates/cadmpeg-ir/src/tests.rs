@@ -6,9 +6,11 @@
 use crate::annotations::{ExactnessNote, Provenance};
 use crate::design::SketchRelation;
 use crate::examples::unit_cube;
-use crate::geometry::{Curve, CurveGeometry, SurfaceGeometry};
+use crate::geometry::{
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
+};
 use crate::history::{AsmHistoryRecord, Configuration, FeatureHistory, FeatureInputLane};
-use crate::ids::{CoedgeId, CurveId, EdgeId, SubdId, UnknownId};
+use crate::ids::{CoedgeId, CurveId, EdgeId, ProceduralSurfaceId, SubdId, UnknownId};
 use crate::math::{Point3, Vector3};
 use crate::native::{F3dNative, SldprtNative};
 use crate::provenance::{Exactness, SourceObjectAssociation};
@@ -18,6 +20,7 @@ use crate::subd::{
     SubdVertexTag,
 };
 use crate::tessellation::TessellationChannel;
+use crate::topology::Color;
 use crate::unknown::UnknownRecord;
 use crate::validate::validate;
 use crate::{diff, CadIr};
@@ -537,7 +540,7 @@ fn subd_round_trip_and_directed_ring_validation() {
             SubdEdge {
                 vertices: [1, 2],
                 sharpness: [0.25, 0.0],
-                tag: SubdEdgeTag::Crease,
+                tag: SubdEdgeTag::SmoothX,
                 sector_coefficients: [1.0, 1.0],
             },
             SubdEdge {
@@ -568,8 +571,79 @@ fn subd_round_trip_and_directed_ring_validation() {
     assert!(validate(&ir, Vec::new()).is_ok());
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
     assert_eq!(parsed, ir);
+    assert_eq!(
+        serde_json::to_value(SubdEdgeTag::SmoothX).unwrap(),
+        serde_json::json!("smooth_x")
+    );
     ir.model.subds[0].faces[0].edges[1].reversed = true;
     assert!(!validate(&ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn subd_rejects_short_rings_and_negative_sharpness() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:subd:surface#short".into()),
+        scheme: SubdScheme::CatmullClark,
+        vertices: vec![
+            SubdVertex {
+                point: Point3::new(0.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+            },
+            SubdVertex {
+                point: Point3::new(1.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+            },
+        ],
+        edges: vec![SubdEdge {
+            vertices: [0, 1],
+            sharpness: [-0.1, 0.0],
+            tag: SubdEdgeTag::Smooth,
+            sector_coefficients: [0.0, 0.0],
+        }],
+        faces: vec![SubdFace {
+            edges: vec![
+                SubdEdgeUse {
+                    edge: 0,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 0,
+                    reversed: true,
+                },
+            ],
+        }],
+        source_object: None,
+    });
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("fewer than three")));
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("edge 0 is invalid")));
+}
+
+#[test]
+fn revolution_rejects_equal_intervals() {
+    let mut ir = unit_cube();
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("synthetic:test:procedural-surface#equal".into()),
+        surface: ir.model.surfaces[0].id.clone(),
+        definition: ProceduralSurfaceDefinition::Revolution {
+            directrix: ir.model.curves[0].id.clone(),
+            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_direction: Vector3::new(0.0, 0.0, 1.0),
+            angular_interval: [1.0, 1.0],
+            parameter_interval: [0.0, 1.0],
+            transposed: false,
+        },
+        cache_fit_tolerance: None,
+    });
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("revolution interval")));
 }
 
 #[test]
@@ -592,6 +666,33 @@ fn source_association_is_a_free_carrier_root() {
     assert!(report.is_ok(), "{:?}", report.findings);
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
     assert_eq!(parsed, ir);
+}
+
+#[test]
+fn source_association_rejects_out_of_range_color() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: CurveId("synthetic:source:curve#color".into()),
+        geometry: CurveGeometry::Unknown { record: None },
+        source_object: Some(SourceObjectAssociation {
+            format: "rhino".into(),
+            object_id: "object".into(),
+            name: None,
+            color: Some(Color {
+                r: 1.1,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        }),
+    });
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("outside [0, 1]")));
 }
 
 #[test]

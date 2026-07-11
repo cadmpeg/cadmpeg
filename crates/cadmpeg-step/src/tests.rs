@@ -78,6 +78,7 @@ fn edgeless_doc() -> CadIr {
             normal: Vector3::new(0.0, 0.0, 1.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         },
+        source_object: None,
     });
     ir.model.coedges.push(Coedge {
         id: CoedgeId("ce0".into()),
@@ -254,6 +255,7 @@ fn cylinder_surface_doc() -> CadIr {
             ref_direction: Vector3::new(1.0, 0.0, 0.0),
             radius: 5.0,
         },
+        source_object: None,
     });
     ir
 }
@@ -306,6 +308,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
         ir.model.surfaces.push(Surface {
             id: SurfaceId("s".into()),
             geometry: geom,
+            source_object: None,
         });
         // Surfaces alone aren't reachable from a shell, so they won't be emitted
         // by the topology walk; emit directly via the geometry module instead.
@@ -441,6 +444,7 @@ fn edge_without_curve_is_reported_and_omitted() {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
         },
+        source_object: None,
     };
     let _ = curve; // silence unused import path
     assert!(report

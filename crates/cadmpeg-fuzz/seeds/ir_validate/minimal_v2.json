@@ -1,5 +1,5 @@
 {
-  "ir_version": "1",
+  "ir_version": "2",
   "units": {
     "length": "millimeter"
   },
@@ -19,6 +19,7 @@
     "points": [],
     "surfaces": [],
     "curves": [],
+    "subds": [],
     "pcurves": [],
     "procedural_surfaces": [],
     "procedural_curves": [],
