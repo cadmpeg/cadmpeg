@@ -291,13 +291,27 @@ fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) {
 }
 
 pub(crate) fn semantic_hash(ir: &CadIr) -> String {
-    let mut normalized = ir.clone();
-    if let Some(source) = &mut normalized.source {
-        source.attributes.remove("semantic_sha256");
-    }
-    normalized
-        .unknowns
-        .retain(|record| record.id.0 != "f3d:file:source-image#0");
+    // Normalize with a field-by-field clone so the retained source image (the
+    // largest single payload) is filtered out instead of copied and dropped.
+    let normalized = CadIr {
+        ir_version: ir.ir_version.clone(),
+        source: ir.source.as_ref().map(|source| {
+            let mut source = source.clone();
+            source.attributes.remove("semantic_sha256");
+            source
+        }),
+        units: ir.units.clone(),
+        tolerances: ir.tolerances,
+        model: ir.model.clone(),
+        annotations: ir.annotations.clone(),
+        native: ir.native.clone(),
+        unknowns: ir
+            .unknowns
+            .iter()
+            .filter(|record| record.id.0 != "f3d:file:source-image#0")
+            .cloned()
+            .collect(),
+    };
     sha256_hex(
         normalized
             .to_canonical_json()

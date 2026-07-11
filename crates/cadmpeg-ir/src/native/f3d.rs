@@ -38,6 +38,7 @@ macro_rules! f3d_arenas {
         }
     };
 }
+pub(crate) use f3d_arenas;
 
 macro_rules! sort_f3d_arenas {
     ($($field:ident: $ty:ty;)*) => {

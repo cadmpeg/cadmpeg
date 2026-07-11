@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-format namespaces retained outside the format-neutral model.
 
-mod f3d;
+pub(crate) mod f3d;
 mod sldprt;
 
 use schemars::JsonSchema;

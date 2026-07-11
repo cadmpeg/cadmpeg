@@ -735,8 +735,18 @@ fn set_semantic_hash(ir: &mut CadIr) {
 pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
-    let mut normalized = ir.clone();
-    normalized.source = None;
+    // Normalize with a field-by-field clone so the dropped namespaces (source
+    // image, native records, annotations) are never copied.
+    let mut normalized = CadIr {
+        ir_version: ir.ir_version.clone(),
+        source: None,
+        units: ir.units.clone(),
+        tolerances: ir.tolerances,
+        model: ir.model.clone(),
+        annotations: Annotations::default(),
+        native: cadmpeg_ir::Native::default(),
+        unknowns: Vec::new(),
+    };
     normalized.model.bodies.iter_mut().for_each(|body| {
         body.name = None;
         body.color = None;
@@ -759,10 +769,7 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
         .appearances
         .retain(|appearance| face_appearances.contains(&appearance.id));
     normalized.model.tessellations.clear();
-    normalized.native = cadmpeg_ir::Native::default();
     normalized.model.attributes.clear();
-    normalized.annotations = Annotations::default();
-    normalized.unknowns.clear();
     sha256_hex(
         normalized
             .to_canonical_json()
@@ -772,13 +779,27 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
 }
 
 pub(crate) fn semantic_hash(ir: &CadIr) -> String {
-    let mut normalized = ir.clone();
-    if let Some(source) = &mut normalized.source {
-        source.attributes.remove("semantic_sha256");
-    }
-    normalized
-        .unknowns
-        .retain(|record| record.id.0 != "sldprt:file:source-image#0");
+    // Normalize with a field-by-field clone so the retained source image (the
+    // largest single payload) is filtered out instead of copied and dropped.
+    let normalized = CadIr {
+        ir_version: ir.ir_version.clone(),
+        source: ir.source.as_ref().map(|source| {
+            let mut source = source.clone();
+            source.attributes.remove("semantic_sha256");
+            source
+        }),
+        units: ir.units.clone(),
+        tolerances: ir.tolerances,
+        model: ir.model.clone(),
+        annotations: ir.annotations.clone(),
+        native: ir.native.clone(),
+        unknowns: ir
+            .unknowns
+            .iter()
+            .filter(|record| record.id.0 != "sldprt:file:source-image#0")
+            .cloned()
+            .collect(),
+    };
     sha256_hex(
         normalized
             .to_canonical_json()

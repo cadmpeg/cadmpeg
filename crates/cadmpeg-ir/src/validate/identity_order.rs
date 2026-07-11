@@ -94,7 +94,11 @@ macro_rules! define_model_identity_checks {
 }
 crate::document::arena_registry!(define_model_identity_checks);
 
-pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) {
+/// Run the identity and arena-order checks, returning the set of every entity
+/// id in the document (model arenas, unknowns, and native records). Downstream
+/// checks resolve annotation and link targets against this set instead of
+/// re-enumerating the id universe.
+pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) -> HashSet<String> {
     let mut seen = HashSet::new();
     check_model_identity_and_order(ir, &mut seen, findings);
     check_order(
@@ -118,36 +122,31 @@ pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) 
     for (arena, ids) in by_arena {
         check_order(arena, ids, findings);
     }
+    seen
 }
 
-pub(super) fn collect_native_ids<'a>(ir: &'a CadIr, ids: &mut Vec<(&'static str, &'a str)>) {
-    if let Some(native) = &ir.native.f3d {
-        macro_rules! arena {
-            ($field:ident) => {
+macro_rules! define_collect_f3d_arena_ids {
+    ($( $field:ident: $ty:ty; )*) => {
+        fn collect_f3d_arena_ids<'a>(
+            native: &'a crate::native::f3d::F3dNative,
+            ids: &mut Vec<(&'static str, &'a str)>,
+        ) {
+            $(
                 ids.extend(native.$field.iter().map(|record| {
                     (
                         concat!("native.f3d.", stringify!($field)),
                         record.id.as_str(),
                     )
                 }));
-            };
+            )*
         }
-        arena!(act_entities);
-        arena!(act_guids);
-        arena!(act_root_components);
-        arena!(design_objects);
-        arena!(design_entity_headers);
-        arena!(design_record_headers);
-        arena!(design_body_members);
-        arena!(construction_recipes);
-        arena!(persistent_design_links);
-        arena!(persistent_references);
-        arena!(sketch_curve_links);
-        arena!(sketch_relations);
-        arena!(sketch_points);
-        arena!(sketch_curve_identities);
-        arena!(lost_edge_references);
-        arena!(asm_histories);
+    };
+}
+crate::native::f3d::f3d_arenas!(define_collect_f3d_arena_ids);
+
+pub(super) fn collect_native_ids<'a>(ir: &'a CadIr, ids: &mut Vec<(&'static str, &'a str)>) {
+    if let Some(native) = &ir.native.f3d {
+        collect_f3d_arena_ids(native, ids);
         for history in &native.asm_histories {
             for state in &history.states {
                 ids.push(("native.f3d.asm_delta_states", &state.id));

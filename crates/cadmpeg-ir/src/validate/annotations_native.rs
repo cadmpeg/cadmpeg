@@ -17,30 +17,19 @@ pub(super) fn check_native_ids(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     };
     if let Some(native) = &ir.native.f3d {
-        macro_rules! check_arena {
-            ($field:ident) => {
-                for record in &native.$field {
-                    check(&record.id);
-                }
+        macro_rules! check_f3d_arenas {
+            ($( $field:ident: $ty:ty; )*) => {
+                $(
+                    for record in &native.$field {
+                        check(&record.id);
+                    }
+                )*
             };
         }
-        check_arena!(act_entities);
-        check_arena!(act_guids);
-        check_arena!(act_root_components);
-        check_arena!(design_objects);
-        check_arena!(design_entity_headers);
-        check_arena!(design_record_headers);
-        check_arena!(design_body_members);
-        check_arena!(construction_recipes);
-        check_arena!(persistent_design_links);
-        check_arena!(persistent_references);
-        check_arena!(sketch_curve_links);
-        check_arena!(sketch_relations);
-        check_arena!(sketch_points);
-        check_arena!(sketch_curve_identities);
-        check_arena!(lost_edge_references);
+        crate::native::f3d::f3d_arenas!(check_f3d_arenas);
+        // History container ids are covered by the arena sweep above; only the
+        // nested per-state records remain.
         for history in &native.asm_histories {
-            check(&history.id);
             for state in &history.states {
                 check(&state.id);
                 for board in &state.bulletin_boards {
@@ -247,47 +236,100 @@ pub(super) fn check_feature_input_lanes(ir: &CadIr, findings: &mut Vec<Finding>)
     }
 }
 
-/// Every JSON object carrying a string `id` field in the serialized IR, keyed
-/// by that id. First occurrence in document order wins on duplicates
-/// (duplicates are flagged separately by the identity checks).
-pub(super) type EntityIndex<'a> = HashMap<&'a str, &'a serde_json::Value>;
-
-/// Build the [`EntityIndex`] for a serialized IR in one traversal.
-pub(super) fn build_entity_index(value: &serde_json::Value) -> EntityIndex<'_> {
-    let mut index = HashMap::new();
-    collect_entity_values(value, &mut index);
-    index
+macro_rules! define_model_entity_json {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] => $key:expr; )*) => {
+        fn model_entity_json(ir: &CadIr, id: &str) -> Option<serde_json::Value> {
+            $(
+                let key: fn(&$element) -> String = $key;
+                if let Some(entity) = ir.model.$field.iter().find(|entity| key(entity) == id) {
+                    return serde_json::to_value(entity).ok();
+                }
+            )*
+            None
+        }
+    };
 }
+crate::document::arena_registry!(define_model_entity_json);
 
-fn collect_entity_values<'a>(value: &'a serde_json::Value, index: &mut EntityIndex<'a>) {
-    match value {
-        serde_json::Value::Object(object) => {
-            if let Some(id) = object.get("id").and_then(serde_json::Value::as_str) {
-                index.entry(id).or_insert(value);
-            }
-            for child in object.values() {
-                collect_entity_values(child, index);
-            }
+macro_rules! define_f3d_entity_json {
+    ($( $field:ident: $ty:ty; )*) => {
+        fn f3d_entity_json(
+            native: &crate::native::f3d::F3dNative,
+            id: &str,
+        ) -> Option<serde_json::Value> {
+            $(
+                if let Some(record) = native.$field.iter().find(|record| record.id == id) {
+                    return serde_json::to_value(record).ok();
+                }
+            )*
+            None
         }
-        serde_json::Value::Array(array) => {
-            for child in array {
-                collect_entity_values(child, index);
-            }
-        }
-        _ => {}
+    };
+}
+crate::native::f3d::f3d_arenas!(define_f3d_entity_json);
+
+/// Serialize the single entity `id` names. Covers the same id universe as the
+/// identity checks: model arenas, unknowns, and native records including
+/// nested history and feature entities.
+fn entity_json(ir: &CadIr, id: &str) -> Option<serde_json::Value> {
+    if let Some(value) = model_entity_json(ir, id) {
+        return Some(value);
     }
+    if let Some(record) = ir.unknowns.iter().find(|record| record.id.0 == id) {
+        return serde_json::to_value(record).ok();
+    }
+    if let Some(native) = &ir.native.f3d {
+        if let Some(value) = f3d_entity_json(native, id) {
+            return Some(value);
+        }
+        for state in native.asm_histories.iter().flat_map(|h| &h.states) {
+            if state.id == id {
+                return serde_json::to_value(state).ok();
+            }
+            for board in &state.bulletin_boards {
+                if board.id == id {
+                    return serde_json::to_value(board).ok();
+                }
+                if let Some(change) = board.changes.iter().find(|change| change.id == id) {
+                    return serde_json::to_value(change).ok();
+                }
+            }
+            if let Some(record) = state.records.iter().find(|record| record.id == id) {
+                return serde_json::to_value(record).ok();
+            }
+        }
+    }
+    if let Some(native) = &ir.native.sldprt {
+        for history in &native.feature_histories {
+            if history.id == id {
+                return serde_json::to_value(history).ok();
+            }
+            if let Some(entry) = history.configurations.iter().find(|c| c.id == id) {
+                return serde_json::to_value(entry).ok();
+            }
+            if let Some(entry) = history.features.iter().find(|f| f.id == id) {
+                return serde_json::to_value(entry).ok();
+            }
+        }
+        for lane in &native.feature_input_lanes {
+            if lane.id == id {
+                return serde_json::to_value(lane).ok();
+            }
+            if let Some(entry) = lane.sketch_entities.iter().find(|e| e.id == id) {
+                return serde_json::to_value(entry).ok();
+            }
+        }
+    }
+    None
 }
 
 pub(super) fn check_annotations(
     ir: &CadIr,
-    index: Option<&EntityIndex<'_>>,
+    all_ids: &HashSet<String>,
     findings: &mut Vec<Finding>,
 ) {
-    let Some(index) = index else {
-        return;
-    };
     for (id, provenance) in &ir.annotations.provenance {
-        if !index.contains_key(id.as_str()) {
+        if !all_ids.contains(id) {
             annotation_finding(
                 findings,
                 Severity::Error,
@@ -305,7 +347,7 @@ pub(super) fn check_annotations(
         }
     }
     for (id, note) in &ir.annotations.exactness {
-        let Some(entity) = index.get(id.as_str()) else {
+        if !all_ids.contains(id) {
             annotation_finding(
                 findings,
                 Severity::Error,
@@ -313,9 +355,21 @@ pub(super) fn check_annotations(
                 "exactness key does not resolve to an entity",
             );
             continue;
+        }
+        if note.fields.is_empty() {
+            continue;
+        }
+        let Some(entity) = entity_json(ir, id) else {
+            annotation_finding(
+                findings,
+                Severity::Warning,
+                id,
+                "entity could not be serialized to validate its exactness field paths",
+            );
+            continue;
         };
         for path in note.fields.keys() {
-            if path.is_empty() || !field_path_resolves(entity, path) {
+            if path.is_empty() || !field_path_resolves(&entity, path) {
                 annotation_finding(
                     findings,
                     Severity::Warning,
@@ -362,7 +416,7 @@ fn field_path_resolves(mut value: &serde_json::Value, path: &str) -> bool {
 
 pub(super) fn check_native_links(
     ir: &CadIr,
-    index: Option<&EntityIndex<'_>>,
+    all_ids: &HashSet<String>,
     findings: &mut Vec<Finding>,
 ) {
     let mut native_ids = Vec::new();
@@ -384,12 +438,9 @@ pub(super) fn check_native_links(
         }
     }
 
-    let Some(index) = index else {
-        return;
-    };
     for record in &ir.unknowns {
         for target in &record.links {
-            if !index.contains_key(target.as_str()) {
+            if !all_ids.contains(target) {
                 findings.push(Finding {
                     check: Check::NativeLinks,
                     severity: Severity::Error,
