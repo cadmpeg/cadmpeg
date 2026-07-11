@@ -10,6 +10,7 @@ This document records F3D semantics that the format specification does not yet d
 - The semantic role of the `POSITION` field after `cyl_spl_sur.extrusion_direction` is unresolved.
 - The semantic role of the `ENUM_VALUE -1` field after the `rb_blend_spl_sur` radius pair is unresolved.
 - The `subset_int_cur`, `comp_int_cur`, and labelled two-curve `offset_int_cur` field sequences with source curve blocks serialized flat before the cache lack real-stream confirmation. The observed `offset_int_cur` form opens with its cache and nests the progenitor curve in a trailing subtype scope, and its offset-law fields are unresolved.
+- Whether a pcurve's UV coordinates live on the owning surface's exact procedural parameterization or on its B-spline cache parameterization is unresolved. On `rot_spl_sur` faces the stored UV values follow the exact (angle × profile-parameter) space, which drifts from the rational cache parameterization between knots.
 
 ## Container, header, and design records
 

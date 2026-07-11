@@ -7101,8 +7101,12 @@ fn subtype_reference_resolves_surface_cache() {
 
     let mut active = target;
     active.extend_from_slice(&source);
-    let decoded = decode_surface_cache_resolving_refs(&source, &active)
-        .expect("subtype-table reference resolves to its surface cache");
+    let decoded = decode_surface_cache_resolving_refs(
+        &source,
+        &active,
+        &crate::nurbs::SubtypeTables::from_stream(&active),
+    )
+    .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count, decoded.v_count), (2, 2));
 }
 
@@ -8548,8 +8552,12 @@ fn ref_pcurve_resolves_intcurve_subtype_cache() {
     let mut active = target;
     active.extend_from_slice(&source);
 
-    let pcurve = crate::nurbs::decode_intcurve_pcurve_cache_resolving_refs(&source, &active)
-        .expect("intcurve subtype carries UV cache");
+    let pcurve = crate::nurbs::decode_intcurve_pcurve_cache_resolving_refs(
+        &source,
+        &active,
+        &crate::nurbs::SubtypeTables::from_stream(&active),
+    )
+    .expect("intcurve subtype carries UV cache");
     assert_eq!(pcurve.control_points[1].v, 1.5);
 }
 

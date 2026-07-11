@@ -441,6 +441,8 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     let id = |i: i64| format!("f3d:brep:entity#{i}");
     // Index records by RecordTable index (== position for a framed slice).
     let by_index: HashMap<i64, &Record> = records.iter().map(|r| (r.index as i64, r)).collect();
+    // Subtype-definition positions, built once for every carrier resolution.
+    let subtype_tables = nurbs::SubtypeTables::from_records(records, bytes);
     let header_scale = asm_header::parse(bytes)
         .and_then(|header| header.scale)
         .unwrap_or(1.0);
@@ -505,14 +507,17 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         kept_faces.insert(r.index as i64);
         // A non-analytic surface may still carry a decodable B-spline face cache.
         if let std::collections::hash_map::Entry::Vacant(e) = surface_geo.entry(surf_ref) {
-            if let Some(ns) =
-                nurbs::decode_surface_cache_resolving_refs(record_slice(surf_rec, bytes), bytes)
-            {
+            if let Some(ns) = nurbs::decode_surface_cache_resolving_refs(
+                record_slice(surf_rec, bytes),
+                bytes,
+                &subtype_tables,
+            ) {
                 e.insert((SurfaceGeometry::Nurbs(ns), false));
                 out.stats.nurbs_surfaces += 1;
                 if let Some(procedural) = nurbs::decode_procedural_surface_resolving_refs(
                     record_slice(surf_rec, bytes),
                     bytes,
+                    &subtype_tables,
                 ) {
                     procedural_surface_defs.insert(surf_ref, procedural);
                 }
@@ -561,6 +566,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             let decoded = nurbs::decode_pcurve_cache_resolving_refs(
                                 record_slice(prec, bytes),
                                 bytes,
+                                &subtype_tables,
                             )
                             .or_else(|| {
                                 prec.ref_at(4)
@@ -569,6 +575,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         nurbs::decode_intcurve_pcurve_cache_resolving_refs(
                                             record_slice(intcurve, bytes),
                                             bytes,
+                                            &subtype_tables,
                                         )
                                     })
                             });
@@ -621,6 +628,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                 nurbs::decode_procedural_curve_resolving_refs(
                                                     record_slice(crec, bytes),
                                                     bytes,
+                                                    &subtype_tables,
                                                 )
                                             {
                                                 let mut curve = decoded.curve;
@@ -729,6 +737,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                     nurbs::decode_procedural_curve_resolving_refs(
                                                         record_slice(curve_record, bytes),
                                                         bytes,
+                                                        &subtype_tables,
                                                     )
                                                 {
                                                     let mut curve = decoded.curve;
