@@ -850,7 +850,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             for (side, support) in supports.into_iter().enumerate() {
                                 if let Some(support) = support {
                                     let support_id = SurfaceId(format!(
-                                        "f3d:brep:procedural_surface#{i}:support#{side}"
+                                        "f3d:brep:procedural_surface#{i}:support{side}"
                                     ));
                                     out.surfaces.push(Surface {
                                         id: support_id.clone(),
@@ -958,7 +958,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -998,7 +998,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1037,7 +1037,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1079,7 +1079,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1120,7 +1120,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1169,7 +1169,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1221,7 +1221,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .map(|(side, geometry)| {
                                 geometry.map(|geometry| {
                                     let id = SurfaceId(format!(
-                                        "f3d:brep:procedural_curve#{i}:support#{side}"
+                                        "f3d:brep:procedural_curve#{i}:support{side}"
                                     ));
                                     out.surfaces.push(Surface {
                                         id: id.clone(),
@@ -1294,7 +1294,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1921,8 +1921,46 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     }
 
     classify_body_kinds(&mut out);
+    clamp_edge_ranges_to_carrier_domains(&mut out);
 
     out
+}
+
+/// Snap edge parameter ranges that overshoot their B-spline carrier's knot
+/// domain by floating-point noise back onto the domain boundary. Native edge
+/// ranges and cache knot vectors are stored independently and can disagree in
+/// their last few bits; a genuine domain violation is left for validation.
+fn clamp_edge_ranges_to_carrier_domains(out: &mut Brep) {
+    let domains: HashMap<&str, [f64; 2]> = out
+        .curves
+        .iter()
+        .filter_map(|curve| match &curve.geometry {
+            CurveGeometry::Nurbs(nurbs) => {
+                let (first, last) = (nurbs.knots.first()?, nurbs.knots.last()?);
+                Some((curve.id.0.as_str(), [*first, *last]))
+            }
+            _ => None,
+        })
+        .collect();
+    for edge in &mut out.edges {
+        let Some([start, end]) = edge.param_range.as_mut() else {
+            continue;
+        };
+        let Some([first, last]) = edge
+            .curve
+            .as_ref()
+            .and_then(|curve| domains.get(curve.0.as_str()))
+        else {
+            continue;
+        };
+        let tolerance = 1.0e-9 * (last - first).abs().max(1.0);
+        if *start < *first && *first - *start <= tolerance {
+            *start = *first;
+        }
+        if *end > *last && *end - *last <= tolerance {
+            *end = *last;
+        }
+    }
 }
 
 fn classify_body_kinds(out: &mut Brep) {

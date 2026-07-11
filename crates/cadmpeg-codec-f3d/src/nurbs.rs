@@ -1072,12 +1072,25 @@ fn decode_procedural_curve_recursive(
     seen: &mut Vec<usize>,
     int_width: usize,
 ) -> Option<DecodedProceduralCurve> {
-    let mut solved = None;
-    for position in marker_positions(bytes) {
-        if let Some(decoded) = decode_curve_block(bytes, position, int_width) {
-            solved = Some(decoded);
-        }
-    }
+    let vector_offset = decode_vector_offset_definition(bytes, int_width);
+    let subset = decode_subset_definition(bytes, int_width);
+    let compound = decode_compound_definition(bytes, int_width);
+    // Wrapper constructions serialize their source curves before the record's
+    // own cache, so the cache is the last decodable curve block. Every other
+    // intcurve opens with its cache — the first block, followed by the fit
+    // tolerance; later blocks belong to nested construction machinery
+    // (support surfaces, blend spines, progenitors) and are not the carrier.
+    let positions = marker_positions(bytes);
+    let solved = if vector_offset.is_some() || subset.is_some() || compound.is_some() {
+        positions
+            .into_iter()
+            .rev()
+            .find_map(|position| decode_curve_block(bytes, position, int_width))
+    } else {
+        positions
+            .into_iter()
+            .find_map(|position| decode_curve_block(bytes, position, int_width))
+    };
     if let Some(decoded) = solved {
         let cache_fit_tolerance = (bytes.get(decoded.end) == Some(&0x06))
             .then(|| read_f64(bytes, decoded.end + 1).map(|value| value * LEN_TO_MM))
@@ -1093,9 +1106,9 @@ fn decode_procedural_curve_recursive(
             curve: decoded.curve,
             native_kind,
             definition,
-            vector_offset: decode_vector_offset_definition(bytes, int_width),
-            subset: decode_subset_definition(bytes, int_width),
-            compound: decode_compound_definition(bytes, int_width),
+            vector_offset,
+            subset,
+            compound,
             embedded_two_sided_offset: decode_embedded_two_sided_offset(bytes, int_width),
             embedded_intersection: decode_embedded_intersection(bytes, int_width),
             embedded_three_surface_intersection: decode_embedded_three_surface_intersection(

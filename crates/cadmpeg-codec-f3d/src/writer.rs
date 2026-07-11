@@ -7529,7 +7529,7 @@ fn validate_surface_edits(
                 };
                 (id.starts_with("f3d:brep:entity#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
-                        && (id.ends_with(":support#0") || id.ends_with(":support#1"))))
+                        && (id.ends_with(":support0") || id.ends_with(":support1"))))
                     && valid_edited_nurbs_direction(
                         &before.u_knots,
                         after.u_degree,
@@ -8091,10 +8091,7 @@ fn patch_framed_geometry(
             patch_nurbs_surface_record(bytes, record, edit, None)?;
         }
         for side in 0..2 {
-            let support_id = format!(
-                "f3d:brep:procedural_surface#{}:support#{side}",
-                record.index
-            );
+            let support_id = format!("f3d:brep:procedural_surface#{}:support{side}", record.index);
             if let Some(edit) = nurbs_surfaces.get(&support_id) {
                 patch_nurbs_surface_record(bytes, record, edit, Some(side))?;
             }
