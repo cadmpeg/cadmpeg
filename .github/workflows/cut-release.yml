@@ -1,0 +1,142 @@
+# One-click release for cadmpeg.
+#
+# Dispatch this workflow (Actions tab -> Cut release -> Run workflow) with the
+# target version, e.g. 0.1.5. It performs the entire release in a single run:
+#
+#   1. Validates the version (must be a strict upgrade; tag must not exist).
+#   2. Bumps the workspace manifest and refreshes Cargo.lock.
+#   3. Runs the full CI gate (fmt, clippy, build, test) as a safety net.
+#   4. Commits the bump directly to main.
+#   5. Pushes the matching git tag, which triggers the Release workflow
+#      (release.yml) that builds artifacts and creates the GitHub Release.
+#
+# WHY A GITHUB APP TOKEN, NOT GITHUB_TOKEN:
+# The tag push MUST be authenticated with a GitHub App installation token. A tag
+# pushed by the default GITHUB_TOKEN is deliberately ignored by GitHub's event
+# system, so release.yml (on: push: tags) would never fire. This is a hard
+# GitHub rule to prevent workflows from recursively triggering workflows; it is
+# separate from the "Allow GitHub Actions to create and approve pull requests"
+# org/repo setting and cannot be toggled off.
+#
+# ONE-TIME PREREQUISITES:
+#   - Create a GitHub App (cadmpeg org -> Settings -> Developer settings ->
+#     GitHub Apps -> New) with Repository permissions: Contents = Read and
+#     write. Nothing else is needed (the bump touches only Cargo.toml/Cargo.lock,
+#     never workflow files, so no Workflows permission is required).
+#   - Install that App on the cadmpeg/cadmpeg repository.
+#   - Generate a private key for the App.
+#   - Add two repository (or org) secrets:
+#       RELEASE_APP_ID          -> the App's numeric App ID
+#       RELEASE_APP_PRIVATE_KEY -> the full .pem private key contents
+name: Cut release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Target release version, e.g. 0.1.5 (a leading v is stripped)"
+        required: true
+        type: string
+
+# The default GITHUB_TOKEN needs no write access: every push below uses the
+# GitHub App token instead. Keep the built-in token read-only.
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          # Check out with the App token so the later commit and tag pushes are
+          # authenticated as the App and therefore trigger release.yml.
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Set workspace version
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${{ inputs.version }}"
+          version="${version#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+          current="$(
+            cargo metadata --no-deps --format-version 1 |
+              jq --raw-output '.packages[] | select(.name == "cadmpeg") | .version'
+          )"
+
+          # Refuse a no-op or a downgrade: the new version must sort strictly
+          # after the current one.
+          lowest="$(printf '%s\n%s\n' "${current}" "${version}" | sort --version-sort | head -n1)"
+          if [[ "${version}" == "${current}" || "${lowest}" != "${current}" ]]; then
+            echo "requested version ${version} is not greater than current ${current}" >&2
+            exit 1
+          fi
+
+          # Refuse to clobber an existing tag.
+          if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
+            echo "tag v${version} already exists on origin" >&2
+            exit 1
+          fi
+
+          python3 scripts/set-workspace-version.py "${version}"
+          cargo update --workspace
+
+          # Coherence guard: the manifest version dist matches the tag against
+          # must now equal the requested version.
+          manifest_version="$(
+            cargo metadata --no-deps --format-version 1 |
+              jq --raw-output '.packages[] | select(.name == "cadmpeg") | .version'
+          )"
+          if [[ "${manifest_version}" != "${version}" ]]; then
+            echo "manifest version ${manifest_version} does not match requested ${version}" >&2
+            exit 1
+          fi
+
+      - name: CI gate
+        run: |
+          set -euo pipefail
+          cargo fmt --all --check
+          cargo clippy --workspace -- -D warnings -W missing-docs
+          cargo build --workspace --locked
+          cargo test --workspace --locked
+
+      - name: Commit, tag, and push
+        shell: bash
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          version="${{ steps.bump.outputs.version }}"
+
+          # Attribute the commit to the App's bot identity so it shows as
+          # verified and authored by the App rather than a stray user.
+          bot_id="$(gh api "/users/${APP_SLUG}[bot]" --jq '.id')"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+          git add Cargo.toml Cargo.lock
+          git commit -m "Bump workspace version to ${version}"
+          git push origin HEAD:main
+
+          git tag "v${version}"
+          git push origin "v${version}"
