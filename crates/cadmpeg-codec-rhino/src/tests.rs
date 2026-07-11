@@ -131,7 +131,7 @@ fn verifies_crc_vectors_and_recoverable_mismatch() {
 
     let body = b"body";
     let mut bytes = (TCODE_CRC | 9).to_le_bytes().to_vec();
-    bytes.extend((body.len() + 4).to_le_bytes());
+    bytes.extend(((body.len() + 4) as i32).to_le_bytes());
     bytes.extend(body);
     bytes.extend(crc32fast::hash(body).to_le_bytes());
     let chunk = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V2, false).unwrap();
@@ -143,7 +143,7 @@ fn verifies_crc_vectors_and_recoverable_mismatch() {
     ));
 
     assert_eq!(
-        super::chunks::checksum_kind(ArchiveVersion::V1, 0x1000_0000, false),
+        super::chunks::checksum_kind(ArchiveVersion::V1, 0x0001_0000, false),
         super::chunks::ChecksumKind::Crc16
     );
     assert_eq!(
@@ -210,7 +210,7 @@ fn validates_eof_width_size_and_truncation() {
 #[test]
 fn nested_bounds_and_unknown_skip_are_exact() {
     let child = long_chunk(ArchiveVersion::V5, 0x1234, &[9, 8, 7]);
-    let sibling = long_chunk(ArchiveVersion::V5, 0x5678, &[1]);
+    let sibling = long_chunk(ArchiveVersion::V5, 0x2345, &[1]);
     let mut parent = long_chunk(ArchiveVersion::V5, 0x1000, &child);
     parent.extend(sibling);
     let first = chunk_at(&parent, 0, parent.len(), ArchiveVersion::V5, false).unwrap();
@@ -231,7 +231,7 @@ fn nested_bounds_and_unknown_skip_are_exact() {
         false,
     )
     .unwrap();
-    assert_eq!(next.typecode, 0x5678);
+    assert_eq!(next.typecode, 0x2345);
     assert!(matches!(
         chunk_at(
             &parent,

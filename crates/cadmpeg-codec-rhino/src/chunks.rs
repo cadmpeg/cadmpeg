@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino 3DM headers, chunks, checksums, and bounded readers.
 
+#![allow(dead_code)]
+
 use std::fmt;
 
 /// The fixed ASCII prefix of a 3DM file header.
@@ -405,7 +407,7 @@ pub(crate) fn chunk_at(
 ) -> Result<Chunk, FramingError> {
     let mut reader = BoundedReader::new(bytes, offset, parent_end)?;
     let typecode = reader.u32()?;
-    if typecode & 0x0000_4000 != 0 {
+    if typecode & 0x0000_4000 != 0 && typecode != TCODE_ENDOFFILE {
         return Err(FramingError::InvalidTypecode(typecode));
     }
     let short = typecode & TCODE_SHORT != 0;
