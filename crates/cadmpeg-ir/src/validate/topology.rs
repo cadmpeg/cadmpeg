@@ -393,6 +393,43 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralCurveDefinition::Silhouette {
+                context,
+                cast_surface,
+                ..
+            } => {
+                if !ids.surfaces.contains(&cast_surface.0) {
+                    ref_error(findings, &procedural.id.0, "surface", &cast_surface.0);
+                }
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
+                    }
+                }
+            }
+            ProceduralCurveDefinition::SurfaceOffset { context, base, .. } => {
+                if !ids.curves.contains(&base.0) {
+                    ref_error(findings, &procedural.id.0, "curve", &base.0);
+                }
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
+                    }
+                }
+            }
+            ProceduralCurveDefinition::Spring { context, .. } => {
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
+                    }
+                }
+            }
             ProceduralCurveDefinition::Projection {
                 context, source, ..
             } => {

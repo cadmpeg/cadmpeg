@@ -450,6 +450,21 @@ pub enum SurfaceCurveFamily {
     Skin,
 }
 
+/// Native silhouette construction family and its exclusive tail fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SilhouetteKind {
+    /// Standard implicit silhouette.
+    Standard,
+    /// Parametric silhouette.
+    Parametric,
+    /// Draft/taper silhouette with an explicit factor.
+    Taper {
+        /// Native unscaled draft factor.
+        draft_factor: f64,
+    },
+}
+
 /// Neutral semantics for a procedural curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -502,6 +517,43 @@ pub enum ProceduralCurveDefinition {
         family: SurfaceCurveFamily,
         /// Shared surfaces, UV curves, interval, and discontinuities.
         context: IntcurveSupportContext,
+    },
+    /// Silhouette of a cast surface in a light direction.
+    Silhouette {
+        /// Shared first two support pairs.
+        context: IntcurveSupportContext,
+        /// Standard, parametric, or taper silhouette semantics.
+        silhouette: SilhouetteKind,
+        /// Surface whose silhouette is constructed.
+        cast_surface: SurfaceId,
+        /// Native model-space light direction.
+        light_direction: Vector3,
+    },
+    /// Curve offset relative to a surface parameterization.
+    SurfaceOffset {
+        /// Shared first two support pairs.
+        context: IntcurveSupportContext,
+        /// Native U interval on the base surface.
+        base_u_range: [f64; 2],
+        /// Native V interval on the base surface.
+        base_v_range: [f64; 2],
+        /// Embedded base curve.
+        base: CurveId,
+        /// Native interval on `base`.
+        base_range: [f64; 2],
+        /// Signed model-space offset distance.
+        distance: f64,
+        /// Native unscaled parameter shift.
+        shift: f64,
+        /// Native unscaled parameter scale.
+        scale: f64,
+    },
+    /// Blend spring guide between two support sides.
+    Spring {
+        /// Ordered support surfaces, UV curves, interval, and discontinuities.
+        context: IntcurveSupportContext,
+        /// Native `CURV_DIR` enum value.
+        direction: i64,
     },
     /// Projection of a source curve onto a support surface.
     Projection {

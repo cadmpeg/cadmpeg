@@ -291,6 +291,70 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for procedural in &ir.model.procedural_curves {
+        if let ProceduralCurveDefinition::Spring { context, .. } = &procedural.definition {
+            if !support_context_is_finite(context) {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "spring context is not finite and ordered",
+                );
+            }
+            continue;
+        }
+        if let ProceduralCurveDefinition::SurfaceOffset {
+            context,
+            base_u_range,
+            base_v_range,
+            base_range,
+            distance,
+            shift,
+            scale,
+            ..
+        } = &procedural.definition
+        {
+            let ranges = [base_u_range, base_v_range, base_range];
+            if !support_context_is_finite(context)
+                || ranges.iter().any(|range| {
+                    !range.iter().all(|value| value.is_finite()) || range[0] > range[1]
+                })
+                || !distance.is_finite()
+                || !shift.is_finite()
+                || !scale.is_finite()
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "surface-offset fields are not finite and ordered",
+                );
+            }
+            continue;
+        }
+        if let ProceduralCurveDefinition::Silhouette {
+            context,
+            silhouette,
+            light_direction,
+            ..
+        } = &procedural.definition
+        {
+            let draft_finite = match silhouette {
+                crate::geometry::SilhouetteKind::Taper { draft_factor } => draft_factor.is_finite(),
+                _ => true,
+            };
+            if !support_context_is_finite(context)
+                || !light_direction.x.is_finite()
+                || !light_direction.y.is_finite()
+                || !light_direction.z.is_finite()
+                || light_direction.norm() <= f64::EPSILON
+                || !draft_finite
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "silhouette fields are not finite or the light direction is degenerate",
+                );
+            }
+            continue;
+        }
         if let ProceduralCurveDefinition::SurfaceCurve { context, .. } = &procedural.definition {
             if !support_context_is_finite(context) {
                 bounds_err(

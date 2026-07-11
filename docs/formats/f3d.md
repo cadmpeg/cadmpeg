@@ -348,6 +348,12 @@ Evaluation formulas for all four carriers follow directly from the frame vectors
 
 **Prefix-only surface curves**: `blend_int_cur`, `surf_int_cur`, `par_int_cur`, and `skin_int_cur` contain the surface-related prefix with no subtype-specific tail, followed by the solved cache and fit tolerance. The subtype name distinguishes blend-edge, surface-constrained, parametric, and skin construction semantics.
 
+**Silhouette curves**: `silh_int_cur` and `para_silh_int_cur` append a cast surface and light vector to the surface-related prefix. `taper_silh_int_cur` adds one unscaled draft-factor double after the light vector. The solved cache and fit tolerance follow the silhouette tail.
+
+**`off_surf_int_cur`**: the surface-related prefix, one ASM extension flag, base-surface U and V intervals, an embedded base curve and its interval, then distance, shift, and scale doubles. Distance is a signed length; all intervals, shift, and scale are unscaled. The solved cache and fit tolerance follow the tail.
+
+**`spring_int_cur` (modern non-null form)**: two non-null support surfaces, their two BS2 curves, the native curve interval, three discontinuity arrays, one ASM extension flag, and a `CURV_DIR` enum. The solved cache and fit tolerance follow. Null support sentinels introduce additional conditional U/V range fields and form a distinct layout.
+
 An embedded freeform support surface is encoded as the `spline` surface discriminator followed by its `nubs`/`nurbs` surface block. Its paired BS2 curve is a direct `nubs`/`nurbs` curve block. Surface control points use length scaling; UV poles, knots, weights, intervals, and discontinuities are unscaled.
 
 Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus` discriminator followed by the same position, orientation, radius, angle, and flag payload used by the corresponding top-level carrier. A zero cone sine denotes a cylinder. Signed sphere and torus radii retain their signs.

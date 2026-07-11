@@ -932,6 +932,87 @@ fn synthetic_geometry_with_surface_curve_smbh(name: &str) -> Vec<u8> {
     bytes
 }
 
+fn synthetic_geometry_with_silhouette_smbh(name: &str, draft_factor: Option<f64>) -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_surface_intersection_smbh();
+    let subtype = bytes
+        .windows(b"int_int_cur".len())
+        .position(|window| window == b"int_int_cur")
+        .expect("generated intersection subtype");
+    bytes[subtype - 1] = name.len() as u8;
+    bytes.splice(
+        subtype..subtype + b"int_int_cur".len(),
+        name.as_bytes().iter().copied(),
+    );
+    let solved = bytes
+        .windows(b"\x0d\x04nubs".len())
+        .rposition(|window| window == b"\x0d\x04nubs")
+        .expect("generated solved curve cache");
+    let mut tail = Vec::new();
+    t_ident(&mut tail, "sphere");
+    t_pos(&mut tail, [0.0, 0.0, 0.0]);
+    t_dbl(&mut tail, 1.5);
+    t_vec(&mut tail, [1.0, 0.0, 0.0]);
+    t_vec(&mut tail, [0.0, 0.0, 1.0]);
+    tail.extend_from_slice(&[0x0b; 5]);
+    t_vec(&mut tail, [0.0, -2.0, 0.0]);
+    if let Some(draft_factor) = draft_factor {
+        t_dbl(&mut tail, draft_factor);
+    }
+    bytes.splice(solved - 1..solved, tail);
+    bytes
+}
+
+fn synthetic_geometry_with_surface_offset_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_analytic_offset_supports_smbh();
+    let subtype = bytes
+        .windows(b"off_int_cur".len())
+        .position(|window| window == b"off_int_cur")
+        .expect("generated offset subtype");
+    bytes[subtype - 1] = b"off_surf_int_cur".len() as u8;
+    bytes.splice(
+        subtype..subtype + b"off_int_cur".len(),
+        b"off_surf_int_cur".iter().copied(),
+    );
+    let solved = bytes
+        .windows(b"\x0d\x04nubs".len())
+        .rposition(|window| window == b"\x0d\x04nubs")
+        .expect("generated solved curve cache");
+    let mut tail = vec![0x0b];
+    for value in [-1.0, 2.0, -3.0, 4.0] {
+        t_dbl(&mut tail, value);
+    }
+    tail.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut tail, -0.5);
+    t_dbl(&mut tail, 1.5);
+    t_dbl(&mut tail, -0.25);
+    t_dbl(&mut tail, 0.75);
+    t_dbl(&mut tail, 1.25);
+    bytes.splice(solved - 19..solved, tail);
+    bytes
+}
+
+fn synthetic_geometry_with_spring_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_surface_intersection_smbh();
+    let subtype = bytes
+        .windows(b"int_int_cur".len())
+        .position(|window| window == b"int_int_cur")
+        .expect("generated intersection subtype");
+    bytes[subtype - 1] = b"spring_int_cur".len() as u8;
+    bytes.splice(
+        subtype..subtype + b"int_int_cur".len(),
+        b"spring_int_cur".iter().copied(),
+    );
+    let solved = bytes
+        .windows(b"\x0d\x04nubs".len())
+        .rposition(|window| window == b"\x0d\x04nubs")
+        .expect("generated solved curve cache");
+    let mut direction = Vec::new();
+    direction.push(0x15);
+    direction.extend_from_slice(&(-3i64).to_le_bytes());
+    bytes.splice(solved..solved, direction);
+    bytes
+}
+
 fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -7843,6 +7924,168 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
             ProceduralCurveDefinition::SurfaceCurve { family, .. } if family == &expected_family
         ));
     }
+}
+
+#[test]
+fn generated_silhouette_curves_decode_and_write_source_less() {
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SilhouetteKind};
+
+    for (name, draft_factor) in [
+        ("silh_int_cur", None),
+        ("para_silh_int_cur", None),
+        ("taper_silh_int_cur", Some(0.35)),
+    ] {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_silhouette_smbh(
+                    name,
+                    draft_factor,
+                ))),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{name} decode failed: {error}"));
+        let ProceduralCurveDefinition::Silhouette {
+            silhouette,
+            cast_surface,
+            light_direction,
+            ..
+        } = &result.ir.model.procedural_curves[0].definition
+        else {
+            panic!("expected {name} silhouette")
+        };
+        assert!(result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| surface.id == *cast_surface));
+        assert_eq!(
+            *light_direction,
+            cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0)
+        );
+        match (silhouette, draft_factor) {
+            (SilhouetteKind::Standard, None) if name == "silh_int_cur" => {}
+            (SilhouetteKind::Parametric, None) if name == "para_silh_int_cur" => {}
+            (
+                SilhouetteKind::Taper {
+                    draft_factor: actual,
+                },
+                Some(expected),
+            ) => {
+                assert_eq!(*actual, expected);
+            }
+            _ => panic!("wrong silhouette family for {name}"),
+        }
+
+        let mut source_less = result.ir;
+        source_less.source = None;
+        source_less.unknowns.clear();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .unwrap_or_else(|error| panic!("{name} source-less encode failed: {error}"));
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{name} round trip failed: {error}"));
+        assert!(matches!(
+            round_trip.ir.model.procedural_curves[0].definition,
+            ProceduralCurveDefinition::Silhouette { .. }
+        ));
+    }
+}
+
+#[test]
+fn generated_surface_offset_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_surface_offset_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("surface-offset decode");
+    let ProceduralCurveDefinition::SurfaceOffset {
+        base_u_range,
+        base_v_range,
+        base,
+        base_range,
+        distance,
+        shift,
+        scale,
+        ..
+    } = &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected surface-offset construction")
+    };
+    assert_eq!(*base_u_range, [-1.0, 2.0]);
+    assert_eq!(*base_v_range, [-3.0, 4.0]);
+    assert_eq!(*base_range, [-0.5, 1.5]);
+    assert_eq!((*distance, *shift, *scale), (-2.5, 0.75, 1.25));
+    assert!(result.ir.model.curves.iter().any(|curve| curve.id == *base));
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less surface-offset encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less surface-offset round trip");
+    let ProceduralCurveDefinition::SurfaceOffset {
+        base_u_range,
+        base_v_range,
+        base_range,
+        distance,
+        shift,
+        scale,
+        ..
+    } = &round_trip.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected round-trip surface offset")
+    };
+    assert_eq!(*base_u_range, [-1.0, 2.0]);
+    assert_eq!(*base_v_range, [-3.0, 4.0]);
+    assert_eq!(*base_range, [-0.5, 1.5]);
+    assert_eq!((*distance, *shift, *scale), (-2.5, 0.75, 1.25));
+}
+
+#[test]
+fn generated_spring_curve_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_spring_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("spring decode");
+    let ProceduralCurveDefinition::Spring { context, direction } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected spring construction")
+    };
+    assert_eq!(*direction, -3);
+    assert!(context
+        .sides
+        .iter()
+        .all(|side| side.surface.is_some() && side.pcurve.is_some()));
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less spring encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less spring round trip");
+    assert!(matches!(
+        round_trip.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::Spring { direction: -3, .. }
+    ));
 }
 
 #[test]

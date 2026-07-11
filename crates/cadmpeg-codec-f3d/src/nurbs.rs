@@ -969,6 +969,32 @@ pub(crate) struct EmbeddedProjection {
     pub(crate) tail: cadmpeg_ir::geometry::ProjectionTail,
 }
 
+/// Shared context and tail fields of a silhouette intcurve.
+pub(crate) struct EmbeddedSilhouette {
+    pub(crate) context: EmbeddedIntersection,
+    pub(crate) silhouette: cadmpeg_ir::geometry::SilhouetteKind,
+    pub(crate) cast_surface: SurfaceGeometry,
+    pub(crate) light_direction: Vector3,
+}
+
+/// Shared context and tail fields of an `off_surf_int_cur`.
+pub(crate) struct EmbeddedSurfaceOffset {
+    pub(crate) context: EmbeddedIntersection,
+    pub(crate) base_u_range: [f64; 2],
+    pub(crate) base_v_range: [f64; 2],
+    pub(crate) base: NurbsCurve,
+    pub(crate) base_range: [f64; 2],
+    pub(crate) distance: f64,
+    pub(crate) shift: f64,
+    pub(crate) scale: f64,
+}
+
+/// Non-null modern spring support context and direction enum.
+pub(crate) struct EmbeddedSpring {
+    pub(crate) context: EmbeddedIntersection,
+    pub(crate) direction: i64,
+}
+
 /// A procedural curve cache together with its native subtype and fit contract.
 pub struct DecodedProceduralCurve {
     /// The cached B-spline curve (control points scaled centimetre→
@@ -996,6 +1022,12 @@ pub struct DecodedProceduralCurve {
         cadmpeg_ir::geometry::SurfaceCurveFamily,
         EmbeddedIntersection,
     )>,
+    /// Embedded silhouette support, cast surface, and light vector.
+    pub(crate) embedded_silhouette: Option<EmbeddedSilhouette>,
+    /// Embedded support context and base curve of an `off_surf_int_cur`.
+    pub(crate) embedded_surface_offset: Option<EmbeddedSurfaceOffset>,
+    /// Modern non-null `spring_int_cur` construction.
+    pub(crate) embedded_spring: Option<EmbeddedSpring>,
     /// Embedded support context and source of a `proj_int_cur`.
     pub(crate) embedded_projection: Option<EmbeddedProjection>,
     /// `surface_fit_tolerance` of the cached B-spline block, if present
@@ -1049,6 +1081,9 @@ fn decode_procedural_curve_recursive(
                 bytes, int_width,
             ),
             embedded_surface_curve: decode_embedded_surface_curve(bytes, int_width),
+            embedded_silhouette: decode_embedded_silhouette(bytes, int_width),
+            embedded_surface_offset: decode_embedded_surface_offset(bytes, int_width),
+            embedded_spring: decode_embedded_spring(bytes, int_width),
             embedded_projection: decode_embedded_projection(bytes, int_width),
             cache_fit_tolerance,
         });
@@ -1070,6 +1105,163 @@ fn decode_procedural_curve_recursive(
         }
     }
     None
+}
+
+fn decode_embedded_spring(bytes: &[u8], int_width: usize) -> Option<EmbeddedSpring> {
+    let name = b"spring_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let mut position = marker + name.len() + 3;
+    let surfaces = [
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+    ];
+    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = first_end;
+    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = second_end;
+    let parameter_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+    ];
+    take_bool(bytes, &mut position)?;
+    let direction = take_tagged_int(bytes, &mut position, 0x15, int_width)?;
+    Some(EmbeddedSpring {
+        context: EmbeddedIntersection {
+            surfaces,
+            pcurves: [first_pcurve, second_pcurve],
+            parameter_range,
+            discontinuities,
+        },
+        direction,
+    })
+}
+
+fn decode_embedded_surface_offset(bytes: &[u8], int_width: usize) -> Option<EmbeddedSurfaceOffset> {
+    let name = b"off_surf_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let mut position = marker + name.len() + 3;
+    let surfaces = [
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+    ];
+    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = first_end;
+    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = second_end;
+    let parameter_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+    ];
+    take_bool(bytes, &mut position)?;
+    let base_u_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    let base_v_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    let base = decode_curve_block(bytes, position, int_width)?;
+    position = base.end;
+    let base_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    Some(EmbeddedSurfaceOffset {
+        context: EmbeddedIntersection {
+            surfaces,
+            pcurves: [first_pcurve, second_pcurve],
+            parameter_range,
+            discontinuities,
+        },
+        base_u_range,
+        base_v_range,
+        base: base.curve,
+        base_range,
+        distance: take_f64(bytes, &mut position)? * LEN_TO_MM,
+        shift: take_f64(bytes, &mut position)?,
+        scale: take_f64(bytes, &mut position)?,
+    })
+}
+
+fn decode_embedded_silhouette(bytes: &[u8], int_width: usize) -> Option<EmbeddedSilhouette> {
+    use cadmpeg_ir::geometry::SilhouetteKind;
+    let names = [
+        (b"silh_int_cur".as_slice(), SilhouetteKind::Standard),
+        (b"para_silh_int_cur".as_slice(), SilhouetteKind::Parametric),
+        (
+            b"taper_silh_int_cur".as_slice(),
+            SilhouetteKind::Taper { draft_factor: 0.0 },
+        ),
+    ];
+    let (marker, name, mut silhouette) = names.into_iter().find_map(|(name, silhouette)| {
+        bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|marker| (marker, name, silhouette))
+    })?;
+    let mut position = marker + name.len() + 3;
+    let surfaces = [
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+    ];
+    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = first_end;
+    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = second_end;
+    let parameter_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+    ];
+    let cast_surface = decode_embedded_surface(bytes, &mut position, int_width)?;
+    let light = take_native_vec3(bytes, &mut position, 0x14)?;
+    let light_direction = normalized(light)?;
+    if matches!(silhouette, SilhouetteKind::Taper { .. }) {
+        silhouette = SilhouetteKind::Taper {
+            draft_factor: take_f64(bytes, &mut position)?,
+        };
+    }
+    Some(EmbeddedSilhouette {
+        context: EmbeddedIntersection {
+            surfaces,
+            pcurves: [first_pcurve, second_pcurve],
+            parameter_range,
+            discontinuities,
+        },
+        silhouette,
+        cast_surface,
+        light_direction,
+    })
 }
 
 fn decode_embedded_surface_curve(

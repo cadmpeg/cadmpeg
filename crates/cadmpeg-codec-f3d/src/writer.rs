@@ -3515,6 +3515,110 @@ fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
+        context,
+        silhouette,
+        cast_surface,
+        light_direction,
+    } = &procedural.definition
+    {
+        let (name, draft_factor) = match silhouette {
+            cadmpeg_ir::geometry::SilhouetteKind::Standard => ("silh_int_cur", None),
+            cadmpeg_ir::geometry::SilhouetteKind::Parametric => ("para_silh_int_cur", None),
+            cadmpeg_ir::geometry::SilhouetteKind::Taper { draft_factor } => {
+                ("taper_silh_int_cur", Some(*draft_factor))
+            }
+        };
+        let cast_surface = target
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == *cast_surface)
+            .ok_or_else(|| CodecError::Malformed("silhouette cast surface is missing".into()))?;
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, name)?;
+        native_intcurve_support_context(bytes, target, context)?;
+        native_embedded_surface(bytes, &cast_surface.geometry)?;
+        native_vector(
+            bytes,
+            [light_direction.x, light_direction.y, light_direction.z],
+        );
+        if let Some(draft_factor) = draft_factor {
+            native_f64(bytes, draft_factor);
+        }
+        native_nurbs_curve(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        bytes.push(0x10);
+        return Ok(true);
+    }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+        context,
+        base_u_range,
+        base_v_range,
+        base,
+        base_range,
+        distance,
+        shift,
+        scale,
+    } = &procedural.definition
+    {
+        let base = target
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *base)
+            .ok_or_else(|| CodecError::Malformed("surface-offset base curve is missing".into()))?;
+        let CurveGeometry::Nurbs(base) = &base.geometry else {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D off_surf_int_cur requires a NURBS base curve".into(),
+            ));
+        };
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "off_surf_int_cur")?;
+        native_intcurve_support_context(bytes, target, context)?;
+        bytes.push(0x0b);
+        for range in [base_u_range, base_v_range] {
+            for value in *range {
+                native_f64(bytes, value);
+            }
+        }
+        native_nurbs_curve(bytes, base)?;
+        for value in base_range {
+            native_f64(bytes, *value);
+        }
+        native_f64(bytes, *distance / 10.0);
+        native_f64(bytes, *shift);
+        native_f64(bytes, *scale);
+        native_nurbs_curve(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        bytes.push(0x10);
+        return Ok(true);
+    }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring { context, direction } =
+        &procedural.definition
+    {
+        if context
+            .sides
+            .iter()
+            .any(|side| side.surface.is_none() || side.pcurve.is_none())
+        {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D spring_int_cur null-support ranges are not yet writable".into(),
+            ));
+        }
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "spring_int_cur")?;
+        native_intcurve_support_context(bytes, target, context)?;
+        bytes.push(0x0b);
+        native_enum(bytes, *direction);
+        native_nurbs_curve(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        bytes.push(0x10);
+        return Ok(true);
+    }
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
         context,
         selector,

@@ -644,6 +644,9 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                         decoded.embedded_intersection,
                                                         decoded.embedded_three_surface_intersection,
                                                         decoded.embedded_surface_curve,
+                                                        decoded.embedded_silhouette,
+                                                        decoded.embedded_surface_offset,
+                                                        decoded.embedded_spring,
                                                         decoded.embedded_projection,
                                                         decoded.cache_fit_tolerance,
                                                     ),
@@ -744,6 +747,9 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                             decoded.embedded_intersection,
                                                             decoded.embedded_three_surface_intersection,
                                                             decoded.embedded_surface_curve,
+                                                            decoded.embedded_silhouette,
+                                                            decoded.embedded_surface_offset,
+                                                            decoded.embedded_spring,
                                                             decoded.embedded_projection,
                                                             decoded.cache_fit_tolerance,
                                                         ),
@@ -1105,6 +1111,148 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             },
                         }
                     } else if let Some(embedded) = procedural.9 {
+                        let support_ids: [Option<SurfaceId>; 2] = embedded
+                            .context
+                            .surfaces
+                            .into_iter()
+                            .enumerate()
+                            .map(|(side, geometry)| {
+                                let id = SurfaceId(format!(
+                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                ));
+                                out.surfaces.push(Surface {
+                                    id: id.clone(),
+                                    geometry,
+                                });
+                                Some(id)
+                            })
+                            .collect::<Vec<_>>()
+                            .try_into()
+                            .expect("two fixed support sides");
+                        let pcurves = embedded.context.pcurves.map(|pcurve| {
+                            Some(PcurveGeometry::Nurbs {
+                                degree: pcurve.degree,
+                                knots: pcurve.knots,
+                                control_points: pcurve.control_points,
+                                weights: pcurve.weights,
+                                periodic: pcurve.periodic,
+                            })
+                        });
+                        let cast_surface =
+                            SurfaceId(format!("f3d:brep:procedural_curve#{i}:cast_surface"));
+                        out.surfaces.push(Surface {
+                            id: cast_surface.clone(),
+                            geometry: embedded.cast_surface,
+                        });
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
+                            context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                                sides: std::array::from_fn(|side| {
+                                    cadmpeg_ir::geometry::IntcurveSupportSide {
+                                        surface: support_ids[side].clone(),
+                                        pcurve: pcurves[side].clone(),
+                                    }
+                                }),
+                                parameter_range: embedded.context.parameter_range,
+                                discontinuities: embedded.context.discontinuities,
+                            },
+                            silhouette: embedded.silhouette,
+                            cast_surface,
+                            light_direction: embedded.light_direction,
+                        }
+                    } else if let Some(embedded) = procedural.10 {
+                        let support_ids: [Option<SurfaceId>; 2] = embedded
+                            .context
+                            .surfaces
+                            .into_iter()
+                            .enumerate()
+                            .map(|(side, geometry)| {
+                                let id = SurfaceId(format!(
+                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                ));
+                                out.surfaces.push(Surface {
+                                    id: id.clone(),
+                                    geometry,
+                                });
+                                Some(id)
+                            })
+                            .collect::<Vec<_>>()
+                            .try_into()
+                            .expect("two fixed support sides");
+                        let pcurves = embedded.context.pcurves.map(|pcurve| {
+                            Some(PcurveGeometry::Nurbs {
+                                degree: pcurve.degree,
+                                knots: pcurve.knots,
+                                control_points: pcurve.control_points,
+                                weights: pcurve.weights,
+                                periodic: pcurve.periodic,
+                            })
+                        });
+                        let base = CurveId(format!("f3d:brep:procedural_curve#{i}:base"));
+                        out.curves.push(Curve {
+                            id: base.clone(),
+                            geometry: CurveGeometry::Nurbs(embedded.base),
+                        });
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+                            context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                                sides: std::array::from_fn(|side| {
+                                    cadmpeg_ir::geometry::IntcurveSupportSide {
+                                        surface: support_ids[side].clone(),
+                                        pcurve: pcurves[side].clone(),
+                                    }
+                                }),
+                                parameter_range: embedded.context.parameter_range,
+                                discontinuities: embedded.context.discontinuities,
+                            },
+                            base_u_range: embedded.base_u_range,
+                            base_v_range: embedded.base_v_range,
+                            base,
+                            base_range: embedded.base_range,
+                            distance: embedded.distance,
+                            shift: embedded.shift,
+                            scale: embedded.scale,
+                        }
+                    } else if let Some(embedded) = procedural.11 {
+                        let support_ids: [Option<SurfaceId>; 2] = embedded
+                            .context
+                            .surfaces
+                            .into_iter()
+                            .enumerate()
+                            .map(|(side, geometry)| {
+                                let id = SurfaceId(format!(
+                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                ));
+                                out.surfaces.push(Surface {
+                                    id: id.clone(),
+                                    geometry,
+                                });
+                                Some(id)
+                            })
+                            .collect::<Vec<_>>()
+                            .try_into()
+                            .expect("two fixed support sides");
+                        let pcurves = embedded.context.pcurves.map(|pcurve| {
+                            Some(PcurveGeometry::Nurbs {
+                                degree: pcurve.degree,
+                                knots: pcurve.knots,
+                                control_points: pcurve.control_points,
+                                weights: pcurve.weights,
+                                periodic: pcurve.periodic,
+                            })
+                        });
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
+                            context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                                sides: std::array::from_fn(|side| {
+                                    cadmpeg_ir::geometry::IntcurveSupportSide {
+                                        surface: support_ids[side].clone(),
+                                        pcurve: pcurves[side].clone(),
+                                    }
+                                }),
+                                parameter_range: embedded.context.parameter_range,
+                                discontinuities: embedded.context.discontinuities,
+                            },
+                            direction: embedded.direction,
+                        }
+                    } else if let Some(embedded) = procedural.12 {
                         let surfaces: [Option<SurfaceId>; 2] = embedded
                             .surfaces
                             .into_iter()
@@ -1183,7 +1331,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         id: format!("f3d:brep:procedural_curve#{i}").into(),
                         curve: CurveId(id(i)),
                         definition,
-                        cache_fit_tolerance: procedural.10,
+                        cache_fit_tolerance: procedural.13,
                     });
                 }
             }

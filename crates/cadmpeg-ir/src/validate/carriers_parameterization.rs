@@ -87,6 +87,33 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
+            ProceduralCurveDefinition::Silhouette {
+                context,
+                cast_surface,
+                ..
+            } => {
+                surfaces.insert(&cast_surface.0);
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                }
+            }
+            ProceduralCurveDefinition::SurfaceOffset { context, base, .. } => {
+                curves.insert(&base.0);
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                }
+            }
+            ProceduralCurveDefinition::Spring { context, .. } => {
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                }
+            }
             ProceduralCurveDefinition::Projection {
                 context, source, ..
             } => {
