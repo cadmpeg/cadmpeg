@@ -223,6 +223,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 CurveGeometry::Ellipse { .. } => counts.ellipses += 1,
                 CurveGeometry::Parabola { .. }
                 | CurveGeometry::Hyperbola { .. }
+                | CurveGeometry::Degenerate { .. }
                 | CurveGeometry::Nurbs(_)
                 | CurveGeometry::Unknown { .. } => {}
             }
@@ -636,6 +637,7 @@ fn curve_tag(geometry: &CurveGeometry) -> &'static str {
         CurveGeometry::Ellipse { .. } => "ELLIPSE",
         CurveGeometry::Parabola { .. } => "PARABOLA",
         CurveGeometry::Hyperbola { .. } => "HYPERBOLA",
+        CurveGeometry::Degenerate { .. } => "DEGENERATE_CURVE",
         CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
         CurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
     }

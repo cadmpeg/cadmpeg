@@ -170,6 +170,10 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
                 &format!("'',{pl},{},{}", real(*major_radius), real(*minor_radius)),
             )
         }
+        CurveGeometry::Degenerate { point: collapsed } => {
+            let point = point(e, *collapsed);
+            e.emit("POLYLINE", &format!("'',({point},{point})"))
+        }
         CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
         CurveGeometry::Unknown { .. } => {
             unreachable!("unknown curves are filtered before emission")

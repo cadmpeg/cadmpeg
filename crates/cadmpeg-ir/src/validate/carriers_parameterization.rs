@@ -62,6 +62,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
     for procedural in &ir.model.procedural_curves {
         curves.insert(&procedural.curve.0);
         match &procedural.definition {
+            ProceduralCurveDefinition::Helix { .. } => {}
             ProceduralCurveDefinition::Intersection { supports } => {
                 for support in supports.iter().flatten() {
                     surfaces.insert(&support.0);
@@ -80,6 +81,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 if let Some(support) = support {
                     surfaces.insert(&support.0);
                 }
+            }
+            ProceduralCurveDefinition::VectorOffset { source, .. } => {
+                curves.insert(&source.0);
             }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {
                 if let Some(surface) = blend_surface {

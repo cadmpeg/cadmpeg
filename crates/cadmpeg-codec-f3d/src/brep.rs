@@ -181,7 +181,7 @@ fn is_analytic_surface(head: &str) -> bool {
 
 /// Whether a record name heads an analytic curve carrier.
 fn is_analytic_curve(head: &str) -> bool {
-    matches!(head, "straight" | "ellipse")
+    matches!(head, "straight" | "ellipse" | "degenerate_curve")
 }
 
 /// Decode an analytic surface carrier. Signed sphere and torus radii remain in
@@ -348,6 +348,9 @@ pub(crate) fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
                 })
             }
         }
+        "degenerate_curve" => Some(CurveGeometry::Degenerate {
+            point: scale_point(base),
+        }),
         _ => None,
     }
 }
@@ -536,7 +539,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         degree: decoded.degree,
                                         knots: decoded.knots,
                                         control_points: decoded.control_points,
-                                        weights: None,
+                                        weights: decoded.weights,
                                         periodic: decoded.periodic,
                                     },
                                 );
@@ -593,6 +596,8 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                     cv,
                                                     (
                                                         decoded.native_kind,
+                                                        decoded.definition,
+                                                        decoded.vector_offset,
                                                         decoded.cache_fit_tolerance,
                                                     ),
                                                 );
@@ -684,6 +689,8 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                         curve_index,
                                                         (
                                                             decoded.native_kind,
+                                                            decoded.definition,
+                                                            decoded.vector_offset,
                                                             decoded.cache_fit_tolerance,
                                                         ),
                                                     );
@@ -816,13 +823,33 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     geometry,
                 });
                 if let Some(procedural) = procedural_curve_defs.remove(&i) {
+                    let definition = if let Some((source, parameter_range, offset, labels, codes)) =
+                        procedural.2
+                    {
+                        let source_id = CurveId(format!("f3d:brep:procedural_curve#{i}:source"));
+                        out.curves.push(Curve {
+                            id: source_id.clone(),
+                            geometry: CurveGeometry::Nurbs(source),
+                        });
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
+                            source: source_id,
+                            parameter_range,
+                            offset,
+                            labels,
+                            codes,
+                        }
+                    } else {
+                        procedural.1.unwrap_or(
+                            cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
+                                record: None,
+                            },
+                        )
+                    };
                     out.procedural_curves.push(ProceduralCurve {
                         id: format!("f3d:brep:procedural_curve#{i}").into(),
                         curve: CurveId(id(i)),
-                        definition: cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
-                            record: None,
-                        },
-                        cache_fit_tolerance: procedural.1,
+                        definition,
+                        cache_fit_tolerance: procedural.3,
                     });
                 }
             }
@@ -1380,8 +1407,17 @@ fn classify_body_kinds(out: &mut Brep) {
             .filter(|shell| shell_ids.contains(&shell.id))
             .flat_map(|shell| &shell.faces)
             .collect::<HashSet<_>>();
+        let has_wire_edges = out
+            .shells
+            .iter()
+            .filter(|shell| shell_ids.contains(&shell.id))
+            .any(|shell| !shell.wire_edges.is_empty());
         if face_ids.is_empty() {
             body.kind = cadmpeg_ir::topology::BodyKind::Wire;
+            continue;
+        }
+        if has_wire_edges {
+            body.kind = cadmpeg_ir::topology::BodyKind::General;
             continue;
         }
         let loop_ids = out

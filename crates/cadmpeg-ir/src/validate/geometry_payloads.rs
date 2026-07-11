@@ -272,6 +272,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     bounds_err(findings, &c.id.0, "hyperbola radius is not positive");
                 }
             }
+            CurveGeometry::Degenerate { point } => {
+                if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
+                    bounds_err(findings, &c.id.0, "degenerate curve point is not finite");
+                }
+            }
             CurveGeometry::Nurbs(n) => {
                 if n.control_points.len() < (n.degree as usize + 1) {
                     bounds_err(
@@ -283,6 +288,66 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check_knots(findings, &c.id.0, &n.knots, "");
             }
             CurveGeometry::Unknown { .. } => {}
+        }
+    }
+    for procedural in &ir.model.procedural_curves {
+        if let ProceduralCurveDefinition::VectorOffset {
+            parameter_range,
+            offset,
+            ..
+        } = &procedural.definition
+        {
+            if !parameter_range.iter().all(|value| value.is_finite())
+                || parameter_range[0] > parameter_range[1]
+                || !offset.x.is_finite()
+                || !offset.y.is_finite()
+                || !offset.z.is_finite()
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "vector-offset fields are not finite and ordered",
+                );
+            }
+            continue;
+        }
+        let ProceduralCurveDefinition::Helix {
+            angle_range,
+            center,
+            major,
+            minor,
+            pitch,
+            apex_factor,
+            axis,
+        } = &procedural.definition
+        else {
+            continue;
+        };
+        let finite = angle_range.iter().all(|value| value.is_finite())
+            && center.x.is_finite()
+            && center.y.is_finite()
+            && center.z.is_finite()
+            && [major, minor, pitch, axis]
+                .into_iter()
+                .flat_map(|vector| [vector.x, vector.y, vector.z])
+                .all(f64::is_finite)
+            && apex_factor.is_finite();
+        if !finite || angle_range[0] > angle_range[1] {
+            bounds_err(
+                findings,
+                &procedural.id.0,
+                "helix fields are not finite and ordered",
+            );
+        }
+        if degenerate(major) || degenerate(minor) || degenerate(axis) {
+            bounds_err(findings, &procedural.id.0, "helix frame is degenerate");
+        }
+        if (major.norm() - minor.norm()).abs() > 1e-9 {
+            bounds_err(
+                findings,
+                &procedural.id.0,
+                "helix major and minor radii differ",
+            );
         }
     }
 }

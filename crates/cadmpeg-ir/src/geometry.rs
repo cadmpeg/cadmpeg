@@ -204,6 +204,11 @@ pub enum CurveGeometry {
         /// Semi-conjugate radius.
         minor_radius: f64,
     },
+    /// A curve collapsed to one model-space point at a topological singularity.
+    Degenerate {
+        /// The collapsed curve point.
+        point: Point3,
+    },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
     /// Native curve carrier whose shape is not decoded.
@@ -393,6 +398,23 @@ pub struct ProceduralCurve {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralCurveDefinition {
+    /// Circular or conical helix around an axis.
+    Helix {
+        /// Native angular parameter interval.
+        angle_range: [f64; 2],
+        /// Axis origin at the start of the helix.
+        center: Point3,
+        /// Major profile-radius vector.
+        major: Vector3,
+        /// Minor profile-radius vector; its orientation records handedness.
+        minor: Vector3,
+        /// Axial rise vector per full revolution.
+        pitch: Vector3,
+        /// Linear radial growth per revolution fraction; zero is cylindrical.
+        apex_factor: f64,
+        /// Unit helix axis direction.
+        axis: Vector3,
+    },
     /// Intersection of two support surfaces.
     Intersection {
         /// The two intersecting surfaces; `None` when a side was not resolved.
@@ -419,6 +441,19 @@ pub enum ProceduralCurveDefinition {
         /// to a support surface; `None` for a free-space offset.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         support: Option<SurfaceId>,
+    },
+    /// Free-space vector offset of a source curve over a parameter interval.
+    VectorOffset {
+        /// Curve being offset.
+        source: CurveId,
+        /// Native parameter interval on the source curve.
+        parameter_range: [f64; 2],
+        /// Model-space offset vector.
+        offset: Vector3,
+        /// Native role labels following the offset vector.
+        labels: [String; 2],
+        /// Native integer role codes paired with `labels`.
+        codes: [i64; 2],
     },
     /// Spine or center curve of a blend surface.
     BlendSpine {

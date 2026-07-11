@@ -416,6 +416,14 @@ fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
 /// Add a generated inline 2D `nubs` pcurve to the first coedge of the base
 /// topology fixture. The new record is appended at `RecordTable` index 19.
 fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
+    synthetic_geometry_with_pcurve_block_smbh(generated_pcurve_block())
+}
+
+fn synthetic_geometry_with_rational_pcurve_smbh() -> Vec<u8> {
+    synthetic_geometry_with_pcurve_block_smbh(generated_rational_pcurve_block())
+}
+
+fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -439,7 +447,7 @@ fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
     pcurve.push(0x0b);
     pcurve.push(0x0f);
     t_ident(&mut pcurve, "exp_par_cur");
-    pcurve.extend_from_slice(&generated_pcurve_block());
+    pcurve.extend_from_slice(&block);
     t_dbl(&mut pcurve, 0.001);
     pcurve.push(0x10);
     pcurve.extend_from_slice(&[0x0b; 4]);
@@ -512,6 +520,87 @@ fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
     t_ident(&mut curve, "surf_surf_int_cur");
     curve.extend_from_slice(&generated_curve_block());
     t_dbl(&mut curve, 0.0005);
+    curve.push(0x10);
+    t_end(&mut curve);
+    bytes.splice(delta..delta, curve);
+    bytes
+}
+
+fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+        .expect("generated edge reference offsets");
+    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "intcurve");
+    t_ident(&mut curve, "curve");
+    t_ref(&mut curve, -1);
+    t_long(&mut curve, -1);
+    t_ref(&mut curve, -1);
+    curve.push(0x0f);
+    t_ident(&mut curve, "helix_int_cur");
+    curve.push(0x0a);
+    t_dbl(&mut curve, 0.0);
+    curve.push(0x0a);
+    t_dbl(&mut curve, std::f64::consts::TAU);
+    t_pos(&mut curve, [1.0, 2.0, 3.0]);
+    t_pos(&mut curve, [2.0, 0.0, 0.0]);
+    t_pos(&mut curve, [0.0, 2.0, 0.0]);
+    t_pos(&mut curve, [0.0, 0.0, 4.0]);
+    t_dbl(&mut curve, 0.25);
+    t_vec(&mut curve, [0.0, 0.0, 1.0]);
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut curve, 0.0005);
+    curve.push(0x10);
+    t_end(&mut curve);
+    bytes.splice(delta..delta, curve);
+    bytes
+}
+
+fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+        .expect("generated edge reference offsets");
+    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "intcurve");
+    t_ident(&mut curve, "curve");
+    t_ref(&mut curve, -1);
+    t_long(&mut curve, -1);
+    t_ref(&mut curve, -1);
+    curve.push(0x0f);
+    t_ident(&mut curve, "offset_int_cur");
+    curve.push(0x0b);
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut curve, -2.0);
+    t_dbl(&mut curve, 5.0);
+    t_vec(&mut curve, [0.5, -1.0, 2.0]);
+    push_u8_string(&mut curve, "source");
+    t_long(&mut curve, 7);
+    push_u8_string(&mut curve, "offset");
+    t_long(&mut curve, 9);
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut curve, 0.0008);
     curve.push(0x10);
     t_end(&mut curve);
     bytes.splice(delta..delta, curve);
@@ -680,6 +769,123 @@ fn synthetic_wire_body_smbh() -> Vec<u8> {
     out
 }
 
+fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    for (record_index, reference_ordinal) in [(1usize, 3usize), (3, 5)] {
+        let record = &records[record_index];
+        let offsets = crate::sab::payload_token_offsets(&bytes, record, 8, 0x0c)
+            .expect("generated reference offsets");
+        let offset = offsets[reference_ordinal];
+        bytes[offset + 1..offset + 9].copy_from_slice(&19i64.to_le_bytes());
+    }
+    let updated = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    assert_eq!(updated[1].ref_at(4), Some(19));
+    assert_eq!(updated[3].ref_at(6), Some(19));
+
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut appended = Vec::new();
+    t_ident(&mut appended, "wire");
+    t_ref(&mut appended, -1);
+    t_long(&mut appended, -1);
+    for reference in [-1, -1, 20, 3, -1] {
+        t_ref(&mut appended, reference);
+    }
+    appended.push(0x0b);
+    t_end(&mut appended);
+
+    t_ident(&mut appended, "coedge");
+    t_ref(&mut appended, -1);
+    t_long(&mut appended, -1);
+    for reference in [-1, 20, 20, -1, 21] {
+        t_ref(&mut appended, reference);
+    }
+    appended.push(0x0b);
+    t_ref(&mut appended, 19);
+    t_long(&mut appended, 0);
+    t_ref(&mut appended, -1);
+    t_end(&mut appended);
+
+    t_ident(&mut appended, "edge");
+    t_ref(&mut appended, -1);
+    t_long(&mut appended, -1);
+    t_ref(&mut appended, -1);
+    t_ref(&mut appended, 22);
+    t_dbl(&mut appended, 0.0);
+    t_ref(&mut appended, 23);
+    t_dbl(&mut appended, 2.0);
+    t_ref(&mut appended, 20);
+    t_ref(&mut appended, 26);
+    appended.push(0x0b);
+    push_u8_string(&mut appended, "unknown");
+    t_end(&mut appended);
+
+    for (point, index_flag) in [(24, 0), (25, 1)] {
+        t_ident(&mut appended, "vertex");
+        t_ref(&mut appended, -1);
+        t_long(&mut appended, -1);
+        t_ref(&mut appended, -1);
+        t_ref(&mut appended, 21);
+        t_long(&mut appended, index_flag);
+        t_ref(&mut appended, point);
+        t_end(&mut appended);
+    }
+    for position in [[0.0, 0.0, 1.0], [2.0, 0.0, 1.0]] {
+        t_ident(&mut appended, "point");
+        t_ref(&mut appended, -1);
+        t_long(&mut appended, -1);
+        t_ref(&mut appended, -1);
+        t_pos(&mut appended, position);
+        t_long(&mut appended, 1);
+        t_end(&mut appended);
+    }
+    t_subident(&mut appended, "straight");
+    t_ident(&mut appended, "curve");
+    t_ref(&mut appended, -1);
+    t_long(&mut appended, -1);
+    t_ref(&mut appended, -1);
+    t_pos(&mut appended, [0.0, 0.0, 1.0]);
+    t_vec(&mut appended, [1.0, 0.0, 0.0]);
+    t_end(&mut appended);
+    bytes.splice(delta..delta, appended);
+    bytes
+}
+
+fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+        .expect("generated edge reference offsets");
+    bytes[offsets[3] + 1..offsets[3] + 9].copy_from_slice(&13i64.to_le_bytes());
+    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "degenerate_curve");
+    t_ident(&mut curve, "curve");
+    t_ref(&mut curve, -1);
+    t_long(&mut curve, -1);
+    t_ref(&mut curve, -1);
+    t_pos(&mut curve, [0.0, 0.0, 0.0]);
+    curve.extend_from_slice(&[0x0b, 0x0b]);
+    t_end(&mut curve);
+    bytes.splice(delta..delta, curve);
+    bytes
+}
+
 fn generated_pcurve_block() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"\x0d\x04nubs");
@@ -693,6 +899,24 @@ fn generated_pcurve_block() -> Vec<u8> {
     for [u, v] in [[0.25, 0.5], [0.75, 1.5]] {
         push_tagged_f64(&mut b, u);
         push_tagged_f64(&mut b, v);
+    }
+    b
+}
+
+fn generated_rational_pcurve_block() -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend_from_slice(b"\x0d\x05nurbs");
+    push_tagged_i64(&mut b, 0x04, 1);
+    push_tagged_i64(&mut b, 0x15, 0);
+    push_tagged_i64(&mut b, 0x04, 2);
+    for (k, m) in [(0.0, 1i64), (1.0, 1)] {
+        push_tagged_f64(&mut b, k);
+        push_tagged_i64(&mut b, 0x04, m);
+    }
+    for ([u, v], weight) in [([0.25, 0.5], 1.0), ([0.75, 1.5], 0.5)] {
+        push_tagged_f64(&mut b, u);
+        push_tagged_f64(&mut b, v);
+        push_tagged_f64(&mut b, weight);
     }
     b
 }
@@ -1130,7 +1354,6 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.unknowns.clear();
-
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -1749,6 +1972,39 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
             .count(),
         1
     );
+}
+
+#[test]
+fn generated_source_less_face_writes_rational_nurbs_pcurve() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_rational_pcurve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated rational pcurve decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let expected = source_less.model.pcurves[0].clone();
+    assert!(matches!(
+        &expected.geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+            weights: Some(weights),
+            ..
+        } if weights == &vec![1.0, 0.5]
+    ));
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less rational pcurve encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less rational pcurve round trip");
+    assert_eq!(round_trip.ir.model.pcurves.len(), 1);
+    let actual = &round_trip.ir.model.pcurves[0];
+    assert_eq!(actual.geometry, expected.geometry);
+    assert_eq!(actual.wrapper_reversed, expected.wrapper_reversed);
+    assert_eq!(actual.parameter_range, expected.parameter_range);
+    assert_eq!(actual.fit_tolerance, expected.fit_tolerance);
 }
 
 #[test]
@@ -5019,6 +5275,200 @@ fn decode_transfers_generated_wire_body_topology() {
 }
 
 #[test]
+fn decode_classifies_generated_mixed_face_wire_body_as_general() {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_mixed_face_wire_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated mixed body decode");
+    assert_eq!(
+        result.ir.model.bodies.len(),
+        1,
+        "mixed decode report: {:?}",
+        result.report
+    );
+    assert_eq!(
+        result.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::General
+    );
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.shells[0].wire_edges.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 4);
+    assert_eq!(result.ir.model.curves.len(), 1);
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "mixed-body findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
+fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
+    use cadmpeg_ir::{geometry::CurveGeometry, math::Point3};
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated degenerate curve decode");
+    let curve = decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| matches!(curve.geometry, CurveGeometry::Degenerate { .. }))
+        .expect("degenerate curve carrier");
+    assert_eq!(
+        curve.geometry,
+        CurveGeometry::Degenerate {
+            point: Point3::new(0.0, 0.0, 0.0)
+        }
+    );
+    let curve_id = curve.id.clone();
+
+    let mut edited = decoded.ir.clone();
+    let edited_curve = edited
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .expect("editable degenerate curve");
+    edited_curve.geometry = CurveGeometry::Degenerate {
+        point: Point3::new(2.0, 3.0, 4.0),
+    };
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("degenerate curve regeneration");
+    let regenerated = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated degenerate curve decode");
+    assert!(regenerated.ir.model.curves.iter().any(|curve| {
+        curve.geometry
+            == CurveGeometry::Degenerate {
+                point: Point3::new(2.0, 3.0, 4.0),
+            }
+    }));
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let expected = CurveGeometry::Degenerate {
+        point: Point3::new(0.0, 0.0, 0.0),
+    };
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less degenerate curve encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less degenerate curve round trip");
+    assert!(round_trip
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry == expected));
+    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "degenerate-curve findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
+fn generated_source_less_writes_general_face_wire_body() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_mixed_face_wire_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated mixed body decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less general body encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less general body round trip");
+    assert_eq!(round_trip.ir.model.bodies.len(), 1);
+    assert_eq!(
+        round_trip.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::General
+    );
+    assert_eq!(round_trip.ir.model.faces.len(), 1);
+    assert_eq!(round_trip.ir.model.shells[0].wire_edges.len(), 1);
+    assert_eq!(round_trip.ir.model.edges.len(), 4);
+    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "mixed-body findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
+fn generated_source_less_writes_solid_and_wire_bodies_together() {
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let decoded_wire = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_wire_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated wire body decode");
+    let wire_json = decoded_wire
+        .ir
+        .to_canonical_json()
+        .expect("canonical wire JSON")
+        .replace("f3d:brep:", "generated:combined_wire:");
+    let mut wire =
+        cadmpeg_ir::document::CadIr::from_json(&wire_json).expect("renamed combined wire IR");
+    source_less.model.bodies.append(&mut wire.model.bodies);
+    source_less.model.regions.append(&mut wire.model.regions);
+    source_less.model.shells.append(&mut wire.model.shells);
+    source_less.model.edges.append(&mut wire.model.edges);
+    source_less.model.vertices.append(&mut wire.model.vertices);
+    source_less.model.points.append(&mut wire.model.points);
+    source_less.model.curves.append(&mut wire.model.curves);
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less solid-plus-wire encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less solid-plus-wire round trip");
+    assert_eq!(round_trip.ir.model.bodies.len(), 2);
+    assert_eq!(
+        round_trip
+            .ir
+            .model
+            .bodies
+            .iter()
+            .map(|body| body.kind)
+            .collect::<Vec<_>>(),
+        [
+            cadmpeg_ir::topology::BodyKind::Solid,
+            cadmpeg_ir::topology::BodyKind::Wire,
+        ]
+    );
+    assert_eq!(round_trip.ir.model.faces.len(), 6);
+    assert_eq!(round_trip.ir.model.shells[1].wire_edges.len(), 1);
+    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "combined-body findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
 fn generated_source_less_writes_wire_body_topology() {
     let decoded = F3dCodec
         .decode(
@@ -5062,6 +5512,233 @@ fn generated_source_less_writes_wire_body_topology() {
         expected_points
     );
     assert_eq!(round_trip.ir.model.curves[0].geometry, expected_curve);
+    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "wire findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
+fn generated_source_less_writes_two_independent_wire_bodies() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_wire_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated wire body decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let second_json = source_less
+        .to_canonical_json()
+        .expect("canonical wire JSON")
+        .replace("f3d:brep:", "generated:wire_two:");
+    let mut second =
+        cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second wire IR");
+    second.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform {
+        rows: [
+            [1.0, 0.0, 0.0, 25.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    });
+    source_less.model.bodies.append(&mut second.model.bodies);
+    source_less.model.regions.append(&mut second.model.regions);
+    source_less.model.shells.append(&mut second.model.shells);
+    source_less.model.edges.append(&mut second.model.edges);
+    source_less
+        .model
+        .vertices
+        .append(&mut second.model.vertices);
+    source_less.model.points.append(&mut second.model.points);
+    source_less.model.curves.append(&mut second.model.curves);
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less two-wire-body encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less two-wire-body round trip");
+    assert_eq!(round_trip.ir.model.bodies.len(), 2);
+    assert!(round_trip
+        .ir
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.kind == cadmpeg_ir::topology::BodyKind::Wire));
+    assert_eq!(round_trip.ir.model.regions.len(), 2);
+    assert_eq!(round_trip.ir.model.shells.len(), 2);
+    assert_eq!(round_trip.ir.model.edges.len(), 2);
+    assert_eq!(round_trip.ir.model.curves.len(), 2);
+    assert_eq!(
+        round_trip.ir.model.bodies[1]
+            .transform
+            .expect("second wire transform")
+            .rows[0][3],
+        25.0
+    );
+    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "wire findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
+fn generated_source_less_writes_multi_edge_wire_ring() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_wire_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated wire body decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let second_json = source_less
+        .to_canonical_json()
+        .expect("canonical wire JSON")
+        .replace("f3d:brep:", "generated:wire_edge_two:");
+    let mut second =
+        cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second wire edge IR");
+    let second_edge = second.model.edges[0].id.clone();
+    source_less.model.shells[0].wire_edges.push(second_edge);
+    source_less.model.edges.append(&mut second.model.edges);
+    source_less
+        .model
+        .vertices
+        .append(&mut second.model.vertices);
+    source_less.model.points.append(&mut second.model.points);
+    source_less.model.curves.append(&mut second.model.curves);
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less multi-edge wire encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less multi-edge wire round trip");
+    assert_eq!(round_trip.ir.model.shells[0].wire_edges.len(), 2);
+    assert_eq!(round_trip.ir.model.edges.len(), 2);
+    assert_eq!(round_trip.ir.model.curves.len(), 2);
+    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "wire findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
+fn generated_source_less_writes_multi_region_wire_body() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_wire_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated wire body decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let second_json = source_less
+        .to_canonical_json()
+        .expect("canonical wire JSON")
+        .replace("f3d:brep:", "generated:wire_region_two:");
+    let mut second = cadmpeg_ir::document::CadIr::from_json(&second_json)
+        .expect("renamed second wire region IR");
+    let body_id = source_less.model.bodies[0].id.clone();
+    let region_id = second.model.regions[0].id.clone();
+    second.model.regions[0].body = body_id;
+    source_less.model.bodies[0].regions.push(region_id);
+    source_less.model.regions.append(&mut second.model.regions);
+    source_less.model.shells.append(&mut second.model.shells);
+    source_less.model.edges.append(&mut second.model.edges);
+    source_less
+        .model
+        .vertices
+        .append(&mut second.model.vertices);
+    source_less.model.points.append(&mut second.model.points);
+    source_less.model.curves.append(&mut second.model.curves);
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less multi-region wire encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less multi-region wire round trip");
+    assert_eq!(round_trip.ir.model.bodies.len(), 1);
+    assert_eq!(round_trip.ir.model.bodies[0].regions.len(), 2);
+    assert_eq!(round_trip.ir.model.regions.len(), 2);
+    assert_eq!(round_trip.ir.model.shells.len(), 2);
+    assert!(round_trip
+        .ir
+        .model
+        .regions
+        .iter()
+        .all(|region| region.body == round_trip.ir.model.bodies[0].id));
+    assert_eq!(round_trip.ir.model.edges.len(), 2);
+    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "wire findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
+fn generated_source_less_writes_multi_shell_wire_region() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_wire_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated wire body decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let second_json = source_less
+        .to_canonical_json()
+        .expect("canonical wire JSON")
+        .replace("f3d:brep:", "generated:wire_shell_two:");
+    let mut second =
+        cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second wire shell IR");
+    let region_id = source_less.model.regions[0].id.clone();
+    let shell_id = second.model.shells[0].id.clone();
+    second.model.shells[0].region = region_id;
+    source_less.model.regions[0].shells.push(shell_id);
+    source_less.model.shells.append(&mut second.model.shells);
+    source_less.model.edges.append(&mut second.model.edges);
+    source_less
+        .model
+        .vertices
+        .append(&mut second.model.vertices);
+    source_less.model.points.append(&mut second.model.points);
+    source_less.model.curves.append(&mut second.model.curves);
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less multi-shell wire encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less multi-shell wire round trip");
+    assert_eq!(round_trip.ir.model.bodies.len(), 1);
+    assert_eq!(round_trip.ir.model.regions.len(), 1);
+    assert_eq!(round_trip.ir.model.regions[0].shells.len(), 2);
+    assert_eq!(round_trip.ir.model.shells.len(), 2);
+    assert!(round_trip
+        .ir
+        .model
+        .shells
+        .iter()
+        .all(|shell| shell.region == round_trip.ir.model.regions[0].id));
+    assert_eq!(round_trip.ir.model.edges.len(), 2);
     let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
@@ -5933,6 +6610,216 @@ fn decode_retains_generated_procedural_curve_fit_contract() {
 }
 
 #[test]
+fn decode_retains_generated_helix_construction() {
+    use cadmpeg_ir::{geometry::ProceduralCurveDefinition, math::Point3};
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_helix_curve_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated helix decode");
+    let procedural = result
+        .ir
+        .model
+        .procedural_curves
+        .first()
+        .expect("helix construction");
+    let ProceduralCurveDefinition::Helix {
+        angle_range,
+        center,
+        major,
+        minor,
+        pitch,
+        apex_factor,
+        axis,
+    } = procedural.definition
+    else {
+        panic!("expected helix construction")
+    };
+    assert_eq!(angle_range, [0.0, std::f64::consts::TAU]);
+    assert_eq!(center, Point3::new(10.0, 20.0, 30.0));
+    assert_eq!(major, cadmpeg_ir::math::Vector3::new(20.0, 0.0, 0.0));
+    assert_eq!(minor, cadmpeg_ir::math::Vector3::new(0.0, 20.0, 0.0));
+    assert_eq!(pitch, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 40.0));
+    assert_eq!(apex_factor, 0.25);
+    assert_eq!(axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(procedural.cache_fit_tolerance, Some(0.005));
+
+    let mut edited = result.ir.clone();
+    edited.model.procedural_curves[0].definition = ProceduralCurveDefinition::Helix {
+        angle_range: [-1.0, 7.0],
+        center: Point3::new(12.0, 23.0, 34.0),
+        major: cadmpeg_ir::math::Vector3::new(30.0, 0.0, 0.0),
+        minor: cadmpeg_ir::math::Vector3::new(0.0, -30.0, 0.0),
+        pitch: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 55.0),
+        apex_factor: 0.5,
+        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+    };
+    edited.model.procedural_curves[0].cache_fit_tolerance = Some(0.012);
+    let solved_curve_id = edited.model.procedural_curves[0].curve.clone();
+    let solved_curve = edited
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == solved_curve_id)
+        .expect("helix solved curve");
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(solved_cache) = &mut solved_curve.geometry
+    else {
+        panic!("expected helix NURBS cache")
+    };
+    solved_cache.control_points[1].x = 17.0;
+    solved_cache.control_points[1].z = -2.0;
+    let edited_definition = edited.model.procedural_curves[0].definition.clone();
+    let edited_cache = solved_curve.geometry.clone();
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("helix definition regeneration");
+    let regenerated = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated helix decode");
+    assert_eq!(
+        regenerated.ir.model.procedural_curves[0].definition,
+        edited_definition
+    );
+    assert_eq!(
+        regenerated.ir.model.procedural_curves[0].cache_fit_tolerance,
+        Some(0.012)
+    );
+    assert!(regenerated
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry == edited_cache));
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let expected = source_less.model.procedural_curves[0].definition.clone();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less helix encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less helix round trip");
+    assert_eq!(
+        round_trip.ir.model.procedural_curves[0].definition,
+        expected
+    );
+    assert_eq!(
+        round_trip.ir.model.procedural_curves[0].cache_fit_tolerance,
+        Some(0.005)
+    );
+}
+
+#[test]
+fn generated_vector_offset_curve_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_vector_offset_curve_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("generated vector-offset decode");
+    let procedural = &result.ir.model.procedural_curves[0];
+    let ProceduralCurveDefinition::VectorOffset {
+        source,
+        parameter_range,
+        offset,
+        labels,
+        codes,
+    } = &procedural.definition
+    else {
+        panic!("expected vector offset construction")
+    };
+    assert_eq!(*parameter_range, [-2.0, 5.0]);
+    assert_eq!(*offset, cadmpeg_ir::math::Vector3::new(5.0, -10.0, 20.0));
+    assert_eq!(labels, &["source".to_string(), "offset".to_string()]);
+    assert_eq!(*codes, [7, 9]);
+    assert!(result
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id == *source));
+    assert_eq!(procedural.cache_fit_tolerance, Some(0.008));
+    let expected_range = *parameter_range;
+    let expected_offset = *offset;
+    let expected_labels = labels.clone();
+    let expected_codes = *codes;
+
+    let mut edited = result.ir.clone();
+    let ProceduralCurveDefinition::VectorOffset {
+        parameter_range,
+        offset,
+        ..
+    } = &mut edited.model.procedural_curves[0].definition
+    else {
+        panic!("expected editable vector offset")
+    };
+    *parameter_range = [-3.0, 6.0];
+    *offset = cadmpeg_ir::math::Vector3::new(8.0, -12.0, 25.0);
+    edited.model.procedural_curves[0].cache_fit_tolerance = Some(0.015);
+    let edited_definition = edited.model.procedural_curves[0].definition.clone();
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("vector-offset regeneration");
+    let regenerated = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated vector-offset decode");
+    assert_eq!(
+        regenerated.ir.model.procedural_curves[0].definition,
+        edited_definition
+    );
+    assert_eq!(
+        regenerated.ir.model.procedural_curves[0].cache_fit_tolerance,
+        Some(0.015)
+    );
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less vector-offset encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less vector-offset round trip");
+    let ProceduralCurveDefinition::VectorOffset {
+        source,
+        parameter_range,
+        offset,
+        labels,
+        codes,
+    } = &round_trip.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected round-trip vector offset")
+    };
+    assert_eq!(*parameter_range, expected_range);
+    assert_eq!(*offset, expected_offset);
+    assert_eq!(*labels, expected_labels);
+    assert_eq!(*codes, expected_codes);
+    assert!(round_trip
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id == *source));
+    assert_eq!(
+        round_trip.ir.model.procedural_curves[0].cache_fit_tolerance,
+        Some(0.008)
+    );
+}
+
+#[test]
 fn generated_f3d_rewrites_procedural_curve_fit_tolerance() {
     let source = f3d_with_smbh(&synthetic_geometry_with_procedural_curve_smbh());
     let decoded = F3dCodec
@@ -5952,6 +6839,56 @@ fn generated_f3d_rewrites_procedural_curve_fit_tolerance() {
         round_trip.ir.model.procedural_curves[0].cache_fit_tolerance,
         Some(0.025)
     );
+}
+
+#[test]
+fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_procedural_curve_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("generated procedural curve decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    source_less.model.procedural_curves[0].definition = ProceduralCurveDefinition::Intersection {
+        supports: [None, None],
+    };
+    let mut encoded = Vec::new();
+    let error = F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect_err("typed intersection must not degrade to a cache-only curve");
+    assert!(error
+        .to_string()
+        .contains("does not support procedural curve definition"));
+}
+
+#[test]
+fn generated_source_less_rejects_duplicate_procedural_curve_owners() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_helix_curve_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated helix decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let mut duplicate = source_less.model.procedural_curves[0].clone();
+    duplicate.id = "generated:duplicate-helix".into();
+    source_less.model.procedural_curves.push(duplicate);
+    let mut encoded = Vec::new();
+    let error = F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect_err("duplicate procedural construction must be rejected");
+    assert!(error
+        .to_string()
+        .contains("multiple procedural constructions"));
 }
 
 #[test]
@@ -6095,6 +7032,35 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated pcurve decode");
+    assert_eq!(round_trip.ir.model.pcurves, [expected]);
+}
+
+#[test]
+fn generated_f3d_rewrites_rational_pcurve_weights() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_rational_pcurve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated rational pcurve decode");
+    let mut edited = decoded.ir;
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+        control_points,
+        weights: Some(weights),
+        ..
+    } = &mut edited.model.pcurves[0].geometry
+    else {
+        panic!("expected rational pcurve")
+    };
+    control_points[0].u = -0.25;
+    weights[1] = 0.75;
+    let expected = edited.model.pcurves[0].clone();
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("rational pcurve regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated rational pcurve decode");
     assert_eq!(round_trip.ir.model.pcurves, [expected]);
 }
 

@@ -23,6 +23,7 @@ This document records F3D semantics that the format specification does not yet d
 - The semantic role of the second `0x01`-marker u32 in an ACT counter/registry record is unresolved.
 - The terminating-group framing of multi-token `generic_tag_attrib_def` records is unresolved.
 - The Design `MetaStream` Dimension object is a registry with no owned entity IDs. The location and byte grammar of concrete dimensional constraints and parameter expressions are unresolved.
+- Text-frame (`0x10000000000`) and text-path (`0x20000000000`) constraint bits exceed the settled u32 mask in the 101-byte sketch-relation record. The side-stream record carrying those 64-bit text-constraint masks is unresolved.
 - The class-specific fields after the fixed `*_recipe_data` null sentinel and integer prologue are unresolved; their feature-operation, profile, extent, and dependency semantics are not assigned.
 
 ## Material assets

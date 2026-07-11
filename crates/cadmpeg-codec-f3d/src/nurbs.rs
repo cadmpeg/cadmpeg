@@ -481,7 +481,7 @@ pub(crate) fn final_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout
     })
 }
 
-/// The decoded payload of a 2D `nubs` pcurve block.
+/// The decoded payload of a 2D `nubs` or `nurbs` pcurve block.
 pub struct NurbsPcurve {
     /// Curve degree.
     pub degree: u32,
@@ -489,16 +489,20 @@ pub struct NurbsPcurve {
     pub knots: Vec<f64>,
     /// UV control points in surface-parameter space, without length scaling.
     pub control_points: Vec<Point2>,
+    /// Per-pole homogeneous weights; absent for a `nubs` block.
+    pub weights: Option<Vec<f64>>,
     /// Whether the parameter curve is periodic.
     pub periodic: bool,
 }
 
-/// Writable value offsets for one non-rational 2D pcurve cache.
+/// Writable value offsets for one 2D pcurve cache.
 pub(crate) struct PcurvePatchLayout {
     /// Tagged-integer payload offset for the curve degree.
     pub(crate) degree_value_offset: usize,
     /// Tagged-double payload offsets in `(u, v)` pole order.
     pub(crate) control_value_offsets: Vec<usize>,
+    /// Tagged-double payload offsets for homogeneous weights.
+    pub(crate) weight_value_offsets: Vec<usize>,
     /// Number of UV control points.
     pub(crate) control_count: usize,
     /// Native unique-knot payloads and expanded run lengths.
@@ -521,9 +525,6 @@ fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<Pcurv
         .into_iter()
         .filter_map(|marker_pos| {
             let (_cp_dims, marker_len, rational) = marker_at(record, marker_pos)?;
-            if rational {
-                return None;
-            }
             let mut pos = marker_pos + marker_len;
             let degree_value_offset = pos + 1;
             let degree = take_tagged_int(record, &mut pos, 0x04, int_width)?;
@@ -539,16 +540,25 @@ fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<Pcurv
             let (_knots, control_count, knot_layout) =
                 read_knots(record, &mut pos, unique as usize, degree, int_width)?;
             let mut offsets = Vec::with_capacity(control_count * 2);
+            let mut weight_offsets = Vec::with_capacity(control_count * usize::from(rational));
             for _ in 0..control_count * 2 {
                 if record.get(pos) != Some(&0x06) {
                     return None;
                 }
                 offsets.push(pos + 1);
                 pos += 9;
+                if rational && offsets.len() % 2 == 0 {
+                    if record.get(pos) != Some(&0x06) {
+                        return None;
+                    }
+                    weight_offsets.push(pos + 1);
+                    pos += 9;
+                }
             }
             Some(PcurvePatchLayout {
                 degree_value_offset,
                 control_value_offsets: offsets,
+                weight_value_offsets: weight_offsets,
                 control_count,
                 knots: knot_layout.into(),
                 periodic_value_offset,
@@ -568,9 +578,6 @@ pub(crate) fn decode_pcurve_fit_tolerance(record: &[u8]) -> Option<f64> {
 
 fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<NurbsPcurve> {
     let (_cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
-    if rational {
-        return None;
-    }
     let mut pos = marker_pos + marker_len;
     let degree = take_tagged_int(b, &mut pos, 0x04, int_width)?;
     if !(1..=20).contains(&degree) {
@@ -584,6 +591,7 @@ fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<
     let (knots, n_poles, _knot_layout) =
         read_knots(b, &mut pos, n_uniq as usize, degree, int_width)?;
     let mut control_points = Vec::with_capacity(n_poles);
+    let mut weights = rational.then(|| Vec::with_capacity(n_poles));
     for _ in 0..n_poles {
         if *b.get(pos)? != 0x06 {
             return None;
@@ -596,11 +604,19 @@ fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<
         let v = read_f64(b, pos + 1)?;
         pos += 9;
         control_points.push(Point2::new(u, v));
+        if let Some(weights) = weights.as_mut() {
+            if *b.get(pos)? != 0x06 {
+                return None;
+            }
+            weights.push(read_f64(b, pos + 1)?);
+            pos += 9;
+        }
     }
     Some(NurbsPcurve {
         degree: degree as u32,
         knots,
         control_points,
+        weights,
         periodic: is_periodic(closure),
     })
 }
@@ -882,6 +898,9 @@ pub fn decode_curve_cache_resolving_refs(
     })
 }
 
+/// Source curve and tail fields decoded from an `offset_int_cur` construction.
+pub(crate) type VectorOffsetDefinition = (NurbsCurve, [f64; 2], Vector3, [String; 2], [i64; 2]);
+
 /// A procedural curve cache together with its native subtype and fit contract.
 pub struct DecodedProceduralCurve {
     /// The cached B-spline curve (control points scaled centimetre→
@@ -890,6 +909,10 @@ pub struct DecodedProceduralCurve {
     /// The `intcurve` subtype record name (`exact_int_cur`, `off_int_cur`,
     /// `proj_int_cur`, `int_int_cur`, `helix_int_cur`, `sss_int_cur`, ...).
     pub native_kind: String,
+    /// Neutral construction fields decoded from the subtype tail.
+    pub definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
+    /// Source curve and tail fields of an `offset_int_cur` construction.
+    pub vector_offset: Option<VectorOffsetDefinition>,
     /// `surface_fit_tolerance` of the cached B-spline block, if present
     /// ([spec §7.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#75-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
     pub cache_fit_tolerance: Option<f64>,
@@ -911,18 +934,24 @@ fn decode_procedural_curve_recursive(
     seen: &mut Vec<usize>,
     int_width: usize,
 ) -> Option<DecodedProceduralCurve> {
+    let mut solved = None;
     for position in marker_positions(bytes) {
         if let Some(decoded) = decode_curve_block(bytes, position, int_width) {
-            let cache_fit_tolerance = (bytes.get(decoded.end) == Some(&0x06))
-                .then(|| read_f64(bytes, decoded.end + 1).map(|value| value * LEN_TO_MM))
-                .flatten();
-            return Some(DecodedProceduralCurve {
-                curve: decoded.curve,
-                native_kind: first_construction_subtype(bytes)
-                    .unwrap_or_else(|| "intcurve".to_string()),
-                cache_fit_tolerance,
-            });
+            solved = Some(decoded);
         }
+    }
+    if let Some(decoded) = solved {
+        let cache_fit_tolerance = (bytes.get(decoded.end) == Some(&0x06))
+            .then(|| read_f64(bytes, decoded.end + 1).map(|value| value * LEN_TO_MM))
+            .flatten();
+        return Some(DecodedProceduralCurve {
+            curve: decoded.curve,
+            native_kind: first_construction_subtype(bytes)
+                .unwrap_or_else(|| "intcurve".to_string()),
+            definition: decode_helix_definition(bytes),
+            vector_offset: decode_vector_offset_definition(bytes, int_width),
+            cache_fit_tolerance,
+        });
     }
     let table = subtype_table(active_bytes);
     for index in subtype_refs(bytes, int_width) {
@@ -941,6 +970,147 @@ fn decode_procedural_curve_recursive(
         }
     }
     None
+}
+
+fn decode_vector_offset_definition(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<VectorOffsetDefinition> {
+    let name = b"offset_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let start = marker + name.len() + 3;
+    let source_marker = marker_positions(&bytes[start..]).into_iter().next()? + start;
+    let source = decode_curve_block(bytes, source_marker, int_width)?;
+    let mut position = source.end;
+    if bytes.get(position) != Some(&0x06) || bytes.get(position + 9) != Some(&0x06) {
+        return None;
+    }
+    let parameter_range = [
+        read_f64(bytes, position + 1)?,
+        read_f64(bytes, position + 10)?,
+    ];
+    position += 18;
+    let offset = take_native_vec3(bytes, &mut position, 0x14)?;
+    let first_label = take_native_string(bytes, &mut position)?;
+    let first_code = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    let second_label = take_native_string(bytes, &mut position)?;
+    let second_code = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    Some((
+        source.curve,
+        parameter_range,
+        Vector3::new(
+            offset[0] * LEN_TO_MM,
+            offset[1] * LEN_TO_MM,
+            offset[2] * LEN_TO_MM,
+        ),
+        [first_label, second_label],
+        [first_code, second_code],
+    ))
+}
+
+fn take_native_string(bytes: &[u8], position: &mut usize) -> Option<String> {
+    let (length, header) = match *bytes.get(*position)? {
+        0x07 => (usize::from(*bytes.get(*position + 1)?), 2),
+        0x08 => (
+            usize::from(u16::from_le_bytes(
+                bytes.get(*position + 1..*position + 3)?.try_into().ok()?,
+            )),
+            3,
+        ),
+        0x09 => (
+            usize::try_from(u32::from_le_bytes(
+                bytes.get(*position + 1..*position + 5)?.try_into().ok()?,
+            ))
+            .ok()?,
+            5,
+        ),
+        _ => return None,
+    };
+    let start = *position + header;
+    let end = start.checked_add(length)?;
+    let value = String::from_utf8(bytes.get(start..end)?.to_vec()).ok()?;
+    *position = end;
+    Some(value)
+}
+
+fn decode_helix_definition(
+    bytes: &[u8],
+) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
+    let name = b"helix_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let mut position = marker + name.len() + 3;
+    let lower = take_range_value(bytes, &mut position)?;
+    let upper = take_range_value(bytes, &mut position)?;
+    let center = take_native_vec3(bytes, &mut position, 0x13)?;
+    let major = take_native_vec3(bytes, &mut position, 0x13)?;
+    let minor = take_native_vec3(bytes, &mut position, 0x13)?;
+    let pitch = take_native_vec3(bytes, &mut position, 0x13)?;
+    if bytes.get(position) != Some(&0x06) {
+        return None;
+    }
+    let apex_factor = read_f64(bytes, position + 1)?;
+    position += 9;
+    let axis = take_native_vec3(bytes, &mut position, 0x14)?;
+    Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+        angle_range: [lower, upper],
+        center: Point3::new(
+            center[0] * LEN_TO_MM,
+            center[1] * LEN_TO_MM,
+            center[2] * LEN_TO_MM,
+        ),
+        major: Vector3::new(
+            major[0] * LEN_TO_MM,
+            major[1] * LEN_TO_MM,
+            major[2] * LEN_TO_MM,
+        ),
+        minor: Vector3::new(
+            minor[0] * LEN_TO_MM,
+            minor[1] * LEN_TO_MM,
+            minor[2] * LEN_TO_MM,
+        ),
+        pitch: Vector3::new(
+            pitch[0] * LEN_TO_MM,
+            pitch[1] * LEN_TO_MM,
+            pitch[2] * LEN_TO_MM,
+        ),
+        apex_factor,
+        axis: Vector3::new(axis[0], axis[1], axis[2]),
+    })
+}
+
+fn take_range_value(bytes: &[u8], position: &mut usize) -> Option<f64> {
+    if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
+        *position += 1;
+    }
+    if bytes.get(*position) != Some(&0x06) {
+        return None;
+    }
+    let value = read_f64(bytes, *position + 1)?;
+    *position += 9;
+    Some(value)
+}
+
+fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> Option<[f64; 3]> {
+    if bytes.get(*position) != Some(&tag) {
+        return None;
+    }
+    let values = [
+        read_f64(bytes, *position + 1)?,
+        read_f64(bytes, *position + 9)?,
+        read_f64(bytes, *position + 17)?,
+    ];
+    *position += 25;
+    Some(values)
 }
 
 fn first_construction_subtype(bytes: &[u8]) -> Option<String> {
