@@ -4776,6 +4776,12 @@ fn bf4_header_prefix(flags: u32) -> Vec<u8> {
 /// `lump` head for the body-subdivision record, and one edge resting on an
 /// ellipse arc whose stored range is negative.
 fn synthetic_geometry_bf4_smbh() -> Vec<u8> {
+    synthetic_geometry_bf4_smbh_with_arc_sense(0x0b)
+}
+
+/// `synthetic_geometry_bf4_smbh` with the arc edge's sense byte set to
+/// `arc_edge_sense` (`0x0b` forward, `0x0a` reversed).
+fn synthetic_geometry_bf4_smbh_with_arc_sense(arc_edge_sense: u8) -> Vec<u8> {
     // Width-4 writers; the remaining tag writers are width-independent.
     fn t_ref(b: &mut Vec<u8>, v: i32) {
         b.push(0x0c);
@@ -4896,7 +4902,7 @@ fn synthetic_geometry_bf4_smbh() -> Vec<u8> {
         t_dbl(&mut r, -std::f64::consts::FRAC_PI_2); // 6 t_end
         t_ref(&mut r, -1); // 7 owner_coedge
         t_ref(&mut r, curve); // 8 curve
-        r.push(0x0b); // 9 sense
+        r.push(if curve >= 0 { arc_edge_sense } else { 0x0b }); // 9 sense
         push_u8_string(&mut r, "unknown"); // 10 continuity text
         t_end(&mut r);
     }
@@ -4997,6 +5003,42 @@ fn decodes_binaryfile4_geometry_with_lump_topology() {
     let [start, end] = arc.param_range.expect("arc range");
     assert!((start - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-9);
     assert!((end - std::f64::consts::TAU).abs() < 1e-9);
+}
+
+#[test]
+fn reversed_edge_sense_reverses_its_conic_carrier() {
+    let f3d = f3d_with_smbh(&synthetic_geometry_bf4_smbh_with_arc_sense(0x0a));
+    let result = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+
+    // A reversed edge runs `E(t) = C(-t)`; the IR keeps edges forward on
+    // their curve, so the conic carrier is emitted with a negated plane
+    // normal. The stored parameters already live on the reversed
+    // parameterization and transform exactly like a forward edge's.
+    let arc = result
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.curve.is_some())
+        .expect("edge on the ellipse carrier");
+    let [start, end] = arc.param_range.expect("arc range");
+    assert!((start - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+    assert!((end - std::f64::consts::TAU).abs() < 1e-9);
+
+    let curve_id = arc.curve.as_ref().expect("curve link");
+    let carrier = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| &curve.id == curve_id)
+        .expect("conic carrier");
+    let cadmpeg_ir::geometry::CurveGeometry::Circle { axis, .. } = &carrier.geometry else {
+        panic!("expected the ratio-1 ellipse to decode as a circle");
+    };
+    assert!((axis.z - -1.0).abs() < 1e-12, "axis must be negated");
 }
 
 #[test]
