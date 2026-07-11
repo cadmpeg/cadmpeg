@@ -4,8 +4,6 @@
 //! Feeds arbitrary bytes through UTF-8 decoding, JSON deserialization into
 //! `CadIr`, then validation. Contract: no input may panic. Malformed JSON must
 //! surface as `serde_json::Error`; validation findings are discarded.
-//!
-//! Run: cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz ir_validate
 
 #![no_main]
 

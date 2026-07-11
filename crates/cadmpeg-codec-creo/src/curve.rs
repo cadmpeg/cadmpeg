@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Typed discovery of labeled `crv_array` prototype rows.
+//! Curve namespace prototypes and topology rows.
+//!
+//! Prototype rows identify curves and their generating features. Topology rows
+//! add the two face sides and successor curve for each native half-edge. Curve
+//! parameter bodies are not interpreted here.
 
 use crate::psb::{compact_int, reference_id};
 
-/// A labeled curve prototype. `type_byte` is retained verbatim: its geometric
-/// interpretation belongs to the curve-body evaluator, not the namespace
-/// grammar.
+/// A labeled curve namespace entry.
+///
+/// `type_byte` remains raw because the namespace grammar does not define its
+/// geometric interpretation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CurvePrototype {
     /// The row's `crv_id`: the curve's identifier in the `crv_array`
@@ -13,7 +18,7 @@ pub struct CurvePrototype {
     /// fields.
     pub id: u32,
     /// The row's raw `type` byte. Its geometric meaning is not identified by
-    /// the namespace grammar alone (spec §4); the curve-body evaluator
+    /// the namespace grammar alone ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)); the curve-body evaluator
     /// determines the interpretation.
     pub type_byte: u8,
     /// The `feat_id` compact integer, when the labeled row has one: the
@@ -24,8 +29,9 @@ pub struct CurvePrototype {
     pub offset: usize,
 }
 
-/// A positional curve row whose terminal topology suffix was uniquely decoded.
-/// `faces` and `next_edges` retain the two native half-edge sides in order.
+/// A curve row with a uniquely delimited topology suffix.
+///
+/// `faces` and `next_edges` preserve the two native sides in order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CurveTopologyRow {
     /// The row's `crv_id`, matching a [`CurvePrototype::id`] in the same
@@ -37,15 +43,15 @@ pub struct CurveTopologyRow {
     /// curve.
     pub feature_id: u32,
     /// The two `crv_pnt_dir` orientation-flag bytes, one per half-edge side.
-    /// These are per-side orientation flags, not a tangent vector (spec
-    /// §4).
+    /// These are per-side orientation flags, not a tangent vector
+    /// ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)).
     pub directions: [u8; 2],
     /// The `F0`/`F1` suffix fields: the `srf_array` face identifiers
     /// bounding the curve's two half-edge sides.
     pub faces: [u32; 2],
     /// The `E0`/`E1` suffix fields: the `crv_array` identifier of the next
-    /// edge for each of the two half-edge sides, used to walk loops (spec
-    /// §4).
+    /// edge for each of the two half-edge sides, used to walk loops
+    /// ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)).
     pub next_edges: [u32; 2],
     /// Byte offset of the row's `crv_id` field in the original stream.
     pub offset: usize,

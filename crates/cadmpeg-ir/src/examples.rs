@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Hand-built IR fixtures.
-//!
-//! [`unit_cube`] constructs a topologically complete, validation-clean cube: 8
-//! vertices, 12 edges, 6 planar faces, 24 coedges (each edge shared by exactly
-//! two coedges of opposite sense). It is the worked example serialized in
-//! `docs/cad-ir.md` and the anchor for the IR round-trip and validation tests.
+//! Hand-built documents for examples and tests.
 
 use std::collections::HashMap;
 
@@ -19,8 +14,7 @@ use crate::topology::{
 };
 use crate::units::Units;
 
-/// One face definition for [`unit_cube`]: name, outward normal, surface origin,
-/// and the boundary loop as an ordered ring of `(edge_index, forward)` pairs.
+/// Face input used to construct [`unit_cube`].
 type FaceDef = (
     &'static str,
     (f64, f64, f64),

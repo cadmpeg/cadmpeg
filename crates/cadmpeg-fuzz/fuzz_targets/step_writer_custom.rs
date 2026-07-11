@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fuzz target for `cadmpeg_step::write_step` with non-default options.
-//!
-//! Feeds arbitrary bytes through UTF-8 decoding, JSON deserialization into
-//! `CadIr`, then STEP export with custom options. Contract: no input may panic.
-//! Exercises string escaping in STEP HEADER with arbitrary metadata.
+//! Uses an eight-byte prefix to construct non-default STEP header fields,
+//! parses the remaining bytes as `CadIr` JSON, and calls `write_step`. Parse and
+//! export errors are expected; panics are failures.
 
 #![no_main]
 

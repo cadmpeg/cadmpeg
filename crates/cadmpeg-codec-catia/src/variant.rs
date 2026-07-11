@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! CATIA V5 stores its geometry in one of five distinct families, and the family
-//! determines the whole decode path, so it must be identified before anything
-//! else. This module names the family from container-level evidence (presence of
-//! a nested container and its reconstructed BREP stream, plus a small set of
-//! record-family census counts). Detection is deliberately conservative: a
-//! family is only claimed when its structural invariant holds, and everything
-//! else is reported as [`Variant::Unknown`] rather than guessed.
+//! `CATPart` storage-layout classification.
+//!
+//! The container shape, reconstructed B-rep stream, spine markers, table
+//! delimiters, and record-family markers determine which decoder applies.
+//! [`Variant::Unknown`] represents layouts that satisfy no recognized
+//! structural pattern.
 
-/// The five documented storage families, plus two honest "not one of the
-/// decodable five" outcomes.
+/// Recognized `CATPart` storage families and fallback classifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Variant {
     /// Nested `V5_CFV2` with a `30 04 04 ff` FBB spine followed by the standard

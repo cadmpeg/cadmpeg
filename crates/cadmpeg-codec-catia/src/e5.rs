@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 /// Resolved graph of an E5 `0D 03` record stream: bodies, faces, edges, and
 /// the geometry records they reference. Produced by [`parse_topology`], which
 /// walks every class-tagged record, resolves cross-record references, and
-/// returns `None` if the walk cannot be closed (spec §9).
+/// returns `None` if the walk cannot be closed ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
 pub struct E5Topology {
     /// Class-`0x01` body records with their resolved face rosters and
@@ -34,7 +34,7 @@ pub struct E5Topology {
 }
 
 /// A class-`0xc0`/`0xc1` curve-support record: the pcurve(s) an edge curve
-/// evaluates against and the surface parameter range they span (spec §9).
+/// evaluates against and the surface parameter range they span ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
 pub struct E5CurveSupport {
     /// This record's stream-assigned `record_id`, used to resolve
@@ -56,7 +56,7 @@ pub struct E5CurveSupport {
 }
 
 /// A class-`0x0e` parameter-bound record: a list of representation
-/// references each paired with a bound parameter (spec §9).
+/// references each paired with a bound parameter ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
 pub struct E5Bounds {
     /// This record's stream-assigned `record_id`.
@@ -80,7 +80,7 @@ pub struct E5BoundEntry {
 
 /// A resolved E5 pcurve: a 2D curve in a surface's parameter space, decoded
 /// from a class-`0x96` (line), `0x97` (circle), or `0xa0` (spline jet)
-/// record (spec §9).
+/// record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
 pub enum E5Pcurve {
     /// Class `0x96`: `<surface_ref>, origin_u, origin_v, dir_u, dir_v,
@@ -111,7 +111,7 @@ pub enum E5Pcurve {
         range: [f64; 2],
     },
     /// Class `0xa0`: a nonperiodic degree-5 C2 B-spline p-curve encoded as a
-    /// per-knot position/first-derivative/second-derivative jet (spec §9).
+    /// per-knot position/first-derivative/second-derivative jet ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
     Jet {
         /// `record_id` of the owning surface carrier.
         surface: u32,
@@ -136,7 +136,7 @@ pub enum E5Pcurve {
 
 /// A class-`0x01` body record resolved through its class-`0x08` root record:
 /// the body's face roster and the per-face/global orientation-sign tape
-/// (spec §9).
+/// ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct E5Body {
     /// The class-`0x01` record's `record_id`.
@@ -150,12 +150,12 @@ pub struct E5Body {
     /// element, each `+1` or `-1`.
     pub face_orientation_signs: Vec<i16>,
     /// The two trailing sign-tape entries after the per-face signs. Per
-    /// spec §9, these have no assigned semantic role.
+    /// [spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant), these have no assigned semantic role.
     pub extra_orientation_signs: [i16; 2],
 }
 
 /// A resolved class-`0x00` advanced-face record: its surface, loops, and
-/// root sign-tape entry (spec §9).
+/// root sign-tape entry ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct E5Face {
     /// This face record's `record_id`.
@@ -172,7 +172,7 @@ pub struct E5Face {
 }
 
 /// A resolved class-`0x09` loop record: its member pcurve/edge-use pairs and
-/// derived orientation (spec §9).
+/// derived orientation ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct E5Loop {
     /// This loop record's `record_id`.
@@ -190,7 +190,7 @@ pub struct E5Loop {
     /// end-to-start.
     pub reversed: Vec<bool>,
     /// Per-edge-use sense after folding in the loop's global orientation
-    /// sign `g_loop` (spec §9); `None` until [`solve_absolute_orientation`]
+    /// sign `g_loop` ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)); `None` until [`solve_absolute_orientation`]
     /// resolves it, which it can decline to do (frustrated or ambiguous
     /// sign system).
     pub absolute_reversed: Option<Vec<bool>>,
@@ -200,7 +200,7 @@ pub struct E5Loop {
     pub outer: Option<bool>,
 }
 
-/// A resolved class-`0xff` trimmed edge-use record (spec §9, grammar `85
+/// A resolved class-`0xff` trimmed edge-use record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant), grammar `85
 /// <curve_support_ref> <start_vertex> <end_vertex> <param_start>
 /// <param_end>`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

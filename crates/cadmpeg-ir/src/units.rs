@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Canonical units and tolerances.
 //!
-//! The IR's canonical length unit is the millimeter, matching the `.f3d`
-//! exact-BREP contract (Fusion ASM `BinaryFile8` model-space lengths are
-//! centimeters and are converted ×10 at decode time; see the f3d container
-//! spec §6). The [`Units`] block records what unit the stored coordinates are
-//! expressed in so an exporter can report or re-scale honestly.
+//! Stored lengths and coordinates use millimeters. Angular quantities use
+//! radians.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -14,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LengthUnit {
-    /// Millimeter — the IR canonical unit.
+    /// Millimeter, the IR canonical length unit.
     Millimeter,
 }
 
@@ -25,8 +22,7 @@ impl LengthUnit {
     }
 }
 
-/// Unit declaration for a document. Presence of this block is required by
-/// validation: an IR document with no declared units cannot be exported safely.
+/// Unit declaration for stored document coordinates.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Units {
     /// Unit the stored coordinate values are expressed in.

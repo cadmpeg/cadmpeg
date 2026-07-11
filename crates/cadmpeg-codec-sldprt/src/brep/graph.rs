@@ -1,18 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Assemble the IR B-rep graph from parsed compact carriers and the typed
-//! topology chain.
+//! Build IR arenas from parsed Parasolid topology records and carriers.
 //!
-//! Each `00 0e` bridge is one face-use: it links a support surface (its
-//! `refs[4]`) and a loop-head chain (its `refs[2]`). Walking that chain yields
-//! the face's loops, their coedge rings, and — through edge-uses and
-//! vertex-uses — the edges, vertices, and world points. The bridge, loop,
-//! coedge, edge-use, vertex-use, and point tables are all keyed by attribute id
-//! across the active partition and deltas streams.
-//!
-//! A face-use's coedge ring is emitted with `next`/`prev`
-//! taken from the walk order so every loop closes, and an edge's endpoints are
-//! read head-to-tail from that ring. A face on a surface carrier this codec does
-//! not type keeps its topology with a [`SurfaceGeometry::Unknown`] carrier.
+//! The graph builder walks each face bridge through its loop and coedge rings,
+//! resolves edge and vertex uses, closes emitted loops, and groups faces under
+//! explicit body records. It derives one body hierarchy when those records are
+//! absent. It also derives supported pcurves and periodic seams.
 
 use std::collections::{HashMap, HashSet};
 
@@ -35,53 +27,45 @@ use super::topology::{self, Record};
 use super::{scan_carriers, Carrier, CarrierGeometry, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
-/// The decoded B-rep graph plus loss accounting.
+/// Decoded B-rep arenas, provenance, and transfer statistics.
 #[derive(Default)]
 pub struct Brep {
     /// Source locations for decoded entities.
     pub annotations: Annotations,
-    /// Top-level bodies grouped by disc17 UUID membership or single-shell
-    /// face-use rings, per §6.
+    /// Top-level solid or sheet bodies.
     pub bodies: Vec<Body>,
     /// Solid regions / sheet regions owned by each body.
     pub regions: Vec<Region>,
     /// Shells owned by each region.
     pub shells: Vec<Shell>,
-    /// Faces reached through `00 0e` bridges and their canonical face
-    /// records.
+    /// Faces reached through face-use bridge records.
     pub faces: Vec<Face>,
     /// Loops reached through `00 0f` loop heads.
     pub loops: Vec<Loop>,
-    /// Coedges from `00 11` records, ring-ordered by the walk.
+    /// Coedges in loop-ring order.
     pub coedges: Vec<Coedge>,
-    /// Edges deduplicated from `00 10` edge-uses by endpoint pair, curve
-    /// kind, and curve-geometry fingerprint, per §4.1.
+    /// Edges resolved from edge-use records.
     pub edges: Vec<Edge>,
-    /// Vertices resolved from `00 12` vertex-uses and `00 1d` world points,
-    /// deduplicated by coordinate.
+    /// Vertices resolved from vertex-use and world-point records.
     pub vertices: Vec<Vertex>,
-    /// World points transferred from `00 1d` records, in metres.
+    /// World points converted to millimetres.
     pub points: Vec<Point>,
-    /// Support surfaces: compact analytic carriers or `00 7c`/`00 7e`
-    /// B-spline surface carriers.
+    /// Analytic, NURBS, or opaque support surfaces.
     pub surfaces: Vec<Surface>,
-    /// Support curves: compact analytic carriers or `00 86`/`00 88`
-    /// B-spline curve carriers.
+    /// Analytic, NURBS, or opaque support curves.
     pub curves: Vec<Curve>,
-    /// Placeholder UV pcurves; the Parasolid stream grammar stores no 2D
-    /// pcurve control arrays, so pcurves are derived, not transferred (§7.2).
+    /// Pcurves derived for supported analytic and NURBS-boundary cases.
     pub pcurves: Vec<Pcurve>,
     /// Records whose carrier kind this codec does not type, retained as
     /// opaque payloads.
     pub unknowns: Vec<UnknownRecord>,
-    /// Per-face RGB colors resolved through the generation-specific route
-    /// (disc14 or disc15/33103), per §8.
+    /// Per-face RGB colors resolved from native entity records.
     pub face_colors: Vec<entity::FaceColor>,
     /// Loss accounting for this decode.
     pub stats: Stats,
 }
 
-/// Counts of what could not be transferred faithfully.
+/// Transfer limitations found while building a [`Brep`].
 #[derive(Default)]
 pub struct Stats {
     /// Faces on a support surface this codec does not type; emitted with an
@@ -175,13 +159,17 @@ fn sense_of(marker: u8) -> Sense {
     }
 }
 
-/// Decode a Parasolid stream body into the IR B-rep graph.
+/// Decode one parsed Parasolid stream into B-rep arenas.
+///
+/// `stream` names the provenance stream recorded in [`Brep::annotations`].
 pub fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
     decode_body(&payload[header.body_offset.min(payload.len())..], stream)
 }
 
-/// Decode paired partition/deltas bodies as one record source. Later deltas
-/// records replace partition records with the same attribute id.
+/// Decode related partition and deltas streams as one record source.
+///
+/// Input order determines override order for topology records with the same
+/// attribute id. `stream` names the combined provenance source.
 pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
     let mut combined = Vec::new();
     for (payload, header) in bodies {

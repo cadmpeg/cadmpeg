@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Seed generator for sub-module parser fuzz targets.
-//! Creates minimal valid inputs for each sub-module parser.
-//! Run: cargo run --bin generate_submodule_seeds
+//! Writes minimal structural inputs for focused parser fuzz targets.
 
 use std::fs;
 use std::path::Path;

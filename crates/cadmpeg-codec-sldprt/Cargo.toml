@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-sldprt"
-description = "Read .sldprt geometry, metadata, and feature records and edit common B-rep geometry."
+description = "Read and write SolidWorks .sldprt part geometry, metadata, and feature records."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

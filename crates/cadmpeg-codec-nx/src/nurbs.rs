@@ -1,32 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
-//! B-spline carrier decode for Parasolid neutral-binary streams.
+//! Decode NURBS curves and surfaces from Parasolid neutral-binary records.
+//!
+//! The decoder joins descriptor, payload, knot, and multiplicity records by
+//! their stream-scoped references. Control points are converted from metres to
+//! millimetres. Invalid references, dimensions, knots, control points, and
+//! weights cause the affected carrier to be omitted.
 
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
-/// A decoded B-spline carrier keyed by its record position.
+/// A decoded NURBS surface and its source descriptor offset.
 #[derive(Debug, Clone)]
 pub struct Surface {
     /// Byte offset of the tag-126 descriptor record within the input stream.
     pub pos: usize,
-    /// Reconstructed NURBS surface geometry.
+    /// Reconstructed surface geometry.
     pub geometry: SurfaceGeometry,
 }
 
-/// A decoded B-spline carrier keyed by its record position.
+/// A decoded NURBS curve and its source descriptor offset.
 #[derive(Debug, Clone)]
 pub struct Curve {
     /// Byte offset of the tag-136 descriptor record within the input stream.
     pub pos: usize,
-    /// Reconstructed NURBS curve geometry.
+    /// Reconstructed curve geometry.
     pub geometry: CurveGeometry,
 }
 
-/// Scan `bytes` for tag-126/125 descriptor-payload pairs and decode each into
-/// a NURBS surface. Pairs with malformed offsets, non-finite control-point or
-/// knot values, or a poles/stride mismatch are skipped.
+/// Decode valid NURBS surface record families in source order.
+///
+/// The returned geometry uses millimetre control points. Malformed references,
+/// knots, dimensions, control points, and weights are skipped.
 pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
     let arrays = arrays(bytes);
     let payloads = surface_payloads(bytes);
@@ -88,9 +94,10 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
         .collect()
 }
 
-/// Scan `bytes` for tag-136/135 descriptor-payload pairs and decode each into
-/// a NURBS curve. Pairs with malformed offsets, non-finite control-point or
-/// knot values, or a poles/stride mismatch are skipped.
+/// Decode valid NURBS curve record families in source order.
+///
+/// The returned geometry uses millimetre control points. Malformed references,
+/// knots, dimensions, control points, and weights are skipped.
 pub fn curves(bytes: &[u8]) -> Vec<Curve> {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);

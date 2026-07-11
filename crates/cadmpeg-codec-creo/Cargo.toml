@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-creo"
-description = "Inspect Creo .prt files and recover previews and datum planes."
+description = "Inspect Creo PSB .prt files and decode model-space datum planes."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

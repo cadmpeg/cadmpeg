@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Typed string identifiers for the id-referenced IR graph.
+//! Typed string identifiers for the ID-referenced IR graph.
 //!
-//! The IR is stored as flat arenas (see [`crate::document`]); entities refer to
-//! one another by id rather than by nested ownership. Each entity kind gets its
-//! own newtype so the compiler rejects, say, passing a [`FaceId`] where an
-//! [`EdgeId`] is expected. Every id wraps a [`String`]: decoders mint ids that
-//! encode provenance (for example `f3d:smbh#42` for `RecordTable` index 42), and
-//! hand-built IR can use any stable unique string.
+//! Each entity kind wraps a string in a distinct newtype, preventing references
+//! between incompatible arenas. IDs must be stable and globally unique within
+//! a document.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -42,15 +39,15 @@ macro_rules! id_type {
 }
 
 id_type!(
-    /// Identifies a [`crate::topology::Body`] — the top-level solid/sheet entity.
+    /// Identifies a [`crate::topology::Body`].
     BodyId
 );
 id_type!(
-    /// Identifies a [`crate::topology::Region`] — a connected region of a body.
+    /// Identifies a [`crate::topology::Region`].
     RegionId
 );
 id_type!(
-    /// Identifies a [`crate::topology::Shell`] — an oriented boundary of a region.
+    /// Identifies a [`crate::topology::Shell`].
     ShellId
 );
 id_type!(

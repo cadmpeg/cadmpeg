@@ -1,8 +1,10 @@
 # cadmpeg-codec-f3d
 
-`cadmpeg-codec-f3d` opens `.f3d` archives and loads their model data into
-`CadIr`. It reads the archive structure, B-rep topology, analytic and spline
-geometry, design records, transforms, and appearances.
+`cadmpeg-codec-f3d` decodes Autodesk Fusion `.f3d` archives into `CadIr` and
+encodes supported `CadIr` documents back to `.f3d`. The codec covers ZIP
+container metadata, ASM B-rep topology, analytic and cached NURBS geometry,
+body transforms, design and sketch records, construction history, and
+appearances.
 
 ## Install
 
@@ -10,7 +12,7 @@ geometry, design records, transforms, and appearances.
 cargo add cadmpeg-codec-f3d cadmpeg-ir
 ```
 
-## Use
+## Decode
 
 ```rust,no_run
 use cadmpeg_codec_f3d::F3dCodec;
@@ -21,32 +23,67 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.f3d")?;
     let result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    println!(
-        "{} bodies, {} surfaces",
-        result.ir.model.bodies.len(),
-        result.ir.model.surfaces.len()
-    );
+    for loss in &result.report.losses {
+        eprintln!("{:?}: {}", loss.severity, loss.message);
+    }
+    println!("{} bodies", result.ir.model.bodies.len());
     Ok(())
 }
 ```
 
-`F3dCodec::inspect` returns the archive entries and B-rep headers without
-decoding the model.
+The result contains the decoded `CadIr` and a `DecodeReport`. Check
+`report.losses` before using geometry from files that may contain unsupported
+record forms. Set `DecodeOptions::container_only` when you need archive
+metadata without B-rep decoding. `F3dCodec::inspect` returns the classified ZIP
+entries and B-rep header facts.
 
-## Coverage
+## Encode
 
-The decoder handles common analytic and NURBS geometry, connected B-rep
-topology, body transforms, material data, and a growing set of design and
-sketch records.
+```rust,no_run
+use cadmpeg_codec_f3d::F3dCodec;
+use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+use std::fs::File;
 
-The writer can replay an unchanged archive byte for byte and update supported
-B-rep, sketch, history, design, and appearance fields while retaining the rest
-of the archive. Source-less writing currently covers one canonical polygonal
-face with selected analytic surface and edge carriers.
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut input = File::open("part.f3d")?;
+    let mut result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
 
-Display meshes, full component structure, assembly constraints, and replayable
-feature history remain outside the current coverage. See
-[format support][support] for the detailed matrix.
+    // Edit supported fields in result.ir.
+
+    let mut output = File::create("part-edited.f3d")?;
+    F3dCodec.encode(&result.ir, &mut output)?;
+    Ok(())
+}
+```
+
+Decode retains the source archive and records a semantic baseline. Encoding an
+unchanged result replays the original bytes. After supported edits, encoding
+patches the retained archive and preserves unmodified entries and records.
+Encoding a `CadIr` without retained F3D source data creates a canonical archive
+for the supported source-less profile.
+
+## Data model and support
+
+The decoder selects the authoritative `.smbh` B-rep, or the first `.smb`
+construction snapshot when no `.smbh` exists. It frames the active SAB record
+slice and builds the topology chain from bodies through vertices and points.
+ASM model-space lengths become millimetres in `CadIr`; directions, ratios,
+angles, knots, weights, and UV parameters retain their native scale.
+
+Analytic carriers include planes, cylinders, cones, spheres, tori, lines,
+circles, and ellipses. The codec also reads cached NURBS surfaces, 3D curves,
+and pcurves, selected procedural definitions, source attributes, design joins,
+sketch entities, typed ASM history, and Protein appearances.
+
+Records that prevent faithful transfer appear in `DecodeReport::losses`.
+Referenced carrier bytes that remain useful for passthrough are stored as
+`UnknownRecord` values. If SAB framing or geometry decoding fails, the result
+contains container metadata and retained source data with blocking geometry
+and topology losses.
+
+Display meshes, complete component structure, assembly constraints, and
+replayable feature history are outside current support. The
+[format-support matrix][support] lists decode and encode coverage.
 
 ## Documentation
 

@@ -1,28 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
-//! B-spline (`nubs`/`nurbs`) block decode for spline surfaces and procedural
-//! curves.
+//! Decode cached B-spline blocks from spline and procedural SAB records.
 //!
-//! Spline surface (`spline`) and procedural curve (`intcurve`) records are
-//! subtype-dispatched constructions this codec does not evaluate. They do,
-//! however, carry a cached B-spline block — the surface's final face cache and
-//! the curve's 3D cache — in a fixed inline grammar (spec §5), and that cache is
-//! the exact geometry a downstream kernel or STEP writer consumes. This module
-//! locates and decodes those blocks directly from the record's bytes.
+//! A `0x0d`-tagged `nubs` marker introduces a non-rational block; `nurbs`
+//! introduces a rational block. Surface blocks contain two degrees, closure and
+//! singularity enums, U and V knot tables, and a control grid. Curve blocks
+//! contain one degree, a closure enum, one knot table, and a control polygon.
+//! The token after the first degree distinguishes the two forms.
 //!
-//! A block is introduced by a `0x0d`-tagged `nubs` (non-rational) or `nurbs`
-//! (rational) marker. A **surface** block carries two degrees, four
-//! periodic/singularity enums, U and V knot tables, and a control grid; a
-//! **curve** block carries one degree, a closure enum, one knot table, and a
-//! control polygon. The two are told apart by the token immediately after the
-//! first degree (a second `0x04` degree for a surface, a `0x15` closure enum for
-//! a curve), so scanning a record for the right kind never confuses a surface
-//! cache with a 2D pcurve or a spine curve.
+//! Spline surfaces and procedural curves store solved geometry in these caches.
+//! The public decode functions accept one record's bytes, with variants that
+//! also follow references through the active slice's subtype table.
 //!
-//! Endpoint knot multiplicities are stored as `degree` (not `degree + 1`); the
-//! clamped knot vector is recovered by adding one at each end. Control-point
-//! x/y/z are model-space lengths converted centimetre→millimetre (×10); knots
-//! and rational weights are not scaled. Surface control grids are stored
-//! v-major (v outer, u inner) and are transposed to the IR's u-major order.
+//! Endpoint knot multiplicities are stored as `degree` rather than
+//! `degree + 1`; the clamped knot vector is recovered by adding one at each
+//! end. Control-point x/y/z are model-space lengths converted from centimetres
+//! to millimetres; knots and rational weights are not scaled. Surface control
+//! grids are stored v-major (v outer, u inner) and are transposed to the IR's
+//! u-major order.
+//!
+//! Integer-family payloads (`0x04` int, `0x0c` ref, `0x15` enum) are 4 bytes in
+//! `BinaryFile4` streams and 8 in `BinaryFile8` ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)); doubles are always
+//! 8. Record bytes omit the stream width, so each decoder tests both layouts
+//! and validates tags, degrees, counts, and block extents.
 
 use cadmpeg_ir::geometry::{BlendCrossSection, BlendRadiusLaw, NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -33,13 +32,31 @@ const LEN_TO_MM: f64 = 10.0;
 const NUBS_MARKER: &[u8] = b"\x0d\x04nubs";
 const NURBS_MARKER: &[u8] = b"\x0d\x05nurbs";
 
-fn read_i64(b: &[u8], p: usize) -> Option<i64> {
-    b.get(p..p + 8).map(|s| {
-        i64::from_le_bytes(
-            s.try_into()
-                .expect("invariant: b.get(p..p+8) is an 8-byte slice"),
-        )
-    })
+/// Integer/ref payload widths to probe, `BinaryFile8` first. A wrong-width
+/// parse cannot yield a false positive: in-range integers (degrees ≤ 20, knot
+/// counts ≤ 1000) store zero high bytes, so an 8-byte read on a 4-byte stream
+/// swallows the next tag byte into the value and fails the range check, while
+/// a 4-byte read on an 8-byte stream leaves a zero byte where the next tag
+/// must be and fails tag dispatch.
+const INT_WIDTHS: [usize; 2] = [8, 4];
+
+/// Read an `int_width`-byte little-endian signed integer.
+fn read_int(b: &[u8], p: usize, int_width: usize) -> Option<i64> {
+    if int_width == 4 {
+        b.get(p..p + 4).map(|s| {
+            i64::from(i32::from_le_bytes(
+                s.try_into()
+                    .expect("invariant: b.get(p..p+4) is a 4-byte slice"),
+            ))
+        })
+    } else {
+        b.get(p..p + 8).map(|s| {
+            i64::from_le_bytes(
+                s.try_into()
+                    .expect("invariant: b.get(p..p+8) is an 8-byte slice"),
+            )
+        })
+    }
 }
 
 fn read_f64(b: &[u8], p: usize) -> Option<f64> {
@@ -51,13 +68,14 @@ fn read_f64(b: &[u8], p: usize) -> Option<f64> {
     })
 }
 
-/// Consume a `tag`-prefixed i64 at `*pos`, advancing past it.
-fn take_tagged_i64(b: &[u8], pos: &mut usize, tag: u8) -> Option<i64> {
+/// Consume a `tag`-prefixed integer of `int_width` bytes at `*pos`, advancing
+/// past it.
+fn take_tagged_int(b: &[u8], pos: &mut usize, tag: u8, int_width: usize) -> Option<i64> {
     if *b.get(*pos)? != tag {
         return None;
     }
-    let v = read_i64(b, *pos + 1)?;
-    *pos += 9;
+    let v = read_int(b, *pos + 1, int_width)?;
+    *pos += 1 + int_width;
     Some(v)
 }
 
@@ -88,9 +106,7 @@ fn marker_positions(b: &[u8]) -> Vec<usize> {
 }
 
 /// Read a knot table of `n` `(knot, multiplicity)` pairs, returning the expanded
-/// (clamped) knot vector — each unique knot repeated by its stored multiplicity,
-/// with one extra at the first and last to clamp the endpoints — and the pole
-/// count `sum(mult) - (degree - 1)`.
+/// clamped knot vector and pole count `sum(mult) - (degree - 1)`.
 struct KnotLayout {
     value_offsets: Vec<usize>,
     multiplicity_offsets: Vec<usize>,
@@ -101,6 +117,7 @@ fn read_knots(
     pos: &mut usize,
     n: usize,
     degree: i64,
+    int_width: usize,
 ) -> Option<(Vec<f64>, usize, KnotLayout)> {
     let mut knots = Vec::new();
     let mut mults = Vec::new();
@@ -114,7 +131,7 @@ fn read_knots(
         knots.push(read_f64(b, *pos + 1)?);
         *pos += 9;
         multiplicity_offsets.push(*pos + 1);
-        mults.push(take_tagged_i64(b, pos, 0x04)?);
+        mults.push(take_tagged_int(b, pos, 0x04, int_width)?);
     }
     let sum: i64 = mults.iter().sum();
     let n_poles = sum - (degree - 1);
@@ -192,14 +209,18 @@ struct DecodedSurfaceBlock {
     degree_value_offsets: [usize; 2],
 }
 
-fn decode_surface_block(b: &[u8], marker_pos: usize) -> Option<DecodedSurfaceBlock> {
+fn decode_surface_block(
+    b: &[u8],
+    marker_pos: usize,
+    int_width: usize,
+) -> Option<DecodedSurfaceBlock> {
     let (cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker_len;
 
     let degree_u_offset = pos + 1;
-    let degree_u = take_tagged_i64(b, &mut pos, 0x04)?;
+    let degree_u = take_tagged_int(b, &mut pos, 0x04, int_width)?;
     let degree_v_offset = pos + 1;
-    let degree_v = take_tagged_i64(b, &mut pos, 0x04)?;
+    let degree_v = take_tagged_int(b, &mut pos, 0x04, int_width)?;
     if !(1..=20).contains(&degree_u) || !(1..=20).contains(&degree_v) {
         return None;
     }
@@ -213,16 +234,18 @@ fn decode_surface_block(b: &[u8], marker_pos: usize) -> Option<DecodedSurfaceBlo
     let mut enum_value_offsets = [0usize; 4];
     for (ordinal, e) in enums.iter_mut().enumerate() {
         enum_value_offsets[ordinal] = pos + 1;
-        *e = take_tagged_i64(b, &mut pos, 0x15)?;
+        *e = take_tagged_int(b, &mut pos, 0x15, int_width)?;
     }
-    let n_uniq_u = take_tagged_i64(b, &mut pos, 0x04)?;
-    let n_uniq_v = take_tagged_i64(b, &mut pos, 0x04)?;
+    let n_uniq_u = take_tagged_int(b, &mut pos, 0x04, int_width)?;
+    let n_uniq_v = take_tagged_int(b, &mut pos, 0x04, int_width)?;
     if !(1..=1000).contains(&n_uniq_u) || !(1..=1000).contains(&n_uniq_v) {
         return None;
     }
 
-    let (u_knots, n_poles_u, u_knot_layout) = read_knots(b, &mut pos, n_uniq_u as usize, degree_u)?;
-    let (v_knots, n_poles_v, v_knot_layout) = read_knots(b, &mut pos, n_uniq_v as usize, degree_v)?;
+    let (u_knots, n_poles_u, u_knot_layout) =
+        read_knots(b, &mut pos, n_uniq_u as usize, degree_u, int_width)?;
+    let (v_knots, n_poles_v, v_knot_layout) =
+        read_knots(b, &mut pos, n_uniq_v as usize, degree_v, int_width)?;
     if n_poles_u.checked_mul(n_poles_v).is_none_or(|n| n > 200_000) {
         return None;
     }
@@ -311,10 +334,12 @@ impl From<KnotLayout> for KnotPatchLayout {
 
 /// Locate the final valid `nubs`/`nurbs` surface block in a carrier record.
 pub(crate) fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLayout> {
-    let decoded = marker_positions(record)
-        .into_iter()
-        .filter_map(|position| decode_surface_block(record, position))
-        .next_back()?;
+    let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
+        marker_positions(record)
+            .into_iter()
+            .filter_map(|position| decode_surface_block(record, position, int_width))
+            .next_back()
+    })?;
     Some(SurfacePatchLayout {
         control_value_offsets: decoded.control_value_offsets,
         rational: decoded.rational,
@@ -330,10 +355,12 @@ pub(crate) fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLa
 
 /// Locate the surface block at `ordinal` among valid surface caches in a carrier record.
 pub(crate) fn surface_patch_layout_at(record: &[u8], ordinal: usize) -> Option<SurfacePatchLayout> {
-    let decoded = marker_positions(record)
-        .into_iter()
-        .filter_map(|position| decode_surface_block(record, position))
-        .nth(ordinal)?;
+    let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
+        marker_positions(record)
+            .into_iter()
+            .filter_map(|position| decode_surface_block(record, position, int_width))
+            .nth(ordinal)
+    })?;
     Some(SurfacePatchLayout {
         control_value_offsets: decoded.control_value_offsets,
         rational: decoded.rational,
@@ -359,22 +386,23 @@ struct DecodedCurveBlock {
     degree_value_offset: usize,
 }
 
-fn decode_curve_block(b: &[u8], marker_pos: usize) -> Option<DecodedCurveBlock> {
+fn decode_curve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<DecodedCurveBlock> {
     let (cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker_len;
 
     let degree_value_offset = pos + 1;
-    let degree = take_tagged_i64(b, &mut pos, 0x04)?;
+    let degree = take_tagged_int(b, &mut pos, 0x04, int_width)?;
     if !(1..=20).contains(&degree) {
         return None;
     }
     let periodic_value_offset = pos + 1;
-    let closure = take_tagged_i64(b, &mut pos, 0x15)?;
-    let n_uniq = take_tagged_i64(b, &mut pos, 0x04)?;
+    let closure = take_tagged_int(b, &mut pos, 0x15, int_width)?;
+    let n_uniq = take_tagged_int(b, &mut pos, 0x04, int_width)?;
     if !(1..=1000).contains(&n_uniq) {
         return None;
     }
-    let (knots, n_poles, knot_layout) = read_knots(b, &mut pos, n_uniq as usize, degree)?;
+    let (knots, n_poles, knot_layout) =
+        read_knots(b, &mut pos, n_uniq as usize, degree, int_width)?;
     let control_start = pos;
     let (control_points, weights) = read_control_points(b, &mut pos, n_poles, cp_dims)?;
     let control_value_offsets = (0..n_poles * cp_dims)
@@ -418,9 +446,11 @@ pub(crate) struct CurvePatchLayout {
 
 /// Locate the first valid 3D curve cache in a carrier record.
 pub(crate) fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
-    let decoded = marker_positions(record)
-        .into_iter()
-        .find_map(|position| decode_curve_block(record, position))?;
+    let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
+        marker_positions(record)
+            .into_iter()
+            .find_map(|position| decode_curve_block(record, position, int_width))
+    })?;
     Some(CurvePatchLayout {
         control_count: decoded.curve.control_points.len(),
         control_value_offsets: decoded.control_value_offsets,
@@ -434,10 +464,12 @@ pub(crate) fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout
 
 /// Locate the final valid 3D curve cache in a carrier record.
 pub(crate) fn final_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
-    let decoded = marker_positions(record)
-        .into_iter()
-        .filter_map(|position| decode_curve_block(record, position))
-        .next_back()?;
+    let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
+        marker_positions(record)
+            .into_iter()
+            .filter_map(|position| decode_curve_block(record, position, int_width))
+            .next_back()
+    })?;
     Some(CurvePatchLayout {
         control_count: decoded.curve.control_points.len(),
         control_value_offsets: decoded.control_value_offsets,
@@ -455,8 +487,7 @@ pub struct NurbsPcurve {
     pub degree: u32,
     /// Full clamped knot vector.
     pub knots: Vec<f64>,
-    /// UV control points. These are surface parameters, not model-space
-    /// lengths, and are deliberately never scaled.
+    /// UV control points in surface-parameter space, without length scaling.
     pub control_points: Vec<Point2>,
     /// Whether the parameter curve is periodic.
     pub periodic: bool,
@@ -480,6 +511,12 @@ pub(crate) struct PcurvePatchLayout {
 
 /// Locate the final valid non-rational 2D pcurve block in a carrier record.
 pub(crate) fn final_pcurve_patch_layout(record: &[u8]) -> Option<PcurvePatchLayout> {
+    INT_WIDTHS
+        .into_iter()
+        .find_map(|int_width| final_pcurve_patch_layout_at(record, int_width))
+}
+
+fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<PcurvePatchLayout> {
     marker_positions(record)
         .into_iter()
         .filter_map(|marker_pos| {
@@ -489,18 +526,18 @@ pub(crate) fn final_pcurve_patch_layout(record: &[u8]) -> Option<PcurvePatchLayo
             }
             let mut pos = marker_pos + marker_len;
             let degree_value_offset = pos + 1;
-            let degree = take_tagged_i64(record, &mut pos, 0x04)?;
+            let degree = take_tagged_int(record, &mut pos, 0x04, int_width)?;
             if !(1..=20).contains(&degree) {
                 return None;
             }
             let periodic_value_offset = pos + 1;
-            let _closure = take_tagged_i64(record, &mut pos, 0x15)?;
-            let unique = take_tagged_i64(record, &mut pos, 0x04)?;
+            let _closure = take_tagged_int(record, &mut pos, 0x15, int_width)?;
+            let unique = take_tagged_int(record, &mut pos, 0x04, int_width)?;
             if !(1..=1000).contains(&unique) {
                 return None;
             }
             let (_knots, control_count, knot_layout) =
-                read_knots(record, &mut pos, unique as usize, degree)?;
+                read_knots(record, &mut pos, unique as usize, degree, int_width)?;
             let mut offsets = Vec::with_capacity(control_count * 2);
             for _ in 0..control_count * 2 {
                 if record.get(pos) != Some(&0x06) {
@@ -529,22 +566,23 @@ pub(crate) fn decode_pcurve_fit_tolerance(record: &[u8]) -> Option<f64> {
         .flatten()
 }
 
-fn decode_pcurve_block(b: &[u8], marker_pos: usize) -> Option<NurbsPcurve> {
+fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<NurbsPcurve> {
     let (_cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
     if rational {
         return None;
     }
     let mut pos = marker_pos + marker_len;
-    let degree = take_tagged_i64(b, &mut pos, 0x04)?;
+    let degree = take_tagged_int(b, &mut pos, 0x04, int_width)?;
     if !(1..=20).contains(&degree) {
         return None;
     }
-    let closure = take_tagged_i64(b, &mut pos, 0x15)?;
-    let n_uniq = take_tagged_i64(b, &mut pos, 0x04)?;
+    let closure = take_tagged_int(b, &mut pos, 0x15, int_width)?;
+    let n_uniq = take_tagged_int(b, &mut pos, 0x04, int_width)?;
     if !(1..=1000).contains(&n_uniq) {
         return None;
     }
-    let (knots, n_poles, _knot_layout) = read_knots(b, &mut pos, n_uniq as usize, degree)?;
+    let (knots, n_poles, _knot_layout) =
+        read_knots(b, &mut pos, n_uniq as usize, degree, int_width)?;
     let mut control_points = Vec::with_capacity(n_poles);
     for _ in 0..n_poles {
         if *b.get(pos)? != 0x06 {
@@ -572,9 +610,15 @@ fn decode_pcurve_block(b: &[u8], marker_pos: usize) -> Option<NurbsPcurve> {
 /// blocks are support surfaces or 2D pcurves). Returns `None` when no surface
 /// block is present or parseable.
 pub fn decode_surface_cache(record_bytes: &[u8]) -> Option<NurbsSurface> {
+    INT_WIDTHS
+        .into_iter()
+        .find_map(|int_width| decode_surface_cache_at(record_bytes, int_width))
+}
+
+fn decode_surface_cache_at(record_bytes: &[u8], int_width: usize) -> Option<NurbsSurface> {
     marker_positions(record_bytes)
         .into_iter()
-        .filter_map(|pos| decode_surface_block(record_bytes, pos))
+        .filter_map(|pos| decode_surface_block(record_bytes, pos, int_width))
         .map(|decoded| decoded.surface)
         .next_back()
 }
@@ -586,7 +630,7 @@ pub struct DecodedProceduralSurface {
     pub definition: DecodedProceduralSurfaceDefinition,
     /// `surface_fit_tolerance` of the cached B-spline block, if present.
     /// `0.0` indicates fidelity to the procedural surface rather than
-    /// identity with a primitive (spec §7.5).
+    /// identity with a primitive ([spec §7.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#75-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
     pub cache_fit_tolerance: Option<f64>,
 }
 
@@ -614,12 +658,21 @@ pub enum DecodedProceduralSurfaceDefinition {
 
 /// Decode an inline `cyl_spl_sur` translational-extrusion definition.
 pub fn decode_cyl_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurface> {
+    INT_WIDTHS
+        .into_iter()
+        .find_map(|int_width| decode_cyl_spl_sur_at(record_bytes, int_width))
+}
+
+fn decode_cyl_spl_sur_at(
+    record_bytes: &[u8],
+    int_width: usize,
+) -> Option<DecodedProceduralSurface> {
     let marker = b"\x0f\x0d\x0bcyl_spl_sur";
     let start = record_bytes
         .windows(marker.len())
         .position(|w| w == marker)?;
-    let span = subtype_span(record_bytes, start)?;
-    let directrix = decode_curve_cache(span)?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let directrix = decode_curve_cache_at(span, int_width)?;
 
     let mut doubles = Vec::new();
     let mut direction = None;
@@ -636,12 +689,12 @@ pub fn decode_cyl_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurfac
             }
             _ => {}
         }
-        pos = next_token(span, pos)?;
+        pos = next_token(span, pos, int_width)?;
     }
     let _u_range = [*doubles.first()?, *doubles.get(1)?];
     let decoded_cache = marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_surface_block(span, at))
+        .filter_map(|at| decode_surface_block(span, at, int_width))
         .next_back()?;
     let _v_range = [
         *decoded_cache.surface.v_knots.first()?,
@@ -660,15 +713,18 @@ pub fn decode_cyl_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurfac
     })
 }
 
-fn decode_rb_blend_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurface> {
+fn decode_rb_blend_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+) -> Option<DecodedProceduralSurface> {
     let marker = b"\x0f\x0d\x10rb_blend_spl_sur";
     let start = record_bytes
         .windows(marker.len())
         .position(|w| w == marker)?;
-    let span = subtype_span(record_bytes, start)?;
+    let span = subtype_span(record_bytes, start, int_width)?;
     let cache = marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_surface_block(span, at))
+        .filter_map(|at| decode_surface_block(span, at, int_width))
         .next_back()?;
 
     let mut support_count = 0usize;
@@ -683,10 +739,10 @@ fn decode_rb_blend_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurfa
                     support_count += 1;
                 }
             }
-            0x15 if read_i64(span, pos + 1) == Some(-1) => radius_boundary = Some(pos),
+            0x15 if read_int(span, pos + 1, int_width) == Some(-1) => radius_boundary = Some(pos),
             _ => {}
         }
-        pos = next_token(span, pos)?;
+        pos = next_token(span, pos, int_width)?;
     }
     let boundary = radius_boundary?;
     let mut radius_values = Vec::new();
@@ -695,7 +751,7 @@ fn decode_rb_blend_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurfa
         if span[pos] == 0x06 {
             radius_values.push(read_f64(span, pos + 1)?);
         }
-        pos = next_token(span, pos)?;
+        pos = next_token(span, pos, int_width)?;
     }
     let end = *radius_values.last()? * LEN_TO_MM;
     let start = *radius_values.get(radius_values.len().checked_sub(2)?)? * LEN_TO_MM;
@@ -708,12 +764,12 @@ fn decode_rb_blend_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurfa
     };
     let center_curve = marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_curve_block(span, at))
+        .filter_map(|at| decode_curve_block(span, at, int_width))
         .map(|decoded| decoded.curve)
         .next_back();
     let mut support_caches = marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_surface_block(span, at))
+        .filter_map(|at| decode_surface_block(span, at, int_width))
         .filter(|decoded| decoded.end < cache.end)
         .map(|decoded| decoded.surface);
     let supports = [
@@ -740,28 +796,34 @@ pub fn decode_procedural_surface_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
 ) -> Option<DecodedProceduralSurface> {
-    decode_procedural_resolving_refs(record_bytes, active_bytes, &mut Vec::new())
+    INT_WIDTHS.into_iter().find_map(|int_width| {
+        decode_procedural_resolving_refs(record_bytes, active_bytes, &mut Vec::new(), int_width)
+    })
 }
 
 fn decode_procedural_resolving_refs(
     bytes: &[u8],
     active_bytes: &[u8],
     seen: &mut Vec<usize>,
+    int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
-    if let Some(decoded) = decode_cyl_spl_sur(bytes).or_else(|| decode_rb_blend_spl_sur(bytes)) {
+    if let Some(decoded) = decode_cyl_spl_sur_at(bytes, int_width)
+        .or_else(|| decode_rb_blend_spl_sur(bytes, int_width))
+    {
         return Some(decoded);
     }
     let table = subtype_table(active_bytes);
-    for index in subtype_refs(bytes) {
+    for index in subtype_refs(bytes, int_width) {
         if seen.contains(&index) {
             continue;
         }
         let target = *table.get(index)?;
         seen.push(index);
         if let Some(decoded) = decode_procedural_resolving_refs(
-            subtype_span(active_bytes, target)?,
+            subtype_span(active_bytes, target, int_width)?,
             active_bytes,
             seen,
+            int_width,
         ) {
             return Some(decoded);
         }
@@ -777,21 +839,30 @@ pub fn decode_surface_cache_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
 ) -> Option<NurbsSurface> {
-    decode_cache_resolving_refs(
-        record_bytes,
-        active_bytes,
-        &mut Vec::new(),
-        decode_surface_cache,
-    )
+    INT_WIDTHS.into_iter().find_map(|int_width| {
+        decode_cache_resolving_refs(
+            record_bytes,
+            active_bytes,
+            &mut Vec::new(),
+            decode_surface_cache_at,
+            int_width,
+        )
+    })
 }
 
 /// Decode the 3D curve cache of a procedural curve record: the FIRST valid curve
 /// block (surface and 2D pcurve blocks in the record are skipped because they do
 /// not parse as a 3D curve block). Returns `None` when none is present.
 pub fn decode_curve_cache(record_bytes: &[u8]) -> Option<NurbsCurve> {
-    marker_positions(record_bytes)
+    INT_WIDTHS
         .into_iter()
-        .find_map(|pos| decode_curve_block(record_bytes, pos).map(|decoded| decoded.curve))
+        .find_map(|int_width| decode_curve_cache_at(record_bytes, int_width))
+}
+
+fn decode_curve_cache_at(record_bytes: &[u8], int_width: usize) -> Option<NurbsCurve> {
+    marker_positions(record_bytes).into_iter().find_map(|pos| {
+        decode_curve_block(record_bytes, pos, int_width).map(|decoded| decoded.curve)
+    })
 }
 
 /// Decode a curve cache from a carrier record, resolving nested ASM subtype
@@ -800,12 +871,15 @@ pub fn decode_curve_cache_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
 ) -> Option<NurbsCurve> {
-    decode_cache_resolving_refs(
-        record_bytes,
-        active_bytes,
-        &mut Vec::new(),
-        decode_curve_cache,
-    )
+    INT_WIDTHS.into_iter().find_map(|int_width| {
+        decode_cache_resolving_refs(
+            record_bytes,
+            active_bytes,
+            &mut Vec::new(),
+            decode_curve_cache_at,
+            int_width,
+        )
+    })
 }
 
 /// A procedural curve cache together with its native subtype and fit contract.
@@ -817,7 +891,7 @@ pub struct DecodedProceduralCurve {
     /// `proj_int_cur`, `int_int_cur`, `helix_int_cur`, `sss_int_cur`, ...).
     pub native_kind: String,
     /// `surface_fit_tolerance` of the cached B-spline block, if present
-    /// (spec §7.5).
+    /// ([spec §7.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#75-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
     pub cache_fit_tolerance: Option<f64>,
 }
 
@@ -826,16 +900,19 @@ pub fn decode_procedural_curve_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
 ) -> Option<DecodedProceduralCurve> {
-    decode_procedural_curve_recursive(record_bytes, active_bytes, &mut Vec::new())
+    INT_WIDTHS.into_iter().find_map(|int_width| {
+        decode_procedural_curve_recursive(record_bytes, active_bytes, &mut Vec::new(), int_width)
+    })
 }
 
 fn decode_procedural_curve_recursive(
     bytes: &[u8],
     active_bytes: &[u8],
     seen: &mut Vec<usize>,
+    int_width: usize,
 ) -> Option<DecodedProceduralCurve> {
     for position in marker_positions(bytes) {
-        if let Some(decoded) = decode_curve_block(bytes, position) {
+        if let Some(decoded) = decode_curve_block(bytes, position, int_width) {
             let cache_fit_tolerance = (bytes.get(decoded.end) == Some(&0x06))
                 .then(|| read_f64(bytes, decoded.end + 1).map(|value| value * LEN_TO_MM))
                 .flatten();
@@ -848,16 +925,17 @@ fn decode_procedural_curve_recursive(
         }
     }
     let table = subtype_table(active_bytes);
-    for index in subtype_refs(bytes) {
+    for index in subtype_refs(bytes, int_width) {
         if seen.contains(&index) {
             continue;
         }
         let target = *table.get(index)?;
         seen.push(index);
         if let Some(decoded) = decode_procedural_curve_recursive(
-            subtype_span(active_bytes, target)?,
+            subtype_span(active_bytes, target, int_width)?,
             active_bytes,
             seen,
+            int_width,
         ) {
             return Some(decoded);
         }
@@ -883,23 +961,25 @@ fn decode_cache_resolving_refs<T>(
     bytes: &[u8],
     active_bytes: &[u8],
     seen: &mut Vec<usize>,
-    decode_inline: fn(&[u8]) -> Option<T>,
+    decode_inline: fn(&[u8], usize) -> Option<T>,
+    int_width: usize,
 ) -> Option<T> {
-    if let Some(decoded) = decode_inline(bytes) {
+    if let Some(decoded) = decode_inline(bytes, int_width) {
         return Some(decoded);
     }
     let table = subtype_table(active_bytes);
-    for index in subtype_refs(bytes) {
+    for index in subtype_refs(bytes, int_width) {
         if seen.contains(&index) {
             continue;
         }
         let target = *table.get(index)?;
         seen.push(index);
         if let Some(decoded) = decode_cache_resolving_refs(
-            subtype_span(active_bytes, target)?,
+            subtype_span(active_bytes, target, int_width)?,
             active_bytes,
             seen,
             decode_inline,
+            int_width,
         ) {
             return Some(decoded);
         }
@@ -924,12 +1004,12 @@ fn subtype_table(bytes: &[u8]) -> Vec<usize> {
     table
 }
 
-fn subtype_refs(bytes: &[u8]) -> Vec<usize> {
+fn subtype_refs(bytes: &[u8], int_width: usize) -> Vec<usize> {
     let mut refs = Vec::new();
     let marker = b"\x0f\x0d\x03ref\x04";
-    for pos in 0..=bytes.len().saturating_sub(marker.len() + 8) {
+    for pos in 0..=bytes.len().saturating_sub(marker.len() + int_width) {
         if bytes[pos..].starts_with(marker) {
-            if let Some(index) = read_i64(bytes, pos + marker.len()) {
+            if let Some(index) = read_int(bytes, pos + marker.len(), int_width) {
                 if index >= 0 {
                     refs.push(index as usize);
                 }
@@ -939,7 +1019,7 @@ fn subtype_refs(bytes: &[u8]) -> Vec<usize> {
     refs
 }
 
-fn subtype_span(bytes: &[u8], start: usize) -> Option<&[u8]> {
+fn subtype_span(bytes: &[u8], start: usize, int_width: usize) -> Option<&[u8]> {
     let mut depth = 0usize;
     let mut pos = start;
     while pos < bytes.len() {
@@ -953,17 +1033,18 @@ fn subtype_span(bytes: &[u8], start: usize) -> Option<&[u8]> {
             }
             _ => {}
         }
-        pos = next_token(bytes, pos)?;
+        pos = next_token(bytes, pos, int_width)?;
     }
     None
 }
 
-fn next_token(bytes: &[u8], pos: usize) -> Option<usize> {
+fn next_token(bytes: &[u8], pos: usize, int_width: usize) -> Option<usize> {
     let tag = *bytes.get(pos)?;
     let fixed = match tag {
         0x02 => 2,
         0x03 => 3,
-        0x04 | 0x06 | 0x0c | 0x15 | 0x17 => 9,
+        0x04 | 0x0c | 0x15 => 1 + int_width,
+        0x06 | 0x17 => 9,
         0x05 => 5,
         0x0a | 0x0b | 0x0f | 0x10 | 0x11 => 1,
         0x13 | 0x14 => 25,
@@ -988,9 +1069,15 @@ fn next_token(bytes: &[u8], pos: usize) -> Option<usize> {
 
 /// Decode the first well-formed 2D `nubs` block in a pcurve record.
 pub fn decode_pcurve_cache(record_bytes: &[u8]) -> Option<NurbsPcurve> {
+    INT_WIDTHS
+        .into_iter()
+        .find_map(|int_width| decode_pcurve_cache_at(record_bytes, int_width))
+}
+
+fn decode_pcurve_cache_at(record_bytes: &[u8], int_width: usize) -> Option<NurbsPcurve> {
     marker_positions(record_bytes)
         .into_iter()
-        .find_map(|pos| decode_pcurve_block(record_bytes, pos))
+        .find_map(|pos| decode_pcurve_block(record_bytes, pos, int_width))
 }
 
 /// Decode a 2D pcurve cache, resolving a nested ASM subtype-table reference
@@ -999,26 +1086,35 @@ pub fn decode_pcurve_cache_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
 ) -> Option<NurbsPcurve> {
-    decode_cache_resolving_refs(
-        record_bytes,
-        active_bytes,
-        &mut Vec::new(),
-        decode_pcurve_cache,
-    )
+    INT_WIDTHS.into_iter().find_map(|int_width| {
+        decode_cache_resolving_refs(
+            record_bytes,
+            active_bytes,
+            &mut Vec::new(),
+            decode_pcurve_cache_at,
+            int_width,
+        )
+    })
 }
 
 /// Decode the UV cache carried by a ref-form pcurve's `intcurve` entity. The
 /// first curve-shaped `nubs` block is the 3D edge carrier; the subsequent
 /// well-formed 2D block is the pcurve.
 pub fn decode_intcurve_pcurve_cache(record_bytes: &[u8]) -> Option<NurbsPcurve> {
+    INT_WIDTHS
+        .into_iter()
+        .find_map(|int_width| decode_intcurve_pcurve_cache_at(record_bytes, int_width))
+}
+
+fn decode_intcurve_pcurve_cache_at(record_bytes: &[u8], int_width: usize) -> Option<NurbsPcurve> {
     let mut saw_curve = false;
     for position in marker_positions(record_bytes) {
-        if !saw_curve && decode_curve_block(record_bytes, position).is_some() {
+        if !saw_curve && decode_curve_block(record_bytes, position, int_width).is_some() {
             saw_curve = true;
             continue;
         }
         if saw_curve {
-            if let Some(pcurve) = decode_pcurve_block(record_bytes, position) {
+            if let Some(pcurve) = decode_pcurve_block(record_bytes, position, int_width) {
                 return Some(pcurve);
             }
         }
@@ -1032,10 +1128,115 @@ pub fn decode_intcurve_pcurve_cache_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
 ) -> Option<NurbsPcurve> {
-    decode_cache_resolving_refs(
-        record_bytes,
-        active_bytes,
-        &mut Vec::new(),
-        decode_intcurve_pcurve_cache,
-    )
+    INT_WIDTHS.into_iter().find_map(|int_width| {
+        decode_cache_resolving_refs(
+            record_bytes,
+            active_bytes,
+            &mut Vec::new(),
+            decode_intcurve_pcurve_cache_at,
+            int_width,
+        )
+    })
+}
+
+#[cfg(test)]
+mod width_tests {
+    use super::*;
+
+    fn push_int(out: &mut Vec<u8>, tag: u8, value: i64, int_width: usize) {
+        out.push(tag);
+        if int_width == 4 {
+            out.extend_from_slice(
+                &i32::try_from(value)
+                    .expect("test value fits i32")
+                    .to_le_bytes(),
+            );
+        } else {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    fn push_f64(out: &mut Vec<u8>, value: f64) {
+        out.push(0x06);
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+
+    /// A degree-1 two-pole 3D `nubs` curve block over `[0, 1]`.
+    fn curve_block(int_width: usize) -> Vec<u8> {
+        let mut b = NUBS_MARKER.to_vec();
+        push_int(&mut b, 0x04, 1, int_width); // degree
+        push_int(&mut b, 0x15, 0, int_width); // open closure
+        push_int(&mut b, 0x04, 2, int_width); // unique knot count
+        push_f64(&mut b, 0.0);
+        push_int(&mut b, 0x04, 1, int_width);
+        push_f64(&mut b, 1.0);
+        push_int(&mut b, 0x04, 1, int_width);
+        for component in [0.0, 0.0, 0.0, 1.0, 2.0, 3.0] {
+            push_f64(&mut b, component);
+        }
+        b
+    }
+
+    /// A degree-1 2×2-pole `nubs` surface block over `[0, 1]²`.
+    fn surface_block(int_width: usize) -> Vec<u8> {
+        let mut b = NUBS_MARKER.to_vec();
+        push_int(&mut b, 0x04, 1, int_width); // u degree
+        push_int(&mut b, 0x04, 1, int_width); // v degree
+        for _ in 0..4 {
+            push_int(&mut b, 0x15, 0, int_width); // periodic/singularity enums
+        }
+        push_int(&mut b, 0x04, 2, int_width); // unique u knots
+        push_int(&mut b, 0x04, 2, int_width); // unique v knots
+        for _ in 0..2 {
+            push_f64(&mut b, 0.0);
+            push_int(&mut b, 0x04, 1, int_width);
+            push_f64(&mut b, 1.0);
+            push_int(&mut b, 0x04, 1, int_width);
+        }
+        for pole in 0..4 {
+            push_f64(&mut b, f64::from(pole));
+            push_f64(&mut b, 0.0);
+            push_f64(&mut b, 0.0);
+        }
+        b
+    }
+
+    #[test]
+    fn curve_cache_decodes_in_both_integer_widths() {
+        for int_width in [4usize, 8] {
+            let curve = decode_curve_cache(&curve_block(int_width))
+                .unwrap_or_else(|| panic!("curve cache at width {int_width}"));
+            assert_eq!(curve.degree, 1);
+            assert_eq!(curve.control_points.len(), 2);
+            assert_eq!(curve.control_points[1].x, 10.0); // cm→mm ×10
+            assert_eq!(curve.knots, vec![0.0, 0.0, 1.0, 1.0]);
+        }
+    }
+
+    #[test]
+    fn surface_cache_decodes_in_both_integer_widths() {
+        for int_width in [4usize, 8] {
+            let surface = decode_surface_cache(&surface_block(int_width))
+                .unwrap_or_else(|| panic!("surface cache at width {int_width}"));
+            assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
+            assert_eq!((surface.u_count, surface.v_count), (2, 2));
+        }
+    }
+
+    #[test]
+    fn surface_cache_resolves_width4_subtype_ref() {
+        // Active slice: one named subtype span holding the surface cache.
+        let mut active = vec![0x0f, 0x0d, 0x07];
+        active.extend_from_slice(b"spl_sur");
+        active.extend_from_slice(&surface_block(4));
+        active.push(0x10);
+        // Record: `ref 0` into the subtype table, 4-byte index payload.
+        let mut record = vec![0x0f, 0x0d, 0x03];
+        record.extend_from_slice(b"ref");
+        push_int(&mut record, 0x04, 0, 4);
+        record.push(0x10);
+        let surface =
+            decode_surface_cache_resolving_refs(&record, &active).expect("resolved width-4 ref");
+        assert_eq!((surface.u_count, surface.v_count), (2, 2));
+    }
 }

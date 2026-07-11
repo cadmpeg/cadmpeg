@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Typed discovery of `srf_array` surface rows.
+//! Surface namespace rows and prototype parameters.
 //!
-//! A row establishes the native surface namespace and its feature/link
-//! references. Its parameter body remains owned by the later analytic layer;
-//! this module never turns an unparsed prototype into model-space geometry.
+//! A [`SurfaceRow`] identifies a surface family and its feature, orientation,
+//! boundary, and namespace links. A [`SurfacePrototype`] contains named template
+//! parameters. Prototype values do not locate a surface instance in model space.
 
 use crate::psb::compact_int;
 use crate::scalar;
 
-/// Creo's PSB surface-family discriminator (spec §3.1), read from a
-/// `srf_array` row's `geom_type` byte.
+/// Surface family encoded by an `srf_array` row's `geom_type` byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SurfaceKind {
     /// `geom_type = 0x22`.
@@ -19,7 +18,7 @@ pub enum SurfaceKind {
     /// `geom_type = 0x25`.
     Cone,
     /// `geom_type = 0x26`: a torus when the prototype's `radius1` is
-    /// nonzero, a sphere when `radius1 = 0` (spec §3.3).
+    /// nonzero, a sphere when `radius1 = 0` ([spec §3.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#33-torus-and-sphere-representation)).
     TorusOrSphere,
     /// `geom_type = 0x28`.
     Spline,
@@ -71,8 +70,7 @@ pub struct SurfaceRow {
     pub offset: usize,
 }
 
-/// A named surface-prototype scalar. It is a template value and must not be
-/// treated as a per-instance surface parameter.
+/// Named scalar parameters from one surface-family prototype.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfacePrototype {
     /// The prototype's surface family, from its labeled `geom_type` field.
@@ -83,7 +81,7 @@ pub struct SurfacePrototype {
     /// The `radius2` scalar field for a torus/sphere prototype.
     pub radius2: Option<f64>,
     /// The `half_angle` scalar field for a cone prototype, in radians, in
-    /// the range `(0, pi/2)` (spec §3.2).
+    /// the range `(0, pi/2)` ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)).
     pub half_angle: Option<f64>,
     /// Byte offset of the `srf_prim_ptr` record's label in the original
     /// stream.

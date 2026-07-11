@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Emission of STEP geometric primitives from IR geometry carriers.
+//! Converts IR geometry carriers into STEP DATA instances.
 //!
-//! Every function here appends the instances it needs (points, directions,
-//! placements) and returns the reference to the top-level carrier. Analytic
-//! carriers map one-to-one to their STEP counterparts; NURBS carriers map to the
-//! `*_WITH_KNOTS` families, using the complex rational form when weighted.
+//! Conversion appends supporting points, directions, and placements before
+//! returning the top-level carrier reference. Analytic carriers use their STEP
+//! counterparts. NURBS carriers use `*_WITH_KNOTS`, with complex instances for
+//! rational geometry.
 
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::writer::{real, refs, Emitter, Ref};
 
-/// Emit (or reuse) a `CARTESIAN_POINT`.
+/// Emit or reuse a `CARTESIAN_POINT`.
 pub fn point(e: &mut Emitter, p: Point3) -> Ref {
     let params = format!("'',({},{},{})", real(p.x), real(p.y), real(p.z));
     e.emit_interned("CARTESIAN_POINT", &params)
 }
 
-/// Emit (or reuse) a `DIRECTION`, normalized to unit length. A zero-length input
-/// is passed through as `(0,0,1)` so downstream placements stay well-formed;
-/// callers that care about degeneracy check before calling.
+/// Emit or reuse a unit-length `DIRECTION`.
+///
+/// A zero-length vector becomes `(0,0,1)`.
 pub fn direction(e: &mut Emitter, v: Vector3) -> Ref {
     let n = v.norm();
     let u = if n > 0.0 {
@@ -31,9 +31,10 @@ pub fn direction(e: &mut Emitter, v: Vector3) -> Ref {
     e.emit_interned("DIRECTION", &params)
 }
 
-/// Emit an `AXIS2_PLACEMENT_3D` at `origin` with local +Z `axis` and local +X
-/// `ref_dir`. STEP projects `ref_dir` onto the plane normal to `axis`, so it need
-/// only be non-parallel to `axis`.
+/// Emit an `AXIS2_PLACEMENT_3D` with the given origin, local +Z axis, and local
+/// +X reference direction.
+///
+/// STEP projects the reference direction onto the plane normal to the axis.
 pub fn placement(e: &mut Emitter, origin: Point3, axis: Vector3, ref_dir: Vector3) -> Ref {
     let o = point(e, origin);
     let a = direction(e, axis);
@@ -41,7 +42,7 @@ pub fn placement(e: &mut Emitter, origin: Point3, axis: Vector3, ref_dir: Vector
     e.emit("AXIS2_PLACEMENT_3D", &format!("'',{o},{a},{r}"))
 }
 
-/// Emit an analytic or NURBS surface carrier, returning its reference.
+/// Emit an analytic or NURBS surface carrier.
 pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
     match g {
         SurfaceGeometry::Plane {
@@ -112,7 +113,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
     }
 }
 
-/// Emit an analytic or NURBS 3D curve carrier, returning its reference.
+/// Emit an analytic or NURBS 3D curve carrier.
 pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
     match g {
         CurveGeometry::Line {
@@ -176,8 +177,7 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
     }
 }
 
-/// Compress a full (repeated) knot vector into distinct knots and their
-/// multiplicities, in the order STEP's `*_WITH_KNOTS` entities expect.
+/// Convert a repeated knot vector into ordered values and multiplicities.
 fn compress_knots(knots: &[f64]) -> (Vec<f64>, Vec<usize>) {
     let mut values = Vec::new();
     let mut mults = Vec::new();

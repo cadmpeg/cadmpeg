@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `.sldprt` outer container: block framing, cache-cell grid, and the tail
-//! section directory.
+//! Outer `.sldprt` container scanning and inspection.
 //!
-//! A `.sldprt` opens with an 8-byte header (`file_id`, then a big-endian
-//! `version` word) and continues as a sequence of compressed blocks. Each block
-//! is introduced by the marker `14 00 06 00 08 00` and carries a raw-DEFLATE
-//! payload whose CRC-32 is stored in the frame. The same marker is reused by two
-//! non-payload structures: a fixed-cell section-index grid (the "cache cells")
-//! and the tail section directory. This module locates every marker, classifies
-//! each hit against the frame's own validation gates, decompresses the real
-//! blocks, and decodes the OPC section names carried (nibble-swapped) in block
-//! preambles and directory entries.
+//! Files start with an 8-byte `file_id` and big-endian version header. A shared
+//! marker introduces raw-DEFLATE blocks, cache cells, and tail-directory
+//! entries. [`scan`] classifies marker occurrences with structure-specific
+//! invariants, validates block CRC-32 values, inflates payloads, decodes stored
+//! section names, and extracts embedded Parasolid streams.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -18,7 +13,7 @@ use std::io::Read;
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 use sha2::{Digest, Sha256};
 
-/// The block/cache/directory marker that introduces every framed structure.
+/// Marker shared by block, cache-cell, and directory frames.
 pub const MARKER: [u8; 6] = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00];
 
 /// Bytes between a marker and its preamble in a block frame
@@ -39,8 +34,10 @@ pub mod role {
     pub const CACHE_CELL: &str = "cache-cell";
 }
 
-/// The decompressed-payload families a block can carry, keyed off the first
-/// bytes of the inflated payload (spec §3).
+/// Classify a decompressed block payload by signature.
+///
+/// The returned labels form the `family` values exposed by [`Block`] and
+/// [`summarize`]. Unknown signatures return `"unknown"`.
 pub fn payload_family(payload: &[u8]) -> &'static str {
     if payload.starts_with(&[0x89, 0x50, 0x4e, 0x47]) {
         "png-preview"
@@ -79,9 +76,7 @@ fn is_bmp_thumbnail(payload: &[u8]) -> bool {
     header_size == 40 && matches!(bits_per_pixel, 1 | 4 | 8 | 16 | 24 | 32)
 }
 
-/// Byte offset of the `PS\0\0` Parasolid stream signature within a payload, if
-/// present near the start. The plain form sits at 0; wrapped forms carry a small
-/// prefix, so a short leading window is scanned.
+/// Find a Parasolid `PS\0\0` signature in the first 64 payload bytes.
 pub fn parasolid_offset(payload: &[u8]) -> Option<usize> {
     const SIG: &[u8] = &[b'P', b'S', 0x00, 0x00];
     let window = payload.len().min(64);
@@ -95,9 +90,9 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
-/// Decode an OPC section name from its stored (nibble-swapped) bytes: each byte
-/// has its high and low nibble exchanged. Returns `None` if the result is not
-/// fully printable ASCII (the spec's name gate).
+/// Decode a nibble-swapped section name.
+///
+/// Returns `None` when any decoded byte falls outside printable ASCII.
 pub fn nibble_swap_name(raw: &[u8]) -> Option<String> {
     let mut s = String::with_capacity(raw.len());
     for &b in raw {
@@ -116,7 +111,7 @@ fn u32_le(bytes: &[u8], at: usize) -> Option<u32> {
         .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
 
-/// A CRC-validated compressed block with its decompressed payload.
+/// One validated compressed block.
 #[derive(Debug, Clone)]
 pub struct Block {
     /// Byte offset of the marker in the file.
@@ -125,22 +120,21 @@ pub struct Block {
     pub type_id: u32,
     /// Compressed payload length.
     pub comp_sz: u32,
-    /// Decompressed payload length (validated to equal `payload.len()`).
+    /// Declared decompressed length, equal to `payload.len()`.
     pub uncomp_sz: u32,
     /// OPC section name decoded from the preamble, when printable.
     pub section: Option<String>,
-    /// Decompressed-payload family (spec §3).
+    /// Payload-family label from [`payload_family`], or `"parasolid"`.
     pub family: &'static str,
     /// The decompressed payload bytes.
     pub payload: Vec<u8>,
-    /// The extracted Parasolid `PS\0\0` stream, when this block carries one
-    /// (plain, wrapped, or nested). `None` for non-Parasolid blocks.
+    /// First direct or nested Parasolid stream in this block.
     pub ps_stream: Option<Vec<u8>>,
     /// Every Parasolid stream carried by this block.
     pub ps_streams: Vec<Vec<u8>>,
 }
 
-/// A tail section-directory entry naming one OPC part.
+/// One tail-directory entry naming a section.
 #[derive(Debug, Clone)]
 pub struct DirectoryEntry {
     /// Byte offset of the marker.
@@ -149,26 +143,26 @@ pub struct DirectoryEntry {
     pub type_id: u32,
     /// The section's stored/uncompressed size.
     pub size: u32,
-    /// OPC part name (nibble-swapped).
+    /// Decoded section name.
     pub name: String,
 }
 
-/// A cache-cell section-index grid entry (not a compressed payload).
+/// One cache-cell section-index entry.
 #[derive(Debug, Clone)]
 pub struct CacheCell {
     /// Byte offset of the marker.
     pub offset: usize,
     /// The logical cell size `L`.
     pub logical_len: u32,
-    /// OPC section name (nibble-swapped).
+    /// Decoded section name.
     pub name: String,
 }
 
-/// Everything read from the outer container, shared by `inspect` and `decode`.
+/// Complete result of an outer-container scan.
 pub struct ContainerScan {
     /// Complete source image for exact passthrough writing.
     pub source_image: Vec<u8>,
-    /// The big-endian outer `version` word (`0x00000004` in known files).
+    /// Big-endian outer version word.
     pub version: u32,
     /// CRC-validated compressed blocks, in file order.
     pub blocks: Vec<Block>,
@@ -181,10 +175,9 @@ pub struct ContainerScan {
 /// The outer header magic length (`file_id` + `version`).
 const OUTER_HEADER_LEN: usize = 8;
 
-/// Whether a byte prefix looks like a `.sldprt`: the block marker appears within
-/// the leading window, after the 8-byte outer header. `.sldprt` files are not
-/// OLE2 at the outer level, so the marker — not a compound-file magic — is the
-/// signal.
+/// Test whether a prefix contains the container marker after its outer header.
+///
+/// This structural check does not validate block framing or CRC-32.
 pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
     if prefix.len() < OUTER_HEADER_LEN + MARKER.len() {
         return false;
@@ -194,10 +187,11 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
         .any(|w| w == MARKER)
 }
 
-/// Read the whole file and classify every marker hit. Blocks are validated by
-/// raw-DEFLATE round-trip + CRC-32; cache cells by the relational size
-/// invariant; directory entries by a printable nibble-swapped name in the tail
-/// frame. A marker that matches none is ignored (it is payload noise).
+/// Read and scan a complete `.sldprt` stream.
+///
+/// Block candidates must inflate to their declared size and match their stored
+/// CRC-32. Cache cells and directory entries must satisfy their framing
+/// invariants. Unclassified marker occurrences are ignored.
 pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
     reader
         .seek(std::io::SeekFrom::Start(0))
@@ -207,8 +201,10 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
     Ok(scan_bytes(&bytes))
 }
 
-/// Classify a whole `.sldprt` byte image. Split out so tests can drive it from a
-/// synthetic buffer without a reader.
+/// Scan an in-memory `.sldprt` image.
+///
+/// Truncated input produces a scan containing every structure that could be
+/// validated; missing outer-header bytes yield version zero.
 pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
     let version = u32::from_be_bytes([
         *bytes.get(4).unwrap_or(&0),
@@ -354,7 +350,7 @@ fn crc32(bytes: &[u8]) -> u32 {
 
 /// Test a marker hit against the cache-cell relational invariant
 /// (`f@+10 == 2L`, `f@+14 == L/2`, `f@+18 == L`, `f@+22 == name_len`) plus a
-/// printable nibble-swapped name (spec §2.2).
+/// printable nibble-swapped name ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#12-cache-cell-section-index-grid)).
 fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
     let two_l = u32_le(bytes, off + 10)?;
     let half_l = u32_le(bytes, off + 14)?;
@@ -379,7 +375,7 @@ fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
 
 /// Test a marker hit against the tail-directory frame: two zero words at +10 and
 /// +18, a size at +14, a name length at +22, a 14-byte descriptor, then a
-/// printable nibble-swapped name (spec §2.3).
+/// printable nibble-swapped name ([spec §2.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#13-tail-section-directory)).
 fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
     let type_id = u32_le(bytes, off + 6)?;
     let zero_a = u32_le(bytes, off + 10)?;
@@ -403,8 +399,8 @@ fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
     })
 }
 
-/// Build a [`ContainerSummary`] enumerating blocks, directory entries, and the
-/// cache grid, with the active Parasolid partition candidate noted.
+/// Convert a scan into the generic container inventory returned by
+/// [`cadmpeg_ir::Codec::inspect`].
 pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let mut entries = Vec::new();
 
@@ -497,14 +493,11 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     }
 }
 
-/// Choose the block carrying the authoritative solid B-rep.
+/// Select the highest-ranked Parasolid B-rep block.
 ///
-/// Several blocks carry a Parasolid stream, but only the active
-/// `Config-0-Partition` holds the final solid. The `Config-0-GhostPartition` is
-/// a superseded transmit stub and `Config-0-ResolvedFeatures` is the feature
-/// lane (2D input profiles), so both are ranked below a real partition (spec
-/// §3). Candidates are scored by section name and stream size; the highest wins,
-/// with a Parasolid block of any kind as a last resort.
+/// Ranking favors larger partition streams, then deltas streams. Ghost and
+/// `ResolvedFeatures` sections receive a penalty. The return value includes the
+/// parsed stream header.
 pub fn select_active_parasolid(
     scan: &ContainerScan,
 ) -> Option<(&Block, crate::parasolid::StreamHeader)> {

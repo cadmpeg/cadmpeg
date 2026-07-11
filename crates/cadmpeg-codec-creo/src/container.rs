@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The PSB ("Pro/E Session Binary") container: the `#UGC:2` header, the ASCII
-//! table of contents, and the run of named binary sections (spec §2).
+//! PSB container framing and structural inspection.
 //!
-//! A `.prt` opens with an ASCII header block (`#UGC:2 …` magic line through
+//! A `.prt` begins with an ASCII header block (`#UGC:2 …` through
 //! `#-END_OF_UGC_HEADER`), an ASCII table of contents (`#UGC_TOC` …
 //! `#END_OF_TOC_HEADER`), then a sequence of named binary sections. A real body
-//! section header is the byte sequence `#\n#<name>\n` (spec §2.1): the preceding
-//! byte must be the literal `#` terminator and the name a printable run, which is
-//! how a `\n`-plus-name coincidence inside feature data is excluded.
+//! section header is `#\n#<name>\n`. The preceding `#` terminator and printable
+//! name distinguish section boundaries from similar bytes in feature data.
 //!
-//! This module locates the header/TOC boundaries, enumerates and classifies the
-//! sections, identifies the layout family (ND vs DEPDB), and reads the byte-backed
-//! `srf_array`/`crv_array` count headers out of the visible-geometry section. It
-//! does not decode geometry; that is the (mostly ungated) layer reported as loss
-//! in [`crate::decode`].
+//! [`scan`] reads the stream and returns a [`ContainerScan`] containing section
+//! metadata, the ND or DEPDB layout, namespace counts, typed structural rows,
+//! native loops, units, feature identifiers, and datum planes. [`summarize`]
+//! converts that scan into the codec-neutral container summary.
 
 use std::collections::BTreeMap;
 
@@ -38,7 +35,7 @@ const TOC_END: &[u8] = b"#END_OF_TOC_HEADER";
 const JPEG_MAGIC: &[u8] = &[0xff, 0xd8, 0xff];
 
 /// ASCII names that appear in the header/TOC framing and look like section
-/// headers but are structural markers, not binary sections (spec §2.1).
+/// headers but are structural markers, not binary sections ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)).
 const FRAMING_NAMES: &[&str] = &[
     "-END_OF_UGC_HEADER",
     "END_OF_UGC",
@@ -48,7 +45,7 @@ const FRAMING_NAMES: &[&str] = &[
 ];
 
 /// Codec-defined role labels for [`ContainerEntry::role`], grouping sections by
-/// what they carry (spec §2.2).
+/// what they carry ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#12-section-map)).
 pub mod role {
     /// Primary/invisible PSB geometry (`VisibGeom`, `NovisGeom`).
     pub const GEOMETRY: &str = "psb-geometry";
@@ -66,11 +63,11 @@ pub mod role {
 /// the inspect census.
 const VISIBGEOM: &str = "VisibGeom";
 /// Named active-unit selector. Unit-definition tables can contain inactive
-/// systems, so this selector—not a unit-name string elsewhere in the file—is
+/// systems, so this selector, rather than another unit-name string, is
 /// authoritative.
 const PRINCIPAL_UNIT_ID: &[u8] = b"_principal_sys_units_id\0";
 
-/// The two layout families (spec §1). Dispatched structurally, not per-file.
+/// The two layout families ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). Dispatched structurally, not per-file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Layout {
     /// Dense PSB rows in `VisibGeom` (~40+ sections; `ND:` name decoration).
@@ -116,9 +113,9 @@ pub struct GeomCensus {
     pub crv_array_count: Option<u32>,
 }
 
-/// Everything read from a `.prt`, shared by `inspect` and `decode`.
+/// Structural data read from one `.prt` file.
 pub struct ContainerScan {
-    /// The whole file image.
+    /// Complete source bytes.
     pub data: Vec<u8>,
     /// The magic/version header line, ASCII, trimmed.
     pub version_line: String,
@@ -153,8 +150,8 @@ pub struct ContainerScan {
 }
 
 /// Whether a byte prefix is a Creo PSB `.prt`: the `#UGC:2` ASCII magic is the
-/// container signature (spec §2.1). Detection is magic-based, never
-/// extension-based, because `.prt` is shared with Siemens NX (spec §1).
+/// container signature ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). Detection is magic-based, never
+/// extension-based, because `.prt` is shared with Siemens NX ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)).
 pub fn looks_like_creo(prefix: &[u8]) -> bool {
     prefix.starts_with(MAGIC)
 }
@@ -176,7 +173,7 @@ fn line_at(data: &[u8], start: usize) -> String {
         .to_string()
 }
 
-/// Normalize a decorated section name to its base (spec §2.1): strip a
+/// Normalize a decorated section name to its base ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)): strip a
 /// `ModelView#N` suffix and an `ND:0:<Name>:N` decoration.
 fn normalize_name(raw: &str) -> String {
     let base = raw.split('#').next().unwrap_or(raw);
@@ -190,7 +187,7 @@ fn normalize_name(raw: &str) -> String {
     base.to_string()
 }
 
-/// Classify a normalized section name by what it carries (spec §2.2).
+/// Classify a normalized section name by what it carries ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#12-section-map)).
 fn classify(name: &str) -> &'static str {
     match name {
         "VisibGeom" | "NovisGeom" | "ActDatums" => role::GEOMETRY,
@@ -208,7 +205,7 @@ fn classify(name: &str) -> &'static str {
 }
 
 /// Enumerate binary sections from `body_start` to EOF by the `\n#<name>\n`
-/// header rule (spec §2.1). A candidate header is accepted only when its name is
+/// header rule ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). A candidate header is accepted only when its name is
 /// a printable run and is not one of the header/TOC framing markers.
 fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
     // Collect header hits as (offset_of_section_hash, raw_name).
@@ -264,7 +261,7 @@ fn is_name_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'_' | b':' | b'.' | b'-' | b'#')
 }
 
-/// Identify the layout family structurally (spec §1). ND is signalled by `ND:`
+/// Identify the layout family structurally ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). ND is signalled by `ND:`
 /// name decoration or a large section count; DEPDB by a `DEPDB_DATA` section
 /// with a sparse section list.
 fn identify_layout(sections: &[Section]) -> Layout {
@@ -286,8 +283,8 @@ fn identify_layout(sections: &[Section]) -> Layout {
 /// Sum every valid `<label>\0 [skip] f8 <count>` header in `region`.
 /// After the label's NUL terminator, up to two optional non-`f8` framing bytes
 /// (e.g. the `f3`/`f2` `crv_array` discriminators) are skipped before the
-/// required `f8` opener, whose compact-integer count is then decoded (spec §4,
-/// §5).
+/// required `f8` opener, whose compact-integer count is then decoded ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array),
+/// [§5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#5-topology-and-section-records)).
 fn read_array_count(region: &[u8], label: &[u8]) -> Option<u32> {
     let mut from = 0;
     let mut total = 0u32;
@@ -536,8 +533,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     }
 }
 
-/// Whether the file carries a JPEG thumbnail payload (spec §2.2). Informational
-/// only; the thumbnail is never geometry.
+/// Return whether a thumbnail section contains a JPEG start marker.
 pub fn has_thumbnail(scan: &ContainerScan) -> bool {
     scan.sections
         .iter()
@@ -548,8 +544,7 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
         })
 }
 
-/// Build a [`ContainerSummary`] enumerating sections and reporting the layout,
-/// census, and the honest scope of what decode can and cannot do.
+/// Build a codec-neutral summary of the sections, layout, and namespace census.
 pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let entries = scan
         .sections

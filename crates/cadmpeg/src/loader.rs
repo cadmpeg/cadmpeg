@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Loading IR from either a `.cadir.json` document or a source CAD file.
+//! Input detection and loading into CADIR.
 
 use std::fs::File;
 use std::io::Read;
@@ -12,16 +12,15 @@ use cadmpeg_ir::{CadIr, DecodeReport};
 use crate::registry::Registry;
 use crate::ForcedInput;
 
-/// An IR obtained from an input path, plus the decode report when the input was
-/// a source file (rather than an already-decoded `.cadir.json`).
+/// CADIR loaded from an input path, with native-decoder diagnostics when used.
 pub struct LoadedIr {
-    /// The IR document.
+    /// Loaded model data.
     pub ir: CadIr,
-    /// Present when the IR came from decoding a source file.
+    /// Native decode result, or `None` when the input was CADIR JSON.
     pub decode_report: Option<DecodeReport>,
 }
 
-/// Read up to `n` leading bytes of a file for format detection.
+/// Read at most `n` leading bytes for content-based format detection.
 pub fn read_prefix(path: &Path, n: usize) -> Result<Vec<u8>> {
     let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut buf = Vec::with_capacity(n);
@@ -29,9 +28,11 @@ pub fn read_prefix(path: &Path, n: usize) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
-/// Load an IR document from `path`. If a registered codec recognizes the bytes,
-/// the file is decoded and the decode report is returned alongside the IR.
-/// Otherwise the file is parsed as a canonical `.cadir.json` IR.
+/// Load CADIR from a native CAD file or CADIR JSON.
+///
+/// An explicit input format bypasses detection. Without one, the registered
+/// codec with the strongest match decodes the file. An input beginning with a
+/// JSON object is parsed as CADIR when no native codec recognizes it.
 pub fn load_ir(
     registry: &Registry,
     path: &Path,

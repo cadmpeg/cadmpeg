@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Context-independent PSB scalar forms with fully defined IEEE mappings.
+//! PSB scalar forms with context-independent IEEE-754 mappings.
 
 use crate::psb::short_form_float;
 
-/// Decode one scalar whose prefix has a complete byte-to-IEEE definition.
-/// Returns the value and the first unread offset; `None` leaves the caller's
-/// record grammar responsible for the byte.
+/// Decode one scalar with a defined byte-to-IEEE mapping.
+///
+/// Returns the value and first unread offset. Returns `None` when the prefix
+/// requires interpretation by the enclosing record grammar or input is
+/// truncated.
 pub fn decode(data: &[u8], offset: usize) -> Option<(f64, usize)> {
     let head = *data.get(offset)?;
     match head {

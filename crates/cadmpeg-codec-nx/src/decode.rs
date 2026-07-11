@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode a Siemens NX `.prt` into an IR document, transferring the analytic
-//! geometry carriers this codec understands and reporting every unrecovered layer
-//! as explicit, counted loss.
+//! Build IR and diagnostics from an NX SPLMSSTR container.
 //!
-//! The container (SPLMSSTR header + directory) and the embedded Parasolid streams
-//! are located by [`crate::container`] and [`crate::parasolid`]. From every
-//! partition/deltas/plain Parasolid stream this module reads the gate-passing
-//! POINT, analytic-surface, and analytic-curve carriers ([`crate::geometry`]) into
-//! free carrier arenas, and preserves each stream verbatim as an [`UnknownRecord`].
-//! Where the stream's topology records resolve ([`crate::topology`]), the
-//! body→shell→face→loop→fin→edge→vertex graph is reconstructed and attached to
-//! those carriers; a stream that yields no topology is reported as a counted
-//! loss instead.
+//! [`scan`] parses the container and inflates its embedded streams. [`decode`]
+//! converts supported analytic and NURBS carriers to millimetres, resolves
+//! supported topology, preserves each Parasolid stream as an unknown record, and
+//! returns a [`DecodeReport`] describing incomplete transfer. Partition and
+//! deltas streams are both decoded; callers must use the report to account for
+//! unresolved active-face selection and other loss.
+//!
+//! [`DecodeReport`]: cadmpeg_ir::report::DecodeReport
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -38,35 +35,42 @@ use crate::topology::{Graph, Node};
 
 const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 
-/// Everything read from a `.prt`, shared by `inspect` and `decode`.
+/// Parsed container data shared by inspection and entity decoding.
 pub struct Scan {
     /// Parsed SPLMSSTR container.
     pub container: Container,
-    /// Located, inflated Parasolid/preview streams.
+    /// Located and inflated Parasolid or preview streams.
     pub streams: Vec<Stream>,
 }
 
 impl Scan {
-    /// Count of streams of a given kind.
+    /// Count streams with the requested classification.
     pub fn count(&self, kind: StreamKind) -> usize {
         self.streams.iter().filter(|s| s.kind == kind).count()
     }
 
-    /// Whether this file carries any inline Parasolid geometry. An assembly `.prt`
-    /// carries none (its geometry lives in external child parts).
+    /// Return whether the file contains an inline Parasolid stream.
+    ///
+    /// NX assemblies may contain only references to external child parts.
     pub fn has_parasolid(&self) -> bool {
         self.streams.iter().any(|s| s.kind.is_parasolid())
     }
 }
 
-/// Read and inflate everything from a reader.
+/// Parse the SPLMSSTR container and inflate streams in its canonical part entry.
 pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
     let container = container::scan(reader)?;
     let streams = parasolid::extract_streams(&container.data);
     Ok(Scan { container, streams })
 }
 
-/// Decode a `.prt` reader into an IR + report.
+/// Decode an NX `.prt` into IR and a loss report.
+///
+/// When [`DecodeOptions::container_only`] is set, the returned IR contains source
+/// metadata and preserved streams but no typed entities. Otherwise the decoder
+/// emits supported geometry and resolvable topology. A valid container can
+/// decode successfully with no geometry, including an assembly whose geometry
+/// resides in external child parts.
 pub fn decode(
     reader: &mut dyn ReadSeek,
     options: &DecodeOptions,
@@ -889,8 +893,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
     }
 }
 
-/// Container-level informational notes shared by every report and the inspect
-/// summary.
+/// Build container and embedded-stream notes for inspection and decode reports.
 pub fn summary_notes(scan: &Scan) -> Vec<String> {
     let c = &scan.container;
     let mut notes = vec![format!(

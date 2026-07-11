@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Generates hand-crafted seed corpus for all codec fuzz targets.
-//! Run: cargo run --bin generate_all_seeds
+//! Writes structural container and IR seeds, then derives deterministic
+//! truncation, byte-flip, and oversized-length mutants.
 
 use std::fs;
 use std::io::{Cursor, Write};

@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The `V5_CFV2` container: the outer file header, the nested inner sub-container
-//! and its `CATIA_V5 CB0001` stream directory, logical-stream reconstruction, and
-//! the storage-variant identification that drives decode.
+//! `V5_CFV2` container parsing and logical-stream reconstruction.
 //!
-//! A `.CATPart` opens with the 8-byte magic `V5_CFV2\0` and a big-endian
-//! directory offset/length pair whose sum is the file size. The geometry sits in
-//! a nested `V5_CFV2` sub-container whose `CATIA_V5 CB0001` directory catalogues
-//! named logical streams (`MainDataStream`, `SurfacicReps`, `Header`, …) as lists
-//! of physical extents. The BREP body is the largest `MainDataStream` followed by
-//! `SurfacicReps`, each reconstructed from its extents (the extents are frequently
-//! spliced, so a contiguous inner slice corrupts the stream). All multi-byte
-//! integers here are big-endian.
+//! A `CATPart` begins with `V5_CFV2\0` and a big-endian outer directory
+//! offset/length pair. Nested files contain a `CATIA_V5 CB0001` directory that
+//! maps names such as `MainDataStream`, `SurfacicReps`, and `Header` to physical
+//! extents. [`brep_stream`] reconstructs the B-rep buffer from the largest
+//! `MainDataStream` and `SurfacicReps` descriptors in logical-offset order.
+//!
+//! [`scan`] reads the file, parses available directories, reconstructs the
+//! stream, and records the structural census used to select a
+//! [`crate::variant::Variant`]. [`summarize`] converts the scan into the
+//! container view returned by codec inspection.
 
 use std::collections::BTreeMap;
 
@@ -45,10 +45,10 @@ pub struct Extent {
     pub phys_off: u32,
     /// Physical byte length of this extent.
     pub phys_len: u32,
-    /// Logical byte length; validated equal to `phys_len` (spec §3.4).
+    /// Logical byte length; validated equal to `phys_len` ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)).
     pub log_len: u32,
     /// Logical byte offset within the reconstructed stream; validated
-    /// cumulative from `0` across a descriptor's extents (spec §3.4).
+    /// cumulative from `0` across a descriptor's extents ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)).
     pub log_off: u32,
     /// Raw extent-struct flags word; meaning not decoded further.
     pub flags: u32,
@@ -126,7 +126,7 @@ fn u32_be(bytes: &[u8], at: usize) -> Option<u32> {
 }
 
 /// Count non-overlapping stride-8 runs of the FBB marker and total marker hits.
-/// Returns `(run_count)` — the number of maximal contiguous groups is the
+/// Returns `run_count`. The number of maximal contiguous groups is the
 /// documented body count, but for variant detection the presence of any run is
 /// what matters, so this counts every stride-8 marker occurrence.
 fn count_stride8_fbb(body: &[u8]) -> usize {
@@ -154,7 +154,7 @@ fn count_subslice(haystack: &[u8], needle: &[u8]) -> usize {
 }
 
 /// Parse the nested-container stream directory by the self-consistency scan
-/// documented in the format spec (§3.4). Returns `None` when there is no nested
+/// documented in the format spec ([§3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)). Returns `None` when there is no nested
 /// container or no parseable directory (the non-nested `a9 03` variant, and the
 /// contiguous-body exception whose directory catalogues no BREP streams).
 pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
@@ -296,7 +296,7 @@ pub fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: u
 }
 
 /// Reconstruct the logical BREP buffer: the largest `MainDataStream` followed by
-/// the largest `SurfacicReps` (spec §3.4). Both are required — a directory that
+/// the largest `SurfacicReps` ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)). Both are required. A directory that
 /// catalogues the BREP body carries both a substantial `MainDataStream` and a
 /// `SurfacicReps`; the contiguous-body exception has neither and returns `None`.
 pub fn brep_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
@@ -325,7 +325,7 @@ fn find_subslice(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
         .map(|p| p + from)
 }
 
-/// Identify the storage variant from container-level evidence (spec §1).
+/// Identify the storage variant from container-level evidence ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#1-variant-families)).
 ///
 /// The identification is intentionally structural: standard-nested requires an
 /// FBB spine plus the standard edge-table delimiter; FBB-only requires an FBB
@@ -353,9 +353,8 @@ fn identify_variant(inner: Option<&InnerDir>, brep: Option<&[u8]>, census: &Cens
                     Variant::FbbOnly
                 }
             } else if census.e5_markers > 0 {
-                // No FBB spine but a walked E5 family is present. The census is a
-                // necessary (not fully sufficient) signal; a coherent-walk gate is
-                // out of scope, so this is the honest best label.
+                // An E5 family without an FBB spine identifies the E5 stream
+                // variant. Classification does not require a coherent topology walk.
                 Variant::E5Stream
             } else {
                 Variant::FloatPackedInnerNoFbb

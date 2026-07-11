@@ -1,32 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
-//! B-rep topology and analytic geometry decode from a framed SAB `RecordTable`.
+//! Build B-rep topology and geometry from a framed SAB record table.
 //!
-//! Given the [`crate::sab`] `RecordTable` of an active model slice, this builds
-//! the IR topology graph (`body → region → shell → face → loop → coedge → edge →
-//! vertex → point`) and the analytic surface/curve carriers it references
-//! (`plane`, `cone`/cylinder, `sphere`, `torus`, `straight` line,
-//! `ellipse`/circle). Fusion `BinaryFile8` model-space lengths are centimetres
-//! and are converted to millimetres (×10) at read time; unit vectors, ratios,
-//! and angles are not scaled.
+//! [`decode`] follows the topology chain from bodies through vertices and
+//! points. It creates analytic carriers for planes, cylinders, cones, spheres,
+//! tori, lines, circles, and ellipses. [`crate::nurbs`] supplies cached NURBS
+//! surfaces, 3D curves, and pcurves for spline and procedural records.
 //!
-//! Free-form spline surfaces and procedural `intcurve` curves are subtype-
-//! dispatched constructions this codec does not evaluate, but they carry an
-//! inline cached B-spline block ([`crate::nurbs`]) that is decoded into a NURBS
-//! carrier where present. A face whose surface cache is a decodable B-spline
-//! gets a [`SurfaceGeometry::Nurbs`] carrier; one whose cache is absent or an
-//! unparsed procedural form keeps its loops and trims but carries a
-//! [`SurfaceGeometry::Unknown`] surface linking to the preserved record bytes
-//! ([`UnknownRecord`]). An edge whose 3D curve cache decodes gets a
-//! [`CurveGeometry::Nurbs`]; otherwise it is emitted with no attributed curve.
-//! What is not understood is reported, never fabricated.
+//! Faces retain their loops and trims when a referenced surface has no decoded
+//! shape; the emitted [`SurfaceGeometry::Unknown`] links to the corresponding
+//! [`UnknownRecord`]. Edges retain vertices and parameter ranges when their 3D
+//! curve carrier is unavailable. [`Stats`] records these transfer losses for
+//! the decode report.
+//!
+//! ASM model-space lengths become millimetres. Unit vectors, ratios, angles,
+//! knots, weights, and UV parameters keep their native scale.
 
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::design::{PersistentDesignLink, SketchCurveLink};
 use cadmpeg_ir::geometry::{
-    BlendSupport, Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    BlendSupport, Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     AttributeId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId,
@@ -104,7 +99,7 @@ pub struct AnnotationRecord {
     pub derived_fields: Vec<&'static str>,
 }
 
-/// Counts of what could not be transferred faithfully.
+/// Counts used to construct the B-rep loss report.
 #[derive(Default)]
 pub struct Stats {
     /// Faces resting on a spline/procedural surface whose shape was not decoded
@@ -364,6 +359,35 @@ fn sense_at(rec: &Record, i: usize) -> Sense {
     }
 }
 
+/// The record-level sense bit of an `intcurve` or `spline` carrier: the boolean
+/// token immediately before the record's subtype scope ([spec §7.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#76-intcurve-and-spline-subtypes)). `true`
+/// marks geometry as the reverse of its cached definition. A reversed intcurve
+/// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
+/// spline surface flips the cache normal.
+fn record_reversed(rec: &Record) -> bool {
+    for token in &rec.tokens {
+        match token {
+            Token::True => return true,
+            Token::False | Token::SubtypeOpen => return false,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Reparameterize a cached B-spline to its record's reversed sense,
+/// `C'(t) = C(-t)`, by reversing poles and weights and negating reversed knots.
+fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
+    curve.control_points.reverse();
+    if let Some(weights) = curve.weights.as_mut() {
+        weights.reverse();
+    }
+    curve.knots.reverse();
+    for knot in &mut curve.knots {
+        *knot = -*knot;
+    }
+}
+
 fn double_at(rec: &Record, i: usize) -> Option<f64> {
     match rec.chunk(i) {
         Some(Token::Double(d)) => Some(*d),
@@ -556,10 +580,15 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                     bytes,
                                                 )
                                             {
-                                                curve_geo.insert(
-                                                    cv,
-                                                    CurveGeometry::Nurbs(decoded.curve),
-                                                );
+                                                let mut curve = decoded.curve;
+                                                // A reversed intcurve parameterizes
+                                                // as the negation of its cache; the
+                                                // edge's stored range is on the
+                                                // reversed parameterization.
+                                                if record_reversed(crec) {
+                                                    reverse_nurbs_curve(&mut curve);
+                                                }
+                                                curve_geo.insert(cv, CurveGeometry::Nurbs(curve));
                                                 procedural_curve_defs.insert(
                                                     cv,
                                                     (
@@ -882,11 +911,25 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 continue;
             };
             let loops = loop_chain(r, &by_index, &kept_loops);
+            // The face record's sense is relative to its surface record's
+            // orientation. A reversed spline record flips the cache normal, and
+            // the IR stores the cache itself, so the reversal folds into the
+            // face sense to keep the IR self-consistent.
+            let mut sense = sense_at(r, 8);
+            if by_index
+                .get(&surface)
+                .is_some_and(|surf| surf.head == "spline" && record_reversed(surf))
+            {
+                sense = match sense {
+                    Sense::Forward => Sense::Reversed,
+                    Sense::Reversed => Sense::Forward,
+                };
+            }
             out.faces.push(Face {
                 id: FaceId(id(i)),
                 shell: ShellId(id(owner)),
                 surface: SurfaceId(id(surface)),
-                sense: sense_at(r, 8),
+                sense,
                 loops,
                 name: None,
                 color: attribute_color(r),

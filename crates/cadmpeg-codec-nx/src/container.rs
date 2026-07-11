@@ -1,37 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The SPLMSSTR container: the file header, the HEADER/FOOTER directory regions,
-//! named-stream enumeration, and location of the embedded Parasolid streams.
+//! Parse the SPLMSSTR header and its `HEADER` and `FOOTER` directories.
 //!
-//! A `.prt` opens with the 8-byte ASCII magic `SPLMSSTR`, a constant version tag
-//! `0x06` at `+8`, a file-specific `uint24` LE at `+9`, and a 48-bit little-endian
-//! FOOTER offset at `+11`. Two directory regions (`HEADER` near the start at `+25`
-//! and `FOOTER` near EOF) share one grammar: each entry is a `name_len:u32 LE`
-//! followed by an ASCII `/Root/...` path and a 16-byte payload (file entries carry
-//! `file_offset:u64 LE, size:u64 LE`; directory/non-file entries carry 16 opaque
-//! bytes). All container integers are little-endian.
-//!
-//! The Parasolid geometry is not addressed through the directory here — it is
-//! located directly by a zlib scan (see [`crate::parasolid`]), which is robust to
-//! the directory's file/non-file entry ambiguity and to spliced payloads.
+//! An NX part begins with the eight-byte `SPLMSSTR` signature. Container integers
+//! are little-endian. Directory entries name `/Root/...` paths and may carry an
+//! in-bounds file offset and size. [`crate::parasolid`] uses the canonical
+//! `/Root/UG_PART/UG_PART` span to bound its compressed-stream scan.
 
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 
-/// The file magic that uniquely identifies an NX `.prt` SPLMSSTR container.
+/// The eight-byte signature used to identify an SPLMSSTR container.
 pub const MAGIC: &[u8; 8] = b"SPLMSSTR";
 
-/// One catalogued directory entry (from HEADER or FOOTER).
+/// A directory entry from the `HEADER` or `FOOTER` region.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirEntry {
     /// The `/Root/...` path name.
     pub name: String,
     /// Which region the entry was read from.
     pub region: Region,
-    /// When the 16-byte payload parses as an in-bounds `(offset, size)` pair, the
-    /// stream's byte offset and length; `None` for directory/non-file entries.
+    /// An in-bounds byte offset and length, or `None` for non-file entries.
     pub file_span: Option<(u64, u64)>,
 }
 
-/// Which directory region an entry came from.
+/// Directory region containing an entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Region {
     /// The `HEADER` region near the start of the file.
@@ -41,7 +32,7 @@ pub enum Region {
 }
 
 impl Region {
-    /// A short label for reporting.
+    /// Return the directory-region label used in summaries.
     pub fn label(self) -> &'static str {
         match self {
             Region::Header => "HEADER",
@@ -51,7 +42,7 @@ impl Region {
 }
 
 impl Container {
-    /// Child part paths from an `EXTREFSTREAM` payload.
+    /// Extract child-part paths from catalogued external-reference payloads.
     pub fn external_reference_paths(&self) -> Vec<String> {
         self.entries
             .iter()
@@ -72,7 +63,7 @@ impl Container {
             .collect()
     }
 
-    /// Active NX object identifiers from `/Root/FastLoad/RMFastLoad`.
+    /// Extract active NX object identifiers from `/Root/FastLoad/RMFastLoad`.
     pub fn rmfastload_object_ids(&self) -> Vec<u32> {
         let Some((offset, size)) = self
             .entries
@@ -157,25 +148,22 @@ fn parse_extref_paths(payload: &[u8]) -> Vec<String> {
     out
 }
 
-/// The parsed SPLMSSTR container header and enumerated directory.
+/// A parsed SPLMSSTR container and its directory entries.
 #[derive(Debug, Clone)]
 pub struct Container {
     /// The whole file image.
     pub data: Vec<u8>,
-    /// Version tag at `+8` (constant `0x06` in observed files).
+    /// Version byte at file offset 8.
     pub version: u8,
-    /// File-specific `uint24` LE at `+9`.
+    /// File-specific 24-bit little-endian value at offset 9.
     pub file_tag: u32,
-    /// 48-bit LE FOOTER offset at `+11`.
+    /// Offset of the `FOOTER` region.
     pub footer_offset: u64,
     /// Enumerated directory entries from both regions, in discovery order.
     pub entries: Vec<DirEntry>,
 }
 
-/// Whether a byte prefix is an NX `.prt`: the `SPLMSSTR` magic is unique to the
-/// Siemens PLM master-storage container and is conclusive on its own. NX and Creo
-/// share the `.prt` extension, so detection must be magic-based; a Creo/Granite
-/// `.prt` never starts with `SPLMSSTR`.
+/// Return whether `prefix` starts with [`MAGIC`].
 pub fn looks_like_nx(prefix: &[u8]) -> bool {
     prefix.starts_with(MAGIC)
 }
@@ -207,7 +195,7 @@ fn u64_le(d: &[u8], at: usize) -> Option<u64> {
         .map(|s| u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
 }
 
-/// Read the whole reader and parse the SPLMSSTR container.
+/// Read a complete SPLMSSTR file and parse its header and directories.
 pub fn scan(reader: &mut dyn ReadSeek) -> Result<Container, CodecError> {
     reader
         .seek(std::io::SeekFrom::Start(0))
@@ -217,7 +205,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<Container, CodecError> {
     scan_bytes(data)
 }
 
-/// Parse a whole `.prt` byte image. Split out so tests drive it without a reader.
+/// Parse an SPLMSSTR file image.
 pub fn scan_bytes(data: Vec<u8>) -> Result<Container, CodecError> {
     if !data.starts_with(MAGIC) {
         return Err(CodecError::WrongFormat(

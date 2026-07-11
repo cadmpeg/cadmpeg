@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode a `.sldprt` into an IR document, transferring the Parasolid B-rep
-//! topology and analytic geometry this codec understands and reporting the rest
-//! as explicit loss.
+//! High-level `.sldprt` decoding.
 //!
-//! The container layer (block framing, tail directory, cache grid, Parasolid
-//! block selection) is decoded by [`crate::container`]. This module locates the
-//! active Parasolid stream and hands its class-definition body to
-//! [`crate::brep`], which walks the typed topology chain and decodes the compact
-//! analytic carriers. Faces on carriers this codec does not type keep their
-//! topology with a [`SurfaceGeometry::Unknown`] surface; each is accounted for
-//! in the [`DecodeReport`]. When no Parasolid body stream can be located or
-//! framed, decode falls back to the container-metadata IR (the active block
-//! preserved as an [`UnknownRecord`]) and says so.
+//! [`decode`] scans the outer [`crate::container`], groups related Parasolid
+//! `partition` and `deltas` streams, and selects the group that yields the
+//! richest B-rep. It then adds appearances, display meshes, document attributes,
+//! feature history, feature-input lanes, provenance, and retained source data.
 //!
-//! [`SurfaceGeometry::Unknown`]: cadmpeg_ir::geometry::SurfaceGeometry::Unknown
+//! The returned [`DecodeResult`] contains both the IR and its diagnostics.
+//! Untyped surface and curve carriers become opaque geometry linked to the
+//! retained partition. If no body stream yields geometry, decoding returns a
+//! metadata-only IR and blocking loss notes. [`DecodeOptions::container_only`]
+//! requests the metadata-only path.
 
 use std::collections::BTreeMap;
 
@@ -38,7 +35,11 @@ struct BodyStream<'a> {
     header: StreamHeader,
 }
 
-/// Decode a `.sldprt` reader into an IR + report.
+/// Decode one seekable `.sldprt` stream into IR and diagnostics.
+///
+/// The function reads and retains the complete source image. Container framing
+/// or I/O failures return [`CodecError`]; unsupported model records are reported
+/// through [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(
     reader: &mut dyn ReadSeek,
     options: &DecodeOptions,

@@ -1,35 +1,55 @@
 // SPDX-License-Identifier: Apache-2.0
-//! # cadmpeg-codec-nx
+//! Read Siemens NX `.prt` files into [`cadmpeg_ir::document::CadIr`].
 //!
-//! Decoder for Siemens NX `.prt` files.
+//! The codec recognizes the `SPLMSSTR` container signature, extracts compressed
+//! Parasolid neutral-binary streams from the canonical part payload, and decodes
+//! supported geometry and topology. Detection uses file content because NX and
+//! Creo share the `.prt` extension.
 //!
-//! ## What is implemented
+//! # Decode a part
 //!
-//! An NX `.prt` is an `SPLMSSTR` container (Siemens PLM master storage) wrapping
-//! zlib-compressed **Parasolid neutral-binary** streams — NX authors geometry
-//! directly with the Parasolid kernel. This codec:
+//! ```no_run
+//! use std::fs::File;
 //!
-//! - [`NxCodec::detect`] recognizes the unique `SPLMSSTR` magic. NX and Creo share
-//!   the `.prt` extension, so detection is magic-based, never extension-based: a
-//!   Creo/Granite `.prt` never carries this magic.
-//! - [`NxCodec::inspect`] parses the container header and HEADER/FOOTER directory,
-//!   enumerates the named `/Root/...` streams, locates and classifies every
-//!   embedded Parasolid stream (partition / deltas / plain cached body) by a
-//!   zlib scan and its inflated prologue, and reads the `SCH_` schema token.
-//! - [`NxCodec::decode`] reads the gate-passing analytic geometry carriers —
-//!   POINT vertices, analytic surfaces (plane/cylinder/cone/sphere/torus), and
-//!   analytic curves (line/circle/ellipse) — from every Parasolid stream into free
-//!   carrier arenas, and preserves each stream verbatim as an unknown passthrough.
+//! use cadmpeg_codec_nx::NxCodec;
+//! use cadmpeg_ir::{Codec, DecodeOptions};
 //!
-//! ## What is decoded, and what is reported as loss
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut input = File::open("part.prt")?;
+//! let result = NxCodec.decode(&mut input, &DecodeOptions::default())?;
 //!
-//! Geometry decodes to a vertex point cloud plus analytic surface/curve carriers,
-//! emitted as **unattached** geometry: the face→loop→edge topology graph is
-//! byte-underdetermined without a full sequential record-framing walk (and its
-//! active-body face set additionally hangs on the undecoded partition↔deltas
-//! tombstone bridge), so it is reported, not fabricated. B-spline and procedural
-//! blend surfaces, cross-body Boolean composition, assembly placements, and the NX
-//! object-model metadata are counted in the [`cadmpeg_ir::report::DecodeReport`].
+//! println!("{} bodies", result.ir.model.bodies.len());
+//! for loss in &result.report.losses {
+//!     println!("{:?}: {}", loss.severity, loss.message);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! [`NxCodec::inspect`] returns the SPLMSSTR directory and embedded-stream
+//! classifications without decoding entities. `DecodeOptions::container_only`
+//! produces metadata IR and skips entity decode.
+//!
+//! # Model and loss boundaries
+//!
+//! NX stores part geometry in zlib-compressed Parasolid partition, deltas, or
+//! plain streams. The decoder converts Parasolid metre values to millimetres and
+//! emits points; analytic curves and surfaces; NURBS curves and surfaces;
+//! selected trimmed curves; and resolvable body, region, shell, face, loop,
+//! coedge, edge, and vertex topology. Each inflated Parasolid stream is also
+//! retained as an unknown record.
+//!
+//! Read [`cadmpeg_ir::report::DecodeReport`] before using the model as a complete
+//! representation. Partition and deltas streams are decoded together without
+//! applying the tombstone relation that selects surviving faces. Multiple
+//! partitions are not combined through NX feature-history Booleans. Assembly
+//! files may contain only references to external child parts.
+//!
+//! Procedural blend surfaces, design history, assembly occurrence placement,
+//! materials, appearances, attributes, tessellation, and `.prt` writing are not
+//! supported. The public submodules expose the lower-level container, stream,
+//! geometry, NURBS, and topology decoders; applications that need a complete IR
+//! entry point should use [`NxCodec`].
 
 pub mod container;
 pub mod decode;
@@ -45,7 +65,7 @@ use cadmpeg_ir::codec::{
     ReadSeek,
 };
 
-/// The Siemens NX `.prt` codec.
+/// Decoder and inspector for Siemens NX `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NxCodec;
 

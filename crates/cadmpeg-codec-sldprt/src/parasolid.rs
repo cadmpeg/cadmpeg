@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The embedded Parasolid stream: header parsing and stream-scope framing.
+//! Extraction and header parsing for embedded Parasolid streams.
 //!
-//! Inside a Parasolid-family block the payload opens with a `PS\0\0` signature,
-//! a big-endian description length and description, some padding, and a
-//! length-prefixed schema token (`SCH_<modeller>_<schema>_<format>`). The
-//! description distinguishes the authoritative `partition`/`deltas` streams from
-//! nested `TRANSMIT FILE` streams that carry only feature-input profiles. The
-//! class-definition body that follows uses a typed record grammar decoded in
-//! [`crate::brep`].
+//! A stream starts with `PS\0\0`, a big-endian description length and
+//! description, padding, and a length-prefixed
+//! `SCH_<modeller>_<schema>_<format>` token. Outer blocks may carry direct
+//! streams or zlib-compressed streams inside a transmit wrapper. Stream
+//! descriptions identify partition, deltas, and feature-profile payloads.
 
 use std::io::Read;
 
@@ -15,26 +13,22 @@ use crate::container::parasolid_offset;
 
 /// The constant 16-byte prefix of the wrapped Parasolid transmit-container
 /// magic. When it is present, the actual `PS\0\0` stream is a nested zlib member
-/// rather than bytes at the block payload's start (spec §3, "wrapped"/"nested"
+/// rather than bytes at the block payload's start ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#3-parasolid-stream), "wrapped"/"nested"
 /// families). The four bytes that follow this prefix are a per-container
 /// length/type field and are not part of the signature.
 const WRAPPED_MAGIC_PREFIX: [u8; 16] = [
     0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,
 ];
 
-/// Locate and return the Parasolid `PS\0\0` stream carried by a decompressed
-/// block payload, in any of its container shapes:
+/// Extract the first valid Parasolid stream from a decompressed block payload.
 ///
-/// - **plain:** `PS\0\0` sits at (or within a few bytes of) the payload start;
-/// - **wrapped/nested:** the payload opens with the transmit-container magic and
-///   the stream is a nested zlib member (`78 xx`) that inflates to `PS\0\0`.
-///
-/// Returns owned stream bytes so the caller need not track two offset spaces.
+/// Direct `PS\0\0` streams and zlib members in recognized transmit wrappers are
+/// accepted. The returned buffer owns the extracted stream bytes.
 pub fn extract_stream(payload: &[u8]) -> Option<Vec<u8>> {
     extract_streams(payload).into_iter().next()
 }
 
-/// Extract every direct or nested Parasolid stream in one outer block.
+/// Extract every valid direct or nested Parasolid stream in one block payload.
 pub fn extract_streams(payload: &[u8]) -> Vec<Vec<u8>> {
     let mut out = Vec::new();
     let signatures: Vec<_> = payload
@@ -94,23 +88,23 @@ fn zlib_inflate(data: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-/// The parsed Parasolid stream header.
+/// Parsed framing fields for one Parasolid stream.
 #[derive(Debug, Clone)]
 pub struct StreamHeader {
-    /// Byte offset of the `PS\0\0` signature within the block payload.
+    /// Byte offset of the `PS\0\0` signature in the supplied buffer.
     pub signature_offset: usize,
-    /// Human-readable stream description (contains `partition`/`deltas` for the
-    /// authoritative streams).
+    /// Human-readable stream description.
     pub description: String,
-    /// The `SCH_<modeller>_<schema>_<format>` schema token.
+    /// `SCH_<modeller>_<schema>_<format>` schema token.
     pub schema: String,
     /// Byte offset where the class-definition record body begins.
     pub body_offset: usize,
 }
 
-/// Parse the Parasolid stream header from a decompressed block payload, if one
-/// is present. Returns `None` when there is no `PS\0\0` signature or the header
-/// fields do not resolve.
+/// Parse a Parasolid header from a buffer containing a leading-window signature.
+///
+/// Returns `None` when the signature, description, or schema token is missing or
+/// truncated.
 pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
     let sig = parasolid_offset(payload)?;
     let desc_len_at = sig + 4;
@@ -122,7 +116,7 @@ pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
 
     // The padding between description and the length-prefixed schema token is not
     // fixed, so the `SCH_` marker is located directly; the preceding byte is the
-    // schema length (spec §4.1).
+    // schema length ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#41-stored-edge-direction)).
     let window_end = (desc_end + 64).min(payload.len());
     let rel = payload
         .get(desc_end..window_end)?
@@ -141,8 +135,7 @@ pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
     })
 }
 
-/// Whether a stream description names an authoritative body stream (partition or
-/// deltas) rather than a nested `TRANSMIT FILE` feature-profile stream.
+/// Test whether the description identifies a partition or deltas body stream.
 pub fn is_body_stream(header: &StreamHeader) -> bool {
     let d = header.description.to_ascii_lowercase();
     d.contains("partition") || d.contains("deltas")

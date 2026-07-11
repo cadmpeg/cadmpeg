@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg"
-description = "Inspect, convert, compare, and validate CAD files from the command line."
+description = "Inspect, decode, validate, compare, and convert CAD models."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
 readme = "README.md"
-documentation = "https://github.com/cadmpeg/cadmpeg#cli"
+documentation = "https://github.com/cadmpeg/cadmpeg/blob/main/crates/cadmpeg/README.md"
 keywords = ["cad", "converter", "step", "brep", "geometry"]
 categories = ["command-line-utilities", "encoding", "graphics"]
 default-run = "cadmpeg"

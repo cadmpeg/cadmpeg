@@ -1,25 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Analytic geometry decode from a Parasolid neutral-binary stream.
+//! Decode point and analytic geometry records from Parasolid neutral-binary data.
 //!
-//! The topology graph (face→loop→fin→edge→vertex, and the xmt reference
-//! resolution behind it) is byte-underdetermined without a full sequential
-//! record-framing walk that tracks per-record escape and large-index shifts, and
-//! its active-body live-face set additionally hangs on the undecoded tombstone
-//! bridge. What *is* recoverable with high confidence, and without fabricating, is
-//! the set of geometry carriers whose payloads pass a strict byte-validation gate:
+//! The scanners recognize points; planes, cylinders, cones, spheres, and tori;
+//! and lines, circles, and ellipses. They validate record bounds, finite values,
+//! model scale, radii, and direction vectors before returning a carrier.
 //!
-//! - **POINT (`00 1d`)** — three big-endian `f64` at `+16`, metres → millimetres.
-//! - **Analytic surfaces** (`00 32`..`00 36`: plane, cylinder, cone, sphere, torus)
-//!   and **analytic curves** (`00 1e`..`00 20`: line, circle, ellipse) — parameters
-//!   at the spec's payload offsets after the common header.
-//!
-//! Every carrier is validated (unit axes/normals, `sin²+cos²≈1` for cones, positive
-//! in-range radii, finite model-scale origins). A record whose earlier pointer
-//! slots consumed the 4-byte large-index encoding shifts all later fixed fields, so
-//! each candidate is tried at a few byte shifts and only a shift whose decode passes
-//! the gate is accepted. Records that pass no shift are left to the counted loss
-//! notes — never emitted approximately. All geometric doubles are big-endian metres;
-//! coordinates and radii are scaled ×1000 to millimetres, unit vectors are not.
+//! Parasolid stores these fields as big-endian metre values. Returned coordinates
+//! and radii are in millimetres; unit vectors and curve parameters are unchanged.
+//! The scanners test supported field shifts caused by extended references and
+//! omit candidates that fail validation. Use [`crate::topology`] to resolve
+//! returned record offsets into topology.
 
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -28,19 +18,18 @@ use cadmpeg_ir::math::{Point3, Vector3};
 /// record whose leading pointer slots each consumed the 4-byte large-index form.
 const SHIFTS: [usize; 4] = [0, 2, 4, 6];
 
-/// A decoded analytic surface plus the byte position and consumed length of its
-/// source record.
+/// A decoded analytic surface and its source span.
 #[derive(Debug, Clone)]
 pub struct DecodedSurface {
     /// Byte offset of the record's type tag within the stream.
     pub pos: usize,
-    /// Consumed record length (from the fixed-record table), for non-overlap.
+    /// Fixed record length used to prevent overlapping matches.
     pub len: usize,
     /// The decoded surface geometry.
     pub geometry: SurfaceGeometry,
 }
 
-/// A decoded analytic curve plus its source position/length.
+/// A decoded analytic curve and its source span.
 #[derive(Debug, Clone)]
 pub struct DecodedCurve {
     /// Byte offset of the record's type tag within the stream.
@@ -51,7 +40,7 @@ pub struct DecodedCurve {
     pub geometry: CurveGeometry,
 }
 
-/// A decoded point plus its source position.
+/// A decoded point and its source offset.
 #[derive(Debug, Clone)]
 pub struct DecodedPoint {
     /// Byte offset of the record's `00 1d` tag within the stream.
@@ -60,7 +49,7 @@ pub struct DecodedPoint {
     pub position: Point3,
 }
 
-/// The analytic surface type tags and their fixed record lengths (§4.1).
+/// The analytic surface type tags and their fixed record lengths ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#41-fixed-record-families)).
 const SURFACE_TAGS: [(u8, usize); 5] = [
     (0x32, 91),  // plane
     (0x33, 99),  // cylinder
@@ -69,18 +58,17 @@ const SURFACE_TAGS: [(u8, usize); 5] = [
     (0x36, 107), // torus
 ];
 
-/// The analytic curve type tags and their fixed record lengths (§4.1).
+/// The analytic curve type tags and their fixed record lengths ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#41-fixed-record-families)).
 const CURVE_TAGS: [(u8, usize); 3] = [
     (0x1e, 67),  // line
     (0x1f, 99),  // circle
     (0x20, 107), // ellipse
 ];
 
-/// Read every gate-passing POINT record as a millimetre position.
+/// Decode validated point records in source order.
 ///
-/// A `00 1d` tag with three finite big-endian doubles at `+16` whose magnitudes are
-/// model-scale (under one kilometre) is a POINT; the strict-finite gate rejects the
-/// `00 1d` byte pairs that occur incidentally inside other records' payloads.
+/// Positions are returned in millimetres. Malformed and out-of-range candidates
+/// are skipped.
 pub fn points(stream: &[u8]) -> Vec<DecodedPoint> {
     let mut out = Vec::new();
     let mut occupied_end = 0usize;
@@ -107,7 +95,7 @@ pub fn points(stream: &[u8]) -> Vec<DecodedPoint> {
     out
 }
 
-/// Read every gate-passing analytic surface carrier.
+/// Decode validated analytic surface records in source order.
 pub fn surfaces(stream: &[u8]) -> Vec<DecodedSurface> {
     let mut out = Vec::new();
     let mut occupied_end = 0usize;
@@ -132,7 +120,7 @@ pub fn surfaces(stream: &[u8]) -> Vec<DecodedSurface> {
     out
 }
 
-/// Read every gate-passing analytic curve carrier.
+/// Decode validated analytic curve records in source order.
 pub fn curves(stream: &[u8]) -> Vec<DecodedCurve> {
     let mut out = Vec::new();
     let mut occupied_end = 0usize;
@@ -194,7 +182,7 @@ fn decode_curve(stream: &[u8], p: usize, kind: u8) -> Option<CurveGeometry> {
     None
 }
 
-// --- Surface decoders (offsets from the common header, §5.1 / §6.1) ---
+// --- Surface decoders (offsets from the common header, [§5.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#51-ownership-graph) / [§6.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#61-analytic-curves-and-surfaces)) ---
 
 fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let origin = read_vec3(s, b + 19)?;
@@ -361,9 +349,7 @@ fn read_vec3(s: &[u8], at: usize) -> Option<[f64; 3]> {
     ])
 }
 
-/// A vector is unit when it is finite and its norm is within a tight tolerance of
-/// one — the decisive witness that a triple of doubles is a real direction field
-/// rather than a coincidental payload alignment.
+/// Return whether a finite vector has unit length within the decode tolerance.
 fn is_unit(v: [f64; 3]) -> bool {
     if !v.iter().all(|c| c.is_finite()) {
         return false;
@@ -377,10 +363,7 @@ fn model_scale(v: [f64; 3]) -> bool {
     v.iter().all(|c| c.is_finite() && c.abs() < 1.0e3)
 }
 
-/// A radius (in metres) is valid when finite and between a sane floor and one
-/// kilometre. The floor (one nanometre) rejects the denormal/near-zero doubles
-/// that a coincidental byte alignment can present as a positive radius — far below
-/// any real CAD feature yet decisively non-zero.
+/// Return whether a metre radius is finite and within the accepted model range.
 fn in_radius(r: f64) -> bool {
     r.is_finite() && r > 1.0e-9 && r < 1.0e3
 }

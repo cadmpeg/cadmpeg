@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Command-line front-end for cadmpeg.
+//! The `cadmpeg` command-line interface.
+//!
+//! The CLI detects supported native CAD containers, decodes model data through
+//! CADIR, validates and compares CADIR models, and writes CADIR, STEP AP214,
+//! `.f3d`, or `.sldprt` output. See the package README for workflows, format
+//! limits, loss reporting, and exit-status semantics.
 
 mod commands;
 mod loader;
@@ -16,20 +21,25 @@ use crate::registry::Registry;
 #[command(
     name = "cadmpeg",
     version,
-    about = "An open-source CAD transcoder",
+    about = "Inspect, decode, validate, compare, and convert CAD models",
     after_help = "Exit codes: 0 success, 1 semantic failure, 2 operational error."
 )]
 struct Cli {
+    /// Operation to perform.
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Format {
+    /// Canonical CADIR JSON.
     #[value(alias = "json")]
     Cadir,
+    /// ISO 10303-21 STEP AP214.
     Step,
+    /// Fusion 360 `.f3d`.
     F3d,
+    /// `SolidWorks` `.sldprt`.
     Sldprt,
 }
 
@@ -66,12 +76,18 @@ impl Format {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum InputFormat {
+    /// Fusion 360 `.f3d`.
     F3d,
+    /// `SolidWorks` `.sldprt`.
     Sldprt,
+    /// CATIA V5 `.CATPart`.
     #[value(alias = "catia")]
     Catpart,
+    /// Siemens NX `.prt`.
     Nx,
+    /// Creo Parametric `.prt`.
     Creo,
+    /// Canonical CADIR JSON.
     Cadir,
 }
 
@@ -96,7 +112,7 @@ impl InputFormat {
 
 #[derive(Debug, Clone, Args)]
 struct InputArgs {
-    /// Bypass format detection and decode as this input format.
+    /// Bypass content detection and read the input as this format.
     #[arg(long, value_enum)]
     input_format: Option<InputFormat>,
 }
@@ -109,7 +125,7 @@ impl InputArgs {
 
 #[derive(Debug, Clone, Args)]
 struct DecodeArgs {
-    /// Stop after the container layer.
+    /// Stop after the native container layer without transferring geometry.
     #[arg(long)]
     container_only: bool,
 }
@@ -124,22 +140,27 @@ impl DecodeArgs {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// List a container's streams/segments without decoding geometry.
+    /// List a native container's entries without decoding its model.
     Inspect {
+        /// Native CAD file to inspect.
         input: PathBuf,
+        /// Write a versioned JSON summary to standard output.
         #[arg(long)]
         json: bool,
         #[command(flatten)]
         input_args: InputArgs,
     },
-    /// Decode a source file into a .cadir.json IR.
+    /// Decode a native CAD file to canonical CADIR JSON.
     Decode {
+        /// Native CAD file to decode.
         input: PathBuf,
+        /// Output file; omit to write CADIR to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Replace an existing output file.
         #[arg(long)]
         force: bool,
-        /// Write a machine-readable command report.
+        /// Write a versioned JSON command report to this file.
         #[arg(long)]
         report: Option<PathBuf>,
         #[command(flatten)]
@@ -147,9 +168,11 @@ enum Command {
         #[command(flatten)]
         decode: DecodeArgs,
     },
-    /// Validate an IR document or decoded source file.
+    /// Validate a CADIR document or a decoded native CAD file.
     Validate {
+        /// CADIR or supported native CAD file to validate.
         input: PathBuf,
+        /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
         #[command(flatten)]
@@ -157,19 +180,23 @@ enum Command {
         #[command(flatten)]
         decode: DecodeArgs,
     },
-    /// Decode (if needed) and export without validation.
+    /// Decode if needed, then export without CADIR validation.
     Export {
+        /// CADIR or supported native CAD file to export.
         input: PathBuf,
+        /// Output format; inferred from the output extension when omitted.
         #[arg(short, long, value_enum)]
         format: Option<Format>,
+        /// Output file; omit to write the artifact to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Replace an existing output file.
         #[arg(long)]
         force: bool,
-        /// Write a machine-readable command report.
+        /// Write a versioned JSON command report to this file.
         #[arg(long)]
         report: Option<PathBuf>,
-        /// Write a geometry format even when decoding transferred no geometry.
+        /// Write geometry output even when decoding transferred no geometry.
         #[arg(long)]
         allow_empty: bool,
         #[command(flatten)]
@@ -177,31 +204,38 @@ enum Command {
         #[command(flatten)]
         decode: DecodeArgs,
     },
-    /// Structurally diff two IR documents; exits 1 when they differ.
+    /// Structurally compare two CADIR or supported native CAD models.
     Diff {
+        /// First model.
         a: PathBuf,
+        /// Second model.
         b: PathBuf,
+        /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
         #[command(flatten)]
         decode: DecodeArgs,
     },
-    /// Decode, validate, then export.
+    /// Decode if needed, validate CADIR, then export.
     Convert {
+        /// CADIR or supported native CAD file to convert.
         input: PathBuf,
+        /// Output format; inferred from the output extension when omitted.
         #[arg(short, long, value_enum)]
         format: Option<Format>,
+        /// Output file; omit to write the artifact to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Replace an existing output file.
         #[arg(long)]
         force: bool,
-        /// Write a machine-readable command report.
+        /// Write a versioned JSON command report to this file.
         #[arg(long)]
         report: Option<PathBuf>,
-        /// Export even when IR validation fails.
+        /// Export even when CADIR validation finds errors.
         #[arg(long)]
         allow_invalid: bool,
-        /// Write a geometry format even when decoding transferred no geometry.
+        /// Write geometry output even when decoding transferred no geometry.
         #[arg(long)]
         allow_empty: bool,
         #[command(flatten)]

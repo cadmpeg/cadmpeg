@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The layered v1 IR document.
+//! Versioned document structure and canonical arena ordering.
 
 use std::collections::BTreeMap;
 
@@ -46,7 +46,7 @@ pub(crate) use arena_registry;
 
 macro_rules! declare_model {
     ($($field:ident: $ty:ty, $doc:literal, $attrs:tt => $key:expr;)*) => {
-        /// Format-neutral model arenas.
+        /// Format-neutral entity arenas connected by typed IDs.
         #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
         pub struct Model {
             $(
@@ -61,7 +61,7 @@ macro_rules! declare_model {
                 &[$(stringify!($field)),*]
             }
 
-            /// Sort every arena into canonical identity order.
+            /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self) {
                 $(self.$field.sort_by_key($key);)*
             }
@@ -74,7 +74,11 @@ pub const IR_VERSION: &str = "1";
 
 arena_registry!(declare_model);
 
-/// A decoded CAD document.
+/// A versioned CAD document.
+///
+/// `model` holds the format-neutral graph. `annotations`, `native`, and
+/// `unknowns` retain source fidelity without changing that graph's semantics.
+/// Entity IDs must be globally unique across all document arenas.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CadIr {
     /// IR schema version.
@@ -94,13 +98,13 @@ pub struct CadIr {
     /// Independently versioned native namespaces.
     #[serde(default)]
     pub native: Native,
-    /// Uninterpreted passthrough records.
+    /// Recognized source records without a typed interpretation.
     #[serde(default)]
     pub unknowns: Vec<UnknownRecord>,
 }
 
 impl CadIr {
-    /// Construct an empty current-version document.
+    /// Construct an empty current-version document with default tolerances.
     pub fn empty(units: Units) -> Self {
         Self {
             ir_version: IR_VERSION.to_owned(),
@@ -119,12 +123,14 @@ impl CadIr {
         Model::arena_names()
     }
 
-    /// Serialize as stable pretty JSON.
+    /// Serialize the document as pretty JSON.
+    ///
+    /// Call [`CadIr::finalize`] first when canonical arena order is required.
     pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
 
-    /// Parse JSON, then reject documents from any other IR version.
+    /// Parse JSON and reject any unsupported `ir_version`.
     pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
         let value: serde_json::Value = serde_json::from_str(s)?;
         let version = value.get("ir_version").and_then(serde_json::Value::as_str);
@@ -136,7 +142,7 @@ impl CadIr {
         serde_json::from_value(value)
     }
 
-    /// Canonicalize all model, native, and passthrough arena ordering.
+    /// Sort model, native, and unknown-record arenas by identity.
     pub fn finalize(&mut self) {
         self.model.finalize();
         self.native.finalize();

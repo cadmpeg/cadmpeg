@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! PSB primitive encoding: compact integers, structural token bytes, and the
-//! 3-byte compact-float short form.
+//! Context-independent PSB tokens and primitive numeric encodings.
 //!
-//! This is the load-bearing, best-established layer of the format (spec §3). The
-//! decoders here are pure functions over a byte slice so they can be unit-tested
-//! against the spec's byte-exact worked examples. Higher layers (surface/curve
-//! namespaces, row bodies, world-coordinate tokens) are only partially
-//! characterized and are *not* decoded by this codec; see [`crate::decode`] for
-//! how those are reported as loss rather than fabricated.
+//! [`tokens`] walks forms whose lengths are known without a parent record
+//! grammar. [`compact_int`], [`reference_id`], and [`short_form_float`] decode
+//! primitive values. Unknown and truncated input remains explicit in the token
+//! stream.
 
-/// Structural token bytes (spec §3.2).
+/// Structural token bytes ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#22-structural-tokens)).
 pub mod token {
     /// Named-record header: `e0 <type> <name>\0`.
     pub const NAMED_RECORD: u8 = 0xe0;
@@ -23,9 +20,10 @@ pub mod token {
     pub const ARRAY_CLOSE: u8 = 0xfb;
 }
 
-/// One structurally framed PSB token. `offset` and `length` always refer to
-/// the original byte stream; unknown bytes remain explicit rather than being
-/// skipped, which makes the walker safe for provenance and cache building.
+/// One structurally framed PSB token.
+///
+/// `offset` and `length` refer to the input slice. Unknown bytes remain
+/// explicit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     /// Byte offset of the token's first byte in the original stream.
@@ -40,10 +38,10 @@ pub struct Token {
 /// parent record grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
-    /// A PSB compact integer (spec §3.1): `0x00..=0x7f` one byte, or
+    /// A PSB compact integer ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#21-compact-integers)): `0x00..=0x7f` one byte, or
     /// `0x80..=0xbf XX` two bytes big-endian.
     CompactInt,
-    /// A 3-byte short-form float token (spec §3.3): `<prefix> XX YY`.
+    /// A 3-byte short-form float token ([spec §3.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#23-scalar-tokens)): `<prefix> XX YY`.
     ShortFloat,
     /// An 8-byte world-coordinate token whose leading byte is `0x46`
     /// (positive) or `0x2d` (negative).
@@ -64,7 +62,7 @@ pub enum TokenKind {
     /// depends on the enclosing record grammar.
     CompoundClose,
     /// A recognized single-byte structural marker outside the primary token
-    /// set (spec §3.2), such as `0xe1`, `0xe4`, `0xe5`, `0xe6`, `0xe8`,
+    /// set ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#22-structural-tokens)), such as `0xe1`, `0xe4`, `0xe5`, `0xe6`, `0xe8`,
     /// `0xf1`, `0xf2`, `0xf3`, `0xf5`, or `0xf6`. The wrapped byte is the raw
     /// marker value.
     OtherStructural(u8),
@@ -77,9 +75,10 @@ pub enum TokenKind {
     Truncated(u8),
 }
 
-/// Tokenize a PSB byte range using only byte-self-delimiting forms. Numeric
-/// row-body forms whose meaning depends on a parent grammar are deliberately
-/// left as compact/unknown tokens here.
+/// Tokenize byte-self-delimiting PSB forms.
+///
+/// Numeric forms that depend on a parent grammar remain compact or unknown
+/// tokens.
 pub fn tokens(data: &[u8]) -> Vec<Token> {
     let mut result = Vec::new();
     let mut offset = 0;
@@ -138,7 +137,7 @@ pub fn tokens(data: &[u8]) -> Vec<Token> {
     result
 }
 
-/// Decode a generic PSB compact integer at `offset` (spec §3.1).
+/// Decode a generic PSB compact integer at `offset` ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#21-compact-integers)).
 ///
 /// - `0x00..=0x7f`: one-byte direct value.
 /// - `0x80..=0xbf XX`: two-byte big-endian `((head - 0x80) << 8) | XX`.
@@ -186,7 +185,7 @@ pub fn reference_id(data: &[u8], offset: usize) -> Result<(u32, usize), &'static
     }
 }
 
-/// 3-byte short-form float prefix table (spec §3.3): `prefix -> (ieee_byte0,
+/// 3-byte short-form float prefix table ([spec §3.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#23-scalar-tokens)): `prefix -> (ieee_byte0,
 /// repeat_fill)`. Repeat-fill tokens fill the 6-byte IEEE tail with the third
 /// byte repeated; the others place the third byte then five zero bytes.
 ///
@@ -211,7 +210,7 @@ pub fn is_short_form_float(prefix: u8) -> bool {
     short_form_spec(prefix).is_some()
 }
 
-/// Decode a 3-byte short-form float at `offset` (spec §3.3). Returns
+/// Decode a 3-byte short-form float at `offset` ([spec §3.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#23-scalar-tokens)). Returns
 /// `Some((value, new_offset))` when the prefix is a known short-form opener and
 /// three bytes are available; `None` otherwise.
 ///
@@ -326,7 +325,7 @@ mod tests {
         );
     }
 
-    /// Every worked example from spec §3.3, byte-exact.
+    /// Every worked example from [spec §3.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#23-scalar-tokens), byte-exact.
     #[test]
     fn short_form_float_worked_examples() {
         let cases: &[(&[u8], f64)] = &[

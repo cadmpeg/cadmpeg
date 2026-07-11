@@ -4,8 +4,6 @@
 //! Feeds arbitrary bytes through UTF-8 decoding, JSON deserialization into
 //! `CadIr`, then STEP export. Contract: no input may panic. Malformed JSON must
 //! surface as `serde_json::Error`; STEP export errors are discarded.
-//!
-//! Run: cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz step_writer
 
 #![no_main]
 

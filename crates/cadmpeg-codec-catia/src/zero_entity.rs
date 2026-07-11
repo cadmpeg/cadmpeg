@@ -2,7 +2,7 @@
 //! Counted topology records in the zero-entity `a9 03` stream family.
 
 /// Resolved zero-entity `a9 03` stream: records, faces, loops, carrier runs,
-/// and the edge/vertex tables recovered from them (spec §8).
+/// and the edge/vertex tables recovered from them ([spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZeroEntityTopology {
     /// Every `a9 03` record found by the stream walk, in stream order.
@@ -15,7 +15,7 @@ pub struct ZeroEntityTopology {
     pub loops: Vec<ZeroEntityLoop>,
     /// Carrier-then-supports runs: each surface carrier (`27 6a`/`28
     /// 8a`/`29 b8`/`2b c8`/`34 xx`) followed by its maximal run of `21 xx`
-    /// support occurrences, one run per face (spec §8).
+    /// support occurrences, one run per face ([spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
     pub carrier_runs: Vec<ZeroCarrierRun>,
     /// `21 xx` curve-support-on-surface records, across all carrier runs.
     pub supports: Vec<ZeroSupport>,
@@ -32,7 +32,7 @@ pub struct ZeroEntityTopology {
 }
 
 /// A resolved vertex-incidence pair: a `05 0b`/`05 10`/`05 15` incidence
-/// record immediately followed by its `5d 06` vertex marker (spec §8).
+/// record immediately followed by its `5d 06` vertex marker ([spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroVertex {
     /// `ordinal` of the following `5d 06` marker record.
@@ -44,7 +44,7 @@ pub struct ZeroVertex {
     pub incidence_items: Vec<u32>,
 }
 
-/// A resolved `5e 1a` edge-stride record (38 bytes; spec §8).
+/// A resolved `5e 1a` edge-stride record (38 bytes; [spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroPhysicalEdge {
     /// `ordinal` of this record.
@@ -55,7 +55,7 @@ pub struct ZeroPhysicalEdge {
 }
 
 /// A resolved `06 38` coedge record: one of the two per-side halves of a
-/// physical edge (68 bytes; spec §8).
+/// physical edge (68 bytes; [spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroCoedgeTwin {
     /// `ordinal` of this record.
@@ -69,7 +69,7 @@ pub struct ZeroCoedgeTwin {
 }
 
 /// A resolved `25 69` side-pair header record, linking two [`ZeroCoedgeTwin`]
-/// records by side number (spec §8).
+/// records by side number ([spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroSidePair {
     /// `ordinal` of this record.
@@ -85,7 +85,7 @@ pub struct ZeroSidePair {
 }
 
 /// One surface carrier and its maximal run of `21 xx` support occurrences,
-/// aligned 1:1 with a face (spec §8, "Carrier run = per-face surface").
+/// aligned 1:1 with a face ([spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant), "Carrier run = per-face surface").
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZeroCarrierRun {
     /// `ordinal` of the carrier record (`27 6a`/`28 8a`/`29 b8`/`2b
@@ -97,7 +97,7 @@ pub struct ZeroCarrierRun {
 }
 
 /// A resolved `21 xx` curve-support-on-surface record, with its UV
-/// endpoints lifted through the owning carrier where possible (spec §8).
+/// endpoints lifted through the owning carrier where possible ([spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZeroSupport {
     /// `ordinal` of this record.
@@ -119,11 +119,11 @@ pub struct ZeroSupport {
 }
 
 /// One length-framed `a9 03` record as found by the stream walk: framing
-/// `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12` (spec §8).
+/// `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12` ([spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroEntityRecord {
     /// This record's position in the stream walk order. Records reference
-    /// each other by this ordinal, not by byte offset (spec §8).
+    /// each other by this ordinal, not by byte offset ([spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
     pub ordinal: usize,
     /// Byte offset of the `a9 03` marker in the source stream.
     pub offset: usize,
@@ -133,7 +133,7 @@ pub struct ZeroEntityRecord {
     pub bytes: Vec<u8>,
 }
 
-/// A resolved `5f 0c` face record (24 bytes; spec §8).
+/// A resolved `5f 0c` face record (24 bytes; [spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroEntityFace {
     /// `ordinal` of this record.
@@ -155,7 +155,7 @@ pub struct ZeroEntityFace {
 }
 
 /// A resolved `62 xx` loop record: an alternating even/odd reference lane
-/// plus a packed 3-bit-per-member sense stream (spec §8).
+/// plus a packed 3-bit-per-member sense stream ([spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroEntityLoop {
     /// `ordinal` of this record.

@@ -1,41 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Extraction and classification of the embedded Parasolid neutral-binary streams.
+//! Extract and classify compressed streams in an NX part payload.
 //!
-//! NX authors geometry directly with Parasolid and stores it as zlib-compressed
-//! neutral-binary streams inside the SPLMSSTR container. Rather than address these
-//! through the container directory (whose file/non-file entry payloads are
-//! ambiguous), the streams are located by a **zlib scan**: every `78 01` position
-//! whose inflate yields a substantial payload is a candidate, and the inflated
-//! prologue text classifies it.
-//!
-//! An inflated Parasolid stream begins `PS 00 00`, followed by a text prologue
-//! naming the transmit subtype (`(partition)`, `(deltas)`, or a plain cached body)
-//! and a `SCH_<version>` schema token. Only partition and deltas streams carry the
-//! topology/geometry records this codec reads; the JT/preview zlib blobs inflate to
-//! non-`PS` payloads and are classified [`StreamKind::Preview`].
+//! [`extract_streams`] scans the canonical `/Root/UG_PART/UG_PART` file span for
+//! valid zlib headers. An inflated `PS 00 00` prologue identifies Parasolid
+//! neutral-binary data and supplies its subtype and optional `SCH_` schema token.
+//! Other inflated payloads are classified as [`StreamKind::Preview`].
 
 use flate2::read::ZlibDecoder;
 use std::io::Read;
 
 use crate::container;
 
-/// Classification of an inflated zlib payload found in the container.
+/// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamKind {
-    /// A Parasolid `(partition)` stream: a full body snapshot.
+    /// A Parasolid `(partition)` body snapshot.
     Partition,
-    /// A Parasolid `(deltas)` stream: an incremental edit log paired with a
-    /// partition.
+    /// A Parasolid `(deltas)` edit overlay.
     Deltas,
-    /// A Parasolid plain stream: a cached body with no partition/deltas subtype.
+    /// A cached Parasolid body without a partition or deltas subtype.
     Plain,
-    /// A non-Parasolid payload (JT/preview mesh, metadata) — never a source of
-    /// analytic B-rep.
+    /// An inflated non-Parasolid payload, such as preview or metadata data.
     Preview,
 }
 
 impl StreamKind {
-    /// A short label for reporting.
+    /// Return the stable label used in summaries and reports.
     pub fn label(self) -> &'static str {
         match self {
             StreamKind::Partition => "partition",
@@ -45,22 +35,22 @@ impl StreamKind {
         }
     }
 
-    /// Whether this stream carries Parasolid neutral-binary geometry records.
+    /// Return whether this kind contains Parasolid neutral-binary records.
     pub fn is_parasolid(self) -> bool {
         !matches!(self, StreamKind::Preview)
     }
 }
 
-/// One located, inflated stream.
+/// A located and inflated stream from the canonical part payload.
 #[derive(Debug, Clone)]
 pub struct Stream {
     /// Byte offset of the `78 01` zlib header in the source file.
     pub file_offset: usize,
     /// Inflated bytes.
     pub inflated: Vec<u8>,
-    /// Classification.
+    /// Payload classification.
     pub kind: StreamKind,
-    /// The `SCH_<version>` schema token, when the stream is Parasolid.
+    /// The Parasolid `SCH_<version>` token, when present.
     pub schema: Option<String>,
 }
 
@@ -68,14 +58,11 @@ pub struct Stream {
 /// this a `78 01` match is almost certainly a coincidence in packed data.
 const MIN_INFLATED: usize = 64;
 
-/// Locate and inflate every embedded Parasolid stream in the canonical
-/// `/Root/UG_PART/UG_PART` payload, classifying each.
+/// Locate, inflate, and classify zlib streams in `/Root/UG_PART/UG_PART`.
 ///
-/// The directory bounds are authoritative. Other SPLMSSTR streams, notably JT,
-/// can contain independent zlib payloads and must not be interpreted as part
-/// geometry even if their inflated bytes happen to begin with a Parasolid
-/// prologue. A malformed or absent canonical part stream has no inline
-/// Parasolid streams.
+/// Returns an empty vector if `data` is not a valid SPLMSSTR image or the
+/// canonical part entry is absent or invalid. The scan remains inside that
+/// entry, excluding compressed payloads stored elsewhere in the container.
 pub fn extract_streams(data: &[u8]) -> Vec<Stream> {
     let Ok(container) = container::scan_bytes(data.to_vec()) else {
         return Vec::new();

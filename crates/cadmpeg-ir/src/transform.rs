@@ -5,9 +5,9 @@ use crate::math::{Point3, Vector3};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// A right-handed coordinate placement: an origin plus two orthonormal axes
-/// (the third is their cross product). This is the ACIS-style representation of
-/// an analytic entity's local frame.
+/// A right-handed local frame defined by an origin and two orthonormal axes.
+///
+/// The third axis is the cross product of `axis` and `ref_direction`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Placement {
     /// Local frame origin.
@@ -20,9 +20,8 @@ pub struct Placement {
 
 /// A 4×4 row-major affine transform applied to a body's geometry.
 ///
-/// Stored explicitly (rather than decomposed) so a byte-exact transform record
-/// round-trips without lossy decomposition. The bottom row is included so the
-/// matrix is self-describing; validation checks it is affine.
+/// The explicit matrix preserves source coefficients. Validation checks the
+/// affine bottom row.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Transform {
     /// Row-major 4×4 matrix; `rows[3]` is normally `[0, 0, 0, 1]`.
