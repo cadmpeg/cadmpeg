@@ -47,7 +47,8 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             "semantic SLDPRT writing requires a B-rep".into(),
         ));
     }
-    let length_scale = ir.units.length.to_millimeters() / 1000.0;
+    // The IR stores canonical millimetres; Parasolid stores metres.
+    let length_scale = 0.001;
     let patched_partition = if retained_partition.is_none() {
         crate::writer_patch::patch_partition(ir, length_scale)?
     } else {
