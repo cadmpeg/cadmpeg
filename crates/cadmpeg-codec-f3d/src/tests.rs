@@ -7721,6 +7721,26 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             assert!(third.secondary_pcurve.is_some());
             assert!(!third.flag);
         }
+
+        let expected = native.clone();
+        let mut source_less = result.ir;
+        source_less.source = None;
+        source_less.unknowns.clear();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less rolling-ball encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("source-less rolling-ball round trip");
+        let ProceduralSurfaceDefinition::Blend {
+            native: Some(actual),
+            ..
+        } = &round_trip.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected complete round-trip rolling-ball graph")
+        };
+        assert_eq!(actual.as_ref(), expected.as_ref());
     }
 }
 

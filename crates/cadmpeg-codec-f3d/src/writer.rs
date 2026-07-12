@@ -3509,17 +3509,29 @@ fn native_procedural_surface(
             spine,
             radius,
             cross_section,
-            ..
-        } => encode_native_rolling_ball(
-            bytes,
-            target,
-            procedural,
-            supports,
-            spine.as_ref(),
-            radius,
-            cross_section,
-            solved_cache,
-        )?,
+            native,
+        } => {
+            if let Some(native) = native {
+                encode_complete_native_rolling_ball(
+                    bytes,
+                    target,
+                    procedural,
+                    native,
+                    solved_cache,
+                )?;
+            } else {
+                encode_native_rolling_ball(
+                    bytes,
+                    target,
+                    procedural,
+                    supports,
+                    spine.as_ref(),
+                    radius,
+                    cross_section,
+                    solved_cache,
+                )?;
+            }
+        }
         _ => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} is not yet writable",
@@ -3889,6 +3901,158 @@ fn encode_native_extrusion(
     native_nurbs_curve(bytes, directrix_cache)?;
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    bytes.push(0x10);
+    Ok(())
+}
+
+fn native_optional_pcurve(
+    bytes: &mut Vec<u8>,
+    pcurve: Option<&PcurveGeometry>,
+) -> Result<(), CodecError> {
+    if let Some(pcurve) = pcurve {
+        native_nurbs_pcurve_block(bytes, pcurve)
+    } else {
+        native_ident(bytes, "nullbs")
+    }
+}
+
+fn native_rolling_ball_side(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    side: &cadmpeg_ir::geometry::RollingBallSide,
+) -> Result<(), CodecError> {
+    native_string(bytes, &side.label)?;
+    if let Some(id) = &side.surface {
+        let surface = target
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == *id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("rolling-ball support {id} is missing"))
+            })?;
+        native_embedded_surface(bytes, &surface.geometry)?;
+    } else {
+        native_ident(bytes, "null_surface")?;
+    }
+    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    native_optional_pcurve(bytes, side.pcurve.as_ref())?;
+    native_point(
+        bytes,
+        [
+            side.location.x / 10.0,
+            side.location.y / 10.0,
+            side.location.z / 10.0,
+        ],
+    );
+    native_optional_pcurve(bytes, side.secondary_pcurve.as_ref())?;
+    if let Some(id) = &side.exact_support {
+        let surface = target
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == *id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("rolling-ball exact support {id} is missing"))
+            })?;
+        let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
+            return Err(CodecError::NotImplemented(
+                "rolling-ball exact support must be NURBS".into(),
+            ));
+        };
+        native_ident(bytes, "spline")?;
+        native_nurbs_surface(bytes, surface)?;
+    } else {
+        native_ident(bytes, "nullbs")?;
+    }
+    Ok(())
+}
+
+fn native_rolling_ball_third_side(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    side: &cadmpeg_ir::geometry::RollingBallThirdSide,
+) -> Result<(), CodecError> {
+    native_string(bytes, &side.label)?;
+    let surface = target
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == side.surface)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "rolling-ball third support {} is missing",
+                side.surface
+            ))
+        })?;
+    native_embedded_surface(bytes, &surface.geometry)?;
+    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    native_optional_pcurve(bytes, side.pcurve.as_ref())?;
+    native_vector(
+        bytes,
+        [side.direction.x, side.direction.y, side.direction.z],
+    );
+    native_optional_pcurve(bytes, side.secondary_pcurve.as_ref())?;
+    native_i64(bytes, side.extension);
+    native_optional_pcurve(bytes, side.tertiary_pcurve.as_ref())?;
+    bytes.push(native_bool(side.flag));
+    Ok(())
+}
+
+fn encode_complete_native_rolling_ball(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::RollingBallConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(
+        bytes,
+        if construction.third.is_some() {
+            "sss_blend_spl_sur"
+        } else {
+            "rb_blend_spl_sur"
+        },
+    )?;
+    for side in construction.sides.iter() {
+        native_rolling_ball_side(bytes, target, side)?;
+    }
+    native_nurbs_curve(bytes, native_loft_curve(target, &construction.slice)?)?;
+    for offset in construction.offsets {
+        native_f64(bytes, offset / 10.0);
+    }
+    match construction.radius_selector {
+        cadmpeg_ir::geometry::RollingBallRadiusSelector::None => native_enum(bytes, -1),
+        cadmpeg_ir::geometry::RollingBallRadiusSelector::Value { value } => {
+            native_f64(bytes, value);
+        }
+    }
+    for range in [construction.u_range, construction.v_range] {
+        native_f64(bytes, range[0]);
+        native_f64(bytes, range[1]);
+    }
+    for parameter in construction.parameters {
+        native_f64(bytes, parameter);
+    }
+    native_i64(bytes, construction.tail);
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for values in &construction.discontinuities {
+        native_i64(
+            bytes,
+            i64::try_from(values.len()).map_err(|_| {
+                CodecError::NotImplemented("rolling-ball discontinuity count exceeds i64".into())
+            })?,
+        );
+        for value in values {
+            native_f64(bytes, *value);
+        }
+    }
+    if let Some(third) = &construction.third {
+        native_rolling_ball_third_side(bytes, target, third)?;
+    }
     bytes.push(0x10);
     Ok(())
 }
