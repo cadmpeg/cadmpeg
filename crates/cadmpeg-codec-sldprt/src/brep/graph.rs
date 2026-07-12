@@ -725,19 +725,29 @@ fn derive_planar_pcurves(
         .iter()
         .map(|lp| (lp.id.clone(), lp.face.clone()))
         .collect();
+    let faces: HashMap<_, _> = out.faces.iter().map(|face| (&face.id, face)).collect();
+    let surfaces: HashMap<_, _> = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect();
+    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
+    let points: HashMap<_, _> = out.points.iter().map(|point| (&point.id, point)).collect();
+    let vertex_points: HashMap<_, _> = out
+        .vertices
+        .iter()
+        .filter_map(|vertex| points.get(&vertex.point).map(|point| (&vertex.id, *point)))
+        .collect();
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
             continue;
         };
-        let Some(face) = out.faces.iter().find(|face| face.id == *face_id) else {
+        let Some(face) = faces.get(face_id) else {
             continue;
         };
-        let Some(surface) = out
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == face.surface)
-        else {
+        let Some(surface) = surfaces.get(&face.surface) else {
             continue;
         };
         if !matches!(surface.geometry, SurfaceGeometry::Plane { .. }) {
@@ -756,23 +766,18 @@ fn derive_planar_pcurves(
             normal.z * u_reference.x - normal.x * u_reference.z,
             normal.x * u_reference.y - normal.y * u_reference.x,
         );
-        let Some(edge) = out.edges.iter().find(|edge| edge.id == coedge.edge) else {
+        let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
         if !edge.curve.as_ref().is_some_and(|curve_id| {
-            out.curves.iter().any(|curve| {
-                curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Line { .. })
-            })
+            curves
+                .get(curve_id)
+                .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Line { .. }))
         }) {
             continue;
         }
-        let position = |vertex_id: &VertexId| {
-            out.vertices
-                .iter()
-                .find(|vertex| vertex.id == *vertex_id)
-                .and_then(|vertex| out.points.iter().find(|point| point.id == vertex.point))
-                .map(|point| point.position)
-        };
+        let position =
+            |vertex_id: &VertexId| vertex_points.get(vertex_id).map(|point| point.position);
         let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end)) else {
             continue;
         };
@@ -828,13 +833,21 @@ fn derive_cylindrical_pcurves(
         .iter()
         .map(|lp| (lp.id.clone(), lp.face.clone()))
         .collect();
-    let position = |out: &Brep, vertex_id: &VertexId| {
-        out.vertices
-            .iter()
-            .find(|vertex| vertex.id == *vertex_id)
-            .and_then(|vertex| out.points.iter().find(|point| point.id == vertex.point))
-            .map(|point| point.position)
-    };
+    let faces: HashMap<_, _> = out.faces.iter().map(|face| (&face.id, face)).collect();
+    let surfaces: HashMap<_, _> = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect();
+    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
+    let points: HashMap<_, _> = out.points.iter().map(|point| (&point.id, point)).collect();
+    let vertex_points: HashMap<_, _> = out
+        .vertices
+        .iter()
+        .filter_map(|vertex| points.get(&vertex.point).map(|point| (&vertex.id, *point)))
+        .collect();
+    let position = |vertex_id: &VertexId| vertex_points.get(vertex_id).map(|point| point.position);
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if coedge.pcurve.is_some() {
@@ -843,14 +856,10 @@ fn derive_cylindrical_pcurves(
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
             continue;
         };
-        let Some(face) = out.faces.iter().find(|face| face.id == *face_id) else {
+        let Some(face) = faces.get(face_id) else {
             continue;
         };
-        let Some(surface) = out
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == face.surface)
-        else {
+        let Some(surface) = surfaces.get(&face.surface) else {
             continue;
         };
         let SurfaceGeometry::Cylinder {
@@ -862,14 +871,10 @@ fn derive_cylindrical_pcurves(
         else {
             continue;
         };
-        let Some(edge) = out.edges.iter().find(|edge| edge.id == coedge.edge) else {
+        let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
-        let Some(curve) = edge
-            .curve
-            .as_ref()
-            .and_then(|id| out.curves.iter().find(|curve| curve.id == *id))
-        else {
+        let Some(curve) = edge.curve.as_ref().and_then(|id| curves.get(id).copied()) else {
             continue;
         };
         let cross = cadmpeg_ir::math::Vector3::new(
@@ -918,7 +923,7 @@ fn derive_cylindrical_pcurves(
                 if (direction.x * axis.x + direction.y * axis.y + direction.z * axis.z).abs()
                     > 1.0 - 1e-9 =>
             {
-                let Some(start) = position(out, &edge.start) else {
+                let Some(start) = position(&edge.start) else {
                     continue;
                 };
                 let d = [start.x - origin.x, start.y - origin.y, start.z - origin.z];
@@ -977,6 +982,14 @@ fn derive_spherical_pcurves(
         .iter()
         .map(|lp| (lp.id.clone(), lp.face.clone()))
         .collect();
+    let faces: HashMap<_, _> = out.faces.iter().map(|face| (&face.id, face)).collect();
+    let surfaces: HashMap<_, _> = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect();
+    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if coedge.pcurve.is_some() {
@@ -985,14 +998,10 @@ fn derive_spherical_pcurves(
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
             continue;
         };
-        let Some(face) = out.faces.iter().find(|face| face.id == *face_id) else {
+        let Some(face) = faces.get(face_id) else {
             continue;
         };
-        let Some(surface) = out
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == face.surface)
-        else {
+        let Some(surface) = surfaces.get(&face.surface) else {
             continue;
         };
         let SurfaceGeometry::Sphere {
@@ -1004,7 +1013,7 @@ fn derive_spherical_pcurves(
         else {
             continue;
         };
-        let Some(edge) = out.edges.iter().find(|edge| edge.id == coedge.edge) else {
+        let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
         let Some(CurveGeometry::Circle {
@@ -1015,7 +1024,7 @@ fn derive_spherical_pcurves(
         }) = edge
             .curve
             .as_ref()
-            .and_then(|id| out.curves.iter().find(|curve| curve.id == *id))
+            .and_then(|id| curves.get(id).copied())
             .map(|curve| &curve.geometry)
         else {
             continue;
@@ -1099,6 +1108,14 @@ fn derive_nurbs_boundary_pcurves(
         .iter()
         .map(|lp| (lp.id.clone(), lp.face.clone()))
         .collect();
+    let faces: HashMap<_, _> = out.faces.iter().map(|face| (&face.id, face)).collect();
+    let surfaces: HashMap<_, _> = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect();
+    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
     let same_points = |a: &[cadmpeg_ir::math::Point3], b: &[cadmpeg_ir::math::Point3]| {
         a.len() == b.len()
             && a.iter().zip(b).all(|(a, b)| {
@@ -1113,24 +1130,21 @@ fn derive_nurbs_boundary_pcurves(
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
             continue;
         };
-        let Some(face) = out.faces.iter().find(|face| face.id == *face_id) else {
+        let Some(face) = faces.get(face_id) else {
             continue;
         };
-        let Some(SurfaceGeometry::Nurbs(surface)) = out
-            .surfaces
-            .iter()
-            .find(|item| item.id == face.surface)
-            .map(|item| &item.geometry)
+        let Some(SurfaceGeometry::Nurbs(surface)) =
+            surfaces.get(&face.surface).map(|item| &item.geometry)
         else {
             continue;
         };
-        let Some(edge) = out.edges.iter().find(|edge| edge.id == coedge.edge) else {
+        let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
         let Some(CurveGeometry::Nurbs(curve)) = edge
             .curve
             .as_ref()
-            .and_then(|id| out.curves.iter().find(|item| item.id == *id))
+            .and_then(|id| curves.get(id).copied())
             .map(|item| &item.geometry)
         else {
             continue;
@@ -1287,45 +1301,54 @@ fn synthesize_cylinder_seams(
     annotations: &mut AnnotationBuilder,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
 ) {
+    let surfaces: HashMap<_, _> = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect();
+    let loops: HashMap<_, _> = out.loops.iter().map(|lp| (&lp.id, lp)).collect();
+    let coedges: HashMap<_, _> = out
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect();
+    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
     let mut candidates = Vec::new();
     for face in &out.faces {
-        let Some(surface) = out
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == face.surface)
-        else {
+        let Some(surface) = surfaces.get(&face.surface) else {
             continue;
         };
         if !matches!(surface.geometry, SurfaceGeometry::Cylinder { .. }) || face.loops.len() != 2 {
             continue;
         }
-        let Some(a) = out.loops.iter().find(|lp| lp.id == face.loops[0]) else {
+        let Some(a) = loops.get(&face.loops[0]) else {
             continue;
         };
-        let Some(b) = out.loops.iter().find(|lp| lp.id == face.loops[1]) else {
+        let Some(b) = loops.get(&face.loops[1]) else {
             continue;
         };
         if a.coedges.len() != 1 || b.coedges.len() != 1 {
             continue;
         }
-        let Some(ca) = out.coedges.iter().find(|ce| ce.id == a.coedges[0]) else {
+        let Some(ca) = coedges.get(&a.coedges[0]) else {
             continue;
         };
-        let Some(cb) = out.coedges.iter().find(|ce| ce.id == b.coedges[0]) else {
+        let Some(cb) = coedges.get(&b.coedges[0]) else {
             continue;
         };
-        let Some(ea) = out.edges.iter().find(|edge| edge.id == ca.edge) else {
+        let Some(ea) = edges.get(&ca.edge) else {
             continue;
         };
-        let Some(eb) = out.edges.iter().find(|edge| edge.id == cb.edge) else {
+        let Some(eb) = edges.get(&cb.edge) else {
             continue;
         };
         let circular = |edge: &Edge| {
             edge.start == edge.end
                 && edge.curve.as_ref().is_some_and(|id| {
-                    out.curves.iter().any(|curve| {
-                        curve.id == *id && matches!(curve.geometry, CurveGeometry::Circle { .. })
-                    })
+                    curves
+                        .get(id)
+                        .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Circle { .. }))
                 })
         };
         if circular(ea) && circular(eb) {
@@ -1446,13 +1469,22 @@ fn synthesize_sphere_seams(
     annotations: &mut AnnotationBuilder,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
 ) {
+    let surfaces: HashMap<_, _> = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect();
+    let loops: HashMap<_, _> = out.loops.iter().map(|lp| (&lp.id, lp)).collect();
+    let coedges: HashMap<_, _> = out
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect();
+    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
     let mut candidates = Vec::new();
     for face in &out.faces {
-        let Some(surface) = out
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == face.surface)
-        else {
+        let Some(surface) = surfaces.get(&face.surface) else {
             continue;
         };
         let SurfaceGeometry::Sphere { center, radius, .. } = surface.geometry else {
@@ -1461,23 +1493,21 @@ fn synthesize_sphere_seams(
         if face.loops.len() != 1 {
             continue;
         }
-        let Some(lp) = out.loops.iter().find(|lp| lp.id == face.loops[0]) else {
+        let Some(lp) = loops.get(&face.loops[0]) else {
             continue;
         };
         if lp.coedges.len() != 3 {
             continue;
         }
         let all_circles = lp.coedges.iter().all(|id| {
-            out.coedges
-                .iter()
-                .find(|coedge| coedge.id == *id)
-                .and_then(|coedge| out.edges.iter().find(|edge| edge.id == coedge.edge))
+            coedges
+                .get(id)
+                .and_then(|coedge| edges.get(&coedge.edge))
                 .and_then(|edge| edge.curve.as_ref())
                 .is_some_and(|curve_id| {
-                    out.curves.iter().any(|curve| {
-                        curve.id == *curve_id
-                            && matches!(curve.geometry, CurveGeometry::Circle { .. })
-                    })
+                    curves
+                        .get(curve_id)
+                        .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Circle { .. }))
                 })
         });
         let SurfaceGeometry::Sphere { axis, .. } = surface.geometry else {
