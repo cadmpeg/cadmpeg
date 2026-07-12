@@ -10504,6 +10504,27 @@ fn validate_procedural_curve_edits(
                 Some(after.definition.clone())
             }
             (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
+                    context: before_context,
+                    silhouette: before_silhouette,
+                    cast_surface: before_cast,
+                    ..
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
+                    context: after_context,
+                    silhouette: after_silhouette,
+                    cast_surface: after_cast,
+                    ..
+                },
+            ) if before_context == after_context
+                && std::mem::discriminant(before_silhouette)
+                    == std::mem::discriminant(after_silhouette)
+                && before_cast == after_cast
+                && before.definition != after.definition =>
+            {
+                Some(after.definition.clone())
+            }
+            (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
                     components: before_components,
                     ..
@@ -10803,6 +10824,9 @@ fn patch_framed_geometry(
                     } => patch_three_surface_intersection_definition(bytes, record, definition)?,
                     cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { .. } => {
                         patch_surface_curve_definition(bytes, record, definition)?;
+                    }
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette { .. } => {
+                        patch_silhouette_definition(bytes, record, definition)?;
                     }
                     _ => unreachable!("procedural edit validation limits writable definitions"),
                 }
@@ -12313,6 +12337,85 @@ fn patch_surface_curve_definition(
             .chain(context.discontinuities.iter().flatten().copied()),
     ) {
         bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+    }
+    Ok(())
+}
+
+fn patch_silhouette_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> Result<(), CodecError> {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
+        silhouette,
+        light_direction,
+        ..
+    } = definition
+    else {
+        return Err(CodecError::Malformed(
+            "silhouette patch received another definition".into(),
+        ));
+    };
+    if !finite_vector(*light_direction) {
+        return Err(CodecError::Malformed(
+            "silhouette light direction must be finite".into(),
+        ));
+    }
+    let (subtype, draft_factor) = match silhouette {
+        cadmpeg_ir::geometry::SilhouetteKind::Standard => ("silh_int_cur", None),
+        cadmpeg_ir::geometry::SilhouetteKind::Parametric => ("para_silh_int_cur", None),
+        cadmpeg_ir::geometry::SilhouetteKind::Taper { draft_factor } => {
+            if !draft_factor.is_finite() {
+                return Err(CodecError::Malformed(
+                    "silhouette draft factor must be finite".into(),
+                ));
+            }
+            ("taper_silh_int_cur", Some(*draft_factor))
+        }
+    };
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("silhouette record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("silhouette record is truncated".into()))?;
+    if !record_bytes
+        .windows(subtype.len())
+        .any(|window| window == subtype.as_bytes())
+    {
+        return Err(CodecError::Malformed(format!(
+            "record does not contain {subtype}"
+        )));
+    }
+    let solved = [b"\x0d\x04nubs".as_slice(), b"\x0d\x05nurbs".as_slice()]
+        .into_iter()
+        .filter_map(|marker| {
+            record_bytes
+                .windows(marker.len())
+                .rposition(|window| window == marker)
+        })
+        .max()
+        .ok_or_else(|| CodecError::Malformed("silhouette solved cache is missing".into()))?;
+    let boundary = record.offset + solved;
+    let vector_offset = sab::payload_token_offsets(bytes, record, 8, 0x14)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?
+        .into_iter()
+        .rfind(|offset| *offset < boundary)
+        .ok_or_else(|| CodecError::Malformed("silhouette light direction is missing".into()))?;
+    for (component, value) in [light_direction.x, light_direction.y, light_direction.z]
+        .into_iter()
+        .enumerate()
+    {
+        let start = vector_offset + 1 + component * 8;
+        bytes[start..start + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    if let Some(draft_factor) = draft_factor {
+        let draft_offset = sab::payload_token_offsets(bytes, record, 8, 0x06)
+            .map_err(|error| CodecError::Malformed(error.to_string()))?
+            .into_iter()
+            .rfind(|offset| *offset < boundary)
+            .ok_or_else(|| CodecError::Malformed("silhouette draft factor is missing".into()))?;
+        bytes[draft_offset + 1..draft_offset + 9].copy_from_slice(&draft_factor.to_le_bytes());
     }
     Ok(())
 }

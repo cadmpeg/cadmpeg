@@ -12285,6 +12285,39 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
             _ => panic!("wrong silhouette family for {name}"),
         }
 
+        let mut edited = result.ir.clone();
+        let ProceduralCurveDefinition::Silhouette {
+            silhouette,
+            light_direction,
+            ..
+        } = &mut edited.model.procedural_curves[0].definition
+        else {
+            unreachable!()
+        };
+        *light_direction = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
+        if let SilhouetteKind::Taper { draft_factor } = silhouette {
+            *draft_factor = -0.2;
+        }
+        let mut regenerated = Vec::new();
+        F3dCodec
+            .write_preserved(&edited, &mut regenerated)
+            .unwrap_or_else(|error| panic!("{name} regeneration failed: {error}"));
+        let regenerated = F3dCodec
+            .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("regenerated {name} decode failed: {error}"));
+        assert!(matches!(
+            regenerated.ir.model.procedural_curves[0].definition,
+            ProceduralCurveDefinition::Silhouette {
+                ref silhouette,
+                light_direction,
+                ..
+            } if light_direction == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                && match silhouette {
+                    SilhouetteKind::Taper { draft_factor } => *draft_factor == -0.2,
+                    _ => true,
+                }
+        ));
+
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
