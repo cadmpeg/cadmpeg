@@ -170,6 +170,7 @@ impl ExpansionBudget {
 pub(crate) struct DecodeContext<'a> {
     scan: &'a Scan,
     ir: CadIr,
+    unknowns: Vec<UnknownRecord>,
     statuses: Vec<GeometryStatus>,
     outcomes: BTreeMap<String, ClassOutcome>,
     retained_bytes: usize,
@@ -202,6 +203,7 @@ impl<'a> DecodeContext<'a> {
         let mut context = Self {
             scan,
             ir: build_ir(scan),
+            unknowns: Vec::with_capacity(scan.objects.len()),
             statuses: Vec::with_capacity(scan.objects.len()),
             outcomes: BTreeMap::new(),
             retained_bytes: 0,
@@ -237,7 +239,7 @@ impl<'a> DecodeContext<'a> {
     #[cfg(test)]
     pub(crate) fn set_retention_limits(&mut self, record: usize, document: usize) {
         self.retention_limits = [record, document];
-        self.ir.unknowns.clear();
+        self.unknowns.clear();
         self.statuses.clear();
         self.outcomes.clear();
         self.retained_bytes = 0;
@@ -268,12 +270,22 @@ impl<'a> DecodeContext<'a> {
     /// Looks up the retained unknown record for a source-order object.
     #[cfg(test)]
     pub(crate) fn unknown(&self, source_order: usize) -> Option<&UnknownRecord> {
-        self.ir.unknowns.get(source_order)
+        self.unknowns.get(source_order)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn unknown_mut(&mut self, source_order: usize) -> Option<&mut UnknownRecord> {
+        self.unknowns.get_mut(source_order)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn unknown_count(&self) -> usize {
+        self.unknowns.len()
     }
 
     /// Appends a later geometry-phase link to an object record.
     pub(crate) fn append_link(&mut self, source_order: usize, link: String) -> bool {
-        let Some(record) = self.ir.unknowns.get_mut(source_order) else {
+        let Some(record) = self.unknowns.get_mut(source_order) else {
             return false;
         };
         if link == record.id.to_string() {
@@ -286,7 +298,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn append_links(&mut self, source_order: usize, links: &[String]) -> bool {
-        let Some(record) = self.ir.unknowns.get_mut(source_order) else {
+        let Some(record) = self.unknowns.get_mut(source_order) else {
             return false;
         };
         append_links_to_record(record, links);
@@ -300,14 +312,12 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn lightweight_candidate(&mut self) -> CadIr {
-        let payloads = self
-            .ir
-            .unknowns
-            .iter_mut()
-            .map(|record| record.data.take())
-            .collect::<Vec<_>>();
-        let candidate = self.ir.clone();
-        restore_unknown_payloads(&mut self.ir, payloads);
+        let payloads = detach_unknown_payloads(&mut self.unknowns);
+        let mut candidate = self.ir.clone();
+        candidate
+            .set_native_unknowns("rhino", &self.unknowns)
+            .expect("Rhino unknown records serialize");
+        restore_unknown_payloads(&mut self.unknowns, payloads);
         candidate
     }
 
@@ -319,13 +329,15 @@ impl<'a> DecodeContext<'a> {
                 .added_since(ArenaLengths::capture(&self.ir))
                 .ok_or_else(|| "candidate removed existing IR entities".to_string())?;
             self.expansion_budget.entities(added)?;
-            let payloads = self
-                .ir
-                .unknowns
-                .iter_mut()
-                .map(|record| record.data.take())
-                .collect::<Vec<_>>();
-            restore_unknown_payloads(&mut candidate, payloads);
+            let payloads = detach_unknown_payloads(&mut self.unknowns);
+            let mut unknowns = candidate
+                .native_unknowns("rhino")
+                .map_err(|error| error.to_string())?;
+            restore_unknown_payloads(&mut unknowns, payloads);
+            candidate
+                .set_native_unknowns("rhino", &unknowns)
+                .map_err(|error| error.to_string())?;
+            self.unknowns = unknowns;
             self.ir = candidate;
             Ok(())
         } else {
@@ -334,25 +346,15 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn lightweight_context_candidate(&mut self) -> Self {
-        let payloads = self
-            .ir
-            .unknowns
-            .iter_mut()
-            .map(|record| record.data.take())
-            .collect::<Vec<_>>();
+        let payloads = detach_unknown_payloads(&mut self.unknowns);
         let candidate = self.clone();
-        restore_unknown_payloads(&mut self.ir, payloads);
+        restore_unknown_payloads(&mut self.unknowns, payloads);
         candidate
     }
 
     fn transfer_unknown_payloads_to(&mut self, candidate: &mut Self) {
-        let payloads = self
-            .ir
-            .unknowns
-            .iter_mut()
-            .map(|record| record.data.take())
-            .collect::<Vec<_>>();
-        restore_unknown_payloads(&mut candidate.ir, payloads);
+        let payloads = detach_unknown_payloads(&mut self.unknowns);
+        restore_unknown_payloads(&mut candidate.unknowns, payloads);
     }
 
     /// Returns mutable IR for the current decode transaction.
@@ -365,13 +367,12 @@ impl<'a> DecodeContext<'a> {
     pub(crate) fn reject_duplicate_unknown_candidate(&mut self) -> (bool, String) {
         let mut payloads_detached = false;
         let result = self.validate_candidate(|candidate| {
-            payloads_detached = candidate
-                .unknowns
-                .iter()
-                .all(|record| record.data.is_none());
-            if let Some(record) = candidate.unknowns.first().cloned() {
-                candidate.unknowns.push(record);
+            let mut unknowns = candidate.native_unknowns("rhino").unwrap();
+            payloads_detached = unknowns.iter().all(|record| record.data.is_none());
+            if let Some(record) = unknowns.first().cloned() {
+                unknowns.push(record);
             }
+            candidate.set_native_unknowns("rhino", &unknowns).unwrap();
         });
         (
             payloads_detached,
@@ -995,6 +996,9 @@ impl<'a> DecodeContext<'a> {
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> DecodeResult {
+        self.ir
+            .set_native_unknowns("rhino", &self.unknowns)
+            .expect("Rhino unknown records serialize");
         self.ir.finalize();
         let mut losses = Vec::new();
         let decoded = self
@@ -1094,7 +1098,6 @@ impl<'a> DecodeContext<'a> {
                 }),
         );
         let byte_records = self
-            .ir
             .unknowns
             .iter()
             .filter(|record| record.data.is_some())
@@ -1102,7 +1105,7 @@ impl<'a> DecodeContext<'a> {
         let notes = vec![format!(
             "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
              records and complete bytes for {byte_records}; document cap {} bytes, per-record cap {} bytes",
-            self.ir.unknowns.len(),
+            self.unknowns.len(),
             RETAINED_DOCUMENT_CAP,
             RETAINED_RECORD_CAP
         )];
@@ -1152,7 +1155,7 @@ impl<'a> DecodeContext<'a> {
             } else {
                 None
             };
-            self.ir.unknowns.push(UnknownRecord {
+            self.unknowns.push(UnknownRecord {
                 id,
                 offset: u64::try_from(object.range.start).expect("Rhino record offset fits u64"),
                 byte_len,
@@ -1209,7 +1212,6 @@ impl<'a> DecodeContext<'a> {
         let key = self.object_key(identity, source_order);
         let association = self.source_association(identity);
         let Some(unknown) = self
-            .ir
             .unknowns
             .get(source_order)
             .map(|record| record.id.clone())
@@ -1423,9 +1425,10 @@ impl<'a> DecodeContext<'a> {
         }
         let mut candidate = self.lightweight_candidate();
         let Some(unknown) = candidate
-            .unknowns
-            .get(source_order)
-            .map(|record| record.id.clone())
+            .native_unknowns("rhino")
+            .ok()
+            .as_ref()
+            .and_then(|records| records.get(source_order).map(|record| record.id.clone()))
         else {
             return false;
         };
@@ -1515,7 +1518,6 @@ impl<'a> DecodeContext<'a> {
             return false;
         };
         let Some(unknown) = self
-            .ir
             .unknowns
             .get(source_order)
             .map(|record| record.id.clone())
@@ -1604,7 +1606,6 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let Some(unknown) = self
-            .ir
             .unknowns
             .get(source_order)
             .map(|record| record.id.clone())
@@ -1769,7 +1770,7 @@ impl<'a> DecodeContext<'a> {
         };
         let association = self.source_association(identity);
         let key = self.object_key(identity, source_order);
-        let unknown = self.ir.unknowns[source_order].id.clone();
+        let unknown = self.unknowns[source_order].id.clone();
         let budget_checkpoint = self.mesh_budget;
         let transfer = BrepTransferInput {
             data: &self.scan.data,
@@ -1878,16 +1879,24 @@ impl<'a> DecodeContext<'a> {
 
 #[cfg(test)]
 fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
-    let Some(record) = ir.unknowns.iter_mut().find(|record| record.id == *unknown) else {
+    let Ok(mut unknowns) = ir.native_unknowns("rhino") else {
+        return;
+    };
+    let Some(record) = unknowns.iter_mut().find(|record| record.id == *unknown) else {
         return;
     };
     append_links_to_record(record, links);
+    let _ = ir.set_native_unknowns("rhino", &unknowns);
 }
 
 fn append_record_links_at(ir: &mut CadIr, source_order: usize, links: &[String]) {
-    if let Some(record) = ir.unknowns.get_mut(source_order) {
+    let Ok(mut unknowns) = ir.native_unknowns("rhino") else {
+        return;
+    };
+    if let Some(record) = unknowns.get_mut(source_order) {
         append_links_to_record(record, links);
     }
+    let _ = ir.set_native_unknowns("rhino", &unknowns);
 }
 
 fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {
@@ -1923,8 +1932,15 @@ fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {
     record.links = merged;
 }
 
-fn restore_unknown_payloads(ir: &mut CadIr, payloads: Vec<Option<Vec<u8>>>) {
-    for (record, payload) in ir.unknowns.iter_mut().zip(payloads) {
+fn detach_unknown_payloads(records: &mut [UnknownRecord]) -> Vec<Option<Vec<u8>>> {
+    records
+        .iter_mut()
+        .map(|record| record.data.take())
+        .collect()
+}
+
+fn restore_unknown_payloads(records: &mut [UnknownRecord], payloads: Vec<Option<Vec<u8>>>) {
+    for (record, payload) in records.iter_mut().zip(payloads) {
         record.data = payload;
     }
 }
@@ -4108,14 +4124,19 @@ mod tests {
         let unknown: UnknownId = "rhino:object:record#x".into();
         let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
         let mut candidate = CadIr::empty(Units::default());
-        candidate.unknowns.push(UnknownRecord {
-            id: unknown.clone(),
-            offset: 0,
-            byte_len: 0,
-            sha256: sha256_hex(&[]),
-            data: Some(Vec::new()),
-            links: Vec::new(),
-        });
+        candidate
+            .set_native_unknowns(
+                "rhino",
+                &[UnknownRecord {
+                    id: unknown.clone(),
+                    offset: 0,
+                    byte_len: 0,
+                    sha256: sha256_hex(&[]),
+                    data: Some(Vec::new()),
+                    links: Vec::new(),
+                }],
+            )
+            .unwrap();
         let staged = StagedBrep {
             kind: BrepTransferKind::FreeCarrierFallback,
             curves: vec![Curve {
@@ -4129,7 +4150,10 @@ mod tests {
         let links = staged.links.clone();
         staged.apply(&mut candidate);
         append_record_links(&mut candidate, &unknown, &links);
-        assert_eq!(candidate.unknowns[0].links, vec![curve_id.to_string()]);
+        assert_eq!(
+            candidate.native_unknowns("rhino").unwrap()[0].links,
+            vec![curve_id.to_string()]
+        );
         let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }
@@ -4210,14 +4234,19 @@ mod tests {
         assert_eq!(staged.coedges[0].radial_next, staged.coedges[0].id);
         let links = staged.links.clone();
         let mut candidate = CadIr::empty(Units::default());
-        candidate.unknowns.push(UnknownRecord {
-            id: unknown.clone(),
-            offset: 0,
-            byte_len: 0,
-            sha256: sha256_hex(&[]),
-            data: Some(Vec::new()),
-            links: Vec::new(),
-        });
+        candidate
+            .set_native_unknowns(
+                "rhino",
+                &[UnknownRecord {
+                    id: unknown.clone(),
+                    offset: 0,
+                    byte_len: 0,
+                    sha256: sha256_hex(&[]),
+                    data: Some(Vec::new()),
+                    links: Vec::new(),
+                }],
+            )
+            .unwrap();
         staged.apply(&mut candidate);
         append_record_links(&mut candidate, &unknown, &links);
         let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
