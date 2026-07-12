@@ -43,7 +43,12 @@ impl IdSets {
                 .iter()
                 .map(|e| e.id.0.clone())
                 .collect(),
-            unknowns: ir.unknowns.iter().map(|e| e.id.0.clone()).collect(),
+            unknowns: ir
+                .all_native_unknowns()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|record| record.id.0)
+                .collect(),
         }
     }
 }
@@ -51,20 +56,6 @@ impl IdSets {
 pub(super) fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &str, target: &str) {
     findings.push(Finding {
         check: Check::ReferentialIntegrity,
-        severity: Severity::Error,
-        message: format!("references missing {target_kind} `{target}`"),
-        entity: Some(owner.to_string()),
-    });
-}
-
-pub(super) fn native_ref_error(
-    findings: &mut Vec<Finding>,
-    owner: &str,
-    target_kind: &str,
-    target: &str,
-) {
-    findings.push(Finding {
-        check: Check::NativeLinks,
         severity: Severity::Error,
         message: format!("references missing {target_kind} `{target}`"),
         entity: Some(owner.to_string()),
@@ -245,34 +236,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             AttributeTarget::Vertex(id) if !ids.vertices.contains(&id.0) => {
                 ref_error(findings, owner, "vertex", &id.0);
-            }
-            _ => {}
-        }
-    }
-    for link in ir
-        .native
-        .f3d
-        .iter()
-        .flat_map(|native| &native.persistent_design_links)
-    {
-        use crate::attributes::AttributeTarget;
-        let owner = format!("persistent-design-link:{}", link.design_id);
-        match &link.target {
-            AttributeTarget::Document => {}
-            AttributeTarget::Body(id) if !ids.bodies.contains(&id.0) => {
-                native_ref_error(findings, &owner, "body", &id.0);
-            }
-            AttributeTarget::Face(id) if !ids.faces.contains(&id.0) => {
-                native_ref_error(findings, &owner, "face", &id.0);
-            }
-            AttributeTarget::Coedge(id) if !ids.coedges.contains(&id.0) => {
-                native_ref_error(findings, &owner, "coedge", &id.0);
-            }
-            AttributeTarget::Edge(id) if !ids.edges.contains(&id.0) => {
-                native_ref_error(findings, &owner, "edge", &id.0);
-            }
-            AttributeTarget::Vertex(id) if !ids.vertices.contains(&id.0) => {
-                native_ref_error(findings, &owner, "vertex", &id.0);
             }
             _ => {}
         }
@@ -689,16 +652,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
             }
             ProceduralCurveDefinition::Unknown { record: None } => {}
-        }
-    }
-    for link in ir
-        .native
-        .f3d
-        .iter()
-        .flat_map(|native| &native.sketch_curve_links)
-    {
-        if !ids.coedges.contains(&link.coedge.0) {
-            native_ref_error(findings, &link.id, "coedge", &link.coedge.0);
         }
     }
 }

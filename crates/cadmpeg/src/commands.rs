@@ -8,15 +8,29 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
-use cadmpeg_ir::report::{DecodeReport, ValidationReport};
-use cadmpeg_ir::{validate, CadIr, Encoder};
-use cadmpeg_step::StepReport;
+use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
+use cadmpeg_ir::{validate, CadIr};
 
 use crate::loader::{self, read_prefix};
 use crate::registry::Registry;
 use crate::{DecodeArgs, ForcedInput, Format};
 
-const CLI_SCHEMA_VERSION: u32 = 2;
+const CLI_SCHEMA_VERSION: u32 = 3;
+
+fn validate_ir(ir: &CadIr, losses: Vec<cadmpeg_ir::LossNote>) -> ValidationReport {
+    let mut report = validate(ir, losses);
+    if ir.native.namespace("f3d").is_some() {
+        report
+            .findings
+            .extend(cadmpeg_codec_f3d::validate_native(ir));
+    }
+    if ir.native.namespace("sldprt").is_some() {
+        report
+            .findings
+            .extend(cadmpeg_codec_sldprt::validate_native(ir));
+    }
+    report
+}
 
 #[derive(Debug)]
 /// Error whose result is meaningful to the caller rather than operational.
@@ -129,7 +143,7 @@ pub fn decode(
     args: &DecodeArgs,
 ) -> Result<()> {
     let loaded = loader::load_ir(registry, path, args.options(), forced)?;
-    write_ir(&loaded.ir, out, path, force)?;
+    export_ir(registry, &loaded.ir, Format::Cadir, out, path, force)?;
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
@@ -158,7 +172,7 @@ pub fn validate_cmd(
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
-    let report = validate(&loaded.ir, losses(loaded.decode_report.as_ref()));
+    let report = validate_ir(&loaded.ir, losses(loaded.decode_report.as_ref()));
     if json {
         writeln!(
             stdout,
@@ -236,8 +250,7 @@ pub fn export(
             format.name()
         )));
     }
-    let export = export_ir(&loaded.ir, format, out, path, force)?;
-    let report = export.as_report(format);
+    let report = export_ir(registry, &loaded.ir, format, out, path, force)?;
     write_command_report(
         path,
         report_path.as_deref(),
@@ -265,7 +278,7 @@ pub fn convert(
         print_decode_report(&mut stderr, report)?;
         writeln!(stderr)?;
     }
-    let validation = validate(&loaded.ir, losses(loaded.decode_report.as_ref()));
+    let validation = validate_ir(&loaded.ir, losses(loaded.decode_report.as_ref()));
     print_validation_report(&mut stderr, &validation)?;
     if !validation.is_ok() && !settings.allow_invalid {
         write_command_report(
@@ -303,8 +316,7 @@ pub fn convert(
             format.name()
         )));
     }
-    let export = export_ir(&loaded.ir, format, out, path, settings.force)?;
-    let report = export.as_report(format);
+    let report = export_ir(registry, &loaded.ir, format, out, path, settings.force)?;
     write_command_report(
         path,
         settings.report.as_deref(),
@@ -401,97 +413,19 @@ fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format
     Format::from_path(out).ok_or_else(|| anyhow!("cannot infer format; pass -f"))
 }
 
-enum ExportResult {
-    Cadir { total_entities: usize },
-    Step(StepReport),
-    F3d { total_entities: usize },
-    Sldprt { total_entities: usize },
-}
-
-impl ExportResult {
-    fn as_report(&self, format: Format) -> serde_json::Value {
-        match self {
-            Self::Cadir { total_entities } => serde_json::json!({
-                "format": format.name(),
-                "total_entities": total_entities,
-                "losses": [],
-            }),
-            Self::Step(report) => serde_json::json!({
-                "format": format.name(),
-                "total_entities": report.total_entities,
-                "losses": report.losses,
-            }),
-            Self::F3d { total_entities } | Self::Sldprt { total_entities } => serde_json::json!({
-                "format": format.name(),
-                "total_entities": total_entities,
-                "losses": [],
-            }),
-        }
-    }
-}
-
 fn export_ir(
+    registry: &Registry,
     ir: &CadIr,
     format: Format,
     out: Option<&Path>,
     input: &Path,
     force: bool,
-) -> Result<ExportResult> {
-    match format {
-        Format::Cadir => {
-            write_ir(ir, out, input, force)?;
-            let total_entities = validate(ir, Vec::new()).entity_counts.values().sum();
-            Ok(ExportResult::Cadir { total_entities })
-        }
-        Format::Step => run_step_export(ir, out, input, force),
-        Format::F3d => run_f3d_export(ir, out, input, force),
-        Format::Sldprt => run_sldprt_export(ir, out, input, force),
-    }
-}
-
-fn run_f3d_export(
-    ir: &CadIr,
-    out: Option<&Path>,
-    input: &Path,
-    force: bool,
-) -> Result<ExportResult> {
+) -> Result<ExportReport> {
+    let encoder = registry
+        .encoder_by_id(format.name())
+        .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))?;
     let mut bytes = Vec::new();
-    cadmpeg_codec_f3d::F3dCodec.encode(ir, &mut bytes)?;
-    if let Some(path) = out {
-        write_output(input, path, &bytes, force)?;
-    } else {
-        io::stdout().write_all(&bytes)?;
-    }
-    let total_entities = validate(ir, Vec::new()).entity_counts.values().sum();
-    Ok(ExportResult::F3d { total_entities })
-}
-
-fn run_sldprt_export(
-    ir: &CadIr,
-    out: Option<&Path>,
-    input: &Path,
-    force: bool,
-) -> Result<ExportResult> {
-    let mut bytes = Vec::new();
-    cadmpeg_codec_sldprt::SldprtCodec.encode(ir, &mut bytes)?;
-    if let Some(path) = out {
-        write_output(input, path, &bytes, force)?;
-    } else {
-        io::stdout().write_all(&bytes)?;
-    }
-    let total_entities = validate(ir, Vec::new()).entity_counts.values().sum();
-    Ok(ExportResult::Sldprt { total_entities })
-}
-
-fn run_step_export(
-    ir: &CadIr,
-    out: Option<&Path>,
-    input: &Path,
-    force: bool,
-) -> Result<ExportResult> {
-    let mut bytes = Vec::new();
-    let report =
-        cadmpeg_step::write_step(ir, &mut bytes, &cadmpeg_step::StepWriteOptions::default())?;
+    let report = encoder.encode(ir, &mut bytes)?;
     if let Some(path) = out {
         write_output(input, path, &bytes, force)?;
         eprintln!(
@@ -503,24 +437,12 @@ fn run_step_export(
         io::stdout().write_all(&bytes)?;
     }
     if !report.losses.is_empty() {
-        eprintln!("step export losses:");
+        eprintln!("{} export losses:", report.format);
         for loss in &report.losses {
             eprintln!("  [{}/{}] {}", loss.severity, loss.category, loss.message);
         }
     }
-    Ok(ExportResult::Step(report))
-}
-
-fn write_ir(ir: &CadIr, out: Option<&Path>, input: &Path, force: bool) -> Result<()> {
-    let mut json = ir.to_canonical_json().context("serializing IR to JSON")?;
-    json.push('\n');
-    if let Some(path) = out {
-        write_output(input, path, json.as_bytes(), force)?;
-        eprintln!("wrote {}", path.display());
-    } else {
-        io::stdout().write_all(json.as_bytes())?;
-    }
-    Ok(())
+    Ok(report)
 }
 
 fn write_command_report(
@@ -530,7 +452,7 @@ fn write_command_report(
     command: &'static str,
     decode_report: Option<&DecodeReport>,
     validation_report: Option<&ValidationReport>,
-    export: Option<&serde_json::Value>,
+    export: Option<&ExportReport>,
 ) -> Result<()> {
     let Some(output) = output else {
         return Ok(());

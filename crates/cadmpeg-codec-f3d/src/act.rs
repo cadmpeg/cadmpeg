@@ -3,8 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::records::{ActEntity, ActGuid, ActRootComponent};
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
-use cadmpeg_ir::design::{ActEntity, ActGuid, ActRootComponent};
 use cadmpeg_ir::le::{lp_u32_bytes_at, u32_at, utf16le_at};
 
 use crate::container::{role, ContainerScan};

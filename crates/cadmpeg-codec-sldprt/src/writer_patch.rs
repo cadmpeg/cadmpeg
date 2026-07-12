@@ -26,12 +26,12 @@ fn patch_partition_inner(ir: &CadIr, scale: f64) -> Option<Result<(String, Vec<u
         return None;
     }
     let source = ir
-        .unknowns
-        .iter()
+        .native_unknowns("sldprt")
+        .ok()?
+        .into_iter()
         .find(|record| record.id.0 == "sldprt:file:source-image#0")?
-        .data
-        .as_deref()?;
-    let scan = crate::container::scan_bytes(source);
+        .data?;
+    let scan = crate::container::scan_bytes(&source);
     let (block, header) = crate::container::select_active_parasolid(&scan)?;
     if block.ps_stream.as_deref() != Some(block.payload.as_slice()) {
         return None;

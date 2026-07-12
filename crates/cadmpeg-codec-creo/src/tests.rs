@@ -218,9 +218,10 @@ fn decode_annotations_cover_every_emitted_entity() {
     let mut reader = Cursor::new(data);
     let result = decode::decode(&mut reader, &DecodeOptions::default()).expect("decode");
 
-    assert_eq!(result.ir.unknowns.len(), 3);
+    let unknowns = result.ir.native_unknowns("creo").unwrap();
+    assert_eq!(unknowns.len(), 3);
     assert_eq!(result.ir.model.surfaces.len(), 1);
-    for unknown in &result.ir.unknowns {
+    for unknown in &unknowns {
         let section_name = unknown
             .id
             .as_str()
@@ -247,7 +248,7 @@ fn decode_annotations_cover_every_emitted_entity() {
             Exactness::Derived,
         );
     }
-    let emitted_entity_count = result.ir.unknowns.len() + result.ir.model.surfaces.len();
+    let emitted_entity_count = unknowns.len() + result.ir.model.surfaces.len();
     assert_eq!(result.ir.annotations.provenance.len(), emitted_entity_count);
     assert_eq!(result.ir.annotations.exactness.len(), emitted_entity_count);
 }
@@ -309,17 +310,10 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
 
     assert!(!result.report.geometry_transferred);
     // The two PSB geometry sections are preserved as unknown records.
-    assert_eq!(result.ir.unknowns.len(), 2);
-    assert!(result
-        .ir
-        .unknowns
-        .iter()
-        .any(|u| u.id.0.contains("VisibGeom")));
-    assert!(result
-        .ir
-        .unknowns
-        .iter()
-        .any(|u| u.id.0.contains("NovisGeom")));
+    let unknowns = result.ir.native_unknowns("creo").unwrap();
+    assert_eq!(unknowns.len(), 2);
+    assert!(unknowns.iter().any(|u| u.id.0.contains("VisibGeom")));
+    assert!(unknowns.iter().any(|u| u.id.0.contains("NovisGeom")));
     // No geometry arenas populated.
     assert!(result.ir.model.surfaces.is_empty());
     assert!(result.ir.model.points.is_empty());

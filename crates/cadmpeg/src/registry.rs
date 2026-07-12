@@ -7,11 +7,13 @@ use cadmpeg_codec_f3d::F3dCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::{Codec, Confidence};
+use cadmpeg_ir::codec::{CadirEncoder, Codec, Confidence, Encoder};
+use cadmpeg_step::StepCodec;
 
 /// Native codecs available to the CLI.
 pub struct Registry {
     codecs: Vec<Box<dyn Codec>>,
+    encoders: Vec<Box<dyn Encoder>>,
 }
 
 impl Registry {
@@ -25,6 +27,12 @@ impl Registry {
                 Box::new(CreoCodec),
                 Box::new(NxCodec),
                 Box::new(RhinoCodec),
+            ],
+            encoders: vec![
+                Box::new(F3dCodec),
+                Box::new(SldprtCodec),
+                Box::new(StepCodec::default()),
+                Box::new(CadirEncoder),
             ],
         }
     }
@@ -46,5 +54,31 @@ impl Registry {
             .iter()
             .find(|codec| codec.id() == id)
             .map(Box::as_ref)
+    }
+
+    /// Return the encoder with the given stable output-format identifier.
+    pub fn encoder_by_id(&self, id: &str) -> Option<&dyn Encoder> {
+        self.encoders
+            .iter()
+            .find(|encoder| encoder.id() == id)
+            .map(Box::as_ref)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Registry;
+    use crate::Format;
+
+    #[test]
+    fn every_exportable_format_has_an_encoder() {
+        let registry = Registry::with_builtins();
+        for format in [Format::Cadir, Format::Step, Format::F3d, Format::Sldprt] {
+            assert!(
+                registry.encoder_by_id(format.name()).is_some(),
+                "{}",
+                format.name()
+            );
+        }
     }
 }

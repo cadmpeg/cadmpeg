@@ -4,16 +4,14 @@
 //! and each validation check actually fires when its invariant is broken.
 
 use crate::annotations::{ExactnessNote, Provenance};
-use crate::design::SketchRelation;
 use crate::document::Model;
 use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
-use crate::history::{AsmHistoryRecord, Configuration, FeatureHistory, FeatureInputLane};
 use crate::ids::{CoedgeId, CurveId, EdgeId, ProceduralSurfaceId, SubdId, UnknownId};
 use crate::math::{Point3, Vector3};
-use crate::native::{F3dNative, SldprtNative};
+use crate::native::NativeRecord;
 use crate::provenance::{Exactness, SourceObjectAssociation};
 use crate::report::{Check, LossCategory, LossNote, Severity};
 use crate::subd::{
@@ -59,14 +57,18 @@ fn face_on_unknown_surface_validates_clean() {
     let mut ir = unit_cube();
     // Preserve a raw record and point the unknown surface at it.
     let rec = UnknownId("synthetic:cube:unknown#0".into());
-    ir.unknowns.push(UnknownRecord {
-        id: rec.clone(),
-        offset: 0,
-        byte_len: 16,
-        sha256: "0".repeat(64),
-        data: None,
-        links: Vec::new(),
-    });
+    ir.push_native_unknown(
+        "synthetic",
+        UnknownRecord {
+            id: rec.clone(),
+            offset: 0,
+            byte_len: 16,
+            sha256: "0".repeat(64),
+            data: None,
+            links: Vec::new(),
+        },
+    )
+    .unwrap();
     make_first_face_surface_unknown(&mut ir, Some(rec));
 
     let report = validate(&ir, Vec::new());
@@ -121,14 +123,18 @@ fn unknown_surface_dangling_record_is_flagged() {
 fn unknown_surface_json_round_trips() {
     let mut ir = unit_cube();
     let rec = UnknownId("synthetic:cube:unknown#0".into());
-    ir.unknowns.push(UnknownRecord {
-        id: rec.clone(),
-        offset: 0,
-        byte_len: 16,
-        sha256: "0".repeat(64),
-        data: None,
-        links: Vec::new(),
-    });
+    ir.push_native_unknown(
+        "synthetic",
+        UnknownRecord {
+            id: rec.clone(),
+            offset: 0,
+            byte_len: 16,
+            sha256: "0".repeat(64),
+            data: None,
+            links: Vec::new(),
+        },
+    )
+    .unwrap();
     make_first_face_surface_unknown(&mut ir, Some(rec));
 
     let json = ir.to_canonical_json().unwrap();
@@ -192,30 +198,21 @@ fn arena_registry_drives_counts_and_diff_dispatch() {
 fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let left = unit_cube();
     let mut right = left.clone();
-    right.native.f3d = Some(F3dNative {
-        act_guids: vec![crate::design::ActGuid {
+    right.native.namespace_mut("f3d").arenas.insert(
+        "act_guids".into(),
+        vec![NativeRecord {
             id: "f3d:test:act-guid#0".into(),
-            byte_offset: 0,
-            guid_offset: 4,
-            ordinal: 0,
-            guid: "00000000-0000-0000-0000-000000000000".into(),
+            fields: serde_json::Map::new(),
         }],
-        ..F3dNative::default()
-    });
-    right.native.sldprt = Some(SldprtNative {
-        feature_histories: vec![FeatureHistory {
-            id: "sldprt:test:feature-history#0".into(),
-            part_name: None,
-            configurations: vec![Configuration {
-                id: "sldprt:test:configuration#0".into(),
-                name: "Default".into(),
-                material: None,
-                properties: std::collections::BTreeMap::new(),
-            }],
-            features: Vec::new(),
+    );
+    right.native.namespace_mut("sldprt").arenas.insert(
+        "configurations".into(),
+        vec![NativeRecord {
+            id: "sldprt:test:configuration#0".into(),
+            fields: serde_json::Map::new(),
         }],
-        ..SldprtNative::default()
-    });
+    );
+    right.native.finalize();
 
     let result = diff(&left, &right);
     assert_eq!(
@@ -241,12 +238,18 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
     assert_eq!(report.entity_counts["native.sldprt.configurations"], 1);
     assert!(report.is_ok(), "{:?}", report.findings);
 
-    right.native.sldprt.as_mut().unwrap().feature_histories[0].configurations[0].id =
-        "f3d:test:act-guid#0".into();
+    right
+        .native
+        .namespace_mut("sldprt")
+        .arenas
+        .get_mut("configurations")
+        .unwrap()[0]
+        .id = "f3d:test:act-guid#0".into();
+    right.native.finalize();
     assert!(validate(&right, Vec::new())
         .findings
         .iter()
-        .any(|finding| finding.message == "native record id is empty or duplicated"));
+        .any(|finding| finding.message == "entity id is not globally unique"));
 }
 
 #[test]
@@ -900,17 +903,14 @@ fn annotation_keys_streams_and_field_paths_are_checked() {
 #[test]
 fn native_topology_link_must_resolve() {
     let mut ir = unit_cube();
-    ir.native.f3d = Some(F3dNative {
-        sketch_curve_links: vec![crate::design::SketchCurveLink {
+    ir.native.namespace_mut("f3d").arenas.insert(
+        "sketch_curve_links".into(),
+        vec![NativeRecord {
             id: "native:link#0".into(),
-            coedge: CoedgeId("missing".into()),
-            sketch_curve_id: 0,
-            signed_reference: None,
-            role: 0,
-            closure: 0,
+            fields: serde_json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
         }],
-        ..F3dNative::default()
-    });
+    );
+    ir.native.finalize();
     assert!(validate(&ir, Vec::new())
         .findings
         .iter()
@@ -953,14 +953,18 @@ fn document_and_entity_tolerances_are_checked() {
 #[test]
 fn preserved_payload_digest_is_checked() {
     let mut ir = unit_cube();
-    ir.unknowns.push(UnknownRecord {
-        id: UnknownId("zz:payload".into()),
-        offset: 0,
-        byte_len: 3,
-        sha256: "0".repeat(64),
-        data: Some(vec![1, 2, 3]),
-        links: Vec::new(),
-    });
+    ir.push_native_unknown(
+        "zz",
+        UnknownRecord {
+            id: UnknownId("zz:payload".into()),
+            offset: 0,
+            byte_len: 3,
+            sha256: "0".repeat(64),
+            data: Some(vec![1, 2, 3]),
+            links: Vec::new(),
+        },
+    )
+    .unwrap();
     assert!(validate(&ir, Vec::new())
         .findings
         .iter()
@@ -979,42 +983,6 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
             links: Vec::new(),
         },
         "data",
-    );
-    assert_base64_round_trip_and_rejection(
-        &FeatureInputLane {
-            id: "sldprt:test:feature-input-lane#0".into(),
-            configuration: None,
-            native_payload: vec![1, 2, 3],
-            sketch_entities: Vec::new(),
-        },
-        "native_payload",
-    );
-    assert_base64_round_trip_and_rejection(
-        &AsmHistoryRecord {
-            id: "f3d:test:asm-history-record#0".into(),
-            index: 0,
-            name: "record".into(),
-            raw_bytes: vec![1, 2, 3],
-        },
-        "raw_bytes",
-    );
-    assert_base64_round_trip_and_rejection(
-        &SketchRelation {
-            id: "f3d:test:sketch-relation#0".into(),
-            record_index: 0,
-            class_tag: "001".into(),
-            byte_offset: 0,
-            state_offset: 0,
-            owner_reference: 0,
-            auxiliary_references: Vec::new(),
-            members: Vec::new(),
-            state: 0,
-            constraint_kinds: Vec::new(),
-            unknown_constraint_bits: 0,
-            return_members: Vec::new(),
-            raw_bytes: vec![1, 2, 3],
-        },
-        "raw_bytes",
     );
     assert_base64_round_trip_and_rejection(
         &TessellationChannel {

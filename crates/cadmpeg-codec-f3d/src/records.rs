@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Parametric-design entities and their links to the solved B-rep.
+//! Fusion parametric-design records and links to the solved B-rep.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::attributes::AttributeTarget;
-use crate::ids::CoedgeId;
-use crate::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::attributes::AttributeTarget;
+use cadmpeg_ir::ids::CoedgeId;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 /// Provenance link from a solved B-rep coedge to its source sketch curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -301,7 +301,7 @@ pub struct SketchRelation {
     /// from `members`.
     pub return_members: Vec<u32>,
     /// Complete 101-byte source record for native replay/write.
-    #[serde(with = "crate::bytes")]
+    #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub raw_bytes: Vec<u8>,
 }
@@ -363,7 +363,7 @@ pub struct SketchPoint {
     /// Sketch coordinates in millimetres.
     pub coordinates: Point2,
     /// Complete source record bytes for native replay and rewrite.
-    #[serde(with = "crate::bytes")]
+    #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub raw_bytes: Vec<u8>,
 }

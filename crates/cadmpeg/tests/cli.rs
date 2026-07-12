@@ -391,7 +391,7 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_version"], 3);
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");
@@ -433,13 +433,13 @@ fn rhino_forced_input_format_and_3dm_alias_bypass_detection() {
             .unwrap();
         assert!(output.status.success());
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["ir_version"], "2");
+        assert_eq!(value["ir_version"], "3");
         assert_eq!(value["source"]["format"], "rhino");
     }
 }
 
 #[test]
-fn rhino_full_band_empty_archive_decodes_to_current_ir_v2() {
+fn rhino_full_band_empty_archive_decodes_to_current_ir_v3() {
     let dir = tempdir().unwrap();
     for version in ["50", "60", "70", "80"] {
         let input = minimal_rhino_archive(dir.path(), &format!("empty-{version}.3dm"), version);
@@ -456,7 +456,7 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir_v2() {
                 String::from_utf8_lossy(&output.stderr)
             );
             let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(value["ir_version"], "2");
+            assert_eq!(value["ir_version"], "3");
             assert_eq!(value["source"]["format"], "rhino");
             assert_eq!(value["source"]["attributes"]["archive_version"], version);
             assert_eq!(
@@ -496,7 +496,7 @@ fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
     assert_eq!(ir["model"]["points"][0]["position"]["y"], -2.5);
     assert_eq!(ir["model"]["points"][0]["position"]["z"], 3.75);
     let body_id = ir["model"]["bodies"][0]["id"].as_str().unwrap();
-    assert!(ir["unknowns"][0]["links"]
+    assert!(ir["native"]["rhino"]["arenas"]["unknowns"][0]["links"]
         .as_array()
         .unwrap()
         .iter()
@@ -522,7 +522,7 @@ fn rhino_v3_v4_decode_metadata_but_legacy_bands_are_header_only() {
             .unwrap();
         assert!(output.status.success());
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["ir_version"], "2");
+        assert_eq!(value["ir_version"], "3");
         assert_eq!(value["source"]["attributes"]["archive_version"], version);
         assert_eq!(value["model"]["subds"], serde_json::json!([]));
     }
@@ -788,11 +788,15 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
         .success();
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(success_report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_version"], 3);
     assert_eq!(value["command"], "convert");
     assert!(value["decode_report"].is_null());
     assert!(value["validation_report"].is_object());
     assert_eq!(value["export"]["format"], "step");
+    assert!(value["export"]["entity_counts"].is_object());
+    assert!(value["export"]["total_entities"].is_number());
+    assert!(value["export"]["losses"].is_array());
+    assert!(value["export"]["notes"].is_array());
 
     let empty = geometryless_creo(dir.path(), "empty.prt");
     let refusal_report = dir.path().join("refusal-report.json");
@@ -814,6 +818,38 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     assert!(value["decode_report"].is_object());
     assert!(value["validation_report"].is_object());
     assert!(value["export"].is_null());
+}
+
+#[test]
+fn f3d_export_report_identifies_regenerated_output() {
+    let dir = tempdir().unwrap();
+    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let output = dir.path().join("cube.f3d");
+    let report = dir.path().join("f3d-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cube.to_str().unwrap(),
+            "-f",
+            "f3d",
+            "-o",
+            output.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["export"]["format"], "f3d");
+    assert!(value["export"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note
+            .as_str()
+            .is_some_and(|note| note.contains("regenerated"))));
 }
 
 #[test]
@@ -874,7 +910,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_version"], 3);
     assert_eq!(value["command"], "validate");
 
     let diff = Command::cargo_bin("cadmpeg")
@@ -888,7 +924,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&diff.stdout).unwrap();
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_version"], 3);
     assert_eq!(value["command"], "diff");
 
     let native = geometryless_creo(dir.path(), "ambiguous.bin");
@@ -905,7 +941,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .unwrap();
     assert!(inspect.status.success());
     let value: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_version"], 3);
     assert_eq!(value["command"], "inspect");
 }
 

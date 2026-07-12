@@ -72,7 +72,7 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "2";
+pub const IR_VERSION: &str = "3";
 
 arena_registry!(declare_model);
 
@@ -122,12 +122,59 @@ pub struct CadIr {
     /// Independently versioned native namespaces.
     #[serde(default)]
     pub native: Native,
-    /// Recognized source records without a typed interpretation.
-    #[serde(default)]
-    pub unknowns: Vec<UnknownRecord>,
 }
 
 impl CadIr {
+    /// Deserialize the reserved `unknowns` arena for `format`.
+    pub fn native_unknowns(
+        &self,
+        format: &str,
+    ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
+        self.native.namespace(format).map_or_else(
+            || Ok(Vec::new()),
+            |namespace| namespace.arena_as("unknowns"),
+        )
+    }
+
+    /// Deserialize every reserved native `unknowns` arena.
+    pub fn all_native_unknowns(
+        &self,
+    ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
+        self.native
+            .0
+            .values()
+            .filter(|namespace| namespace.arenas.contains_key("unknowns"))
+            .try_fold(Vec::new(), |mut records, namespace| {
+                records.extend(namespace.arena_as::<UnknownRecord>("unknowns")?);
+                Ok(records)
+            })
+    }
+
+    /// Replace the reserved `unknowns` arena for `format`.
+    pub fn set_native_unknowns(
+        &mut self,
+        format: &str,
+        records: &[UnknownRecord],
+    ) -> Result<(), crate::native::NativeConvertError> {
+        let namespace = self.native.namespace_mut(format);
+        if namespace.version == 0 {
+            namespace.version = 1;
+        }
+        namespace.set_arena("unknowns", records)
+    }
+
+    /// Append one record to the reserved `unknowns` arena for `format`.
+    pub fn push_native_unknown(
+        &mut self,
+        format: &str,
+        record: UnknownRecord,
+    ) -> Result<(), crate::native::NativeConvertError> {
+        let mut records = self.native_unknowns(format)?;
+        records.retain(|existing| existing.id != record.id);
+        records.push(record);
+        self.set_native_unknowns(format, &records)
+    }
+
     /// Construct an empty current-version document with default tolerances.
     pub fn empty(units: Units) -> Self {
         Self {
@@ -138,7 +185,6 @@ impl CadIr {
             model: Model::default(),
             annotations: Annotations::default(),
             native: Native::default(),
-            unknowns: Vec::new(),
         }
     }
 
@@ -165,7 +211,6 @@ impl CadIr {
     pub fn finalize(&mut self) {
         self.model.finalize();
         self.native.finalize();
-        self.unknowns.sort_by(|left, right| left.id.cmp(&right.id));
     }
 }
 

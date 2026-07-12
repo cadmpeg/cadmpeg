@@ -2,6 +2,7 @@
 //! Stream-scope entity records needed for body membership.
 
 use super::{u16_be, u32_be};
+use cadmpeg_ir::be::f64_at as f64_be;
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::topology::Color;
 use std::collections::{HashMap, HashSet};
@@ -110,11 +111,6 @@ fn scan_entities(body: &[u8]) -> Vec<EntityRecord> {
         });
     }
     out
-}
-
-fn f64_be(body: &[u8], at: usize) -> Option<f64> {
-    body.get(at..at + 8)
-        .map(|bytes| f64::from_be_bytes(bytes.try_into().expect("eight-byte slice")))
 }
 
 fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {

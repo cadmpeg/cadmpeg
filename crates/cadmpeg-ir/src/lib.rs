@@ -29,10 +29,11 @@
 pub mod annotations;
 pub mod appearance;
 pub mod attributes;
+pub mod be;
 pub mod bytes;
 pub mod codec;
 pub mod compression;
-pub mod design;
+
 pub mod diff;
 pub mod document;
 pub mod eval;
@@ -40,12 +41,13 @@ pub mod examples;
 pub mod features;
 pub mod geometry;
 pub mod hash;
-pub mod history;
+
 pub mod ids;
 pub mod le;
 pub mod math;
 pub mod native;
 mod provenance;
+pub mod read;
 pub mod report;
 pub mod subd;
 pub mod tessellation;
@@ -56,18 +58,18 @@ pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
 pub use codec::{
-    Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions, DecodeResult,
-    Encoder, ReadSeek,
+    CadirEncoder, Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions,
+    DecodeResult, Encoder, ReadSeek,
 };
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{Feature, FeatureDefinition, FeatureId};
-pub use native::{F3dNative, LossCount, Native, SldprtNative};
+pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 /// Source location attached to a [`LossNote`].
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
-    Check, DecodeReport, Finding, LossCategory, LossNote, Severity, ValidationReport,
+    Check, DecodeReport, ExportReport, Finding, LossCategory, LossNote, Severity, ValidationReport,
 };
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,

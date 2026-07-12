@@ -72,7 +72,9 @@ pub mod container;
 pub mod decode;
 mod history;
 mod metadata;
+mod native;
 pub mod parasolid;
+pub mod records;
 mod resolved_features;
 mod tessellation;
 mod writer;
@@ -84,11 +86,62 @@ use cadmpeg_ir::codec::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::{Check, Finding, Severity};
 use std::io::Write;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SldprtCodec;
+
+/// Validate `SolidWorks` native feature-input byte references.
+pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
+    const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
+
+    let Some(namespace) = ir.native.namespace("sldprt") else {
+        return Vec::new();
+    };
+    if namespace.version != native::SLDPRT_NATIVE_VERSION {
+        let version = namespace.version;
+        return vec![Finding {
+            check: Check::Version,
+            severity: Severity::Error,
+            message: format!("unsupported SolidWorks native namespace version {version}"),
+            entity: None,
+        }];
+    }
+    let Ok(native) = native::SldprtNative::load(namespace) else {
+        return vec![Finding {
+            check: Check::NativeLinks,
+            severity: Severity::Error,
+            message: "SolidWorks native namespace does not match schema version 1".into(),
+            entity: None,
+        }];
+    };
+    let mut findings = Vec::new();
+    for lane in &native.feature_input_lanes {
+        for entity in &lane.sketch_entities {
+            let valid = usize::try_from(entity.offset).ok().is_some_and(|offset| {
+                offset
+                    .checked_add(MARKER.len())
+                    .and_then(|end| lane.native_payload.get(offset..end))
+                    == Some(MARKER)
+                    && offset
+                        .checked_add(21)
+                        .is_some_and(|end| end <= lane.native_payload.len())
+            });
+            if !valid {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "feature-input entity is outside its native payload".into(),
+                    entity: Some(lane.id.clone()),
+                });
+            }
+        }
+    }
+    findings
+}
 
 impl SldprtCodec {
     /// Write a decoded or constructed IR as `.sldprt`.
@@ -109,8 +162,8 @@ impl SldprtCodec {
         if expected.is_none_or(|expected| decode::semantic_hash(ir) != *expected) {
             return writer::write_semantic(ir, writer);
         }
-        let record = ir
-            .unknowns
+        let unknowns = ir.native_unknowns("sldprt")?;
+        let record = unknowns
             .iter()
             .find(|record| record.id.0 == "sldprt:file:source-image#0")
             .ok_or_else(|| {
@@ -162,8 +215,29 @@ impl Encoder for SldprtCodec {
         "sldprt"
     }
 
-    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-        self.write_preserved(ir, writer)
+    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
+        let replay = ir
+            .native_unknowns("sldprt")?
+            .into_iter()
+            .any(|record| record.id.0 == "sldprt:file:source-image#0");
+        self.write_preserved(ir, writer)?;
+        let validation = cadmpeg_ir::validate(ir, Vec::new());
+        let total_entities = validation.entity_counts.values().sum();
+        Ok(ExportReport {
+            format: "sldprt".into(),
+            entity_counts: validation.entity_counts,
+            total_entities,
+            losses: Vec::new(),
+            notes: vec![
+                if replay {
+                    "preserved source container replayed verbatim"
+                } else {
+                    "source container regenerated from IR"
+                }
+                .into(),
+                "entity counts are derived from the IR".into(),
+            ],
+        })
     }
 }
 

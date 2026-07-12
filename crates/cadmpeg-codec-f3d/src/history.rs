@@ -5,7 +5,7 @@
 //! history records while retaining source bytes for records without typed
 //! semantics.
 
-use cadmpeg_ir::history::{
+use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
     AsmHistoryRecord,
 };
@@ -22,7 +22,12 @@ const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
 /// `bytes` carries no `delta_state` record (the stream is a construction
 /// snapshot with no history tail) or a malformed history body. `width` is the
 /// stream's integer/ref width (4 for `BinaryFile4`, 8 for `BinaryFile8`).
-pub fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHistory> {
+pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHistory> {
+    let preamble_offset = bytes
+        .windows(PREAMBLE.len())
+        .position(|window| window == PREAMBLE);
+    let history_offset = preamble_offset.unwrap_or(0);
+    let history_id = format!("f3d:{stream}:asm-history#{history_offset:010}");
     let mut delta_offsets = Vec::new();
     let mut search = 0usize;
     while let Some(relative) = bytes[search..]
@@ -35,6 +40,7 @@ pub fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHistory> {
     }
     let mut states = Vec::new();
     for (ordinal, &offset) in delta_offsets.iter().enumerate() {
+        let state_record_id = format!("f3d:{stream}:asm-delta-state#{offset:010}");
         let mut position = offset + DELTA.len();
         let state_id = take_int(bytes, &mut position, 0x04, width)?;
         let version_flag = take_int(bytes, &mut position, 0x04, width)?;
@@ -48,16 +54,18 @@ pub fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHistory> {
             continue;
         }
         let (bulletin_boards, body_end) =
-            decode_bulletin_boards(bytes, position + 1, stream, offset, width)?;
+            decode_bulletin_boards(bytes, position + 1, stream, offset, &state_record_id, width)?;
         let records = decode_history_records(
             bytes,
             body_end,
             delta_offsets.get(ordinal + 1).copied(),
             stream,
+            &state_record_id,
             width,
         );
         states.push(AsmDeltaState {
-            id: format!("f3d:{stream}:asm-delta-state#{offset:010}"),
+            id: state_record_id,
+            parent: history_id.clone(),
             byte_offset: offset as u64,
             state_id,
             version_flag,
@@ -75,15 +83,12 @@ pub fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHistory> {
         return None;
     }
 
-    let preamble_offset = bytes
-        .windows(PREAMBLE.len())
-        .position(|window| window == PREAMBLE);
     let (stream_size, high_water_mark) = preamble_offset
         .and_then(|offset| decode_preamble(bytes, offset + PREAMBLE.len(), width))
         .map_or((None, None), |(size, high)| (Some(size), Some(high)));
-    let offset = preamble_offset.unwrap_or(0);
+    let offset = history_offset;
     Some(AsmHistory {
-        id: format!("f3d:{stream}:asm-history#{offset:010}"),
+        id: history_id,
         byte_offset: offset as u64,
         stream_size,
         high_water_mark,
@@ -96,6 +101,7 @@ fn decode_bulletin_boards(
     mut position: usize,
     stream: &str,
     state_offset: usize,
+    state_id: &str,
     width: usize,
 ) -> Option<(Vec<AsmBulletinBoard>, usize)> {
     if bytes.get(position) == Some(&0x11) {
@@ -110,6 +116,10 @@ fn decode_bulletin_boards(
         }
         let owner_ref = take_int(bytes, &mut position, 0x0c, width)?;
         let number = take_int(bytes, &mut position, 0x04, width)?;
+        let board_id = format!(
+            "f3d:{stream}:asm-bulletin-board#{state_offset:010}:{:06}",
+            boards.len()
+        );
         let mut changes = Vec::new();
         loop {
             let change_offset = position;
@@ -131,6 +141,7 @@ fn decode_bulletin_boards(
                     boards.len(),
                     changes.len()
                 ),
+                parent: board_id.clone(),
                 byte_offset: change_offset as u64,
                 kind,
                 old_ref: (old >= 0).then_some(old),
@@ -138,10 +149,8 @@ fn decode_bulletin_boards(
             });
         }
         boards.push(AsmBulletinBoard {
-            id: format!(
-                "f3d:{stream}:asm-bulletin-board#{state_offset:010}:{:06}",
-                boards.len()
-            ),
+            id: board_id,
+            parent: state_id.to_string(),
             byte_offset: board_offset as u64,
             owner_ref,
             number,
@@ -156,6 +165,7 @@ fn decode_history_records(
     state_end: usize,
     next_delta: Option<usize>,
     stream: &str,
+    state_id: &str,
     width: usize,
 ) -> Vec<AsmHistoryRecord> {
     let start = state_end + usize::from(bytes.get(state_end) == Some(&0x11));
@@ -168,6 +178,7 @@ fn decode_history_records(
             .into_iter()
             .map(|record| AsmHistoryRecord {
                 id: format!("f3d:{stream}:asm-history-record#{:010}", record.offset),
+                parent: state_id.to_string(),
                 index: record.index as u64,
                 name: record.name,
                 raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
@@ -175,6 +186,7 @@ fn decode_history_records(
             .collect(),
         Err(_) => vec![AsmHistoryRecord {
             id: format!("f3d:{stream}:asm-history-record#{start:010}"),
+            parent: state_id.to_string(),
             index: 0,
             name: "opaque_history_payload".into(),
             raw_bytes: bytes[start..limit].to_vec(),

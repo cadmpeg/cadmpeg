@@ -174,6 +174,9 @@ name = "cadmpeg-codec-f3d"
 version = "0.1.6"
 dependencies = [
  "cadmpeg-ir",
+ "schemars",
+ "serde",
+ "serde_json",
  "sha2",
  "thiserror",
  "zip",
@@ -207,6 +210,9 @@ dependencies = [
  "crc32fast",
  "flate2",
  "roxmltree",
+ "schemars",
+ "serde",
+ "serde_json",
  "sha2",
  "thiserror",
 ]

@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 
+use crate::native::SldprtNative;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -15,6 +16,19 @@ use crate::container::MARKER;
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
 pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+    let native = ir
+        .native
+        .namespace("sldprt")
+        .map(|namespace| {
+            if namespace.version != crate::native::SLDPRT_NATIVE_VERSION {
+                let version = namespace.version;
+                return Err(CodecError::Malformed(format!(
+                    "unsupported SLDPRT native namespace version {version}"
+                )));
+            }
+            SldprtNative::load(namespace).map_err(Into::into)
+        })
+        .transpose()?;
     let retained_partition = retained_partition(ir);
     let mut normalized = ir.clone();
     sort_arenas(&mut normalized);
@@ -94,9 +108,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             tessellation_payload(ir, length_scale)?,
         ));
     }
-    for (index, history) in ir
-        .native
-        .sldprt
+    for (index, history) in native
         .iter()
         .flat_map(|native| &native.feature_histories)
         .enumerate()
@@ -106,12 +118,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             history_payload(history)?,
         ));
     }
-    for lane in ir
-        .native
-        .sldprt
-        .iter()
-        .flat_map(|native| &native.feature_input_lanes)
-    {
+    for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
         let section = ir
             .annotations
             .provenance
@@ -126,7 +133,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         sections.push((section, resolved_feature_payload(lane)?));
     }
     for (section, payload) in opaque_blocks(ir, &active_partition_section, retain_native_brep) {
-        sections.push((section.to_string(), payload.to_vec()));
+        sections.push((section.clone(), payload.clone()));
     }
 
     let type_ids = section_type_ids(ir, &sections)?;
@@ -166,7 +173,14 @@ fn sort_arenas(ir: &mut CadIr) {
     ir.model
         .appearance_bindings
         .sort_by_key(|binding| format!("{:?}:{}", binding.target, binding.appearance.0));
-    ir.unknowns.sort_by(|a, b| a.id.cmp(&b.id));
+}
+
+fn source_image(ir: &CadIr) -> Option<Vec<u8>> {
+    ir.native_unknowns("sldprt")
+        .ok()?
+        .into_iter()
+        .find(|record| record.id.0 == "sldprt:file:source-image#0")?
+        .data
 }
 
 fn section_directory_entries(
@@ -174,12 +188,8 @@ fn section_directory_entries(
     sections: &[(String, Vec<u8>)],
     type_ids: &[u32],
 ) -> Result<Vec<Vec<u8>>, CodecError> {
-    let source = ir
-        .unknowns
-        .iter()
-        .find(|record| record.id.0 == "sldprt:file:source-image#0")
-        .and_then(|record| record.data.as_deref());
-    let source_scan = source.map(crate::container::scan_bytes);
+    let source = source_image(ir);
+    let source_scan = source.as_deref().map(crate::container::scan_bytes);
     sections
         .iter()
         .zip(type_ids)
@@ -190,7 +200,7 @@ fn section_directory_entries(
                 let entry = scan.directory.iter().find(|entry| {
                     entry.name == *section && entry.type_id == *type_id && entry.size == size
                 })?;
-                let source = source?;
+                let source = source.as_deref()?;
                 let end = entry.offset.checked_add(46 + entry.name.len())?;
                 source.get(entry.offset..end).map(<[u8]>::to_vec)
             });
@@ -200,15 +210,10 @@ fn section_directory_entries(
 }
 
 fn retained_cache_cells(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Vec<Vec<u8>> {
-    let Some(source) = ir
-        .unknowns
-        .iter()
-        .find(|record| record.id.0 == "sldprt:file:source-image#0")
-        .and_then(|record| record.data.as_deref())
-    else {
+    let Some(source) = source_image(ir) else {
         return Vec::new();
     };
-    let scan = crate::container::scan_bytes(source);
+    let scan = crate::container::scan_bytes(&source);
     scan.cache_cells
         .iter()
         .filter(|cell| {
@@ -233,13 +238,8 @@ fn retained_partition(ir: &CadIr) -> Option<(String, Vec<u8>)> {
     if crate::decode::brep_semantic_hash(ir) != *expected {
         return None;
     }
-    let source_image = ir
-        .unknowns
-        .iter()
-        .find(|record| record.id.0 == "sldprt:file:source-image#0")?
-        .data
-        .as_deref()?;
-    let scan = crate::container::scan_bytes(source_image);
+    let source_image = source_image(ir)?;
+    let scan = crate::container::scan_bytes(&source_image);
     let (block, _) = crate::container::select_active_parasolid(&scan)?;
     Some((
         block
@@ -251,10 +251,8 @@ fn retained_partition(ir: &CadIr) -> Option<(String, Vec<u8>)> {
 }
 
 fn outer_header(ir: &CadIr) -> [u8; 8] {
-    ir.unknowns
-        .iter()
-        .find(|record| record.id.0 == "sldprt:file:source-image#0")
-        .and_then(|record| record.data.as_deref())
+    source_image(ir)
+        .as_deref()
         .and_then(|source| source.get(..8))
         .and_then(|header| header.try_into().ok())
         .unwrap_or_else(|| {
@@ -267,13 +265,8 @@ fn outer_header(ir: &CadIr) -> [u8; 8] {
 
 fn section_type_ids(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Result<Vec<u32>, CodecError> {
     let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
-    if let Some(source) = ir
-        .unknowns
-        .iter()
-        .find(|record| record.id.0 == "sldprt:file:source-image#0")
-        .and_then(|record| record.data.as_deref())
-    {
-        for block in crate::container::scan_bytes(source).blocks {
+    if let Some(source) = source_image(ir) {
+        for block in crate::container::scan_bytes(&source).blocks {
             if let Some(section) = block.section {
                 source_ids
                     .entry(section)
@@ -367,14 +360,15 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn opaque_blocks<'a>(
-    ir: &'a CadIr,
+fn opaque_blocks(
+    ir: &CadIr,
     active_partition: &str,
     retain_native_brep: bool,
-) -> Vec<(&'a str, &'a [u8])> {
+) -> Vec<(String, Vec<u8>)> {
     let mut seen = HashSet::new();
-    ir.unknowns
-        .iter()
+    ir.native_unknowns("sldprt")
+        .unwrap_or_default()
+        .into_iter()
         .filter(|record| record.id.0.starts_with("sldprt:file:block#"))
         .filter_map(|record| {
             let provenance = ir.annotations.provenance.get(&record.id.0)?;
@@ -402,15 +396,15 @@ fn opaque_blocks<'a>(
             {
                 return None;
             }
-            let payload = record.data.as_deref()?;
-            seen.insert((section, record.sha256.as_str()))
-                .then_some((section, payload))
+            let payload = record.data?;
+            seen.insert((section.to_string(), record.sha256))
+                .then_some((section.to_string(), payload))
         })
         .collect()
 }
 
 fn resolved_feature_payload(
-    lane: &cadmpeg_ir::history::FeatureInputLane,
+    lane: &crate::records::FeatureInputLane,
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
     let mut payload = lane.native_payload.clone();
@@ -564,7 +558,7 @@ fn metadata_payloads(
     Ok((objects, units))
 }
 
-fn history_payload(history: &cadmpeg_ir::history::FeatureHistory) -> Result<Vec<u8>, CodecError> {
+fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {
     validate_feature_graph(&history.features)?;
     let mut out = String::from("<Keywords");
     if let Some(name) = &history.part_name {
@@ -595,7 +589,7 @@ fn history_payload(history: &cadmpeg_ir::history::FeatureHistory) -> Result<Vec<
     Ok(out.into_bytes())
 }
 
-fn validate_feature_graph(features: &[cadmpeg_ir::history::Feature]) -> Result<(), CodecError> {
+fn validate_feature_graph(features: &[crate::records::Feature]) -> Result<(), CodecError> {
     let by_id = features
         .iter()
         .filter_map(|feature| feature.source_id.as_ref().map(|id| (id.as_str(), feature)))
@@ -626,8 +620,8 @@ fn validate_feature_graph(features: &[cadmpeg_ir::history::Feature]) -> Result<(
 
 fn write_feature_xml(
     out: &mut String,
-    feature: &cadmpeg_ir::history::Feature,
-    features: &[cadmpeg_ir::history::Feature],
+    feature: &crate::records::Feature,
+    features: &[crate::records::Feature],
 ) {
     out.push_str("<Feature");
     if let Some(id) = &feature.source_id {

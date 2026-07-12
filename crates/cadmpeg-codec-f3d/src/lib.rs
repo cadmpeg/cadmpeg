@@ -74,8 +74,11 @@ pub mod container;
 pub mod decode;
 pub mod design;
 pub mod history;
+mod history_records;
 pub mod materials;
+mod native;
 pub mod nurbs;
+pub mod records;
 pub mod sab;
 mod writer;
 
@@ -84,6 +87,8 @@ use cadmpeg_ir::codec::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::{Check, Finding, Severity};
 use std::io::Write;
 
 /// The ZIP local-file-header magic.
@@ -92,6 +97,88 @@ const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 /// The Autodesk Fusion `.f3d` container codec.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct F3dCodec;
+
+/// Validate Fusion native design-record relationships and exact sketch frames.
+pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
+    use std::collections::HashSet;
+
+    let Some(namespace) = ir.native.namespace("f3d") else {
+        return Vec::new();
+    };
+    if namespace.version != native::F3D_NATIVE_VERSION {
+        let version = namespace.version;
+        return vec![Finding {
+            check: Check::Version,
+            severity: Severity::Error,
+            message: format!("unsupported Fusion native namespace version {version}"),
+            entity: None,
+        }];
+    }
+    let Ok(native) = native::F3dNative::load(namespace) else {
+        return vec![Finding {
+            check: Check::NativeLinks,
+            severity: Severity::Error,
+            message: "Fusion native namespace does not match schema version 1".into(),
+            entity: None,
+        }];
+    };
+    let mut findings = Vec::new();
+    let record_indices = native
+        .design_record_headers
+        .iter()
+        .map(|record| record.record_index)
+        .collect::<HashSet<_>>();
+    for header in &native.design_entity_headers {
+        let count_matches = header
+            .declared_reference_count
+            .is_none_or(|count| count as usize == header.reference_indices.len());
+        let references_resolve = header
+            .reference_indices
+            .iter()
+            .all(|index| record_indices.contains(index));
+        if !count_matches || !references_resolve {
+            findings.push(Finding {
+                check: Check::ReferentialIntegrity,
+                severity: Severity::Error,
+                message: "Fusion design entity has an invalid reference run".into(),
+                entity: Some(header.entity_id.clone()),
+            });
+        }
+    }
+    let sketch_owners = native
+        .design_entity_headers
+        .iter()
+        .filter(|header| header.object_kind == Some(records::DesignObjectKind::Sketch))
+        .map(|header| header.entity_suffix as u32)
+        .collect::<HashSet<_>>();
+    for relation in &native.sketch_relations {
+        const CONSTRAINT_MASK: u32 = 0x3000_3ff7;
+        let valid = sketch_owners.contains(&relation.owner_reference)
+            && relation.raw_bytes.len() == 101
+            && relation.unknown_constraint_bits == relation.state & !CONSTRAINT_MASK
+            && relation.constraint_kinds.len()
+                == (relation.state & CONSTRAINT_MASK).count_ones() as usize;
+        if !valid {
+            findings.push(Finding {
+                check: Check::ReferentialIntegrity,
+                severity: Severity::Error,
+                message: "Fusion sketch relation has an invalid owner or byte frame".into(),
+                entity: Some(relation.id.clone()),
+            });
+        }
+    }
+    for point in &native.sketch_points {
+        if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
+            findings.push(Finding {
+                check: Check::Bounds,
+                severity: Severity::Error,
+                message: "Fusion sketch point contains a non-finite coordinate".into(),
+                entity: Some(point.id.clone()),
+            });
+        }
+    }
+    findings
+}
 
 impl F3dCodec {
     /// Write a decoded F3D document, replaying its source bytes when its
@@ -106,8 +193,8 @@ impl F3dCodec {
             .as_ref()
             .and_then(|source| source.attributes.get("semantic_sha256"))
             .ok_or_else(|| CodecError::NotImplemented("IR has no F3D semantic baseline".into()))?;
-        let record = ir
-            .unknowns
+        let unknowns = ir.native_unknowns("f3d")?;
+        let record = unknowns
             .iter()
             .find(|record| record.id.0 == "f3d:file:source-image#0")
             .ok_or_else(|| {
@@ -171,16 +258,33 @@ impl Encoder for F3dCodec {
         "f3d"
     }
 
-    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-        if ir
-            .unknowns
-            .iter()
-            .any(|record| record.id.0 == "f3d:file:source-image#0")
-        {
-            self.write_preserved(ir, writer)
+    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
+        let replay = ir
+            .native_unknowns("f3d")?
+            .into_iter()
+            .any(|record| record.id.0 == "f3d:file:source-image#0");
+        if replay {
+            self.write_preserved(ir, writer)?;
         } else {
-            writer::write_new(ir, writer)
+            writer::write_new(ir, writer)?;
         }
+        let validation = cadmpeg_ir::validate(ir, Vec::new());
+        let total_entities = validation.entity_counts.values().sum();
+        Ok(ExportReport {
+            format: "f3d".into(),
+            entity_counts: validation.entity_counts,
+            total_entities,
+            losses: Vec::new(),
+            notes: vec![
+                if replay {
+                    "preserved source container replayed verbatim"
+                } else {
+                    "source container regenerated from IR"
+                }
+                .into(),
+                "entity counts are derived from the IR".into(),
+            ],
+        })
     }
 }
 

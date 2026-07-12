@@ -5,7 +5,8 @@
 use super::*;
 
 pub(super) fn check_unknown_payloads(ir: &CadIr, findings: &mut Vec<Finding>) {
-    for record in &ir.unknowns {
+    let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
+    for record in &native_unknowns {
         let Some(data) = &record.data else { continue };
         let hash = Sha256::digest(data)
             .iter()

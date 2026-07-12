@@ -79,8 +79,8 @@ jobs:
       - name: Check
         run: cargo check --workspace
 
-  # CONTRIBUTING.md requires a DCO sign-off on every commit; this enforces it
-  # for pull requests.
+  # CONTRIBUTING.md requires a DCO sign-off on each PR; this enforces it. The
+  # sign-off may be per-commit or a single trailer in the PR description.
   dco:
     name: DCO sign-off
     if: github.event_name == 'pull_request'
@@ -91,7 +91,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check Signed-off-by on every PR commit
+      - name: Check Signed-off-by on the PR or its commits
         # bash for here-string (`<<<`) support; see the SIGPIPE note below.
         shell: bash
         env:
@@ -100,10 +100,26 @@ jobs:
           # workflow context.
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # The PR description is contributor-authored free text. Like the SHAs,
+          # it only ever reaches the shell as an environment value, never
+          # interpolated into the script body.
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
 
-          # A commit whose entire diff stays within these paths is release
+          # PR-level sign-off. This repo squash-merges with the PR description as
+          # the commit message, so a Signed-off-by trailer here lands verbatim on
+          # the single commit that reaches main and certifies exactly what merges.
+          # When present it satisfies DCO for the whole PR, letting a squash of
+          # unsigned WIP commits merge on one sign-off. (Here-string, not a pipe —
+          # see the SIGPIPE note below.)
+          if grep -q '^Signed-off-by: .\+ <.\+@.\+>' <<<"$PR_BODY"; then
+            echo "::notice::PR description carries a Signed-off-by trailer; DCO satisfied at the PR level."
+            exit 0
+          fi
+
+          # No PR-level sign-off: fall back to requiring one on every authored
+          # commit. A commit whose entire diff stays within these paths is release
           # plumbing (version manifest, lockfile, dist config) and certifies
           # nothing that a DCO sign-off is meant to cover, so it is exempt. Any
           # commit that touches a file outside this set must still be signed off.

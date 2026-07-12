@@ -38,13 +38,13 @@ pub fn decode(
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(reader)?;
 
-    let ir = build_ir(&scan);
+    let ir = build_ir(&scan)?;
     let report = build_report(&scan, options.container_only);
     Ok(DecodeResult::new(ir, report))
 }
 
 /// Build source metadata, preserved geometry records, and datum-plane surfaces.
-fn build_ir(scan: &ContainerScan) -> CadIr {
+fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
@@ -61,14 +61,17 @@ fn build_ir(scan: &ContainerScan) -> CadIr {
             "psb_geometry_section",
             Exactness::Unknown,
         );
-        ir.unknowns.push(UnknownRecord {
-            id,
-            offset: section.offset as u64,
-            byte_len: bytes.len() as u64,
-            sha256: sha256_hex(bytes),
-            data: Some(bytes.to_vec()),
-            links: Vec::new(),
-        });
+        ir.push_native_unknown(
+            "creo",
+            UnknownRecord {
+                id,
+                offset: section.offset as u64,
+                byte_len: bytes.len() as u64,
+                sha256: sha256_hex(bytes),
+                data: Some(bytes.to_vec()),
+                links: Vec::new(),
+            },
+        )?;
     }
     for plane in &scan.datum_planes {
         let id = SurfaceId(format!("creo:datum-plane#{}", plane.id));
@@ -99,7 +102,7 @@ fn build_ir(scan: &ContainerScan) -> CadIr {
         });
     }
     ir.annotations = annotations.build();
-    ir
+    Ok(ir)
 }
 
 fn annotate(

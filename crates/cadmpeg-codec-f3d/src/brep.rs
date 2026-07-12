@@ -17,8 +17,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::records::{PersistentDesignLink, SketchCurveLink};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-use cadmpeg_ir::design::{PersistentDesignLink, SketchCurveLink};
 use cadmpeg_ir::eval;
 use cadmpeg_ir::geometry::{
     BlendSupport, Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,

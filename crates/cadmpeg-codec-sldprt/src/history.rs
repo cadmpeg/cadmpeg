@@ -2,8 +2,8 @@
 //! `SolidWorks` Keywords XML feature history.
 
 use crate::container::ContainerScan;
+use crate::records::{Configuration, Feature, FeatureHistory};
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::history::{Configuration, Feature, FeatureHistory};
 use cadmpeg_ir::Exactness;
 use std::collections::BTreeMap;
 
@@ -21,6 +21,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                 .section
                 .clone()
                 .unwrap_or_else(|| format!("block@{}", block.offset));
+            let parent = format!("sldprt:history:feature-history#{}", block.offset);
             let configurations = root
                 .children()
                 .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
@@ -37,6 +38,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                     );
                     Configuration {
                         id,
+                        parent: parent.clone(),
                         name: node.attribute("Name").unwrap_or("").into(),
                         material: node
                             .attribute("Material")
@@ -74,6 +76,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                     );
                     Feature {
                         id,
+                        parent: parent.clone(),
                         source_id: node
                             .attribute("id")
                             .filter(|value| !value.is_empty())
@@ -115,7 +118,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                     }
                 })
                 .collect();
-            let id = format!("sldprt:history:feature-history#{}", block.offset);
+            let id = parent;
             crate::annotations::note(
                 annotations,
                 id.clone(),

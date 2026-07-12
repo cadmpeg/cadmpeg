@@ -46,7 +46,7 @@ pub fn decode(
     let scan = container::scan(reader)?;
 
     if options.container_only {
-        let ir = build_metadata_ir(&scan);
+        let ir = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
         return Ok(DecodeResult::new(ir, report));
     }
@@ -78,7 +78,7 @@ pub fn decode(
         }
     }
 
-    let ir = build_metadata_ir(&scan);
+    let ir = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
     Ok(DecodeResult::new(ir, report))
 }
@@ -111,7 +111,8 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
         &mut annotations,
         scan,
         "catia:payload:unknown#zero-entity",
-    );
+    )
+    .ok()?;
     for (index, point) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:zero-entity:pt#{index}"));
         annotate(
@@ -158,7 +159,7 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
             source_object: None,
         });
     }
-    link_payload_carriers(&mut ir, &mut annotations);
+    link_payload_carriers(&mut ir, &mut annotations).ok()?;
     ir.annotations = annotations.build();
     let summary = container::summarize(scan);
     let report = DecodeReport {
@@ -191,7 +192,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
-    preserve_raw_payload(&mut ir, &mut annotations, scan, "catia:payload:unknown#e5");
+    preserve_raw_payload(&mut ir, &mut annotations, scan, "catia:payload:unknown#e5").ok()?;
     for (index, point) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:e5:pt#{index}"));
         annotate(
@@ -293,7 +294,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             visible: None,
         });
     }
-    link_payload_carriers(&mut ir, &mut annotations);
+    link_payload_carriers(&mut ir, &mut annotations).ok()?;
     ir.annotations = annotations.build();
     Some((
         ir,
@@ -411,7 +412,8 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
         &mut annotations,
         scan,
         "catia:payload:unknown#freeform",
-    );
+    )
+    .ok()?;
     for (index, surface) in surfaces.iter().enumerate() {
         let id = SurfaceId(format!("catia:a8:surf#{index}"));
         annotate(
@@ -428,7 +430,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
             source_object: None,
         });
     }
-    link_payload_carriers(&mut ir, &mut annotations);
+    link_payload_carriers(&mut ir, &mut annotations).ok()?;
     ir.annotations = annotations.build();
     Some((
         ir,
@@ -530,7 +532,8 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         &mut annotations,
         scan,
         "catia:payload:unknown#brep-stream",
-    );
+    )
+    .ok()?;
 
     for (i, p) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:standard:pt#{i}"));
@@ -590,7 +593,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         }
     }
     append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data);
-    link_payload_carriers(&mut ir, &mut annotations);
+    link_payload_carriers(&mut ir, &mut annotations).ok()?;
     ir.annotations = annotations.build();
 
     let report = build_geometry_report(
@@ -1345,7 +1348,7 @@ fn build_geometry_report(
     }
 }
 
-fn build_metadata_ir(scan: &ContainerScan) -> CadIr {
+fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
@@ -1362,17 +1365,20 @@ fn build_metadata_ir(scan: &ContainerScan) -> CadIr {
             scan.variant.token(),
             Exactness::Unknown,
         );
-        ir.unknowns.push(UnknownRecord {
-            id,
-            offset: 0,
-            byte_len: brep.len() as u64,
-            sha256: sha256_hex(brep),
-            data: Some(brep.clone()),
-            links: Vec::new(),
-        });
+        ir.push_native_unknown(
+            "catia",
+            UnknownRecord {
+                id,
+                offset: 0,
+                byte_len: brep.len() as u64,
+                sha256: sha256_hex(brep),
+                data: Some(brep.clone()),
+                links: Vec::new(),
+            },
+        )?;
     }
     ir.annotations = annotations.build();
-    ir
+    Ok(ir)
 }
 
 /// Preserve the native payload for every partial decode.  Typed entities are
@@ -1382,7 +1388,7 @@ fn preserve_raw_payload(
     annotations: &mut AnnotationBuilder,
     scan: &ContainerScan,
     id: &str,
-) {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let (bytes, stream) = match scan.brep.as_ref() {
         Some(brep) => (brep.as_slice(), "MainDataStream+SurfacicReps"),
         None => (scan.data.as_slice(), "CATPart"),
@@ -1396,20 +1402,27 @@ fn preserve_raw_payload(
         scan.variant.token(),
         Exactness::Unknown,
     );
-    ir.unknowns.push(UnknownRecord {
-        id,
-        offset: 0,
-        byte_len: bytes.len() as u64,
-        sha256: sha256_hex(bytes),
-        data: Some(bytes.to_vec()),
-        links: Vec::new(),
-    });
+    ir.push_native_unknown(
+        "catia",
+        UnknownRecord {
+            id,
+            offset: 0,
+            byte_len: bytes.len() as u64,
+            sha256: sha256_hex(bytes),
+            data: Some(bytes.to_vec()),
+            links: Vec::new(),
+        },
+    )?;
+    Ok(())
 }
 
 /// Attribute typed carrier views to the preserved payload when CATIA's binding
 /// layer was not recovered. The raw payload is their byte-backed owner; this
 /// avoids inventing topology or procedural relationships.
-fn link_payload_carriers(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+fn link_payload_carriers(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let links = ir
         .model
         .surfaces
@@ -1418,14 +1431,16 @@ fn link_payload_carriers(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
         .chain(ir.model.curves.iter().map(|curve| curve.id.0.clone()))
         .collect::<Vec<_>>();
     if links.is_empty() {
-        return;
+        return Ok(());
     }
-    let payload = ir
-        .unknowns
+    let mut unknowns = ir.native_unknowns("catia")?;
+    let payload = unknowns
         .last_mut()
         .expect("partial CATIA decode preserves its source payload");
     payload.links = links;
     annotations.derived(&payload.id, "links");
+    ir.set_native_unknowns("catia", &unknowns)?;
+    Ok(())
 }
 
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {

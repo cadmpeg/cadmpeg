@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD containers through format codecs into `CadIr`, then optionally validates and encodes that IR. [cad-ir.md](cad-ir.md) defines the current required IR version 2, including canonical units and parameterization, identity, topology, free carriers, annotations, and native-namespace contracts. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
+cadmpeg routes native CAD containers through format codecs into `CadIr`, then optionally validates and encodes that IR. [cad-ir.md](cad-ir.md) defines the current required IR version 3, including canonical units and parameterization, identity, topology, free carriers, annotations, and native-namespace contracts. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
 
 ## Pipeline
 
@@ -19,11 +19,11 @@ native CAD ── detect + inspect ──> container summary
 - `convert` performs load/decode, validation, and export. Validation errors stop export unless `--allow-invalid` is set.
 - `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, annotations, native namespaces, and opaque records. ID-bearing records are matched by globally unique IDs. Vector position is not entity identity.
 
-CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 2, including its required `subds` arena. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
+CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 3, including its required `subds` arena. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
 
 ## CLI stream and exit contract
 
-`decode`, `export`, and `convert` reserve stdout for the output artifact; diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 2`, including semantic refusal paths. JSON output from `inspect`, `validate`, and `diff` uses the same CLI schema version. This envelope version is independent of `CadIr.ir_version`. Status 0 means success, status 1 means semantic failure or a non-empty diff, and status 2 means operational failure.
+`decode`, `export`, and `convert` reserve stdout for the output artifact; diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 3`, including semantic refusal paths. JSON output from `inspect`, `validate`, and `diff` uses the same CLI schema version. This envelope version is independent of `CadIr.ir_version`. Status 0 means success, status 1 means semantic failure or a non-empty diff, and status 2 means operational failure.
 
 Output and report files are written through a unique temporary file in the destination directory and then persisted. Existing files require `--force`. An output path resolving to the input is rejected.
 
@@ -31,7 +31,7 @@ Output and report files are written through a unique temporary file in the desti
 
 Source decoders return `DecodeReport`, including `geometry_transferred`, notes, and attributable `LossNote` entries. Validation propagates supplied decode losses unchanged.
 
-STEP export returns substantive export loss notes for IR data that STEP does not carry. CADIR, F3D, and SLDPRT export command reports currently contain an empty export-loss list. CADIR is IR serialization; the native encoders reject unsupported inputs instead of producing a substantive loss report. Decode losses remain present in the command report when export or convert started from native CAD.
+Every encoder returns an `ExportReport` containing its format id, entity census, total entity count, loss notes, and informational notes. STEP reports reductions and omitted IR data. CADIR has no export losses. F3D and SLDPRT retain all-or-nothing rejection for unsupported input and report whether the source container was replayed or regenerated. Decode losses remain present in the command report when export or convert started from native CAD.
 
 The [format support profiles](format-support.md) record read, write, and round-trip capability by semantic domain, summarized as one [ladder score](format-support.md#support-ladder) per codec.
 
@@ -40,7 +40,7 @@ The [format support profiles](format-support.md) record read, write, and round-t
 | Crate                  | Responsibility                                                                                                                                                                                                 |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`              | CLI orchestration for `inspect`, `decode`, `validate`, `export`, `diff`, and `convert`; built-in codec registration; CADIR, STEP, and SLDPRT output dispatch.                                                  |
-| `cadmpeg-ir`           | Layered version 2 IR model, canonical JSON, free-carrier source associations, sparse provenance and exactness, native namespaces, structural diff, validation, codec traits, and report types.                 |
+| `cadmpeg-ir`           | Layered version 3 IR model, canonical JSON, free-carrier source associations, sparse provenance and exactness, native namespaces, structural diff, validation, codec traits, and report types.                 |
 | `cadmpeg-codec-f3d`    | `.f3d` ZIP inspection; ASM/SAB B-rep, analytic and cached NURBS geometry, pcurves, transforms, attributes, appearances, Design/ACT records, history decode, retained-source replay, and selected native edits. |
 | `cadmpeg-codec-sldprt` | SLDPRT block, directory, and cache-cell inspection; Parasolid analytic/NURBS B-rep, pcurves, appearances, feature lanes, history, and tessellation decode; retained-source and semantic SLDPRT writing.        |
 | `cadmpeg-codec-catia`  | CATIA V5 `V5_CFV2` layout inspection; standard, zero-entity, E5, and object-stream carrier decode; conditional standard-nested topology reconstruction.                                                        |

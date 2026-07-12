@@ -20,6 +20,7 @@
 //! `resnor`) follow the strings, then the SAB record stream.
 
 use cadmpeg_ir::le::u32_at;
+use cadmpeg_ir::le::u64_at as read_le_u64;
 
 /// The recognized header fields of a Fusion ASM BREP stream.
 #[derive(Debug, Clone, PartialEq)]
@@ -194,15 +195,6 @@ pub fn first_delta_state_offset(bytes: &[u8]) -> Option<usize> {
     bytes
         .windows(DELTA_STATE.len())
         .position(|w| w == DELTA_STATE)
-}
-
-fn read_le_u64(bytes: &[u8], at: usize) -> Option<u64> {
-    bytes.get(at..at + 8).map(|s| {
-        u64::from_le_bytes(
-            s.try_into()
-                .expect("invariant: bytes.get(at..at+8) is an 8-byte slice"),
-        )
-    })
 }
 
 /// Read a `0x07`-tagged UTF-8 string (tag byte, u8 length, bytes). Returns the

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Parametric construction history.
+//! `SolidWorks` parametric construction-history records.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,8 @@ use std::collections::BTreeMap;
 pub struct Configuration {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Owning feature-history record id.
+    pub parent: String,
     /// Source configuration name.
     pub name: String,
     /// Material assigned in this configuration, when overridden; `None` when the
@@ -27,6 +29,8 @@ pub struct Configuration {
 pub struct Feature {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Owning feature-history record id.
+    pub parent: String,
     /// Native identifier of this feature, when the source assigned one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,
@@ -79,7 +83,7 @@ pub struct FeatureInputLane {
     pub configuration: Option<String>,
     /// Complete native feature-input byte stream, retained undecoded for
     /// parametric replay and native rewrite.
-    #[serde(with = "crate::bytes")]
+    #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub native_payload: Vec<u8>,
     /// Typed sketch-entity markers located within `native_payload`.
@@ -92,6 +96,8 @@ pub struct FeatureInputLane {
 pub struct SketchInputEntity {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Owning feature-input lane record id.
+    pub parent: String,
     /// Position of this marker within the owning `FeatureInputLane`, in stream order.
     pub ordinal: u32,
     /// Byte offset of this marker within `FeatureInputLane::native_payload`.
@@ -140,115 +146,4 @@ impl SketchInputKind {
             Self::Native(value) => value,
         }
     }
-}
-
-/// ASM construction-history container and its linked delta states.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct AsmHistory {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Byte offset of the `history_stream` identifier, or zero when no preamble exists.
-    pub byte_offset: u64,
-    /// Declared byte length of the ASM history stream from its preamble, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stream_size: Option<i64>,
-    /// Highest state id watermark recorded in the history preamble, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub high_water_mark: Option<i64>,
-    /// Linked `delta_state` nodes forming the construction-state chain.
-    pub states: Vec<AsmDeltaState>,
-}
-
-/// One byte-framed ASM `delta_state` node.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct AsmDeltaState {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Byte offset of the leading `END` token immediately before this `delta_state` record.
-    pub byte_offset: u64,
-    /// Construction-state id; the head node's `state_id` equals the history
-    /// stream preamble's first field.
-    pub state_id: i64,
-    /// Source version tag on the `delta_state` record; observed constant `1`.
-    pub version_flag: i64,
-    /// Source state tag on the `delta_state` record; observed constant `0`.
-    pub state_flag: i64,
-    /// Reference to the previous state in the doubly-linked chain; `None` on the head node.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub previous_ref: Option<i64>,
-    /// Reference to the next state in the doubly-linked chain; `None` on the tail node.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub next_ref: Option<i64>,
-    /// Sequential position of this node in the chain (0, 1, 2, ...).
-    pub node_index: i64,
-    /// Reference to a partner state, when the source recorded one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub partner_ref: Option<i64>,
-    /// Reference to the owning entity or container of this state.
-    pub owner_ref: i64,
-    /// Per-entity insert/delete/update bulletins recorded in this state.
-    #[serde(default)]
-    pub bulletin_boards: Vec<AsmBulletinBoard>,
-    /// State-local SAB entity revisions referenced by the bulletins.
-    #[serde(default)]
-    pub records: Vec<AsmHistoryRecord>,
-}
-
-/// One state-local SAB record retained byte-for-byte for replay and native write.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct AsmHistoryRecord {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Index of this record within its owning `delta_state`'s local record table.
-    pub index: u64,
-    /// Source class/record-type name.
-    pub name: String,
-    /// Complete undecoded source record bytes, retained for native replay/write.
-    #[serde(with = "crate::bytes")]
-    #[schemars(with = "String")]
-    pub raw_bytes: Vec<u8>,
-}
-
-/// One `BulletinBoard` in an ASM construction state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct AsmBulletinBoard {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Byte offset of this board's leading presence token.
-    pub byte_offset: u64,
-    /// Reference to the entity or container this bulletin board is attached to.
-    pub owner_ref: i64,
-    /// Sequential bulletin-board number within its owning state.
-    pub number: i64,
-    /// Per-entity insert/delete/update change bulletins carried by this board.
-    pub changes: Vec<AsmEntityChange>,
-}
-
-/// Entity revision pair carried by a `BulletinBoard`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct AsmEntityChange {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Byte offset of this change's leading presence token.
-    pub byte_offset: u64,
-    /// Whether this bulletin records an entity insert, delete, or update.
-    pub kind: AsmEntityChangeKind,
-    /// Reference to the entity revision before the change; `None` on insert.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub old_ref: Option<i64>,
-    /// Reference to the entity revision after the change; `None` on delete.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub new_ref: Option<i64>,
-}
-
-/// The kind of change one ASM bulletin records against an entity revision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum AsmEntityChangeKind {
-    /// A new entity revision was created.
-    Insert,
-    /// An entity revision was removed.
-    Delete,
-    /// An entity revision was modified.
-    Update,
 }

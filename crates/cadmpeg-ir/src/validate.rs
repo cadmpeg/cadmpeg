@@ -33,10 +33,7 @@ mod identity_order;
 mod subd;
 mod topology;
 
-use annotations_native::{
-    check_annotations, check_design_records, check_feature_input_lanes, check_native_ids,
-    check_native_links,
-};
+use annotations_native::{check_annotations, check_native_links};
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use geometry_consistency::{check_edge_endpoint_consistency, check_pcurve_surface_consistency};
 use geometry_payloads::{check_bounds, check_tessellations, check_unknown_payloads};
@@ -78,9 +75,6 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_subds(ir, &mut findings);
     check_procedural_surfaces(ir, &mut findings);
     check_source_associations(ir, &mut findings);
-    check_feature_input_lanes(ir, &mut findings);
-    check_design_records(ir, &mut findings);
-    check_native_ids(ir, &mut findings);
     check_unknown_payloads(ir, &mut findings);
 
     ValidationReport {

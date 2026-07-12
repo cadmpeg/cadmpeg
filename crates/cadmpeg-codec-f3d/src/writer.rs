@@ -5,19 +5,20 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read, Write};
 
-use cadmpeg_ir::codec::{Codec, CodecError, DecodeOptions};
-use cadmpeg_ir::design::{
+use crate::history_records::{
+    AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
+};
+use crate::native::F3dNative;
+use crate::records::{
     ActEntity, ActGuid, ActRootComponent, ConstructionRecipeKind, DesignMaterialAssignment,
     DesignObjectKind, LostEdgeReference, PersistentDesignLink, PersistentReferenceKind,
     SketchCurveGeometry, SketchCurveLink,
 };
+use cadmpeg_ir::codec::{Codec, CodecError, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
     ProceduralCurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::history::{
-    AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
@@ -26,9 +27,26 @@ use zip::write::SimpleFileOptions;
 
 use crate::{asm_header, decode, sab, F3dCodec};
 
+fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
+    if let Some(namespace) = ir.native.namespace("f3d") {
+        if namespace.version != crate::native::F3D_NATIVE_VERSION {
+            let version = namespace.version;
+            return Err(CodecError::Malformed(format!(
+                "unsupported F3D native namespace version {version}"
+            )));
+        }
+    }
+    ir.native
+        .namespace("f3d")
+        .map(F3dNative::load)
+        .transpose()
+        .map_err(Into::into)
+}
+
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
 pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+    let _ = f3d_native(target)?;
     if !target.model.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "source-less F3D generation does not support SubD surfaces".into(),
@@ -98,7 +116,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
 }
 
 fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
-    let Some(native) = target.native.f3d.as_ref() else {
+    let Some(native) = f3d_native(target)? else {
         return Ok(None);
     };
     if native.act_entities.is_empty()
@@ -194,7 +212,7 @@ fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
 }
 
 fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
-    let Some(native) = target.native.f3d.as_ref() else {
+    let Some(native) = f3d_native(target)? else {
         return Ok(None);
     };
     if native.construction_recipes.is_empty()
@@ -353,7 +371,7 @@ fn encode_sketch_record_header(
 
 fn encode_sketch_point(
     out: &mut Vec<u8>,
-    point: &cadmpeg_ir::design::SketchPoint,
+    point: &crate::records::SketchPoint,
 ) -> Result<(), CodecError> {
     if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
         return Err(CodecError::Malformed(
@@ -379,7 +397,7 @@ fn encode_sketch_point(
 
 fn encode_sketch_curve_identity(
     out: &mut Vec<u8>,
-    curve: &cadmpeg_ir::design::SketchCurveIdentity,
+    curve: &crate::records::SketchCurveIdentity,
 ) -> Result<(), CodecError> {
     let mut record = vec![0u8; 133];
     encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index)?;
@@ -545,7 +563,7 @@ fn encode_sketch_nurbs(
 
 fn encode_sketch_relation(
     out: &mut Vec<u8>,
-    relation: &cadmpeg_ir::design::SketchRelation,
+    relation: &crate::records::SketchRelation,
 ) -> Result<(), CodecError> {
     let mut record = vec![0u8; 101];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index)?;
@@ -628,7 +646,7 @@ fn validate_dynamic_class_tag(value: &str, field: &str) -> Result<(), CodecError
 }
 
 fn encode_design_metastream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
-    let Some(native) = target.native.f3d.as_ref() else {
+    let Some(native) = f3d_native(target)? else {
         return Ok(None);
     };
     if native.design_objects.is_empty() {
@@ -2498,6 +2516,7 @@ fn source_less_body_key(
     body: &Body,
     body_ordinal: usize,
 ) -> Result<i64, CodecError> {
+    let native = f3d_native(target)?;
     let assigned = target
         .model
         .appearance_bindings
@@ -2512,9 +2531,7 @@ fn source_less_body_key(
             _ => None,
         })
         .and_then(|visual_guid| {
-            target
-                .native
-                .f3d
+            native
                 .as_ref()?
                 .design_material_assignments
                 .iter()
@@ -2560,23 +2577,22 @@ fn color_attribute_ref(
     native_record_index(attribute_start, preceding)
 }
 
-fn persistent_links<'a>(
-    target: &'a CadIr,
+fn persistent_links(
+    target: &CadIr,
     entity: &cadmpeg_ir::attributes::AttributeTarget,
-) -> Vec<&'a PersistentDesignLink> {
-    let mut links = target
-        .native
-        .f3d
-        .as_ref()
+) -> Vec<PersistentDesignLink> {
+    let mut links = f3d_native(target)
+        .ok()
+        .flatten()
         .into_iter()
-        .flat_map(|native| &native.persistent_design_links)
+        .flat_map(|native| native.persistent_design_links)
         .filter(|link| &link.target == entity)
         .collect::<Vec<_>>();
     links.sort_by_key(|link| link.ordinal);
     links
 }
 
-fn body_persistent_links<'a>(target: &'a CadIr, body: &Body) -> Vec<&'a PersistentDesignLink> {
+fn body_persistent_links(target: &CadIr, body: &Body) -> Vec<PersistentDesignLink> {
     persistent_links(
         target,
         &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
@@ -2603,14 +2619,14 @@ fn persistent_body_group_count(target: &CadIr) -> usize {
     )
 }
 
-fn face_persistent_links<'a>(target: &'a CadIr, face: &Face) -> Vec<&'a PersistentDesignLink> {
+fn face_persistent_links(target: &CadIr, face: &Face) -> Vec<PersistentDesignLink> {
     persistent_links(
         target,
         &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
     )
 }
 
-fn edge_persistent_links<'a>(target: &'a CadIr, edge: &Edge) -> Vec<&'a PersistentDesignLink> {
+fn edge_persistent_links(target: &CadIr, edge: &Edge) -> Vec<PersistentDesignLink> {
     persistent_links(
         target,
         &cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone()),
@@ -2765,13 +2781,12 @@ fn source_less_color_count(target: &CadIr) -> usize {
             .count()
 }
 
-fn sketch_link<'a>(target: &'a CadIr, coedge: &Coedge) -> Option<&'a SketchCurveLink> {
-    target
-        .native
-        .f3d
-        .as_ref()?
+fn sketch_link(target: &CadIr, coedge: &Coedge) -> Option<SketchCurveLink> {
+    f3d_native(target)
+        .ok()
+        .flatten()?
         .sketch_curve_links
-        .iter()
+        .into_iter()
         .find(|link| link.coedge == coedge.id)
 }
 
@@ -2801,7 +2816,7 @@ fn sketch_link_attribute_ref(
 
 fn native_persistent_design_attribute(
     records: &mut Vec<u8>,
-    links: &[&PersistentDesignLink],
+    links: &[PersistentDesignLink],
     kind: i64,
 ) -> Result<(), CodecError> {
     native_subident(records, "ATTRIB_CUSTOM")?;
@@ -2895,7 +2910,7 @@ fn encode_source_less_attributes(
         let Some(link) = sketch_link(target, coedge) else {
             continue;
         };
-        native_sketch_link_attribute(records, link)?;
+        native_sketch_link_attribute(records, &link)?;
         records.push(0x11);
     }
     Ok(())
@@ -5534,9 +5549,8 @@ fn native_transform(bytes: &mut Vec<u8>, transform: Transform) -> Result<(), Cod
 }
 
 fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
-    let histories = target
-        .native
-        .f3d
+    let native = f3d_native(target)?;
+    let histories = native
         .as_ref()
         .map_or(&[][..], |native| native.asm_histories.as_slice());
     if histories.is_empty() {
@@ -5615,6 +5629,7 @@ pub fn write_semantic(
     source_image: &[u8],
     writer: &mut dyn Write,
 ) -> Result<(), CodecError> {
+    let _ = f3d_native(target)?;
     let baseline = F3dCodec.decode(&mut Cursor::new(source_image), &DecodeOptions::default())?;
     let baseline_point_ids = baseline
         .ir
@@ -5804,10 +5819,9 @@ pub fn write_semantic(
         .model
         .procedural_curves
         .clone_from(&target.model.procedural_curves);
-    if let (Some(supported), Some(target_native)) = (
-        supported_target.native.f3d.as_mut(),
-        target.native.f3d.as_ref(),
-    ) {
+    if let (Some(mut supported), Some(target_native)) =
+        (f3d_native(&supported_target)?, f3d_native(target)?)
+    {
         supported
             .sketch_points
             .clone_from(&target_native.sketch_points);
@@ -5848,6 +5862,7 @@ pub fn write_semantic(
         supported
             .asm_histories
             .clone_from(&target_native.asm_histories);
+        supported.store(supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::semantic_hash(&supported_target) != decode::semantic_hash(target) {
         return Err(CodecError::NotImplemented(
@@ -6143,6 +6158,8 @@ fn validate_material_assignment_appearances(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, crate::materials::ProteinAppearanceEdit>, CodecError> {
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
     let baseline_appearances = baseline
         .model
         .appearances
@@ -6160,15 +6177,11 @@ fn validate_material_assignment_appearances(
             "F3D material regeneration requires the unchanged appearance-id set".into(),
         ));
     }
-    let target_assignments = target
-        .native
-        .f3d
+    let target_assignments = target_native
         .as_ref()
         .map(|native| &native.design_material_assignments[..])
         .unwrap_or_default();
-    let baseline_assignments = baseline
-        .native
-        .f3d
+    let baseline_assignments = baseline_native
         .as_ref()
         .map(|native| &native.design_material_assignments[..])
         .unwrap_or_default();
@@ -6271,15 +6284,13 @@ fn validate_material_assignment_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<DesignMaterialAssignment>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.design_material_assignments[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.design_material_assignments[..])
         .unwrap_or_default();
@@ -6410,15 +6421,13 @@ fn validate_lost_edge_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<LostEdgeReference>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.lost_edge_references[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.lost_edge_references[..])
         .unwrap_or_default();
@@ -6486,15 +6495,13 @@ fn patch_lost_edge_references(
 type ActGuidEdit = (u64, Vec<u8>);
 
 fn validate_act_appearance_bindings(baseline: &CadIr, target: &CadIr) -> Result<(), CodecError> {
-    let baseline_entities = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline_entities = baseline_native
         .as_ref()
         .map(|native| &native.act_entities[..])
         .unwrap_or_default();
-    let target_entities = target
-        .native
-        .f3d
+    let target_entities = target_native
         .as_ref()
         .map(|native| &native.act_entities[..])
         .unwrap_or_default();
@@ -6599,9 +6606,7 @@ fn validate_act_appearance_bindings(baseline: &CadIr, target: &CadIr) -> Result<
             grouped.entry(entry.0).or_default().push((entry.1, entry.2));
             grouped
         });
-    let assignment_entities = target
-        .native
-        .f3d
+    let assignment_entities = target_native
         .as_ref()
         .into_iter()
         .flat_map(|native| &native.design_material_assignments)
@@ -6651,15 +6656,13 @@ fn validate_act_entity_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<ActEntity>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.act_entities[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.act_entities[..])
         .unwrap_or_default();
@@ -6756,15 +6759,13 @@ fn validate_act_guid_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<ActGuidEdit>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.act_guids[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.act_guids[..])
         .unwrap_or_default();
@@ -6829,15 +6830,13 @@ fn validate_act_root_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<ActRootComponent>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.act_root_components[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.act_root_components[..])
         .unwrap_or_default();
@@ -6990,15 +6989,13 @@ fn validate_design_object_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<DesignObjectEdit>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.design_objects[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.design_objects[..])
         .unwrap_or_default();
@@ -7119,15 +7116,13 @@ fn validate_entity_header_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<EntityHeaderEdit>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.design_entity_headers[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.design_entity_headers[..])
         .unwrap_or_default();
@@ -7232,15 +7227,13 @@ fn validate_body_member_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<BodyMemberEdit>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.design_body_members[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.design_body_members[..])
         .unwrap_or_default();
@@ -7315,15 +7308,13 @@ fn validate_construction_recipe_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<ConstructionRecipeEdit>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.construction_recipes[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.construction_recipes[..])
         .unwrap_or_default();
@@ -7455,15 +7446,13 @@ fn validate_persistent_reference_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<PersistentReferenceEdit>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.persistent_references[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.persistent_references[..])
         .unwrap_or_default();
@@ -7539,15 +7528,13 @@ fn validate_history_state_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, HistoryEdits>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.asm_histories[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.asm_histories[..])
         .unwrap_or_default();
@@ -7819,15 +7806,13 @@ fn validate_sketch_point_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<SketchPointEdit>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.sketch_points[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.sketch_points[..])
         .unwrap_or_default();
@@ -7904,15 +7889,13 @@ fn validate_sketch_curve_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<SketchCurveEdit>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.sketch_curve_identities[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.sketch_curve_identities[..])
         .unwrap_or_default();
@@ -8175,15 +8158,13 @@ fn validate_sketch_relation_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<SketchRelationEdit>>, CodecError> {
-    let baseline = baseline
-        .native
-        .f3d
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
         .as_ref()
         .map(|native| &native.sketch_relations[..])
         .unwrap_or_default();
-    let target = target
-        .native
-        .f3d
+    let target = target_native
         .as_ref()
         .map(|native| &native.sketch_relations[..])
         .unwrap_or_default();

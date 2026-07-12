@@ -549,14 +549,15 @@ fn decode_transfers_point_plane_cylinder_line() {
             && l.severity == cadmpeg_ir::report::Severity::Blocking));
 
     // The Parasolid stream is preserved verbatim.
-    assert_eq!(result.ir.unknowns.len(), 1);
-    assert_eq!(result.ir.unknowns[0].sha256.len(), 64);
+    let unknowns = result.ir.native_unknowns("nx").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(unknowns[0].sha256.len(), 64);
     assert_eq!(
-        result.ir.unknowns[0].links,
+        unknowns[0].links,
         ["nx:s0:surf#0", "nx:s0:surf#1", "nx:s0:crv#0",]
     );
     assert_eq!(
-        result.ir.annotations.exactness[&result.ir.unknowns[0].id.to_string()].fields["links"],
+        result.ir.annotations.exactness[&unknowns[0].id.to_string()].fields["links"],
         Exactness::Derived
     );
 
@@ -655,7 +656,8 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
     assert_arena_annotations!(&ir.model.points);
     assert_arena_annotations!(&ir.model.surfaces);
     assert_arena_annotations!(&ir.model.curves);
-    assert_arena_annotations!(&ir.unknowns);
+    let unknowns = ir.native_unknowns("nx").unwrap();
+    assert_arena_annotations!(&unknowns);
 
     let point_note = &ir.annotations.exactness[&ir.model.points[0].id.to_string()];
     assert_eq!(point_note.entity, Exactness::ByteExact);
@@ -790,7 +792,7 @@ fn container_only_preserves_streams_without_geometry() {
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
     assert!(!result.report.geometry_transferred);
     assert!(result.report.container_only);
-    assert_eq!(result.ir.unknowns.len(), 1);
+    assert_eq!(result.ir.native_unknowns("nx").unwrap().len(), 1);
     assert!(result.ir.model.points.is_empty());
 }
 

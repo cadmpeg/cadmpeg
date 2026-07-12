@@ -79,7 +79,7 @@ pub fn decode(
     let scan = scan(reader)?;
 
     if options.container_only {
-        let ir = build_metadata_ir(&scan);
+        let ir = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
         return Ok(DecodeResult::new(ir, report));
     }
@@ -88,7 +88,7 @@ pub fn decode(
         return Ok(DecodeResult::new(ir, report));
     }
 
-    let ir = build_metadata_ir(&scan);
+    let ir = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
     Ok(DecodeResult::new(ir, report))
 }
@@ -304,7 +304,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         if !unknown.links.is_empty() {
             annotations.derived(&unknown.id, "links");
         }
-        ir.unknowns.push(unknown);
+        ir.push_native_unknown("nx", unknown).ok()?;
     }
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
@@ -830,7 +830,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
     }
 }
 
-fn build_metadata_ir(scan: &Scan) -> CadIr {
+fn build_metadata_ir(scan: &Scan) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
@@ -842,11 +842,11 @@ fn build_metadata_ir(scan: &Scan) -> CadIr {
                 .note(&unknown.id, source_stream, stream.file_offset as u64)
                 .tag(stream.kind.label());
             annotations.exactness(&unknown.id, Exactness::Derived);
-            ir.unknowns.push(unknown);
+            ir.push_native_unknown("nx", unknown)?;
         }
     }
     ir.annotations = annotations.build();
-    ir
+    Ok(ir)
 }
 
 fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {

@@ -102,17 +102,7 @@ crate::document::arena_registry!(define_model_identity_checks);
 pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) -> HashSet<String> {
     let mut seen = HashSet::new();
     check_model_identity_and_order(ir, &mut seen, findings);
-    check_order(
-        "unknowns",
-        ir.unknowns.iter().map(|record| record.id.0.as_str()),
-        findings,
-    );
-    for record in &ir.unknowns {
-        push_identity(&mut seen, findings, &record.id.0);
-    }
-
-    let mut native_ids = Vec::new();
-    collect_native_ids(ir, &mut native_ids);
+    let native_ids = collect_native_ids(ir);
     for (_, id) in &native_ids {
         push_identity(&mut seen, findings, id);
     }
@@ -126,74 +116,18 @@ pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) 
     seen
 }
 
-macro_rules! define_collect_f3d_arena_ids {
-    ($( $field:ident: $ty:ty; )*) => {
-        fn collect_f3d_arena_ids<'a>(
-            native: &'a crate::native::f3d::F3dNative,
-            ids: &mut Vec<(&'static str, &'a str)>,
-        ) {
-            $(
-                ids.extend(native.$field.iter().map(|record| {
-                    (
-                        concat!("native.f3d.", stringify!($field)),
-                        record.id.as_str(),
-                    )
-                }));
-            )*
-        }
-    };
-}
-crate::native::f3d::f3d_arenas!(define_collect_f3d_arena_ids);
-
-pub(super) fn collect_native_ids<'a>(ir: &'a CadIr, ids: &mut Vec<(&'static str, &'a str)>) {
-    if let Some(native) = &ir.native.f3d {
-        collect_f3d_arena_ids(native, ids);
-        for history in &native.asm_histories {
-            for state in &history.states {
-                ids.push(("native.f3d.asm_delta_states", &state.id));
-                for board in &state.bulletin_boards {
-                    ids.push(("native.f3d.asm_bulletin_boards", &board.id));
-                    ids.extend(
-                        board
-                            .changes
-                            .iter()
-                            .map(|record| ("native.f3d.asm_entity_changes", record.id.as_str())),
-                    );
-                }
-                ids.extend(
-                    state
-                        .records
-                        .iter()
-                        .map(|record| ("native.f3d.asm_history_records", record.id.as_str())),
-                );
-            }
-        }
-    }
-    if let Some(native) = &ir.native.sldprt {
-        for history in &native.feature_histories {
-            ids.push(("native.sldprt.feature_histories", &history.id));
-            ids.extend(
-                history
-                    .configurations
+pub(super) fn collect_native_ids(ir: &CadIr) -> Vec<(String, &str)> {
+    ir.native
+        .0
+        .iter()
+        .flat_map(|(format, namespace)| {
+            namespace.arenas.iter().flat_map(move |(arena, records)| {
+                records
                     .iter()
-                    .map(|record| ("native.sldprt.configurations", record.id.as_str())),
-            );
-            ids.extend(
-                history
-                    .features
-                    .iter()
-                    .map(|record| ("native.sldprt.features", record.id.as_str())),
-            );
-        }
-        for lane in &native.feature_input_lanes {
-            ids.push(("native.sldprt.feature_input_lanes", &lane.id));
-            ids.extend(
-                lane.sketch_entities
-                    .iter()
-                    .map(|record| ("native.sldprt.sketch_input_entities", record.id.as_str())),
-            );
-        }
-    }
+                    .map(move |record| (format!("native.{format}.{arena}"), record.id.as_str()))
+            })
+        })
+        .collect()
 }
 
 macro_rules! define_registered_entity_counts {
@@ -217,7 +151,6 @@ pub(super) fn entity_counts(ir: &CadIr) -> BTreeMap<String, usize> {
             .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
             .count(),
     );
-    counts.insert("unknowns".into(), ir.unknowns.len());
     for loss in ir.native.loss_counts() {
         counts.insert(format!("native.{}.{}", loss.format, loss.kind), loss.count);
     }

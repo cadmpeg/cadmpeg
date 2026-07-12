@@ -7,13 +7,13 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_ir::codec::{CodecError, ReadSeek};
-use cadmpeg_ir::design::{
+use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignEntityHeader, DesignObject,
     DesignObjectKind, DesignRecordHeader, LostEdgeReference, PersistentReference,
     PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
     SketchPoint, SketchRelation,
 };
+use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
     f64_at, f64s_at, lp_u32_bytes_at, u32_at, u32_at as read_u32, u64_at as read_u64, utf16le_at,
 };

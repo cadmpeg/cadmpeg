@@ -84,8 +84,7 @@ pub struct StreamHeader {
 pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
     let sig = parasolid_offset(payload)?;
     let desc_len_at = sig + 4;
-    let desc_len =
-        u16::from_be_bytes([*payload.get(desc_len_at)?, *payload.get(desc_len_at + 1)?]) as usize;
+    let desc_len = usize::from(cadmpeg_ir::be::u16_at(payload, desc_len_at)?);
     let desc_start = desc_len_at + 2;
     let desc_end = desc_start + desc_len;
     let description = String::from_utf8_lossy(payload.get(desc_start..desc_end)?).into_owned();
