@@ -4,7 +4,6 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Geometry carriers
 
-- A rational `exp_par_cur` pcurve byte grammar is not defined. Explicit F3D pcurves use the non-rational `nubs` carrier; analytic-face coedges store a null pcurve reference.
 - The `law_spl_sur` family lacks complete carrier semantics. The primitive-reduction paths `plane/plane -> cylinder`, `plane/cylinder perpendicular -> torus`, and exact-circle-directrix cylinder also lack defined carrier semantics.
 - Variable-arity algebraic `readLaw` operators `MIN`, `MAX`, `SET`, `ROTATE`, and `STEP` have no defined serialized child-count or terminating delimiter. Their recursive boundaries cannot yet be decoded or written losslessly inside law, net, skin, and sweep payloads.
 - The full closed-sphere and closed-torus seam conventions remain unspecified.

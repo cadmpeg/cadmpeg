@@ -9979,6 +9979,44 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
 }
 
 #[test]
+fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
+    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(2, false))),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let ProceduralSurfaceDefinition::Skin { construction } =
+        &mut source_less.model.procedural_surfaces[0].definition
+    else {
+        panic!()
+    };
+    construction.formula.variables[0] = LawExpression::Algebraic {
+        operator: "SIN".into(),
+        operands: Vec::new(),
+    };
+    let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+    assert!(error.to_string().contains("requires 1 operands, got 0"));
+
+    let ProceduralSurfaceDefinition::Skin { construction } =
+        &mut source_less.model.procedural_surfaces[0].definition
+    else {
+        panic!()
+    };
+    construction.formula.variables[0] = LawExpression::Algebraic {
+        operator: "MIN".into(),
+        operands: vec![LawExpression::Double { value: 1.0 }],
+    };
+    let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+    assert!(error.to_string().contains("unresolved variable arity"));
+}
+
+#[test]
 fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
     use cadmpeg_ir::geometry::{G2BlendFirstShape, LoftBridgeToken, ProceduralSurfaceDefinition};
 

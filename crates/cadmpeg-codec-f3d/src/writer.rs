@@ -4617,6 +4617,31 @@ fn native_law_expression(
             native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
         }
         LawExpression::Algebraic { operator, operands } => {
+            let arity = match operator.as_str() {
+                "COS" | "SIN" | "TAN" | "COT" | "SEC" | "CSC" | "COSH" | "SINH" | "TANH"
+                | "COTH" | "SECH" | "CSCH" | "ARCCOS" | "ARCSIN" | "ARCTAN" | "ARCOT"
+                | "ARCSEC" | "ARCCSC" | "ARCCOSH" | "ARCSINH" | "ARCTANH" | "ARCOTH"
+                | "ARCSECH" | "ARCCSCH" | "ABS" | "EXP" | "LN" | "LOG" | "SIGN" | "SIZE"
+                | "TERM" | "SQRT" | "NORM" | "NOT" => 1,
+                "CROSS" | "DOT" | "DCUR" => 2,
+                "VEC" | "DSURF" => 3,
+                "MIN" | "MAX" | "SET" | "ROTATE" | "STEP" => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "source-less F3D law operator {operator} has unresolved variable arity"
+                    )));
+                }
+                _ => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "source-less F3D law operator {operator} has no defined byte grammar"
+                    )));
+                }
+            };
+            if operands.len() != arity {
+                return Err(CodecError::Malformed(format!(
+                    "F3D law operator {operator} requires {arity} operands, got {}",
+                    operands.len()
+                )));
+            }
             native_string(bytes, operator)?;
             for operand in operands {
                 native_law_expression(bytes, target, operand, depth + 1)?;
