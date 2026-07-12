@@ -124,7 +124,7 @@ From the repository root:
 
 ```sh
 cargo build --workspace
-cargo test --workspace
+cargo test-fast
 ```
 
 Run an end-to-end smoke test:

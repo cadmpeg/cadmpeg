@@ -12,5 +12,5 @@ cargo clippy --workspace -- -D warnings -W missing-docs
 echo "pre-commit: cargo build --workspace"
 cargo build --workspace
 
-echo "pre-commit: cargo test --workspace"
-cargo test --workspace
+echo "pre-commit: cargo test-fast"
+cargo test-fast

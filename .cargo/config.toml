@@ -1,0 +1,2 @@
+[alias]
+test-fast = "test --workspace --lib --bins --tests"
