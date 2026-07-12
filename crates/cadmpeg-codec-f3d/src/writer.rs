@@ -3310,6 +3310,9 @@ fn native_procedural_surface(
             bridge,
             solved_cache,
         )?,
+        ProceduralSurfaceDefinition::G2Blend { construction } => {
+            encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
+        }
         ProceduralSurfaceDefinition::Ruled { first, second } => {
             let profiles = [first, second]
                 .map(|id| {
@@ -3524,6 +3527,157 @@ fn native_procedural_surface(
         }
     }
     Ok(true)
+}
+
+fn native_bridge_token(
+    bytes: &mut Vec<u8>,
+    token: &cadmpeg_ir::geometry::LoftBridgeToken,
+) -> Result<(), CodecError> {
+    match token {
+        cadmpeg_ir::geometry::LoftBridgeToken::Boolean(value) => {
+            bytes.push(native_bool(*value));
+        }
+        cadmpeg_ir::geometry::LoftBridgeToken::Integer(value) => native_i64(bytes, *value),
+        cadmpeg_ir::geometry::LoftBridgeToken::Double(value) => native_f64(bytes, *value),
+        cadmpeg_ir::geometry::LoftBridgeToken::Text(value) => native_string(bytes, value)?,
+        cadmpeg_ir::geometry::LoftBridgeToken::Enum(value) => native_enum(bytes, *value),
+    }
+    Ok(())
+}
+
+fn native_g2_pcurve(
+    bytes: &mut Vec<u8>,
+    pcurve: Option<&PcurveGeometry>,
+) -> Result<(), CodecError> {
+    if let Some(pcurve) = pcurve {
+        native_nurbs_pcurve_block(bytes, pcurve)
+    } else {
+        native_ident(bytes, "nullbs")
+    }
+}
+
+fn native_g2_side(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    side: &cadmpeg_ir::geometry::G2BlendSide,
+) -> Result<(), CodecError> {
+    native_string(bytes, &side.label)?;
+    let surface = target
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == side.surface)
+        .ok_or_else(|| CodecError::Malformed(format!("G2 support {} is missing", side.surface)))?;
+    native_embedded_surface(bytes, &surface.geometry)?;
+    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    native_g2_pcurve(bytes, side.pcurves[0].as_ref())?;
+    native_vector(
+        bytes,
+        [side.direction.x, side.direction.y, side.direction.z],
+    );
+    native_g2_pcurve(bytes, side.pcurves[1].as_ref())?;
+    Ok(())
+}
+
+fn encode_native_g2_blend(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::G2BlendConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "g2_blend_spl_sur")?;
+    native_g2_side(bytes, target, &construction.first)?;
+    native_enum(bytes, construction.singularity);
+    match &construction.first_shape {
+        cadmpeg_ir::geometry::G2BlendFirstShape::Full { surface, tolerance } => {
+            match (surface, tolerance) {
+                (None, None) => native_ident(bytes, "nullbs")?,
+                (Some(surface), Some(tolerance)) => {
+                    let surface = target
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|candidate| candidate.id == *surface)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("G2 first exact surface is missing".into())
+                        })?;
+                    let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
+                        return Err(CodecError::NotImplemented(
+                            "source-less G2 full branch requires a NURBS exact surface".into(),
+                        ));
+                    };
+                    native_nurbs_surface(bytes, surface)?;
+                    native_f64(bytes, *tolerance / 10.0);
+                }
+                _ => {
+                    return Err(CodecError::Malformed(
+                        "G2 full surface and tolerance must be paired".into(),
+                    ));
+                }
+            }
+        }
+        cadmpeg_ir::geometry::G2BlendFirstShape::None {
+            coefficients,
+            tolerance,
+            extension,
+            pcurve,
+        } => {
+            for coefficient in coefficients {
+                native_f64(bytes, *coefficient);
+            }
+            native_f64(bytes, *tolerance / 10.0);
+            if let Some(extension) = extension {
+                native_bridge_token(bytes, extension)?;
+            }
+            native_g2_pcurve(bytes, pcurve.as_ref())?;
+        }
+    }
+    native_g2_side(bytes, target, &construction.second)?;
+    let second_exact = target
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == construction.second_exact_surface)
+        .ok_or_else(|| CodecError::Malformed("G2 second exact surface is missing".into()))?;
+    let SurfaceGeometry::Nurbs(second_exact) = &second_exact.geometry else {
+        return Err(CodecError::NotImplemented(
+            "source-less G2 second exact surface must be NURBS".into(),
+        ));
+    };
+    native_nurbs_surface(bytes, second_exact)?;
+    native_nurbs_curve(
+        bytes,
+        native_loft_curve(target, &construction.center_curve)?,
+    )?;
+    for value in construction.center_parameters {
+        native_f64(bytes, value);
+    }
+    native_i64(bytes, construction.center_flag);
+    for range in construction.parameter_ranges {
+        native_f64(bytes, range[0]);
+        native_f64(bytes, range[1]);
+    }
+    for value in construction.trailing_parameters {
+        native_f64(bytes, value);
+    }
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for discontinuities in &construction.discontinuities {
+        native_i64(
+            bytes,
+            i64::try_from(discontinuities.len()).map_err(|_| {
+                CodecError::NotImplemented("G2 discontinuity count exceeds i64".into())
+            })?,
+        );
+        for value in discontinuities {
+            native_f64(bytes, *value);
+        }
+    }
+    bytes.push(0x10);
+    Ok(())
 }
 
 fn native_loft_curve<'a>(

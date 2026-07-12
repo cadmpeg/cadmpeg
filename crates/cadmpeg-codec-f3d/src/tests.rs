@@ -7574,6 +7574,30 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 }
                 _ => panic!("wrong G2 singularity payload"),
             }
+
+            let mut source_less = result.ir;
+            source_less.source = None;
+            source_less.unknowns.clear();
+            let mut encoded = Vec::new();
+            F3dCodec
+                .encode(&source_less, &mut encoded)
+                .expect("source-less G2 encode");
+            let round_trip = F3dCodec
+                .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+                .expect("source-less G2 round trip");
+            let ProceduralSurfaceDefinition::G2Blend { construction } =
+                &round_trip.ir.model.procedural_surfaces[0].definition
+            else {
+                panic!("expected round-trip G2 blend")
+            };
+            assert_eq!(construction.singularity, if full { 11 } else { 12 });
+            assert_eq!(construction.center_parameters, [-0.5, 1.5]);
+            assert_eq!(construction.parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
+            assert_eq!(construction.discontinuities[2], [0.5, 0.75]);
+            assert_eq!(
+                matches!(construction.first_shape, G2BlendFirstShape::Full { .. }),
+                full
+            );
         }
     }
 }
