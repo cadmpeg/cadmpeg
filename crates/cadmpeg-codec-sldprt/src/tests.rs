@@ -3463,6 +3463,54 @@ fn semantic_writer_round_trips_typed_combine() {
 }
 
 #[test]
+fn semantic_writer_round_trips_typed_delete_face() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><DeleteFace Name="Remove Boss" Type="DeleteFace" id="20" Faces="face:4,face:5" Heal="true"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::DeleteFace {
+            faces: FaceSelection::Native(faces),
+            heal: true,
+        } if faces == "face:4,face:5"
+    ));
+
+    let FeatureDefinition::DeleteFace { faces, heal } =
+        &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed delete face");
+    };
+    *faces = FaceSelection::Native("face:7".into());
+    *heal = false;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.properties["Faces"], "face:7");
+    assert_eq!(feature.properties["Heal"], "false");
+    assert!(matches!(
+        &regenerated.ir.model.features[0].definition,
+        FeatureDefinition::DeleteFace {
+            faces: FaceSelection::Native(faces),
+            heal: false,
+        } if faces == "face:7"
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition, HoleKind, Length};
 

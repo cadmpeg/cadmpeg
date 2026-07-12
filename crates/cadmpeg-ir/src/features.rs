@@ -268,6 +268,13 @@ pub enum FeatureDefinition {
         /// Join, cut, or intersection operation.
         op: BooleanOp,
     },
+    /// Removal of selected faces from an existing body.
+    DeleteFace {
+        /// Faces removed by the operation.
+        faces: FaceSelection,
+        /// Whether adjacent faces extend to heal the resulting boundary.
+        heal: bool,
+    },
     /// Drilled or machined hole.
     Hole {
         /// Face the hole is placed on, when known.

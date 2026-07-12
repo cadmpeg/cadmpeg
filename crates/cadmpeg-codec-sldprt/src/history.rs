@@ -370,6 +370,8 @@ fn project_definition(
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Combine") {
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature.kind.eq_ignore_ascii_case("DeleteFace") {
+        project_delete_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Hole") {
         project_hole(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Revolve") {
@@ -724,6 +726,13 @@ fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
         target: BodySelection::Native(feature.properties.get("Target")?.clone()),
         tools: BodySelection::Native(feature.properties.get("Tools")?.clone()),
         op,
+    })
+}
+
+fn project_delete_face(feature: &Feature) -> Option<FeatureDefinition> {
+    Some(FeatureDefinition::DeleteFace {
+        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
+        heal: parse_bool(feature.properties.get("Heal")?)?,
     })
 }
 
@@ -1500,6 +1509,27 @@ pub fn sync_neutral_features(
                 properties.insert("Target".into(), target.clone());
                 properties.insert("Tools".into(), tools.clone());
                 properties.insert("Operation".into(), format_boolean_op(*op).into());
+                (record.kind.clone(), record.parameters.clone(), properties)
+            }
+            FeatureDefinition::DeleteFace {
+                faces: FaceSelection::Native(faces),
+                heal,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained delete-face record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("DeleteFace") || faces.trim().is_empty() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported delete-face semantics",
+                        feature.id
+                    )));
+                }
+                let mut properties = record.properties.clone();
+                properties.insert("Faces".into(), faces.clone());
+                properties.insert("Heal".into(), heal.to_string());
                 (record.kind.clone(), record.parameters.clone(), properties)
             }
             FeatureDefinition::Hole {
