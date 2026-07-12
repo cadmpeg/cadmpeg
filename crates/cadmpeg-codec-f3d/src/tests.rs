@@ -1021,7 +1021,7 @@ fn synthetic_geometry_with_analytic_offset_supports_smbh() -> Vec<u8> {
     t_pos(&mut curve, [1.0, 2.0, 3.0]);
     t_vec(&mut curve, [0.0, 0.0, 1.0]);
     t_vec(&mut curve, [1.0, 0.0, 0.0]);
-    t_dbl(&mut curve, 1.0);
+    t_dbl(&mut curve, 0.4);
     curve.extend_from_slice(&[0x0b; 2]);
     t_dbl(&mut curve, -0.5);
     t_dbl(&mut curve, 3.0_f64.sqrt() / 2.0);
@@ -3987,6 +3987,7 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
         ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
         radius: 9.0,
+        ratio: 1.0,
         half_angle: 0.5,
     };
     source_less.model.surfaces[0].geometry = expected.clone();
@@ -4594,6 +4595,7 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
         axis: Vector3::new(0.0, 0.0, 1.0),
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
         radius: 8.0,
+        ratio: 1.0,
         half_angle: 0.35,
     };
     let sphere = SurfaceGeometry::Sphere {
@@ -11694,6 +11696,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
         supports[0],
         SurfaceGeometry::Cone {
             radius: 10.0,
+            ratio: 0.4,
             half_angle,
             axis,
             ..

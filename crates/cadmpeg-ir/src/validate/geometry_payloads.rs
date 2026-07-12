@@ -202,6 +202,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 axis,
                 ref_direction,
                 radius,
+                ratio,
                 ..
             } => {
                 if degenerate(axis) {
@@ -212,6 +213,9 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 if *radius < 0.0 {
                     bounds_err(findings, &s.id.0, "cone radius is negative");
+                }
+                if !ratio.is_finite() || *ratio <= 0.0 {
+                    bounds_err(findings, &s.id.0, "cone ratio is not positive and finite");
                 }
             }
             SurfaceGeometry::Sphere {

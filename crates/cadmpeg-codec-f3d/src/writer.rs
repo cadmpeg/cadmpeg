@@ -936,6 +936,7 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             axis,
             ref_direction,
             radius,
+            ratio,
             half_angle,
         } => {
             native_surface_base(&mut records, "cone")?;
@@ -952,7 +953,7 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                     ref_direction.z * radius / 10.0,
                 ],
             );
-            native_f64(&mut records, 1.0);
+            native_f64(&mut records, ratio);
             records.extend_from_slice(&[0x0b, 0x0b]);
             native_f64(&mut records, half_angle.sin());
             native_f64(&mut records, half_angle.cos());
@@ -2172,6 +2173,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 axis,
                 ref_direction,
                 radius,
+                ratio,
                 half_angle,
             } => {
                 native_surface_base(&mut records, "cone")?;
@@ -2188,7 +2190,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                         ref_direction.z * radius / 10.0,
                     ],
                 );
-                native_f64(&mut records, 1.0);
+                native_f64(&mut records, ratio);
                 records.extend_from_slice(&[0x0b, 0x0b]);
                 native_f64(&mut records, half_angle.sin());
                 native_f64(&mut records, half_angle.cos());
@@ -6430,14 +6432,23 @@ fn native_embedded_surface(
             axis,
             ref_direction,
             radius,
-        } => native_embedded_cone(bytes, *origin, *axis, *ref_direction, *radius, 0.0)?,
+        } => native_embedded_cone(bytes, *origin, *axis, *ref_direction, *radius, 1.0, 0.0)?,
         SurfaceGeometry::Cone {
             origin,
             axis,
             ref_direction,
             radius,
+            ratio,
             half_angle,
-        } => native_embedded_cone(bytes, *origin, *axis, *ref_direction, *radius, *half_angle)?,
+        } => native_embedded_cone(
+            bytes,
+            *origin,
+            *axis,
+            *ref_direction,
+            *radius,
+            *ratio,
+            *half_angle,
+        )?,
         SurfaceGeometry::Sphere {
             center,
             axis,
@@ -6546,6 +6557,7 @@ fn native_embedded_cone(
     axis: Vector3,
     ref_direction: Vector3,
     radius: f64,
+    ratio: f64,
     half_angle: f64,
 ) -> Result<(), CodecError> {
     native_ident(bytes, "cone")?;
@@ -6559,7 +6571,7 @@ fn native_embedded_cone(
             ref_direction.z * radius / 10.0,
         ],
     );
-    native_f64(bytes, 1.0);
+    native_f64(bytes, ratio);
     bytes.extend_from_slice(&[0x0b, 0x0b]);
     native_f64(bytes, half_angle.sin());
     native_f64(bytes, half_angle.cos());
@@ -10047,6 +10059,7 @@ fn validate_surface_edits(
                 ref_direction,
                 radius,
                 half_angle,
+                ..
             } => {
                 let unchanged_angle = matches!(
                     before,

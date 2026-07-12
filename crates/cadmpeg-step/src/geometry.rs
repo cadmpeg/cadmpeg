@@ -67,6 +67,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
             axis,
             ref_direction,
             radius,
+            ratio: _,
             half_angle,
         } => {
             let pl = placement(e, *origin, *axis, *ref_direction);

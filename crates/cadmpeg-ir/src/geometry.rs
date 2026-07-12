@@ -81,8 +81,9 @@ pub enum SurfaceGeometry {
         /// Cylinder radius, in the document's length unit.
         radius: f64,
     },
-    /// Right circular cone. `radius` is measured at `origin`; `half_angle` is
-    /// the half-angle between the axis and the cone surface, in radians.
+    /// Right elliptical cone. `radius` is the major radius at `origin`;
+    /// `ratio` is the minor-to-major radius ratio; `half_angle` is the major
+    /// half-angle between the axis and the cone surface, in radians.
     Cone {
         /// Reference point on the axis where `radius` is measured.
         origin: Point3,
@@ -92,6 +93,8 @@ pub enum SurfaceGeometry {
         ref_direction: Vector3,
         /// Radius at `origin`.
         radius: f64,
+        /// Minor-to-major radius ratio.
+        ratio: f64,
         /// Half-angle in radians.
         half_angle: f64,
     },

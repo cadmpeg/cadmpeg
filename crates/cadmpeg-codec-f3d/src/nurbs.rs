@@ -5112,7 +5112,7 @@ fn decode_embedded_surface(
             let radius = (major[0] * major[0] + major[1] * major[1] + major[2] * major[2]).sqrt()
                 * LEN_TO_MM;
             let ref_direction = normalized(major)?;
-            take_f64(bytes, position)?;
+            let ratio = take_f64(bytes, position)?;
             take_bool(bytes, position)?;
             take_bool(bytes, position)?;
             let sine = take_f64(bytes, position)?;
@@ -5139,6 +5139,7 @@ fn decode_embedded_surface(
                     axis,
                     ref_direction,
                     radius,
+                    ratio,
                     half_angle: sine.abs().asin(),
                 })
             }

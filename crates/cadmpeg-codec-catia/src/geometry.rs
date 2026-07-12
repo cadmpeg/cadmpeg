@@ -776,6 +776,7 @@ fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
         axis,
         ref_direction: ref_direction?,
         radius,
+        ratio: 1.0,
         half_angle,
     })
 }
@@ -923,6 +924,7 @@ fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
         axis,
         ref_direction: ref_direction?,
         radius,
+        ratio: 1.0,
         half_angle,
     })
 }
@@ -1030,6 +1032,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                     ax, ay, semi,
                 )),
                 radius: 0.0,
+                ratio: 1.0,
                 half_angle: semi.abs() as f64,
             })
         }

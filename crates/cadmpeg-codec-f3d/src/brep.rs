@@ -224,6 +224,7 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             ))
         }
         "cone" => {
+            let ratio = *c.doubles.first().unwrap_or(&1.0);
             let axis = *c.vectors.first()?;
             let axis = unit(axis);
             let major = c.vectors.get(1).copied();
@@ -270,6 +271,7 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
                         axis,
                         ref_direction,
                         radius,
+                        ratio,
                         half_angle: sine.abs().asin(),
                     },
                     cosine < 0.0,

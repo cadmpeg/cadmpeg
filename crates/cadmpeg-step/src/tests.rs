@@ -279,6 +279,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
                 axis: Vector3::new(0.0, 0.0, 1.0),
                 ref_direction: Vector3::new(1.0, 0.0, 0.0),
                 radius: 2.0,
+                ratio: 1.0,
                 half_angle: 0.5,
             },
             "CONICAL_SURFACE",

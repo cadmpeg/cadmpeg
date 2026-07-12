@@ -223,6 +223,7 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<(CarrierGeometry, bool)> {
                     axis: unit(&v[3..6]),
                     ref_direction: unit(&v[9..12]),
                     radius: v[6] * LEN_TO_MM,
+                    ratio: 1.0,
                     half_angle: sin.abs().clamp(0.0, 1.0).asin(),
                 }),
                 true,
