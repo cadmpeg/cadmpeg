@@ -6,7 +6,7 @@
 
 ## Checklist
 
-- [ ] All commits are signed off (`git commit -s`) — see [CONTRIBUTING.md](../CONTRIBUTING.md).
+- [ ] Signed off — every commit (`git commit -s`), or one `Signed-off-by` line in this PR description. See [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Provenance declaration (decoder or format-spec changes only)
 
