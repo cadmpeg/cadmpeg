@@ -11693,7 +11693,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
     assert!(matches!(
         supports[0],
         SurfaceGeometry::Cone {
-            radius: 12.5,
+            radius: 10.0,
             half_angle,
             axis,
             ..

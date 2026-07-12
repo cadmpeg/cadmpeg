@@ -5109,13 +5109,15 @@ fn decode_embedded_surface(
         "cone" => {
             let native_axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
             let major = take_native_vec3(bytes, position, 0x14)?;
+            let radius = (major[0] * major[0] + major[1] * major[1] + major[2] * major[2]).sqrt()
+                * LEN_TO_MM;
             let ref_direction = normalized(major)?;
             take_f64(bytes, position)?;
             take_bool(bytes, position)?;
             take_bool(bytes, position)?;
             let sine = take_f64(bytes, position)?;
             let cosine = take_f64(bytes, position)?;
-            let radius = take_f64(bytes, position)? * LEN_TO_MM;
+            take_f64(bytes, position)?;
             for _ in 0..5 {
                 take_bool(bytes, position)?;
             }
