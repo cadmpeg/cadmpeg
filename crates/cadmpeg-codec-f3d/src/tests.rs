@@ -11745,6 +11745,36 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         })
     ));
 
+    let mut retained = result.ir.clone();
+    let ProceduralCurveDefinition::TwoSidedOffset {
+        context,
+        discontinuity_flag,
+        offsets,
+    } = &mut retained.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    context.parameter_range = [-2.0, 5.0];
+    for (side, discontinuities) in context.discontinuities.iter_mut().enumerate() {
+        for (ordinal, value) in discontinuities.iter_mut().enumerate() {
+            *value = 0.125 * (side + ordinal + 1) as f64;
+        }
+    }
+    *discontinuity_flag = false;
+    *offsets = [-2.5, 4.5];
+    let expected_retained = retained.model.procedural_curves[0].definition.clone();
+    let mut retained_bytes = Vec::new();
+    F3dCodec
+        .write_preserved(&retained, &mut retained_bytes)
+        .expect("retained embedded offset-support edit");
+    let retained_round_trip = F3dCodec
+        .decode(&mut Cursor::new(retained_bytes), &DecodeOptions::default())
+        .expect("retained embedded offset-support round trip");
+    assert_eq!(
+        retained_round_trip.ir.model.procedural_curves[0].definition,
+        expected_retained
+    );
+
     let mut source_less = result.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();

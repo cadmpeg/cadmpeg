@@ -11769,70 +11769,44 @@ fn patch_two_sided_offset_definition(
             "two-sided offset patch received another definition".into(),
         ));
     };
-    let end = record.offset + record.len;
-    let (mut position, int_width) = {
-        let record_bytes = bytes
-            .get(record.offset..end)
-            .ok_or_else(|| CodecError::Malformed("two-sided offset record is truncated".into()))?;
-        let name = b"off_int_cur";
-        let marker = record_bytes
-            .windows(name.len())
-            .position(|window| window == name)
-            .ok_or_else(|| CodecError::Malformed("record is not an off_int_cur".into()))?;
-        let mut position = marker + name.len();
-        for expected in ["null_surface", "null_surface", "nullbs", "nullbs"] {
-            if record_bytes.get(position) != Some(&0x0d) {
-                return Err(CodecError::Malformed(
-                    "two-sided offset support prefix is malformed".into(),
-                ));
-            }
-            let length = usize::from(*record_bytes.get(position + 1).ok_or_else(|| {
-                CodecError::Malformed("two-sided offset support prefix is truncated".into())
-            })?);
-            let start = position + 2;
-            let stop = start + length;
-            if record_bytes.get(start..stop) != Some(expected.as_bytes()) {
-                return Err(CodecError::NotImplemented(
-                    "retained editing of non-null two-sided offset supports is not yet writable"
-                        .into(),
-                ));
-            }
-            position = stop;
-        }
-        position += 18;
-        let int_width = [8usize, 4]
-            .into_iter()
-            .find(|width| {
-                record_bytes.get(position) == Some(&0x04)
-                    && read_native_int(record_bytes, position + 1, *width)
-                        == i64::try_from(context.discontinuities[0].len()).ok()
-            })
-            .ok_or_else(|| {
-                CodecError::Malformed("two-sided offset discontinuity count is malformed".into())
-            })?;
-        (position, int_width)
-    };
-    let mut parameter_position = position - 18;
-    for value in context.parameter_range {
-        patch_compound_double(bytes, record, &mut parameter_position, value)?;
+    let record_bytes = bytes
+        .get(record.offset..record.offset + record.len)
+        .ok_or_else(|| CodecError::Malformed("two-sided offset record is truncated".into()))?;
+    let layout = [8usize, 4]
+        .into_iter()
+        .filter_map(|width| crate::nurbs::two_sided_offset_patch_layout(record_bytes, width))
+        .find(|layout| {
+            layout
+                .discontinuities
+                .iter()
+                .map(Vec::len)
+                .eq(context.discontinuities.iter().map(Vec::len))
+        })
+        .ok_or_else(|| CodecError::Malformed("two-sided offset layout is malformed".into()))?;
+    for (at, value) in layout
+        .parameter_range
+        .into_iter()
+        .zip(context.parameter_range)
+    {
+        patch_f64_payload(bytes, record.offset + at, value)?;
     }
-    for discontinuities in &context.discontinuities {
-        position += 1 + int_width;
-        for value in discontinuities {
-            patch_compound_double(bytes, record, &mut position, *value)?;
+    for (locations, values) in layout.discontinuities.iter().zip(&context.discontinuities) {
+        for (at, value) in locations.iter().zip(values) {
+            patch_f64_payload(bytes, record.offset + *at, *value)?;
         }
     }
-    let flag_at = record.offset + position;
-    if !matches!(bytes.get(flag_at), Some(0x0a | 0x0b)) {
-        return Err(CodecError::Malformed(
-            "two-sided offset discontinuity flag is malformed".into(),
-        ));
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    for (at, value) in layout.offsets.into_iter().zip(offsets) {
+        patch_f64_payload(bytes, record.offset + at, *value / 10.0)?;
     }
-    bytes[flag_at] = native_bool(*discontinuity_flag);
-    position += 1;
-    for offset in offsets {
-        patch_compound_double(bytes, record, &mut position, *offset / 10.0)?;
-    }
+    Ok(())
+}
+
+fn patch_f64_payload(bytes: &mut [u8], at: usize, value: f64) -> Result<(), CodecError> {
+    let payload = bytes
+        .get_mut(at..at + 8)
+        .ok_or_else(|| CodecError::Malformed("native double payload is truncated".into()))?;
+    payload.copy_from_slice(&value.to_le_bytes());
     Ok(())
 }
 
@@ -12552,23 +12526,6 @@ fn patch_silhouette_definition(
         bytes[draft_offset + 1..draft_offset + 9].copy_from_slice(&draft_factor.to_le_bytes());
     }
     Ok(())
-}
-
-fn read_native_int(bytes: &[u8], position: usize, width: usize) -> Option<i64> {
-    match width {
-        8 => bytes
-            .get(position..position + 8)?
-            .try_into()
-            .ok()
-            .map(i64::from_le_bytes),
-        4 => bytes
-            .get(position..position + 4)?
-            .try_into()
-            .ok()
-            .map(i32::from_le_bytes)
-            .map(i64::from),
-        _ => None,
-    }
 }
 
 fn patch_compound_double(

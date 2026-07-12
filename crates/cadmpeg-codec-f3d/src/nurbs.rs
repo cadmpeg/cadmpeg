@@ -5078,6 +5078,94 @@ fn decode_embedded_two_sided_offset(
     })
 }
 
+/// Writable scalar locations in a retained `off_int_cur` construction.
+pub(crate) struct TwoSidedOffsetPatchLayout {
+    pub(crate) parameter_range: [usize; 2],
+    pub(crate) discontinuities: [Vec<usize>; 3],
+    pub(crate) discontinuity_flag: usize,
+    pub(crate) offsets: [usize; 2],
+}
+
+/// Locates the fixed-width scalar payloads after variable embedded supports.
+pub(crate) fn two_sided_offset_patch_layout(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<TwoSidedOffsetPatchLayout> {
+    let name = b"off_int_cur";
+    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let mut position = marker + name_len + 3;
+    skip_offset_support_surface(bytes, &mut position, int_width)?;
+    skip_offset_support_surface(bytes, &mut position, int_width)?;
+    skip_offset_support_pcurve(bytes, &mut position, int_width)?;
+    skip_offset_support_pcurve(bytes, &mut position, int_width)?;
+    let parameter_range = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+    ];
+    let discontinuity_flag = position;
+    take_bool(bytes, &mut position)?;
+    let offsets = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    Some(TwoSidedOffsetPatchLayout {
+        parameter_range,
+        discontinuities,
+        discontinuity_flag,
+        offsets,
+    })
+}
+
+fn skip_offset_support_surface(bytes: &[u8], position: &mut usize, int_width: usize) -> Option<()> {
+    let start = *position;
+    if take_native_ident(bytes, position)?.as_str() == "null_surface" {
+        return Some(());
+    }
+    *position = start;
+    decode_embedded_surface(bytes, position, int_width)?;
+    Some(())
+}
+
+fn skip_offset_support_pcurve(bytes: &[u8], position: &mut usize, int_width: usize) -> Option<()> {
+    let start = *position;
+    if take_native_ident(bytes, position)?.as_str() == "nullbs" {
+        return Some(());
+    }
+    *position = decode_pcurve_block_with_end(bytes, start, int_width)?.1;
+    Some(())
+}
+
+fn take_double_payload(bytes: &[u8], position: &mut usize) -> Option<usize> {
+    (*bytes.get(*position)? == 0x06).then_some(())?;
+    let payload = *position + 1;
+    bytes.get(payload..payload + 8)?;
+    *position = payload + 8;
+    Some(payload)
+}
+
+fn take_float_array_payloads(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<Vec<usize>> {
+    (*bytes.get(*position)? == 0x04).then_some(())?;
+    let raw = bytes.get(*position + 1..*position + 1 + int_width)?;
+    let count = match int_width {
+        8 => usize::try_from(i64::from_le_bytes(raw.try_into().ok()?)).ok()?,
+        4 => usize::try_from(i32::from_le_bytes(raw.try_into().ok()?)).ok()?,
+        _ => return None,
+    };
+    *position += 1 + int_width;
+    (0..count)
+        .map(|_| take_double_payload(bytes, position))
+        .collect()
+}
+
 fn decode_embedded_surface(
     bytes: &[u8],
     position: &mut usize,
