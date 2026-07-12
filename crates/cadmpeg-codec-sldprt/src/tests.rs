@@ -2263,7 +2263,7 @@ fn decode_preserves_multiple_regions_and_shells_per_body() {
     body.extend(owned_triangle(0, 700, 0.0));
     body.extend(owned_triangle(200, 701, 10.0));
 
-    let result = SldprtCodec
+    let mut result = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
             &DecodeOptions::default(),
@@ -2288,6 +2288,24 @@ fn decode_preserves_multiple_regions_and_shells_per_body() {
         .all(|shell| shell.faces.len() == 1));
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
+
+    result.ir.model.points[0].position.z += 1.0;
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&result.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(regenerated.ir.model.bodies.len(), 1);
+    assert_eq!(regenerated.ir.model.regions.len(), 2);
+    assert_eq!(regenerated.ir.model.shells.len(), 2);
+    assert!(regenerated
+        .ir
+        .model
+        .shells
+        .iter()
+        .all(|shell| shell.faces.len() == 1));
 }
 
 #[test]
@@ -2390,7 +2408,7 @@ fn decode_partitions_disc14_faces_by_native_shell_rings() {
     body.extend(owned_triangle(400, 800, 10.0));
     body.extend(owned_triangle(600, 801, 12.0));
 
-    let decoded = SldprtCodec
+    let mut decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
             &DecodeOptions::default(),
@@ -2420,6 +2438,23 @@ fn decode_partitions_disc14_faces_by_native_shell_rings() {
     assert!(shell_500.faces.iter().any(|face| face.0.ends_with("#210")));
     assert!(shell_501.faces.iter().any(|face| face.0.ends_with("#410")));
     assert!(shell_501.faces.iter().any(|face| face.0.ends_with("#610")));
+
+    decoded.ir.model.points[0].position.z += 1.0;
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(regenerated.ir.model.regions.len(), 1);
+    assert_eq!(regenerated.ir.model.shells.len(), 2);
+    assert!(regenerated
+        .ir
+        .model
+        .shells
+        .iter()
+        .all(|shell| shell.faces.len() == 2));
 }
 
 #[test]

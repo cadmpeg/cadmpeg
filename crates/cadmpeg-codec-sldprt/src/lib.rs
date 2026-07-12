@@ -56,8 +56,8 @@
 //! Otherwise the writer regenerates supported semantic records and returns
 //! [`CodecError::NotImplemented`] for an unsupported IR shape.
 //!
-//! The semantic writer supports solid and sheet bodies with one region per body
-//! and one shell per region, analytic and non-periodic NURBS carriers, selected
+//! The semantic writer supports solid bodies with multiple regions and shells,
+//! sheet bodies with one shell per region, analytic and non-periodic NURBS carriers, selected
 //! metadata and feature records, base colors, and sequential triangle-strip
 //! tessellation. It bakes right-handed rigid body transforms into geometry.
 //!

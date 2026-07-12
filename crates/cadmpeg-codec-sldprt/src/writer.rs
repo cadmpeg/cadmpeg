@@ -308,24 +308,7 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
             "SLDPRT semantic writer does not support SubD surfaces".into(),
         ));
     }
-    let regions = ir
-        .model
-        .regions
-        .iter()
-        .map(|region| (&region.id, region))
-        .collect::<HashMap<_, _>>();
     for body in &ir.model.bodies {
-        if body.regions.len() != 1 {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT semantic writer requires one region per body".into(),
-            ));
-        }
-        let region = regions[&body.regions[0]];
-        if region.shells.len() != 1 {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT semantic writer requires one shell per region".into(),
-            ));
-        }
         if body.name.is_some() && body.color.is_none() {
             return Err(CodecError::NotImplemented(
                 "SLDPRT semantic writer cannot encode a body name without a material".into(),
@@ -1078,15 +1061,25 @@ fn write_body_hierarchy(
         .collect::<HashMap<_, _>>();
     let mut assigned = HashSet::new();
     for body in &ir.model.bodies {
-        let mut owned = Vec::new();
+        let root = take_attr(next)?;
+        let mut native_regions = Vec::new();
         for region_id in &body.regions {
             let region = regions
                 .get(region_id)
                 .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
+            if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT sheet regions require exactly one shell".into(),
+                ));
+            }
+            let native_region = take_attr(next)?;
+            native_regions.push(native_region);
+            let mut native_lumps = Vec::new();
             for shell_id in &region.shells {
                 let shell = shells.get(shell_id).ok_or_else(|| {
                     CodecError::Malformed("region references missing shell".into())
                 })?;
+                let mut owned = Vec::new();
                 for face in &shell.faces {
                     if !faces.contains_key(face) {
                         return Err(CodecError::Malformed(
@@ -1100,30 +1093,45 @@ fn write_body_hierarchy(
                     }
                     owned.push(face_owners[face]);
                 }
+                let head = write_face_list(
+                    out,
+                    &owned,
+                    next,
+                    if schema_32001 { 0x0015 } else { 0x0013 },
+                )?;
+                if body.kind == BodyKind::Sheet {
+                    entity51(out, 1, native_region, 0x001d, &[head, 0, 0, 0, 0, 0]);
+                    continue;
+                }
+                let lump = take_attr(next)?;
+                let shell_node = take_attr(next)?;
+                let shell_link = take_attr(next)?;
+                native_lumps.push(lump);
+                entity51(out, 2, lump, 0x001f, &[shell_node, 0, 0, 0, 0, 0]);
+                entity51(out, 2, shell_node, 0x0021, &[shell_link, 0, 0, 0, 0, 0]);
+                entity51(out, 2, shell_link, 0x0023, &[head, 0, 0, 0, 0, 0]);
+            }
+            if body.kind != BodyKind::Sheet {
+                entity51(
+                    out,
+                    1,
+                    native_region,
+                    0x001b,
+                    &fixed_refs(&native_lumps, "SLDPRT region has more than six shells")?,
+                );
             }
         }
-        let root = take_attr(next)?;
-        let region = take_attr(next)?;
-        if body.kind == BodyKind::Sheet {
-            let head = write_face_list(out, &owned, next, 0x0015)?;
-            entity51(out, 2, root, 0x0017, &[region, 0, 0, 0, 0, 0]);
-            entity51(out, 1, region, 0x001d, &[head, 0, 0, 0, 0, 0]);
-            continue;
+        let mut root_refs = [0; 6];
+        if native_regions.is_empty() {
+            return Err(CodecError::Malformed("SLDPRT body has no regions".into()));
         }
-        let lump = take_attr(next)?;
-        let shell = take_attr(next)?;
-        let shell_link = take_attr(next)?;
-        let head = write_face_list(
-            out,
-            &owned,
-            next,
-            if schema_32001 { 0x0015 } else { 0x0013 },
-        )?;
-        entity51(out, 2, root, 0x0017, &[0, region, 0, 0, 0, 0]);
-        entity51(out, 1, region, 0x001b, &[lump, 0, 0, 0, 0, 0]);
-        entity51(out, 2, lump, 0x001f, &[shell, 0, 0, 0, 0, 0]);
-        entity51(out, 2, shell, 0x0021, &[0, shell_link, 0, 0, 0, 0]);
-        entity51(out, 2, shell_link, 0x0023, &[head, 0, 0, 0, 0, 0]);
+        if native_regions.len() > 5 {
+            return Err(CodecError::NotImplemented(
+                "SLDPRT body has more than five regions".into(),
+            ));
+        }
+        root_refs[1..=native_regions.len()].copy_from_slice(&native_regions);
+        entity51(out, 2, root, 0x0017, &root_refs);
     }
     if assigned.len() != ir.model.faces.len() {
         return Err(CodecError::Malformed(
@@ -1142,6 +1150,15 @@ fn write_body_hierarchy(
         );
     }
     Ok(())
+}
+
+fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
+    if values.len() > 6 {
+        return Err(CodecError::NotImplemented(message.into()));
+    }
+    let mut refs = [0; 6];
+    refs[..values.len()].copy_from_slice(values);
+    Ok(refs)
 }
 
 fn face_colors(ir: &CadIr) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, CodecError> {
