@@ -335,6 +335,12 @@ pub enum ProceduralSurfaceDefinition {
         support: SurfaceId,
         /// Signed offset distance, in document length units.
         distance: f64,
+        /// Native U parameter-direction sense enum.
+        u_sense: i64,
+        /// Native V parameter-direction sense enum.
+        v_sense: i64,
+        /// Ordered conditional ASM extension flags.
+        extension_flags: Vec<bool>,
     },
     /// Ruled surface joining two directrices.
     Ruled {

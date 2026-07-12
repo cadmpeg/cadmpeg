@@ -3240,6 +3240,114 @@ fn native_procedural_surface(
             native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
             bytes.push(0x10);
         }
+        ProceduralSurfaceDefinition::Revolution {
+            directrix,
+            axis_origin,
+            axis_direction,
+            angular_interval,
+            parameter_interval,
+            transposed,
+        } => {
+            let directrix = target
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *directrix)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "revolution surface {} references a missing directrix",
+                        procedural.id
+                    ))
+                })?;
+            let CurveGeometry::Nurbs(directrix) = &directrix.geometry else {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D rot_spl_sur requires a NURBS directrix".into(),
+                ));
+            };
+            let native_parameter_interval = [
+                directrix.knots.first().copied().unwrap_or(0.0),
+                directrix.knots.last().copied().unwrap_or(0.0),
+            ];
+            let native_angular_interval = [
+                solved_cache.v_knots.first().copied().unwrap_or(0.0),
+                solved_cache.v_knots.last().copied().unwrap_or(0.0),
+            ];
+            if *transposed
+                || *parameter_interval != native_parameter_interval
+                || *angular_interval != native_angular_interval
+            {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D rot_spl_sur intervals must match its profile and solved cache and cannot be transposed".into(),
+                ));
+            }
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "rot_spl_sur")?;
+            native_nurbs_curve(bytes, directrix)?;
+            native_point(
+                bytes,
+                [
+                    axis_origin.x / 10.0,
+                    axis_origin.y / 10.0,
+                    axis_origin.z / 10.0,
+                ],
+            );
+            native_vector(
+                bytes,
+                [axis_direction.x, axis_direction.y, axis_direction.z],
+            );
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            bytes.push(0x10);
+        }
+        ProceduralSurfaceDefinition::Offset {
+            support,
+            distance,
+            u_sense,
+            v_sense,
+            extension_flags,
+        } => {
+            let support = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == *support)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "offset surface {} references a missing support",
+                        procedural.id
+                    ))
+                })?;
+            let valid_flags = matches!(
+                extension_flags.as_slice(),
+                [] | [false] | [true, _] | [true, _, _]
+            );
+            if !valid_flags {
+                return Err(CodecError::Malformed(
+                    "off_spl_sur ASM extension flags have an invalid conditional shape".into(),
+                ));
+            }
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(
+                bytes,
+                if extension_flags.is_empty() {
+                    "offsur"
+                } else {
+                    "off_spl_sur"
+                },
+            )?;
+            native_embedded_surface(bytes, &support.geometry)?;
+            native_f64(bytes, *distance / 10.0);
+            native_enum(bytes, *u_sense);
+            native_enum(bytes, *v_sense);
+            for flag in extension_flags {
+                bytes.push(native_bool(*flag));
+            }
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            bytes.push(0x10);
+        }
         ProceduralSurfaceDefinition::Extrusion {
             directrix,
             direction,

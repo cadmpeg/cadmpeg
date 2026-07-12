@@ -887,6 +887,51 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 basepoint,
                             }
                         }
+                        nurbs::DecodedProceduralSurfaceDefinition::Revolution {
+                            directrix,
+                            axis_origin,
+                            axis_direction,
+                            angular_interval,
+                            parameter_interval,
+                        } => {
+                            let directrix_id =
+                                CurveId(format!("f3d:brep:procedural_surface#{i}:directrix"));
+                            out.curves.push(Curve {
+                                id: directrix_id.clone(),
+                                geometry: CurveGeometry::Nurbs(directrix),
+                                source_object: None,
+                            });
+                            ProceduralSurfaceDefinition::Revolution {
+                                directrix: directrix_id,
+                                axis_origin,
+                                axis_direction,
+                                angular_interval,
+                                parameter_interval,
+                                transposed: false,
+                            }
+                        }
+                        nurbs::DecodedProceduralSurfaceDefinition::Offset {
+                            support,
+                            distance,
+                            u_sense,
+                            v_sense,
+                            extension_flags,
+                        } => {
+                            let support_id =
+                                SurfaceId(format!("f3d:brep:procedural_surface#{i}:support"));
+                            out.surfaces.push(Surface {
+                                id: support_id.clone(),
+                                geometry: support,
+                                source_object: None,
+                            });
+                            ProceduralSurfaceDefinition::Offset {
+                                support: support_id,
+                                distance,
+                                u_sense,
+                                v_sense,
+                                extension_flags,
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
                             directrix,
                             direction,

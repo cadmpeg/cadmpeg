@@ -698,6 +698,32 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Native model-space origin.
         basepoint: Vector3,
     },
+    /// Revolution of an embedded profile around an axis.
+    Revolution {
+        /// Embedded profile curve.
+        directrix: NurbsCurve,
+        /// Point on the axis in model space.
+        axis_origin: Point3,
+        /// Unit axis direction.
+        axis_direction: Vector3,
+        /// Angular interval from the solved surface cache.
+        angular_interval: [f64; 2],
+        /// Native profile parameter interval.
+        parameter_interval: [f64; 2],
+    },
+    /// Signed offset from an embedded support surface.
+    Offset {
+        /// Embedded support surface.
+        support: SurfaceGeometry,
+        /// Signed model-space distance.
+        distance: f64,
+        /// Native U sense enum.
+        u_sense: i64,
+        /// Native V sense enum.
+        v_sense: i64,
+        /// Ordered conditional ASM flags.
+        extension_flags: Vec<bool>,
+    },
     /// Translation of an embedded directrix along a length-bearing direction.
     Extrusion {
         /// Embedded directrix cache.
@@ -716,6 +742,105 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Blend cross-section family.
         cross_section: BlendCrossSection,
     },
+}
+
+fn decode_off_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    let names: [&[u8]; 2] = [b"off_spl_sur", b"offsur"];
+    let (start, name_len, modern) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len(), name == b"off_spl_sur"))
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name_len + 3;
+    let support = decode_embedded_surface(span, &mut position, int_width)?;
+    let distance = take_f64(span, &mut position)? * LEN_TO_MM;
+    let u_sense = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let v_sense = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let mut extension_flags = Vec::new();
+    if modern {
+        let first = take_bool(span, &mut position)?;
+        extension_flags.push(first);
+        if first {
+            extension_flags.push(take_bool(span, &mut position)?);
+            if matches!(span.get(position), Some(0x0a | 0x0b)) {
+                extension_flags.push(take_bool(span, &mut position)?);
+            }
+        }
+    }
+    let cache = marker_positions(span)
+        .into_iter()
+        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .next_back()?;
+    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
+        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
+        .flatten();
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Offset {
+            support,
+            distance,
+            u_sense,
+            v_sense,
+            extension_flags,
+        },
+        cache_fit_tolerance,
+    })
+}
+
+fn decode_rot_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    let names: [&[u8]; 2] = [b"rot_spl_sur", b"rotsur"];
+    let start = names.into_iter().find_map(|name| {
+        record_bytes.windows(name.len() + 3).position(|window| {
+            window[0] == 0x0f
+                && matches!(window[1], 0x0d | 0x0e)
+                && usize::from(window[2]) == name.len()
+                && &window[3..] == name
+        })
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let directrix = marker_positions(span)
+        .into_iter()
+        .find_map(|at| decode_curve_block(span, at, int_width))?;
+    let parameter_interval = [
+        *directrix.curve.knots.first()?,
+        *directrix.curve.knots.last()?,
+    ];
+    let mut position = directrix.end;
+    let origin = take_native_vec3(span, &mut position, 0x13)?;
+    let axis_origin = Point3::new(
+        origin[0] * LEN_TO_MM,
+        origin[1] * LEN_TO_MM,
+        origin[2] * LEN_TO_MM,
+    );
+    let axis = take_native_vec3(span, &mut position, 0x14)?;
+    let axis_direction = normalized(axis)?;
+    let cache = marker_positions(span)
+        .into_iter()
+        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .next_back()?;
+    let angular_interval = [
+        *cache.surface.v_knots.first()?,
+        *cache.surface.v_knots.last()?,
+    ];
+    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
+        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
+        .flatten();
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Revolution {
+            directrix: directrix.curve,
+            axis_origin,
+            axis_direction,
+            angular_interval,
+            parameter_interval,
+        },
+        cache_fit_tolerance,
+    })
 }
 
 fn decode_sum_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
@@ -992,6 +1117,8 @@ fn decode_procedural_resolving_refs(
     if let Some(decoded) = decode_exact_spl_sur(bytes, int_width)
         .or_else(|| decode_ruled_spl_sur(bytes, int_width))
         .or_else(|| decode_sum_spl_sur(bytes, int_width))
+        .or_else(|| decode_rot_spl_sur(bytes, int_width))
+        .or_else(|| decode_off_spl_sur(bytes, int_width))
         .or_else(|| decode_cyl_spl_sur_at(bytes, int_width))
         .or_else(|| decode_rb_blend_spl_sur(bytes, int_width))
     {

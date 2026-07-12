@@ -237,6 +237,25 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::Offset {
+            distance,
+            extension_flags,
+            ..
+        } = &procedural.definition
+        {
+            if !distance.is_finite()
+                || !matches!(
+                    extension_flags.as_slice(),
+                    [] | [false] | [true, _] | [true, _, _]
+                )
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "offset spline surface distance or extension flags are invalid",
+                );
+            }
+        }
     }
     for c in &ir.model.curves {
         match &c.geometry {
