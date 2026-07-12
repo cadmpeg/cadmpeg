@@ -3363,6 +3363,15 @@ fn native_procedural_surface(
         ProceduralSurfaceDefinition::CompoundLoft { construction } => {
             encode_native_compound_loft(bytes, target, procedural, construction, solved_cache)?;
         }
+        ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } => {
+            encode_native_scaled_compound_loft(
+                bytes,
+                target,
+                procedural,
+                construction,
+                solved_cache,
+            )?;
+        }
         ProceduralSurfaceDefinition::G2Blend { construction } => {
             encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
         }
@@ -4028,6 +4037,134 @@ fn encode_native_compound_loft(
             }
         }
     }
+    bytes.push(0x10);
+    Ok(())
+}
+
+fn native_compound_loft_float_array(bytes: &mut Vec<u8>, values: &[f64]) -> Result<(), CodecError> {
+    native_i64(
+        bytes,
+        i64::try_from(values.len()).map_err(|_| {
+            CodecError::NotImplemented("compound-loft float-array count exceeds i64".into())
+        })?,
+    );
+    for value in values {
+        native_f64(bytes, *value);
+    }
+    Ok(())
+}
+
+fn encode_native_scaled_compound_loft(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::ScaledCompoundLoftConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::{
+        CompoundLoftDirection, ScaledCompoundLoftBranch, ScaledCompoundLoftShape,
+    };
+
+    let first_absent = construction.scales.iter().position(Option::is_none);
+    if first_absent
+        .is_some_and(|index| construction.scales[index + 1..].iter().any(Option::is_some))
+    {
+        return Err(CodecError::Malformed(
+            "scaled compound-loft scales must form a contiguous prefix".into(),
+        ));
+    }
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "scaled_cloft_spl_sur")?;
+    native_enum(bytes, construction.singularity);
+    match &construction.shape {
+        ScaledCompoundLoftShape::Full => {
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        }
+        ScaledCompoundLoftShape::None {
+            parameter_ranges: _,
+            parameters: _,
+        } => {
+            return Err(CodecError::NotImplemented(
+                "source-less scaled compound-loft none shape has no defined face carrier".into(),
+            ));
+        }
+    }
+    for values in &construction.discontinuities {
+        native_compound_loft_float_array(bytes, values)?;
+    }
+    bytes.push(native_bool(construction.discontinuity_flag));
+    for scale in construction.scales.iter().flatten() {
+        native_compound_loft_scale(bytes, target, scale)?;
+    }
+    for flag in construction.flags {
+        bytes.push(native_bool(flag));
+    }
+    native_i64(bytes, construction.selector);
+    match &construction.branch {
+        ScaledCompoundLoftBranch::ExtendedVector {
+            first_scale,
+            second_scale,
+            selector,
+            direction,
+        } => {
+            bytes.push(native_bool(true));
+            if let Some(scale) = first_scale.as_deref() {
+                native_compound_loft_scale(bytes, target, scale)?;
+            }
+            bytes.push(native_bool(true));
+            native_compound_loft_scale(bytes, target, second_scale)?;
+            native_i64(bytes, *selector);
+            native_vector(bytes, [direction.x, direction.y, direction.z]);
+        }
+        ScaledCompoundLoftBranch::ExtendedCurve {
+            scale,
+            flag,
+            singularity,
+            curve,
+        } => {
+            bytes.push(native_bool(true));
+            if let Some(scale) = scale.as_deref() {
+                native_compound_loft_scale(bytes, target, scale)?;
+            }
+            bytes.push(native_bool(false));
+            bytes.push(native_bool(*flag));
+            native_enum(bytes, *singularity);
+            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+        }
+        ScaledCompoundLoftBranch::Direct {
+            flag,
+            selector,
+            direction,
+        } => {
+            bytes.push(native_bool(false));
+            bytes.push(native_bool(*flag));
+            native_i64(bytes, *selector);
+            match direction {
+                CompoundLoftDirection::Vector { value } if *selector == 0 => {
+                    native_vector(bytes, [value.x, value.y, value.z]);
+                }
+                CompoundLoftDirection::Curve { curve } if *selector != 0 => {
+                    native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+                }
+                _ => {
+                    return Err(CodecError::Malformed(
+                        "scaled compound-loft direction conflicts with its selector".into(),
+                    ));
+                }
+            }
+        }
+    }
+    for flag in construction.trailing_flags {
+        bytes.push(native_bool(flag));
+    }
+    native_i64(bytes, construction.tail_kind);
+    for direction in construction.tail_directions {
+        native_vector(bytes, [direction.x, direction.y, direction.z]);
+    }
+    native_enum(bytes, construction.tail_singularity);
+    native_nurbs_curve(bytes, native_loft_curve(target, &construction.tail_curve)?)?;
     bytes.push(0x10);
     Ok(())
 }

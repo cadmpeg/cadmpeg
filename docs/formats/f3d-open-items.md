@@ -6,6 +6,7 @@ This document records F3D semantics that the format specification does not yet d
 
 - A rational `exp_par_cur` pcurve byte grammar is not defined. Explicit F3D pcurves use the non-rational `nubs` carrier; analytic-face coedges store a null pcurve reference.
 - Law, skin, net, sweep, and helix-surface families lack complete carrier semantics. The primitive-reduction paths `plane/plane -> cylinder`, `plane/cylinder perpendicular -> torus`, and exact-circle-directrix cylinder also lack defined carrier semantics.
+- The `scaled_cloft_spl_sur` none-singularity shape stores two intervals and two scalar arrays instead of a solved NURBS cache. Its standalone face-carrier semantics are unresolved; full-shape records carry the solved face surface directly.
 - Algebraic `readLaw` nodes have a settled token vocabulary but no defined serialized child-count/arity field for each token. Without that framing, recursive formula boundaries cannot be decoded or written losslessly for law, net, skin, and sweep payloads.
 - The full closed-sphere and closed-torus seam conventions remain unspecified.
 - The semantic role of the `POSITION` field after `cyl_spl_sur.extrusion_direction` is unresolved.

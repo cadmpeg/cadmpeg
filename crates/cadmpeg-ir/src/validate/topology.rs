@@ -352,6 +352,55 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } => {
+                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                };
+                let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
+                match &construction.branch {
+                    crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
+                        first_scale,
+                        second_scale,
+                        ..
+                    } => {
+                        scales.extend(first_scale.iter().map(Box::as_ref));
+                        scales.push(second_scale.as_ref());
+                    }
+                    crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve {
+                        scale,
+                        curve,
+                        ..
+                    } => {
+                        scales.extend(scale.iter().map(Box::as_ref));
+                        check_curve(curve, findings);
+                    }
+                    crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
+                        if let crate::geometry::CompoundLoftDirection::Curve { curve } = direction {
+                            check_curve(curve, findings);
+                        }
+                    }
+                }
+                check_curve(&construction.tail_curve, findings);
+                for scale in scales {
+                    check_curve(&scale.path, findings);
+                    for curve in &scale.auxiliaries {
+                        check_curve(curve, findings);
+                    }
+                    for member in &scale.members {
+                        check_curve(&member.curve, findings);
+                        if !ids.surfaces.contains(&member.data.surface.0) {
+                            ref_error(
+                                findings,
+                                &procedural.id.0,
+                                "surface",
+                                &member.data.surface.0,
+                            );
+                        }
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::G2Blend { construction } => {
                 for surface in [&construction.first.surface, &construction.second.surface]
                     .into_iter()
