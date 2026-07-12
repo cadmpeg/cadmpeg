@@ -150,6 +150,18 @@ pub enum FeatureDefinition {
         /// In-plane u-axis.
         u_axis: Vector3,
     },
+    /// Constructed reference axis.
+    DatumAxis {
+        /// Point on the axis in model space.
+        origin: Point3,
+        /// Axis direction.
+        direction: Vector3,
+    },
+    /// Constructed reference point.
+    DatumPoint {
+        /// Point position in model space.
+        position: Point3,
+    },
     /// Solved sketch node in the construction history.
     Sketch {
         /// Neutral sketch geometry owned by this history node, when resolved.

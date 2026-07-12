@@ -342,6 +342,12 @@ fn project_definition(
     if feature.kind.eq_ignore_ascii_case("ReferencePlane") {
         return project_datum_plane(feature).unwrap_or_else(|| native_definition(feature));
     }
+    if feature.kind.eq_ignore_ascii_case("ReferenceAxis") {
+        return project_datum_axis(feature).unwrap_or_else(|| native_definition(feature));
+    }
+    if feature.kind.eq_ignore_ascii_case("ReferencePoint") {
+        return project_datum_point(feature).unwrap_or_else(|| native_definition(feature));
+    }
     let op = match feature.kind.to_ascii_lowercase().as_str() {
         "bossextrude" => Some(BooleanOp::Join),
         "cutextrude" => Some(BooleanOp::Cut),
@@ -416,6 +422,22 @@ fn valid_plane_frame(normal: Vector3, u_axis: Vector3) -> bool {
         && u_length > f64::EPSILON
         && (normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z).abs()
             <= 1.0e-9 * normal_length * u_length
+}
+
+fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition> {
+    let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
+    let direction = parse_vector3(feature.properties.get("Direction")?)?;
+    valid_direction(direction).then_some(FeatureDefinition::DatumAxis { origin, direction })
+}
+
+fn project_datum_point(feature: &Feature) -> Option<FeatureDefinition> {
+    Some(FeatureDefinition::DatumPoint {
+        position: parse_point3_mm(feature.properties.get("Position")?)?,
+    })
+}
+
+fn valid_direction(direction: Vector3) -> bool {
+    direction.norm().is_finite() && direction.norm() > f64::EPSILON
 }
 
 fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
@@ -1381,6 +1403,56 @@ pub fn sync_neutral_features(
                 properties.insert("Origin".into(), format_point3_mm(*origin));
                 properties.insert("Normal".into(), format_vector3(*normal));
                 properties.insert("UAxis".into(), format_vector3(*u_axis));
+                (record.kind.clone(), record.parameters.clone(), properties)
+            }
+            FeatureDefinition::DatumAxis { origin, direction } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained reference-axis record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("ReferenceAxis")
+                    || !valid_direction(*direction)
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported reference-axis semantics",
+                        feature.id
+                    )));
+                }
+                if ![origin.x, origin.y, origin.z]
+                    .iter()
+                    .all(|value| value.is_finite())
+                {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has a non-finite reference-axis origin",
+                        feature.id
+                    )));
+                }
+                let mut properties = record.properties.clone();
+                properties.insert("Origin".into(), format_point3_mm(*origin));
+                properties.insert("Direction".into(), format_vector3(*direction));
+                (record.kind.clone(), record.parameters.clone(), properties)
+            }
+            FeatureDefinition::DatumPoint { position } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained reference-point record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("ReferencePoint")
+                    || ![position.x, position.y, position.z]
+                        .iter()
+                        .all(|value| value.is_finite())
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported reference-point semantics",
+                        feature.id
+                    )));
+                }
+                let mut properties = record.properties.clone();
+                properties.insert("Position".into(), format_point3_mm(*position));
                 (record.kind.clone(), record.parameters.clone(), properties)
             }
             FeatureDefinition::Sketch { .. } => {

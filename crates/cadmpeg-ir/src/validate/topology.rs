@@ -988,7 +988,10 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                 }
             }
-            FeatureDefinition::DatumPlane { .. } | FeatureDefinition::Native { .. } => {}
+            FeatureDefinition::DatumPlane { .. }
+            | FeatureDefinition::DatumAxis { .. }
+            | FeatureDefinition::DatumPoint { .. }
+            | FeatureDefinition::Native { .. } => {}
         }
         for profile in profiles {
             if let ProfileRef::Faces(faces) = profile {

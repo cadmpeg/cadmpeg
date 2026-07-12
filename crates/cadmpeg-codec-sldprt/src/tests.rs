@@ -3748,6 +3748,97 @@ fn semantic_writer_round_trips_typed_reference_plane() {
 }
 
 #[test]
+fn semantic_writer_round_trips_reference_axis_and_point() {
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><ReferenceAxis Name="Axis A" Type="ReferenceAxis" id="26" Origin="1mm,2mm,3mm" Direction="0,0,1"/><ReferencePoint Name="Point A" Type="ReferencePoint" id="27" Position="4mm,5mm,6mm"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::DatumAxis {
+            origin: Point3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0
+            },
+            direction: Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0
+            },
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::DatumPoint {
+            position: Point3 {
+                x: 4.0,
+                y: 5.0,
+                z: 6.0
+            },
+        }
+    ));
+
+    let FeatureDefinition::DatumAxis { origin, direction } =
+        &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed reference axis");
+    };
+    *origin = Point3::new(-1.0, 0.0, 2.0);
+    *direction = Vector3::new(0.0, 1.0, 0.0);
+    let FeatureDefinition::DatumPoint { position } = &mut decoded.ir.model.features[1].definition
+    else {
+        panic!("typed reference point");
+    };
+    *position = Point3::new(7.0, 8.0, 9.0);
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native[0].properties["Origin"], "-1mm,0mm,2mm");
+    assert_eq!(native[0].properties["Direction"], "0,1,0");
+    assert_eq!(native[1].properties["Position"], "7mm,8mm,9mm");
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::DatumAxis {
+            origin: Point3 {
+                x: -1.0,
+                y: 0.0,
+                z: 2.0
+            },
+            direction: Vector3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0
+            },
+        }
+    ));
+    assert!(matches!(
+        regenerated.ir.model.features[1].definition,
+        FeatureDefinition::DatumPoint {
+            position: Point3 {
+                x: 7.0,
+                y: 8.0,
+                z: 9.0
+            },
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition, HoleKind, Length};
 
