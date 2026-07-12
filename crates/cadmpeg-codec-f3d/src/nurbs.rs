@@ -4377,6 +4377,7 @@ pub(crate) struct EmbeddedSilhouette {
 /// Shared context and tail fields of an `off_surf_int_cur`.
 pub(crate) struct EmbeddedSurfaceOffset {
     pub(crate) context: EmbeddedIntersection,
+    pub(crate) discontinuity_flag: bool,
     pub(crate) base_u_range: [f64; 2],
     pub(crate) base_v_range: [f64; 2],
     pub(crate) base: NurbsCurve,
@@ -4745,7 +4746,7 @@ fn decode_embedded_surface_offset(bytes: &[u8], int_width: usize) -> Option<Embe
         take_float_array(bytes, &mut position, int_width)?,
         take_float_array(bytes, &mut position, int_width)?,
     ];
-    take_bool(bytes, &mut position)?;
+    let discontinuity_flag = take_bool(bytes, &mut position)?;
     let base_u_range = [
         take_range_value(bytes, &mut position)?,
         take_range_value(bytes, &mut position)?,
@@ -4767,6 +4768,7 @@ fn decode_embedded_surface_offset(bytes: &[u8], int_width: usize) -> Option<Embe
             parameter_range,
             discontinuities,
         },
+        discontinuity_flag,
         base_u_range,
         base_v_range,
         base: base.curve,

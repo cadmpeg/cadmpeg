@@ -3275,6 +3275,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 parameter_range: embedded.context.parameter_range,
                                 discontinuities: embedded.context.discontinuities,
                             },
+                            discontinuity_flag: embedded.discontinuity_flag,
                             base_u_range: embedded.base_u_range,
                             base_v_range: embedded.base_v_range,
                             base,

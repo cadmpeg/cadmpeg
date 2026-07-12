@@ -6123,6 +6123,7 @@ fn native_procedural_curve(
     }
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
         context,
+        discontinuity_flag,
         base_u_range,
         base_v_range,
         base,
@@ -6147,7 +6148,7 @@ fn native_procedural_curve(
         bytes.push(0x0f);
         native_ident(bytes, "off_surf_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
-        bytes.push(0x0b);
+        bytes.push(native_bool(*discontinuity_flag));
         for range in [base_u_range, base_v_range] {
             for value in *range {
                 native_f64(bytes, value);

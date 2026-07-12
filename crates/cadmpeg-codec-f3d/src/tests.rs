@@ -1196,7 +1196,7 @@ fn synthetic_geometry_with_surface_offset_smbh() -> Vec<u8> {
         .windows(b"\x0d\x04nubs".len())
         .rposition(|window| window == b"\x0d\x04nubs")
         .expect("generated solved curve cache");
-    let mut tail = vec![0x0b];
+    let mut tail = vec![0x0a];
     for value in [-1.0, 2.0, -3.0, 4.0] {
         t_dbl(&mut tail, value);
     }
@@ -12059,6 +12059,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         )
         .expect("surface-offset decode");
     let ProceduralCurveDefinition::SurfaceOffset {
+        discontinuity_flag,
         base_u_range,
         base_v_range,
         base,
@@ -12072,6 +12073,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         panic!("expected surface-offset construction")
     };
     assert_eq!(*base_u_range, [-1.0, 2.0]);
+    assert!(*discontinuity_flag);
     assert_eq!(*base_v_range, [-3.0, 4.0]);
     assert_eq!(*base_range, [-0.5, 1.5]);
     assert_eq!((*distance, *shift, *scale), (-2.5, 0.75, 1.25));
@@ -12088,6 +12090,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less surface-offset round trip");
     let ProceduralCurveDefinition::SurfaceOffset {
+        discontinuity_flag,
         base_u_range,
         base_v_range,
         base_range,
@@ -12100,6 +12103,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         panic!("expected round-trip surface offset")
     };
     assert_eq!(*base_u_range, [-1.0, 2.0]);
+    assert!(*discontinuity_flag);
     assert_eq!(*base_v_range, [-3.0, 4.0]);
     assert_eq!(*base_range, [-0.5, 1.5]);
     assert_eq!((*distance, *shift, *scale), (-2.5, 0.75, 1.25));

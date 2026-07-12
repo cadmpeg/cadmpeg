@@ -2065,6 +2065,8 @@ pub enum ProceduralCurveDefinition {
     SurfaceOffset {
         /// Shared first two support pairs.
         context: IntcurveSupportContext,
+        /// Native boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
         /// Native U interval on the base surface.
         base_u_range: [f64; 2],
         /// Native V interval on the base surface.
