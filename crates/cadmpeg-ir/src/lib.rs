@@ -40,6 +40,7 @@ pub mod geometry;
 pub mod hash;
 pub mod history;
 pub mod ids;
+pub mod le;
 pub mod math;
 pub mod native;
 mod provenance;
