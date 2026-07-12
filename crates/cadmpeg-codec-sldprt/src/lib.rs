@@ -84,6 +84,7 @@ use cadmpeg_ir::codec::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::report::ExportReport;
 use std::io::Write;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
@@ -162,8 +163,29 @@ impl Encoder for SldprtCodec {
         "sldprt"
     }
 
-    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-        self.write_preserved(ir, writer)
+    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
+        let replay = ir
+            .unknowns
+            .iter()
+            .any(|record| record.id.0 == "sldprt:file:source-image#0");
+        self.write_preserved(ir, writer)?;
+        let validation = cadmpeg_ir::validate(ir, Vec::new());
+        let total_entities = validation.entity_counts.values().sum();
+        Ok(ExportReport {
+            format: "sldprt".into(),
+            entity_counts: validation.entity_counts,
+            total_entities,
+            losses: Vec::new(),
+            notes: vec![
+                if replay {
+                    "preserved source container replayed verbatim"
+                } else {
+                    "source container regenerated from IR"
+                }
+                .into(),
+                "entity counts are derived from the IR".into(),
+            ],
+        })
     }
 }
 

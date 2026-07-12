@@ -27,7 +27,7 @@
 //! # Ok::<(), cadmpeg_step::StepError>(())
 //! ```
 //!
-//! Review [`StepReport::losses`] before retaining the output. Export continues
+//! Review [`cadmpeg_ir::ExportReport::losses`] before retaining the output. Export continues
 //! when an IR fact has no representation in this writer. Unknown-surface faces
 //! and edges without typed 3D curves are omitted; pcurves, source attributes,
 //! passthrough records, and parametric history are reported rather than
@@ -47,13 +47,14 @@
 mod geometry;
 mod writer;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::io::Write;
 
+use cadmpeg_ir::codec::{CodecError, Encoder};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::{Coedge, Edge, Point, Sense, Vertex};
 use cadmpeg_ir::CadIr;
 
@@ -97,40 +98,9 @@ impl Default for StepWriteOptions {
     }
 }
 
-/// Summary of a completed STEP export.
-///
-/// A report is returned only after the entire file reaches the output sink.
-/// Loss notes describe omitted or reduced IR content and do not prevent export.
-#[derive(Debug, Clone, PartialEq)]
-pub struct StepReport {
-    /// DATA instance counts keyed by entity keyword.
-    ///
-    /// Keys are sorted. Complex rational B-spline instances are counted under
-    /// their `B_SPLINE_*_WITH_KNOTS` keyword.
-    pub entity_counts: BTreeMap<String, usize>,
-    /// Total DATA instances, including product, context, and geometry records.
-    pub total_entities: usize,
-    /// Omitted, normalized, or reduced IR content.
-    ///
-    /// Notes use [`cadmpeg_ir::LossNote`] categories and severities. Callers
-    /// should inspect the complete list rather than relying only on
-    /// [`Self::error_count`].
-    pub losses: Vec<LossNote>,
-}
-
-impl StepReport {
-    /// Counts loss notes whose severity is at least [`Severity::Error`].
-    pub fn error_count(&self) -> usize {
-        self.losses
-            .iter()
-            .filter(|l| l.severity >= Severity::Error)
-            .count()
-    }
-}
-
 /// Failure returned while streaming STEP output.
 ///
-/// Unsupported or reduced IR content appears in [`StepReport::losses`] after a
+/// Unsupported or reduced IR content appears in [`ExportReport::losses`] after a
 /// successful write.
 #[derive(Debug, thiserror::Error)]
 pub enum StepError {
@@ -153,9 +123,9 @@ pub enum StepError {
 /// omitted or reduced content.
 pub fn write_step(
     ir: &CadIr,
-    w: &mut impl Write,
+    w: &mut (impl Write + ?Sized),
     opts: &StepWriteOptions,
-) -> Result<StepReport, StepError> {
+) -> Result<ExportReport, StepError> {
     let mut b = Builder::new(ir);
     b.build();
     let report = b.finish_report();
@@ -171,7 +141,7 @@ pub fn write_step(
     Ok(report)
 }
 
-fn write_header(w: &mut impl Write, opts: &StepWriteOptions) -> std::io::Result<()> {
+fn write_header(w: &mut (impl Write + ?Sized), opts: &StepWriteOptions) -> std::io::Result<()> {
     let ts = if opts.timestamp.is_empty() {
         "1970-01-01T00:00:00"
     } else {
@@ -1038,11 +1008,38 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn finish_report(&self) -> StepReport {
-        StepReport {
+    fn finish_report(&self) -> ExportReport {
+        ExportReport {
+            format: "step".into(),
             entity_counts: self.emitter.counts(),
             total_entities: self.emitter.total(),
             losses: self.losses.clone(),
+            notes: Vec::new(),
+        }
+    }
+}
+
+/// STEP encoder with per-export header options.
+#[derive(Debug, Clone, Default)]
+pub struct StepCodec {
+    /// Header metadata and deterministic writer options.
+    pub options: StepWriteOptions,
+}
+
+impl Encoder for StepCodec {
+    fn id(&self) -> &'static str {
+        "step"
+    }
+
+    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
+        write_step(ir, writer, &self.options).map_err(CodecError::from)
+    }
+}
+
+impl From<StepError> for CodecError {
+    fn from(error: StepError) -> Self {
+        match error {
+            StepError::Io(error) => Self::Io(error),
         }
     }
 }

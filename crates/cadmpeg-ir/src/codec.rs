@@ -11,6 +11,7 @@ use std::io::{Read, Seek, Write};
 
 use crate::document::CadIr;
 use crate::report::DecodeReport;
+use crate::report::ExportReport;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -145,5 +146,32 @@ pub trait Encoder {
     fn id(&self) -> &'static str;
 
     /// Encode one IR document to the target format.
-    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError>;
+    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError>;
+}
+
+/// Encoder for canonical versioned CADIR JSON.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CadirEncoder;
+
+impl Encoder for CadirEncoder {
+    fn id(&self) -> &'static str {
+        "cadir"
+    }
+
+    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
+        let mut json = ir
+            .to_canonical_json()
+            .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        json.push('\n');
+        writer.write_all(json.as_bytes())?;
+        let validation = crate::validate(ir, Vec::new());
+        let total_entities = validation.entity_counts.values().sum();
+        Ok(ExportReport {
+            format: "cadir".into(),
+            entity_counts: validation.entity_counts,
+            total_entities,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        })
+    }
 }

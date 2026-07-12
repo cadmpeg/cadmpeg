@@ -58,8 +58,8 @@ pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
 pub use codec::{
-    Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions, DecodeResult,
-    Encoder, ReadSeek,
+    CadirEncoder, Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions,
+    DecodeResult, Encoder, ReadSeek,
 };
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
@@ -69,7 +69,7 @@ pub use native::{F3dNative, LossCount, Native, SldprtNative};
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
-    Check, DecodeReport, Finding, LossCategory, LossNote, Severity, ValidationReport,
+    Check, DecodeReport, ExportReport, Finding, LossCategory, LossNote, Severity, ValidationReport,
 };
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,

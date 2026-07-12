@@ -23,7 +23,7 @@ CADIR input bypasses codec detection and parses directly into `CadIr`. The parse
 
 ## CLI stream and exit contract
 
-`decode`, `export`, and `convert` reserve stdout for the output artifact; diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 2`, including semantic refusal paths. JSON output from `inspect`, `validate`, and `diff` uses the same CLI schema version. This envelope version is independent of `CadIr.ir_version`. Status 0 means success, status 1 means semantic failure or a non-empty diff, and status 2 means operational failure.
+`decode`, `export`, and `convert` reserve stdout for the output artifact; diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 3`, including semantic refusal paths. JSON output from `inspect`, `validate`, and `diff` uses the same CLI schema version. This envelope version is independent of `CadIr.ir_version`. Status 0 means success, status 1 means semantic failure or a non-empty diff, and status 2 means operational failure.
 
 Output and report files are written through a unique temporary file in the destination directory and then persisted. Existing files require `--force`. An output path resolving to the input is rejected.
 
@@ -31,7 +31,7 @@ Output and report files are written through a unique temporary file in the desti
 
 Source decoders return `DecodeReport`, including `geometry_transferred`, notes, and attributable `LossNote` entries. Validation propagates supplied decode losses unchanged.
 
-STEP export returns substantive export loss notes for IR data that STEP does not carry. CADIR, F3D, and SLDPRT export command reports currently contain an empty export-loss list. CADIR is IR serialization; the native encoders reject unsupported inputs instead of producing a substantive loss report. Decode losses remain present in the command report when export or convert started from native CAD.
+Every encoder returns an `ExportReport` containing its format id, entity census, total entity count, loss notes, and informational notes. STEP reports reductions and omitted IR data. CADIR has no export losses. F3D and SLDPRT retain all-or-nothing rejection for unsupported input and report whether the source container was replayed or regenerated. Decode losses remain present in the command report when export or convert started from native CAD.
 
 The [format support profiles](format-support.md) record read, write, and round-trip capability by semantic domain, summarized as one [ladder score](format-support.md#support-ladder) per codec.
 

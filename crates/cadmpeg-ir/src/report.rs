@@ -110,6 +110,31 @@ impl DecodeReport {
     }
 }
 
+/// Entity census and fidelity details from a successful export.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ExportReport {
+    /// Target format id.
+    pub format: String,
+    /// Exported entity counts keyed by target entity kind.
+    pub entity_counts: BTreeMap<String, usize>,
+    /// Total exported entities.
+    pub total_entities: usize,
+    /// Omitted, normalized, or reduced content.
+    pub losses: Vec<LossNote>,
+    /// Informational details about the export path.
+    pub notes: Vec<String>,
+}
+
+impl ExportReport {
+    /// Count loss notes at or above [`Severity::Error`].
+    pub fn error_count(&self) -> usize {
+        self.losses
+            .iter()
+            .filter(|loss| loss.severity >= Severity::Error)
+            .count()
+    }
+}
+
 /// Which invariant a validation finding concerns.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,

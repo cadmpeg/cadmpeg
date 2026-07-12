@@ -84,6 +84,7 @@ use cadmpeg_ir::codec::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::report::ExportReport;
 use std::io::Write;
 
 /// The ZIP local-file-header magic.
@@ -171,16 +172,33 @@ impl Encoder for F3dCodec {
         "f3d"
     }
 
-    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-        if ir
+    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
+        let replay = ir
             .unknowns
             .iter()
-            .any(|record| record.id.0 == "f3d:file:source-image#0")
-        {
-            self.write_preserved(ir, writer)
+            .any(|record| record.id.0 == "f3d:file:source-image#0");
+        if replay {
+            self.write_preserved(ir, writer)?;
         } else {
-            writer::write_new(ir, writer)
+            writer::write_new(ir, writer)?;
         }
+        let validation = cadmpeg_ir::validate(ir, Vec::new());
+        let total_entities = validation.entity_counts.values().sum();
+        Ok(ExportReport {
+            format: "f3d".into(),
+            entity_counts: validation.entity_counts,
+            total_entities,
+            losses: Vec::new(),
+            notes: vec![
+                if replay {
+                    "preserved source container replayed verbatim"
+                } else {
+                    "source container regenerated from IR"
+                }
+                .into(),
+                "entity counts are derived from the IR".into(),
+            ],
+        })
     }
 }
 

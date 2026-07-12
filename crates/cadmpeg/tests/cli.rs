@@ -391,7 +391,7 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_version"], 3);
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");
@@ -788,7 +788,7 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
         .success();
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(success_report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_version"], 3);
     assert_eq!(value["command"], "convert");
     assert!(value["decode_report"].is_null());
     assert!(value["validation_report"].is_object());
@@ -874,7 +874,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_version"], 3);
     assert_eq!(value["command"], "validate");
 
     let diff = Command::cargo_bin("cadmpeg")
@@ -888,7 +888,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&diff.stdout).unwrap();
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_version"], 3);
     assert_eq!(value["command"], "diff");
 
     let native = geometryless_creo(dir.path(), "ambiguous.bin");
@@ -905,7 +905,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .unwrap();
     assert!(inspect.status.success());
     let value: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_version"], 3);
     assert_eq!(value["command"], "inspect");
 }
 
