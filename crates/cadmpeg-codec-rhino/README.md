@@ -2,7 +2,7 @@
 
 `cadmpeg-codec-rhino` is the read-only Rhino `.3dm` codec for cadmpeg. It
 detects 3DM input, inspects chunk and table structure, decodes document
-metadata, and transfers supported model data into CADIR version 2.
+metadata, and transfers supported model data into CADIR version 3.
 
 Archive versions 50, 60, 70, and 80 decode points, point clouds, line, arc,
 polyline, polycurve, and NURBS curves; plane, NURBS, revolution, and sum

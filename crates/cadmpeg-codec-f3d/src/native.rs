@@ -15,6 +15,30 @@ use crate::records::{
 /// Current schema version for the Autodesk Fusion native namespace.
 pub const F3D_NATIVE_VERSION: u32 = 1;
 
+pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
+    "act_entities",
+    "act_guids",
+    "act_root_components",
+    "asm_bulletin_boards",
+    "asm_delta_states",
+    "asm_entity_changes",
+    "asm_histories",
+    "asm_history_records",
+    "construction_recipes",
+    "design_body_members",
+    "design_entity_headers",
+    "design_material_assignments",
+    "design_objects",
+    "design_record_headers",
+    "lost_edge_references",
+    "persistent_design_links",
+    "persistent_references",
+    "sketch_curve_identities",
+    "sketch_curve_links",
+    "sketch_points",
+    "sketch_relations",
+];
+
 macro_rules! f3d_arenas {
     ($macro:ident) => {
         $macro! {
@@ -73,6 +97,9 @@ macro_rules! sort_f3d_arenas {
                 namespace.set_arena("asm_bulletin_boards", &boards)?;
                 namespace.set_arena("asm_entity_changes", &changes)?;
                 namespace.set_arena("asm_history_records", &records)?;
+                debug_assert!(F3D_ARENA_NAMES
+                    .iter()
+                    .all(|name| namespace.arenas.contains_key(*name)));
                 Ok(())
             }
         }

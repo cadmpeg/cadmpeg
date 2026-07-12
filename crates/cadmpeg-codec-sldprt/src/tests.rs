@@ -53,13 +53,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
-        [
-            "configurations",
-            "feature_histories",
-            "feature_input_lanes",
-            "features",
-            "sketch_input_entities",
-        ]
+        crate::native::SLDPRT_ARENA_NAMES
     );
     for records in round_trip.arenas.values() {
         for record in records {

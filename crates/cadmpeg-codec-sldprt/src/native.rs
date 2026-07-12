@@ -9,6 +9,14 @@ use crate::records::{FeatureHistory, FeatureInputLane};
 /// Current schema version for the SOLIDWORKS native namespace.
 pub const SLDPRT_NATIVE_VERSION: u32 = 1;
 
+pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
+    "configurations",
+    "feature_histories",
+    "feature_input_lanes",
+    "features",
+    "sketch_input_entities",
+];
+
 /// SOLIDWORKS records retained outside the format-neutral model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SldprtNative {
@@ -118,6 +126,9 @@ impl SldprtNative {
                 .flat_map(|lane| lane.sketch_entities.clone())
                 .collect::<Vec<_>>(),
         )?;
+        debug_assert!(SLDPRT_ARENA_NAMES
+            .iter()
+            .all(|name| namespace.arenas.contains_key(*name)));
         Ok(())
     }
 }

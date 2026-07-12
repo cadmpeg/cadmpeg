@@ -15,7 +15,7 @@ cargo add cadmpeg-ir
 
 A `CadIr` document contains:
 
-- required IR version 2 schema, including the `subds` arena;
+- required IR version 3 schema, including the `subds` arena;
 - canonical units and document tolerances;
 - flat, ID-referenced arenas for topology, geometry, subdivision control cages, construction features,
   tessellation, appearance, and source attributes;
@@ -87,7 +87,7 @@ offsets.
 
 ## Scope
 
-IR version 2 covers B-rep topology, analytic and NURBS geometry, Catmull–Clark
+IR version 3 covers B-rep topology, analytic and NURBS geometry, Catmull–Clark
 control cages, procedural construction links including Sum and bounded
 Revolution definitions, tessellation, appearance, attributes, and neutral
 feature records. Native namespaces retain format-specific design and history
@@ -97,7 +97,7 @@ Assembly instancing, component trees, and joint constraints are reserved.
 ## Documentation
 
 - [API documentation][docs]
-- [CAD IR version 2][ir-spec]
+- [CAD IR version 3][ir-spec]
 - [Architecture and crate map][architecture]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]

@@ -176,36 +176,13 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     typed.store(&mut round_trip).unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
     assert_eq!(round_trip.version, crate::native::F3D_NATIVE_VERSION);
-    let expected = [
-        "act_entities",
-        "act_guids",
-        "act_root_components",
-        "asm_bulletin_boards",
-        "asm_delta_states",
-        "asm_entity_changes",
-        "asm_histories",
-        "asm_history_records",
-        "construction_recipes",
-        "design_body_members",
-        "design_entity_headers",
-        "design_material_assignments",
-        "design_objects",
-        "design_record_headers",
-        "lost_edge_references",
-        "persistent_design_links",
-        "persistent_references",
-        "sketch_curve_identities",
-        "sketch_curve_links",
-        "sketch_points",
-        "sketch_relations",
-    ];
     assert_eq!(
         round_trip
             .arenas
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
-        expected
+        crate::native::F3D_ARENA_NAMES
     );
     for records in round_trip.arenas.values() {
         for record in records {
