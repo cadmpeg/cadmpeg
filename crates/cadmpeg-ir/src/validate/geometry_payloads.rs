@@ -995,10 +995,39 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         if let ProceduralSurfaceDefinition::Deformable { construction } = &procedural.definition {
-            let crate::geometry::DeformableSurfaceData::Minimal { vectors, .. } = construction.data;
-            if !vectors
-                .iter()
-                .all(|vector| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite())
+            let vector_finite = |vector: &Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let frame_valid = |frame: &crate::geometry::DeformableSurfaceFrame| {
+                frame.leading_vectors.iter().all(vector_finite)
+                    && frame.secondary_vectors.iter().all(vector_finite)
+                    && frame.leading_parameter.is_finite()
+                    && frame.secondary_parameter.is_finite()
+                    && frame.point.x.is_finite()
+                    && frame.point.y.is_finite()
+                    && frame.point.z.is_finite()
+            };
+            let data_valid = match &construction.data {
+                crate::geometry::DeformableSurfaceData::Plain {
+                    frame,
+                    parameter_triples,
+                } => {
+                    frame_valid(frame)
+                        && parameter_triples
+                            .iter()
+                            .flatten()
+                            .all(|value| value.is_finite())
+                }
+                crate::geometry::DeformableSurfaceData::Guided {
+                    frame,
+                    guide_parameter,
+                    ..
+                } => frame_valid(frame) && guide_parameter.is_finite(),
+                crate::geometry::DeformableSurfaceData::Minimal { vectors, .. } => {
+                    vectors.iter().all(vector_finite)
+                }
+            };
+            if !data_valid
                 || !construction
                     .discontinuities
                     .iter()

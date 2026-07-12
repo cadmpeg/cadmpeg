@@ -2866,6 +2866,52 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
     })
 }
 
+fn decode_deformable_surface_frame(
+    bytes: &[u8],
+    position: &mut usize,
+) -> Option<cadmpeg_ir::geometry::DeformableSurfaceFrame> {
+    let mut leading_vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
+    for vector in &mut leading_vectors {
+        let value = take_native_vec3(bytes, position, 0x14)?;
+        *vector = Vector3::new(value[0], value[1], value[2]);
+    }
+    let leading_parameter = take_f64(bytes, position)?;
+    let leading_flags = [
+        take_bool(bytes, position)?,
+        take_bool(bytes, position)?,
+        take_bool(bytes, position)?,
+    ];
+    let mut secondary_vectors = [Vector3::new(0.0, 0.0, 0.0); 3];
+    for vector in &mut secondary_vectors {
+        let value = take_native_vec3(bytes, position, 0x14)?;
+        *vector = Vector3::new(value[0], value[1], value[2]);
+    }
+    let secondary_parameter = take_f64(bytes, position)?;
+    let secondary_flags = [take_bool(bytes, position)?, take_bool(bytes, position)?];
+    let point = take_native_vec3(bytes, position, 0x13)?;
+    let trailing_flags = [
+        take_bool(bytes, position)?,
+        take_bool(bytes, position)?,
+        take_bool(bytes, position)?,
+        take_bool(bytes, position)?,
+        take_bool(bytes, position)?,
+    ];
+    Some(cadmpeg_ir::geometry::DeformableSurfaceFrame {
+        leading_vectors,
+        leading_parameter,
+        leading_flags,
+        secondary_vectors,
+        secondary_parameter,
+        secondary_flags,
+        point: Point3::new(
+            point[0] * LEN_TO_MM,
+            point[1] * LEN_TO_MM,
+            point[2] * LEN_TO_MM,
+        ),
+        trailing_flags,
+    })
+}
+
 fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::DeformableSurfaceData;
     let names: [&[u8]; 2] = [b"defm_spl_sur", b"defmsur"];
@@ -2885,6 +2931,29 @@ fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
     let support = decode_embedded_surface(span, &mut position, int_width)?;
     let mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
     let data = match mode {
+        1 => {
+            let frame = Box::new(decode_deformable_surface_frame(span, &mut position)?);
+            let count =
+                usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
+            let parameter_triples = (0..count)
+                .map(|_| {
+                    Some([
+                        take_f64(span, &mut position)?,
+                        take_f64(span, &mut position)?,
+                        take_f64(span, &mut position)?,
+                    ])
+                })
+                .collect::<Option<Vec<_>>>()?;
+            DeformableSurfaceData::Plain {
+                frame,
+                parameter_triples,
+            }
+        }
+        3 => DeformableSurfaceData::Guided {
+            frame: Box::new(decode_deformable_surface_frame(span, &mut position)?),
+            selector: take_tagged_int(span, &mut position, 0x04, int_width)?,
+            guide_parameter: take_f64(span, &mut position)?,
+        },
         8 => {
             let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
             for vector in &mut vectors {

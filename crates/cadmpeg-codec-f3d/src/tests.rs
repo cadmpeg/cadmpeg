@@ -2255,6 +2255,64 @@ fn synthetic_minimal_deformable_surface_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "defm_spl_sur");
+    t_ident(&mut surface, "plane");
+    t_pos(&mut surface, [1.0, 2.0, 3.0]);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    t_vec(&mut surface, [1.0, 0.0, 0.0]);
+    surface.push(0x0b);
+    t_long(&mut surface, mode);
+    for vector in [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [-1.0, 0.0, 0.0],
+    ] {
+        t_vec(&mut surface, vector);
+    }
+    t_dbl(&mut surface, 0.5);
+    surface.extend_from_slice(&[0x0a, 0x0b, 0x0a]);
+    for vector in [[1.0, 1.0, 0.0], [0.0, 1.0, 1.0], [1.0, 0.0, 1.0]] {
+        t_vec(&mut surface, vector);
+    }
+    t_dbl(&mut surface, 0.75);
+    surface.extend_from_slice(&[0x0b, 0x0a]);
+    t_pos(&mut surface, [4.0, 5.0, 6.0]);
+    surface.extend_from_slice(&[0x0a, 0x0b, 0x0a, 0x0b, 0x0a]);
+    if mode == 1 {
+        t_long(&mut surface, 2);
+        for value in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6] {
+            t_dbl(&mut surface, value);
+        }
+    } else {
+        t_long(&mut surface, 1);
+        t_dbl(&mut surface, 0.9);
+    }
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.004);
+    for values in [&[0.25][..], &[][..], &[][..], &[][..], &[][..], &[][..]] {
+        append_generated_float_array(&mut surface, values);
+    }
+    surface.push(0x0a);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -8735,9 +8793,11 @@ fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
     else {
         panic!("expected deformable surface")
     };
-    let DeformableSurfaceData::Minimal { vectors, selector } = construction.data;
+    let DeformableSurfaceData::Minimal { vectors, selector } = &construction.data else {
+        panic!("expected minimal deformable surface")
+    };
     assert_eq!(vectors[2].z, 1.0);
-    assert_eq!(selector, 0);
+    assert_eq!(*selector, 0);
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
@@ -8750,6 +8810,58 @@ fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
         round_trip.ir.model.procedural_surfaces[0].definition,
         ProceduralSurfaceDefinition::Deformable { .. }
     ));
+}
+
+#[test]
+fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
+    use cadmpeg_ir::geometry::{DeformableSurfaceData, ProceduralSurfaceDefinition};
+    for mode in [1, 3] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_framed_deformable_surface_smbh(
+                    mode,
+                ))),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let ProceduralSurfaceDefinition::Deformable { construction } =
+            &decoded.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected deformable surface")
+        };
+        match &construction.data {
+            DeformableSurfaceData::Plain {
+                frame,
+                parameter_triples,
+            } => {
+                assert_eq!(mode, 1);
+                assert_eq!(frame.point.z, 60.0);
+                assert_eq!(parameter_triples.len(), 2);
+            }
+            DeformableSurfaceData::Guided {
+                frame,
+                guide_parameter,
+                ..
+            } => {
+                assert_eq!(mode, 3);
+                assert_eq!(frame.point.z, 60.0);
+                assert_eq!(*guide_parameter, 0.9);
+            }
+            DeformableSurfaceData::Minimal { .. } => panic!("wrong mode"),
+        }
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let mut encoded = Vec::new();
+        F3dCodec.encode(&source_less, &mut encoded).unwrap();
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap();
+        assert!(matches!(
+            round_trip.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::Deformable { .. }
+        ));
+    }
 }
 
 #[test]

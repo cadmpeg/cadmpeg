@@ -3218,13 +3218,69 @@ fn native_procedural_surface(
                 .find(|surface| surface.id == construction.support)
                 .ok_or_else(|| CodecError::Malformed("deformable support is missing".into()))?;
             native_embedded_surface(bytes, &support.geometry)?;
-            match construction.data {
+            let write_frame =
+                |bytes: &mut Vec<u8>, frame: &cadmpeg_ir::geometry::DeformableSurfaceFrame| {
+                    for vector in frame.leading_vectors {
+                        native_vector(bytes, [vector.x, vector.y, vector.z]);
+                    }
+                    native_f64(bytes, frame.leading_parameter);
+                    for flag in frame.leading_flags {
+                        bytes.push(native_bool(flag));
+                    }
+                    for vector in frame.secondary_vectors {
+                        native_vector(bytes, [vector.x, vector.y, vector.z]);
+                    }
+                    native_f64(bytes, frame.secondary_parameter);
+                    for flag in frame.secondary_flags {
+                        bytes.push(native_bool(flag));
+                    }
+                    native_point(
+                        bytes,
+                        [
+                            frame.point.x / 10.0,
+                            frame.point.y / 10.0,
+                            frame.point.z / 10.0,
+                        ],
+                    );
+                    for flag in frame.trailing_flags {
+                        bytes.push(native_bool(flag));
+                    }
+                };
+            match &construction.data {
+                DeformableSurfaceData::Plain {
+                    frame,
+                    parameter_triples,
+                } => {
+                    native_i64(bytes, 1);
+                    write_frame(bytes, frame);
+                    native_i64(
+                        bytes,
+                        i64::try_from(parameter_triples.len()).map_err(|_| {
+                            CodecError::NotImplemented("deformable triple count exceeds i64".into())
+                        })?,
+                    );
+                    for triple in parameter_triples {
+                        for value in triple {
+                            native_f64(bytes, *value);
+                        }
+                    }
+                }
+                DeformableSurfaceData::Guided {
+                    frame,
+                    selector,
+                    guide_parameter,
+                } => {
+                    native_i64(bytes, 3);
+                    write_frame(bytes, frame);
+                    native_i64(bytes, *selector);
+                    native_f64(bytes, *guide_parameter);
+                }
                 DeformableSurfaceData::Minimal { vectors, selector } => {
                     native_i64(bytes, 8);
                     for vector in vectors {
                         native_vector(bytes, [vector.x, vector.y, vector.z]);
                     }
-                    native_i64(bytes, selector);
+                    native_i64(bytes, *selector);
                 }
             }
             native_nurbs_surface(bytes, solved_cache)?;

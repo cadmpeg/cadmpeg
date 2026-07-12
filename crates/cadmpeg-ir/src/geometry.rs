@@ -466,6 +466,22 @@ pub enum ProceduralSurfaceDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DeformableSurfaceData {
+    /// Mode-1 deformation frame with counted parameter triples.
+    Plain {
+        /// Shared full deformation frame.
+        frame: Box<DeformableSurfaceFrame>,
+        /// Ordered native scalar triples.
+        parameter_triples: Vec<[f64; 3]>,
+    },
+    /// Mode-3 deformation frame with a guide scalar.
+    Guided {
+        /// Shared full deformation frame.
+        frame: Box<DeformableSurfaceFrame>,
+        /// Native guide selector.
+        selector: i64,
+        /// Native guide scalar.
+        guide_parameter: f64,
+    },
     /// Mode-8 minimal four-vector scaffold.
     Minimal {
         /// Four ordered deformation vectors.
@@ -473,6 +489,27 @@ pub enum DeformableSurfaceData {
         /// Native trailing selector.
         selector: i64,
     },
+}
+
+/// Shared frame payload of deformable-surface modes 1 and 3.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DeformableSurfaceFrame {
+    /// Four leading deformation vectors.
+    pub leading_vectors: [Vector3; 4],
+    /// Leading frame scalar.
+    pub leading_parameter: f64,
+    /// Three leading frame flags.
+    pub leading_flags: [bool; 3],
+    /// Three secondary deformation vectors.
+    pub secondary_vectors: [Vector3; 3],
+    /// Secondary frame scalar.
+    pub secondary_parameter: f64,
+    /// Two secondary frame flags.
+    pub secondary_flags: [bool; 2],
+    /// Native model-space frame point.
+    pub point: Point3,
+    /// Five trailing frame flags.
+    pub trailing_flags: [bool; 5],
 }
 
 /// Complete native deformable-surface construction.
