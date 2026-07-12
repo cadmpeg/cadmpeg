@@ -55,6 +55,12 @@ struct EntityRecord {
     offset: usize,
 }
 
+impl EntityRecord {
+    fn flo(&self) -> u8 {
+        (self.flags & 0xff) as u8
+    }
+}
+
 fn slot_count(disc: u16, flo: u8) -> usize {
     match (disc, flo) {
         (0x0018 | 0x0025 | 0x0020, 1) => 6,
@@ -226,11 +232,8 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
     for root in by_attr.values().filter(|record| {
         (record.flags == 2 || record.flags & 0xff00_0000 == 0xff00_0000) && record.disc == 0x0017
     }) {
-        let sheet = root
-            .refs
-            .iter()
-            .filter_map(|reference| by_attr.get(reference))
-            .any(|record| record.disc == 0x001d);
+        let solid_regions = body_regions(&by_attr, root, 0x001b, None);
+        let sheet_regions = body_regions(&by_attr, root, 0x001d, Some(1));
         let mut refs = HashSet::new();
         let mut pending: Vec<u16> = root
             .refs
@@ -254,25 +257,42 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
         }
         let mut refs = refs.into_iter().collect::<Vec<_>>();
         refs.sort_unstable();
-        let regions = linked_all(&by_attr, root, 0x001b)
-            .into_iter()
-            .flat_map(|region_link| linked_all(&by_attr, region_link, 0x001f))
-            .map(|region| RegionRecord {
-                attr: region.attr,
-                offset: region.offset,
-                shells: linked_all(&by_attr, region, 0x0021)
+        let regions = solid_regions
+            .iter()
+            .chain(&sheet_regions)
+            .map(|region| {
+                let mut shells = linked_all(&by_attr, region, 0x001f)
                     .into_iter()
+                    .flat_map(|lump| linked_all(&by_attr, lump, 0x0021))
+                    .map(|shell_link| {
+                        linked_all(&by_attr, shell_link, 0x0023)
+                            .into_iter()
+                            .next()
+                            .unwrap_or(shell_link)
+                    })
                     .map(|shell| ShellRecord {
                         attr: shell.attr,
                         offset: shell.offset,
                         refs: reachable_refs(&by_attr, shell),
                     })
-                    .collect(),
+                    .collect::<Vec<_>>();
+                if shells.is_empty() {
+                    shells.push(ShellRecord {
+                        attr: region.attr,
+                        offset: region.offset,
+                        refs: reachable_refs(&by_attr, region),
+                    });
+                }
+                RegionRecord {
+                    attr: region.attr,
+                    offset: region.offset,
+                    shells,
+                }
             })
             .collect();
         out.push(BodyRecord {
             attr: root.attr,
-            kind: if sheet {
+            kind: if solid_regions.is_empty() && !sheet_regions.is_empty() {
                 BodyKind::Sheet
             } else {
                 BodyKind::Solid
@@ -284,6 +304,37 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
     }
     out.sort_by_key(|record| record.attr);
     out
+}
+
+fn body_regions<'a>(
+    by_attr: &HashMap<u16, &'a EntityRecord>,
+    body: &'a EntityRecord,
+    disc: u16,
+    flo: Option<u8>,
+) -> Vec<&'a EntityRecord> {
+    let matches = |record: &&EntityRecord| {
+        record.disc == disc && flo.is_none_or(|expected| record.flo() == expected)
+    };
+    let mut regions = body
+        .refs
+        .iter()
+        .filter_map(|reference| by_attr.get(reference))
+        .copied()
+        .filter(matches)
+        .collect::<Vec<_>>();
+    for connector in linked_all(by_attr, body, 0x0019) {
+        regions.extend(
+            connector
+                .refs
+                .iter()
+                .filter_map(|reference| by_attr.get(reference))
+                .copied()
+                .filter(matches),
+        );
+    }
+    regions.sort_by_key(|record| record.attr);
+    regions.dedup_by_key(|record| record.attr);
+    regions
 }
 
 fn linked_all<'a>(

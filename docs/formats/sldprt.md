@@ -198,6 +198,10 @@ Slot values `0` and `1` are sentinels. Values greater than 1 are entity attribut
 
 Disc14 and disc15 face records use the common six-slot prefix in §5. Disc15/flo2 is a face-list-head family in schema 32001; disc15/flo1 is a face family in schema 33103. The exact body-to-face relation is carried by entity references, not geometric connectivity.
 
+In schema 32001, `0x17.slot1` references a region directly or through `0x19.slot1`. A `0x1b/flo2` target denotes a solid region; a `0x1d/flo1` target denotes a sheet region. Solid shell ownership follows `0x1b -> 0x1f -> 0x21 -> 0x23`. The terminal `0x23` record reaches the owned face records.
+
+In schema 33103, solid ownership follows the same `0x17 -> [0x19] -> 0x1b -> 0x1f -> 0x21 -> 0x23` hierarchy with `0x1b/flo1` as the solid region. `0x1d/flo2` belongs to the face-connectivity web and is not a sheet discriminator.
+
 ---
 
 ## 7. Geometry carriers

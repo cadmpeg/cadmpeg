@@ -2291,6 +2291,34 @@ fn decode_preserves_multiple_regions_and_shells_per_body() {
 }
 
 #[test]
+fn decode_follows_connector_region_lump_and_shell_chain() {
+    let mut body = Vec::new();
+    body.extend(entity51(2, 500, 0x0017, &[510, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 510, 0x0019, &[0, 520, 0, 0, 0, 0]));
+    body.extend(entity51(1, 520, 0x001b, &[530, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 530, 0x001f, &[540, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 540, 0x0021, &[550, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 550, 0x0023, &[700, 0, 0, 0, 0, 0]));
+    body.extend(owned_triangle(0, 700, 0.0));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.regions[0].id.0, "sldprt:brep:region#520");
+    assert_eq!(decoded.ir.model.shells[0].id.0, "sldprt:brep:shell#550");
+    assert_eq!(decoded.ir.model.shells[0].faces.len(), 1);
+    assert_eq!(
+        decoded.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Solid
+    );
+}
+
+#[test]
 fn semantic_writer_preserves_multiple_body_ownership() {
     let mut body = Vec::new();
     body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
