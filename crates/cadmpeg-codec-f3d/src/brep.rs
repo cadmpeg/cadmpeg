@@ -441,6 +441,8 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     let id = |i: i64| format!("f3d:brep:entity#{i}");
     // Index records by RecordTable index (== position for a framed slice).
     let by_index: HashMap<i64, &Record> = records.iter().map(|r| (r.index as i64, r)).collect();
+    // Subtype-definition positions, built once for every carrier resolution.
+    let subtype_tables = nurbs::SubtypeTables::from_records(records, bytes);
     let header_scale = asm_header::parse(bytes)
         .and_then(|header| header.scale)
         .unwrap_or(1.0);
@@ -505,14 +507,17 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         kept_faces.insert(r.index as i64);
         // A non-analytic surface may still carry a decodable B-spline face cache.
         if let std::collections::hash_map::Entry::Vacant(e) = surface_geo.entry(surf_ref) {
-            if let Some(ns) =
-                nurbs::decode_surface_cache_resolving_refs(record_slice(surf_rec, bytes), bytes)
-            {
+            if let Some(ns) = nurbs::decode_surface_cache_resolving_refs(
+                record_slice(surf_rec, bytes),
+                bytes,
+                &subtype_tables,
+            ) {
                 e.insert((SurfaceGeometry::Nurbs(ns), false));
                 out.stats.nurbs_surfaces += 1;
                 if let Some(procedural) = nurbs::decode_procedural_surface_resolving_refs(
                     record_slice(surf_rec, bytes),
                     bytes,
+                    &subtype_tables,
                 ) {
                     procedural_surface_defs.insert(surf_ref, procedural);
                 }
@@ -561,6 +566,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             let decoded = nurbs::decode_pcurve_cache_resolving_refs(
                                 record_slice(prec, bytes),
                                 bytes,
+                                &subtype_tables,
                             )
                             .or_else(|| {
                                 prec.ref_at(4)
@@ -569,6 +575,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         nurbs::decode_intcurve_pcurve_cache_resolving_refs(
                                             record_slice(intcurve, bytes),
                                             bytes,
+                                            &subtype_tables,
                                         )
                                     })
                             });
@@ -621,6 +628,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                 nurbs::decode_procedural_curve_resolving_refs(
                                                     record_slice(crec, bytes),
                                                     bytes,
+                                                    &subtype_tables,
                                                 )
                                             {
                                                 let mut curve = decoded.curve;
@@ -729,6 +737,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                     nurbs::decode_procedural_curve_resolving_refs(
                                                         record_slice(curve_record, bytes),
                                                         bytes,
+                                                        &subtype_tables,
                                                     )
                                                 {
                                                     let mut curve = decoded.curve;
@@ -852,7 +861,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             for (side, support) in supports.into_iter().enumerate() {
                                 if let Some(support) = support {
                                     let support_id = SurfaceId(format!(
-                                        "f3d:brep:procedural_surface#{i}:support#{side}"
+                                        "f3d:brep:procedural_surface#{i}:support{side}"
                                     ));
                                     out.surfaces.push(Surface {
                                         id: support_id.clone(),
@@ -967,7 +976,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1008,7 +1017,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1048,7 +1057,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1091,7 +1100,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1133,7 +1142,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1184,7 +1193,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1238,7 +1247,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .map(|(side, geometry)| {
                                 geometry.map(|geometry| {
                                     let id = SurfaceId(format!(
-                                        "f3d:brep:procedural_curve#{i}:support#{side}"
+                                        "f3d:brep:procedural_curve#{i}:support{side}"
                                     ));
                                     out.surfaces.push(Surface {
                                         id: id.clone(),
@@ -1314,7 +1323,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .enumerate()
                             .map(|(side, geometry)| {
                                 let id = SurfaceId(format!(
-                                    "f3d:brep:procedural_curve#{i}:support#{side}"
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
                                 out.surfaces.push(Surface {
                                     id: id.clone(),
@@ -1483,26 +1492,28 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         if curve_record.head == "ellipse" {
                             // Native conic parameters are angles from the
                             // major axis, matching the IR carrier's own
-                            // parameterization directly.
-                            if (b - a).abs() >= std::f64::consts::TAU - 1.0e-12 {
+                            // parameterization directly. Wrap the arc start
+                            // into the canonical `[0, τ)` domain, preserving
+                            // the sweep; a full period keeps its start phase
+                            // so the range still anchors on the edge's
+                            // vertices.
+                            let sweep = b - a;
+                            a = a.rem_euclid(std::f64::consts::TAU);
+                            if std::f64::consts::TAU - a < 1.0e-9 {
                                 a = 0.0;
-                                b = std::f64::consts::TAU;
-                            } else {
-                                // Wrap the arc start into the canonical
-                                // `[0, τ)` domain, preserving the sweep.
-                                let sweep = b - a;
-                                a = a.rem_euclid(std::f64::consts::TAU);
-                                if std::f64::consts::TAU - a < 1.0e-9 {
-                                    a = 0.0;
-                                }
-                                b = a + sweep;
                             }
+                            b = a + sweep;
                         } else if curve_record.head == "straight" {
-                            // Native line parameters are arc lengths in
-                            // centimeters; the IR carrier's unit direction
+                            // Native line parameters are multiples of the
+                            // stored direction vector, whose length is the
+                            // parameter scale; the IR carrier's unit direction
                             // lives in millimeter space.
-                            a *= LEN_TO_MM;
-                            b *= LEN_TO_MM;
+                            let scale = collect_carrier(curve_record)
+                                .vectors
+                                .first()
+                                .map_or(1.0, |vector| norm3(*vector));
+                            a *= scale * LEN_TO_MM;
+                            b *= scale * LEN_TO_MM;
                         }
                     }
                     Some([a, b])
@@ -1944,8 +1955,46 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     }
 
     classify_body_kinds(&mut out);
+    clamp_edge_ranges_to_carrier_domains(&mut out);
 
     out
+}
+
+/// Snap edge parameter ranges that overshoot their B-spline carrier's knot
+/// domain by floating-point noise back onto the domain boundary. Native edge
+/// ranges and cache knot vectors are stored independently and can disagree in
+/// their last few bits; a genuine domain violation is left for validation.
+fn clamp_edge_ranges_to_carrier_domains(out: &mut Brep) {
+    let domains: HashMap<&str, [f64; 2]> = out
+        .curves
+        .iter()
+        .filter_map(|curve| match &curve.geometry {
+            CurveGeometry::Nurbs(nurbs) => {
+                let (first, last) = (nurbs.knots.first()?, nurbs.knots.last()?);
+                Some((curve.id.0.as_str(), [*first, *last]))
+            }
+            _ => None,
+        })
+        .collect();
+    for edge in &mut out.edges {
+        let Some([start, end]) = edge.param_range.as_mut() else {
+            continue;
+        };
+        let Some([first, last]) = edge
+            .curve
+            .as_ref()
+            .and_then(|curve| domains.get(curve.0.as_str()))
+        else {
+            continue;
+        };
+        let tolerance = 1.0e-9 * (last - first).abs().max(1.0);
+        if *start < *first && *first - *start <= tolerance {
+            *start = *first;
+        }
+        if *end > *last && *end - *last <= tolerance {
+            *end = *last;
+        }
+    }
 }
 
 fn classify_body_kinds(out: &mut Brep) {

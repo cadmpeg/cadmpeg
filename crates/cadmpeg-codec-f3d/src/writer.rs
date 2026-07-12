@@ -371,8 +371,8 @@ fn encode_sketch_point(
     record[62..70].copy_from_slice(&point.persistent_id.to_le_bytes());
     record[70] = 1;
     record[71..75].copy_from_slice(&point.paired_reference.to_le_bytes());
-    record[96..104].copy_from_slice(&(point.coordinates.u / 10.0).to_le_bytes());
-    record[104..112].copy_from_slice(&(point.coordinates.v / 10.0).to_le_bytes());
+    record[89..97].copy_from_slice(&(point.coordinates.u / 10.0).to_le_bytes());
+    record[97..105].copy_from_slice(&(point.coordinates.v / 10.0).to_le_bytes());
     out.extend_from_slice(&record);
     Ok(())
 }
@@ -7534,7 +7534,7 @@ fn validate_surface_edits(
                 };
                 (id.starts_with("f3d:brep:entity#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
-                        && (id.ends_with(":support#0") || id.ends_with(":support#1"))))
+                        && (id.ends_with(":support0") || id.ends_with(":support1"))))
                     && valid_edited_nurbs_direction(
                         &before.u_knots,
                         after.u_degree,
@@ -8096,10 +8096,7 @@ fn patch_framed_geometry(
             patch_nurbs_surface_record(bytes, record, edit, None)?;
         }
         for side in 0..2 {
-            let support_id = format!(
-                "f3d:brep:procedural_surface#{}:support#{side}",
-                record.index
-            );
+            let support_id = format!("f3d:brep:procedural_surface#{}:support{side}", record.index);
             if let Some(edit) = nurbs_surfaces.get(&support_id) {
                 patch_nurbs_surface_record(bytes, record, edit, Some(side))?;
             }

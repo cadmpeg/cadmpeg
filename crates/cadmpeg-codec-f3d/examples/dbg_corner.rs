@@ -38,6 +38,7 @@ fn main() {
     let limit = active.delta_state_offset.unwrap_or(bytes.len());
     let width = active.header.as_ref().map(|h| h.width).unwrap_or(4);
     let records = sab::frame(&bytes, start, limit, usize::from(width)).expect("frame");
+    let tables = nurbs::SubtypeTables::from_records(&records, &bytes);
 
     // Active slice = what brep::decode sees as `bytes` (the WHOLE decompressed buffer).
     let table = subtype_table(&bytes);
@@ -73,9 +74,9 @@ fn main() {
                 let slice = &bytes[cr.offset..cr.offset + cr.len];
                 println!("  strings: {:?}", strings(slice));
                 println!("  hex[..160]: {}", hex(&slice[..slice.len().min(160)]));
-                let dec = nurbs::decode_curve_cache_resolving_refs(slice, &bytes);
+                let dec = nurbs::decode_curve_cache_resolving_refs(slice, &bytes, &tables);
                 println!("  decode_curve_cache_resolving_refs -> {}", dec.is_some());
-                let pdec = nurbs::decode_procedural_curve_resolving_refs(slice, &bytes);
+                let pdec = nurbs::decode_procedural_curve_resolving_refs(slice, &bytes, &tables);
                 println!(
                     "  decode_procedural_curve_resolving_refs -> {:?}",
                     pdec.map(|d| d.native_kind)
@@ -110,7 +111,7 @@ fn main() {
                 );
             }
         }
-        let dec = nurbs::decode_surface_cache_resolving_refs(slice, &bytes);
+        let dec = nurbs::decode_surface_cache_resolving_refs(slice, &bytes, &tables);
         println!("  decode_surface_cache_resolving_refs -> {}", dec.is_some());
     }
 }

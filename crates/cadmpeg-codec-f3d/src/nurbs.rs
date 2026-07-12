@@ -28,6 +28,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
+use crate::sab::Record;
+
 /// Millimetres per ASM model-space length unit (centimetres).
 const LEN_TO_MM: f64 = 10.0;
 
@@ -832,15 +834,23 @@ fn decode_rb_blend_spl_sur(
 pub fn decode_procedural_surface_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
+    tables: &SubtypeTables,
 ) -> Option<DecodedProceduralSurface> {
     INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_procedural_resolving_refs(record_bytes, active_bytes, &mut Vec::new(), int_width)
+        decode_procedural_resolving_refs(
+            record_bytes,
+            active_bytes,
+            tables,
+            &mut Vec::new(),
+            int_width,
+        )
     })
 }
 
 fn decode_procedural_resolving_refs(
     bytes: &[u8],
     active_bytes: &[u8],
+    tables: &SubtypeTables,
     seen: &mut Vec<usize>,
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
@@ -849,7 +859,7 @@ fn decode_procedural_resolving_refs(
     {
         return Some(decoded);
     }
-    let table = subtype_table(active_bytes);
+    let table = tables.for_width(int_width);
     for index in subtype_refs(bytes, int_width) {
         if seen.contains(&index) {
             continue;
@@ -859,6 +869,7 @@ fn decode_procedural_resolving_refs(
         if let Some(decoded) = decode_procedural_resolving_refs(
             subtype_span(active_bytes, target, int_width)?,
             active_bytes,
+            tables,
             seen,
             int_width,
         ) {
@@ -875,11 +886,13 @@ fn decode_procedural_resolving_refs(
 pub fn decode_surface_cache_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
+    tables: &SubtypeTables,
 ) -> Option<NurbsSurface> {
     INT_WIDTHS.into_iter().find_map(|int_width| {
         decode_cache_resolving_refs(
             record_bytes,
             active_bytes,
+            tables,
             &mut Vec::new(),
             decode_surface_cache_at,
             int_width,
@@ -907,11 +920,13 @@ fn decode_curve_cache_at(record_bytes: &[u8], int_width: usize) -> Option<NurbsC
 pub fn decode_curve_cache_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
+    tables: &SubtypeTables,
 ) -> Option<NurbsCurve> {
     INT_WIDTHS.into_iter().find_map(|int_width| {
         decode_cache_resolving_refs(
             record_bytes,
             active_bytes,
+            tables,
             &mut Vec::new(),
             decode_curve_cache_at,
             int_width,
@@ -1060,24 +1075,45 @@ pub struct DecodedProceduralCurve {
 pub fn decode_procedural_curve_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
+    tables: &SubtypeTables,
 ) -> Option<DecodedProceduralCurve> {
     INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_procedural_curve_recursive(record_bytes, active_bytes, &mut Vec::new(), int_width)
+        decode_procedural_curve_recursive(
+            record_bytes,
+            active_bytes,
+            tables,
+            &mut Vec::new(),
+            int_width,
+        )
     })
 }
 
 fn decode_procedural_curve_recursive(
     bytes: &[u8],
     active_bytes: &[u8],
+    tables: &SubtypeTables,
     seen: &mut Vec<usize>,
     int_width: usize,
 ) -> Option<DecodedProceduralCurve> {
-    let mut solved = None;
-    for position in marker_positions(bytes) {
-        if let Some(decoded) = decode_curve_block(bytes, position, int_width) {
-            solved = Some(decoded);
-        }
-    }
+    let vector_offset = decode_vector_offset_definition(bytes, int_width);
+    let subset = decode_subset_definition(bytes, int_width);
+    let compound = decode_compound_definition(bytes, int_width);
+    // Wrapper constructions serialize their source curves before the record's
+    // own cache, so the cache is the last decodable curve block. Every other
+    // intcurve opens with its cache — the first block, followed by the fit
+    // tolerance; later blocks belong to nested construction machinery
+    // (support surfaces, blend spines, progenitors) and are not the carrier.
+    let positions = marker_positions(bytes);
+    let solved = if vector_offset.is_some() || subset.is_some() || compound.is_some() {
+        positions
+            .into_iter()
+            .rev()
+            .find_map(|position| decode_curve_block(bytes, position, int_width))
+    } else {
+        positions
+            .into_iter()
+            .find_map(|position| decode_curve_block(bytes, position, int_width))
+    };
     if let Some(decoded) = solved {
         let cache_fit_tolerance = (bytes.get(decoded.end) == Some(&0x06))
             .then(|| read_f64(bytes, decoded.end + 1).map(|value| value * LEN_TO_MM))
@@ -1093,9 +1129,9 @@ fn decode_procedural_curve_recursive(
             curve: decoded.curve,
             native_kind,
             definition,
-            vector_offset: decode_vector_offset_definition(bytes, int_width),
-            subset: decode_subset_definition(bytes, int_width),
-            compound: decode_compound_definition(bytes, int_width),
+            vector_offset,
+            subset,
+            compound,
             embedded_two_sided_offset: decode_embedded_two_sided_offset(bytes, int_width),
             embedded_intersection: decode_embedded_intersection(bytes, int_width),
             embedded_three_surface_intersection: decode_embedded_three_surface_intersection(
@@ -1110,7 +1146,7 @@ fn decode_procedural_curve_recursive(
             cache_fit_tolerance,
         });
     }
-    let table = subtype_table(active_bytes);
+    let table = tables.for_width(int_width);
     for index in subtype_refs(bytes, int_width) {
         if seen.contains(&index) {
             continue;
@@ -1120,6 +1156,7 @@ fn decode_procedural_curve_recursive(
         if let Some(decoded) = decode_procedural_curve_recursive(
             subtype_span(active_bytes, target, int_width)?,
             active_bytes,
+            tables,
             seen,
             int_width,
         ) {
@@ -2023,6 +2060,7 @@ fn first_construction_subtype(bytes: &[u8]) -> Option<String> {
 fn decode_cache_resolving_refs<T>(
     bytes: &[u8],
     active_bytes: &[u8],
+    tables: &SubtypeTables,
     seen: &mut Vec<usize>,
     decode_inline: fn(&[u8], usize) -> Option<T>,
     int_width: usize,
@@ -2030,7 +2068,7 @@ fn decode_cache_resolving_refs<T>(
     if let Some(decoded) = decode_inline(bytes, int_width) {
         return Some(decoded);
     }
-    let table = subtype_table(active_bytes);
+    let table = tables.for_width(int_width);
     for index in subtype_refs(bytes, int_width) {
         if seen.contains(&index) {
             continue;
@@ -2040,6 +2078,7 @@ fn decode_cache_resolving_refs<T>(
         if let Some(decoded) = decode_cache_resolving_refs(
             subtype_span(active_bytes, target, int_width)?,
             active_bytes,
+            tables,
             seen,
             decode_inline,
             int_width,
@@ -2050,33 +2089,101 @@ fn decode_cache_resolving_refs<T>(
     None
 }
 
-fn subtype_table(bytes: &[u8]) -> Vec<usize> {
-    let mut table = Vec::new();
-    for pos in 0..bytes.len().saturating_sub(4) {
-        if bytes[pos] != 0x0f || !matches!(bytes.get(pos + 1), Some(0x0d | 0x0e)) {
-            continue;
-        }
-        let len = *bytes.get(pos + 2).unwrap_or(&0) as usize;
-        let Some(name) = bytes.get(pos + 3..pos + 3 + len) else {
-            continue;
-        };
-        if name != b"ref" && name.iter().all(|b| (0x21..=0x7e).contains(b)) {
-            table.push(pos);
-        }
-    }
-    table
+/// Byte positions of the stream's subtype definitions, one table per candidate
+/// integer width.
+///
+/// A subtype definition opens as `0x0f` followed by a `0x0d`/`0x0e` name token
+/// other than `ref`; the table indexes definitions in stream order. Definition
+/// openings are recognized only at token boundaries — the same byte pattern
+/// inside an `f64` payload is data, not a definition — so the table is built by
+/// token-walking the framed records, not by scanning raw bytes.
+pub struct SubtypeTables {
+    tables: [Vec<usize>; INT_WIDTHS.len()],
 }
 
+impl SubtypeTables {
+    /// Build the tables by token-walking each framed record of `bytes`.
+    pub fn from_records(records: &[Record], bytes: &[u8]) -> Self {
+        Self {
+            tables: INT_WIDTHS.map(|walk_width| {
+                let mut table = Vec::new();
+                for record in records {
+                    collect_defs_in_span(
+                        bytes,
+                        record.offset,
+                        record.offset + record.len,
+                        walk_width,
+                        &mut table,
+                    );
+                }
+                table
+            }),
+        }
+    }
+
+    /// Build the tables by token-walking `bytes` as one contiguous token run.
+    pub fn from_stream(bytes: &[u8]) -> Self {
+        Self {
+            tables: INT_WIDTHS.map(|walk_width| {
+                let mut table = Vec::new();
+                collect_defs_in_span(bytes, 0, bytes.len(), walk_width, &mut table);
+                table
+            }),
+        }
+    }
+
+    fn for_width(&self, int_width: usize) -> &[usize] {
+        INT_WIDTHS
+            .iter()
+            .position(|&width| width == int_width)
+            .map_or(&[], |slot| self.tables[slot].as_slice())
+    }
+}
+
+/// Append the token-boundary subtype-definition openings in
+/// `bytes[start..end]` to `table`. Stops at the first unwalkable token.
+fn collect_defs_in_span(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    int_width: usize,
+    table: &mut Vec<usize>,
+) {
+    let end = end.min(bytes.len());
+    let mut pos = start;
+    while pos < end {
+        if bytes[pos] == 0x0f && matches!(bytes.get(pos + 1), Some(0x0d | 0x0e)) {
+            let len = usize::from(*bytes.get(pos + 2).unwrap_or(&0));
+            if let Some(name) = bytes.get(pos + 3..pos + 3 + len) {
+                if name != b"ref" {
+                    table.push(pos);
+                }
+            }
+        }
+        match next_token(bytes, pos, int_width) {
+            Some(next) => pos = next,
+            None => return,
+        }
+    }
+}
+
+/// Subtype-table reference indices in `bytes`, in token order. References are
+/// recognized only at token boundaries, mirroring [`SubtypeTables`].
 fn subtype_refs(bytes: &[u8], int_width: usize) -> Vec<usize> {
     let mut refs = Vec::new();
     let marker = b"\x0f\x0d\x03ref\x04";
-    for pos in 0..=bytes.len().saturating_sub(marker.len() + int_width) {
+    let mut pos = 0usize;
+    while pos < bytes.len() {
         if bytes[pos..].starts_with(marker) {
             if let Some(index) = read_int(bytes, pos + marker.len(), int_width) {
                 if index >= 0 {
                     refs.push(index as usize);
                 }
             }
+        }
+        match next_token(bytes, pos, int_width) {
+            Some(next) => pos = next,
+            None => break,
         }
     }
     refs
@@ -2148,11 +2255,13 @@ fn decode_pcurve_cache_at(record_bytes: &[u8], int_width: usize) -> Option<Nurbs
 pub fn decode_pcurve_cache_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
+    tables: &SubtypeTables,
 ) -> Option<NurbsPcurve> {
     INT_WIDTHS.into_iter().find_map(|int_width| {
         decode_cache_resolving_refs(
             record_bytes,
             active_bytes,
+            tables,
             &mut Vec::new(),
             decode_pcurve_cache_at,
             int_width,
@@ -2190,11 +2299,13 @@ fn decode_intcurve_pcurve_cache_at(record_bytes: &[u8], int_width: usize) -> Opt
 pub fn decode_intcurve_pcurve_cache_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
+    tables: &SubtypeTables,
 ) -> Option<NurbsPcurve> {
     INT_WIDTHS.into_iter().find_map(|int_width| {
         decode_cache_resolving_refs(
             record_bytes,
             active_bytes,
+            tables,
             &mut Vec::new(),
             decode_intcurve_pcurve_cache_at,
             int_width,
@@ -2298,8 +2409,12 @@ mod width_tests {
         record.extend_from_slice(b"ref");
         push_int(&mut record, 0x04, 0, 4);
         record.push(0x10);
-        let surface =
-            decode_surface_cache_resolving_refs(&record, &active).expect("resolved width-4 ref");
+        let surface = decode_surface_cache_resolving_refs(
+            &record,
+            &active,
+            &SubtypeTables::from_stream(&active),
+        )
+        .expect("resolved width-4 ref");
         assert_eq!((surface.u_count, surface.v_count), (2, 2));
     }
 }

@@ -260,7 +260,7 @@ The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partn
 +89 chunk[9] sense byte     +90 0x07 'tangent'|'unknown' continuity text
 ```
 
-`+52` is end_vertex and `+79` is curve, not the other way round. `t_start`/`t_end` are stored parameters on the edge's own parameterization: the referenced curve itself when the sense byte is forward (`0x0b`), its reverse `E(t) = C(−t)` when reversed (`0x0a`). A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`. The continuity text is descriptive metadata, **not** a curve-type discriminator.
+`+52` is end_vertex and `+79` is curve, not the other way round. `t_start`/`t_end` are stored parameters on the edge's own parameterization: the referenced curve itself when the sense byte is forward (`0x0b`), its reverse `E(t) = C(−t)` when reversed (`0x0a`). A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`; the shared vertex lies at the `t_start` angle from the major axis, so a full period's phase is significant, not a free normalization. The continuity text is descriptive metadata, **not** a curve-type discriminator.
 
 **Vertex (63 B):** `chunk[3]` @+36 = owning_edge, `chunk[4]` @+45 = index_flag (`0` = this is the owning edge's START vertex, `1` = its END vertex), `chunk[5]` @+54 = point ref. Each vertex has its own point entity; no deduplication.
 
@@ -320,7 +320,7 @@ Evaluation formulas for all four carriers follow directly from the frame vectors
 
 ### 7.3 Analytic curve byte layouts
 
-**`straight` (115 B)**: base point + unit direction. Curve range is unbounded; the owning edge's `t_start`/`t_end` clip it. Endpoints `= base + t·direction`. Line directions are unit vectors.
+**`straight` (115 B)**: base point + direction vector. Curve range is unbounded; the owning edge's `t_start`/`t_end` clip it. Endpoints `= base + t·direction` with the stored, unnormalized vector: the direction's magnitude is the line's parameter scale and is not necessarily 1.
 
 **`ellipse` (148 B with angles / 130 B without, covers circles)**: center, axis normal, `ref × r_major` (magnitude = major radius), `ratio = r_minor/r_major`; the 148-B variant adds start/end angles. Circle when `ratio==1`. **Ratio-sign phase convention:** for `ratio > 0` the stored range is axis-aligned and the endpoint phase is +π/2. For `ratio < 0`, the negative sign encodes a flipped parameterization; the stored range is direct and the minor-radius magnitude is `|ratio|`.
 
@@ -385,11 +385,13 @@ Native ASM NURBS control grids are the per-face cache. `surface_fit_tolerance ==
 
 ### 7.6 `intcurve` and `spline` subtypes
 
-Procedural intcurve subtypes (`exact_int_cur`, `off_int_cur`, `proj_int_cur`, `int_int_cur`, `sss_int_cur`, …) and spline-surface subtypes (`rb_blend_spl_sur`, `sss_blend_spl_sur`, `var_blend_spl_sur`, `loft_spl_sur`, `sweep_spl_sur`, `net_spl_sur`, VBL/taper families, …) each carry per-subtype field tails and version/`asm_major` gates. A `ref N` nested inside a surface, curve, or pcurve body indexes a per-file subtype table, not a byte offset. Each `0x0F` Surface/Curve/Pcurve block contributes one table entry in stream order.
+Procedural intcurve subtypes (`exact_int_cur`, `off_int_cur`, `proj_int_cur`, `int_int_cur`, `sss_int_cur`, …) and spline-surface subtypes (`rb_blend_spl_sur`, `sss_blend_spl_sur`, `var_blend_spl_sur`, `loft_spl_sur`, `sweep_spl_sur`, `net_spl_sur`, VBL/taper families, …) each carry per-subtype field tails and version/`asm_major` gates. A `ref N` nested inside a surface, curve, or pcurve body indexes a per-file subtype table, not a byte offset. Each subtype definition — a `0x0F` opening followed by a `0x0d`/`0x0e` name token other than `ref` — contributes one table entry in stream order. Definitions are recognized at token boundaries only: the same byte pattern inside a token payload (an `f64`, a string body) is data, not a table entry.
 
 An `intcurve` or `spline` record carries a record-level sense boolean immediately before its subtype scope (`0x0a` reversed, `0x0b` forward). A reversed record's geometry is the reverse of its subtype definition: a reversed intcurve parameterizes as the negation of its cache (`C(t) = cache(−t)`; the owning edge's `t_start`/`t_end` are on the reversed parameterization), and a reversed spline surface's normal is the reverse of the cache normal (the face's sense field composes on the reversed surface).
 
 A `spline` subtype can contain several top-level surface-bearing `nubs` or `nurbs` blocks. The final surface block is the face-surface cache; earlier blocks can be 2D support pcurves. A nested `ref` denotes another carrier through the subtype table.
+
+An intcurve subtype opens with the record's own 3D B-spline cache: the first `nubs`/`nurbs` curve block after the subtype scope opens, followed by a `DOUBLE` fit tolerance, safe-range booleans, and the counted discontinuity arrays. Construction machinery — support surfaces, blend spines, progenitor curves — is serialized after the cache in nested subtype scopes, and its curve blocks are not the record's carrier. The owning edge's `t_start`/`t_end` live on the cache parameterization.
 
 The `cyl_spl_sur` and `rb_blend_spl_sur` field sequences are:
 
@@ -438,13 +440,15 @@ The design BulkStream BREP body map is `u32 count`, followed by `count` pairs of
 
 A browser-node record stores a length-prefixed 36-character UTF-16LE node GUID, a one-byte hidden flag, the `0x01 0x01` marker, and the node's `u64` design-entity suffix. Flag `1` hides the entity in the document display; `0` shows it. **Body visibility join:** ASM `asm_body_key` → BREP body map `entity_suffix` → browser-node hidden flag.
 
+A browser body record carries the body's appearance binding. The record head references the body's design entity with the `299` class tag (`u32 3`, ASCII `299`, `u64 entity`). The appearance fields open with the marker GUID pair `D87FBE62-3B12-4CA8-9014-BAD31ABDB101` and `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C` as consecutive length-prefixed 36-character UTF-16LE strings, then in order: the LP-UTF16 physical-material token (`PrismMaterial-###`) with `0x01 + u64` entity reference, the LP-UTF16 36-character browser-node GUID with `0x01 + u64` node entity, an optional LP-UTF16 display name, zero padding, an f32 opacity, the `0x01 0x01` marker, zero padding, and the LP-UTF16 visual GUID (a 36-character GUID with `_Post2015` repeats). The node entity equals the body's design entity plus one. **Body appearance join:** `299`-tag entity → BREP body map `entity_suffix` → ASM `asm_body_key`; the visual GUID's 36-character prefix selects the appearance asset. ASM body records whose key field is null (`-1`) are sub-bodies of the stream's keyed body and carry no design records of their own.
+
 A sketch entity container follows its self-validating entity header and UTF-16LE entity ID with `u32 record_reference`, `u32 zero`, `0x01`, `u32 reference_count`, then `reference_count` entries of `0x01 + u32 record_index + six zero bytes`. The referenced records contain the sketch's geometry and relations.
 
 An indexed Design record header is `u32 class_tag_length`, a three-digit ASCII dynamic-class tag, then `u32 record_index`. `record_index` is a logical reference value; it is independent of the header's byte offset in the `BulkStream`.
 
 A sketch relation stores counted member references, zero or more auxiliary references, the owning sketch reference, a u32 constraint mask, and a counted return-reference list. References use `0x01 + u32 record_index` with zero padding; direct u32 role fields may occur between references. Constraint bits are `0x1` coincident, `0x2` colinear, `0x4` concentric, `0x10` parallel, `0x20` perpendicular, `0x40` horizontal, `0x80` vertical, `0x100` tangent, `0x200` curvature, `0x400` symmetry, `0x800` equal, `0x1000` midpoint, `0x2000` polygon, `0x10000000` circular pattern, and `0x20000000` rectangular pattern.
 
-A sketch-point record contains one typed property named `pt_tag`: `u32 property_count=1`, LP-ASCII `pt_tag`, LP-ASCII `IntrinsicMetaTypeuint64`, and the persistent u64 point id. The record then stores a paired record reference and two f64 sketch coordinates in centimetres. The alternate form sets `property_count=2` and prefixes `pt_tag` with an `EntityGenesis` `IntrinsicMetaTypeuint64` property; all subsequent fields shift by 52 bytes.
+A sketch-point record contains one typed property named `pt_tag`: `u32 property_count=1`, LP-ASCII `pt_tag`, LP-ASCII `IntrinsicMetaTypeuint64`, and the persistent u64 point id. The record then stores `0x01`, a u32 paired record reference, a 14-byte flag area whose bytes are each `0x00` or `0x01`, and two f64 sketch coordinates in centimetres at record offsets 89 and 97. The alternate form sets `property_count=2` and prefixes `pt_tag` with an `EntityGenesis` `IntrinsicMetaTypeuint64` property; all subsequent fields shift by 52 bytes.
 
 A sketch-curve record contains two typed properties in order: `crv_primary_id` and `crv_secondary_id`, both `IntrinsicMetaTypeuint64`. The primary id is the curve's persistent identity; zero in the secondary slot is null. The alternate form sets `property_count=3` and prefixes these properties with `EntityGenesis`, shifting the curve identity and geometry fields by 52 bytes. The analytic payload following the identity properties is twelve f64 values. A line stores `(start point xyz, displacement xyz, unit direction xyz, unit sketch normal xyz)`. A circular arc stores `(center xyz, unit normal xyz, in-plane unit reference direction xyz, radius, start angle, end angle)`. Points, displacements, and radii are in centimetres; angles are radians. A referenced analytic wrapper prefixes this payload with `0x01 + u32 record_ref + six zero bytes`.
 
@@ -465,6 +469,8 @@ Color attribute records include `rgb_color-st-attrib` (float r,g,b in 0..1), `tr
 `.protein` assets are **nested ZIP archives** carrying per-asset `AssetData/*.bin` value streams plus XML schemas (`CommonSchema`, `GenericSchema`, `PhysMatSchema`, `PrismOpaqueSchema`, …). `InstanceProperties.bin` and `DefinitionIteratorProperties.bin` have a 16-byte prefix followed by 136-byte pages. Each page is a record-start page, continuation page, or `0xffffffff` terminal page with a u16 used length. A logical record is the concatenation of its start-page and continuation-page payloads.
 
 A design BulkStream material assignment targets the nearest preceding component-prefixed entity ID. Its physical-material token joins to the `.protein` `PhysMatSchema` asset. Its visual appearance GUID is the GUID immediately before the fixed visual-appearance marker GUID. A physical-material default-appearance clause stores associated GenericSchema and Prism appearance asset references.
+
+A per-face appearance assignment ends with the visual-appearance marker GUID `BA5EE55E-9982-449B-9D66-9F036540E140`. The two length-prefixed UTF-16LE strings before the marker are the 36-character face GUID and the visual GUID. The face GUID also appears as the string payload of the owning face's `NEUTRON_Material_attrib_def` `ATTRIB_CUSTOM` attribute in the B-rep stream. **Face appearance join:** face `NEUTRON_Material_attrib_def` GUID → design BulkStream face assignment → visual GUID → appearance asset. A face assignment overrides the owning body's appearance for that face.
 
 A `PhysMatSchema` value block contains a count followed by 36-character GUID references to its constituent aspect assets. The physical-material join is `BulkStream` `PrismMaterial` token → `PhysMatSchema` asset → referenced Structural, Thermal, and Prism aspect assets.
 

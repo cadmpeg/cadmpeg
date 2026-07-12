@@ -162,6 +162,8 @@ pub fn decode(
             }
             ir.model.appearances = decoded_materials.appearances;
             ir.model.appearance_bindings = decoded_materials.bindings;
+            resolve_face_appearance_bindings(&mut ir, &decoded_materials.face_assignments);
+            ir.model.appearance_bindings.sort_by(|a, b| a.id.cmp(&b.id));
             if !ir.model.appearances.is_empty() {
                 if ir.model.appearance_bindings.is_empty() {
                     if let Some(loss) = report
@@ -440,9 +442,8 @@ fn populate_annotations(
         }
     }
     for binding in &ir.model.appearance_bindings {
-        let id = format!("{:?}:{}", binding.target, binding.appearance.0);
         annotations
-            .note(id, native_stream, 0)
+            .note(&binding.id, native_stream, 0)
             .tag("appearance_binding");
     }
     if brep.is_none() {
@@ -843,5 +844,78 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         geometry_transferred: false,
         losses,
         notes: summary.notes,
+    }
+}
+
+/// Join per-face appearance assignments to BREP faces through the face GUID
+/// carried by each face's `NEUTRON_Material_attrib_def` attribute
+/// ([spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)).
+fn resolve_face_appearance_bindings(
+    ir: &mut CadIr,
+    face_assignments: &[materials::FaceAppearanceAssignment],
+) {
+    use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+
+    if face_assignments.is_empty() {
+        return;
+    }
+    let mut faces_by_guid: std::collections::HashMap<&str, Vec<cadmpeg_ir::ids::FaceId>> =
+        std::collections::HashMap::new();
+    for attribute in &ir.model.attributes {
+        let AttributeTarget::Face(face) = &attribute.target else {
+            continue;
+        };
+        let strings: Vec<&str> = attribute
+            .values
+            .iter()
+            .filter_map(|value| match value {
+                AttributeValue::String(value) => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+        if !strings.contains(&"NEUTRON_Material_attrib_def") {
+            continue;
+        }
+        for value in strings {
+            if value.len() == 36 && value.matches('-').count() == 4 {
+                faces_by_guid.entry(value).or_default().push(face.clone());
+            }
+        }
+    }
+    for assignment in face_assignments {
+        let Some(faces) = faces_by_guid.get(assignment.face_guid.as_str()) else {
+            continue;
+        };
+        let Some(appearance) = ir.model.appearances.iter().find(|appearance| {
+            appearance
+                .visual_guid
+                .as_deref()
+                .is_some_and(|guid| guid.starts_with(&assignment.visual_guid))
+        }) else {
+            continue;
+        };
+        for face in faces {
+            let target = AppearanceTarget::Face(face.clone());
+            if ir
+                .model
+                .appearance_bindings
+                .iter()
+                .any(|binding| binding.target == target)
+            {
+                continue;
+            }
+            ir.model.appearance_bindings.push(AppearanceBinding {
+                id: format!(
+                    "f3d:appearance:face#{}:{}",
+                    assignment.face_guid, assignment.visual_guid
+                ),
+                target,
+                appearance: appearance.id.clone(),
+                source_entity_id: None,
+                object_type: None,
+                channels: std::collections::BTreeMap::new(),
+            });
+        }
     }
 }

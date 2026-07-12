@@ -2,7 +2,7 @@
 
 **One open pipeline for native CAD.**
 
-cadmpeg aims to do for CAD files what FFmpeg does for media: provide one open toolchain for reading, inspecting, converting, and building on all CAD formats. It decodes vendor files into a documented intermediate representation (IR), validates the result, and exports neutral formats.
+cadmpeg aims to do for CAD what FFmpeg does for media: provide one open toolchain for reading, inspecting, converting, and building across formats. It decodes vendor files into a documented intermediate representation (IR), validates them, and exports neutral formats.
 
 cadmpeg is early. End-to-end Autodesk Fusion `.f3d` to STEP path is about 70% complete, while codecs for SolidWorks, Rhino, CATIA, NX, and Creo cover different subsets. Long-term goal is one inspectable pipeline for every major CAD format.
 
@@ -10,17 +10,17 @@ cadmpeg is early. End-to-end Autodesk Fusion `.f3d` to STEP path is about 70% co
 
 ## Why cadmpeg
 
-Most native CAD formats are proprietary and sparsely documented. Neutral exports such as STEP make geometry portable but drop design data and hide the native file.
+Native CAD formats are proprietary and sparsely documented. Neutral formats such as STEP make geometry portable but discard design data.
 
-Every cadmpeg decoder writes to one documented IR. Validators, exporters, and downstream tools build against that single interface. IR values record the byte offsets they came from, inferred values are marked inferred, and whatever a decoder or exporter cannot carry through it reports as loss.
+Every decoder writes to one documented IR used by validators, exporters, and downstream tools. Values retain source byte offsets, inferred values are marked, and unsupported content is reported as loss.
 
-Format knowledge comes from CAD files contributors may legally possess and from public documentation. Vendor SDKs, decompiled binaries, and confidential material are off limits ([LEGAL.md](LEGAL.md)).
+Format knowledge comes from legally possessed CAD files and public documentation. Vendor SDKs, decompiled binaries, and confidential material are prohibited ([LEGAL.md](LEGAL.md)).
 
-The grand vision is high fidelity conversion between all CAD formats, including parametric design history, across versions and vendors. Impossible to perfectly convert but the idea is to get as close as possible.
+The goal is high-fidelity conversion across formats, versions, and vendors, including parametric design history.
 
 ## Install
 
-cadmpeg requires Rust 1.88 or later:
+Build from source with Rust 1.88 or later:
 
 ```sh
 git clone https://github.com/cadmpeg/cadmpeg
@@ -28,7 +28,7 @@ cd cadmpeg
 cargo install --path crates/cadmpeg
 ```
 
-Prebuilt binaries are also available. Homebrew (macOS):
+Homebrew (macOS):
 
 ```sh
 brew install cadmpeg/tap/cadmpeg
@@ -52,7 +52,7 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/cadmpeg/cadmpeg/re
 cadmpeg convert part.f3d -f step
 ```
 
-The conversion reports validation results and any loss:
+Conversion reports validation results and loss:
 
 ```text
 decode report (f3d): geometry_transferred=true
@@ -74,9 +74,9 @@ The repository contains six native-format codecs:
 - **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.
 - **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** container mastered; no placed model geometry.
 
-The pure-Rust STEP AP214 writer emits supported analytic and B-spline B-rep geometry and reports omitted or reduced IR content.
+The pure-Rust STEP AP214 writer exports supported analytic and B-spline B-rep geometry and reports loss.
 
-The [format support profiles](docs/format-support.md) are the authoritative capability breakdown. Per-format specifications in [`docs/formats/`](docs/formats/) define byte semantics; adjacent `*-open-items.md` files track unresolved fields and structures.
+[Format support profiles](docs/format-support.md) detail current capabilities. [`docs/formats/`](docs/formats/) defines byte semantics and tracks unresolved fields and structures.
 
 ## Pipeline
 
@@ -102,21 +102,21 @@ cadmpeg convert  part.f3d -f step -o part.step
 cadmpeg diff     a.cadir.json b.cadir.json
 ```
 
-Output formats are `cadir`, `step`, `f3d`, and `sldprt`; `json` remains an alias for `cadir`. When `-f` is omitted, `export` and `convert` infer the format from `.cadir`, `.json`, `.step`, `.stp`, `.f3d`, or `.sldprt` output paths. Use `--input-format` to bypass source-format detection.
+Output formats are `cadir`, `step`, `f3d`, and `sldprt`; `json` aliases `cadir`. `export` and `convert` infer omitted formats from the output extension. Use `--input-format` to override source detection.
 
 Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 2`. This command-envelope version is independent of the CAD IR's `ir_version: "2"`.
 
 ## Contributing
 
-Public test files are the most immediate need. If you can author a CAD file and dedicate it to the public domain under CC0, [donate it to the corpus](corpus/README.md) it would be greatly appreciated!
+Public test files are the most immediate need. If you can dedicate a CAD file to the public domain under CC0, please [donate it to the corpus](corpus/README.md).
 
-Code and format contributions are also welcome:
+Other contributions:
 
 - Implement a codec from a format specification.
 - Resolve an open format item with byte-backed evidence.
 - Add validators, exporters, IR tooling, corpus tooling, or CLI improvements.
 
-Every commit requires a DCO sign-off. Decoder and specification contributions also require a provenance declaration. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the process, [LEGAL.md](LEGAL.md) for acceptable sources, and [docs/roadmap.md](docs/roadmap.md) for contributor entry points.
+Commits require DCO sign-off; decoder and specification changes also require a provenance declaration. See [CONTRIBUTING.md](CONTRIBUTING.md), [LEGAL.md](LEGAL.md), and the [roadmap](docs/roadmap.md).
 
 ## Development
 
@@ -127,17 +127,17 @@ cargo build --workspace
 cargo test --workspace
 ```
 
-Run an end-to-end smoke test without a native CAD file:
+Run an end-to-end smoke test:
 
 ```sh
 cargo run -p cadmpeg-ir --example emit_cube > cube.cadir.json
 cadmpeg export cube.cadir.json -f step -o cube.step
 ```
 
-AI-assisted contributions are welcome but please keep them concise and review the output before submission. The same clean-room rules in LEGAL.md apply, don't paste vendor SDK knowledge through a model.
+AI-assisted contributions are welcome when reviewed and concise. Clean-room rules still apply: do not pass vendor SDK knowledge through a model.
 
 ## Licensing
 
-Code is licensed under the [Apache License 2.0](LICENSE). Documentation and format specifications are licensed under [Creative Commons Attribution 4.0 International](LICENSE-docs). Contributions use the same terms.
+Code uses the [Apache License 2.0](LICENSE); documentation and specifications use [CC BY 4.0](LICENSE-docs). Contributions use the corresponding license.
 
 SolidWorks, Rhino, CATIA, Autodesk Fusion, Creo, NX, Parasolid, and other product names are trademarks of their respective owners. cadmpeg uses them only to identify the file formats its decoders target. cadmpeg is an independent project and is not affiliated with, endorsed by, or sponsored by any CAD vendor. See [LEGAL.md](LEGAL.md).

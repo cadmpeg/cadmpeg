@@ -312,6 +312,8 @@ pub struct DecodedMaterials {
     pub appearances: Vec<Appearance>,
     /// Body-to-appearance bindings resolved via ACT/design/ASM body-key joins.
     pub bindings: Vec<AppearanceBinding>,
+    /// Per-face appearance assignments awaiting the BREP face-attribute join.
+    pub face_assignments: Vec<FaceAppearanceAssignment>,
 }
 
 /// Decode `.protein` assets and Design and ACT assignments without ASM body
@@ -392,10 +394,48 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
             appearance.physical_token = assignment.physical_token.clone();
         }
     }
-    let bindings = bind_bodies(&out, &assignments, &act_channels, &object_types, body_keys);
+    let mut bindings = bind_bodies(&out, &assignments, &act_channels, &object_types, body_keys);
+    for over in decode_body_appearance_overrides(reader, scan)? {
+        let Some(body) = body_keys
+            .iter()
+            .find_map(|(body, key)| (*key == over.asm_body_key).then_some(body.clone()))
+        else {
+            continue;
+        };
+        if bindings
+            .iter()
+            .any(|binding| binding.target == AppearanceTarget::Body(body.clone()))
+        {
+            continue;
+        }
+        let Some(appearance) = out.iter().find(|appearance| {
+            appearance
+                .visual_guid
+                .as_deref()
+                .is_some_and(|guid| guid.starts_with(&over.visual_guid))
+        }) else {
+            continue;
+        };
+        bindings.push(AppearanceBinding {
+            id: format!(
+                "f3d:appearance:body#{}:{}",
+                over.entity_suffix, over.visual_guid
+            ),
+            target: AppearanceTarget::Body(body),
+            appearance: appearance.id.clone(),
+            source_entity_id: None,
+            object_type: object_types.get(&over.entity_suffix).cloned(),
+            channels: act_channels
+                .get(&over.entity_suffix)
+                .cloned()
+                .unwrap_or_default(),
+        });
+    }
+    let face_assignments = decode_face_appearance_assignments(reader, scan)?;
     Ok(DecodedMaterials {
         appearances: out,
         bindings,
+        face_assignments,
     })
 }
 
@@ -472,6 +512,271 @@ pub(crate) fn decode_design_assignments(
         }
     }
     Ok(out)
+}
+
+/// One per-body appearance override joined to its ASM body key.
+pub(crate) struct BodyAppearanceOverride {
+    /// The referenced ASM body key from the Design body map.
+    pub asm_body_key: u64,
+    /// The body's design-entity suffix.
+    pub entity_suffix: u64,
+    /// First 36 characters of the bound visual GUID.
+    pub visual_guid: String,
+}
+
+/// Decode per-body appearance overrides from browser body records in every
+/// Design `BulkStream` and join them to ASM body keys through the BREP
+/// body-map record
+/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+pub(crate) fn decode_body_appearance_overrides(
+    reader: &mut dyn ReadSeek,
+    scan: &ContainerScan,
+) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+    {
+        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let body_map = decode_body_map(&bytes);
+        for (entity_suffix, visual_guid) in browser_body_appearances(&bytes) {
+            if let Some((&asm_body_key, _)) = body_map
+                .iter()
+                .find(|(_, (suffix, _))| *suffix == entity_suffix)
+            {
+                out.push(BodyAppearanceOverride {
+                    asm_body_key,
+                    entity_suffix,
+                    visual_guid,
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// One per-face appearance assignment from a Design `BulkStream`.
+///
+/// The face GUID joins the BREP face that carries the same GUID in its
+/// `NEUTRON_Material_attrib_def` attribute
+/// ([spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)).
+pub struct FaceAppearanceAssignment {
+    /// The face GUID shared with the BREP face attribute.
+    pub face_guid: String,
+    /// First 36 characters of the bound visual GUID.
+    pub visual_guid: String,
+}
+
+/// Decode per-face appearance assignments from every Design `BulkStream`.
+///
+/// A face assignment ends with the `BA5EE55E-…` marker GUID; the two
+/// length-prefixed UTF-16 strings before the marker are the 36-character
+/// face GUID and the bound visual GUID
+/// ([spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)).
+pub(crate) fn decode_face_appearance_assignments(
+    reader: &mut dyn ReadSeek,
+    scan: &ContainerScan,
+) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+    {
+        let bytes = container::decompress_entry(reader, &entry.name)?;
+        out.extend(face_appearance_assignments(&bytes));
+    }
+    Ok(out)
+}
+
+/// Scan one Design `BulkStream` for face appearance assignments; see
+/// [`decode_face_appearance_assignments`].
+pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAssignment> {
+    const MARKER: &str = "BA5EE55E-9982-449B-9D66-9F036540E140";
+    let strings = lp_utf16_strings(bytes);
+    let mut out = Vec::new();
+    for (index, (_, value)) in strings.iter().enumerate() {
+        if value != MARKER || index < 2 {
+            continue;
+        }
+        let (_, visual) = &strings[index - 1];
+        let (_, face_guid) = &strings[index - 2];
+        if visual.len() < 36
+            || !is_guid_prefix(visual)
+            || face_guid.len() != 36
+            || !is_guid_prefix(face_guid)
+            || face_guid.as_bytes()[0].is_ascii_uppercase()
+        {
+            continue;
+        }
+        out.push(FaceAppearanceAssignment {
+            face_guid: face_guid.clone(),
+            visual_guid: visual[..36].to_string(),
+        });
+    }
+    out
+}
+
+/// The marker GUID pair that opens the appearance fields of a browser body
+/// record ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+const BODY_RECORD_MARKER_GUIDS: [&str; 2] = [
+    "D87FBE62-3B12-4CA8-9014-BAD31ABDB101",
+    "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
+];
+
+/// Scan a Design `BulkStream` for browser body records that bind an
+/// appearance and return `(body entity suffix, 36-character visual GUID)`
+/// pairs.
+///
+/// A browser body record carries a `299`-tagged head whose entity is the
+/// body's design-entity suffix, the marker GUID pair, the physical-material
+/// token, the browser-node GUID with the node's entity (the body suffix plus
+/// one), the display name, an f32 opacity, the `01 01` marker, and the bound
+/// visual GUID ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+/// The scan requires the head entity and node entity to agree before
+/// accepting a record.
+pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
+    let marker: Vec<u8> = lp_utf16_needle(BODY_RECORD_MARKER_GUIDS[0])
+        .into_iter()
+        .chain(lp_utf16_needle(BODY_RECORD_MARKER_GUIDS[1]))
+        .collect();
+    let mut out = Vec::new();
+    let mut position = 0usize;
+    while let Some(at) = find(bytes, &marker, position) {
+        position = at + marker.len();
+        let Some(entity_suffix) = browser_body_appearance_at(bytes, at, position) else {
+            continue;
+        };
+        out.push(entity_suffix);
+    }
+    out
+}
+
+/// Parse the appearance fields of one browser body record whose marker GUID
+/// pair spans `marker_at..fields_at`; see [`browser_body_appearances`].
+fn browser_body_appearance_at(
+    bytes: &[u8],
+    marker_at: usize,
+    fields_at: usize,
+) -> Option<(u64, String)> {
+    // Physical-material token, then its entity reference.
+    let (token, after) = lp_utf16_at(bytes, skip_zeros(bytes, fields_at))?;
+    if !token.starts_with("PrismMaterial") || bytes.get(after)? != &0x01 {
+        return None;
+    }
+    // Browser-node GUID, then the node's entity.
+    let (node_guid, after) = lp_utf16_at(bytes, skip_zeros(bytes, after + 9))?;
+    if node_guid.len() != 36 || !is_guid_prefix(&node_guid) || bytes.get(after)? != &0x01 {
+        return None;
+    }
+    let node_entity = read_u64_at(bytes, after + 1)?;
+    // Optional display name, opacity, and the `01 01` marker.
+    let name_end = match lp_utf16_at(bytes, skip_zeros(bytes, after + 9)) {
+        Some((_, end)) => end,
+        None => after + 9,
+    };
+    let visual_at = record_tail_visual_offset(bytes, name_end)?;
+    let (visual, _) = lp_utf16_at(bytes, visual_at)?;
+    if visual.len() < 36 || !is_guid_prefix(&visual) {
+        return None;
+    }
+    // The record head's `299` class tag names the body's design entity; it
+    // precedes the marker pair and equals the node entity minus one.
+    let head_entity = preceding_class_299_entity(bytes, marker_at)?;
+    if head_entity + 1 != node_entity {
+        return None;
+    }
+    Some((head_entity, visual[..36].to_string()))
+}
+
+/// Skip the zeros and f32 opacity between a body record's display name and
+/// its `01 01` marker and return the visual GUID's length-prefix offset.
+fn record_tail_visual_offset(bytes: &[u8], name_end: usize) -> Option<usize> {
+    const OPACITY_ONE: [u8; 4] = [0x00, 0x00, 0x80, 0x3f];
+    for delta in 0..40usize {
+        let at = name_end + delta;
+        if bytes.get(at..at + 2)? != [0x01, 0x01] {
+            continue;
+        }
+        let gap = &bytes[name_end..at];
+        let zeros_only = gap.iter().all(|byte| *byte == 0);
+        let opacity_tail = gap.len() >= 4
+            && gap[gap.len() - 4..] == OPACITY_ONE
+            && gap[..gap.len() - 4].iter().all(|byte| *byte == 0);
+        if !(zeros_only || opacity_tail) {
+            return None;
+        }
+        return Some(skip_zeros_capped(bytes, at + 2, 12));
+    }
+    None
+}
+
+/// Find the `u32 3 + "299"` class tag nearest before `at` and read its
+/// entity value.
+fn preceding_class_299_entity(bytes: &[u8], at: usize) -> Option<u64> {
+    const CLASS_299: [u8; 7] = [3, 0, 0, 0, b'2', b'9', b'9'];
+    let window_start = at.saturating_sub(65536);
+    let window = bytes.get(window_start..at)?;
+    let tag_at = window
+        .windows(CLASS_299.len())
+        .rposition(|candidate| candidate == CLASS_299)?;
+    read_u64_at(bytes, window_start + tag_at + CLASS_299.len())
+}
+
+/// Encode a string as its length-prefixed UTF-16 byte form.
+fn lp_utf16_needle(value: &str) -> Vec<u8> {
+    let units: Vec<u8> = value.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let mut out = ((units.len() / 2) as u32).to_le_bytes().to_vec();
+    out.extend(units);
+    out
+}
+
+/// Read one length-prefixed UTF-16 string of up to 256 characters at
+/// `position` and return it with the offset past its code units.
+fn lp_utf16_at(bytes: &[u8], position: usize) -> Option<(String, usize)> {
+    let length = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
+    if !(1..=256).contains(&length) {
+        return None;
+    }
+    let end = position + 4 + length * 2;
+    let units: Vec<u16> = bytes
+        .get(position + 4..end)?
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect();
+    Some((String::from_utf16(&units).ok()?, end))
+}
+
+/// Advance past at most `cap` zero bytes starting at `position`.
+fn skip_zeros_capped(bytes: &[u8], position: usize, cap: usize) -> usize {
+    let mut at = position;
+    while at < bytes.len() && at - position < cap && bytes[at] == 0 {
+        at += 1;
+    }
+    at
+}
+
+/// Advance past at most eight zero bytes starting at `position`.
+fn skip_zeros(bytes: &[u8], position: usize) -> usize {
+    skip_zeros_capped(bytes, position, 8)
+}
+
+/// Whether the first 36 characters of `value` form a hyphenated GUID.
+fn is_guid_prefix(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() >= 36
+        && bytes[..36].iter().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                *byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        })
+}
+
+fn read_u64_at(bytes: &[u8], at: usize) -> Option<u64> {
+    Some(u64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
 }
 
 fn bind_bodies<S: std::hash::BuildHasher>(
@@ -660,28 +965,38 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut offset = 0usize;
     while offset + 4 <= bytes.len() {
-        let count = u32::from_le_bytes(
-            bytes[offset..offset + 4]
-                .try_into()
-                .expect("invariant: bytes[offset..offset+4] is a 4-byte slice"),
-        ) as usize;
-        let byte_len = count.saturating_mul(2);
-        if (2..=256).contains(&count) && offset + 4 + byte_len <= bytes.len() {
-            let units: Vec<u16> = bytes[offset + 4..offset + 4 + byte_len]
-                .chunks_exact(2)
-                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-                .collect();
-            if let Ok(value) = String::from_utf16(&units) {
-                if value.chars().all(|ch| !ch.is_control()) {
-                    out.push((offset, value));
-                    offset += 4 + byte_len;
-                    continue;
-                }
-            }
+        if let Some((value, record_len)) = lp_utf16_string_at(bytes, offset) {
+            out.push((offset, value));
+            offset += record_len;
+        } else {
+            offset += 1;
         }
-        offset += 1;
     }
     out
+}
+
+/// Decode one LP-UTF16 string at `offset`, validating unit by unit so a
+/// non-string byte window bails out before allocating.
+fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
+    let count = u32::from_le_bytes(bytes.get(offset..offset + 4)?.try_into().ok()?) as usize;
+    if !(2..=256).contains(&count) {
+        return None;
+    }
+    let byte_len = count * 2;
+    let payload = bytes.get(offset + 4..offset + 4 + byte_len)?;
+    let mut value = String::new();
+    for unit in char::decode_utf16(
+        payload
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]])),
+    ) {
+        let ch = unit.ok()?;
+        if ch.is_control() {
+            return None;
+        }
+        value.push(ch);
+    }
+    Some((value, 4 + byte_len))
 }
 
 fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize)> {
