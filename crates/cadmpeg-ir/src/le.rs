@@ -72,9 +72,36 @@ pub fn take_vec3(bytes: &[u8], position: &mut usize) -> Option<[f64; 3]> {
     Some(value)
 }
 
+/// Reads a u32-length-prefixed byte slice and returns it with the end offset.
+pub fn lp_u32_bytes_at(bytes: &[u8], offset: usize) -> Option<(&[u8], usize)> {
+    let length = usize::try_from(u32_at(bytes, offset)?).ok()?;
+    let start = offset.checked_add(4)?;
+    let end = start.checked_add(length)?;
+    Some((bytes.get(start..end)?, end))
+}
+
+/// Takes a u32-length-prefixed byte slice, advancing only on success.
+pub fn take_lp_u32_bytes<'a>(bytes: &'a [u8], position: &mut usize) -> Option<&'a [u8]> {
+    let (value, end) = lp_u32_bytes_at(bytes, *position)?;
+    *position = end;
+    Some(value)
+}
+
+/// Decodes `count` UTF-16LE code units at `offset` and returns the end offset.
+pub fn utf16le_at(bytes: &[u8], offset: usize, count: usize) -> Option<(String, usize)> {
+    let byte_length = count.checked_mul(2)?;
+    let end = offset.checked_add(byte_length)?;
+    let units = bytes
+        .get(offset..end)?
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    Some((String::from_utf16(&units).ok()?, end))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{f64_at, take_u32, take_vec3};
+    use super::{f64_at, lp_u32_bytes_at, take_u32, take_vec3, utf16le_at};
 
     #[test]
     fn failed_take_does_not_advance() {
@@ -91,5 +118,14 @@ mod tests {
         }
         assert_eq!(f64_at(&bytes, 8), Some(2.0));
         assert_eq!(take_vec3(&bytes, &mut 0), Some([1.0, 2.0, 3.0]));
+    }
+
+    #[test]
+    fn reads_length_prefixed_bytes_and_utf16() {
+        assert_eq!(
+            lp_u32_bytes_at(b"\x03\0\0\0abc", 0),
+            Some((b"abc".as_slice(), 7))
+        );
+        assert_eq!(utf16le_at(b"A\0B\0", 0, 2), Some(("AB".to_string(), 4)));
     }
 }

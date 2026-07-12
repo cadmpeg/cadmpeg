@@ -15,6 +15,7 @@ use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::design::DesignMaterialAssignment;
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
+use cadmpeg_ir::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, utf16le_at};
 use cadmpeg_ir::topology::Color;
 
 use crate::container::{role, ContainerScan};
@@ -931,29 +932,22 @@ fn decode_act_channels(
 }
 
 fn lp_ascii(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let length = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
+    let length = usize::try_from(u32_at(bytes, position)?).ok()?;
     if !(1..=64).contains(&length) {
         return None;
     }
-    let end = position + 4 + length;
-    let raw = bytes.get(position + 4..end)?;
+    let (raw, end) = lp_u32_bytes_at(bytes, position)?;
     raw.iter()
         .all(|byte| (0x20..0x7f).contains(byte))
         .then(|| (String::from_utf8_lossy(raw).into_owned(), end))
 }
 
 fn lp_utf16(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let length = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
+    let length = usize::try_from(u32_at(bytes, position)?).ok()?;
     if !(1..=64).contains(&length) {
         return None;
     }
-    let end = position + 4 + length * 2;
-    let units: Vec<u16> = bytes
-        .get(position + 4..end)?
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-        .collect();
-    Some((String::from_utf16(&units).ok()?, end))
+    utf16le_at(bytes, position.checked_add(4)?, length)
 }
 
 fn entity_suffix(value: &str) -> Option<u64> {
@@ -978,7 +972,7 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
 /// Decode one LP-UTF16 string at `offset`, validating unit by unit so a
 /// non-string byte window bails out before allocating.
 fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let count = u32::from_le_bytes(bytes.get(offset..offset + 4)?.try_into().ok()?) as usize;
+    let count = usize::try_from(u32_at(bytes, offset)?).ok()?;
     if !(2..=256).contains(&count) {
         return None;
     }
@@ -1290,11 +1284,7 @@ fn insert_tagged_scalar(
 }
 
 fn take_lp(bytes: &[u8], position: &mut usize) -> Option<String> {
-    let length = u32::from_le_bytes(bytes.get(*position..*position + 4)?.try_into().ok()?) as usize;
-    *position += 4;
-    let value = String::from_utf8(bytes.get(*position..*position + length)?.to_vec()).ok()?;
-    *position += length;
-    Some(value)
+    String::from_utf8(take_lp_u32_bytes(bytes, position)?.to_vec()).ok()
 }
 
 fn rgba(bytes: &[u8], offset: usize) -> Option<Color> {

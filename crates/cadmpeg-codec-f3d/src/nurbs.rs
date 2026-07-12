@@ -26,7 +26,7 @@
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_int};
+use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_int, u16_at, u32_at};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::sab::Record;
@@ -3419,19 +3419,8 @@ fn decode_vector_offset_definition(
 fn take_native_string(bytes: &[u8], position: &mut usize) -> Option<String> {
     let (length, header) = match *bytes.get(*position)? {
         0x07 => (usize::from(*bytes.get(*position + 1)?), 2),
-        0x08 => (
-            usize::from(u16::from_le_bytes(
-                bytes.get(*position + 1..*position + 3)?.try_into().ok()?,
-            )),
-            3,
-        ),
-        0x09 => (
-            usize::try_from(u32::from_le_bytes(
-                bytes.get(*position + 1..*position + 5)?.try_into().ok()?,
-            ))
-            .ok()?,
-            5,
-        ),
+        0x08 => (usize::from(u16_at(bytes, *position + 1)?), 3),
+        0x09 => (usize::try_from(u32_at(bytes, *position + 1)?).ok()?, 5),
         _ => return None,
     };
     let start = *position + header;

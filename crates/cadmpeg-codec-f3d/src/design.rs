@@ -14,6 +14,7 @@ use cadmpeg_ir::design::{
     PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
     SketchPoint, SketchRelation,
 };
+use cadmpeg_ir::le::{f64_at, lp_u32_bytes_at, u32_at, utf16le_at};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::container::{role, ContainerScan};
@@ -1001,18 +1002,6 @@ fn next_nonzero(bytes: &[u8], mut position: usize) -> Option<usize> {
     (position + 4 <= bytes.len()).then_some(position)
 }
 
-fn u32_at(bytes: &[u8], position: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(
-        bytes.get(position..position + 4)?.try_into().ok()?,
-    ))
-}
-
-fn f64_at(bytes: &[u8], position: usize) -> Option<f64> {
-    Some(f64::from_le_bytes(
-        bytes.get(position..position + 8)?.try_into().ok()?,
-    ))
-}
-
 struct SketchReferenceList {
     record_reference: u32,
     record_reference_offset: usize,
@@ -1140,40 +1129,22 @@ fn object_kind(name: &str) -> Option<DesignObjectKind> {
 }
 
 fn lp_ascii(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32::from_le_bytes(
-        bytes.get(offset..offset + 4)?.try_into().ok()?,
-    ))
-    .ok()?;
+    let length = usize::try_from(u32_at(bytes, offset)?).ok()?;
     if length > 2_000 {
         return None;
     }
-    let end = offset.checked_add(4 + length)?;
-    let raw = bytes.get(offset + 4..end)?;
+    let (raw, end) = lp_u32_bytes_at(bytes, offset)?;
     raw.iter()
         .all(u8::is_ascii_graphic)
         .then(|| (String::from_utf8_lossy(raw).into_owned(), end))
 }
 
 fn lp_utf16(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32::from_le_bytes(
-        bytes.get(offset..offset + 4)?.try_into().ok()?,
-    ))
-    .ok()?;
+    let length = usize::try_from(u32_at(bytes, offset)?).ok()?;
     if !(1..=256).contains(&length) {
         return None;
     }
-    let end = offset.checked_add(4 + length * 2)?;
-    let units = bytes
-        .get(offset + 4..end)?
-        .chunks_exact(2)
-        .map(|raw| {
-            u16::from_le_bytes(
-                raw.try_into()
-                    .expect("invariant: chunks_exact(2) yields 2-byte slices"),
-            )
-        })
-        .collect::<Vec<_>>();
-    Some((String::from_utf16(&units).ok()?, end))
+    utf16le_at(bytes, offset.checked_add(4)?, length)
 }
 
 fn is_guid(value: &str) -> bool {
