@@ -7482,6 +7482,40 @@ fn decode_retains_generated_rolling_ball_definition() {
 }
 
 #[test]
+fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    for name in ["rbblnsur", "pipe_spl_sur", "pipesur"] {
+        let bytes =
+            with_legacy_subtype(synthetic_rb_blend_spl_sur_smbh(), "rb_blend_spl_sur", name);
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&bytes)),
+                &DecodeOptions::default(),
+            )
+            .expect("rolling-ball alias decode");
+        assert!(matches!(
+            result.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::Blend { .. }
+        ));
+        let mut source_less = result.ir;
+        source_less.source = None;
+        source_less.unknowns.clear();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("canonical rolling-ball encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("canonical rolling-ball round trip");
+        assert!(matches!(
+            round_trip.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::Blend { .. }
+        ));
+    }
+}
+
+#[test]
 fn generated_f3d_rewrites_rolling_ball_radius_law() {
     use cadmpeg_ir::geometry::{BlendRadiusLaw, ProceduralSurfaceDefinition};
 

@@ -372,6 +372,8 @@ Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus
 
 **`comp_spl_sur`**: the solved NURBS surface and fit tolerance occur first, followed by a float array and one component surface per array element. Each float is paired positionally with its component surface. The leading surface block is the face cache; trailing NURBS component surfaces do not replace it during cache selection.
 
+**Rolling-ball aliases**: `rb_blend_spl_sur`, `rbblnsur`, `pipe_spl_sur`, and `pipesur` select the same rolling-ball blend layout. The pipe names denote its surface-surface specialization. Native generation uses `rb_blend_spl_sur`.
+
 ### 7.4 Pcurves (2D UV trimming curves)
 
 A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at record-relative **+37**:

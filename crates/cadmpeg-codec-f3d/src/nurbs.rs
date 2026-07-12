@@ -1060,10 +1060,23 @@ fn decode_rb_blend_spl_sur(
     record_bytes: &[u8],
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
-    let marker = b"\x0f\x0d\x10rb_blend_spl_sur";
-    let start = record_bytes
-        .windows(marker.len())
-        .position(|w| w == marker)?;
+    let names: [&[u8]; 4] = [
+        b"rb_blend_spl_sur",
+        b"rbblnsur",
+        b"pipe_spl_sur",
+        b"pipesur",
+    ];
+    let (start, header_len) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len() + 3))
+    })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let cache = marker_positions(span)
         .into_iter()
@@ -1072,7 +1085,7 @@ fn decode_rb_blend_spl_sur(
 
     let mut support_count = 0usize;
     let mut radius_boundary = None;
-    let mut pos = marker.len();
+    let mut pos = header_len;
     while pos < cache.end {
         match span[pos] {
             0x0d | 0x0e => {
@@ -1089,7 +1102,7 @@ fn decode_rb_blend_spl_sur(
     }
     let boundary = radius_boundary?;
     let mut radius_values = Vec::new();
-    let mut pos = marker.len();
+    let mut pos = header_len;
     while pos < boundary {
         if span[pos] == 0x06 {
             radius_values.push(read_f64(span, pos + 1)?);
