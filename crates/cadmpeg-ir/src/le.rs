@@ -1,35 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked little-endian primitive readers shared by binary codecs.
 
-/// Returns `count` bytes at `offset` without advancing external state.
-pub fn bytes_at(bytes: &[u8], offset: usize, count: usize) -> Option<&[u8]> {
-    bytes.get(offset..offset.checked_add(count)?)
-}
+use crate::read::readers;
 
-/// Takes `count` bytes and advances `position` only when the full slice exists.
-pub fn take<'a>(bytes: &'a [u8], position: &mut usize, count: usize) -> Option<&'a [u8]> {
-    let value = bytes_at(bytes, *position, count)?;
-    *position += count;
-    Some(value)
-}
-
-macro_rules! readers {
-    ($(($at:ident, $take:ident, $ty:ty, $width:literal)),* $(,)?) => {
-        $(
-            #[doc = concat!("Reads a little-endian `", stringify!($ty), "` at `offset`.")]
-            pub fn $at(bytes: &[u8], offset: usize) -> Option<$ty> {
-                Some(<$ty>::from_le_bytes(bytes_at(bytes, offset, $width)?.try_into().ok()?))
-            }
-
-            #[doc = concat!("Takes a little-endian `", stringify!($ty), "` and advances `position`.")]
-            pub fn $take(bytes: &[u8], position: &mut usize) -> Option<$ty> {
-                Some(<$ty>::from_le_bytes(take(bytes, position, $width)?.try_into().ok()?))
-            }
-        )*
-    };
-}
-
-readers!(
+readers!(from_le_bytes, "little-endian";
     (u16_at, take_u16, u16, 2),
     (i16_at, take_i16, i16, 2),
     (u32_at, take_u32, u32, 4),
@@ -39,23 +13,6 @@ readers!(
     (f32_at, take_f32, f32, 4),
     (f64_at, take_f64, f64, 8),
 );
-
-/// Reads `count` consecutive little-endian `f64` values at `offset`.
-pub fn f64s_at(bytes: &[u8], offset: usize, count: usize) -> Option<Vec<f64>> {
-    let byte_length = count.checked_mul(8)?;
-    let values = bytes_at(bytes, offset, byte_length)?;
-    values
-        .chunks_exact(8)
-        .map(|value| Some(f64::from_le_bytes(value.try_into().ok()?)))
-        .collect()
-}
-
-/// Takes `count` consecutive little-endian `f64` values.
-pub fn take_f64s(bytes: &[u8], position: &mut usize, count: usize) -> Option<Vec<f64>> {
-    let values = f64s_at(bytes, *position, count)?;
-    *position = position.checked_add(count.checked_mul(8)?)?;
-    Some(values)
-}
 
 /// Reads a signed little-endian integer with a four- or eight-byte width.
 pub fn int_at(bytes: &[u8], offset: usize, width: usize) -> Option<i64> {
@@ -70,22 +27,6 @@ pub fn int_at(bytes: &[u8], offset: usize, width: usize) -> Option<i64> {
 pub fn take_int(bytes: &[u8], position: &mut usize, width: usize) -> Option<i64> {
     let value = int_at(bytes, *position, width)?;
     *position += width;
-    Some(value)
-}
-
-/// Reads three consecutive little-endian `f64` values.
-pub fn vec3_at(bytes: &[u8], offset: usize) -> Option<[f64; 3]> {
-    Some([
-        f64_at(bytes, offset)?,
-        f64_at(bytes, offset.checked_add(8)?)?,
-        f64_at(bytes, offset.checked_add(16)?)?,
-    ])
-}
-
-/// Takes three consecutive little-endian `f64` values.
-pub fn take_vec3(bytes: &[u8], position: &mut usize) -> Option<[f64; 3]> {
-    let value = vec3_at(bytes, *position)?;
-    *position += 24;
     Some(value)
 }
 
