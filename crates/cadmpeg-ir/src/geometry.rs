@@ -928,6 +928,81 @@ pub struct VariableBlendConstruction {
     pub post_pcurve: Option<PcurveGeometry>,
 }
 
+/// One boundary record in a native vertex-blend patch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VertexBlendBoundary {
+    /// Native boundary type enum.
+    pub boundary_type: i64,
+    /// Native model-space magic location.
+    pub magic: Point3,
+    /// Native U-smoothing enum.
+    pub u_smoothing: i64,
+    /// Native V-smoothing enum.
+    pub v_smoothing: i64,
+    /// Native fullness scalar.
+    pub fullness: f64,
+    /// Structurally selected boundary geometry.
+    pub geometry: VertexBlendBoundaryGeometry,
+}
+
+/// Type-specific geometry of a vertex-blend boundary.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum VertexBlendBoundaryGeometry {
+    /// Curve boundary with a circle/ellipse/unknown twist form.
+    Circle {
+        /// Boundary curve.
+        curve: CurveId,
+        /// Native circle-form enum.
+        form: i64,
+        /// Zero, one, or two model-space twist locations selected by `form`.
+        twists: Vec<Point3>,
+        /// Two ordered curve parameters.
+        parameters: [f64; 2],
+        /// Native sense enum.
+        sense: i64,
+    },
+    /// Degenerate boundary at a model-space location.
+    Degenerate {
+        /// Degenerate location.
+        location: Point3,
+        /// Two ordered boundary normals.
+        normals: [Vector3; 2],
+    },
+    /// Surface pcurve boundary.
+    Pcurve {
+        /// Support surface.
+        surface: SurfaceId,
+        /// Native BS2 pcurve, absent for `nullbs`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pcurve: Option<PcurveGeometry>,
+        /// Native sense enum.
+        sense: i64,
+        /// Parameter-space fit tolerance.
+        fit_tolerance: f64,
+    },
+    /// Planar boundary described by a normal and curve.
+    Plane {
+        /// Plane normal.
+        normal: Vector3,
+        /// Two ordered plane parameters.
+        parameters: [f64; 2],
+        /// Boundary curve.
+        curve: CurveId,
+    },
+}
+
+/// Complete native vertex-blend surface construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VertexBlendConstruction {
+    /// Ordered boundary records.
+    pub boundaries: Vec<VertexBlendBoundary>,
+    /// Native grid-size integer.
+    pub grid_size: i64,
+    /// Native model-space fit tolerance.
+    pub fit_tolerance: f64,
+}
+
 /// Radius law for a procedural blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
