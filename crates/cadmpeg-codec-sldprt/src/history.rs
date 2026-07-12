@@ -2038,13 +2038,11 @@ pub fn sync_neutral_features(
                 tools: BodySelection::Native(tools),
                 op,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained combine record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("Combine") || *op == BooleanOp::NewBody {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Combine"))
+                    || *op == BooleanOp::NewBody
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported combine semantics",
                         feature.id
@@ -2056,51 +2054,77 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let mut properties = record.properties.clone();
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
                 properties.insert("Target".into(), target.clone());
                 properties.insert("Tools".into(), tools.clone());
                 properties.insert("Operation".into(), format_boolean_op(*op).into());
-                (record.kind.clone(), record.parameters.clone(), properties)
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Combine".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
             }
             FeatureDefinition::DeleteFace {
                 faces: FaceSelection::Native(faces),
                 heal,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained delete-face record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("DeleteFace") || faces.trim().is_empty() {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("DeleteFace"))
+                    || faces.trim().is_empty()
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported delete-face semantics",
                         feature.id
                     )));
                 }
-                let mut properties = record.properties.clone();
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
                 properties.insert("Faces".into(), faces.clone());
                 properties.insert("Heal".into(), heal.to_string());
-                (record.kind.clone(), record.parameters.clone(), properties)
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "DeleteFace".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
             }
             FeatureDefinition::MoveFace {
                 faces: FaceSelection::Native(faces),
                 motion,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained move-face record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("MoveFace") || faces.trim().is_empty() {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("MoveFace"))
+                    || faces.trim().is_empty()
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported move-face semantics",
                         feature.id
                     )));
                 }
-                let mut parameters = record.parameters.clone();
-                let mut properties = record.properties.clone();
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
                 properties.insert("Faces".into(), faces.clone());
                 parameters.remove("Distance");
                 parameters.remove("Angle");
@@ -2139,7 +2163,13 @@ pub fn sync_neutral_features(
                         parameters.insert("Angle".into(), format_angle_rad(angle.0));
                     }
                 }
-                (record.kind.clone(), parameters, properties)
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "MoveFace".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
             }
             FeatureDefinition::Dome {
                 faces: FaceSelection::Native(faces),
@@ -2147,13 +2177,11 @@ pub fn sync_neutral_features(
                 elliptical,
                 reverse,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained dome record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("Dome") || faces.trim().is_empty() {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Dome"))
+                    || faces.trim().is_empty()
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported dome semantics",
                         feature.id
@@ -2165,13 +2193,25 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let mut parameters = record.parameters.clone();
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
                 parameters.insert("Height".into(), format_length_mm(height.0));
-                let mut properties = record.properties.clone();
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
                 properties.insert("Faces".into(), faces.clone());
                 properties.insert("Elliptical".into(), elliptical.to_string());
                 properties.insert("Reverse".into(), reverse.to_string());
-                (record.kind.clone(), parameters, properties)
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Dome".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
             }
             FeatureDefinition::Hole {
                 face,
@@ -2181,19 +2221,19 @@ pub fn sync_neutral_features(
                 diameter,
                 extent,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained hole record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("Hole") {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Hole"))
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported hole semantics",
                         feature.id
                     )));
                 }
-                let mut parameters = record.parameters.clone();
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
                 parameters.insert("Diameter".into(), format_length_mm(diameter.0));
                 parameters.remove("CounterboreDiameter");
                 parameters.remove("CounterboreDepth");
@@ -2212,7 +2252,10 @@ pub fn sync_neutral_features(
                         parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
                     }
                 }
-                let mut properties = record.properties.clone();
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
                 match face {
                     Some(FaceSelection::Native(selection)) if !selection.is_empty() => {
                         properties.insert("Face".into(), selection.clone());
@@ -2278,7 +2321,13 @@ pub fn sync_neutral_features(
                         )))
                     }
                 }
-                (record.kind.clone(), parameters, properties)
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Hole".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
             }
             FeatureDefinition::Revolve {
                 profile,

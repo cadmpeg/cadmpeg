@@ -1705,10 +1705,10 @@ fn encoder_writes_source_less_curved_sketches() {
 #[test]
 fn encoder_writes_source_less_native_features() {
     use cadmpeg_ir::features::{
-        Angle, ChamferSpec, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        Length, RadiusSpec,
+        Angle, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, Extent, FaceMotion,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, HoleKind, Length, RadiusSpec,
     };
-    use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -1732,7 +1732,7 @@ fn encoder_writes_source_less_native_features() {
         },
         native_ref: None,
     });
-    let definitions = [
+    let definitions = vec![
         FeatureDefinition::Fillet {
             edges: EdgeSelection::Native("edge-a,edge-b".into()),
             radius: RadiusSpec::Constant {
@@ -1757,6 +1757,42 @@ fn encoder_writes_source_less_native_features() {
             pull_direction: Vector3::new(0.0, 0.0, 1.0),
             angle: Angle(0.2),
             outward: false,
+        },
+        FeatureDefinition::Combine {
+            target: BodySelection::Native("body-a".into()),
+            tools: BodySelection::Native("body-b,body-c".into()),
+            op: BooleanOp::Join,
+        },
+        FeatureDefinition::DeleteFace {
+            faces: FaceSelection::Native("face-d".into()),
+            heal: true,
+        },
+        FeatureDefinition::MoveFace {
+            faces: FaceSelection::Native("face-e".into()),
+            motion: FaceMotion::Rotate {
+                axis_origin: Point3::new(1.0, 2.0, 3.0),
+                axis_dir: Vector3::new(0.0, 1.0, 0.0),
+                angle: Angle(0.4),
+            },
+        },
+        FeatureDefinition::Dome {
+            faces: FaceSelection::Native("face-f".into()),
+            height: Length(4.0),
+            elliptical: true,
+            reverse: false,
+        },
+        FeatureDefinition::Hole {
+            face: Some(FaceSelection::Native("face-g".into())),
+            position: Some(Point3::new(3.0, 4.0, 5.0)),
+            direction: Some(Vector3::new(0.0, 0.0, -1.0)),
+            kind: HoleKind::Countersink {
+                diameter: Length(8.0),
+                angle: Angle(1.4),
+            },
+            diameter: Length(5.0),
+            extent: Extent::Blind {
+                length: Length(20.0),
+            },
         },
     ];
     for (index, definition) in definitions.into_iter().enumerate() {
@@ -1822,6 +1858,36 @@ fn encoder_writes_source_less_native_features() {
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Draft { .. })));
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::Combine { .. })));
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::DeleteFace { .. })));
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::MoveFace { .. })));
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::Dome { .. })));
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::Hole { .. })));
 }
 
 #[test]
