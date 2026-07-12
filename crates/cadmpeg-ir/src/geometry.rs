@@ -2204,6 +2204,9 @@ pub struct Pcurve {
     /// Inline `exp_par_cur` parameterization reversal; absent on ref-form pcurves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wrapper_reversed: Option<bool>,
+    /// Four native booleans following the inline subtype scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_tail_flags: Option<[bool; 4]>,
     /// Native parameter interval on which this pcurve is evaluated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_range: Option<[f64; 2]>,

@@ -6611,7 +6611,9 @@ fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError>
     }
     native_f64(bytes, pcurve.fit_tolerance.unwrap_or(0.0));
     bytes.push(0x10);
-    bytes.extend_from_slice(&[0x0b; 4]);
+    for flag in pcurve.native_tail_flags.unwrap_or([true; 4]) {
+        bytes.push(native_bool(flag));
+    }
     let range = pcurve.parameter_range.unwrap_or_else(|| {
         [
             knots.first().copied().unwrap_or(0.0),

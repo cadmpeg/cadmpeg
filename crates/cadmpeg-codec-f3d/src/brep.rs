@@ -3607,6 +3607,21 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         }
                         _ => None,
                     },
+                    native_tail_flags: {
+                        let flags = r
+                            .tokens
+                            .iter()
+                            .filter_map(|token| match token {
+                                Token::True => Some(true),
+                                Token::False => Some(false),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>();
+                        matches!(r.chunk(4), Some(Token::True | Token::False))
+                            .then(|| flags.get(flags.len().saturating_sub(4)..))
+                            .flatten()
+                            .and_then(|flags| flags.try_into().ok())
+                    },
                     parameter_range: if matches!(
                         r.chunk(4),
                         Some(Token::True | Token::False | Token::Ref(_))

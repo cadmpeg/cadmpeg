@@ -427,7 +427,7 @@ A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at r
 
 UV poles are dimensionless surface parameters. `wrapper_reversed` is the inline curve's fit-convention bit, independent of coedge sense and of the parameter-interval sign.
 
-The inline control polygon is followed by a `DOUBLE` parameter-space fit tolerance. After the nested support-surface scope and four trailing booleans, two final `DOUBLE` values store the pcurve parameter interval `(t_start, t_end)`. Ref-form pcurves store the same interval immediately after their intcurve reference and have no wrapper or inline fit-tolerance carrier.
+The inline control polygon is followed by a `DOUBLE` parameter-space fit tolerance. After the nested support-surface scope, four ordered trailing booleans precede two final `DOUBLE` values storing the pcurve parameter interval `(t_start, t_end)`. The four booleans are retained and regenerated independently. Ref-form pcurves store the same interval immediately after their intcurve reference and have no wrapper, boolean tail, or inline fit-tolerance carrier.
 
 Coedge sense is the edge-use orientation for a pcurve inherited from its surface: `effective_pcurve = flip_pcurve(surface_pcurve, coedge.sense)`. The stored 2D B-spline poles and knots retain their native order. `wrapper_reversed` is separate from coedge sense.
 

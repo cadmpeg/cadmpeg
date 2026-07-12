@@ -581,7 +581,7 @@ fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     pcurve.extend_from_slice(&block);
     t_dbl(&mut pcurve, 0.001);
     pcurve.push(0x10);
-    pcurve.extend_from_slice(&[0x0b; 4]);
+    pcurve.extend_from_slice(&[0x0a, 0x0b, 0x0a, 0x0b]);
     t_dbl(&mut pcurve, -1.0);
     t_dbl(&mut pcurve, 2.0);
     t_end(&mut pcurve);
@@ -4172,6 +4172,10 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
         expected.wrapper_reversed
     );
     assert_eq!(
+        round_trip.ir.model.pcurves[0].native_tail_flags,
+        expected.native_tail_flags
+    );
+    assert_eq!(
         round_trip.ir.model.pcurves[0].parameter_range,
         expected.parameter_range
     );
@@ -4220,6 +4224,7 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
     let actual = &round_trip.ir.model.pcurves[0];
     assert_eq!(actual.geometry, expected.geometry);
     assert_eq!(actual.wrapper_reversed, expected.wrapper_reversed);
+    assert_eq!(actual.native_tail_flags, expected.native_tail_flags);
     assert_eq!(actual.parameter_range, expected.parameter_range);
     assert_eq!(actual.fit_tolerance, expected.fit_tolerance);
 }
@@ -12475,6 +12480,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     let mut edited = decoded.ir;
     let pcurve = &mut edited.model.pcurves[0];
     assert_eq!(pcurve.wrapper_reversed, Some(false));
+    assert_eq!(pcurve.native_tail_flags, Some([true, false, true, false]));
     assert_eq!(pcurve.parameter_range, Some([-1.0, 2.0]));
     assert_eq!(pcurve.fit_tolerance, Some(0.001));
     let cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
