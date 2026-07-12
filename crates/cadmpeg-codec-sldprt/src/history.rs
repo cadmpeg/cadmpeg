@@ -2586,18 +2586,15 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained pattern record",
-                        feature.id
-                    )));
-                };
                 let expected_form = match pattern {
                     PatternKind::Linear { .. } => PatternForm::Linear,
                     PatternKind::Circular { .. } => PatternForm::Circular,
                     PatternKind::Mirror { .. } => PatternForm::Mirror,
                 };
-                if pattern_form(record) != Some(expected_form) {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| pattern_form(record) != Some(expected_form))
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes pattern form",
                         feature.id
@@ -2619,8 +2616,14 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let mut parameters = record.parameters.clone();
-                let mut properties = record.properties.clone();
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
                 properties.insert("Seeds".into(), seed_sources.join(","));
                 match pattern {
                     PatternKind::Linear {
@@ -2656,7 +2659,15 @@ pub fn sync_neutral_features(
                         properties.insert("PlaneNormal".into(), format_vector3(*plane_normal));
                     }
                 }
-                (record.kind.clone(), parameters, properties)
+                let kind = existing.as_deref().map_or_else(
+                    || match expected_form {
+                        PatternForm::Linear => "LinearPattern".into(),
+                        PatternForm::Circular => "CircularPattern".into(),
+                        PatternForm::Mirror => "Mirror".into(),
+                    },
+                    |record| record.kind.clone(),
+                );
+                (kind, parameters, properties)
             }
             _ => {
                 return Err(CodecError::NotImplemented(format!(

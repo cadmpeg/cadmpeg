@@ -1706,7 +1706,8 @@ fn encoder_writes_source_less_curved_sketches() {
 fn encoder_writes_source_less_native_features() {
     use cadmpeg_ir::features::{
         Angle, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, Extent, FaceMotion,
-        FaceSelection, Feature, FeatureDefinition, FeatureId, HoleKind, Length, RadiusSpec,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, HoleKind, Length, PatternKind,
+        RadiusSpec,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::BTreeMap;
@@ -1718,8 +1719,9 @@ fn encoder_writes_source_less_native_features() {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
+    let seed_id = FeatureId("sldprt:model:feature#generated:0".into());
     ir.model.features.push(Feature {
-        id: FeatureId("sldprt:model:feature#generated:0".into()),
+        id: seed_id.clone(),
         ordinal: 0,
         name: Some("Boss".into()),
         suppressed: false,
@@ -1807,6 +1809,38 @@ fn encoder_writes_source_less_native_features() {
             native_ref: None,
         });
     }
+    let patterns = [
+        PatternKind::Linear {
+            direction: Vector3::new(1.0, 0.0, 0.0),
+            spacing: Length(10.0),
+            count: 3,
+        },
+        PatternKind::Circular {
+            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_dir: Vector3::new(0.0, 0.0, 1.0),
+            angle: Angle(std::f64::consts::TAU),
+            count: 6,
+        },
+        PatternKind::Mirror {
+            plane_origin: Point3::new(0.0, 0.0, 0.0),
+            plane_normal: Vector3::new(1.0, 0.0, 0.0),
+        },
+    ];
+    for (index, pattern) in patterns.into_iter().enumerate() {
+        ir.model.features.push(Feature {
+            id: FeatureId(format!("synthetic:test:feature#pattern-{index}")),
+            ordinal: index as u64 + 10,
+            name: Some(format!("Pattern {index}")),
+            suppressed: false,
+            parent: None,
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Pattern {
+                seeds: vec![seed_id.clone()],
+                pattern,
+            },
+            native_ref: None,
+        });
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec.encode(&ir, &mut encoded).unwrap();
@@ -1888,6 +1922,16 @@ fn encoder_writes_source_less_native_features() {
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Hole { .. })));
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .features
+            .iter()
+            .filter(|feature| matches!(feature.definition, FeatureDefinition::Pattern { .. }))
+            .count(),
+        3
+    );
 }
 
 #[test]
