@@ -1374,7 +1374,8 @@ fn encoder_writes_source_less_ir() {
 #[test]
 fn encoder_writes_source_less_line_sketches() {
     use cadmpeg_ir::features::{
-        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+        Angle, BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, PathRef,
+        ProfileRef,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
@@ -1440,6 +1441,50 @@ fn encoder_writes_source_less_line_sketches() {
         },
         native_ref: None,
     });
+    let profile = ProfileRef::Sketch(sketch_id.clone());
+    let path = PathRef::Sketch(sketch_id.clone());
+    let generated = [
+        FeatureDefinition::Revolve {
+            profile: profile.clone(),
+            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_dir: Vector3::new(0.0, 1.0, 0.0),
+            angle: Extent::Angle { angle: Angle(1.2) },
+            op: BooleanOp::NewBody,
+        },
+        FeatureDefinition::Sweep {
+            profile: profile.clone(),
+            path: path.clone(),
+            op: BooleanOp::Join,
+            twist: Some(Angle(0.3)),
+            scale: Some(1.5),
+        },
+        FeatureDefinition::Loft {
+            profiles: vec![profile.clone(), profile.clone()],
+            guides: vec![path],
+            op: BooleanOp::NewBody,
+            closed: false,
+        },
+        FeatureDefinition::Rib {
+            profile,
+            direction: Vector3::new(0.0, 0.0, 1.0),
+            thickness: Length(2.5),
+            both_sides: true,
+            draft: Some(Angle(0.1)),
+            op: BooleanOp::Join,
+        },
+    ];
+    for (index, definition) in generated.into_iter().enumerate() {
+        ir.model.features.push(Feature {
+            id: FeatureId(format!("synthetic:test:feature#profile-op-{index}")),
+            ordinal: index as u64 + 2,
+            name: Some(format!("Profile op {index}")),
+            suppressed: false,
+            parent: None,
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        });
+    }
     ir.model.features.push(Feature {
         id: FeatureId("synthetic:test:feature#extrude".into()),
         ordinal: 1,
@@ -1495,6 +1540,30 @@ fn encoder_writes_source_less_line_sketches() {
             ..
         }
     )));
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::Revolve { .. })));
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::Sweep { .. })));
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::Loft { .. })));
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::Rib { .. })));
 }
 
 #[test]

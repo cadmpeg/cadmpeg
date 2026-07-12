@@ -2230,13 +2230,10 @@ pub fn sync_neutral_features(
                 angle,
                 op,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained revolution record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("Revolve") {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Revolve"))
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported revolution semantics",
                         feature.id
@@ -2255,8 +2252,14 @@ pub fn sync_neutral_features(
                             feature.id
                         ))
                     })?;
-                let mut parameters = record.parameters.clone();
-                let mut properties = record.properties.clone();
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
                 parameters.remove("Angle");
                 parameters.remove("Angle2");
                 match angle {
@@ -2284,7 +2287,13 @@ pub fn sync_neutral_features(
                 properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
                 properties.insert("Operation".into(), format_boolean_op(*op).into());
                 properties.insert("Profile".into(), profile_source);
-                (record.kind.clone(), parameters, properties)
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Revolve".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
             }
             FeatureDefinition::Sweep {
                 profile,
@@ -2293,13 +2302,10 @@ pub fn sync_neutral_features(
                 twist,
                 scale,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained sweep record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("Sweep") {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Sweep"))
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
                         feature.id
@@ -2319,7 +2325,10 @@ pub fn sync_neutral_features(
                             feature.id
                         ))
                     })?;
-                let mut parameters = record.parameters.clone();
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
                 match twist {
                     Some(twist) => {
                         parameters.insert("Twist".into(), format_angle_rad(twist.0));
@@ -2342,11 +2351,20 @@ pub fn sync_neutral_features(
                         parameters.remove("Scale");
                     }
                 }
-                let mut properties = record.properties.clone();
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
                 properties.insert("Profile".into(), profile_source.clone());
                 properties.insert("Path".into(), path_source.clone());
                 properties.insert("Operation".into(), format_boolean_op(*op).into());
-                (record.kind.clone(), parameters, properties)
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Sweep".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
             }
             FeatureDefinition::Loft {
                 profiles,
@@ -2354,13 +2372,11 @@ pub fn sync_neutral_features(
                 op,
                 closed,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained loft record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("Loft") || profiles.len() < 2 {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Loft"))
+                    || profiles.len() < 2
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported loft semantics",
                         feature.id
@@ -2386,7 +2402,10 @@ pub fn sync_neutral_features(
                             feature.id
                         ))
                     })?;
-                let mut properties = record.properties.clone();
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
                 properties.insert("Profiles".into(), profile_sources.join(","));
                 if guide_sources.is_empty() {
                     properties.remove("Guides");
@@ -2395,7 +2414,16 @@ pub fn sync_neutral_features(
                 }
                 properties.insert("Operation".into(), format_boolean_op(*op).into());
                 properties.insert("Closed".into(), closed.to_string());
-                (record.kind.clone(), record.parameters.clone(), properties)
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Loft".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
             }
             FeatureDefinition::Rib {
                 profile,
@@ -2405,13 +2433,10 @@ pub fn sync_neutral_features(
                 draft,
                 op,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained rib record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("Rib") {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Rib"))
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
                         feature.id
@@ -2425,7 +2450,10 @@ pub fn sync_neutral_features(
                             feature.id
                         ))
                     })?;
-                let mut parameters = record.parameters.clone();
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
                 parameters.insert("Thickness".into(), format_length_mm(thickness.0));
                 match draft {
                     Some(draft) => {
@@ -2435,12 +2463,21 @@ pub fn sync_neutral_features(
                         parameters.remove("Draft");
                     }
                 }
-                let mut properties = record.properties.clone();
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
                 properties.insert("Profile".into(), profile_source.clone());
                 properties.insert("Direction".into(), format_vector3(*direction));
                 properties.insert("BothSides".into(), both_sides.to_string());
                 properties.insert("Operation".into(), format_boolean_op(*op).into());
-                (record.kind.clone(), parameters, properties)
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Rib".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
                 let Some(record) = existing.as_deref() else {
