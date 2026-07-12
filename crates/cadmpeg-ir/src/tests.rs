@@ -1628,6 +1628,13 @@ fn feature_extents_round_trip_through_json() {
         Extent::Angle {
             angle: Angle(std::f64::consts::PI),
         },
+        Extent::SymmetricAngle {
+            angle: Angle(std::f64::consts::FRAC_PI_2),
+        },
+        Extent::TwoSidedAngles {
+            first: Angle(0.25),
+            second: Angle(0.75),
+        },
     ];
 
     let json = serde_json::to_string(&extents).unwrap();

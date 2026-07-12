@@ -369,7 +369,7 @@ fn project_definition(
     } else if feature.kind.eq_ignore_ascii_case("Hole") {
         project_hole(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Revolve") {
-        project_revolve(feature).unwrap_or_else(|| native_definition(feature))
+        project_revolve(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if pattern_form(feature).is_some() {
         project_pattern(feature, by_source).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Sweep") {
@@ -687,24 +687,49 @@ fn parse_count(value: &str) -> Option<u32> {
     value.trim().parse().ok().filter(|count| *count > 0)
 }
 
-fn project_revolve(feature: &Feature) -> Option<FeatureDefinition> {
-    let angle = feature
-        .parameters
-        .get("Angle")
-        .and_then(|value| parse_angle_rad(value))?;
+fn project_revolve(
+    feature: &Feature,
+    native_by_source: &HashMap<&str, &str>,
+) -> Option<FeatureDefinition> {
+    let angle = |name| {
+        feature
+            .parameters
+            .get(name)
+            .and_then(|value| parse_angle_rad(value))
+            .map(Angle)
+    };
+    let extent = match feature.properties.get("EndCondition").map(String::as_str) {
+        None | Some("OneSided") => Extent::Angle {
+            angle: angle("Angle")?,
+        },
+        Some("Symmetric") => Extent::SymmetricAngle {
+            angle: angle("Angle")?,
+        },
+        Some("TwoSided") => Extent::TwoSidedAngles {
+            first: angle("Angle")?,
+            second: angle("Angle2")?,
+        },
+        Some(_) => return None,
+    };
     let axis_origin = parse_point3_mm(feature.properties.get("AxisOrigin")?)?;
     let axis_dir = parse_vector3(feature.properties.get("AxisDirection")?)?;
     if !(axis_dir.norm().is_finite() && axis_dir.norm() > 0.0) {
         return None;
     }
     let op = parse_boolean_op(feature.properties.get("Operation")?)?;
+    let profile = feature.properties.get("Profile").map_or_else(
+        || Some(feature.id.clone()),
+        |source| {
+            native_by_source
+                .get(source.as_str())
+                .map(|id| (*id).to_string())
+        },
+    )?;
     Some(FeatureDefinition::Revolve {
-        profile: ProfileRef::Native(feature.id.clone()),
+        profile: ProfileRef::Native(profile),
         axis_origin,
         axis_dir,
-        angle: Extent::Angle {
-            angle: Angle(angle),
-        },
+        angle: extent,
         op,
     })
 }
@@ -1562,7 +1587,10 @@ pub fn sync_neutral_features(
                     Extent::ThroughAll => {
                         properties.insert("EndCondition".into(), "ThroughAll".into());
                     }
-                    Extent::ToFace { .. } | Extent::Angle { .. } => {
+                    Extent::ToFace { .. }
+                    | Extent::Angle { .. }
+                    | Extent::SymmetricAngle { .. }
+                    | Extent::TwoSidedAngles { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} uses an unsupported extrusion extent",
                             feature.id
@@ -1961,9 +1989,7 @@ pub fn sync_neutral_features(
                 profile,
                 axis_origin,
                 axis_dir,
-                angle: Extent::Angle {
-                    angle: Angle(angle),
-                },
+                angle,
                 op,
             } => {
                 let Some(record) = existing.as_deref() else {
@@ -1972,26 +1998,54 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 };
-                if !record.kind.eq_ignore_ascii_case("Revolve")
-                    || profile != &ProfileRef::Native(record.id.clone())
-                {
+                if !record.kind.eq_ignore_ascii_case("Revolve") {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported revolution semantics",
                         feature.id
                     )));
                 }
-                if !(axis_dir.norm().is_finite() && axis_dir.norm() > 0.0) {
+                if !valid_direction(*axis_dir) {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has a degenerate revolution axis",
                         feature.id
                     )));
                 }
+                let profile_source = profile_source(profile, &record_sources, &sketch_sources)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing revolution profile",
+                            feature.id
+                        ))
+                    })?;
                 let mut parameters = record.parameters.clone();
-                parameters.insert("Angle".into(), format_angle_rad(*angle));
                 let mut properties = record.properties.clone();
+                parameters.remove("Angle");
+                parameters.remove("Angle2");
+                match angle {
+                    Extent::Angle { angle } => {
+                        properties.insert("EndCondition".into(), "OneSided".into());
+                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    }
+                    Extent::SymmetricAngle { angle } => {
+                        properties.insert("EndCondition".into(), "Symmetric".into());
+                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    }
+                    Extent::TwoSidedAngles { first, second } => {
+                        properties.insert("EndCondition".into(), "TwoSided".into());
+                        parameters.insert("Angle".into(), format_angle_rad(first.0));
+                        parameters.insert("Angle2".into(), format_angle_rad(second.0));
+                    }
+                    _ => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses a linear revolution extent",
+                            feature.id
+                        )));
+                    }
+                }
                 properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
                 properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
                 properties.insert("Operation".into(), format_boolean_op(*op).into());
+                properties.insert("Profile".into(), profile_source);
                 (record.kind.clone(), parameters, properties)
             }
             FeatureDefinition::Sweep {

@@ -436,6 +436,18 @@ pub enum Extent {
         /// Angular travel.
         angle: Angle,
     },
+    /// Angular travel split equally around the profile plane.
+    SymmetricAngle {
+        /// Total angular travel.
+        angle: Angle,
+    },
+    /// Independent angular travel on each side of the profile plane.
+    TwoSidedAngles {
+        /// Angular travel on the first side.
+        first: Angle,
+        /// Angular travel on the second side.
+        second: Angle,
+    },
 }
 
 /// Boolean effect of a solid-producing feature.
