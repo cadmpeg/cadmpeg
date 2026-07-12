@@ -7403,6 +7403,7 @@ struct NurbsPcurveEdit {
     geometry: PcurveGeometry,
     periodic: Option<bool>,
     wrapper_reversed: Option<bool>,
+    native_tail_flags: Option<[bool; 4]>,
     parameter_range: Option<[f64; 2]>,
     fit_tolerance: Option<f64>,
 }
@@ -9930,6 +9931,7 @@ fn validate_pcurve_edits(
                 .iter()
                 .all(|point| point.u.is_finite() && point.v.is_finite());
         let contract_valid = before.wrapper_reversed.is_some() == after.wrapper_reversed.is_some()
+            && before.native_tail_flags.is_some() == after.native_tail_flags.is_some()
             && before.parameter_range.is_some() == after.parameter_range.is_some()
             && before.fit_tolerance.is_some() == after.fit_tolerance.is_some()
             && after
@@ -9950,6 +9952,9 @@ fn validate_pcurve_edits(
                 periodic: (before_periodic != after_periodic).then_some(*after_periodic),
                 wrapper_reversed: (before.wrapper_reversed != after.wrapper_reversed)
                     .then_some(after.wrapper_reversed)
+                    .flatten(),
+                native_tail_flags: (before.native_tail_flags != after.native_tail_flags)
+                    .then_some(after.native_tail_flags)
                     .flatten(),
                 parameter_range: (before.parameter_range != after.parameter_range)
                     .then_some(after.parameter_range)
@@ -10536,6 +10541,7 @@ fn patch_framed_geometry(
             let target = usize::try_from(record.ref_at(4)?).ok()?;
             let mut geometry = edit.clone();
             geometry.wrapper_reversed = None;
+            geometry.native_tail_flags = None;
             geometry.parameter_range = None;
             geometry.fit_tolerance = None;
             Some((target, geometry))
@@ -11600,6 +11606,32 @@ fn patch_nurbs_pcurve_record(
         })?;
         bytes[offset] = if reversed { 0x0a } else { 0x0b };
     }
+    if let Some(flags) = edit.native_tail_flags {
+        let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x0a)
+            .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        offsets.extend(
+            sab::payload_token_offsets(bytes, record, 8, 0x0b)
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
+        );
+        offsets.sort_unstable();
+        let tail = offsets
+            .get(offsets.len().saturating_sub(4)..)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "pcurve record {} lacks native boolean-tail carriers",
+                    record.index
+                ))
+            })?;
+        if tail.len() != 4 {
+            return Err(CodecError::Malformed(format!(
+                "pcurve record {} has an incomplete native boolean tail",
+                record.index
+            )));
+        }
+        for (offset, flag) in tail.iter().zip(flags) {
+            bytes[*offset] = native_bool(flag);
+        }
+    }
     if let Some(range) = edit.parameter_range {
         let offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
             .map_err(|error| CodecError::Malformed(error.to_string()))?;
@@ -11654,7 +11686,10 @@ fn patch_ref_pcurve_contract(
     record: &sab::Record,
     edit: &NurbsPcurveEdit,
 ) -> Result<(), CodecError> {
-    if edit.wrapper_reversed.is_some() || edit.fit_tolerance.is_some() {
+    if edit.wrapper_reversed.is_some()
+        || edit.native_tail_flags.is_some()
+        || edit.fit_tolerance.is_some()
+    {
         return Err(CodecError::NotImplemented(format!(
             "ref-form pcurve record {} cannot carry wrapper or inline fit edits",
             record.index

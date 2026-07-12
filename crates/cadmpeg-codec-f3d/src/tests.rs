@@ -12499,6 +12499,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     *knots = vec![-1.0, -1.0, -1.0, 2.0, 2.0];
     *periodic = true;
     pcurve.wrapper_reversed = Some(true);
+    pcurve.native_tail_flags = Some([false, true, false, true]);
     pcurve.parameter_range = Some([-2.0, 3.0]);
     pcurve.fit_tolerance = Some(0.0025);
     let expected = pcurve.clone();
