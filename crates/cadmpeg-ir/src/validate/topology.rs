@@ -391,6 +391,26 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralSurfaceDefinition::VertexBlend { construction } => {
+                for boundary in &construction.boundaries {
+                    match &boundary.geometry {
+                        crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
+                        | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
+                            if !ids.curves.contains(&curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            }
+                        }
+                        crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
+                            surface, ..
+                        } => {
+                            if !ids.surfaces.contains(&surface.0) {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                            }
+                        }
+                        crate::geometry::VertexBlendBoundaryGeometry::Degenerate { .. } => {}
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 if !ids.curves.contains(&directrix.0) {

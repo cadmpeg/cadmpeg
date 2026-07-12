@@ -337,6 +337,11 @@ pub enum ProceduralSurfaceDefinition {
         /// Complete native variable-blend construction graph.
         construction: Box<VariableBlendConstruction>,
     },
+    /// Native vertex-blend patch.
+    VertexBlend {
+        /// Complete native vertex-blend construction graph.
+        construction: Box<VertexBlendConstruction>,
+    },
     /// Translation of a directrix along a direction.
     Extrusion {
         /// Curve swept along `direction` to form the surface.

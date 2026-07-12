@@ -997,6 +997,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Loft { .. }
                 | ProceduralSurfaceDefinition::G2Blend { .. }
                 | ProceduralSurfaceDefinition::VariableBlend { .. }
+                | ProceduralSurfaceDefinition::VertexBlend { .. }
                 | ProceduralSurfaceDefinition::Extrusion { .. }
                 | ProceduralSurfaceDefinition::Revolution { .. }
                 | ProceduralSurfaceDefinition::Sum { .. }

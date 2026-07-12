@@ -479,6 +479,62 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::VertexBlend { construction } = &procedural.definition {
+            let point_finite = |point: &crate::math::Point3| {
+                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+            };
+            let vector_finite = |vector: &Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let boundaries_valid = construction.boundaries.iter().all(|boundary| {
+                point_finite(&boundary.magic)
+                    && boundary.fullness.is_finite()
+                    && match &boundary.geometry {
+                        crate::geometry::VertexBlendBoundaryGeometry::Circle {
+                            form,
+                            twists,
+                            parameters,
+                            ..
+                        } => {
+                            matches!((*form, twists.len()), (0, 0) | (1, 1) | (3, 2))
+                                && twists.iter().all(&point_finite)
+                                && parameters.iter().all(|value| value.is_finite())
+                        }
+                        crate::geometry::VertexBlendBoundaryGeometry::Degenerate {
+                            location,
+                            normals,
+                        } => {
+                            point_finite(location)
+                                && normals
+                                    .iter()
+                                    .all(|normal| vector_finite(normal) && !degenerate(normal))
+                        }
+                        crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
+                            fit_tolerance,
+                            ..
+                        } => fit_tolerance.is_finite() && *fit_tolerance >= 0.0,
+                        crate::geometry::VertexBlendBoundaryGeometry::Plane {
+                            normal,
+                            parameters,
+                            ..
+                        } => {
+                            vector_finite(normal)
+                                && !degenerate(normal)
+                                && parameters.iter().all(|value| value.is_finite())
+                        }
+                    }
+            });
+            if !construction.fit_tolerance.is_finite()
+                || construction.fit_tolerance < 0.0
+                || !boundaries_valid
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "vertex blend construction payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Blend {
             native: Some(construction),
             ..

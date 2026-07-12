@@ -93,6 +93,22 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     construction.post_curve.0.as_str(),
                 ]);
             }
+            ProceduralSurfaceDefinition::VertexBlend { construction } => {
+                for boundary in &construction.boundaries {
+                    match &boundary.geometry {
+                        crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
+                        | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
+                            curves.insert(&curve.0);
+                        }
+                        crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
+                            surface, ..
+                        } => {
+                            surfaces.insert(&surface.0);
+                        }
+                        crate::geometry::VertexBlendBoundaryGeometry::Degenerate { .. } => {}
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 curves.insert(&directrix.0);
