@@ -98,7 +98,6 @@ pub struct Native {
     /// Generic namespaces keyed by format id.
     #[serde(flatten)]
     pub namespaces: BTreeMap<String, NativeNamespace>,
-    /// Transitional typed Fusion view used by the codec while arenas are assembled.
     #[serde(skip)]
     #[schemars(skip)]
     pub f3d: Option<f3d::F3dNative>,

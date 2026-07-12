@@ -33,7 +33,7 @@ pub fn decode(
 
     if options.container_only {
         let mut ir = build_metadata_ir(&scan)?;
-        populate_annotations(&mut ir, &scan, None);
+        populate_annotations(&mut ir, &scan, &F3dNative::default(), None);
         preserve_source_image(&scan, &mut ir)?;
         let report = build_container_report(&scan, true);
         return Ok(DecodeResult::new(ir, report));
@@ -56,53 +56,22 @@ pub fn decode(
                 }
             }
             let annotation_records = std::mem::take(&mut brep.annotation_records);
-            let mut ir = build_geometry_ir(&scan, &active, brep)?;
+            let (mut ir, mut native) = build_geometry_ir(&scan, &active, brep)?;
             if let Some(history) = decode_asm_history(&scan, &active)? {
-                ir.native
-                    .f3d
-                    .get_or_insert_with(F3dNative::default)
-                    .asm_histories
-                    .push(history);
+                native.asm_histories.push(history);
             }
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .construction_recipes = crate::design::decode_recipes(reader, &scan)?;
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .persistent_references =
+            native.construction_recipes = crate::design::decode_recipes(reader, &scan)?;
+            native.persistent_references =
                 crate::design::decode_persistent_references(reader, &scan)?;
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .lost_edge_references = crate::design::decode_lost_edge_references(reader, &scan)?;
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .design_material_assignments =
+            native.lost_edge_references =
+                crate::design::decode_lost_edge_references(reader, &scan)?;
+            native.design_material_assignments =
                 crate::materials::decode_design_assignments(reader, &scan)?;
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .design_objects = crate::design::decode_objects(reader, &scan)?;
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .design_entity_headers = crate::design::decode_entity_headers(reader, &scan)?;
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .design_record_headers = crate::design::decode_record_headers(
-                reader,
-                &scan,
-                &ir.native
-                    .f3d
-                    .get_or_insert_with(F3dNative::default)
-                    .design_entity_headers,
-            )?;
+            native.design_objects = crate::design::decode_objects(reader, &scan)?;
+            native.design_entity_headers = crate::design::decode_entity_headers(reader, &scan)?;
+            native.design_record_headers =
+                crate::design::decode_record_headers(reader, &scan, &native.design_entity_headers)?;
             let sketch_relations = {
-                let native = ir.native.f3d.get_or_insert_with(F3dNative::default);
                 crate::design::decode_sketch_relations(
                     reader,
                     &scan,
@@ -110,50 +79,23 @@ pub fn decode(
                     &native.design_entity_headers,
                 )?
             };
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .sketch_relations = sketch_relations;
-            extend_related_design_records(reader, &scan, &mut ir)?;
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .sketch_curve_identities =
+            native.sketch_relations = sketch_relations;
+            extend_related_design_records(reader, &scan, &mut native)?;
+            native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
+            native.sketch_curve_identities =
                 crate::design::decode_sketch_curve_identities(reader, &scan)?;
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .design_body_members = crate::design::decode_body_members(reader, &scan)?;
+            native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
             let act = crate::act::decode(reader, &scan)?;
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .act_entities = act.entities;
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .act_guids = act.guids;
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .act_root_components = act.root_components;
-            if !ir
-                .native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .lost_edge_references
-                .is_empty()
-            {
+            native.act_entities = act.entities;
+            native.act_guids = act.guids;
+            native.act_root_components = act.root_components;
+            if !native.lost_edge_references.is_empty() {
                 report.losses.push(LossNote {
                     category: LossCategory::Attribute,
                     severity: Severity::Warning,
                     message: format!(
                         "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and cannot be replayed without repair.",
-                        ir.native.f3d.get_or_insert_with(F3dNative::default).lost_edge_references.len()
+                        native.lost_edge_references.len()
                     ),
                     provenance: None,
                 });
@@ -180,7 +122,14 @@ pub fn decode(
                         .retain(|loss| loss.category != LossCategory::Material);
                 }
             }
-            populate_annotations(&mut ir, &scan, Some((&active.name, &annotation_records)));
+            native.store(ir.native.namespace_mut("f3d"))?;
+            ir.native.f3d = Some(native.clone());
+            populate_annotations(
+                &mut ir,
+                &scan,
+                &native,
+                Some((&active.name, &annotation_records)),
+            );
             preserve_source_image(&scan, &mut ir)?;
             return Ok(DecodeResult::new(ir, report));
         }
@@ -188,52 +137,22 @@ pub fn decode(
 
     // No decodable SAB stream: use container metadata.
     let mut ir = build_metadata_ir(&scan)?;
+    let mut native = F3dNative::default();
     if let Some(active) = container::select_active_brep(&scan) {
         if let Some(history) = decode_asm_history(&scan, active)? {
-            ir.native
-                .f3d
-                .get_or_insert_with(F3dNative::default)
-                .asm_histories
-                .push(history);
+            native.asm_histories.push(history);
         }
     }
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .construction_recipes = crate::design::decode_recipes(reader, &scan)?;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .persistent_references = crate::design::decode_persistent_references(reader, &scan)?;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .lost_edge_references = crate::design::decode_lost_edge_references(reader, &scan)?;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .design_material_assignments = crate::materials::decode_design_assignments(reader, &scan)?;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .design_objects = crate::design::decode_objects(reader, &scan)?;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .design_entity_headers = crate::design::decode_entity_headers(reader, &scan)?;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .design_record_headers = crate::design::decode_record_headers(
-        reader,
-        &scan,
-        &ir.native
-            .f3d
-            .get_or_insert_with(F3dNative::default)
-            .design_entity_headers,
-    )?;
+    native.construction_recipes = crate::design::decode_recipes(reader, &scan)?;
+    native.persistent_references = crate::design::decode_persistent_references(reader, &scan)?;
+    native.lost_edge_references = crate::design::decode_lost_edge_references(reader, &scan)?;
+    native.design_material_assignments =
+        crate::materials::decode_design_assignments(reader, &scan)?;
+    native.design_objects = crate::design::decode_objects(reader, &scan)?;
+    native.design_entity_headers = crate::design::decode_entity_headers(reader, &scan)?;
+    native.design_record_headers =
+        crate::design::decode_record_headers(reader, &scan, &native.design_entity_headers)?;
     let sketch_relations = {
-        let native = ir.native.f3d.get_or_insert_with(F3dNative::default);
         crate::design::decode_sketch_relations(
             reader,
             &scan,
@@ -241,40 +160,21 @@ pub fn decode(
             &native.design_entity_headers,
         )?
     };
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .sketch_relations = sketch_relations;
-    extend_related_design_records(reader, &scan, &mut ir)?;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .sketch_curve_identities = crate::design::decode_sketch_curve_identities(reader, &scan)?;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .design_body_members = crate::design::decode_body_members(reader, &scan)?;
+    native.sketch_relations = sketch_relations;
+    extend_related_design_records(reader, &scan, &mut native)?;
+    native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
+    native.sketch_curve_identities = crate::design::decode_sketch_curve_identities(reader, &scan)?;
+    native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
     let act = crate::act::decode(reader, &scan)?;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .act_entities = act.entities;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .act_guids = act.guids;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .act_root_components = act.root_components;
+    native.act_entities = act.entities;
+    native.act_guids = act.guids;
+    native.act_root_components = act.root_components;
     let decoded_materials = materials::decode(reader, &scan)?;
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
-    populate_annotations(&mut ir, &scan, None);
+    native.store(ir.native.namespace_mut("f3d"))?;
+    ir.native.f3d = Some(native.clone());
+    populate_annotations(&mut ir, &scan, &native, None);
     preserve_source_image(&scan, &mut ir)?;
     let report = build_container_report(&scan, false);
     Ok(DecodeResult::new(ir, report))
@@ -331,6 +231,7 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
 fn populate_annotations(
     ir: &mut CadIr,
     scan: &ContainerScan,
+    native: &F3dNative,
     brep: Option<(&str, &[brep::AnnotationRecord])>,
 ) {
     let mut annotations = AnnotationBuilder::new();
@@ -351,7 +252,7 @@ fn populate_annotations(
         let offset = trailing_offset(id);
         annotations.note(id, native_stream, offset).tag(tag);
     };
-    if let Some(native) = &ir.native.f3d {
+    {
         for entity in &native.construction_recipes {
             note(&entity.id, "construction_recipe");
         }
@@ -465,37 +366,25 @@ fn decode_asm_history(
 fn extend_related_design_records(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
-    ir: &mut CadIr,
+    native: &mut F3dNative,
 ) -> Result<(), CodecError> {
-    let indices = ir
-        .native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
+    let indices = native
         .sketch_relations
         .iter()
         .flat_map(|relation| relation.members.iter().chain(&relation.return_members))
         .copied()
         .collect::<Vec<_>>();
-    let existing = ir
-        .native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
+    let existing = native
         .design_record_headers
         .iter()
         .map(|record| record.record_index)
         .collect::<std::collections::HashSet<_>>();
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .design_record_headers
-        .extend(
-            crate::design::decode_related_record_headers(reader, scan, &indices)?
-                .into_iter()
-                .filter(|record| !existing.contains(&record.record_index)),
-        );
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
+    native.design_record_headers.extend(
+        crate::design::decode_related_record_headers(reader, scan, &indices)?
+            .into_iter()
+            .filter(|record| !existing.contains(&record.record_index)),
+    );
+    native
         .design_record_headers
         .sort_by_key(|record| record.record_index);
     Ok(())
@@ -538,7 +427,7 @@ fn build_geometry_ir(
     scan: &ContainerScan,
     active: &BrepFacts,
     brep: Brep,
-) -> Result<CadIr, CodecError> {
+) -> Result<(CadIr, F3dNative), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let (source, tolerances) = source_and_tolerances(scan, active);
     ir.source = Some(source);
@@ -558,17 +447,12 @@ fn build_geometry_ir(
     ir.model.pcurves = brep.pcurves;
     ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.procedural_curves = brep.procedural_curves;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .sketch_curve_links = brep.sketch_curve_links;
-    ir.native
-        .f3d
-        .get_or_insert_with(F3dNative::default)
-        .persistent_design_links = brep.persistent_design_links;
+    let mut native = F3dNative::default();
+    native.sketch_curve_links = brep.sketch_curve_links;
+    native.persistent_design_links = brep.persistent_design_links;
     ir.model.attributes = brep.attributes;
     ir.set_native_unknowns("f3d", &brep.unknowns)?;
-    Ok(ir)
+    Ok((ir, native))
 }
 
 /// Source metadata attributes and kernel tolerances from the active BREP header.

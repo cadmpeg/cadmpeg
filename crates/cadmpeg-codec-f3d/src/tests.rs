@@ -115,12 +115,15 @@ fn t_end(b: &mut Vec<u8>) {
 }
 
 fn assert_f3d_native_parity(ir: &cadmpeg_ir::document::CadIr) {
-    let native = ir.native.f3d.as_ref().expect("F3D native namespace");
+    let native = ir.native.namespace("f3d").expect("F3D native namespace");
     assert_eq!(native.version, cadmpeg_ir::native::f3d::F3D_NATIVE_VERSION);
 }
 
-fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> &cadmpeg_ir::native::f3d::F3dNative {
-    ir.native.f3d.as_ref().expect("F3D native namespace")
+fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> cadmpeg_ir::native::f3d::F3dNative {
+    cadmpeg_ir::native::f3d::F3dNative::load(
+        ir.native.namespace("f3d").expect("F3D native namespace"),
+    )
+    .unwrap()
 }
 
 /// Assemble the active slice: header prefix + records + `delta_state` boundary.
@@ -4909,6 +4912,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .design_entity_headers
         .iter()
         .find(|header| header.object_kind == Some(cadmpeg_ir::design::DesignObjectKind::Sketch))
+        .cloned()
         .expect("round-trip sketch entity header");
     assert_eq!(header.record_reference, Some(585));
     assert_eq!(header.reference_indices, [44, 33]);
@@ -4916,6 +4920,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .design_objects
         .iter()
         .find(|object| object.kind == cadmpeg_ir::design::DesignObjectKind::Body)
+        .cloned()
         .expect("round-trip body design object");
     assert_eq!(object.entity_ids, [986]);
     assert_eq!(object.self_guid, "91111111-2222-3333-4444-555555555555");
@@ -10436,6 +10441,7 @@ fn decode_transfers_generated_protein_appearance() {
         .design_objects
         .iter()
         .find(|object| object.kind == cadmpeg_ir::design::DesignObjectKind::Sketch)
+        .cloned()
         .unwrap();
     assert_eq!(sketch.entity_ids, vec![277]);
     assert_eq!(sketch.revision, 4);
@@ -10470,6 +10476,7 @@ fn decode_transfers_generated_protein_appearance() {
         .design_record_headers
         .iter()
         .find(|record| record.record_index == 33)
+        .cloned()
         .expect("record 33");
     assert_eq!(record_33.class_tag, "350");
     assert_eq!(f3d_native(&result.ir).sketch_relations.len(), 2);
@@ -10506,6 +10513,7 @@ fn decode_transfers_generated_protein_appearance() {
         .sketch_points
         .iter()
         .find(|point| point.persistent_id == 500)
+        .cloned()
         .expect("point 500");
     assert_eq!(point_500.coordinates.u, 12.5);
     assert_eq!(point_500.coordinates.v, -25.0);
@@ -10513,6 +10521,7 @@ fn decode_transfers_generated_protein_appearance() {
         .sketch_points
         .iter()
         .find(|point| point.persistent_id == 600)
+        .cloned()
         .expect("point 600");
     assert_eq!(point_600.coordinates.u, -40.0);
     assert_eq!(f3d_native(&result.ir).sketch_curve_identities.len(), 2);
@@ -10587,7 +10596,11 @@ fn decode_transfers_generated_sketch_curve_link() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
 
-    let link = f3d_native(&result.ir).sketch_curve_links.first().unwrap();
+    let link = f3d_native(&result.ir)
+        .sketch_curve_links
+        .first()
+        .cloned()
+        .unwrap();
     assert_eq!(link.coedge.0, "f3d:brep:entity#7");
     assert_eq!(link.sketch_curve_id, 113);
     assert_eq!(link.signed_reference, Some(1));
