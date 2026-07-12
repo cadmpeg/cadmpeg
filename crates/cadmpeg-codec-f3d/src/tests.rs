@@ -12216,6 +12216,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         )
         .expect("surface-offset decode");
     let ProceduralCurveDefinition::SurfaceOffset {
+        context,
         discontinuity_flag,
         base_u_range,
         base_v_range,
@@ -12230,6 +12231,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         panic!("expected surface-offset construction")
     };
     assert_eq!(*base_u_range, [-1.0, 2.0]);
+    assert_eq!(context.parameter_range, [0.0, 1.0]);
     assert!(*discontinuity_flag);
     assert_eq!(*base_v_range, [-3.0, 4.0]);
     assert_eq!(*base_range, [-0.5, 1.5]);
@@ -12238,6 +12240,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
 
     let mut edited = result.ir.clone();
     let ProceduralCurveDefinition::SurfaceOffset {
+        context,
         discontinuity_flag,
         base_u_range,
         base_v_range,
@@ -12250,6 +12253,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     else {
         unreachable!()
     };
+    context.parameter_range = [-1.5, 2.5];
     *discontinuity_flag = false;
     *base_u_range = [-2.0, 5.0];
     *base_v_range = [-6.0, 7.0];
@@ -12265,6 +12269,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     assert!(matches!(
         regenerated.ir.model.procedural_curves[0].definition,
         ProceduralCurveDefinition::SurfaceOffset {
+            ref context,
             discontinuity_flag: false,
             base_u_range: [-2.0, 5.0],
             base_v_range: [-6.0, 7.0],
@@ -12273,7 +12278,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
             shift: -0.25,
             scale: 0.8,
             ..
-        }
+        } if context.parameter_range == [-1.5, 2.5]
     ));
 
     let mut source_less = result.ir;

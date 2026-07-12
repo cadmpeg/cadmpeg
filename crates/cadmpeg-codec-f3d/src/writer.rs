@@ -10381,7 +10381,12 @@ fn validate_procedural_curve_edits(
                     base: after_base,
                     ..
                 },
-            ) if before_context == after_context
+            ) if before_context.sides == after_context.sides
+                && before_context
+                    .discontinuities
+                    .iter()
+                    .map(Vec::len)
+                    .eq(after_context.discontinuities.iter().map(Vec::len))
                 && before_base == after_base
                 && before.definition != after.definition =>
             {
@@ -11610,6 +11615,7 @@ fn patch_surface_offset_definition(
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+        context,
         discontinuity_flag,
         base_u_range,
         base_v_range,
@@ -11636,6 +11642,16 @@ fn patch_surface_offset_definition(
     {
         return Err(CodecError::Malformed(
             "surface-offset ranges must be finite".into(),
+        ));
+    }
+    if context
+        .parameter_range
+        .into_iter()
+        .chain(context.discontinuities.iter().flatten().copied())
+        .any(|value| !value.is_finite())
+    {
+        return Err(CodecError::Malformed(
+            "surface-offset context values must be finite".into(),
         ));
     }
     let end = record.offset.checked_add(record.len).ok_or_else(|| {
@@ -11681,6 +11697,26 @@ fn patch_surface_offset_definition(
         .ok_or_else(|| {
             CodecError::Malformed("surface-offset support ranges are incomplete".into())
         })?;
+    let context_value_count = 2usize
+        .checked_add(context.discontinuities.iter().map(Vec::len).sum::<usize>())
+        .ok_or_else(|| CodecError::Malformed("surface-offset context is too large".into()))?;
+    let context_end = before_base.len().saturating_sub(4);
+    let context_offsets = before_base
+        .get(context_end.saturating_sub(context_value_count)..context_end)
+        .ok_or_else(|| CodecError::Malformed("surface-offset context is incomplete".into()))?;
+    if context_offsets.len() != context_value_count {
+        return Err(CodecError::Malformed(
+            "surface-offset context is incomplete".into(),
+        ));
+    }
+    for (offset, value) in context_offsets.iter().zip(
+        context
+            .parameter_range
+            .into_iter()
+            .chain(context.discontinuities.iter().flatten().copied()),
+    ) {
+        bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+    }
     let first_range = *support_ranges
         .first()
         .ok_or_else(|| CodecError::Malformed("surface-offset support ranges are missing".into()))?;
