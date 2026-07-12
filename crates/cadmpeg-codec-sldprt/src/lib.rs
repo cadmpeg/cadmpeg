@@ -87,11 +87,52 @@ use cadmpeg_ir::codec::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::{Check, Finding, Severity};
 use std::io::Write;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SldprtCodec;
+
+/// Validate `SolidWorks` native feature-input byte references.
+pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
+    const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
+
+    let Some(namespace) = ir.native.namespace("sldprt") else {
+        return Vec::new();
+    };
+    let Ok(native) = native::SldprtNative::load(namespace) else {
+        return vec![Finding {
+            check: Check::NativeLinks,
+            severity: Severity::Error,
+            message: "SolidWorks native namespace does not match schema version 1".into(),
+            entity: None,
+        }];
+    };
+    let mut findings = Vec::new();
+    for lane in &native.feature_input_lanes {
+        for entity in &lane.sketch_entities {
+            let valid = usize::try_from(entity.offset).ok().is_some_and(|offset| {
+                offset
+                    .checked_add(MARKER.len())
+                    .and_then(|end| lane.native_payload.get(offset..end))
+                    == Some(MARKER)
+                    && offset
+                        .checked_add(21)
+                        .is_some_and(|end| end <= lane.native_payload.len())
+            });
+            if !valid {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "feature-input entity is outside its native payload".into(),
+                    entity: Some(lane.id.clone()),
+                });
+            }
+        }
+    }
+    findings
+}
 
 impl SldprtCodec {
     /// Write a decoded or constructed IR as `.sldprt`.

@@ -433,13 +433,13 @@ fn rhino_forced_input_format_and_3dm_alias_bypass_detection() {
             .unwrap();
         assert!(output.status.success());
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["ir_version"], "2");
+        assert_eq!(value["ir_version"], "3");
         assert_eq!(value["source"]["format"], "rhino");
     }
 }
 
 #[test]
-fn rhino_full_band_empty_archive_decodes_to_current_ir_v2() {
+fn rhino_full_band_empty_archive_decodes_to_current_ir_v3() {
     let dir = tempdir().unwrap();
     for version in ["50", "60", "70", "80"] {
         let input = minimal_rhino_archive(dir.path(), &format!("empty-{version}.3dm"), version);
@@ -456,7 +456,7 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir_v2() {
                 String::from_utf8_lossy(&output.stderr)
             );
             let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(value["ir_version"], "2");
+            assert_eq!(value["ir_version"], "3");
             assert_eq!(value["source"]["format"], "rhino");
             assert_eq!(value["source"]["attributes"]["archive_version"], version);
             assert_eq!(
@@ -496,7 +496,7 @@ fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
     assert_eq!(ir["model"]["points"][0]["position"]["y"], -2.5);
     assert_eq!(ir["model"]["points"][0]["position"]["z"], 3.75);
     let body_id = ir["model"]["bodies"][0]["id"].as_str().unwrap();
-    assert!(ir["unknowns"][0]["links"]
+    assert!(ir["native"]["rhino"]["arenas"]["unknowns"][0]["links"]
         .as_array()
         .unwrap()
         .iter()
@@ -522,7 +522,7 @@ fn rhino_v3_v4_decode_metadata_but_legacy_bands_are_header_only() {
             .unwrap();
         assert!(output.status.success());
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["ir_version"], "2");
+        assert_eq!(value["ir_version"], "3");
         assert_eq!(value["source"]["attributes"]["archive_version"], version);
         assert_eq!(value["model"]["subds"], serde_json::json!([]));
     }

@@ -17,6 +17,21 @@ use crate::{DecodeArgs, ForcedInput, Format};
 
 const CLI_SCHEMA_VERSION: u32 = 3;
 
+fn validate_ir(ir: &CadIr, losses: Vec<cadmpeg_ir::LossNote>) -> ValidationReport {
+    let mut report = validate(ir, losses);
+    if ir.native.namespace("f3d").is_some() {
+        report
+            .findings
+            .extend(cadmpeg_codec_f3d::validate_native(ir));
+    }
+    if ir.native.namespace("sldprt").is_some() {
+        report
+            .findings
+            .extend(cadmpeg_codec_sldprt::validate_native(ir));
+    }
+    report
+}
+
 #[derive(Debug)]
 /// Error whose result is meaningful to the caller rather than operational.
 ///
@@ -157,7 +172,7 @@ pub fn validate_cmd(
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
-    let report = validate(&loaded.ir, losses(loaded.decode_report.as_ref()));
+    let report = validate_ir(&loaded.ir, losses(loaded.decode_report.as_ref()));
     if json {
         writeln!(
             stdout,
@@ -263,7 +278,7 @@ pub fn convert(
         print_decode_report(&mut stderr, report)?;
         writeln!(stderr)?;
     }
-    let validation = validate(&loaded.ir, losses(loaded.decode_report.as_ref()));
+    let validation = validate_ir(&loaded.ir, losses(loaded.decode_report.as_ref()));
     print_validation_report(&mut stderr, &validation)?;
     if !validation.is_ok() && !settings.allow_invalid {
         write_command_report(
