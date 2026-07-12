@@ -997,12 +997,8 @@ fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
     assert_eq!(parsed.units.unit, 2);
     assert_eq!(parsed.units.meters_per_unit, 0.001);
     assert_eq!(parsed.linked_appearance, 2);
-    let checksum = parsed.legacy_checksum.as_ref().unwrap();
-    assert_eq!(checksum.byte_count, 123);
-    assert_eq!(checksum.modified_time, 456);
-    assert_eq!(checksum.crc, [0, 1, 2, 3, 4, 5, 6, 7]);
-    assert_eq!(checksum.source_range.len(), 48);
-    assert!(parsed.file_reference.is_none());
+    assert_eq!(parsed.legacy_checksum_range.as_ref().unwrap().len(), 48);
+    assert!(parsed.file_reference_range.is_none());
 
     let v6 = definition_record(
         ArchiveVersion::V6,
@@ -1016,17 +1012,7 @@ fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
     ))
     .unwrap();
     let parsed = &scan.definitions.definitions[0];
-    let file = parsed.file_reference.as_ref().unwrap();
-    assert_eq!(file.full_path, "/full/source.3dm");
-    assert_eq!(file.relative_path, "source.3dm");
-    assert_eq!(file.path_status, 7);
-    assert_eq!(file.embedded_file_id, Some(Uuid::from_wire([0x44; 16])));
-    assert_eq!(file.content_hash.byte_count, 123);
-    assert_eq!(file.content_hash.hash_time, 456);
-    assert_eq!(file.content_hash.content_time, 789);
-    assert_eq!(file.content_hash.name_hash, [0x11; 20]);
-    assert_eq!(file.content_hash.content_digest, [0x22; 20]);
-    assert_eq!(file.content_hash.source_range.len(), 88);
+    assert!(parsed.file_reference_range.is_some());
 }
 
 #[test]
@@ -1078,7 +1064,7 @@ fn parses_source_shaped_v6_v7_v8_static_and_linked_definitions() {
         assert_eq!(linked.linked_depth, 2);
         assert_eq!(linked.linked_appearance, 2);
         assert!(linked.reference_settings_range.is_some());
-        assert!(linked.file_reference.is_some());
+        assert!(linked.file_reference_range.is_some());
         assert_eq!(
             scan.definitions.definitions[2].kind,
             super::instances::DefinitionKind::LinkedAndEmbedded
@@ -2257,11 +2243,11 @@ fn static_definition(id: [u8; 16], members: &[[u8; 16]]) -> super::instances::In
             custom_name: String::new(),
         },
         legacy_linked_path: String::new(),
-        legacy_checksum: None,
+        legacy_checksum_range: None,
         legacy_relative_path: false,
         linked_depth: 0,
         linked_appearance: 0,
-        file_reference: None,
+        file_reference_range: None,
         reference_settings_range: None,
     }
 }

@@ -235,7 +235,7 @@ fn e5_records(data: &[u8]) -> Vec<E5Record> {
             break;
         };
         let pos = position + relative;
-        let Some(size) = u16_at(data, pos + 5).map(usize::from) else {
+        let Some(size) = u16_le(data, pos + 5).map(usize::from) else {
             break;
         };
         let Some(end) = pos.checked_add(size + 13) else {
@@ -586,32 +586,30 @@ pub fn standard_lines(brep: &[u8], face_count: usize) -> Vec<StandardLine> {
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
 pub fn a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
-    const MARKER: &[u8; 3] = b"\xa8\x03\x34";
-
-    let mut out = Vec::new();
-    let mut start = 0usize;
-    while let Some(relative) = data[start..].windows(3).position(|bytes| bytes == MARKER) {
-        let pos = start + relative;
-        start = pos + 3;
-        let Some(surface) = a8_surface(data, pos) else {
-            continue;
-        };
-        out.push(surface);
-    }
-    out
+    scan_surfaces(data, *b"\xa8\x03\x34", 3, a8_surface)
 }
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
 pub fn a5_surfaces(data: &[u8]) -> Vec<A8Surface> {
-    const MARKER: &[u8; 3] = b"\xa5\x03\x34";
+    scan_surfaces(data, *b"\xa5\x03\x34", 1, a5_surface)
+}
 
+fn scan_surfaces(
+    data: &[u8],
+    marker: [u8; 3],
+    advance: usize,
+    decode: fn(&[u8], usize) -> Option<A8Surface>,
+) -> Vec<A8Surface> {
     let mut out = Vec::new();
     let mut start = 0usize;
-    while let Some(relative) = data[start..].windows(3).position(|bytes| bytes == MARKER) {
+    while let Some(relative) = data[start..]
+        .windows(marker.len())
+        .position(|bytes| bytes == marker)
+    {
         let pos = start + relative;
-        start = pos + 1;
-        let Some(surface) = a5_surface(data, pos) else {
+        start = pos + advance;
+        let Some(surface) = decode(data, pos) else {
             continue;
         };
         out.push(surface);

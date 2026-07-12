@@ -2583,13 +2583,24 @@ fn body_persistent_links<'a>(target: &'a CadIr, body: &Body) -> Vec<&'a Persiste
     )
 }
 
-fn persistent_body_group_count(target: &CadIr) -> usize {
-    target
-        .model
-        .bodies
-        .iter()
-        .filter(|body| !body_persistent_links(target, body).is_empty())
+fn persistent_group_count(
+    target: &CadIr,
+    entities: impl Iterator<Item = cadmpeg_ir::attributes::AttributeTarget>,
+) -> usize {
+    entities
+        .filter(|entity| !persistent_links(target, entity).is_empty())
         .count()
+}
+
+fn persistent_body_group_count(target: &CadIr) -> usize {
+    persistent_group_count(
+        target,
+        target
+            .model
+            .bodies
+            .iter()
+            .map(|body| cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone())),
+    )
 }
 
 fn face_persistent_links<'a>(target: &'a CadIr, face: &Face) -> Vec<&'a PersistentDesignLink> {
@@ -2607,21 +2618,25 @@ fn edge_persistent_links<'a>(target: &'a CadIr, edge: &Edge) -> Vec<&'a Persiste
 }
 
 fn persistent_face_group_count(target: &CadIr) -> usize {
-    target
-        .model
-        .faces
-        .iter()
-        .filter(|face| !face_persistent_links(target, face).is_empty())
-        .count()
+    persistent_group_count(
+        target,
+        target
+            .model
+            .faces
+            .iter()
+            .map(|face| cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone())),
+    )
 }
 
 fn persistent_edge_group_count(target: &CadIr) -> usize {
-    target
-        .model
-        .edges
-        .iter()
-        .filter(|edge| !edge_persistent_links(target, edge).is_empty())
-        .count()
+    persistent_group_count(
+        target,
+        target
+            .model
+            .edges
+            .iter()
+            .map(|edge| cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone())),
+    )
 }
 
 fn body_persistent_attribute_ref(

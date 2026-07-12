@@ -915,14 +915,6 @@ impl<'a> DecodeContext<'a> {
         let Some(identity) = object.identity.as_ref() else {
             return false;
         };
-        let Some(unknown) = self
-            .ir
-            .unknowns
-            .get(source_order)
-            .map(|record| record.id.clone())
-        else {
-            return false;
-        };
         surface.source_object = Some(self.source_association(identity));
         let id = surface.id.to_string();
         let result = self.validate_candidate(|candidate| {
@@ -1399,9 +1391,9 @@ impl<'a> DecodeContext<'a> {
                     children,
                 } => {
                     return self.commit_procedural_surface(
+                        source_order,
                         &key,
                         association,
-                        &unknown,
                         geometry,
                         definition,
                         children,
@@ -1415,9 +1407,9 @@ impl<'a> DecodeContext<'a> {
 
     fn commit_procedural_surface(
         &mut self,
+        source_order: usize,
         key: &str,
         association: SourceObjectAssociation,
-        unknown: &UnknownId,
         geometry: cadmpeg_ir::geometry::NurbsSurface,
         definition: crate::surfaces::DecodedProceduralSurface,
         children: Vec<crate::curves::DecodedCurve>,
@@ -1430,6 +1422,13 @@ impl<'a> DecodeContext<'a> {
             return false;
         }
         let mut candidate = self.lightweight_candidate();
+        let Some(unknown) = candidate
+            .unknowns
+            .get(source_order)
+            .map(|record| record.id.clone())
+        else {
+            return false;
+        };
         let mut child_ids = Vec::with_capacity(children.len());
         for (index, child) in children.into_iter().enumerate() {
             let path = match (expected_children, index) {
@@ -1877,6 +1876,7 @@ impl<'a> DecodeContext<'a> {
     }
 }
 
+#[cfg(test)]
 fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
     let Some(record) = ir.unknowns.iter_mut().find(|record| record.id == *unknown) else {
         return;
