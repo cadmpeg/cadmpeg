@@ -332,6 +332,11 @@ pub enum ProceduralSurfaceDefinition {
         /// Complete native G2 construction graph.
         construction: Box<G2BlendConstruction>,
     },
+    /// Native variable-radius two-sided blend.
+    VariableBlend {
+        /// Complete native variable-blend construction graph.
+        construction: Box<VariableBlendConstruction>,
+    },
     /// Translation of a directrix along a direction.
     Extrusion {
         /// Curve swept along `direction` to form the surface.

@@ -81,6 +81,57 @@ pub(super) fn degenerate(v: &Vector3) -> bool {
     v.norm() <= f64::EPSILON
 }
 
+fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bool {
+    use crate::geometry::VariableBlendValuePayload;
+    let finite = |values: &[f64]| values.iter().all(|value| value.is_finite());
+    match &value.payload {
+        VariableBlendValuePayload::TwoEnds { parameters, radii } => {
+            finite(parameters) && finite(radii)
+        }
+        VariableBlendValuePayload::EdgeOffset { scalars, lengths } => {
+            finite(scalars) && finite(lengths)
+        }
+        VariableBlendValuePayload::Functional {
+            parameter,
+            radius,
+            terminal,
+            ..
+        } => {
+            parameter.is_finite()
+                && radius.is_finite()
+                && !matches!(terminal, crate::geometry::LoftBridgeToken::Double(v) if !v.is_finite())
+        }
+        VariableBlendValuePayload::Constant {
+            parameters,
+            radius,
+            nested,
+            ..
+        } => finite(parameters) && radius.is_finite() && variable_blend_value_valid(nested),
+        VariableBlendValuePayload::Interpolated {
+            parameter,
+            radius,
+            points,
+            tail,
+            ..
+        } => {
+            parameter.is_finite()
+                && radius.is_finite()
+                && tail.as_ref().is_none_or(|values| finite(values))
+                && points.iter().all(|point| {
+                    point.parameter.is_finite()
+                        && point.radius.is_finite()
+                        && finite(&point.tangents)
+                        && point.location.x.is_finite()
+                        && point.location.y.is_finite()
+                        && point.location.z.is_finite()
+                        && point.normal.x.is_finite()
+                        && point.normal.y.is_finite()
+                        && point.normal.z.is_finite()
+                })
+        }
+    }
+}
+
 pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
     for (id, tolerance) in ir
         .model
@@ -383,6 +434,48 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     findings,
                     &procedural.id.0,
                     "G2 blend construction payload is invalid",
+                );
+            }
+        }
+        if let ProceduralSurfaceDefinition::VariableBlend { construction } = &procedural.definition
+        {
+            let ranges_valid = [
+                construction.u_range,
+                construction.v_range,
+                construction.post_range,
+            ]
+            .iter()
+            .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
+            let sides_valid = construction.sides.iter().all(|side| {
+                side.scalar.is_finite()
+                    && side.location.x.is_finite()
+                    && side.location.y.is_finite()
+                    && side.location.z.is_finite()
+            });
+            let values_valid = variable_blend_value_valid(&construction.first_value)
+                && construction
+                    .second_value
+                    .as_ref()
+                    .is_none_or(variable_blend_value_valid)
+                && construction
+                    .chamfer
+                    .as_ref()
+                    .is_none_or(|chamfer| variable_blend_value_valid(&chamfer.value));
+            let scalar_tail_valid = construction.offsets.iter().all(|value| value.is_finite())
+                && construction.shape_parameter.is_finite()
+                && construction.shape_length.is_finite()
+                && construction
+                    .single_radius_tail
+                    .as_ref()
+                    .is_none_or(|tail| {
+                        tail.parameters.iter().all(|value| value.is_finite())
+                            && !matches!(tail.selector, crate::geometry::LoftBridgeToken::Double(value) if !value.is_finite())
+                    });
+            if !ranges_valid || !sides_valid || !values_valid || !scalar_tail_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "variable blend construction payload is invalid",
                 );
             }
         }

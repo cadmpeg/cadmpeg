@@ -82,6 +82,17 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     surfaces.insert(&surface.0);
                 }
             }
+            ProceduralSurfaceDefinition::VariableBlend { construction } => {
+                for side in construction.sides.iter() {
+                    surfaces.insert(&side.surface.0);
+                    curves.insert(&side.curve.0);
+                }
+                curves.extend([
+                    construction.primary_curve.0.as_str(),
+                    construction.secondary_curve.0.as_str(),
+                    construction.post_curve.0.as_str(),
+                ]);
+            }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 curves.insert(&directrix.0);
