@@ -12333,6 +12333,37 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         .iter()
         .all(|side| side.surface.is_some() && side.pcurve.is_some()));
 
+    let mut edited = result.ir.clone();
+    let ProceduralCurveDefinition::Spring {
+        context,
+        discontinuity_flag,
+        direction,
+        ..
+    } = &mut edited.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    context.parameter_range = [-2.0, 3.0];
+    let expected_flag = !*discontinuity_flag;
+    *discontinuity_flag = expected_flag;
+    *direction = 4;
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("spring tail regeneration");
+    let regenerated = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated spring decode");
+    assert!(matches!(
+        regenerated.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::Spring {
+            ref context,
+            discontinuity_flag,
+            direction: 4,
+            ..
+        } if discontinuity_flag == expected_flag && context.parameter_range == [-2.0, 3.0]
+    ));
+
     let mut source_less = result.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
