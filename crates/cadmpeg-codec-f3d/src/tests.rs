@@ -12236,6 +12236,34 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     assert_eq!((*distance, *shift, *scale), (-2.5, 0.75, 1.25));
     assert!(result.ir.model.curves.iter().any(|curve| curve.id == *base));
 
+    let mut edited = result.ir.clone();
+    let ProceduralCurveDefinition::SurfaceOffset {
+        distance,
+        shift,
+        scale,
+        ..
+    } = &mut edited.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("surface-offset scalar regeneration");
+    let regenerated = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated surface-offset decode");
+    assert!(matches!(
+        regenerated.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::SurfaceOffset {
+            distance: 3.5,
+            shift: -0.25,
+            scale: 0.8,
+            ..
+        }
+    ));
+
     let mut source_less = result.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();

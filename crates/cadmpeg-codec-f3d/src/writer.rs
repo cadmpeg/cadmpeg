@@ -10371,6 +10371,35 @@ fn validate_procedural_curve_edits(
                 Some(after.definition.clone())
             }
             (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+                    context: before_context,
+                    discontinuity_flag: before_flag,
+                    base_u_range: before_u_range,
+                    base_v_range: before_v_range,
+                    base: before_base,
+                    base_range: before_base_range,
+                    ..
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+                    context: after_context,
+                    discontinuity_flag: after_flag,
+                    base_u_range: after_u_range,
+                    base_v_range: after_v_range,
+                    base: after_base,
+                    base_range: after_base_range,
+                    ..
+                },
+            ) if before_context == after_context
+                && before_flag == after_flag
+                && before_u_range == after_u_range
+                && before_v_range == after_v_range
+                && before_base == after_base
+                && before_base_range == after_base_range
+                && before.definition != after.definition =>
+            {
+                Some(after.definition.clone())
+            }
+            (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
                     components: before_components,
                     ..
@@ -10652,6 +10681,9 @@ fn patch_framed_geometry(
                     }
                     cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { .. } => {
                         patch_two_sided_offset_definition(bytes, record, definition)?;
+                    }
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset { .. } => {
+                        patch_surface_offset_definition(bytes, record, definition)?;
                     }
                     _ => unreachable!("procedural edit validation limits writable definitions"),
                 }
@@ -11580,6 +11612,70 @@ fn patch_two_sided_offset_definition(
     position += 1;
     for offset in offsets {
         patch_compound_double(bytes, record, &mut position, *offset / 10.0)?;
+    }
+    Ok(())
+}
+
+fn patch_surface_offset_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> Result<(), CodecError> {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+        distance,
+        shift,
+        scale,
+        ..
+    } = definition
+    else {
+        return Err(CodecError::Malformed(
+            "surface-offset patch received another definition".into(),
+        ));
+    };
+    if !distance.is_finite() || !shift.is_finite() || !scale.is_finite() {
+        return Err(CodecError::Malformed(
+            "surface-offset scalars must be finite".into(),
+        ));
+    }
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("surface-offset record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("surface-offset record is truncated".into()))?;
+    if !record_bytes
+        .windows(b"off_surf_int_cur".len())
+        .any(|window| window == b"off_surf_int_cur")
+    {
+        return Err(CodecError::Malformed(
+            "record is not an off_surf_int_cur".into(),
+        ));
+    }
+    let solved = [b"\x0d\x04nubs".as_slice(), b"\x0d\x05nurbs".as_slice()]
+        .into_iter()
+        .filter_map(|marker| {
+            record_bytes
+                .windows(marker.len())
+                .rposition(|window| window == marker)
+        })
+        .max()
+        .ok_or_else(|| CodecError::Malformed("surface-offset solved cache is missing".into()))?;
+    let boundary = record.offset + solved;
+    let offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?
+        .into_iter()
+        .filter(|offset| *offset < boundary)
+        .collect::<Vec<_>>();
+    let scalar_offsets = offsets
+        .get(offsets.len().saturating_sub(3)..)
+        .ok_or_else(|| CodecError::Malformed("surface-offset scalar tail is incomplete".into()))?;
+    if scalar_offsets.len() != 3 {
+        return Err(CodecError::Malformed(
+            "surface-offset scalar tail is incomplete".into(),
+        ));
+    }
+    for (offset, value) in scalar_offsets.iter().zip([distance / 10.0, *shift, *scale]) {
+        bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
 }
