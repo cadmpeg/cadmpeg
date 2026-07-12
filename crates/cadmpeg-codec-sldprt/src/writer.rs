@@ -577,6 +577,14 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
 }
 
 fn validate_feature_graph(features: &[crate::records::Feature]) -> Result<(), CodecError> {
+    if features
+        .iter()
+        .any(|feature| !valid_xml_name(&feature.xml_tag))
+    {
+        return Err(CodecError::Malformed(
+            "invalid feature XML element name".into(),
+        ));
+    }
     let by_id = features
         .iter()
         .filter_map(|feature| feature.source_id.as_ref().map(|id| (id.as_str(), feature)))
@@ -605,12 +613,22 @@ fn validate_feature_graph(features: &[crate::records::Feature]) -> Result<(), Co
     Ok(())
 }
 
+fn valid_xml_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
+        && bytes
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.'))
+}
+
 fn write_feature_xml(
     out: &mut String,
     feature: &crate::records::Feature,
     features: &[crate::records::Feature],
 ) {
-    out.push_str("<Feature");
+    out.push('<');
+    out.push_str(&feature.xml_tag);
     if let Some(id) = &feature.source_id {
         xml_attribute(out, "id", id);
     }
@@ -640,7 +658,9 @@ fn write_feature_xml(
             write_feature_xml(out, child, features);
         }
     }
-    out.push_str("</Feature>");
+    out.push_str("</");
+    out.push_str(&feature.xml_tag);
+    out.push('>');
 }
 
 fn xml_attribute(out: &mut String, name: &str, value: &str) {

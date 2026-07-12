@@ -24,6 +24,10 @@ pub struct Configuration {
     pub properties: BTreeMap<String, String>,
 }
 
+fn default_feature_xml_tag() -> String {
+    "Feature".into()
+}
+
 /// One parametric construction-history feature (e.g. an extrude or fillet operation).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Feature {
@@ -31,6 +35,9 @@ pub struct Feature {
     pub id: String,
     /// Owning feature-history record id.
     pub parent: String,
+    /// XML element name carrying this feature record.
+    #[serde(default = "default_feature_xml_tag")]
+    pub xml_tag: String,
     /// Native identifier of this feature, when the source assigned one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,

@@ -1420,6 +1420,10 @@ fn encoder_writes_source_less_native_features() {
             ..
         }
     ));
+    assert_eq!(
+        sldprt_native(&decoded.ir).feature_histories[0].features[0].xml_tag,
+        "Extrusion"
+    );
 }
 
 #[test]
@@ -1457,6 +1461,10 @@ fn semantic_writer_round_trips_unknown_feature_properties() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    assert_eq!(
+        sldprt_native(&regenerated.ir).feature_histories[0].features[0].xml_tag,
+        "Flex"
+    );
     assert!(matches!(
         &regenerated.ir.model.features[0].definition,
         FeatureDefinition::Native {
@@ -3069,9 +3077,11 @@ fn decode_extracts_parametric_history() {
         Some(history.configurations[0].id.as_str())
     );
     assert_eq!(history.features[0].kind, "BossExtrude");
+    assert_eq!(history.features[0].xml_tag, "Extrusion");
     assert_eq!(history.features[0].parameters["Depth"], "12.5mm");
     assert_eq!(history.features[0].properties["Scope"], "Body1");
     assert_eq!(history.features[1].parent_source_id.as_deref(), Some("7"));
+    assert_eq!(history.features[1].xml_tag, "EquationDrivenCurve");
     assert_eq!(result.ir.model.features.len(), 2);
     let neutral = &result.ir.model.features[0];
     assert_eq!(neutral.name.as_deref(), Some("Boss"));

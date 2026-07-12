@@ -87,6 +87,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                     Feature {
                         id,
                         parent: parent.clone(),
+                        xml_tag: node.tag_name().name().into(),
                         source_id: node
                             .attribute("id")
                             .filter(|value| !value.is_empty())
@@ -2436,6 +2437,7 @@ pub fn sync_neutral_features(
                     .clone()
                     .unwrap_or_else(|| format!("sldprt:generated:feature#{}", feature.id.0)),
                 parent: history.id.clone(),
+                xml_tag: feature_xml_tag(feature),
                 source_id: Some(feature.id.0.clone()),
                 parent_source_id,
                 ordinal,
@@ -2510,6 +2512,47 @@ fn indexed_name(name: &str, prefix: &str) -> bool {
     name.strip_prefix(prefix).is_some_and(|suffix| {
         !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
     })
+}
+
+fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
+    let tag = match &feature.definition {
+        FeatureDefinition::DatumPlane { .. } => "ReferencePlane",
+        FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",
+        FeatureDefinition::DatumPoint { .. } => "ReferencePoint",
+        FeatureDefinition::Sketch { .. } => "Sketch",
+        FeatureDefinition::Extrude { .. } => "Extrusion",
+        FeatureDefinition::Revolve { .. } => "Revolve",
+        FeatureDefinition::Sweep { .. } => "Sweep",
+        FeatureDefinition::Loft { .. } => "Loft",
+        FeatureDefinition::Rib { .. } => "Rib",
+        FeatureDefinition::Fillet { .. } => "Fillet",
+        FeatureDefinition::Chamfer { .. } => "Chamfer",
+        FeatureDefinition::Shell { .. } => "Shell",
+        FeatureDefinition::Draft { .. } => "Draft",
+        FeatureDefinition::Combine { .. } => "Combine",
+        FeatureDefinition::DeleteFace { .. } => "DeleteFace",
+        FeatureDefinition::MoveFace { .. } => "MoveFace",
+        FeatureDefinition::Dome { .. } => "Dome",
+        FeatureDefinition::Hole { .. } => "Hole",
+        FeatureDefinition::Pattern {
+            pattern: PatternKind::Mirror { .. },
+            ..
+        } => "Mirror",
+        FeatureDefinition::Pattern { .. } => "Pattern",
+        FeatureDefinition::Native { kind, .. } if extrude_op(kind).is_some() => "Extrusion",
+        FeatureDefinition::Native { kind, .. } if valid_xml_name(kind) => kind,
+        FeatureDefinition::Native { .. } => "Feature",
+    };
+    tag.into()
+}
+
+fn valid_xml_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
+        && bytes
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.'))
 }
 
 fn xml_text(bytes: &[u8]) -> Option<String> {
