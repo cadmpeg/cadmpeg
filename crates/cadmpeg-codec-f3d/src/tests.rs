@@ -1058,6 +1058,7 @@ fn synthetic_geometry_with_surface_intersection_smbh() -> Vec<u8> {
         .windows(b"\x0d\x04nubs".len())
         .rposition(|window| window == b"\x0d\x04nubs")
         .expect("generated solved curve cache");
+    bytes[solved - 19] = 0x0a;
     bytes.drain(solved - 18..solved);
     bytes
 }
@@ -11724,11 +11725,14 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("surface intersection decode");
-    let ProceduralCurveDefinition::Intersection { context } =
-        &result.ir.model.procedural_curves[0].definition
+    let ProceduralCurveDefinition::Intersection {
+        context,
+        discontinuity_flag,
+    } = &result.ir.model.procedural_curves[0].definition
     else {
         panic!("expected surface intersection")
     };
+    assert!(*discontinuity_flag);
     let expected_geometries = context.sides.each_ref().map(|side| {
         result
             .ir
@@ -11759,11 +11763,14 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less surface intersection round trip");
-    let ProceduralCurveDefinition::Intersection { context } =
-        &round_trip.ir.model.procedural_curves[0].definition
+    let ProceduralCurveDefinition::Intersection {
+        context,
+        discontinuity_flag,
+    } = &round_trip.ir.model.procedural_curves[0].definition
     else {
         panic!("expected round-trip surface intersection")
     };
+    assert!(*discontinuity_flag);
     for (side, expected) in context.sides.iter().zip(expected_geometries) {
         let actual = round_trip
             .ir

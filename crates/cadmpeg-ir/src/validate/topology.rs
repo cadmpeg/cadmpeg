@@ -816,7 +816,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
-            ProceduralCurveDefinition::Intersection { context } => {
+            ProceduralCurveDefinition::Intersection { context, .. } => {
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
                         if !ids.surfaces.contains(&surface.0) {

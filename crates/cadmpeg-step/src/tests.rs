@@ -577,6 +577,7 @@ fn procedural_construction_reduction_is_reported() {
                     parameter_range: [0.0, 1.0],
                     discontinuities: std::array::from_fn(|_| Vec::new()),
                 },
+                discontinuity_flag: false,
             },
             cache_fit_tolerance: Some(0.01),
         });

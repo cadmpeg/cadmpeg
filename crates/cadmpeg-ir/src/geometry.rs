@@ -2033,6 +2033,8 @@ pub enum ProceduralCurveDefinition {
     Intersection {
         /// Shared surfaces, UV curves, interval, and discontinuity metadata.
         context: IntcurveSupportContext,
+        /// Native boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
     },
     /// Intersection constrained by a third ordered support surface.
     ThreeSurfaceIntersection {

@@ -4440,7 +4440,7 @@ pub struct DecodedProceduralCurve {
     /// Non-null embedded NURBS support carriers of an `off_int_cur`.
     pub(crate) embedded_two_sided_offset: Option<EmbeddedTwoSidedOffset>,
     /// Embedded support context of an `int_int_cur`.
-    pub(crate) embedded_intersection: Option<EmbeddedIntersection>,
+    pub(crate) embedded_intersection: Option<(EmbeddedIntersection, bool)>,
     /// Three embedded support pairs of an `sss_int_cur`.
     pub(crate) embedded_three_surface_intersection: Option<EmbeddedThreeSurfaceIntersection>,
     /// Prefix-only surface-curve family and support context.
@@ -4992,7 +4992,10 @@ fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<Embedded
     })
 }
 
-fn decode_embedded_intersection(bytes: &[u8], int_width: usize) -> Option<EmbeddedIntersection> {
+fn decode_embedded_intersection(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<(EmbeddedIntersection, bool)> {
     let names: [&[u8]; 3] = [b"int_int_cur", b"surf_surf_int_cur", b"surfintcur"];
     let (marker, name) = names.into_iter().find_map(|name| {
         bytes
@@ -5023,13 +5026,16 @@ fn decode_embedded_intersection(bytes: &[u8], int_width: usize) -> Option<Embedd
         take_float_array(bytes, &mut position, int_width)?,
         take_float_array(bytes, &mut position, int_width)?,
     ];
-    take_bool(bytes, &mut position)?;
-    Some(EmbeddedIntersection {
-        surfaces,
-        pcurves: [first_pcurve, second_pcurve],
-        parameter_range,
-        discontinuities,
-    })
+    let discontinuity_flag = take_bool(bytes, &mut position)?;
+    Some((
+        EmbeddedIntersection {
+            surfaces,
+            pcurves: [first_pcurve, second_pcurve],
+            parameter_range,
+            discontinuities,
+        },
+        discontinuity_flag,
+    ))
 }
 
 fn decode_embedded_two_sided_offset(

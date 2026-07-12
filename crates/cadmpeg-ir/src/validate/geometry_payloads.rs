@@ -1527,7 +1527,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::Intersection { context } = &procedural.definition {
+        if let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition {
             if !support_context_is_finite(context) {
                 bounds_err(
                     findings,

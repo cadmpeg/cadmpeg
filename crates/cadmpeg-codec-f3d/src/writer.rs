@@ -6054,14 +6054,16 @@ fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context } =
-        &procedural.definition
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+        context,
+        discontinuity_flag,
+    } = &procedural.definition
     {
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "int_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
-        bytes.push(0x0b);
+        bytes.push(native_bool(*discontinuity_flag));
         native_nurbs_curve(bytes, solved_cache)?;
         native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
         bytes.push(0x10);
