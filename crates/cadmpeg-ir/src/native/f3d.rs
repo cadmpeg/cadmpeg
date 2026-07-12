@@ -42,9 +42,17 @@ macro_rules! f3d_arenas {
 macro_rules! sort_f3d_arenas {
     ($($field:ident: $ty:ty;)*) => {
         impl F3dNative {
-            pub(crate) fn store(&self, namespace: &mut super::NativeNamespace) {
+            pub fn load(namespace: &super::NativeNamespace) -> Result<Self, super::NativeConvertError> {
+                Ok(Self {
+                    version: namespace.version,
+                    $($field: namespace.arena_as(stringify!($field))?,)*
+                })
+            }
+
+            pub fn store(&self, namespace: &mut super::NativeNamespace) -> Result<(), super::NativeConvertError> {
                 namespace.version = F3D_NATIVE_VERSION;
-                $(namespace.set_arena(stringify!($field), &self.$field).expect("typed native records serialize");)*
+                $(namespace.set_arena(stringify!($field), &self.$field)?;)*
+                Ok(())
             }
             /// Sort every native arena by its normative record identity.
             pub(crate) fn finalize(&mut self) {

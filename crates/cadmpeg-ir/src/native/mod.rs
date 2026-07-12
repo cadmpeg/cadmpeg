@@ -123,11 +123,15 @@ impl Native {
     pub(crate) fn finalize(&mut self) {
         if let Some(typed) = &mut self.f3d {
             typed.finalize();
-            typed.store(self.namespaces.entry("f3d".into()).or_default());
+            typed
+                .store(self.namespaces.entry("f3d".into()).or_default())
+                .expect("typed native records serialize");
         }
         if let Some(typed) = &mut self.sldprt {
             typed.finalize();
-            typed.store(self.namespaces.entry("sldprt".into()).or_default());
+            typed
+                .store(self.namespaces.entry("sldprt".into()).or_default())
+                .expect("typed native records serialize");
         }
         for namespace in self.namespaces.values_mut() {
             for records in namespace.arenas.values_mut() {
