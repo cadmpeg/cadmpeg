@@ -1420,7 +1420,9 @@ fn encoder_writes_source_less_line_sketches() {
         normal: Vector3::new(0.0, 0.0, 1.0),
         u_axis: Vector3::new(1.0, 0.0, 0.0),
         profiles: vec![entity_ids
-            .into_iter()
+            .iter()
+            .take(2)
+            .cloned()
             .map(|entity| SketchEntityUse {
                 entity,
                 reversed: false,
@@ -1517,7 +1519,9 @@ fn encoder_writes_source_less_line_sketches() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketches[0].profiles[0].len(), 3);
+    assert_eq!(decoded.ir.model.sketches[0].profiles.len(), 2);
+    assert_eq!(decoded.ir.model.sketches[0].profiles[0].len(), 2);
+    assert_eq!(decoded.ir.model.sketches[0].profiles[1].len(), 1);
     assert_eq!(decoded.ir.model.sketch_entities.len(), 3);
     assert!(decoded
         .ir

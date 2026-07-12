@@ -17,7 +17,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::Exactness;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
 use crate::container::ContainerScan;
@@ -529,9 +529,28 @@ fn sketch_brep(
         .filter(|entity| entity.sketch == sketch.id)
         .map(|entity| (entity.id.clone(), entity))
         .collect::<HashMap<_, _>>();
+    let referenced = sketch
+        .profiles
+        .iter()
+        .flatten()
+        .map(|entity_use| entity_use.entity.clone())
+        .collect::<HashSet<_>>();
+    let mut profiles = sketch.profiles.clone();
+    profiles.extend(
+        entities
+            .keys()
+            .filter(|id| !referenced.contains(*id))
+            .cloned()
+            .map(|entity| {
+                vec![SketchEntityUse {
+                    entity,
+                    reversed: false,
+                }]
+            }),
+    );
     let mut face_loops = Vec::new();
     let mut vertex_by_position = HashMap::<(u64, u64), VertexId>::new();
-    for (profile_index, profile) in sketch.profiles.iter().enumerate() {
+    for (profile_index, profile) in profiles.iter().enumerate() {
         if profile.is_empty() {
             continue;
         }
