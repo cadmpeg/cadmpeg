@@ -699,6 +699,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     TSpline(Box<cadmpeg_ir::geometry::TSplineSurfaceConstruction>),
     /// Native circular or linear helix surface.
     Helix(Box<cadmpeg_ir::geometry::HelixSurfaceConstruction>),
+    /// Native deformable surface with embedded support.
+    Deformable(Box<EmbeddedDeformableSurface>),
     /// Native G2 blend construction with embedded carriers.
     G2Blend(Box<EmbeddedG2Blend>),
     /// Ruled interpolation between two ordered profile curves.
@@ -1371,6 +1373,14 @@ pub(crate) enum EmbeddedSweepSurfaceLayout {
 pub struct EmbeddedSweepSurface {
     pub(crate) primary_kind: i64,
     pub(crate) layout: EmbeddedSweepSurfaceLayout,
+    pub(crate) discontinuities: [Vec<f64>; 6],
+    pub(crate) discontinuity_flag: bool,
+}
+
+/// Embedded native deformable surface before stable support ids are assigned.
+pub struct EmbeddedDeformableSurface {
+    pub(crate) support: SurfaceGeometry,
+    pub(crate) data: cadmpeg_ir::geometry::DeformableSurfaceData,
     pub(crate) discontinuities: [Vec<f64>; 6],
     pub(crate) discontinuity_flag: bool,
 }
@@ -2856,6 +2866,63 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
     })
 }
 
+fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    use cadmpeg_ir::geometry::DeformableSurfaceData;
+    let names: [&[u8]; 2] = [b"defm_spl_sur", b"defmsur"];
+    let (start, name_len) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len()))
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name_len + 3;
+    let support = decode_embedded_surface(span, &mut position, int_width)?;
+    let mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let data = match mode {
+        8 => {
+            let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
+            for vector in &mut vectors {
+                let value = take_native_vec3(span, &mut position, 0x14)?;
+                *vector = Vector3::new(value[0], value[1], value[2]);
+            }
+            DeformableSurfaceData::Minimal {
+                vectors,
+                selector: take_tagged_int(span, &mut position, 0x04, int_width)?,
+            }
+        }
+        _ => return None,
+    };
+    let cache = decode_surface_block(span, position, int_width)?;
+    position = cache.end;
+    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let discontinuities = [
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+    ];
+    let discontinuity_flag = take_bool(span, &mut position)?;
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Deformable(Box::new(
+            EmbeddedDeformableSurface {
+                support,
+                data,
+                discontinuities,
+                discontinuity_flag,
+            },
+        )),
+        cache_fit_tolerance,
+    })
+}
+
 fn decode_helix_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::{
         HelixPathConstruction, HelixSurfaceConstruction, HelixSurfaceProfile,
@@ -3911,7 +3978,8 @@ fn decode_procedural_resolving_refs(
     seen: &mut Vec<usize>,
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
-    if let Some(mut decoded) = decode_helix_spl_sur(bytes, int_width)
+    if let Some(mut decoded) = decode_defm_spl_sur(bytes, int_width)
+        .or_else(|| decode_helix_spl_sur(bytes, int_width))
         .or_else(|| decode_t_spl_sur(bytes, int_width))
         .or_else(|| decode_exact_spl_sur(bytes, int_width))
         .or_else(|| decode_comp_spl_sur(bytes, int_width))

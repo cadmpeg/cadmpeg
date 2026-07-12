@@ -1007,6 +1007,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Sum { .. }
                 | ProceduralSurfaceDefinition::Sweep { .. }
                 | ProceduralSurfaceDefinition::Helix { .. }
+                | ProceduralSurfaceDefinition::Deformable { .. }
                 | ProceduralSurfaceDefinition::TSpline { .. }
                 | ProceduralSurfaceDefinition::Offset { .. }
                 | ProceduralSurfaceDefinition::Ruled { .. }

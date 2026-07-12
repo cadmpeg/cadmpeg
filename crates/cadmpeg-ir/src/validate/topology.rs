@@ -739,6 +739,16 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
             | ProceduralSurfaceDefinition::Unknown { record: None } => {}
+            ProceduralSurfaceDefinition::Deformable { construction } => {
+                if !ids.surfaces.contains(&construction.support.0) {
+                    ref_error(
+                        findings,
+                        &procedural.id.0,
+                        "surface",
+                        &construction.support.0,
+                    );
+                }
+            }
         }
     }
     for procedural in &ir.model.procedural_curves {

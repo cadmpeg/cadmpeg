@@ -962,6 +962,27 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 });
                 if let Some(procedural) = procedural_surface_defs.remove(&i) {
                     let definition = match procedural.definition {
+                        nurbs::DecodedProceduralSurfaceDefinition::Deformable(embedded) => {
+                            let embedded = *embedded;
+                            let support = SurfaceId(format!(
+                                "f3d:brep:procedural_surface#{i}:deformable:support"
+                            ));
+                            out.surfaces.push(Surface {
+                                id: support.clone(),
+                                geometry: embedded.support,
+                                source_object: None,
+                            });
+                            ProceduralSurfaceDefinition::Deformable {
+                                construction: Box::new(
+                                    cadmpeg_ir::geometry::DeformableSurfaceConstruction {
+                                        support,
+                                        data: embedded.data,
+                                        discontinuities: embedded.discontinuities,
+                                        discontinuity_flag: embedded.discontinuity_flag,
+                                    },
+                                ),
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::Helix(construction) => {
                             ProceduralSurfaceDefinition::Helix { construction }
                         }

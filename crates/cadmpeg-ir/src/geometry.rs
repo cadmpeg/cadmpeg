@@ -413,6 +413,11 @@ pub enum ProceduralSurfaceDefinition {
         /// Complete native helix-surface construction.
         construction: Box<HelixSurfaceConstruction>,
     },
+    /// Native deformable spline surface.
+    Deformable {
+        /// Complete decoded deformable construction.
+        construction: Box<DeformableSurfaceConstruction>,
+    },
     /// Offset from a support surface.
     Offset {
         /// Surface this surface is offset from.
@@ -455,6 +460,32 @@ pub enum ProceduralSurfaceDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
     },
+}
+
+/// Structurally selected deformable-surface payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DeformableSurfaceData {
+    /// Mode-8 minimal four-vector scaffold.
+    Minimal {
+        /// Four ordered deformation vectors.
+        vectors: [Vector3; 4],
+        /// Native trailing selector.
+        selector: i64,
+    },
+}
+
+/// Complete native deformable-surface construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DeformableSurfaceConstruction {
+    /// Surface being deformed.
+    pub support: SurfaceId,
+    /// Discriminator-selected deformation data.
+    pub data: DeformableSurfaceData,
+    /// Six ordered solved-surface discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
+    pub discontinuity_flag: bool,
 }
 
 /// Inline path shared by helix curves and helix surfaces.

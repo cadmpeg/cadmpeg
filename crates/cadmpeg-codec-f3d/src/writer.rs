@@ -3206,6 +3206,35 @@ fn native_procedural_surface(
         return Ok(false);
     };
     match &procedural.definition {
+        ProceduralSurfaceDefinition::Deformable { construction } => {
+            use cadmpeg_ir::geometry::DeformableSurfaceData;
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "defm_spl_sur")?;
+            let support = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == construction.support)
+                .ok_or_else(|| CodecError::Malformed("deformable support is missing".into()))?;
+            native_embedded_surface(bytes, &support.geometry)?;
+            match construction.data {
+                DeformableSurfaceData::Minimal { vectors, selector } => {
+                    native_i64(bytes, 8);
+                    for vector in vectors {
+                        native_vector(bytes, [vector.x, vector.y, vector.z]);
+                    }
+                    native_i64(bytes, selector);
+                }
+            }
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            for values in &construction.discontinuities {
+                native_compound_loft_float_array(bytes, values)?;
+            }
+            bytes.push(native_bool(construction.discontinuity_flag));
+            bytes.push(0x10);
+        }
         ProceduralSurfaceDefinition::TSpline { construction } => {
             use cadmpeg_ir::geometry::TSplineSubtransform;
             native_surface_base(bytes, "spline")?;

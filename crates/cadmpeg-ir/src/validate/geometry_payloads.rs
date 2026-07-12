@@ -994,6 +994,24 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::Deformable { construction } = &procedural.definition {
+            let crate::geometry::DeformableSurfaceData::Minimal { vectors, .. } = construction.data;
+            if !vectors
+                .iter()
+                .all(|vector| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite())
+                || !construction
+                    .discontinuities
+                    .iter()
+                    .flatten()
+                    .all(|value| value.is_finite())
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "deformable surface construction payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::G2Blend { construction } = &procedural.definition {
             let direction_finite = |direction: &Vector3| {
                 direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()

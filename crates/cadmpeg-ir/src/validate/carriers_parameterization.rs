@@ -361,6 +361,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
             | ProceduralSurfaceDefinition::Unknown { .. } => {}
+            ProceduralSurfaceDefinition::Deformable { construction } => {
+                surfaces.insert(&construction.support.0);
+            }
         }
     }
     for procedural in &ir.model.procedural_curves {
