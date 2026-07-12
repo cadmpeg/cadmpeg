@@ -121,6 +121,12 @@ pub enum CodecError {
     Io(#[from] std::io::Error),
 }
 
+impl From<crate::native::NativeConvertError> for CodecError {
+    fn from(error: crate::native::NativeConvertError) -> Self {
+        Self::Malformed(error.to_string())
+    }
+}
+
 /// Decoder and container inspector for one source format.
 pub trait Codec {
     /// Stable short id for this codec, e.g. `"f3d"`.

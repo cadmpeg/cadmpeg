@@ -128,6 +128,42 @@ pub struct CadIr {
 }
 
 impl CadIr {
+    /// Deserialize the reserved `unknowns` arena for `format`.
+    pub fn native_unknowns(
+        &self,
+        format: &str,
+    ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
+        self.native
+            .namespace(format)
+            .map(|namespace| namespace.arena_as("unknowns"))
+            .unwrap_or_else(|| Ok(Vec::new()))
+    }
+
+    /// Replace the reserved `unknowns` arena for `format`.
+    pub fn set_native_unknowns(
+        &mut self,
+        format: &str,
+        records: &[UnknownRecord],
+    ) -> Result<(), crate::native::NativeConvertError> {
+        let namespace = self.native.namespace_mut(format);
+        if namespace.version == 0 {
+            namespace.version = 1;
+        }
+        namespace.set_arena("unknowns", records)
+    }
+
+    /// Append one record to the reserved `unknowns` arena for `format`.
+    pub fn push_native_unknown(
+        &mut self,
+        format: &str,
+        record: UnknownRecord,
+    ) -> Result<(), crate::native::NativeConvertError> {
+        let mut records = self.native_unknowns(format)?;
+        records.retain(|existing| existing.id != record.id);
+        records.push(record);
+        self.set_native_unknowns(format, &records)
+    }
+
     /// Construct an empty current-version document with default tolerances.
     pub fn empty(units: Units) -> Self {
         Self {
