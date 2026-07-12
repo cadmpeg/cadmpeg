@@ -11,6 +11,25 @@ use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, Encoder};
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
 
+fn sldprt_native(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::native::sldprt::SldprtNative {
+    cadmpeg_ir::native::sldprt::SldprtNative::load(
+        ir.native
+            .namespace("sldprt")
+            .expect("SLDPRT native namespace"),
+    )
+    .unwrap()
+}
+
+fn update_sldprt_native<R>(
+    ir: &mut cadmpeg_ir::CadIr,
+    update: impl FnOnce(&mut cadmpeg_ir::native::sldprt::SldprtNative) -> R,
+) -> R {
+    let mut native = sldprt_native(ir);
+    let result = update(&mut native);
+    native.store(ir.native.namespace_mut("sldprt")).unwrap();
+    result
+}
+
 /// Nibble-swap a section name into its stored form (the swap is its own inverse,
 /// so the decoder recovers the original).
 fn swap_name(name: &str) -> Vec<u8> {
