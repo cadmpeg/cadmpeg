@@ -3351,6 +3351,9 @@ fn native_procedural_surface(
         ProceduralSurfaceDefinition::VariableBlend { construction } => {
             encode_native_variable_blend(bytes, target, procedural, construction, solved_cache)?;
         }
+        ProceduralSurfaceDefinition::VertexBlend { construction } => {
+            encode_native_vertex_blend(bytes, target, construction, solved_cache)?;
+        }
         ProceduralSurfaceDefinition::Ruled { first, second } => {
             let profiles = [first, second]
                 .map(|id| {
@@ -4073,6 +4076,144 @@ fn native_variable_blend_value(
             }
         }
     }
+    Ok(())
+}
+
+fn native_vertex_blend_bool(bytes: &mut Vec<u8>, value: i64) -> Result<(), CodecError> {
+    match value {
+        0 => bytes.push(native_bool(false)),
+        1 => bytes.push(native_bool(true)),
+        _ => {
+            return Err(CodecError::Malformed(
+                "vertex-blend boolean enum must be 0 or 1".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn native_vertex_blend_boundary(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    boundary: &cadmpeg_ir::geometry::VertexBlendBoundary,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::VertexBlendBoundaryGeometry;
+    let kind = match &boundary.geometry {
+        VertexBlendBoundaryGeometry::Circle { .. } => "circle",
+        VertexBlendBoundaryGeometry::Degenerate { .. } => "deg",
+        VertexBlendBoundaryGeometry::Pcurve { .. } => "pcurve",
+        VertexBlendBoundaryGeometry::Plane { .. } => "plane",
+    };
+    native_string(bytes, kind)?;
+    native_vertex_blend_bool(bytes, boundary.boundary_type)?;
+    native_point(
+        bytes,
+        [
+            boundary.magic.x / 10.0,
+            boundary.magic.y / 10.0,
+            boundary.magic.z / 10.0,
+        ],
+    );
+    native_vertex_blend_bool(bytes, boundary.u_smoothing)?;
+    native_vertex_blend_bool(bytes, boundary.v_smoothing)?;
+    native_f64(bytes, boundary.fullness);
+    match &boundary.geometry {
+        VertexBlendBoundaryGeometry::Circle {
+            curve,
+            form,
+            twists,
+            parameters,
+            sense,
+        } => {
+            let expected_twists = match form {
+                0 => 0,
+                1 => 1,
+                3 => 2,
+                _ => {
+                    return Err(CodecError::Malformed(
+                        "vertex-blend circle form must be 0, 1, or 3".into(),
+                    ));
+                }
+            };
+            if twists.len() != expected_twists {
+                return Err(CodecError::Malformed(
+                    "vertex-blend circle twist count conflicts with its form".into(),
+                ));
+            }
+            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            native_enum(bytes, *form);
+            for twist in twists {
+                native_point(bytes, [twist.x / 10.0, twist.y / 10.0, twist.z / 10.0]);
+            }
+            native_f64(bytes, parameters[0]);
+            native_f64(bytes, parameters[1]);
+            native_vertex_blend_bool(bytes, *sense)?;
+        }
+        VertexBlendBoundaryGeometry::Degenerate { location, normals } => {
+            native_point(
+                bytes,
+                [location.x / 10.0, location.y / 10.0, location.z / 10.0],
+            );
+            for normal in normals {
+                native_vector(bytes, [normal.x, normal.y, normal.z]);
+            }
+        }
+        VertexBlendBoundaryGeometry::Pcurve {
+            surface,
+            pcurve,
+            sense,
+            fit_tolerance,
+        } => {
+            let surface = target
+                .model
+                .surfaces
+                .iter()
+                .find(|candidate| candidate.id == *surface)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("vertex-blend support {surface} is missing"))
+                })?;
+            native_embedded_surface(bytes, &surface.geometry)?;
+            native_optional_pcurve(bytes, pcurve.as_ref())?;
+            native_vertex_blend_bool(bytes, *sense)?;
+            native_f64(bytes, *fit_tolerance);
+        }
+        VertexBlendBoundaryGeometry::Plane {
+            normal,
+            parameters,
+            curve,
+        } => {
+            native_vector(bytes, [normal.x, normal.y, normal.z]);
+            native_f64(bytes, parameters[0]);
+            native_f64(bytes, parameters[1]);
+            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+        }
+    }
+    Ok(())
+}
+
+fn encode_native_vertex_blend(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    construction: &cadmpeg_ir::geometry::VertexBlendConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "VBL_SURF")?;
+    native_i64(
+        bytes,
+        i64::try_from(construction.boundaries.len()).map_err(|_| {
+            CodecError::NotImplemented("vertex-blend boundary count exceeds i64".into())
+        })?,
+    );
+    for boundary in &construction.boundaries {
+        native_vertex_blend_boundary(bytes, target, boundary)?;
+    }
+    native_i64(bytes, construction.grid_size);
+    native_f64(bytes, construction.fit_tolerance / 10.0);
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, 0.0);
+    bytes.push(0x10);
     Ok(())
 }
 

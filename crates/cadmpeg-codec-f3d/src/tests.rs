@@ -7990,6 +7990,25 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
             construction.boundaries[3].geometry,
             VertexBlendBoundaryGeometry::Plane { .. }
         ));
+
+        let expected = construction.clone();
+        let mut source_less = result.ir;
+        source_less.source = None;
+        source_less.unknowns.clear();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less vertex-blend encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("source-less vertex-blend round trip");
+        let ProceduralSurfaceDefinition::VertexBlend {
+            construction: actual,
+        } = &round_trip.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected round-trip vertex blend")
+        };
+        assert_eq!(actual.as_ref(), expected.as_ref());
     }
 }
 
