@@ -6495,26 +6495,8 @@ fn native_intcurve_support_context(
     target: &CadIr,
     context: &cadmpeg_ir::geometry::IntcurveSupportContext,
 ) -> Result<(), CodecError> {
-    let null_supports = context
-        .sides
-        .iter()
-        .all(|side| side.surface.is_none() && side.pcurve.is_none());
-    if null_supports {
-        for name in ["null_surface", "null_surface", "nullbs", "nullbs"] {
-            native_ident(bytes, name)?;
-        }
-    } else {
-        if context
-            .sides
-            .iter()
-            .any(|side| side.surface.is_none() || side.pcurve.is_none())
-        {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D mixed null/non-null intcurve supports are not yet writable".into(),
-            ));
-        }
-        for side in &context.sides {
-            let surface_id = side.surface.as_ref().expect("non-null supports checked");
+    for side in &context.sides {
+        if let Some(surface_id) = &side.surface {
             let surface = target
                 .model
                 .surfaces
@@ -6526,12 +6508,15 @@ fn native_intcurve_support_context(
                     ))
                 })?;
             native_embedded_surface(bytes, &surface.geometry)?;
+        } else {
+            native_ident(bytes, "null_surface")?;
         }
-        for side in &context.sides {
-            native_nurbs_pcurve_block(
-                bytes,
-                side.pcurve.as_ref().expect("non-null supports checked"),
-            )?;
+    }
+    for side in &context.sides {
+        if let Some(pcurve) = &side.pcurve {
+            native_nurbs_pcurve_block(bytes, pcurve)?;
+        } else {
+            native_ident(bytes, "nullbs")?;
         }
     }
     for value in context.parameter_range {

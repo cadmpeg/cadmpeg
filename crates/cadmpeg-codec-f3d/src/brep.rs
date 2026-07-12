@@ -3020,6 +3020,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .into_iter()
                             .enumerate()
                             .map(|(side, geometry)| {
+                                let geometry = geometry?;
                                 let id = SurfaceId(format!(
                                     "f3d:brep:procedural_curve#{i}:support{side}"
                                 ));
@@ -3034,7 +3035,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             .try_into()
                             .expect("two fixed support sides");
                         let pcurves = embedded.pcurves.map(|pcurve| {
-                            Some(PcurveGeometry::Nurbs {
+                            pcurve.map(|pcurve| PcurveGeometry::Nurbs {
                                 degree: pcurve.degree,
                                 knots: pcurve.knots,
                                 control_points: pcurve.control_points,

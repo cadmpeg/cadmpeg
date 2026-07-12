@@ -4328,9 +4328,9 @@ pub(crate) type CompoundDefinition = (Vec<f64>, Vec<f64>, Vec<NurbsCurve>);
 /// Embedded freeform support carriers and tail fields of an `off_int_cur`.
 pub(crate) struct EmbeddedTwoSidedOffset {
     /// Two ordered embedded support surfaces.
-    pub(crate) surfaces: [SurfaceGeometry; 2],
+    pub(crate) surfaces: [Option<SurfaceGeometry>; 2],
     /// Two ordered embedded NURBS parameter curves.
-    pub(crate) pcurves: [NurbsPcurve; 2],
+    pub(crate) pcurves: [Option<NurbsPcurve>; 2],
     /// Shared native parameter interval.
     pub(crate) parameter_range: [f64; 2],
     /// Three discontinuity arrays.
@@ -5046,13 +5046,11 @@ fn decode_embedded_two_sided_offset(
     let name = b"off_int_cur";
     let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
     let mut position = marker + name_len + 3;
-    let first_surface = decode_embedded_surface(bytes, &mut position, int_width)?;
-    let second_surface = decode_embedded_surface(bytes, &mut position, int_width)?;
+    let first_surface = decode_optional_embedded_surface(bytes, &mut position, int_width)?.value();
+    let second_surface = decode_optional_embedded_surface(bytes, &mut position, int_width)?.value();
     let surfaces = [first_surface, second_surface];
-    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = first_end;
-    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = second_end;
+    let first_pcurve = decode_optional_pcurve(bytes, &mut position, int_width)?.value();
+    let second_pcurve = decode_optional_pcurve(bytes, &mut position, int_width)?.value();
     let pcurves = [first_pcurve, second_pcurve];
     let parameter_range = [
         take_range_value(bytes, &mut position)?,
@@ -5076,6 +5074,47 @@ fn decode_embedded_two_sided_offset(
         discontinuity_flag,
         offsets,
     })
+}
+
+enum Nullable<T> {
+    Null,
+    Value(T),
+}
+
+impl<T> Nullable<T> {
+    fn value(self) -> Option<T> {
+        match self {
+            Self::Null => None,
+            Self::Value(value) => Some(value),
+        }
+    }
+}
+
+fn decode_optional_embedded_surface(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<Nullable<SurfaceGeometry>> {
+    let start = *position;
+    if take_native_ident(bytes, position)?.as_str() == "null_surface" {
+        return Some(Nullable::Null);
+    }
+    *position = start;
+    decode_embedded_surface(bytes, position, int_width).map(Nullable::Value)
+}
+
+fn decode_optional_pcurve(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<Nullable<NurbsPcurve>> {
+    let start = *position;
+    if take_native_ident(bytes, position)?.as_str() == "nullbs" {
+        return Some(Nullable::Null);
+    }
+    let (pcurve, end) = decode_pcurve_block_with_end(bytes, start, int_width)?;
+    *position = end;
+    Some(Nullable::Value(pcurve))
 }
 
 /// Writable scalar locations in a retained `off_int_cur` construction.

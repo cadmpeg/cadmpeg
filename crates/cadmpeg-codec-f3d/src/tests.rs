@@ -11824,6 +11824,64 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
 }
 
 #[test]
+fn generated_mixed_offset_supports_write_source_less() {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_embedded_offset_supports_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("generated embedded offset-support decode");
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let ProceduralCurveDefinition::TwoSidedOffset { context, .. } =
+        &mut source_less.model.procedural_curves[0].definition
+    else {
+        panic!("expected two-sided offset construction")
+    };
+    context.sides[1].surface = None;
+    context.sides[1].pcurve = None;
+    let first_support = context.sides[0]
+        .surface
+        .clone()
+        .expect("retained first support id");
+    let expected_surface = source_less
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == first_support)
+        .expect("retained first support")
+        .geometry
+        .clone();
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less mixed offset-support encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less mixed offset-support round trip");
+    let ProceduralCurveDefinition::TwoSidedOffset { context, .. } =
+        &round_trip.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected round-trip two-sided offset construction")
+    };
+    assert!(context.sides[1].surface.is_none() && context.sides[1].pcurve.is_none());
+    let actual_surface = round_trip
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| Some(&surface.id) == context.sides[0].surface.as_ref())
+        .expect("round-trip first support");
+    assert_eq!(actual_surface.geometry, expected_surface);
+}
+
+#[test]
 fn generated_analytic_offset_supports_decode_and_write_source_less() {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceGeometry};
 
