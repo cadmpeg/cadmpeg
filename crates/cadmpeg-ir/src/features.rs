@@ -259,6 +259,15 @@ pub enum FeatureDefinition {
         /// Whether material is added away from the pull direction.
         outward: bool,
     },
+    /// Boolean operation between existing bodies.
+    Combine {
+        /// Body modified by the operation.
+        target: BodySelection,
+        /// Bodies consumed as Boolean tools.
+        tools: BodySelection,
+        /// Join, cut, or intersection operation.
+        op: BooleanOp,
+    },
     /// Drilled or machined hole.
     Hole {
         /// Face the hole is placed on, when known.
@@ -308,6 +317,16 @@ pub enum FaceSelection {
     /// Resolved topological faces; empty for no selected faces.
     Faces(Vec<FaceId>),
     /// Format-native selection reference.
+    Native(String),
+}
+
+/// Body operands resolved by the decoder or retained in native form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum BodySelection {
+    /// Resolved topological bodies.
+    Bodies(Vec<BodyId>),
+    /// Format-native selection expression.
     Native(String),
 }
 

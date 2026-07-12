@@ -1665,3 +1665,19 @@ fn face_selections_round_trip_through_json() {
         selections
     );
 }
+
+#[test]
+fn body_selections_round_trip_through_json() {
+    use crate::features::BodySelection;
+    use crate::ids::BodyId;
+
+    let selections = vec![
+        BodySelection::Bodies(vec![BodyId("synthetic:test:body#0".into())]),
+        BodySelection::Native("body:17,body:18".into()),
+    ];
+    let json = serde_json::to_string(&selections).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Vec<BodySelection>>(&json).unwrap(),
+        selections
+    );
+}

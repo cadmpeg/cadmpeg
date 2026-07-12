@@ -65,8 +65,8 @@ pub use codec::{
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{
-    ConfigurationId, DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId,
-    ParameterId, ParameterValue,
+    BodySelection, ConfigurationId, DesignConfiguration, DesignParameter, Feature,
+    FeatureDefinition, FeatureId, ParameterId, ParameterValue,
 };
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 /// Source location attached to a [`LossNote`].

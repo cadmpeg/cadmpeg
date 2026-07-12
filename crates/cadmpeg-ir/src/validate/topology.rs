@@ -857,7 +857,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
 
 fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
     use crate::features::{
-        EdgeSelection, Extent, FaceSelection, FeatureDefinition, PathRef, ProfileRef,
+        BodySelection, EdgeSelection, Extent, FaceSelection, FeatureDefinition, PathRef, ProfileRef,
     };
 
     for configuration in &ir.model.configurations {
@@ -906,6 +906,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         let mut extents = Vec::new();
         let mut edge_selections = Vec::new();
         let mut face_selections = Vec::new();
+        let mut body_selections = Vec::new();
         match &feature.definition {
             FeatureDefinition::Extrude {
                 profile, extent, ..
@@ -945,6 +946,10 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 face_selections.push(faces);
                 face_selections.push(neutral_plane);
+            }
+            FeatureDefinition::Combine { target, tools, .. } => {
+                body_selections.push(target);
+                body_selections.push(tools);
             }
             FeatureDefinition::Hole { face, extent, .. } => {
                 face_selections.extend(face);
@@ -1032,6 +1037,17 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     "selected face",
                     faces.iter().map(|id| id.0.as_str()),
                     &ids.faces,
+                );
+            }
+        }
+        for selection in body_selections {
+            if let BodySelection::Bodies(bodies) = selection {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "selected body",
+                    bodies.iter().map(|id| id.0.as_str()),
+                    &ids.bodies,
                 );
             }
         }

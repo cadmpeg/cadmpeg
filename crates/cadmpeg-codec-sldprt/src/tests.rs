@@ -3411,6 +3411,58 @@ fn semantic_writer_round_trips_typed_draft() {
 }
 
 #[test]
+fn semantic_writer_round_trips_typed_combine() {
+    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Combine Name="Union" Type="Combine" id="19" Target="body:1" Tools="body:2,body:3" Operation="Join"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Combine {
+            target: BodySelection::Native(target),
+            tools: BodySelection::Native(tools),
+            op: BooleanOp::Join,
+        } if target == "body:1" && tools == "body:2,body:3"
+    ));
+
+    let FeatureDefinition::Combine { target, tools, op } =
+        &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed combine");
+    };
+    *target = BodySelection::Native("body:4".into());
+    *tools = BodySelection::Native("body:5,body:6".into());
+    *op = BooleanOp::Intersect;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.properties["Target"], "body:4");
+    assert_eq!(feature.properties["Tools"], "body:5,body:6");
+    assert_eq!(feature.properties["Operation"], "Intersect");
+    assert!(matches!(
+        &regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Combine {
+            target: BodySelection::Native(target),
+            tools: BodySelection::Native(tools),
+            op: BooleanOp::Intersect,
+        } if target == "body:4" && tools == "body:5,body:6"
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition, HoleKind, Length};
 

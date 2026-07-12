@@ -6,9 +6,10 @@ use crate::records::{Configuration, Feature, FeatureHistory};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferSpec, ConfigurationId, DesignConfiguration, DesignParameter,
-    EdgeSelection, Extent, FaceSelection, FeatureDefinition, FeatureId, HoleKind, Length,
-    ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, VariableRadius,
+    Angle, BodySelection, BooleanOp, ChamferSpec, ConfigurationId, DesignConfiguration,
+    DesignParameter, EdgeSelection, Extent, FaceSelection, FeatureDefinition, FeatureId, HoleKind,
+    Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec,
+    VariableRadius,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::Exactness;
@@ -367,6 +368,8 @@ fn project_definition(
         project_shell(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Draft") {
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature.kind.eq_ignore_ascii_case("Combine") {
+        project_combine(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Hole") {
         project_hole(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Revolve") {
@@ -709,6 +712,18 @@ fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
                 .and_then(|value| parse_angle_rad(value))?,
         ),
         outward: parse_bool(feature.properties.get("Outward")?)?,
+    })
+}
+
+fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
+    let op = parse_boolean_op(feature.properties.get("Operation")?)?;
+    if op == BooleanOp::NewBody {
+        return None;
+    }
+    Some(FeatureDefinition::Combine {
+        target: BodySelection::Native(feature.properties.get("Target")?.clone()),
+        tools: BodySelection::Native(feature.properties.get("Tools")?.clone()),
+        op,
     })
 }
 
@@ -1457,6 +1472,35 @@ pub fn sync_neutral_features(
                 properties.insert("Direction".into(), format_vector3(*pull_direction));
                 properties.insert("Outward".into(), outward.to_string());
                 (record.kind.clone(), parameters, properties)
+            }
+            FeatureDefinition::Combine {
+                target: BodySelection::Native(target),
+                tools: BodySelection::Native(tools),
+                op,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained combine record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("Combine") || *op == BooleanOp::NewBody {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported combine semantics",
+                        feature.id
+                    )));
+                }
+                if target.trim().is_empty() || tools.trim().is_empty() {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has an empty combine selection",
+                        feature.id
+                    )));
+                }
+                let mut properties = record.properties.clone();
+                properties.insert("Target".into(), target.clone());
+                properties.insert("Tools".into(), tools.clone());
+                properties.insert("Operation".into(), format_boolean_op(*op).into());
+                (record.kind.clone(), record.parameters.clone(), properties)
             }
             FeatureDefinition::Hole {
                 face: Some(FaceSelection::Native(selection)),
