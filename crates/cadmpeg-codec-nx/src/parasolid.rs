@@ -6,8 +6,7 @@
 //! neutral-binary data and supplies its subtype and optional `SCH_` schema token.
 //! Other inflated payloads are classified as [`StreamKind::Preview`].
 
-use flate2::read::ZlibDecoder;
-use std::io::Read;
+use cadmpeg_ir::compression::inflate_zlib_prefix;
 
 use crate::container;
 
@@ -89,7 +88,7 @@ pub fn extract_streams(data: &[u8]) -> Vec<Stream> {
     let mut i = 0usize;
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
-            if let Some(inflated) = inflate(&part[i..]) {
+            if let Some(inflated) = inflate_zlib_prefix(&part[i..]) {
                 if inflated.len() >= MIN_INFLATED {
                     let (kind, schema) = classify(&inflated);
                     streams.push(Stream {
@@ -117,19 +116,6 @@ pub fn extract_streams(data: &[u8]) -> Vec<Stream> {
 #[allow(clippy::manual_is_multiple_of)] // `is_multiple_of` exceeds the workspace MSRV.
 fn is_zlib_header(cmf: u8, flg: u8) -> bool {
     cmf & 0x0f == 8 && cmf >> 4 <= 7 && u16::from_be_bytes([cmf, flg]).is_multiple_of(31)
-}
-
-/// Inflate a zlib stream, tolerating trailing garbage after the compressed data
-/// (the container packs streams back-to-back, so the slice runs past the end).
-fn inflate(bytes: &[u8]) -> Option<Vec<u8>> {
-    let mut dec = ZlibDecoder::new(bytes);
-    let mut out = Vec::new();
-    match dec.read_to_end(&mut out) {
-        Ok(_) => Some(out),
-        // A truncated tail still yields the decoded prefix; accept it if useful.
-        Err(_) if !out.is_empty() => Some(out),
-        Err(_) => None,
-    }
 }
 
 /// Classify an inflated payload from its prologue text and read the schema token.
