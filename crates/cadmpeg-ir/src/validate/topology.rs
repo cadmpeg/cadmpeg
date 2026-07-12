@@ -44,15 +44,10 @@ impl IdSets {
                 .map(|e| e.id.0.clone())
                 .collect(),
             unknowns: ir
-                .unknowns
-                .iter()
-                .map(|e| e.id.0.clone())
-                .chain(
-                    ir.all_native_unknowns()
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|record| record.id.0),
-                )
+                .all_native_unknowns()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|record| record.id.0)
                 .collect(),
         }
     }

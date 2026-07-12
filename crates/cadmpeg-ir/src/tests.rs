@@ -60,14 +60,18 @@ fn face_on_unknown_surface_validates_clean() {
     let mut ir = unit_cube();
     // Preserve a raw record and point the unknown surface at it.
     let rec = UnknownId("synthetic:cube:unknown#0".into());
-    ir.unknowns.push(UnknownRecord {
-        id: rec.clone(),
-        offset: 0,
-        byte_len: 16,
-        sha256: "0".repeat(64),
-        data: None,
-        links: Vec::new(),
-    });
+    ir.push_native_unknown(
+        "synthetic",
+        UnknownRecord {
+            id: rec.clone(),
+            offset: 0,
+            byte_len: 16,
+            sha256: "0".repeat(64),
+            data: None,
+            links: Vec::new(),
+        },
+    )
+    .unwrap();
     make_first_face_surface_unknown(&mut ir, Some(rec));
 
     let report = validate(&ir, Vec::new());
@@ -122,14 +126,18 @@ fn unknown_surface_dangling_record_is_flagged() {
 fn unknown_surface_json_round_trips() {
     let mut ir = unit_cube();
     let rec = UnknownId("synthetic:cube:unknown#0".into());
-    ir.unknowns.push(UnknownRecord {
-        id: rec.clone(),
-        offset: 0,
-        byte_len: 16,
-        sha256: "0".repeat(64),
-        data: None,
-        links: Vec::new(),
-    });
+    ir.push_native_unknown(
+        "synthetic",
+        UnknownRecord {
+            id: rec.clone(),
+            offset: 0,
+            byte_len: 16,
+            sha256: "0".repeat(64),
+            data: None,
+            links: Vec::new(),
+        },
+    )
+    .unwrap();
     make_first_face_surface_unknown(&mut ir, Some(rec));
 
     let json = ir.to_canonical_json().unwrap();
@@ -957,14 +965,18 @@ fn document_and_entity_tolerances_are_checked() {
 #[test]
 fn preserved_payload_digest_is_checked() {
     let mut ir = unit_cube();
-    ir.unknowns.push(UnknownRecord {
-        id: UnknownId("zz:payload".into()),
-        offset: 0,
-        byte_len: 3,
-        sha256: "0".repeat(64),
-        data: Some(vec![1, 2, 3]),
-        links: Vec::new(),
-    });
+    ir.push_native_unknown(
+        "zz",
+        UnknownRecord {
+            id: UnknownId("zz:payload".into()),
+            offset: 0,
+            byte_len: 3,
+            sha256: "0".repeat(64),
+            data: Some(vec![1, 2, 3]),
+            links: Vec::new(),
+        },
+    )
+    .unwrap();
     assert!(validate(&ir, Vec::new())
         .findings
         .iter()

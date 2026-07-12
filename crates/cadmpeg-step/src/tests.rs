@@ -593,7 +593,7 @@ fn parametric_history_reduction_is_reported() {
     let mut ir = unit_cube();
     ir.native
         .f3d
-        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default)
+        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default)
         .asm_histories
         .push(cadmpeg_ir::history::AsmHistory {
             id: "asm-history-0".into(),
@@ -602,6 +602,7 @@ fn parametric_history_reduction_is_reported() {
             high_water_mark: Some(0),
             states: Vec::new(),
         });
+    ir.finalize();
 
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();

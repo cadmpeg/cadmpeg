@@ -913,13 +913,21 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.ir.unknowns.is_empty() {
+        let unknown_count = self
+            .ir
+            .native
+            .loss_counts()
+            .into_iter()
+            .filter(|count| count.kind == "unknowns")
+            .map(|count| count.count)
+            .sum::<usize>();
+        if unknown_count > 0 {
             self.loss(
                 LossCategory::Metadata,
                 Severity::Info,
                 format!(
                     "{} uninterpreted passthrough record(s) were not represented in STEP",
-                    self.ir.unknowns.len()
+                    unknown_count
                 ),
             );
         }

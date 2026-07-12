@@ -281,9 +281,6 @@ fn entity_json(ir: &CadIr, id: &str) -> Option<serde_json::Value> {
     if let Some(value) = model_entity_json(ir, id) {
         return Some(value);
     }
-    if let Some(record) = ir.unknowns.iter().find(|record| record.id.0 == id) {
-        return serde_json::to_value(record).ok();
-    }
     ir.native
         .namespaces
         .values()
@@ -407,7 +404,7 @@ pub(super) fn check_native_links(
     }
 
     let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
-    for record in ir.unknowns.iter().chain(&native_unknowns) {
+    for record in &native_unknowns {
         for target in &record.links {
             if !all_ids.contains(target) {
                 findings.push(Finding {

@@ -102,15 +102,6 @@ crate::document::arena_registry!(define_model_identity_checks);
 pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) -> HashSet<String> {
     let mut seen = HashSet::new();
     check_model_identity_and_order(ir, &mut seen, findings);
-    check_order(
-        "unknowns",
-        ir.unknowns.iter().map(|record| record.id.0.as_str()),
-        findings,
-    );
-    for record in &ir.unknowns {
-        push_identity(&mut seen, findings, &record.id.0);
-    }
-
     let native_ids = collect_native_ids(ir);
     for (_, id) in &native_ids {
         push_identity(&mut seen, findings, id);
@@ -160,7 +151,6 @@ pub(super) fn entity_counts(ir: &CadIr) -> BTreeMap<String, usize> {
             .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
             .count(),
     );
-    counts.insert("unknowns".into(), ir.unknowns.len());
     for loss in ir.native.loss_counts() {
         counts.insert(format!("native.{}.{}", loss.format, loss.kind), loss.count);
     }

@@ -122,9 +122,6 @@ pub struct CadIr {
     /// Independently versioned native namespaces.
     #[serde(default)]
     pub native: Native,
-    /// Recognized source records without a typed interpretation.
-    #[serde(default)]
-    pub unknowns: Vec<UnknownRecord>,
 }
 
 impl CadIr {
@@ -188,7 +185,6 @@ impl CadIr {
             model: Model::default(),
             annotations: Annotations::default(),
             native: Native::default(),
-            unknowns: Vec::new(),
         }
     }
 
@@ -215,7 +211,6 @@ impl CadIr {
     pub fn finalize(&mut self) {
         self.model.finalize();
         self.native.finalize();
-        self.unknowns.sort_by(|left, right| left.id.cmp(&right.id));
     }
 }
 

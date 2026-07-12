@@ -731,7 +731,6 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
         model: ir.model.clone(),
         annotations: Annotations::default(),
         native: cadmpeg_ir::Native::default(),
-        unknowns: Vec::new(),
     };
     normalized.model.bodies.iter_mut().for_each(|body| {
         body.name = None;
