@@ -116,23 +116,21 @@ fn t_end(b: &mut Vec<u8>) {
 
 fn assert_f3d_native_parity(ir: &cadmpeg_ir::document::CadIr) {
     let native = ir.native.namespace("f3d").expect("F3D native namespace");
-    assert_eq!(native.version, cadmpeg_ir::native::f3d::F3D_NATIVE_VERSION);
+    assert_eq!(native.version, crate::native::F3D_NATIVE_VERSION);
 }
 
-fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> cadmpeg_ir::native::f3d::F3dNative {
-    cadmpeg_ir::native::f3d::F3dNative::load(
-        ir.native.namespace("f3d").expect("F3D native namespace"),
-    )
-    .unwrap()
+fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> crate::native::F3dNative {
+    crate::native::F3dNative::load(ir.native.namespace("f3d").expect("F3D native namespace"))
+        .unwrap()
 }
 
 struct F3dNativeMut<'a> {
     ir: &'a mut cadmpeg_ir::document::CadIr,
-    native: cadmpeg_ir::native::f3d::F3dNative,
+    native: crate::native::F3dNative,
 }
 
 impl std::ops::Deref for F3dNativeMut<'_> {
-    type Target = cadmpeg_ir::native::f3d::F3dNative;
+    type Target = crate::native::F3dNative;
 
     fn deref(&self) -> &Self::Target {
         &self.native
@@ -157,7 +155,7 @@ fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeMut<'_> {
     let native = ir
         .native
         .namespace("f3d")
-        .map(cadmpeg_ir::native::f3d::F3dNative::load)
+        .map(crate::native::F3dNative::load)
         .transpose()
         .unwrap()
         .unwrap_or_default();
@@ -166,7 +164,7 @@ fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeMut<'_> {
 
 fn update_f3d_native<R>(
     ir: &mut cadmpeg_ir::document::CadIr,
-    update: impl FnOnce(&mut cadmpeg_ir::native::f3d::F3dNative) -> R,
+    update: impl FnOnce(&mut crate::native::F3dNative) -> R,
 ) -> R {
     let mut native = f3d_native_mut(ir);
     update(&mut native)
@@ -3777,8 +3775,8 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 
 #[test]
 fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes() {
+    use crate::records::{PersistentDesignLink, SketchCurveLink};
     use cadmpeg_ir::attributes::AttributeTarget;
-    use cadmpeg_ir::design::{PersistentDesignLink, SketchCurveLink};
     use cadmpeg_ir::topology::Color;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
@@ -3962,7 +3960,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
 
 #[test]
 fn generated_source_less_writes_design_object_metastream() {
-    use cadmpeg_ir::design::{DesignObject, DesignObjectKind};
+    use crate::records::{DesignObject, DesignObjectKind};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
@@ -4019,7 +4017,7 @@ fn generated_source_less_writes_design_object_metastream() {
 
 #[test]
 fn generated_source_less_writes_design_recipes_and_persistent_references() {
-    use cadmpeg_ir::design::{
+    use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, LostEdgeReference, PersistentReference,
         PersistentReferenceKind,
     };
@@ -4113,7 +4111,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
 
 #[test]
 fn generated_source_less_writes_design_ownership_and_record_headers() {
-    use cadmpeg_ir::design::{
+    use crate::records::{
         DesignBodyMember, DesignEntityHeader, DesignObject, DesignObjectKind, DesignRecordHeader,
     };
 
@@ -4198,7 +4196,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
 
 #[test]
 fn generated_source_less_writes_sketch_points_curves_and_constraints() {
-    use cadmpeg_ir::design::{
+    use crate::records::{
         DesignEntityHeader, DesignObject, DesignObjectKind, SketchConstraintKind,
         SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
     };
@@ -4360,7 +4358,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
 fn generated_source_less_writes_act_table_channels_and_root_component() {
     use std::collections::BTreeMap;
 
-    use cadmpeg_ir::design::{ActEntity, ActGuid, ActRootComponent};
+    use crate::records::{ActEntity, ActGuid, ActRootComponent};
 
     let appearance_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
     let physical_guid = "cccccccc-1111-2222-3333-dddddddddddd";
@@ -4450,8 +4448,8 @@ fn generated_source_less_writes_act_table_channels_and_root_component() {
 fn generated_source_less_writes_protein_appearance_and_body_binding() {
     use std::collections::BTreeMap;
 
+    use crate::records::{DesignMaterialAssignment, DesignObject, DesignObjectKind};
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-    use cadmpeg_ir::design::{DesignMaterialAssignment, DesignObject, DesignObjectKind};
     use cadmpeg_ir::ids::AppearanceId;
     use cadmpeg_ir::topology::Color;
 
@@ -4589,7 +4587,7 @@ fn generated_f3d_rewrites_native_sketch_arc_geometry() {
     let mut edited = decoded.ir;
     let expected = update_f3d_native(&mut edited, |native| {
         let curve = &mut native.sketch_curve_identities[0];
-        let Some(cadmpeg_ir::design::SketchCurveGeometry::Arc {
+        let Some(crate::records::SketchCurveGeometry::Arc {
             center,
             radius,
             start_angle,
@@ -4629,7 +4627,7 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     update_f3d_native(&mut edited, |native| {
         let relation = &mut native.sketch_relations[0];
         relation.state = 0x40;
-        relation.constraint_kinds = vec![cadmpeg_ir::design::SketchConstraintKind::Horizontal];
+        relation.constraint_kinds = vec![crate::records::SketchConstraintKind::Horizontal];
         relation.unknown_constraint_bits = 0;
     });
 
@@ -4645,7 +4643,7 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     assert_eq!(relation.state, 0x40);
     assert_eq!(
         relation.constraint_kinds,
-        [cadmpeg_ir::design::SketchConstraintKind::Horizontal]
+        [crate::records::SketchConstraintKind::Horizontal]
     );
     assert_eq!(relation.unknown_constraint_bits, 0);
 }
@@ -4659,7 +4657,7 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
     let mut edited = decoded.ir;
     let expected = update_f3d_native(&mut edited, |native| {
         let curve = &mut native.sketch_curve_identities[1];
-        let Some(cadmpeg_ir::design::SketchCurveGeometry::Nurbs {
+        let Some(crate::records::SketchCurveGeometry::Nurbs {
             fit_tolerance,
             control_points,
             ..
@@ -4746,7 +4744,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let header = native
         .design_entity_headers
         .iter_mut()
-        .find(|header| header.object_kind == Some(cadmpeg_ir::design::DesignObjectKind::Sketch))
+        .find(|header| header.object_kind == Some(crate::records::DesignObjectKind::Sketch))
         .expect("generated sketch entity header");
     assert!(header.byte_offset > 0);
     assert!(header.record_reference_offset.is_some());
@@ -4756,7 +4754,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let object = native
         .design_objects
         .iter_mut()
-        .find(|object| object.kind == cadmpeg_ir::design::DesignObjectKind::Body)
+        .find(|object| object.kind == crate::records::DesignObjectKind::Body)
         .expect("generated body design object");
     assert!(object.byte_offset < object.revision_offset);
     assert_eq!(object.entity_id_offsets.len(), 1);
@@ -4850,7 +4848,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let header = f3d_native(&round_trip.ir)
         .design_entity_headers
         .iter()
-        .find(|header| header.object_kind == Some(cadmpeg_ir::design::DesignObjectKind::Sketch))
+        .find(|header| header.object_kind == Some(crate::records::DesignObjectKind::Sketch))
         .cloned()
         .expect("round-trip sketch entity header");
     assert_eq!(header.record_reference, Some(585));
@@ -4858,7 +4856,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let object = f3d_native(&round_trip.ir)
         .design_objects
         .iter()
-        .find(|object| object.kind == cadmpeg_ir::design::DesignObjectKind::Body)
+        .find(|object| object.kind == crate::records::DesignObjectKind::Body)
         .cloned()
         .expect("round-trip body design object");
     assert_eq!(object.entity_ids, [986]);
@@ -10327,7 +10325,7 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(f3d_native(&result.ir).construction_recipes.len(), 1);
     assert_eq!(
         f3d_native(&result.ir).construction_recipes[0].kind,
-        cadmpeg_ir::design::ConstructionRecipeKind::Body
+        crate::records::ConstructionRecipeKind::Body
     );
     assert_eq!(
         f3d_native(&result.ir).construction_recipes[0]
@@ -10349,7 +10347,7 @@ fn decode_transfers_generated_protein_appearance() {
         .iter()
         .any(|reference| {
             reference.value == 440
-                && reference.kind == cadmpeg_ir::design::PersistentReferenceKind::CurvePrimary
+                && reference.kind == crate::records::PersistentReferenceKind::CurvePrimary
         }));
     assert_eq!(f3d_native(&result.ir).lost_edge_references.len(), 1);
     assert_eq!(
@@ -10367,7 +10365,7 @@ fn decode_transfers_generated_protein_appearance() {
     let sketch = f3d_native(&result.ir)
         .design_objects
         .iter()
-        .find(|object| object.kind == cadmpeg_ir::design::DesignObjectKind::Sketch)
+        .find(|object| object.kind == crate::records::DesignObjectKind::Sketch)
         .cloned()
         .unwrap();
     assert_eq!(sketch.entity_ids, vec![277]);
@@ -10384,7 +10382,7 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(f3d_native(&result.ir).design_entity_headers[0].optional_slot_present);
     assert_eq!(
         f3d_native(&result.ir).design_entity_headers[0].object_kind,
-        Some(cadmpeg_ir::design::DesignObjectKind::Sketch)
+        Some(crate::records::DesignObjectKind::Sketch)
     );
     assert_eq!(
         f3d_native(&result.ir).design_entity_headers[0].record_reference,
@@ -10421,7 +10419,7 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert_eq!(
         f3d_native(&result.ir).sketch_relations[0].constraint_kinds,
-        [cadmpeg_ir::design::SketchConstraintKind::Parallel]
+        [crate::records::SketchConstraintKind::Parallel]
     );
     assert_eq!(
         f3d_native(&result.ir).sketch_relations[0].unknown_constraint_bits,
@@ -10462,11 +10460,11 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert!(matches!(
         f3d_native(&result.ir).sketch_curve_identities[0].geometry,
-        Some(cadmpeg_ir::design::SketchCurveGeometry::Arc { radius: 30.0, .. })
+        Some(crate::records::SketchCurveGeometry::Arc { radius: 30.0, .. })
     ));
     assert!(matches!(
         &f3d_native(&result.ir).sketch_curve_identities[1].geometry,
-        Some(cadmpeg_ir::design::SketchCurveGeometry::Nurbs {
+        Some(crate::records::SketchCurveGeometry::Nurbs {
             carrier_reference: Some(42),
             degree: 2,
             weights,

@@ -10,10 +10,10 @@
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read, Write};
 
+use crate::records::DesignMaterialAssignment;
 use cadmpeg_ir::appearance::Appearance;
 use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
-use cadmpeg_ir::design::DesignMaterialAssignment;
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
 use cadmpeg_ir::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, u64_at, utf16le_at};
 use cadmpeg_ir::topology::Color;

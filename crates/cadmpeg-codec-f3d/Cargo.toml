@@ -18,6 +18,8 @@ cadmpeg-ir.workspace = true
 zip.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+serde.workspace = true
+schemars.workspace = true
 
 [lints]
 workspace = true

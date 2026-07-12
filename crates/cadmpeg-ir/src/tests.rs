@@ -4,7 +4,6 @@
 //! and each validation check actually fires when its invariant is broken.
 
 use crate::annotations::{ExactnessNote, Provenance};
-use crate::design::SketchRelation;
 use crate::document::Model;
 use crate::examples::unit_cube;
 use crate::geometry::{
@@ -1001,24 +1000,6 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
             parent: "f3d:test:asm-delta-state#0".into(),
             index: 0,
             name: "record".into(),
-            raw_bytes: vec![1, 2, 3],
-        },
-        "raw_bytes",
-    );
-    assert_base64_round_trip_and_rejection(
-        &SketchRelation {
-            id: "f3d:test:sketch-relation#0".into(),
-            record_index: 0,
-            class_tag: "001".into(),
-            byte_offset: 0,
-            state_offset: 0,
-            owner_reference: 0,
-            auxiliary_references: Vec::new(),
-            members: Vec::new(),
-            state: 0,
-            constraint_kinds: Vec::new(),
-            unknown_constraint_bits: 0,
-            return_members: Vec::new(),
             raw_bytes: vec![1, 2, 3],
         },
         "raw_bytes",

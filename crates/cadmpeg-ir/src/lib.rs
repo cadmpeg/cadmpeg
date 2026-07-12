@@ -33,7 +33,7 @@ pub mod be;
 pub mod bytes;
 pub mod codec;
 pub mod compression;
-pub mod design;
+
 pub mod diff;
 pub mod document;
 pub mod eval;

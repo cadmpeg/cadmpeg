@@ -4,13 +4,13 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::design::{
+use crate::records::{
     ActEntity, ActGuid, ActRootComponent, ConstructionRecipe, DesignBodyMember, DesignEntityHeader,
     DesignMaterialAssignment, DesignObject, DesignRecordHeader, LostEdgeReference,
     PersistentDesignLink, PersistentReference, SketchCurveIdentity, SketchCurveLink, SketchPoint,
     SketchRelation,
 };
-use crate::history::AsmHistory;
+use cadmpeg_ir::history::AsmHistory;
 
 /// Current schema version for the Autodesk Fusion native namespace.
 pub const F3D_NATIVE_VERSION: u32 = 1;
@@ -42,15 +42,15 @@ macro_rules! f3d_arenas {
 macro_rules! sort_f3d_arenas {
     ($($field:ident: $ty:ty;)*) => {
         impl F3dNative {
-            pub fn load(namespace: &super::NativeNamespace) -> Result<Self, super::NativeConvertError> {
+            pub fn load(namespace: &cadmpeg_ir::NativeNamespace) -> Result<Self, cadmpeg_ir::NativeConvertError> {
                 let mut native = Self {
                     version: namespace.version,
                     $($field: namespace.arena_as(stringify!($field))?,)*
                 };
-                let mut states: Vec<crate::history::AsmDeltaState> = namespace.arena_as("asm_delta_states")?;
-                let mut boards: Vec<crate::history::AsmBulletinBoard> = namespace.arena_as("asm_bulletin_boards")?;
-                let changes: Vec<crate::history::AsmEntityChange> = namespace.arena_as("asm_entity_changes")?;
-                let records: Vec<crate::history::AsmHistoryRecord> = namespace.arena_as("asm_history_records")?;
+                let mut states: Vec<cadmpeg_ir::history::AsmDeltaState> = namespace.arena_as("asm_delta_states")?;
+                let mut boards: Vec<cadmpeg_ir::history::AsmBulletinBoard> = namespace.arena_as("asm_bulletin_boards")?;
+                let changes: Vec<cadmpeg_ir::history::AsmEntityChange> = namespace.arena_as("asm_entity_changes")?;
+                let records: Vec<cadmpeg_ir::history::AsmHistoryRecord> = namespace.arena_as("asm_history_records")?;
                 for board in &mut boards { board.changes = changes.iter().filter(|change| change.parent == board.id).cloned().collect(); }
                 for state in &mut states {
                     state.bulletin_boards = boards.iter().filter(|board| board.parent == state.id).cloned().collect();
@@ -60,7 +60,7 @@ macro_rules! sort_f3d_arenas {
                 Ok(native)
             }
 
-            pub fn store(&self, namespace: &mut super::NativeNamespace) -> Result<(), super::NativeConvertError> {
+            pub fn store(&self, namespace: &mut cadmpeg_ir::NativeNamespace) -> Result<(), cadmpeg_ir::NativeConvertError> {
                 namespace.version = F3D_NATIVE_VERSION;
                 $(namespace.set_arena(stringify!($field), &self.$field)?;)*
                 let histories = self.asm_histories.iter().cloned().map(|mut history| { history.states.clear(); history }).collect::<Vec<_>>();

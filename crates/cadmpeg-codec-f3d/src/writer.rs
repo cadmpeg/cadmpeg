@@ -5,12 +5,13 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read, Write};
 
-use cadmpeg_ir::codec::{Codec, CodecError, DecodeOptions};
-use cadmpeg_ir::design::{
+use crate::native::F3dNative;
+use crate::records::{
     ActEntity, ActGuid, ActRootComponent, ConstructionRecipeKind, DesignMaterialAssignment,
     DesignObjectKind, LostEdgeReference, PersistentDesignLink, PersistentReferenceKind,
     SketchCurveGeometry, SketchCurveLink,
 };
+use cadmpeg_ir::codec::{Codec, CodecError, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
@@ -20,7 +21,6 @@ use cadmpeg_ir::history::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::native::f3d::F3dNative;
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 use zip::write::SimpleFileOptions;
@@ -363,7 +363,7 @@ fn encode_sketch_record_header(
 
 fn encode_sketch_point(
     out: &mut Vec<u8>,
-    point: &cadmpeg_ir::design::SketchPoint,
+    point: &crate::records::SketchPoint,
 ) -> Result<(), CodecError> {
     if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
         return Err(CodecError::Malformed(
@@ -389,7 +389,7 @@ fn encode_sketch_point(
 
 fn encode_sketch_curve_identity(
     out: &mut Vec<u8>,
-    curve: &cadmpeg_ir::design::SketchCurveIdentity,
+    curve: &crate::records::SketchCurveIdentity,
 ) -> Result<(), CodecError> {
     let mut record = vec![0u8; 133];
     encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index)?;
@@ -555,7 +555,7 @@ fn encode_sketch_nurbs(
 
 fn encode_sketch_relation(
     out: &mut Vec<u8>,
-    relation: &cadmpeg_ir::design::SketchRelation,
+    relation: &crate::records::SketchRelation,
 ) -> Result<(), CodecError> {
     let mut record = vec![0u8; 101];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index)?;
