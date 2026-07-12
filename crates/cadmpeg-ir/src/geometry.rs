@@ -284,6 +284,69 @@ pub struct ProceduralSurface {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralSurfaceDefinition {
+    /// Exact native NURBS surface with retained parameter intervals.
+    Exact {
+        /// Ordered native U and V intervals.
+        parameter_ranges: [[f64; 2]; 2],
+        /// Native ASM extension integer following the intervals.
+        extension: i64,
+    },
+    /// Ordered native compound of a solved surface and component surfaces.
+    Compound {
+        /// One native scalar paired with each component surface.
+        parameters: Vec<f64>,
+        /// Ordered component surfaces.
+        components: Vec<SurfaceId>,
+    },
+    /// Taper of a support surface around a reference curve.
+    Taper {
+        /// Base surface being tapered.
+        support: SurfaceId,
+        /// Reference curve on the support.
+        reference: CurveId,
+        /// UV curve on the support, absent for `nullbs`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pcurve: Option<PcurveGeometry>,
+        /// Native taper parameter or draft magnitude.
+        parameter: f64,
+        /// Subtype-specific taper tail.
+        taper: TaperSurfaceKind,
+    },
+    /// Native loft defined by two section graphs and closure contracts.
+    Loft {
+        /// Two ordered loft sections.
+        sections: [LoftSection; 2],
+        /// Two ordered native parameter intervals.
+        parameter_ranges: [[f64; 2]; 2],
+        /// Two ordered native closure enums.
+        closures: [i64; 2],
+        /// Two ordered native singularity enums.
+        singularities: [i64; 2],
+        /// Native loft mode integer.
+        mode: i64,
+        /// Variable native tokens between the mode and solved cache.
+        bridge: Vec<LoftBridgeToken>,
+    },
+    /// Native compound-loft construction.
+    CompoundLoft {
+        /// Complete native compound-loft graph.
+        construction: Box<CompoundLoftConstruction>,
+    },
+    /// Native curvature-continuous two-sided blend.
+    G2Blend {
+        /// Complete native G2 construction graph.
+        construction: Box<G2BlendConstruction>,
+    },
+    /// Native variable-radius two-sided blend.
+    VariableBlend {
+        /// Complete native variable-blend construction graph.
+        construction: Box<VariableBlendConstruction>,
+    },
+    /// Native vertex-blend patch.
+    VertexBlend {
+        /// Complete native vertex-blend construction graph.
+        construction: Box<VertexBlendConstruction>,
+    },
     /// Translation of a directrix along a direction.
     Extrusion {
         /// Curve swept along `direction` to form the surface.
@@ -328,6 +391,12 @@ pub enum ProceduralSurfaceDefinition {
         support: SurfaceId,
         /// Signed offset distance, in document length units.
         distance: f64,
+        /// Native U parameter-direction sense enum.
+        u_sense: i64,
+        /// Native V parameter-direction sense enum.
+        v_sense: i64,
+        /// Ordered conditional ASM extension flags.
+        extension_flags: Vec<bool>,
     },
     /// Ruled surface joining two directrices.
     Ruled {
@@ -348,6 +417,9 @@ pub enum ProceduralSurfaceDefinition {
         radius: BlendRadiusLaw,
         /// Cross-section family of the blend.
         cross_section: BlendCrossSection,
+        /// Complete byte-backed rolling-ball context when available.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native: Option<Box<RollingBallConstruction>>,
     },
     /// Preserved construction without a neutral interpretation.
     Unknown {
@@ -377,6 +449,674 @@ pub enum BlendCrossSection {
     Conic,
     /// Free-form polynomial cross-section.
     Polynomial,
+}
+
+/// Subtype-specific tail of a native taper spline surface.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TaperSurfaceKind {
+    /// Standard taper without a subtype-specific tail.
+    Standard,
+    /// Orthogonal taper with a native sense flag.
+    Orthogonal {
+        /// Native orientation sense.
+        sense: bool,
+    },
+    /// Edge taper with a model-space draft vector.
+    Edge {
+        /// Native draft vector.
+        draft: Vector3,
+    },
+    /// Shadow taper with a pre-factored draft angle.
+    Shadow {
+        /// Native draft vector.
+        draft: Vector3,
+        /// Stored draft-angle sine.
+        sine: f64,
+        /// Stored draft-angle cosine.
+        cosine: f64,
+    },
+    /// Ruled taper with a pre-factored angle and factor.
+    Ruled {
+        /// Native draft vector.
+        draft: Vector3,
+        /// Stored draft-angle sine.
+        sine: f64,
+        /// Stored draft-angle cosine.
+        cosine: f64,
+        /// Native ruled-taper factor.
+        factor: f64,
+    },
+    /// Swept taper with a pre-factored draft angle.
+    Swept {
+        /// Native draft vector.
+        draft: Vector3,
+        /// Stored draft-angle sine.
+        sine: f64,
+        /// Stored draft-angle cosine.
+        cosine: f64,
+    },
+}
+
+/// One scalar row in native loft subdata.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftSubdataRow {
+    /// Leading ordered scalar pair.
+    pub parameters: [f64; 2],
+    /// Ordered per-column scalar pairs; empty for subdata type 211.
+    pub columns: Vec<[f64; 2]>,
+}
+
+/// Native loft constraint table.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftSubdata {
+    /// Native table type discriminator.
+    pub type_code: i64,
+    /// Serialized row count.
+    pub row_count: i64,
+    /// Serialized per-row column count.
+    pub column_count: i64,
+    /// Ordered decoded rows.
+    pub rows: Vec<LoftSubdataRow>,
+}
+
+/// Surface-side constraint attached to one loft profile curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftProfileData {
+    /// Constraint support surface.
+    pub surface: SurfaceId,
+    /// UV curve on the support, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve: Option<PcurveGeometry>,
+    /// First native constraint flag.
+    pub first_flag: bool,
+    /// ASM extension integer following the first flag.
+    pub asm_extension: i64,
+    /// Native constraint table.
+    pub subdata: LoftSubdata,
+    /// Optional direction selected by the second native flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<Vector3>,
+}
+
+/// One curve member of a loft profile.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftProfileMember {
+    /// Native member type discriminator.
+    pub type_code: i64,
+    /// Profile curve.
+    pub curve: CurveId,
+    /// Surface-side constraint data.
+    pub data: LoftProfileData,
+}
+
+/// Native path data attached to one loft section entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftPath {
+    /// Primary path curve.
+    pub curve: CurveId,
+    /// Ordered auxiliary BS3 curves.
+    pub auxiliaries: Vec<CurveId>,
+    /// Native path tail integer.
+    pub flag: i64,
+}
+
+/// One parameterized entry in a native loft section.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftSectionEntry {
+    /// Native section parameter.
+    pub parameter: f64,
+    /// Ordered profile members.
+    pub profile: Vec<LoftProfileMember>,
+    /// Native path data.
+    pub path: LoftPath,
+}
+
+/// Ordered native loft section.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftSection {
+    /// Ordered entries in the section.
+    pub entries: Vec<LoftSectionEntry>,
+}
+
+/// Token retained from the variable bridge preceding a loft solved cache.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum LoftBridgeToken {
+    /// Native boolean token.
+    Boolean(bool),
+    /// Native integer token.
+    Integer(i64),
+    /// Native double token.
+    Double(f64),
+    /// Native string token.
+    Text(String),
+    /// Native enum token.
+    Enum(i64),
+}
+
+/// Common carrier fields of one G2 blend side.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct G2BlendSide {
+    /// Native side label.
+    pub label: String,
+    /// Primary support surface.
+    pub surface: SurfaceId,
+    /// Primary side curve.
+    pub curve: CurveId,
+    /// First and second ordered BS2 pcurves; each may be `nullbs`.
+    pub pcurves: [Option<PcurveGeometry>; 2],
+    /// Native side direction.
+    pub direction: Vector3,
+}
+
+/// Singularity-specific payload of the first G2 blend side.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum G2BlendFirstShape {
+    /// Full singularity with an optional BS3 support surface.
+    Full {
+        /// Optional exact BS3 support surface.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        surface: Option<SurfaceId>,
+        /// Fit tolerance present exactly when `surface` is present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tolerance: Option<f64>,
+    },
+    /// Non-singular nine-scalar frame and tertiary pcurve.
+    None {
+        /// Ordered native frame scalars.
+        coefficients: [f64; 9],
+        /// Native fit tolerance.
+        tolerance: f64,
+        /// Optional intervening native token.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extension: Option<LoftBridgeToken>,
+        /// Tertiary BS2 pcurve, absent for `nullbs`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pcurve: Option<PcurveGeometry>,
+    },
+}
+
+/// Full native G2 blend construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct G2BlendConstruction {
+    /// First side common fields.
+    pub first: G2BlendSide,
+    /// Native first-side singularity enum.
+    pub singularity: i64,
+    /// First-side singularity payload.
+    pub first_shape: G2BlendFirstShape,
+    /// Second side common fields.
+    pub second: G2BlendSide,
+    /// Exact second-side spline support.
+    pub second_exact_surface: SurfaceId,
+    /// Center or transition curve.
+    pub center_curve: CurveId,
+    /// Ordered center-curve scalars.
+    pub center_parameters: [f64; 2],
+    /// Native center tail integer.
+    pub center_flag: i64,
+    /// Native U and V intervals.
+    pub parameter_ranges: [[f64; 2]; 2],
+    /// Four ordered trailing scalars.
+    pub trailing_parameters: [f64; 4],
+    /// Three ordered ASM discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
+}
+
+/// One complete native rolling-ball support side.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RollingBallSide {
+    /// Native side label.
+    pub label: String,
+    /// Primary support surface, absent for `null_surface`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<SurfaceId>,
+    /// Side curve.
+    pub curve: CurveId,
+    /// Primary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve: Option<PcurveGeometry>,
+    /// Native model-space side location.
+    pub location: Point3,
+    /// ASM secondary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_pcurve: Option<PcurveGeometry>,
+    /// Inline exact support surface, absent for a null spline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exact_support: Option<SurfaceId>,
+}
+
+/// Third support graph appended by `sss_blend_spl_sur`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RollingBallThirdSide {
+    /// Native side label.
+    pub label: String,
+    /// Third support surface.
+    pub surface: SurfaceId,
+    /// Third side curve.
+    pub curve: CurveId,
+    /// Primary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve: Option<PcurveGeometry>,
+    /// Native side vector.
+    pub direction: Vector3,
+    /// ASM secondary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_pcurve: Option<PcurveGeometry>,
+    /// Native ASM integer following the secondary pcurve.
+    pub extension: i64,
+    /// ASM tertiary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tertiary_pcurve: Option<PcurveGeometry>,
+    /// Final ASM flag.
+    pub flag: bool,
+}
+
+/// Native optional-radius selector in a rolling-ball construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RollingBallRadiusSelector {
+    /// Native `-1` no-radius sentinel.
+    None,
+    /// Explicit native selector scalar.
+    Value {
+        /// Stored scalar value.
+        value: f64,
+    },
+}
+
+/// Complete byte-backed rolling-ball or three-surface blend context.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RollingBallConstruction {
+    /// Two ordered primary support sides.
+    pub sides: Box<[RollingBallSide; 2]>,
+    /// Stored slice or center curve.
+    pub slice: CurveId,
+    /// Two signed support offsets in document length units.
+    pub offsets: [f64; 2],
+    /// Optional-radius selector field.
+    pub radius_selector: RollingBallRadiusSelector,
+    /// Native U interval.
+    pub u_range: [f64; 2],
+    /// Native V interval.
+    pub v_range: [f64; 2],
+    /// Three ordered trailing scalars.
+    pub parameters: [f64; 3],
+    /// Native long following the trailing scalars.
+    pub tail: i64,
+    /// Three ordered ASM discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
+    /// Third side present only for `sss_blend_spl_sur`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub third: Option<Box<RollingBallThirdSide>>,
+}
+
+/// One native support side in a variable-radius blend construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableBlendSide {
+    /// Native side label.
+    pub label: String,
+    /// Primary support surface.
+    pub surface: SurfaceId,
+    /// Side curve.
+    pub curve: CurveId,
+    /// Primary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve: Option<PcurveGeometry>,
+    /// Native model-space side location.
+    pub location: Point3,
+    /// ASM secondary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_pcurve: Option<PcurveGeometry>,
+    /// ASM scalar following the secondary pcurve.
+    pub scalar: f64,
+    /// ASM tertiary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tertiary_pcurve: Option<PcurveGeometry>,
+}
+
+/// One interpolation control point in a variable blend-value law.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableBlendInterpolationPoint {
+    /// Law parameter.
+    pub parameter: f64,
+    /// Radius in document length units.
+    pub radius: f64,
+    /// Two ordered tangent scalars.
+    pub tangents: [f64; 2],
+    /// Model-space control location.
+    pub location: Point3,
+    /// Control normal.
+    pub normal: Vector3,
+}
+
+/// Complete recursive native `getBlendValues` payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableBlendValue {
+    /// Native blend-value type name.
+    pub name: String,
+    /// Modern ASM flag present after release 222.
+    pub modern_flag: bool,
+    /// Native sub-discriminator.
+    pub discriminator: i64,
+    /// Native calibrated enum.
+    pub calibrated: i64,
+    /// Type-specific payload.
+    pub payload: VariableBlendValuePayload,
+}
+
+/// Type-specific payload of a variable blend value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum VariableBlendValuePayload {
+    /// Two endpoint parameters and radii.
+    TwoEnds {
+        /// Endpoint parameters.
+        parameters: [f64; 2],
+        /// Endpoint radii in document length units.
+        radii: [f64; 2],
+    },
+    /// Edge-offset branch.
+    EdgeOffset {
+        /// Ordered native scalar payload.
+        scalars: Vec<f64>,
+        /// Ordered length payload in document units.
+        lengths: Vec<f64>,
+    },
+    /// Functional radius law carried by a BS2 pcurve.
+    Functional {
+        /// Leading scalar.
+        parameter: f64,
+        /// Leading length in document units.
+        radius: f64,
+        /// Parametric `(u, radius)` function.
+        function: PcurveGeometry,
+        /// Numeric or symbolic terminal value.
+        terminal: LoftBridgeToken,
+    },
+    /// Constant law followed by a recursive chamfer value.
+    Constant {
+        /// Ordered native scalars.
+        parameters: [f64; 2],
+        /// Radius in document length units.
+        radius: f64,
+        /// Native variable-chamfer enum.
+        variable_chamfer: i64,
+        /// Native chamfer-type enum.
+        chamfer_type: i64,
+        /// Recursively nested blend value.
+        nested: Box<VariableBlendValue>,
+    },
+    /// Interpolated radius law.
+    Interpolated {
+        /// Leading scalar.
+        parameter: f64,
+        /// Leading radius in document length units.
+        radius: f64,
+        /// Parametric support curve.
+        function: PcurveGeometry,
+        /// Native interpolation enum count.
+        enum_count: i64,
+        /// Ordered interpolation controls.
+        points: Vec<VariableBlendInterpolationPoint>,
+        /// Optional two-scalar tail selected by a nonzero flag.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tail: Option<[f64; 2]>,
+    },
+}
+
+/// Optional single-radius tail selected by the native radius-kind branch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableBlendSingleRadiusTail {
+    /// Native symbolic or numeric selector.
+    pub selector: LoftBridgeToken,
+    /// Two ordered scalars following the selector.
+    pub parameters: [f64; 2],
+}
+
+/// Optional rounded-chamfer branch following two radius laws.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableBlendChamfer {
+    /// Native variable-chamfer enum.
+    pub variable_chamfer: i64,
+    /// Native chamfer-type enum.
+    pub chamfer_type: i64,
+    /// Chamfer blend-value payload.
+    pub value: VariableBlendValue,
+}
+
+/// Complete native variable-radius blend construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableBlendConstruction {
+    /// Two ordered support-side graphs.
+    pub sides: Box<[VariableBlendSide; 2]>,
+    /// Primary blend curve.
+    pub primary_curve: CurveId,
+    /// Two signed support offsets in document length units.
+    pub offsets: [f64; 2],
+    /// Native radius-kind enum.
+    pub radius_kind: i64,
+    /// First radius-control payload.
+    pub first_value: VariableBlendValue,
+    /// Second radius-control payload for a two-radii construction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_value: Option<VariableBlendValue>,
+    /// Optional rounded-chamfer payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chamfer: Option<Box<VariableBlendChamfer>>,
+    /// Optional single-radius selector tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub single_radius_tail: Option<VariableBlendSingleRadiusTail>,
+    /// Native U interval.
+    pub u_range: [f64; 2],
+    /// Native V interval.
+    pub v_range: [f64; 2],
+    /// Native integer before the solved shape.
+    pub shape_prefix: i64,
+    /// Native scalar before the solved shape.
+    pub shape_parameter: f64,
+    /// Native length before the solved shape, in document units.
+    pub shape_length: f64,
+    /// Native integer immediately before the solved shape.
+    pub shape_tail: i64,
+    /// Three ASM integers following the solved shape.
+    pub shape_extensions: [i64; 3],
+    /// Secondary curve following the solved shape.
+    pub secondary_curve: CurveId,
+    /// Native convexity enum.
+    pub convexity: i64,
+    /// Native render-blend enum.
+    pub render_blend: i64,
+    /// Native post-shape interval.
+    pub post_range: [f64; 2],
+    /// Native post-shape BS3 curve.
+    pub post_curve: CurveId,
+    /// Native post-shape BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_pcurve: Option<PcurveGeometry>,
+}
+
+/// One boundary record in a native vertex-blend patch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VertexBlendBoundary {
+    /// Native boundary type enum.
+    pub boundary_type: i64,
+    /// Native model-space magic location.
+    pub magic: Point3,
+    /// Native U-smoothing enum.
+    pub u_smoothing: i64,
+    /// Native V-smoothing enum.
+    pub v_smoothing: i64,
+    /// Native fullness scalar.
+    pub fullness: f64,
+    /// Structurally selected boundary geometry.
+    pub geometry: VertexBlendBoundaryGeometry,
+}
+
+/// Type-specific geometry of a vertex-blend boundary.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum VertexBlendBoundaryGeometry {
+    /// Curve boundary with a circle/ellipse/unknown twist form.
+    Circle {
+        /// Boundary curve.
+        curve: CurveId,
+        /// Native circle-form enum.
+        form: i64,
+        /// Zero, one, or two model-space twist locations selected by `form`.
+        twists: Vec<Point3>,
+        /// Two ordered curve parameters.
+        parameters: [f64; 2],
+        /// Native sense enum.
+        sense: i64,
+    },
+    /// Degenerate boundary at a model-space location.
+    Degenerate {
+        /// Degenerate location.
+        location: Point3,
+        /// Two ordered boundary normals.
+        normals: [Vector3; 2],
+    },
+    /// Surface pcurve boundary.
+    Pcurve {
+        /// Support surface.
+        surface: SurfaceId,
+        /// Native BS2 pcurve, absent for `nullbs`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pcurve: Option<PcurveGeometry>,
+        /// Native sense enum.
+        sense: i64,
+        /// Parameter-space fit tolerance.
+        fit_tolerance: f64,
+    },
+    /// Planar boundary described by a normal and curve.
+    Plane {
+        /// Plane normal.
+        normal: Vector3,
+        /// Two ordered plane parameters.
+        parameters: [f64; 2],
+        /// Boundary curve.
+        curve: CurveId,
+    },
+}
+
+/// Complete native vertex-blend surface construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VertexBlendConstruction {
+    /// Ordered boundary records.
+    pub boundaries: Vec<VertexBlendBoundary>,
+    /// Native grid-size integer.
+    pub grid_size: i64,
+    /// Native model-space fit tolerance.
+    pub fit_tolerance: f64,
+}
+
+/// One member of a compound-loft scale block.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompoundLoftScaleMember {
+    /// Native member integer.
+    pub type_code: i64,
+    /// Member curve.
+    pub curve: CurveId,
+    /// Native loft constraint data.
+    pub data: LoftProfileData,
+}
+
+/// Complete `_readScaleClLoft` payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompoundLoftScale {
+    /// Ordered scale members.
+    pub members: Vec<CompoundLoftScaleMember>,
+    /// Scale path curve.
+    pub path: CurveId,
+    /// Ordered BS3 auxiliary curves.
+    pub auxiliaries: Vec<CurveId>,
+    /// Two native trailing integers.
+    pub tail: [i64; 2],
+}
+
+/// Direction carrier in the zero-kind compound-loft tail.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CompoundLoftDirection {
+    /// Inline direction vector when the selector is zero.
+    Vector {
+        /// Stored direction.
+        value: Vector3,
+    },
+    /// BS3 direction curve when the selector is nonzero.
+    Curve {
+        /// Stored curve.
+        curve: CurveId,
+    },
+}
+
+/// Structurally selected tail of `cl_loft_spl_sur`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CompoundLoftTail {
+    /// Native kind `6` tail.
+    Six {
+        /// Two leading flags.
+        flags: [bool; 2],
+        /// Optional scale block.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale: Option<Box<CompoundLoftScale>>,
+        /// Native integer following the scale.
+        selector: i64,
+        /// Stored direction.
+        direction: Vector3,
+        /// Native parameter interval.
+        parameter_range: [f64; 2],
+        /// BS3 tail curve.
+        curve: CurveId,
+    },
+    /// Native kind `7` tail.
+    Seven {
+        /// First flag.
+        first_flag: bool,
+        /// First optional scale block.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        first_scale: Option<Box<CompoundLoftScale>>,
+        /// Second flag.
+        second_flag: bool,
+        /// Second optional scale block.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        second_scale: Option<Box<CompoundLoftScale>>,
+        /// Native selector integer.
+        selector: i64,
+        /// Stored direction.
+        direction: Vector3,
+        /// Two trailing flags.
+        trailing_flags: [bool; 2],
+    },
+    /// Native kind `0` tail.
+    Zero {
+        /// Two leading flags.
+        flags: [bool; 2],
+        /// Native direction selector.
+        selector: i64,
+        /// Vector or BS3 curve selected structurally.
+        direction: CompoundLoftDirection,
+        /// Two trailing flags.
+        trailing_flags: [bool; 2],
+    },
+}
+
+/// Complete native compound-loft construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompoundLoftConstruction {
+    /// Four mandatory scale slots; a boolean token encodes an absent slot.
+    pub scales: Box<[Option<CompoundLoftScale>; 4]>,
+    /// Optional fifth leading scale slot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fifth_scale: Option<Box<CompoundLoftScale>>,
+    /// Two flags before the tail kind.
+    pub flags: [bool; 2],
+    /// Kind-specific trailing graph.
+    pub tail: CompoundLoftTail,
 }
 
 /// Radius law for a procedural blend.

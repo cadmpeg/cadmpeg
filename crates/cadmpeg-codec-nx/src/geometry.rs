@@ -18,24 +18,20 @@ use cadmpeg_ir::math::{Point3, Vector3};
 /// record whose leading pointer slots each consumed the 4-byte large-index form.
 const SHIFTS: [usize; 4] = [0, 2, 4, 6];
 
-/// A decoded analytic surface and its source span.
+/// A decoded analytic surface and its source offset.
 #[derive(Debug, Clone)]
 pub struct DecodedSurface {
     /// Byte offset of the record's type tag within the stream.
     pub pos: usize,
-    /// Fixed record length used to prevent overlapping matches.
-    pub len: usize,
     /// The decoded surface geometry.
     pub geometry: SurfaceGeometry,
 }
 
-/// A decoded analytic curve and its source span.
+/// A decoded analytic curve and its source offset.
 #[derive(Debug, Clone)]
 pub struct DecodedCurve {
     /// Byte offset of the record's type tag within the stream.
     pub pos: usize,
-    /// Consumed record length.
-    pub len: usize,
     /// The decoded curve geometry.
     pub geometry: CurveGeometry,
 }
@@ -106,7 +102,6 @@ pub fn surfaces(stream: &[u8]) -> Vec<DecodedSurface> {
                 if let Some(geom) = decode_surface(stream, p, stream[p + 1]) {
                     out.push(DecodedSurface {
                         pos: p,
-                        len: *len,
                         geometry: geom,
                     });
                     occupied_end = p + *len;
@@ -131,7 +126,6 @@ pub fn curves(stream: &[u8]) -> Vec<DecodedCurve> {
                 if let Some(geom) = decode_curve(stream, p, stream[p + 1]) {
                     out.push(DecodedCurve {
                         pos: p,
-                        len: *len,
                         geometry: geom,
                     });
                     occupied_end = p + *len;

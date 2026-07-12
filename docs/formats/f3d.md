@@ -360,6 +360,30 @@ An embedded freeform support surface is encoded as the `spline` surface discrimi
 
 Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus` discriminator followed by the same position, orientation, radius, angle, and flag payload used by the corresponding top-level carrier. A zero cone sine denotes a cylinder. Signed sphere and torus radii retain their signs.
 
+**`exact_spl_sur` / `exactsur`**: the exact NURBS surface and its fit tolerance, followed by ordered U and V intervals and one ASM extension integer. The NURBS cache is the constructed surface. Native generation uses `exact_spl_sur`.
+
+**`rule_sur` / `rulesur`**: two ordered profile curves followed by the solved NURBS surface and fit tolerance. The surface evaluates as the linear interpolation of the two profiles over its second parameter. Native generation uses `rule_sur`.
+
+**`sum_spl_sur` / `sumsur`**: two ordered curves and a model-space origin followed by the solved NURBS surface and fit tolerance. The surface evaluates as the sum of the two curve positions minus the stored origin. Native generation uses `sum_spl_sur`.
+
+**`rot_spl_sur` / `rotsur`**: one profile curve, a model-space axis origin, and an axis direction followed by the solved NURBS surface and fit tolerance. The profile knot domain is the construction's profile interval; the solved surface V domain is its angular interval. The native layout is not transposed. Native generation uses `rot_spl_sur`.
+
+**`off_spl_sur` / `offsur`**: one support surface, signed offset distance, and U/V sense enums followed by the solved NURBS surface and fit tolerance. The modern name additionally carries a conditional one-to-three-boolean ASM tail: a false first flag ends the tail; a true first flag requires a second flag and permits a third. The legacy name has no ASM boolean tail. Native generation retains the form selected by the stored tail.
+
+**`comp_spl_sur`**: the solved NURBS surface and fit tolerance occur first, followed by a float array and one component surface per array element. Each float is paired positionally with its component surface. The leading surface block is the face cache; trailing NURBS component surfaces do not replace it during cache selection.
+
+**Rolling-ball aliases**: `rb_blend_spl_sur` and `rbblnsur` select the two-support rolling-ball layout. `sss_blend_spl_sur` and `sssblndsur` select the same prefix followed by a third-side graph. `pipe_spl_sur` and `pipesur` denote the surface-surface specialization. Native generation uses the modern spelling.
+
+**Taper spline surfaces**: `taper_spl_sur`, `ortho_spl_sur`/`orthosur`, `edge_tpr_spl_sur`, `shadow_tpr_spl_sur`/`shadowtapersur`, `ruled_tpr_spl_sur`/`ruledtapersur`, and `swept_tpr_spl_sur`/`swepttapersur` share a support surface, reference curve, nullable BS2 pcurve, taper parameter, solved NURBS surface, and fit tolerance. Standard taper has no tail; orthogonal adds a sense boolean; edge adds a draft vector; shadow and swept each add a draft vector plus stored sine/cosine values; ruled adds the same fields plus a factor. Shadow and swept are distinguished by subtype name, not tail shape. Native generation uses the modern subtype corresponding to the retained variant.
+
+**`loft_spl_sur` / `loftsur`**: two ordered loft sections precede two parameter intervals, two closure enums, two singularity enums, and a mode integer. Each section contains parameterized entries; each entry contains a counted profile and one path. Every profile member carries a type integer, curve, support surface, nullable BS2 pcurve, first flag, ASM integer, constraint subdata, and an optional direction selected by a second flag. Each path carries a curve, counted auxiliary BS3 curves, and a tail integer. Constraint subdata stores its type, row/column counts, leading scalar pairs, and per-column scalar pairs; type 211 stores exactly one leading pair and no column pairs. A variable sequence of boolean, integer, double, text, or enum tokens bridges the mode to the solved NURBS surface and fit tolerance.
+
+**`g2_blend_spl_sur` / `g2blnsur`**: two ordered side graphs surround the first-side singularity payload. Each side stores a label, support surface, curve, two nullable BS2 pcurves, and a direction. The first side then stores a singularity enum. The full branch carries an optional BS3 support surface and paired tolerance. The none branch carries nine frame scalars, a tolerance, an optional intervening typed token, and a tertiary nullable BS2 pcurve. The second side is followed by an exact spline support, center curve, two center scalars, center integer, U/V intervals, four trailing scalars, the solved NURBS surface and fit tolerance, and three discontinuity arrays. Branch shape is structural; the singularity enum value is retained without assigning undocumented numeric meanings.
+
+**`var_blend_spl_sur` / `srf_srf_v_bl_spl_sur`**: two ordered side graphs precede the primary curve, two signed offsets, and a radius-kind enum (`0` single radius, `1` two radii). Each side stores a label, support surface, curve, primary BS2 pcurve, model-space location, secondary BS2 pcurve, scalar, and tertiary BS2 pcurve. Radius controls use recursive blend-value payloads: `two_ends`, `edge_offset`, `functional`, `const`, or `interp`. Modern ASM blend values carry a boolean, optional discriminator, and calibrated enum. `const` recursively contains another blend value; `functional` stores a `(u,radius)` BS2 pcurve and numeric or symbolic terminal; `interp` stores counted parameter/radius/tangent/location/normal controls and an optional scalar-pair tail. Two-radii blends may append rounded-chamfer enums and a third blend value. Single-radius blends may append selector `1` or `7` and two scalars. U/V intervals, a shape integer/scalar/length/integer prologue, solved NURBS cache and fit tolerance, three ASM integers, secondary curve, convexity and render enums, post interval, BS3 curve, and nullable BS2 pcurve complete the graph. Native generation uses `var_blend_spl_sur`.
+
+**`VBL_SURF` / `vertexblendsur`**: a counted sequence of boundary records followed by a grid-size integer and model-space fit tolerance. Every boundary begins with a type name, cross enum, model-space magic location, U/V smoothing enums, and fullness scalar. `circle` adds a curve, form enum, form-selected twist locations (zero for circle, one for ellipse, two for unknown), two parameters, and sense enum. `deg` adds a location and two normals. `pcurve` adds a support surface, nullable BS2 pcurve, sense enum, and parameter-space fit tolerance. `plane` adds a normal, two parameters, and curve. Unknown boundary names and unsupported circle forms are invalid. Native generation uses `VBL_SURF`.
+
 ### 7.4 Pcurves (2D UV trimming curves)
 
 A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at record-relative **+37**:
@@ -415,18 +439,44 @@ cyl_spl_sur :=
 ```
 rb_blend_spl_sur :=
   0x0f 0x0d "rb_blend_spl_sur"
-  support-name support-kind
-  support-name support-kind
-  curve-cache
-  DOUBLE radius_start
-  DOUBLE radius_end
-  ENUM_VALUE -1
+  rolling-ball-side
+  rolling-ball-side
+  curve slice
+  LENGTH offset_left
+  LENGTH offset_right
+  (ENUM_VALUE -1 | DOUBLE radius_selector)
+  INTERVAL u_range
+  INTERVAL v_range
+  DOUBLE parameter[3]
+  LONG tail
   surface-cache
   DOUBLE cache_fit_tolerance
+  FLOAT_ARRAY discontinuity[3]
+  [rolling-ball-third-side]
   0x10
+
+rolling-ball-side :=
+  TEXT label
+  surface
+  curve
+  nullable-bs2-pcurve
+  POSITION location
+  nullable-bs2-pcurve
+  nullable-spline-surface
+
+rolling-ball-third-side :=
+  TEXT label
+  surface
+  curve
+  nullable-bs2-pcurve
+  VECTOR_3D direction
+  nullable-bs2-pcurve
+  INTEGER extension
+  nullable-bs2-pcurve
+  BOOLEAN flag
 ```
 
-Each `support-name` is the string `blend_support_surface`; `support-kind` is a surface class token. The curve cache is the blend center curve. The signed radii and fit tolerance are lengths. Equal radius values define a constant-radius rolling-ball blend; unequal values define a linear radius law.
+The two offsets and fit tolerance are lengths. `ENUM_VALUE -1` selects the absent-radius branch; a `DOUBLE` carries an explicit selector value. Each side retains its support surface, side curve, primary and secondary pcurves, model-space location, and optional exact spline support. `sss_blend_spl_sur` appends the third-side graph after the three discontinuity arrays. The final surface cache is the solved face surface.
 
 ---
 

@@ -15,9 +15,10 @@ use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::design::DesignMaterialAssignment;
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
+use cadmpeg_ir::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, u64_at, utf16le_at};
 use cadmpeg_ir::topology::Color;
 
-use crate::container::{self, role, ContainerScan};
+use crate::container::{role, ContainerScan};
 
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
@@ -344,14 +345,14 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
         .iter()
         .filter(|entry| entry.role == role::PROTEIN)
     {
-        let payload = container::decompress_entry(reader, &entry.name)?;
-        let Some(instance) = instance_properties(&payload) else {
+        let payload = scan.entry_bytes(&entry.name)?;
+        let Some(instance) = instance_properties(payload) else {
             continue;
         };
         let Some(logical) = dechunk(&instance) else {
             continue;
         };
-        let catalog = definition_catalog(&payload);
+        let catalog = definition_catalog(payload);
         let mut appearances = decode_logical_records(&logical, &entry.name);
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
@@ -440,7 +441,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
 }
 
 pub(crate) fn decode_design_assignments(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignMaterialAssignment>, CodecError> {
     let mut out = Vec::new();
@@ -449,9 +450,9 @@ pub(crate) fn decode_design_assignments(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
-        let body_map = decode_body_map(&bytes);
-        let strings = lp_utf16_strings(&bytes);
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let body_map = decode_body_map(bytes);
+        let strings = lp_utf16_strings(bytes);
         for (index, (_, value)) in strings.iter().enumerate() {
             if !value.starts_with("PrismMaterial") || value.contains("_physmat_aspects") {
                 continue;
@@ -529,7 +530,7 @@ pub(crate) struct BodyAppearanceOverride {
 /// body-map record
 /// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
 pub(crate) fn decode_body_appearance_overrides(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
     let mut out = Vec::new();
@@ -538,9 +539,9 @@ pub(crate) fn decode_body_appearance_overrides(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
-        let body_map = decode_body_map(&bytes);
-        for (entity_suffix, visual_guid) in browser_body_appearances(&bytes) {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let body_map = decode_body_map(bytes);
+        for (entity_suffix, visual_guid) in browser_body_appearances(bytes) {
             if let Some((&asm_body_key, _)) = body_map
                 .iter()
                 .find(|(_, (suffix, _))| *suffix == entity_suffix)
@@ -575,7 +576,7 @@ pub struct FaceAppearanceAssignment {
 /// face GUID and the bound visual GUID
 /// ([spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)).
 pub(crate) fn decode_face_appearance_assignments(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
     let mut out = Vec::new();
@@ -584,8 +585,8 @@ pub(crate) fn decode_face_appearance_assignments(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
-        out.extend(face_appearance_assignments(&bytes));
+        let bytes = scan.entry_bytes(&entry.name)?;
+        out.extend(face_appearance_assignments(bytes));
     }
     Ok(out)
 }
@@ -670,7 +671,7 @@ fn browser_body_appearance_at(
     if node_guid.len() != 36 || !is_guid_prefix(&node_guid) || bytes.get(after)? != &0x01 {
         return None;
     }
-    let node_entity = read_u64_at(bytes, after + 1)?;
+    let node_entity = u64_at(bytes, after + 1)?;
     // Optional display name, opacity, and the `01 01` marker.
     let name_end = match lp_utf16_at(bytes, skip_zeros(bytes, after + 9)) {
         Some((_, end)) => end,
@@ -721,7 +722,7 @@ fn preceding_class_299_entity(bytes: &[u8], at: usize) -> Option<u64> {
     let tag_at = window
         .windows(CLASS_299.len())
         .rposition(|candidate| candidate == CLASS_299)?;
-    read_u64_at(bytes, window_start + tag_at + CLASS_299.len())
+    u64_at(bytes, window_start + tag_at + CLASS_299.len())
 }
 
 /// Encode a string as its length-prefixed UTF-16 byte form.
@@ -775,10 +776,6 @@ fn is_guid_prefix(value: &str) -> bool {
         })
 }
 
-fn read_u64_at(bytes: &[u8], at: usize) -> Option<u64> {
-    Some(u64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
-}
-
 fn bind_bodies<S: std::hash::BuildHasher>(
     appearances: &[Appearance],
     assignments: &[DesignMaterialAssignment],
@@ -815,7 +812,7 @@ fn bind_bodies<S: std::hash::BuildHasher>(
 }
 
 fn decode_design_object_types(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<std::collections::HashMap<u64, String>, CodecError> {
     let mut out = std::collections::HashMap::new();
@@ -824,10 +821,10 @@ fn decode_design_object_types(
         .iter()
         .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 8 <= bytes.len() {
-            let Some((object_type, after_type)) = lp_ascii(&bytes, position) else {
+            let Some((object_type, after_type)) = lp_ascii(bytes, position) else {
                 position += 1;
                 continue;
             };
@@ -862,17 +859,17 @@ fn decode_design_object_types(
 }
 
 fn decode_act_channels(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<std::collections::HashMap<u64, BTreeMap<String, String>>, CodecError> {
     let mut out = std::collections::HashMap::new();
     for entry in scan.entries.iter().filter(|entry| {
         entry.role == role::BULKSTREAM && entry.name.contains("FusionACTSegmentType")
     }) {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 4 <= bytes.len() {
-            let Some((tag, after_tag)) = lp_ascii(&bytes, position) else {
+            let Some((tag, after_tag)) = lp_ascii(bytes, position) else {
                 position += 1;
                 continue;
             };
@@ -900,11 +897,11 @@ fn decode_act_channels(
             let mut channels = BTreeMap::new();
             let mut valid = true;
             for _ in 0..count {
-                let Some((name, after_name)) = lp_ascii(&bytes, cursor) else {
+                let Some((name, after_name)) = lp_ascii(bytes, cursor) else {
                     valid = false;
                     break;
                 };
-                let Some((guid, after_guid)) = lp_utf16(&bytes, after_name) else {
+                let Some((guid, after_guid)) = lp_utf16(bytes, after_name) else {
                     valid = false;
                     break;
                 };
@@ -916,7 +913,7 @@ fn decode_act_channels(
                 cursor = after_guid;
             }
             if valid {
-                if let Some((entity, end)) = lp_utf16(&bytes, cursor) {
+                if let Some((entity, end)) = lp_utf16(bytes, cursor) {
                     if let Some(suffix) = entity_suffix(&entity) {
                         out.insert(suffix, channels);
                     }
@@ -931,29 +928,22 @@ fn decode_act_channels(
 }
 
 fn lp_ascii(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let length = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
+    let length = usize::try_from(u32_at(bytes, position)?).ok()?;
     if !(1..=64).contains(&length) {
         return None;
     }
-    let end = position + 4 + length;
-    let raw = bytes.get(position + 4..end)?;
+    let (raw, end) = lp_u32_bytes_at(bytes, position)?;
     raw.iter()
         .all(|byte| (0x20..0x7f).contains(byte))
         .then(|| (String::from_utf8_lossy(raw).into_owned(), end))
 }
 
 fn lp_utf16(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let length = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
+    let length = usize::try_from(u32_at(bytes, position)?).ok()?;
     if !(1..=64).contains(&length) {
         return None;
     }
-    let end = position + 4 + length * 2;
-    let units: Vec<u16> = bytes
-        .get(position + 4..end)?
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-        .collect();
-    Some((String::from_utf16(&units).ok()?, end))
+    utf16le_at(bytes, position.checked_add(4)?, length)
 }
 
 fn entity_suffix(value: &str) -> Option<u64> {
@@ -978,7 +968,7 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
 /// Decode one LP-UTF16 string at `offset`, validating unit by unit so a
 /// non-string byte window bails out before allocating.
 fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let count = u32::from_le_bytes(bytes.get(offset..offset + 4)?.try_into().ok()?) as usize;
+    let count = usize::try_from(u32_at(bytes, offset)?).ok()?;
     if !(2..=256).contains(&count) {
         return None;
     }
@@ -1290,11 +1280,7 @@ fn insert_tagged_scalar(
 }
 
 fn take_lp(bytes: &[u8], position: &mut usize) -> Option<String> {
-    let length = u32::from_le_bytes(bytes.get(*position..*position + 4)?.try_into().ok()?) as usize;
-    *position += 4;
-    let value = String::from_utf8(bytes.get(*position..*position + length)?.to_vec()).ok()?;
-    *position += length;
-    Some(value)
+    String::from_utf8(take_lp_u32_bytes(bytes, position)?.to_vec()).ok()
 }
 
 fn rgba(bytes: &[u8], offset: usize) -> Option<Color> {

@@ -19,6 +19,8 @@
 //! In both widths, three `0x06`-tagged little-endian f64s (`scale`, `resabs`,
 //! `resnor`) follow the strings, then the SAB record stream.
 
+use cadmpeg_ir::le::u32_at;
+
 /// The recognized header fields of a Fusion ASM BREP stream.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AsmHeader {
@@ -105,15 +107,15 @@ pub fn parse(bytes: &[u8]) -> Option<AsmHeader> {
 
     match width {
         8 => {
-            header.release = read_le_u32(bytes, 15);
+            header.release = u32_at(bytes, 15);
             header.entity_count = read_le_u64(bytes, 31).and_then(|v| u32::try_from(v).ok());
             header.flags = read_le_u64(bytes, 39).and_then(|v| u32::try_from(v).ok());
         }
         4 => {
-            header.release = read_le_u32(bytes, 15);
-            header.record_count = read_le_u32(bytes, 19);
-            header.entity_count = read_le_u32(bytes, 23);
-            header.flags = read_le_u32(bytes, 27);
+            header.release = u32_at(bytes, 15);
+            header.record_count = u32_at(bytes, 19);
+            header.entity_count = u32_at(bytes, 23);
+            header.flags = u32_at(bytes, 27);
         }
         _ => return Some(header),
     }
@@ -199,15 +201,6 @@ fn read_le_u64(bytes: &[u8], at: usize) -> Option<u64> {
         u64::from_le_bytes(
             s.try_into()
                 .expect("invariant: bytes.get(at..at+8) is an 8-byte slice"),
-        )
-    })
-}
-
-fn read_le_u32(bytes: &[u8], at: usize) -> Option<u32> {
-    bytes.get(at..at + 4).map(|s| {
-        u32::from_le_bytes(
-            s.try_into()
-                .expect("invariant: bytes.get(at..at+4) is a 4-byte slice"),
         )
     })
 }

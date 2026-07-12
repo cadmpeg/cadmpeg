@@ -14,9 +14,12 @@ use cadmpeg_ir::design::{
     PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
     SketchPoint, SketchRelation,
 };
+use cadmpeg_ir::le::{
+    f64_at, f64s_at, lp_u32_bytes_at, u32_at, u32_at as read_u32, u64_at as read_u64, utf16le_at,
+};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-use crate::container::{self, role, ContainerScan};
+use crate::container::{role, ContainerScan};
 
 const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
     (b"body_recipe_data", ConstructionRecipeKind::Body),
@@ -34,7 +37,7 @@ const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
 /// `vertex_recipe_data`) from each design `BulkStream` entry in `scan`.
 /// `recipe_index` is assigned per `(kind, design_id)` group in stream order.
 pub fn decode_recipes(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<ConstructionRecipe>, CodecError> {
     let mut out = Vec::new();
@@ -43,8 +46,8 @@ pub fn decode_recipes(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
-        decode_stream(&bytes, &entry.name, &mut out);
+        let bytes = scan.entry_bytes(&entry.name)?;
+        decode_stream(bytes, &entry.name, &mut out);
     }
     Ok(out)
 }
@@ -54,7 +57,7 @@ pub fn decode_recipes(
 /// `IntrinsicMetaTypeuint64`) from every design `BulkStream` entry in `scan`,
 /// sorted by stream offset.
 pub fn decode_persistent_references(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<PersistentReference>, CodecError> {
     let mut out = Vec::new();
@@ -63,7 +66,7 @@ pub fn decode_persistent_references(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         for &(name, kind) in &[
             (b"pt_tag".as_slice(), PersistentReferenceKind::Point),
             (
@@ -118,7 +121,7 @@ pub fn decode_persistent_references(
 /// `BulkStream` entry in `scan`: the ASCII literal, a `u32` length of `3`, a
 /// three-digit class tag, and a `u32` record index.
 pub fn decode_lost_edge_references(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<LostEdgeReference>, CodecError> {
     let mut out = Vec::new();
@@ -128,7 +131,7 @@ pub fn decode_lost_edge_references(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         let mut cursor = 0;
         while let Some(relative) = bytes[cursor..]
             .windows(marker.len())
@@ -178,7 +181,7 @@ pub fn decode_lost_edge_references(
 /// revision. Records whose type name does not match a known
 /// [`DesignObjectKind`] are skipped.
 pub fn decode_objects(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignObject>, CodecError> {
     let mut out = Vec::new();
@@ -187,10 +190,10 @@ pub fn decode_objects(
         .iter()
         .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         let mut offset = 0usize;
         while offset + 8 <= bytes.len() {
-            let Some((name, after_name)) = lp_ascii(&bytes, offset) else {
+            let Some((name, after_name)) = lp_ascii(bytes, offset) else {
                 offset += 1;
                 continue;
             };
@@ -225,7 +228,7 @@ pub fn decode_objects(
                 .map(|index| (after_name + 4 + index * 8) as u64)
                 .collect();
             let Some((self_guid, after_self)) =
-                lp_ascii(&bytes, ids_end).filter(|(guid, _)| is_guid(guid))
+                lp_ascii(bytes, ids_end).filter(|(guid, _)| is_guid(guid))
             else {
                 offset += 1;
                 continue;
@@ -234,7 +237,7 @@ pub fn decode_objects(
             while bytes.get(tail) == Some(&0) {
                 tail += 1;
             }
-            let (parent_guid, parent_guid_offset, revision_offset) = lp_ascii(&bytes, tail)
+            let (parent_guid, parent_guid_offset, revision_offset) = lp_ascii(bytes, tail)
                 .filter(|(guid, _)| is_guid(guid))
                 .map_or((None, None, tail), |(guid, end)| {
                     (Some(guid), Some((tail + 4) as u64), end)
@@ -289,7 +292,7 @@ pub fn decode_entity_headers(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         let mut offset = 0usize;
         while offset + 30 <= bytes.len() {
             let Some(relative) = bytes[offset..]
@@ -323,7 +326,7 @@ pub fn decode_entity_headers(
                 1 if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => (true, start + 25),
                 _ => continue,
             };
-            let Some((entity_id, end)) = lp_utf16(&bytes, string_offset) else {
+            let Some((entity_id, end)) = lp_utf16(bytes, string_offset) else {
                 continue;
             };
             let Some((_, suffix)) = entity_id.rsplit_once('_') else {
@@ -341,7 +344,7 @@ pub fn decode_entity_headers(
                 reference_offsets,
                 record_end,
             ) = if object_kind == Some(DesignObjectKind::Sketch) {
-                decode_reference_list(&bytes, end).map_or_else(
+                decode_reference_list(bytes, end).map_or_else(
                     || (None, None, None, Vec::new(), Vec::new(), end),
                     |list| {
                         (
@@ -414,7 +417,7 @@ pub fn decode_related_record_headers(
 }
 
 fn decode_headers_for_indices(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     wanted: &std::collections::HashSet<u32>,
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
@@ -428,10 +431,10 @@ fn decode_headers_for_indices(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 11 <= bytes.len() {
-            let Some((class_tag, after_tag)) = lp_ascii(&bytes, position) else {
+            let Some((class_tag, after_tag)) = lp_ascii(bytes, position) else {
                 position += 1;
                 continue;
             };
@@ -469,7 +472,7 @@ fn decode_headers_for_indices(
 /// and return-member list. `records` supplies the byte offsets and class tags
 /// (typically from [`decode_related_record_headers`]).
 pub fn decode_sketch_relations(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
@@ -485,7 +488,7 @@ pub fn decode_sketch_relations(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         for record in records {
             let Ok(at) = usize::try_from(record.byte_offset) else {
                 continue;
@@ -559,7 +562,7 @@ pub(crate) fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>,
 /// reference, and the sketch `(u, v)` coordinates, converted centimetre→
 /// millimetre. Records whose scaled coordinates are non-finite are skipped.
 pub fn decode_sketch_points(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchPoint>, CodecError> {
     let mut out = Vec::new();
@@ -569,10 +572,10 @@ pub fn decode_sketch_points(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         let mut at = 0usize;
         while at + 112 <= bytes.len() {
-            let Some((class_tag, after_tag)) = lp_ascii(&bytes, at) else {
+            let Some((class_tag, after_tag)) = lp_ascii(bytes, at) else {
                 at += 1;
                 continue;
             };
@@ -580,7 +583,7 @@ pub fn decode_sketch_points(
                 at += 1;
                 continue;
             }
-            let Some(record_index) = u32_at(&bytes, after_tag) else {
+            let Some(record_index) = u32_at(bytes, after_tag) else {
                 break;
             };
             let payload = &bytes[at..];
@@ -660,7 +663,7 @@ fn decode_sketch_point_variant(
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
 pub fn decode_sketch_curve_identities(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
@@ -670,10 +673,10 @@ pub fn decode_sketch_curve_identities(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         let mut at = 0usize;
         while at + 133 <= bytes.len() {
-            let Some((class_tag, after_tag)) = lp_ascii(&bytes, at) else {
+            let Some((class_tag, after_tag)) = lp_ascii(bytes, at) else {
                 at += 1;
                 continue;
             };
@@ -681,7 +684,7 @@ pub fn decode_sketch_curve_identities(
                 at += 1;
                 continue;
             }
-            let Some(record_index) = u32_at(&bytes, after_tag) else {
+            let Some(record_index) = u32_at(bytes, after_tag) else {
                 break;
             };
             let payload = &bytes[at..];
@@ -822,7 +825,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<SketchCurveGeometry> {
     {
         return None;
     }
-    let knots = read_f64s(payload, base + 114, knot_count)?;
+    let knots = f64s_at(payload, base + 114, knot_count)?;
     let weights_at = base + 114 + knot_count * 8;
     let weight_count = usize::try_from(u32_at(payload, weights_at)?).ok()?;
     if u32_at(payload, weights_at + 4)? as usize != weight_count
@@ -831,7 +834,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<SketchCurveGeometry> {
     {
         return None;
     }
-    let weights = read_f64s(payload, weights_at + 12, weight_count)?;
+    let weights = f64s_at(payload, weights_at + 12, weight_count)?;
     let points_at = weights_at + 12 + weight_count * 8;
     let point_count = usize::try_from(u32_at(payload, points_at)?).ok()?;
     if (weight_count != 0 && point_count != weight_count)
@@ -841,7 +844,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<SketchCurveGeometry> {
     {
         return None;
     }
-    let coordinates = read_f64s(payload, points_at + 12, point_count.checked_mul(3)?)?;
+    let coordinates = f64s_at(payload, points_at + 12, point_count.checked_mul(3)?)?;
     if knots.windows(2).any(|pair| pair[0] > pair[1])
         || weights
             .iter()
@@ -866,12 +869,6 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<SketchCurveGeometry> {
         weights,
         control_points,
     })
-}
-
-fn read_f64s(bytes: &[u8], position: usize, count: usize) -> Option<Vec<f64>> {
-    (0..count)
-        .map(|ordinal| f64_at(bytes, position + ordinal * 8))
-        .collect()
 }
 
 fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
@@ -1001,18 +998,6 @@ fn next_nonzero(bytes: &[u8], mut position: usize) -> Option<usize> {
     (position + 4 <= bytes.len()).then_some(position)
 }
 
-fn u32_at(bytes: &[u8], position: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(
-        bytes.get(position..position + 4)?.try_into().ok()?,
-    ))
-}
-
-fn f64_at(bytes: &[u8], position: usize) -> Option<f64> {
-    Some(f64::from_le_bytes(
-        bytes.get(position..position + 8)?.try_into().ok()?,
-    ))
-}
-
 struct SketchReferenceList {
     record_reference: u32,
     record_reference_offset: usize,
@@ -1056,7 +1041,7 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 /// stream) unless the declared count is fully consumed and immediately
 /// followed by a zero byte.
 pub fn decode_body_members(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignBodyMember>, CodecError> {
     let mut out = Vec::new();
@@ -1071,7 +1056,7 @@ pub fn decode_body_members(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         let Some(start) = bytes
             .windows(prefix.len())
             .position(|window| window == prefix)
@@ -1140,40 +1125,22 @@ fn object_kind(name: &str) -> Option<DesignObjectKind> {
 }
 
 fn lp_ascii(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32::from_le_bytes(
-        bytes.get(offset..offset + 4)?.try_into().ok()?,
-    ))
-    .ok()?;
+    let length = usize::try_from(u32_at(bytes, offset)?).ok()?;
     if length > 2_000 {
         return None;
     }
-    let end = offset.checked_add(4 + length)?;
-    let raw = bytes.get(offset + 4..end)?;
+    let (raw, end) = lp_u32_bytes_at(bytes, offset)?;
     raw.iter()
         .all(u8::is_ascii_graphic)
         .then(|| (String::from_utf8_lossy(raw).into_owned(), end))
 }
 
 fn lp_utf16(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32::from_le_bytes(
-        bytes.get(offset..offset + 4)?.try_into().ok()?,
-    ))
-    .ok()?;
+    let length = usize::try_from(u32_at(bytes, offset)?).ok()?;
     if !(1..=256).contains(&length) {
         return None;
     }
-    let end = offset.checked_add(4 + length * 2)?;
-    let units = bytes
-        .get(offset + 4..end)?
-        .chunks_exact(2)
-        .map(|raw| {
-            u16::from_le_bytes(
-                raw.try_into()
-                    .expect("invariant: chunks_exact(2) yields 2-byte slices"),
-            )
-        })
-        .collect::<Vec<_>>();
-    Some((String::from_utf16(&units).ok()?, end))
+    utf16le_at(bytes, offset.checked_add(4)?, length)
 }
 
 fn is_guid(value: &str) -> bool {
@@ -1353,7 +1320,7 @@ pub(crate) fn body_bindings(bytes: &[u8]) -> Vec<BodyBinding> {
 /// The result maps each ASM body key to its display visibility; bodies
 /// without records are absent.
 pub fn decode_body_visibility(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     active_brep_entry: &str,
 ) -> Result<HashMap<u64, bool>, CodecError> {
@@ -1370,9 +1337,9 @@ pub fn decode_body_visibility(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
-        let hidden_by_entity = browser_node_hidden_flags(&bytes);
-        for binding in body_bindings(&bytes) {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let hidden_by_entity = browser_node_hidden_flags(bytes);
+        for binding in body_bindings(bytes) {
             if binding.blob_name != basename {
                 continue;
             }
@@ -1422,12 +1389,4 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
     bytes
         .chunks_exact(2)
         .all(|pair| pair[1] == 0 && (pair[0].is_ascii_hexdigit() || pair[0] == b'-'))
-}
-
-fn read_u32(bytes: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
-}
-
-fn read_u64(bytes: &[u8], at: usize) -> Option<u64> {
-    Some(u64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
 }

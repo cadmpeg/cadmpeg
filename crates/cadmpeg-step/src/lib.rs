@@ -991,7 +991,15 @@ impl<'a> Builder<'a> {
             .procedural_surfaces
             .iter()
             .filter(|procedural| match &procedural.definition {
-                ProceduralSurfaceDefinition::Extrusion { .. }
+                ProceduralSurfaceDefinition::Exact { .. }
+                | ProceduralSurfaceDefinition::Compound { .. }
+                | ProceduralSurfaceDefinition::Taper { .. }
+                | ProceduralSurfaceDefinition::Loft { .. }
+                | ProceduralSurfaceDefinition::CompoundLoft { .. }
+                | ProceduralSurfaceDefinition::G2Blend { .. }
+                | ProceduralSurfaceDefinition::VariableBlend { .. }
+                | ProceduralSurfaceDefinition::VertexBlend { .. }
+                | ProceduralSurfaceDefinition::Extrusion { .. }
                 | ProceduralSurfaceDefinition::Revolution { .. }
                 | ProceduralSurfaceDefinition::Sum { .. }
                 | ProceduralSurfaceDefinition::Sweep { .. }
@@ -1032,7 +1040,7 @@ impl<'a> Builder<'a> {
 
     fn finish_report(&self) -> StepReport {
         StepReport {
-            entity_counts: self.emitter.counts().clone(),
+            entity_counts: self.emitter.counts(),
             total_entities: self.emitter.total(),
             losses: self.losses.clone(),
         }

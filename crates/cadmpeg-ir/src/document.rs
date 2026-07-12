@@ -142,11 +142,6 @@ impl CadIr {
         }
     }
 
-    /// Neutral model arena names in canonical order.
-    pub fn arena_names() -> &'static [&'static str] {
-        Model::arena_names()
-    }
-
     /// Serialize the document as pretty JSON.
     ///
     /// Call [`CadIr::finalize`] first when canonical arena order is required.

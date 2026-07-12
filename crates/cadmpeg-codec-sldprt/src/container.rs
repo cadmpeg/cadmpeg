@@ -11,7 +11,8 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
-use sha2::{Digest, Sha256};
+use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::le::u32_at as u32_le;
 
 /// Marker shared by block, cache-cell, and directory frames.
 pub const MARKER: [u8; 6] = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00];
@@ -103,12 +104,6 @@ pub fn nibble_swap_name(raw: &[u8]) -> Option<String> {
         s.push(swapped as char);
     }
     Some(s)
-}
-
-fn u32_le(bytes: &[u8], at: usize) -> Option<u32> {
-    bytes
-        .get(at..at + 4)
-        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
 
 /// One validated compressed block.
@@ -530,16 +525,4 @@ pub fn select_active_parasolid(
         }
     }
     best.map(|(_, b, sch)| (b, sch))
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let mut h = Sha256::new();
-    h.update(bytes);
-    let digest = h.finalize();
-    let mut s = String::with_capacity(digest.len() * 2);
-    for b in digest {
-        use std::fmt::Write as _;
-        let _ = write!(s, "{b:02x}");
-    }
-    s
 }

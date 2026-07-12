@@ -12,6 +12,7 @@
 //! before returning a carrier.
 
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsSurface, SurfaceGeometry};
+use cadmpeg_ir::le::{f64_at, u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// The standard-nested plane parameter record.  Its three-byte tag is the
@@ -50,20 +51,6 @@ pub struct SurfacePrefix {
     pub target: u32,
     /// The kind byte (`0x32`..=`0x38`).
     pub kind: u8,
-}
-
-impl SurfacePrefix {
-    /// Human-readable kind name.
-    pub fn kind_name(&self) -> &'static str {
-        match self.kind {
-            0x32 => "plane",
-            0x33 => "cylinder",
-            0x34 => "cone",
-            0x35 => "sphere",
-            0x38 => "torus",
-            _ => "unknown",
-        }
-    }
 }
 
 /// Read the trailing per-face orientation byte from a complete analytic
@@ -227,29 +214,54 @@ pub struct E5Surface {
     pub geometry: SurfaceGeometry,
 }
 
-/// Walk an E5 record stream and decode its inline `0xc9` circle carriers.
-/// Record strides are derived from the little-endian size field at `+5`.
-pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
+#[derive(Clone, Copy)]
+struct E5Record {
+    pos: usize,
+    end: usize,
+    class: u8,
+    size: usize,
+}
+
+fn e5_records(data: &[u8]) -> Vec<E5Record> {
     const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
 
-    let mut out = Vec::new();
-    let mut p = 0usize;
-    while p + 13 <= data.len() {
-        let Some(relative) = data[p..].windows(3).position(|bytes| bytes == MARKER) else {
+    let mut records = Vec::new();
+    let mut position = 0;
+    while position + 13 <= data.len() {
+        let Some(relative) = data[position..]
+            .windows(MARKER.len())
+            .position(|bytes| bytes == MARKER)
+        else {
             break;
         };
-        let pos = p + relative;
-        if pos + 13 > data.len() {
+        let pos = position + relative;
+        let Some(size) = u16_le(data, pos + 5).map(usize::from) else {
             break;
-        }
-        let size = u16::from_le_bytes([data[pos + 5], data[pos + 6]]) as usize;
+        };
         let Some(end) = pos.checked_add(size + 13) else {
             break;
         };
         if end > data.len() {
             break;
         }
-        if data[pos + 3] == 0xc9 && size >= 81 {
+        records.push(E5Record {
+            pos,
+            end,
+            class: data[pos + 3],
+            size,
+        });
+        position = end;
+    }
+    records
+}
+
+/// Walk an E5 record stream and decode its inline `0xc9` circle carriers.
+/// Record strides are derived from the little-endian size field at `+5`.
+pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
+    let mut out = Vec::new();
+    for record in e5_records(data) {
+        let pos = record.pos;
+        if record.class == 0xc9 && record.size >= 81 {
             let origin = f64_point(data, pos + 14);
             let frame_u = f64_vector(data, pos + 38);
             let frame_v = f64_vector(data, pos + 62);
@@ -275,7 +287,6 @@ pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
                 }
             }
         }
-        p = end;
     }
     out
 }
@@ -296,23 +307,11 @@ pub struct E5Edge {
 
 /// Decode E5 `0xff` five-reference edge records.
 pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
-    const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
-
     let mut out = Vec::new();
-    let mut p = 0usize;
-    while let Some(relative) = data[p..].windows(3).position(|bytes| bytes == MARKER) {
-        let pos = p + relative;
-        let Some(size) = u16_le(data, pos + 5).map(usize::from) else {
-            break;
-        };
-        let Some(end) = pos.checked_add(size + 13) else {
-            break;
-        };
-        if end > data.len() {
-            break;
-        }
-        if data.get(pos + 3) == Some(&0xff) && data.get(pos + 13) == Some(&0x85) {
-            let payload = &data[pos + 13..end];
+    for record in e5_records(data) {
+        let pos = record.pos;
+        if record.class == 0xff && data.get(pos + 13) == Some(&0x85) {
+            let payload = &data[pos + 13..record.end];
             if let Some((support_id, next)) = e5_ref(payload, 1) {
                 if let Some((start_vertex_id, next)) = e5_ref(payload, next) {
                     if let Some((end_vertex_id, _)) = e5_ref(payload, next) {
@@ -326,7 +325,6 @@ pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
                 }
             }
         }
-        p = end;
     }
     out
 }
@@ -334,26 +332,10 @@ pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
 /// Decode E5 cylinder (`0xc9`), cone (`0xca`), and torus (`0xcc`) surface
 /// records. The E5 plane class does not serialize a standalone normal.
 pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
-    const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
-
     let mut out = Vec::new();
-    let mut p = 0usize;
-    while p + 13 <= data.len() {
-        let Some(relative) = data[p..].windows(3).position(|bytes| bytes == MARKER) else {
-            break;
-        };
-        let pos = p + relative;
-        if pos + 13 > data.len() {
-            break;
-        }
-        let size = u16::from_le_bytes([data[pos + 5], data[pos + 6]]) as usize;
-        let Some(end) = pos.checked_add(size + 13) else {
-            break;
-        };
-        if end > data.len() {
-            break;
-        }
-        let geometry = match data[pos + 3] {
+    for record in e5_records(data) {
+        let pos = record.pos;
+        let geometry = match record.class {
             0xc9 => e5_cylinder(data, pos),
             0xca => e5_cone(data, pos),
             0xcc => e5_torus(data, pos),
@@ -366,7 +348,6 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
                 geometry,
             });
         }
-        p = end;
     }
     out
 }
@@ -397,340 +378,6 @@ pub struct A8Surface {
     pub object_id: u32,
     /// The decoded NURBS carrier.
     pub geometry: SurfaceGeometry,
-}
-
-/// A decoded consolidated `a5 03 32` explicit 3D spline support: a swept band
-/// around a freeform curve, reconstructed as a per-span quintic Hermite jet
-/// and, from the same jet, a rolling-ball fillet surface ([spec §6.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#62-a5-03-32-freeform-3d-curve-rolling-ball-fillet)).
-#[derive(Debug, Clone)]
-pub struct A5FreeformCurve {
-    /// Offset of the `a5 03 32` marker in the source buffer.
-    pub pos: usize,
-    /// Header token byte at `record + 7`; a small repeating type code, not
-    /// a per-record object id ([spec §6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#6-object-stream-record-framing-a5-03-a8-03-b5-03)).
-    pub header_token: u8,
-    /// B-spline degree; always `5`.
-    pub degree: u32,
-    /// Distinct, strictly increasing knot values, one per jet site.
-    pub knots: Vec<f64>,
-    /// Per-knot rolling-ball jet sites: position, limit points, and
-    /// subtended angle.
-    pub sites: Vec<RollingBallSite>,
-    /// Per-knot first-derivative jet block (`C'`), 10 f64 channels per
-    /// site matching the [`RollingBallSite`] layout.
-    pub first_derivatives: Vec<[f64; 10]>,
-    /// Per-knot second-derivative jet block (`C''`), same channel layout
-    /// as `first_derivatives`.
-    pub second_derivatives: Vec<[f64; 10]>,
-    /// Minimum per-site rolling-ball radius across `sites`.
-    pub radius_min: f64,
-    /// Maximum per-site rolling-ball radius across `sites`.
-    pub radius_max: f64,
-    /// `true` when `radius_max - radius_min < 1e-9`, indicating a constant
-    /// fillet radius.
-    pub radius_constant: bool,
-}
-
-/// One 80-byte rolling-ball jet site from an [`A5FreeformCurve`] (spec
-/// [§6.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#62-a5-03-32-freeform-3d-curve-rolling-ball-fillet)): `Limit1 [0:3], Limit2 [3:6], Center [6:9], theta [9]`, satisfying
-/// `|Center-Limit1| == |Center-Limit2| == radius` and `theta =
-/// 2*arcsin(|Limit2-Limit1| / (2*radius))`.
-#[derive(Debug, Clone)]
-pub struct RollingBallSite {
-    /// First limit point on the rolling ball's contact circle.
-    pub limit1: [f64; 3],
-    /// Second limit point on the rolling ball's contact circle.
-    pub limit2: [f64; 3],
-    /// Rolling-ball center at this site.
-    pub center: [f64; 3],
-    /// Angle in radians subtended by `limit1`/`limit2` at `center`.
-    pub theta: f64,
-    /// Rolling-ball radius at this site, `|center - limit1|`.
-    pub radius: f64,
-}
-
-/// A decoded common object-stream `a8 03 20` pcurve: a degree-5 C2 B-spline
-/// UV jet in a surface's parameter space ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#65-a8-03-common-object-stream-freeform-class)).
-#[derive(Debug, Clone)]
-pub struct A8Pcurve {
-    /// Offset of the `a8 03 20` marker in the source buffer.
-    pub pos: usize,
-    /// Inline persistent object id stored at `record + 7` ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#65-a8-03-common-object-stream-freeform-class)).
-    pub object_id: u32,
-    /// Referenced owning-surface object id (`0x18`-tagged u16 or
-    /// `0x38`-tagged u24 reference).
-    pub support_id: u32,
-    /// B-spline degree.
-    pub degree: u32,
-    /// Distinct knot values.
-    pub knots: Vec<f64>,
-    /// Per-knot multiplicities, index-aligned with `knots`.
-    pub multiplicities: Vec<u32>,
-    /// `true` when the record's mode byte is `0x05` (rational); `false`
-    /// for `0x01` (non-rational).
-    pub rational: bool,
-    /// `(u, v)` jet-site positions, one per knot.
-    pub points: Vec<[f64; 2]>,
-    /// `(u, v)` first derivatives at each jet site.
-    pub first_derivatives: Vec<[f64; 2]>,
-    /// `(u, v)` second derivatives at each jet site.
-    pub second_derivatives: Vec<[f64; 2]>,
-    /// `[param_lo, param_hi]` curve parameter range.
-    pub range: [f64; 2],
-}
-
-/// Decode common object-stream `a8 03 20` degree-5 UV jet pcurves.
-#[must_use]
-pub fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
-    let mut pcurves = Vec::new();
-    let mut search = 0;
-    while let Some(relative) = data[search..]
-        .windows(3)
-        .position(|value| value == [0xa8, 0x03, 0x20])
-    {
-        let pos = search + relative;
-        search = pos + 3;
-        let Some(payload_length) =
-            u32_le(data, pos + 3).and_then(|value| usize::try_from(value).ok())
-        else {
-            continue;
-        };
-        let Some(end) = pos
-            .checked_add(11)
-            .and_then(|start| start.checked_add(payload_length))
-        else {
-            continue;
-        };
-        if payload_length < 20 || end > data.len() {
-            continue;
-        }
-        let Some(pcurve) = parse_a8_pcurve(data, pos, end) else {
-            continue;
-        };
-        pcurves.push(pcurve);
-    }
-    pcurves
-}
-
-fn parse_a8_pcurve(data: &[u8], record: usize, end: usize) -> Option<A8Pcurve> {
-    let object_id = u32_le(data, record + 7)?;
-    let mut position = record + 12;
-    let support_id = match *data.get(position)? {
-        0x18 => {
-            let value = u32::from(u16_le(data, position + 1)?);
-            position += 3;
-            value
-        }
-        0x38 => {
-            let value = u32_le_24(data, position + 1)?;
-            position += 4;
-            value
-        }
-        _ => return None,
-    };
-    let degree = compact_int(data, &mut position)?;
-    position += 2;
-    data.get(..position)?;
-    let knot_count = usize::try_from(compact_int(data, &mut position)?).ok()?;
-    position += if data.get(position) == Some(&0x08) {
-        2
-    } else {
-        1
-    };
-    if !(2..=8192).contains(&knot_count) || !(1..=9).contains(&degree) {
-        return None;
-    }
-    let mut knots = Vec::with_capacity(knot_count);
-    for _ in 0..knot_count {
-        knots.push(f64_le(data, position)?);
-        position += 8;
-    }
-    let mut multiplicities = Vec::with_capacity(knot_count);
-    for _ in 0..knot_count {
-        multiplicities.push(compact_int(data, &mut position)?);
-    }
-    if usize::try_from(compact_int(data, &mut position)?).ok()? != knot_count {
-        return None;
-    }
-    let mode = *data.get(position)?;
-    position += 1;
-    let read_values = |position: &mut usize| -> Option<Vec<f64>> {
-        let mut values = Vec::with_capacity(knot_count);
-        for _ in 0..knot_count {
-            values.push(f64_le(data, *position)?);
-            *position += 8;
-        }
-        Some(values)
-    };
-    let u = read_values(&mut position)?;
-    let v = read_values(&mut position)?;
-    let du = read_values(&mut position)?;
-    let dv = read_values(&mut position)?;
-    if data.get(position) != Some(&0x05) {
-        return None;
-    }
-    position += 1;
-    let ddu = read_values(&mut position)?;
-    let ddv = read_values(&mut position)?;
-    let range = [f64_le(data, position)?, f64_le(data, position + 8)?];
-    position += 16;
-    if data.get(position) != Some(&0x07)
-        || end - (position + 1) > 256
-        || knots
-            .iter()
-            .chain(&u)
-            .chain(&v)
-            .chain(&du)
-            .chain(&dv)
-            .chain(&ddu)
-            .chain(&ddv)
-            .chain(&range)
-            .any(|value| !value.is_finite() || value.abs() >= 1e12)
-    {
-        return None;
-    }
-    Some(A8Pcurve {
-        pos: record,
-        object_id,
-        support_id,
-        degree,
-        knots,
-        multiplicities,
-        rational: mode == 0x05,
-        points: u.into_iter().zip(v).map(|(u, v)| [u, v]).collect(),
-        first_derivatives: du.into_iter().zip(dv).map(|(u, v)| [u, v]).collect(),
-        second_derivatives: ddu.into_iter().zip(ddv).map(|(u, v)| [u, v]).collect(),
-        range,
-    })
-}
-
-/// Decode the consolidated `a5 03 32` degree-5 rolling-ball jet program.
-#[must_use]
-pub fn a5_freeform_curves(data: &[u8]) -> Vec<A5FreeformCurve> {
-    let mut curves = Vec::new();
-    let mut search = 0;
-    while let Some(relative) = data[search..]
-        .windows(3)
-        .position(|value| value == [0xa5, 0x03, 0x32])
-    {
-        let pos = search + relative;
-        search = pos + 3;
-        let Some(payload_length) =
-            u32_le(data, pos + 3).and_then(|value| usize::try_from(value).ok())
-        else {
-            continue;
-        };
-        let Some(end) = pos
-            .checked_add(8)
-            .and_then(|start| start.checked_add(payload_length))
-        else {
-            continue;
-        };
-        if payload_length < 20 || end > data.len() {
-            continue;
-        }
-        let Some(curve) = parse_a5_freeform_curve(data, pos, end) else {
-            continue;
-        };
-        curves.push(curve);
-    }
-    curves
-}
-
-fn parse_a5_freeform_curve(data: &[u8], record: usize, end: usize) -> Option<A5FreeformCurve> {
-    let mut position = record + 8;
-    let knot_count = usize::try_from(compact_int(data, &mut position)?).ok()?;
-    let degree = compact_int(data, &mut position)?;
-    if usize::try_from(compact_int(data, &mut position)?).ok()? != knot_count
-        || !(2..=4096).contains(&knot_count)
-        || !(1..=9).contains(&degree)
-    {
-        return None;
-    }
-    match data.get(position..position + 2) {
-        Some([0x0c, _]) => position += 1,
-        Some([0x08, 0x09 | 0x05]) => position += 2,
-        _ => return None,
-    }
-    let mut knots = Vec::with_capacity(knot_count);
-    for _ in 0..knot_count {
-        knots.push(f64_le(data, position)?);
-        position += 8;
-    }
-    if knots.iter().any(|value| !value.is_finite())
-        || knots.windows(2).any(|pair| pair[0] >= pair[1])
-    {
-        return None;
-    }
-    let block_bytes = knot_count.checked_mul(80)?;
-    let blocks_end = position.checked_add(block_bytes.checked_mul(3)?)?;
-    if blocks_end > end || end - blocks_end > 4096 {
-        return None;
-    }
-    let read_block = |start: usize| -> Option<Vec<[f64; 10]>> {
-        let mut block = Vec::with_capacity(knot_count);
-        for site in 0..knot_count {
-            let mut values = [0.0; 10];
-            for (channel, value) in values.iter_mut().enumerate() {
-                *value = f64_le(data, start + site * 80 + channel * 8)?;
-            }
-            if values.iter().any(|value| !value.is_finite()) {
-                return None;
-            }
-            block.push(values);
-        }
-        Some(block)
-    };
-    let values = read_block(position)?;
-    let first_derivatives = read_block(position + block_bytes)?;
-    let second_derivatives = read_block(position + 2 * block_bytes)?;
-    let mut sites = Vec::with_capacity(knot_count);
-    for value in values {
-        let limit1 = [value[0], value[1], value[2]];
-        let limit2 = [value[3], value[4], value[5]];
-        let center = [value[6], value[7], value[8]];
-        let radius = array_distance(center, limit1);
-        let other_radius = array_distance(center, limit2);
-        let chord = array_distance(limit1, limit2);
-        if radius <= f64::EPSILON
-            || (radius - other_radius).abs() > 1e-9 * radius.max(1.0)
-            || (value[9] - 2.0 * (chord / (2.0 * radius)).clamp(-1.0, 1.0).asin()).abs() > 1e-9
-        {
-            return None;
-        }
-        sites.push(RollingBallSite {
-            limit1,
-            limit2,
-            center,
-            theta: value[9],
-            radius,
-        });
-    }
-    let radius_min = sites
-        .iter()
-        .map(|site| site.radius)
-        .fold(f64::INFINITY, f64::min);
-    let radius_max = sites
-        .iter()
-        .map(|site| site.radius)
-        .fold(f64::NEG_INFINITY, f64::max);
-    Some(A5FreeformCurve {
-        pos: record,
-        header_token: *data.get(record + 7)?,
-        degree,
-        knots,
-        sites,
-        first_derivatives,
-        second_derivatives,
-        radius_min,
-        radius_max,
-        radius_constant: radius_max - radius_min < 1e-9,
-    })
-}
-
-fn array_distance(left: [f64; 3], right: [f64; 3]) -> f64 {
-    ((left[0] - right[0]).powi(2) + (left[1] - right[1]).powi(2) + (left[2] - right[2]).powi(2))
-        .sqrt()
 }
 
 /// A circle carrier in the standard `0x60` edge-support table.
@@ -939,32 +586,30 @@ pub fn standard_lines(brep: &[u8], face_count: usize) -> Vec<StandardLine> {
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
 pub fn a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
-    const MARKER: &[u8; 3] = b"\xa8\x03\x34";
-
-    let mut out = Vec::new();
-    let mut start = 0usize;
-    while let Some(relative) = data[start..].windows(3).position(|bytes| bytes == MARKER) {
-        let pos = start + relative;
-        start = pos + 3;
-        let Some(surface) = a8_surface(data, pos) else {
-            continue;
-        };
-        out.push(surface);
-    }
-    out
+    scan_surfaces(data, *b"\xa8\x03\x34", 3, a8_surface)
 }
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
 pub fn a5_surfaces(data: &[u8]) -> Vec<A8Surface> {
-    const MARKER: &[u8; 3] = b"\xa5\x03\x34";
+    scan_surfaces(data, *b"\xa5\x03\x34", 1, a5_surface)
+}
 
+fn scan_surfaces(
+    data: &[u8],
+    marker: [u8; 3],
+    advance: usize,
+    decode: fn(&[u8], usize) -> Option<A8Surface>,
+) -> Vec<A8Surface> {
     let mut out = Vec::new();
     let mut start = 0usize;
-    while let Some(relative) = data[start..].windows(3).position(|bytes| bytes == MARKER) {
+    while let Some(relative) = data[start..]
+        .windows(marker.len())
+        .position(|bytes| bytes == marker)
+    {
         let pos = start + relative;
-        start = pos + 1;
-        let Some(surface) = a5_surface(data, pos) else {
+        start = pos + advance;
+        let Some(surface) = decode(data, pos) else {
             continue;
         };
         out.push(surface);
@@ -1424,8 +1069,7 @@ fn u24_le(bytes: &[u8], at: usize) -> u32 {
 }
 
 fn f64_le(bytes: &[u8], at: usize) -> Option<f64> {
-    let raw: [u8; 8] = bytes.get(at..at + 8)?.try_into().ok()?;
-    let value = f64::from_le_bytes(raw);
+    let value = f64_at(bytes, at)?;
     value.is_finite().then_some(value)
 }
 
@@ -1517,14 +1161,6 @@ fn expand_knots(distinct: &[f64], multiplicities: &[u32]) -> Option<Vec<f64>> {
         knots.extend(std::iter::repeat_n(knot, multiplicity as usize));
     }
     Some(knots)
-}
-
-fn u32_le(bytes: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
-}
-
-fn u16_le(bytes: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(bytes.get(at..at + 2)?.try_into().ok()?))
 }
 
 fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {

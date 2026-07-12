@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted topology records in the zero-entity `a9 03` stream family.
 
+use cadmpeg_ir::le::{f64_at, u32_at};
+
 /// Resolved zero-entity `a9 03` stream: records, faces, loops, carrier runs,
 /// and the edge/vertex tables recovered from them ([spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
 #[derive(Debug, Clone, PartialEq)]
@@ -520,7 +522,7 @@ fn lift_endpoints(carrier: &ZeroEntityRecord, uv: [[f64; 2]; 2]) -> Option<[[f64
 }
 
 fn scalar(bytes: &[u8], offset: usize) -> Option<f64> {
-    let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+    let value = f64_at(bytes, offset)?;
     value.is_finite().then_some(value)
 }
 
@@ -583,9 +585,7 @@ fn token_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     if bytes.get(offset) != Some(&0x10) {
         return None;
     }
-    Some(u32::from_le_bytes(
-        bytes.get(offset + 1..offset + 5)?.try_into().ok()?,
-    ))
+    u32_at(bytes, offset + 1)
 }
 
 fn walk_records(bytes: &[u8]) -> Vec<ZeroEntityRecord> {

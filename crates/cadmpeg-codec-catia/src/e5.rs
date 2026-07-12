@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_ir::le::{take_f64s, take_u32 as read_u32, u32_at};
+
 /// Resolved graph of an E5 `0D 03` record stream: bodies, faces, edges, and
 /// the geometry records they reference. Produced by [`parse_topology`], which
 /// walks every class-tagged record, resolves cross-record references, and
@@ -135,23 +137,13 @@ pub enum E5Pcurve {
 }
 
 /// A class-`0x01` body record resolved through its class-`0x08` root record:
-/// the body's face roster and the per-face/global orientation-sign tape
+/// the body's validated face roster
 /// ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct E5Body {
-    /// The class-`0x01` record's `record_id`.
-    pub record_id: u32,
-    /// The referenced class-`0x08` root record's `record_id`.
-    pub root_record_id: u32,
     /// `record_id`s of every class-`0x00` face in the body, in root-record
     /// order.
     pub faces: Vec<u32>,
-    /// Per-face sign tape from the root record, one entry per `faces`
-    /// element, each `+1` or `-1`.
-    pub face_orientation_signs: Vec<i16>,
-    /// The two trailing sign-tape entries after the per-face signs. Per
-    /// [spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant), these have no assigned semantic role.
-    pub extra_orientation_signs: [i16; 2],
 }
 
 /// A resolved class-`0x00` advanced-face record: its surface, loops, and
@@ -463,7 +455,7 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
     let surface = reference(record.payload, &mut position)?;
     match record.class {
         0x96 => {
-            let values = read_f64s(record.payload, &mut position, 6)?;
+            let values = take_f64s(record.payload, &mut position, 6)?;
             if position != record.payload.len() || values.iter().any(|value| !value.is_finite()) {
                 return None;
             }
@@ -475,12 +467,12 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
             })
         }
         0x97 => {
-            let center = read_f64s(record.payload, &mut position, 2)?;
+            let center = take_f64s(record.payload, &mut position, 2)?;
             let codes = [
                 read_u32(record.payload, &mut position)?,
                 read_u32(record.payload, &mut position)?,
             ];
-            let values = read_f64s(record.payload, &mut position, 5)?;
+            let values = take_f64s(record.payload, &mut position, 5)?;
             if position != record.payload.len()
                 || center.iter().chain(&values).any(|value| !value.is_finite())
                 || values[0] <= 0.0
@@ -514,7 +506,7 @@ fn parse_jet_pcurve(payload: &[u8], mut position: usize, surface: u32) -> Option
         return None;
     }
     let mut knots = vec![0.0];
-    knots.extend(read_f64s(payload, &mut position, site_count - 1)?);
+    knots.extend(take_f64s(payload, &mut position, site_count - 1)?);
     let mut multiplicities = Vec::with_capacity(site_count);
     for _ in 0..site_count {
         multiplicities.push(read_u32(payload, &mut position)?);
@@ -522,17 +514,17 @@ fn parse_jet_pcurve(payload: &[u8], mut position: usize, surface: u32) -> Option
     if usize::try_from(read_u32(payload, &mut position)?).ok()? != site_count {
         return None;
     }
-    let x = read_f64s(payload, &mut position, site_count)?;
-    let y = read_f64s(payload, &mut position, site_count)?;
-    let dx = read_f64s(payload, &mut position, site_count)?;
-    let dy = read_f64s(payload, &mut position, site_count)?;
+    let x = take_f64s(payload, &mut position, site_count)?;
+    let y = take_f64s(payload, &mut position, site_count)?;
+    let dx = take_f64s(payload, &mut position, site_count)?;
+    let dy = take_f64s(payload, &mut position, site_count)?;
     if payload.get(position..position + 2) != Some(&1u16.to_le_bytes()) {
         return None;
     }
     position += 2;
-    let ddx = read_f64s(payload, &mut position, site_count)?;
-    let ddy = read_f64s(payload, &mut position, site_count)?;
-    let range_values = read_f64s(payload, &mut position, 2)?;
+    let ddx = take_f64s(payload, &mut position, site_count)?;
+    let ddy = take_f64s(payload, &mut position, site_count)?;
+    let range_values = take_f64s(payload, &mut position, 2)?;
     let expected_multiplicities: Vec<u32> = if site_count == 1 {
         vec![degree + 1]
     } else {
@@ -568,22 +560,6 @@ fn parse_jet_pcurve(payload: &[u8], mut position: usize, surface: u32) -> Option
         second_derivatives: ddx.into_iter().zip(ddy).map(|(u, v)| [u, v]).collect(),
         range: [range_values[0], range_values[1]],
     })
-}
-
-fn read_f64s(bytes: &[u8], position: &mut usize, count: usize) -> Option<Vec<f64>> {
-    let mut values = Vec::with_capacity(count);
-    for _ in 0..count {
-        let value = f64::from_le_bytes(bytes.get(*position..*position + 8)?.try_into().ok()?);
-        *position += 8;
-        values.push(value);
-    }
-    Some(values)
-}
-
-fn read_u32(bytes: &[u8], position: &mut usize) -> Option<u32> {
-    let value = u32::from_le_bytes(bytes.get(*position..*position + 4)?.try_into().ok()?);
-    *position += 4;
-    Some(value)
 }
 
 fn solve_absolute_orientation(faces: &mut [E5Face]) {
@@ -706,13 +682,7 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
             {
                 return None;
             }
-            Some(E5Body {
-                record_id: record.id,
-                root_record_id: root.id,
-                faces,
-                face_orientation_signs: signs[..signs.len() - 2].to_vec(),
-                extra_orientation_signs: [signs[signs.len() - 2], signs[signs.len() - 1]],
-            })
+            Some(E5Body { faces })
         })
         .collect()
 }
@@ -748,7 +718,7 @@ fn records(bytes: &[u8]) -> Vec<Record<'_>> {
         }
         records.push(Record {
             class: bytes[start + 3],
-            id: u32::from_le_bytes(bytes[start + 9..start + 13].try_into().expect("record id")),
+            id: u32_at(bytes, start + 9).expect("record header bounds were checked"),
             payload: &bytes[start + 13..end],
         });
         position = end;

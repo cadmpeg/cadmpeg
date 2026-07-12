@@ -304,6 +304,158 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             );
         }
         match &procedural.definition {
+            ProceduralSurfaceDefinition::Exact { .. } => {}
+            ProceduralSurfaceDefinition::Compound { components, .. } => {
+                for component in components {
+                    if !ids.surfaces.contains(&component.0) {
+                        ref_error(findings, &procedural.id.0, "surface", &component.0);
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::Taper {
+                support, reference, ..
+            } => {
+                if !ids.surfaces.contains(&support.0) {
+                    ref_error(findings, &procedural.id.0, "surface", &support.0);
+                }
+                if !ids.curves.contains(&reference.0) {
+                    ref_error(findings, &procedural.id.0, "curve", &reference.0);
+                }
+            }
+            ProceduralSurfaceDefinition::Loft { sections, .. } => {
+                for entry in sections.iter().flat_map(|section| &section.entries) {
+                    for curve in std::iter::once(&entry.path.curve)
+                        .chain(entry.path.auxiliaries.iter())
+                        .chain(entry.profile.iter().map(|member| &member.curve))
+                    {
+                        if !ids.curves.contains(&curve.0) {
+                            ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                        }
+                    }
+                    for member in &entry.profile {
+                        if !ids.surfaces.contains(&member.data.surface.0) {
+                            ref_error(
+                                findings,
+                                &procedural.id.0,
+                                "surface",
+                                &member.data.surface.0,
+                            );
+                        }
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::CompoundLoft { construction } => {
+                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                };
+                let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
+                scales.extend(construction.fifth_scale.iter().map(Box::as_ref));
+                match &construction.tail {
+                    crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
+                        scales.extend(scale.iter().map(Box::as_ref));
+                        check_curve(curve, findings);
+                    }
+                    crate::geometry::CompoundLoftTail::Seven {
+                        first_scale,
+                        second_scale,
+                        ..
+                    } => {
+                        scales.extend(first_scale.iter().map(Box::as_ref));
+                        scales.extend(second_scale.iter().map(Box::as_ref));
+                    }
+                    crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
+                        if let crate::geometry::CompoundLoftDirection::Curve { curve } = direction {
+                            check_curve(curve, findings);
+                        }
+                    }
+                }
+                for scale in scales {
+                    check_curve(&scale.path, findings);
+                    for curve in &scale.auxiliaries {
+                        check_curve(curve, findings);
+                    }
+                    for member in &scale.members {
+                        check_curve(&member.curve, findings);
+                        if !ids.surfaces.contains(&member.data.surface.0) {
+                            ref_error(
+                                findings,
+                                &procedural.id.0,
+                                "surface",
+                                &member.data.surface.0,
+                            );
+                        }
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::G2Blend { construction } => {
+                for surface in [&construction.first.surface, &construction.second.surface]
+                    .into_iter()
+                    .chain(std::iter::once(&construction.second_exact_surface))
+                {
+                    if !ids.surfaces.contains(&surface.0) {
+                        ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                    }
+                }
+                if let crate::geometry::G2BlendFirstShape::Full {
+                    surface: Some(surface),
+                    ..
+                } = &construction.first_shape
+                {
+                    if !ids.surfaces.contains(&surface.0) {
+                        ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                    }
+                }
+                for curve in [
+                    &construction.first.curve,
+                    &construction.second.curve,
+                    &construction.center_curve,
+                ] {
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::VariableBlend { construction } => {
+                for side in construction.sides.iter() {
+                    if !ids.surfaces.contains(&side.surface.0) {
+                        ref_error(findings, &procedural.id.0, "surface", &side.surface.0);
+                    }
+                    if !ids.curves.contains(&side.curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &side.curve.0);
+                    }
+                }
+                for curve in [
+                    &construction.primary_curve,
+                    &construction.secondary_curve,
+                    &construction.post_curve,
+                ] {
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::VertexBlend { construction } => {
+                for boundary in &construction.boundaries {
+                    match &boundary.geometry {
+                        crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
+                        | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
+                            if !ids.curves.contains(&curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            }
+                        }
+                        crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
+                            surface, ..
+                        } => {
+                            if !ids.surfaces.contains(&surface.0) {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                            }
+                        }
+                        crate::geometry::VertexBlendBoundaryGeometry::Degenerate { .. } => {}
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 if !ids.curves.contains(&directrix.0) {
@@ -337,7 +489,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
             }
             ProceduralSurfaceDefinition::Blend {
-                supports, spine, ..
+                supports,
+                spine,
+                native,
+                ..
             } => {
                 for support in supports.iter().flatten() {
                     if !ids.surfaces.contains(&support.surface.0) {
@@ -347,6 +502,33 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 if let Some(spine) = spine {
                     if !ids.curves.contains(&spine.0) {
                         ref_error(findings, &procedural.id.0, "curve", &spine.0);
+                    }
+                }
+                if let Some(native) = native {
+                    let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
+                        if !ids.curves.contains(&curve.0) {
+                            ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                        }
+                    };
+                    let check_surface =
+                        |surface: &crate::ids::SurfaceId, findings: &mut Vec<Finding>| {
+                            if !ids.surfaces.contains(&surface.0) {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                            }
+                        };
+                    check_curve(&native.slice, findings);
+                    for side in native.sides.iter() {
+                        check_curve(&side.curve, findings);
+                        if let Some(surface) = &side.surface {
+                            check_surface(surface, findings);
+                        }
+                        if let Some(surface) = &side.exact_support {
+                            check_surface(surface, findings);
+                        }
+                    }
+                    if let Some(side) = &native.third {
+                        check_curve(&side.curve, findings);
+                        check_surface(&side.surface, findings);
                     }
                 }
             }

@@ -16,7 +16,6 @@ categories = ["encoding", "parser-implementations", "graphics"]
 [dependencies]
 cadmpeg-ir.workspace = true
 sha2.workspace = true
-flate2.workspace = true
 
 [dev-dependencies]
 flate2.workspace = true

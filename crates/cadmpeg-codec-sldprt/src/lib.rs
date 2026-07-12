@@ -83,7 +83,7 @@ use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder, ReadSeek,
 };
 use cadmpeg_ir::document::CadIr;
-use sha2::{Digest, Sha256};
+use cadmpeg_ir::hash::sha256_hex;
 use std::io::Write;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
@@ -119,13 +119,7 @@ impl SldprtCodec {
         let data = record.data.as_ref().ok_or_else(|| {
             CodecError::Malformed("retained SLDPRT source image has no bytes".into())
         })?;
-        let hash = Sha256::digest(data)
-            .iter()
-            .fold(String::new(), |mut acc, byte| {
-                use std::fmt::Write as _;
-                let _ = write!(acc, "{byte:02x}");
-                acc
-            });
+        let hash = sha256_hex(data);
         if data.len() as u64 != record.byte_len || hash != record.sha256 {
             return Err(CodecError::Malformed(
                 "retained SLDPRT source image failed integrity validation".into(),

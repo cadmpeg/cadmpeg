@@ -7,9 +7,8 @@
 //! streams or zlib-compressed streams inside a transmit wrapper. Stream
 //! descriptions identify partition, deltas, and feature-profile payloads.
 
-use std::io::Read;
-
 use crate::container::parasolid_offset;
+use cadmpeg_ir::compression::inflate_zlib_prefix;
 
 /// The constant 16-byte prefix of the wrapped Parasolid transmit-container
 /// magic. When it is present, the actual `PS\0\0` stream is a nested zlib member
@@ -19,14 +18,6 @@ use crate::container::parasolid_offset;
 const WRAPPED_MAGIC_PREFIX: [u8; 16] = [
     0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,
 ];
-
-/// Extract the first valid Parasolid stream from a decompressed block payload.
-///
-/// Direct `PS\0\0` streams and zlib members in recognized transmit wrappers are
-/// accepted. The returned buffer owns the extracted stream bytes.
-pub fn extract_stream(payload: &[u8]) -> Option<Vec<u8>> {
-    extract_streams(payload).into_iter().next()
-}
 
 /// Extract every valid direct or nested Parasolid stream in one block payload.
 pub fn extract_streams(payload: &[u8]) -> Vec<Vec<u8>> {
@@ -57,7 +48,7 @@ pub fn extract_streams(payload: &[u8]) -> Vec<Vec<u8>> {
     let mut i = 0usize;
     while i + 2 <= payload.len() {
         if payload[i] == 0x78 && matches!(payload[i + 1], 0x01 | 0x9c | 0xda) {
-            if let Some(inner) = zlib_inflate(&payload[i..]) {
+            if let Some(inner) = inflate_zlib_prefix(&payload[i..]) {
                 if inner.starts_with(&[b'P', b'S', 0x00, 0x00])
                     && stream_header(&inner).is_some()
                     && !out.contains(&inner)
@@ -75,24 +66,9 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.len() >= needle.len() && haystack.windows(needle.len()).any(|w| w == needle)
 }
 
-/// zlib-inflate (with the 2-byte header) from the start of `data`; `None` on any
-/// error. A trailing-garbage error still yields the bytes decoded so far.
-fn zlib_inflate(data: &[u8]) -> Option<Vec<u8>> {
-    use flate2::read::ZlibDecoder;
-    let mut out = Vec::new();
-    let mut dec = ZlibDecoder::new(data);
-    match dec.read_to_end(&mut out) {
-        Ok(_) => Some(out),
-        Err(_) if !out.is_empty() => Some(out),
-        Err(_) => None,
-    }
-}
-
 /// Parsed framing fields for one Parasolid stream.
 #[derive(Debug, Clone)]
 pub struct StreamHeader {
-    /// Byte offset of the `PS\0\0` signature in the supplied buffer.
-    pub signature_offset: usize,
     /// Human-readable stream description.
     pub description: String,
     /// `SCH_<modeller>_<schema>_<format>` schema token.
@@ -128,7 +104,6 @@ pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
     let schema = String::from_utf8_lossy(payload.get(schema_at..schema_end)?).into_owned();
 
     Some(StreamHeader {
-        signature_offset: sig,
         description,
         schema,
         body_offset: schema_end,

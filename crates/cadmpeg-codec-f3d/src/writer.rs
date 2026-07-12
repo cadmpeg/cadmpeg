@@ -2,7 +2,7 @@
 //! Encode source-less F3D archives and apply supported edits to retained source
 //! archives.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecError, DecodeOptions};
@@ -1703,6 +1703,42 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
     let model = &target.model;
+    let region_ordinals: HashMap<_, _> = model
+        .regions
+        .iter()
+        .enumerate()
+        .map(|(ordinal, region)| (&region.id, ordinal))
+        .collect();
+    let shell_ordinals: HashMap<_, _> = model
+        .shells
+        .iter()
+        .enumerate()
+        .map(|(ordinal, shell)| (&shell.id, ordinal))
+        .collect();
+    let coedge_ordinals: HashMap<_, _> = model
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(ordinal, coedge)| (&coedge.id, ordinal))
+        .collect();
+    let edge_ordinals: HashMap<_, _> = model
+        .edges
+        .iter()
+        .enumerate()
+        .map(|(ordinal, edge)| (&edge.id, ordinal))
+        .collect();
+    let loop_ordinals: HashMap<_, _> = model
+        .loops
+        .iter()
+        .enumerate()
+        .map(|(ordinal, lp)| (&lp.id, ordinal))
+        .collect();
+    let pcurve_ordinals: HashMap<_, _> = model
+        .pcurves
+        .iter()
+        .enumerate()
+        .map(|(ordinal, pcurve)| (&pcurve.id, ordinal))
+        .collect();
     if model.bodies.is_empty()
         || model.regions.is_empty()
         || model.shells.is_empty()
@@ -1744,13 +1780,9 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .regions
             .first()
             .ok_or_else(|| CodecError::Malformed(format!("body {} has no region", body.id)))?;
-        let region_ordinal = model
-            .regions
-            .iter()
-            .position(|region| region.id == *first_region)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!("body references missing region {first_region}"))
-            })?;
+        let region_ordinal = region_ordinals.get(first_region).copied().ok_or_else(|| {
+            CodecError::Malformed(format!("body references missing region {first_region}"))
+        })?;
         let transform_ordinal = model.bodies[..body_ordinal]
             .iter()
             .filter(|candidate| candidate.transform.is_some())
@@ -1758,13 +1790,17 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         let first_wire = body
             .regions
             .iter()
-            .filter_map(|region_id| model.regions.iter().find(|region| region.id == *region_id))
+            .filter_map(|region_id| {
+                region_ordinals
+                    .get(region_id)
+                    .map(|ordinal| &model.regions[*ordinal])
+            })
             .flat_map(|region| &region.shells)
             .find_map(|shell_id| {
-                model
-                    .shells
-                    .iter()
-                    .position(|shell| shell.id == *shell_id && !shell.wire_edges.is_empty())
+                shell_ordinals
+                    .get(shell_id)
+                    .copied()
+                    .filter(|ordinal| !model.shells[*ordinal].wire_edges.is_empty())
             })
             .map(|shell_ordinal| wire_record_for_shell(model, wire_start, shell_ordinal))
             .transpose()?
@@ -2283,20 +2319,11 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     }
 
     for (coedge_ordinal, coedge) in model.coedges.iter().enumerate() {
-        let next = model.coedges.iter().position(|item| item.id == coedge.next);
-        let previous = model
-            .coedges
-            .iter()
-            .position(|item| item.id == coedge.previous);
-        let radial = model
-            .coedges
-            .iter()
-            .position(|item| item.id == coedge.radial_next);
-        let edge = model.edges.iter().position(|item| item.id == coedge.edge);
-        let owner = model
-            .loops
-            .iter()
-            .position(|item| item.id == coedge.owner_loop);
+        let next = coedge_ordinals.get(&coedge.next).copied();
+        let previous = coedge_ordinals.get(&coedge.previous).copied();
+        let radial = coedge_ordinals.get(&coedge.radial_next).copied();
+        let edge = edge_ordinals.get(&coedge.edge).copied();
+        let owner = loop_ordinals.get(&coedge.owner_loop).copied();
         let (Some(next), Some(previous), Some(radial), Some(edge), Some(owner)) =
             (next, previous, radial, edge, owner)
         else {
@@ -2316,13 +2343,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         native_ref(&mut records, native_record_index(coedge_start, previous)?);
         native_ref(
             &mut records,
-            if radial
-                == model
-                    .coedges
-                    .iter()
-                    .position(|item| item.id == coedge.id)
-                    .unwrap_or(radial)
-            {
+            if radial == coedge_ordinals.get(&coedge.id).copied().unwrap_or(radial) {
                 -1
             } else {
                 native_record_index(coedge_start, radial)?
@@ -2336,10 +2357,9 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .pcurve
             .as_ref()
             .map(|pcurve_id| {
-                model
-                    .pcurves
-                    .iter()
-                    .position(|pcurve| pcurve.id == *pcurve_id)
+                pcurve_ordinals
+                    .get(pcurve_id)
+                    .copied()
                     .ok_or_else(|| {
                         CodecError::Malformed(format!(
                             "coedge references missing pcurve {pcurve_id}"
@@ -2361,13 +2381,9 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         }
         let wire_ref = wire_record_for_shell(model, wire_start, shell_ordinal)?;
         for (ordinal, edge_id) in shell.wire_edges.iter().enumerate() {
-            let edge_ordinal = model
-                .edges
-                .iter()
-                .position(|edge| edge.id == *edge_id)
-                .ok_or_else(|| {
-                    CodecError::Malformed(format!("wire references missing edge {edge_id}"))
-                })?;
+            let edge_ordinal = edge_ordinals.get(edge_id).copied().ok_or_else(|| {
+                CodecError::Malformed(format!("wire references missing edge {edge_id}"))
+            })?;
             let coedge_ordinal = wire_edge_base + ordinal;
             let owner = native_record_index(wire_coedge_start, coedge_ordinal)?;
             if wire_edge_owners.insert(edge_id.clone(), owner).is_some() {
@@ -2544,85 +2560,83 @@ fn color_attribute_ref(
     native_record_index(attribute_start, preceding)
 }
 
-fn body_persistent_links<'a>(target: &'a CadIr, body: &Body) -> Vec<&'a PersistentDesignLink> {
+fn persistent_links<'a>(
+    target: &'a CadIr,
+    entity: &cadmpeg_ir::attributes::AttributeTarget,
+) -> Vec<&'a PersistentDesignLink> {
     let mut links = target
         .native
         .f3d
         .as_ref()
         .into_iter()
         .flat_map(|native| &native.persistent_design_links)
-        .filter(|link| {
-            matches!(
-                &link.target,
-                cadmpeg_ir::attributes::AttributeTarget::Body(id) if id == &body.id
-            )
-        })
+        .filter(|link| &link.target == entity)
         .collect::<Vec<_>>();
     links.sort_by_key(|link| link.ordinal);
     links
+}
+
+fn body_persistent_links<'a>(target: &'a CadIr, body: &Body) -> Vec<&'a PersistentDesignLink> {
+    persistent_links(
+        target,
+        &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
+    )
+}
+
+fn persistent_group_count(
+    target: &CadIr,
+    entities: impl Iterator<Item = cadmpeg_ir::attributes::AttributeTarget>,
+) -> usize {
+    entities
+        .filter(|entity| !persistent_links(target, entity).is_empty())
+        .count()
 }
 
 fn persistent_body_group_count(target: &CadIr) -> usize {
-    target
-        .model
-        .bodies
-        .iter()
-        .filter(|body| !body_persistent_links(target, body).is_empty())
-        .count()
+    persistent_group_count(
+        target,
+        target
+            .model
+            .bodies
+            .iter()
+            .map(|body| cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone())),
+    )
 }
 
 fn face_persistent_links<'a>(target: &'a CadIr, face: &Face) -> Vec<&'a PersistentDesignLink> {
-    let mut links = target
-        .native
-        .f3d
-        .as_ref()
-        .into_iter()
-        .flat_map(|native| &native.persistent_design_links)
-        .filter(|link| {
-            matches!(
-                &link.target,
-                cadmpeg_ir::attributes::AttributeTarget::Face(id) if id == &face.id
-            )
-        })
-        .collect::<Vec<_>>();
-    links.sort_by_key(|link| link.ordinal);
-    links
+    persistent_links(
+        target,
+        &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
+    )
 }
 
 fn edge_persistent_links<'a>(target: &'a CadIr, edge: &Edge) -> Vec<&'a PersistentDesignLink> {
-    let mut links = target
-        .native
-        .f3d
-        .as_ref()
-        .into_iter()
-        .flat_map(|native| &native.persistent_design_links)
-        .filter(|link| {
-            matches!(
-                &link.target,
-                cadmpeg_ir::attributes::AttributeTarget::Edge(id) if id == &edge.id
-            )
-        })
-        .collect::<Vec<_>>();
-    links.sort_by_key(|link| link.ordinal);
-    links
+    persistent_links(
+        target,
+        &cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone()),
+    )
 }
 
 fn persistent_face_group_count(target: &CadIr) -> usize {
-    target
-        .model
-        .faces
-        .iter()
-        .filter(|face| !face_persistent_links(target, face).is_empty())
-        .count()
+    persistent_group_count(
+        target,
+        target
+            .model
+            .faces
+            .iter()
+            .map(|face| cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone())),
+    )
 }
 
 fn persistent_edge_group_count(target: &CadIr) -> usize {
-    target
-        .model
-        .edges
-        .iter()
-        .filter(|edge| !edge_persistent_links(target, edge).is_empty())
-        .count()
+    persistent_group_count(
+        target,
+        target
+            .model
+            .edges
+            .iter()
+            .map(|edge| cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone())),
+    )
 }
 
 fn body_persistent_attribute_ref(
@@ -2939,9 +2953,32 @@ fn encode_source_less_edges_vertices_points(
     edge_owners: Option<&BTreeMap<cadmpeg_ir::ids::EdgeId, i64>>,
 ) -> Result<(), CodecError> {
     let model = &target.model;
+    let vertex_ordinals: HashMap<_, _> = model
+        .vertices
+        .iter()
+        .enumerate()
+        .map(|(ordinal, vertex)| (&vertex.id, ordinal))
+        .collect();
+    let curve_ordinals: HashMap<_, _> = model
+        .curves
+        .iter()
+        .enumerate()
+        .map(|(ordinal, curve)| (&curve.id, ordinal))
+        .collect();
+    let point_ordinals: HashMap<_, _> = model
+        .points
+        .iter()
+        .enumerate()
+        .map(|(ordinal, point)| (&point.id, ordinal))
+        .collect();
+    let mut vertex_edges = HashMap::new();
+    for (ordinal, edge) in model.edges.iter().enumerate() {
+        vertex_edges.entry(&edge.start).or_insert(ordinal);
+        vertex_edges.entry(&edge.end).or_insert(ordinal);
+    }
     for (edge_ordinal, edge) in model.edges.iter().enumerate() {
-        let start = model.vertices.iter().position(|item| item.id == edge.start);
-        let end = model.vertices.iter().position(|item| item.id == edge.end);
+        let start = vertex_ordinals.get(&edge.start).copied();
+        let end = vertex_ordinals.get(&edge.end).copied();
         let (Some(start), Some(end)) = (start, end) else {
             return Err(CodecError::Malformed(format!(
                 "edge {} has an unresolved vertex",
@@ -2952,10 +2989,9 @@ fn encode_source_less_edges_vertices_points(
             .curve
             .as_ref()
             .map(|curve_id| {
-                model
-                    .curves
-                    .iter()
-                    .position(|curve| curve.id == *curve_id)
+                curve_ordinals
+                    .get(curve_id)
+                    .copied()
                     .ok_or_else(|| {
                         CodecError::Malformed(format!("edge references missing curve {curve_id}"))
                     })
@@ -2968,8 +3004,8 @@ fn encode_source_less_edges_vertices_points(
         // stream; line parameters are arc lengths, millimeters in the IR
         // and centimeters natively.
         if edge.curve.as_ref().is_some_and(|curve_id| {
-            model.curves.iter().any(|curve| {
-                curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Line { .. })
+            curve_ordinals.get(curve_id).is_some_and(|ordinal| {
+                matches!(model.curves[*ordinal].geometry, CurveGeometry::Line { .. })
             })
         }) {
             range[0] /= 10.0;
@@ -3000,11 +3036,8 @@ fn encode_source_less_edges_vertices_points(
         records.push(0x11);
     }
     for vertex in &model.vertices {
-        let point = model.points.iter().position(|item| item.id == vertex.point);
-        let edge = model
-            .edges
-            .iter()
-            .position(|item| item.start == vertex.id || item.end == vertex.id);
+        let point = point_ordinals.get(&vertex.point).copied();
+        let edge = vertex_edges.get(&vertex.id).copied();
         let (Some(point), Some(edge)) = (point, edge) else {
             return Err(CodecError::Malformed(format!(
                 "vertex {} has an unresolved carrier",
@@ -3153,6 +3186,354 @@ fn native_procedural_surface(
         return Ok(false);
     };
     match &procedural.definition {
+        ProceduralSurfaceDefinition::Exact {
+            parameter_ranges,
+            extension,
+        } => {
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "exact_spl_sur")?;
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            for range in parameter_ranges {
+                for value in range {
+                    native_f64(bytes, *value);
+                }
+            }
+            native_i64(bytes, *extension);
+            bytes.push(0x10);
+        }
+        ProceduralSurfaceDefinition::Compound {
+            parameters,
+            components,
+        } => {
+            if parameters.len() != components.len() {
+                return Err(CodecError::Malformed(
+                    "comp_spl_sur requires one parameter per component surface".into(),
+                ));
+            }
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "comp_spl_sur")?;
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            native_i64(
+                bytes,
+                i64::try_from(parameters.len()).map_err(|_| {
+                    CodecError::NotImplemented("compound surface count exceeds i64".into())
+                })?,
+            );
+            for parameter in parameters {
+                native_f64(bytes, *parameter);
+            }
+            for component in components {
+                let component = target
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *component)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "compound surface {} references missing component {component}",
+                            procedural.id
+                        ))
+                    })?;
+                native_embedded_surface(bytes, &component.geometry)?;
+            }
+            bytes.push(0x10);
+        }
+        ProceduralSurfaceDefinition::Taper {
+            support,
+            reference,
+            pcurve,
+            parameter,
+            taper,
+        } => {
+            let support = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == *support)
+                .ok_or_else(|| CodecError::Malformed("taper support surface is missing".into()))?;
+            let reference = target
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *reference)
+                .ok_or_else(|| CodecError::Malformed("taper reference curve is missing".into()))?;
+            let CurveGeometry::Nurbs(reference) = &reference.geometry else {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D taper requires a NURBS reference curve".into(),
+                ));
+            };
+            let subtype = match taper {
+                cadmpeg_ir::geometry::TaperSurfaceKind::Standard => "taper_spl_sur",
+                cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. } => "ortho_spl_sur",
+                cadmpeg_ir::geometry::TaperSurfaceKind::Edge { .. } => "edge_tpr_spl_sur",
+                cadmpeg_ir::geometry::TaperSurfaceKind::Shadow { .. } => "shadow_tpr_spl_sur",
+                cadmpeg_ir::geometry::TaperSurfaceKind::Ruled { .. } => "ruled_tpr_spl_sur",
+                cadmpeg_ir::geometry::TaperSurfaceKind::Swept { .. } => "swept_tpr_spl_sur",
+            };
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, subtype)?;
+            native_embedded_surface(bytes, &support.geometry)?;
+            native_nurbs_curve(bytes, reference)?;
+            if let Some(pcurve) = pcurve {
+                native_nurbs_pcurve_block(bytes, pcurve)?;
+            } else {
+                native_ident(bytes, "nullbs")?;
+            }
+            native_f64(bytes, *parameter);
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            let write_draft = |bytes: &mut Vec<u8>, draft: Vector3| {
+                native_vector(bytes, [draft.x, draft.y, draft.z]);
+            };
+            match taper {
+                cadmpeg_ir::geometry::TaperSurfaceKind::Standard => {}
+                cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense } => {
+                    bytes.push(native_bool(*sense));
+                }
+                cadmpeg_ir::geometry::TaperSurfaceKind::Edge { draft } => {
+                    write_draft(bytes, *draft);
+                }
+                cadmpeg_ir::geometry::TaperSurfaceKind::Shadow {
+                    draft,
+                    sine,
+                    cosine,
+                }
+                | cadmpeg_ir::geometry::TaperSurfaceKind::Swept {
+                    draft,
+                    sine,
+                    cosine,
+                } => {
+                    write_draft(bytes, *draft);
+                    native_f64(bytes, *sine);
+                    native_f64(bytes, *cosine);
+                }
+                cadmpeg_ir::geometry::TaperSurfaceKind::Ruled {
+                    draft,
+                    sine,
+                    cosine,
+                    factor,
+                } => {
+                    write_draft(bytes, *draft);
+                    native_f64(bytes, *sine);
+                    native_f64(bytes, *cosine);
+                    native_f64(bytes, *factor);
+                }
+            }
+            bytes.push(0x10);
+        }
+        ProceduralSurfaceDefinition::Loft {
+            sections,
+            parameter_ranges,
+            closures,
+            singularities,
+            mode,
+            bridge,
+        } => encode_native_loft(
+            bytes,
+            target,
+            procedural,
+            sections,
+            parameter_ranges,
+            closures,
+            singularities,
+            *mode,
+            bridge,
+            solved_cache,
+        )?,
+        ProceduralSurfaceDefinition::G2Blend { construction } => {
+            encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
+        }
+        ProceduralSurfaceDefinition::VariableBlend { construction } => {
+            encode_native_variable_blend(bytes, target, procedural, construction, solved_cache)?;
+        }
+        ProceduralSurfaceDefinition::VertexBlend { construction } => {
+            encode_native_vertex_blend(bytes, target, construction, solved_cache)?;
+        }
+        ProceduralSurfaceDefinition::Ruled { first, second } => {
+            let profiles = [first, second]
+                .map(|id| {
+                    target
+                        .model
+                        .curves
+                        .iter()
+                        .find(|curve| curve.id == *id)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "ruled surface {} references missing profile {id}",
+                                procedural.id
+                            ))
+                        })
+                })
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()?;
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "rule_sur")?;
+            for profile in profiles {
+                let CurveGeometry::Nurbs(profile) = &profile.geometry else {
+                    return Err(CodecError::NotImplemented(
+                        "source-less F3D rule_sur requires NURBS profiles".into(),
+                    ));
+                };
+                native_nurbs_curve(bytes, profile)?;
+            }
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            bytes.push(0x10);
+        }
+        ProceduralSurfaceDefinition::Sum {
+            first,
+            second,
+            basepoint,
+        } => {
+            let curves = [first, second]
+                .map(|id| {
+                    target
+                        .model
+                        .curves
+                        .iter()
+                        .find(|curve| curve.id == *id)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "sum surface {} references missing curve {id}",
+                                procedural.id
+                            ))
+                        })
+                })
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()?;
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "sum_spl_sur")?;
+            for curve in curves {
+                let CurveGeometry::Nurbs(curve) = &curve.geometry else {
+                    return Err(CodecError::NotImplemented(
+                        "source-less F3D sum_spl_sur requires NURBS curves".into(),
+                    ));
+                };
+                native_nurbs_curve(bytes, curve)?;
+            }
+            native_point(
+                bytes,
+                [basepoint.x / 10.0, basepoint.y / 10.0, basepoint.z / 10.0],
+            );
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            bytes.push(0x10);
+        }
+        ProceduralSurfaceDefinition::Revolution {
+            directrix,
+            axis_origin,
+            axis_direction,
+            angular_interval,
+            parameter_interval,
+            transposed,
+        } => {
+            let directrix = target
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *directrix)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "revolution surface {} references a missing directrix",
+                        procedural.id
+                    ))
+                })?;
+            let CurveGeometry::Nurbs(directrix) = &directrix.geometry else {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D rot_spl_sur requires a NURBS directrix".into(),
+                ));
+            };
+            let native_parameter_interval = [
+                directrix.knots.first().copied().unwrap_or(0.0),
+                directrix.knots.last().copied().unwrap_or(0.0),
+            ];
+            let native_angular_interval = [
+                solved_cache.v_knots.first().copied().unwrap_or(0.0),
+                solved_cache.v_knots.last().copied().unwrap_or(0.0),
+            ];
+            if *transposed
+                || *parameter_interval != native_parameter_interval
+                || *angular_interval != native_angular_interval
+            {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D rot_spl_sur intervals must match its profile and solved cache and cannot be transposed".into(),
+                ));
+            }
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "rot_spl_sur")?;
+            native_nurbs_curve(bytes, directrix)?;
+            native_point(
+                bytes,
+                [
+                    axis_origin.x / 10.0,
+                    axis_origin.y / 10.0,
+                    axis_origin.z / 10.0,
+                ],
+            );
+            native_vector(
+                bytes,
+                [axis_direction.x, axis_direction.y, axis_direction.z],
+            );
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            bytes.push(0x10);
+        }
+        ProceduralSurfaceDefinition::Offset {
+            support,
+            distance,
+            u_sense,
+            v_sense,
+            extension_flags,
+        } => {
+            let support = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == *support)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "offset surface {} references a missing support",
+                        procedural.id
+                    ))
+                })?;
+            let valid_flags = matches!(
+                extension_flags.as_slice(),
+                [] | [false] | [true, _] | [true, _, _]
+            );
+            if !valid_flags {
+                return Err(CodecError::Malformed(
+                    "off_spl_sur ASM extension flags have an invalid conditional shape".into(),
+                ));
+            }
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(
+                bytes,
+                if extension_flags.is_empty() {
+                    "offsur"
+                } else {
+                    "off_spl_sur"
+                },
+            )?;
+            native_embedded_surface(bytes, &support.geometry)?;
+            native_f64(bytes, *distance / 10.0);
+            native_enum(bytes, *u_sense);
+            native_enum(bytes, *v_sense);
+            for flag in extension_flags {
+                bytes.push(native_bool(*flag));
+            }
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            bytes.push(0x10);
+        }
         ProceduralSurfaceDefinition::Extrusion {
             directrix,
             direction,
@@ -3169,16 +3550,29 @@ fn native_procedural_surface(
             spine,
             radius,
             cross_section,
-        } => encode_native_rolling_ball(
-            bytes,
-            target,
-            procedural,
-            supports,
-            spine.as_ref(),
-            radius,
-            cross_section,
-            solved_cache,
-        )?,
+            native,
+        } => {
+            if let Some(native) = native {
+                encode_complete_native_rolling_ball(
+                    bytes,
+                    target,
+                    procedural,
+                    native,
+                    solved_cache,
+                )?;
+            } else {
+                encode_native_rolling_ball(
+                    bytes,
+                    target,
+                    procedural,
+                    supports,
+                    spine.as_ref(),
+                    radius,
+                    cross_section,
+                    solved_cache,
+                )?;
+            }
+        }
         _ => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} is not yet writable",
@@ -3187,6 +3581,320 @@ fn native_procedural_surface(
         }
     }
     Ok(true)
+}
+
+fn native_bridge_token(
+    bytes: &mut Vec<u8>,
+    token: &cadmpeg_ir::geometry::LoftBridgeToken,
+) -> Result<(), CodecError> {
+    match token {
+        cadmpeg_ir::geometry::LoftBridgeToken::Boolean(value) => {
+            bytes.push(native_bool(*value));
+        }
+        cadmpeg_ir::geometry::LoftBridgeToken::Integer(value) => native_i64(bytes, *value),
+        cadmpeg_ir::geometry::LoftBridgeToken::Double(value) => native_f64(bytes, *value),
+        cadmpeg_ir::geometry::LoftBridgeToken::Text(value) => native_string(bytes, value)?,
+        cadmpeg_ir::geometry::LoftBridgeToken::Enum(value) => native_enum(bytes, *value),
+    }
+    Ok(())
+}
+
+fn native_g2_pcurve(
+    bytes: &mut Vec<u8>,
+    pcurve: Option<&PcurveGeometry>,
+) -> Result<(), CodecError> {
+    if let Some(pcurve) = pcurve {
+        native_nurbs_pcurve_block(bytes, pcurve)
+    } else {
+        native_ident(bytes, "nullbs")
+    }
+}
+
+fn native_g2_side(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    side: &cadmpeg_ir::geometry::G2BlendSide,
+) -> Result<(), CodecError> {
+    native_string(bytes, &side.label)?;
+    let surface = target
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == side.surface)
+        .ok_or_else(|| CodecError::Malformed(format!("G2 support {} is missing", side.surface)))?;
+    native_embedded_surface(bytes, &surface.geometry)?;
+    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    native_g2_pcurve(bytes, side.pcurves[0].as_ref())?;
+    native_vector(
+        bytes,
+        [side.direction.x, side.direction.y, side.direction.z],
+    );
+    native_g2_pcurve(bytes, side.pcurves[1].as_ref())?;
+    Ok(())
+}
+
+fn encode_native_g2_blend(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::G2BlendConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "g2_blend_spl_sur")?;
+    native_g2_side(bytes, target, &construction.first)?;
+    native_enum(bytes, construction.singularity);
+    match &construction.first_shape {
+        cadmpeg_ir::geometry::G2BlendFirstShape::Full { surface, tolerance } => {
+            match (surface, tolerance) {
+                (None, None) => native_ident(bytes, "nullbs")?,
+                (Some(surface), Some(tolerance)) => {
+                    let surface = target
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|candidate| candidate.id == *surface)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("G2 first exact surface is missing".into())
+                        })?;
+                    let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
+                        return Err(CodecError::NotImplemented(
+                            "source-less G2 full branch requires a NURBS exact surface".into(),
+                        ));
+                    };
+                    native_nurbs_surface(bytes, surface)?;
+                    native_f64(bytes, *tolerance / 10.0);
+                }
+                _ => {
+                    return Err(CodecError::Malformed(
+                        "G2 full surface and tolerance must be paired".into(),
+                    ));
+                }
+            }
+        }
+        cadmpeg_ir::geometry::G2BlendFirstShape::None {
+            coefficients,
+            tolerance,
+            extension,
+            pcurve,
+        } => {
+            for coefficient in coefficients {
+                native_f64(bytes, *coefficient);
+            }
+            native_f64(bytes, *tolerance / 10.0);
+            if let Some(extension) = extension {
+                native_bridge_token(bytes, extension)?;
+            }
+            native_g2_pcurve(bytes, pcurve.as_ref())?;
+        }
+    }
+    native_g2_side(bytes, target, &construction.second)?;
+    let second_exact = target
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == construction.second_exact_surface)
+        .ok_or_else(|| CodecError::Malformed("G2 second exact surface is missing".into()))?;
+    let SurfaceGeometry::Nurbs(second_exact) = &second_exact.geometry else {
+        return Err(CodecError::NotImplemented(
+            "source-less G2 second exact surface must be NURBS".into(),
+        ));
+    };
+    native_nurbs_surface(bytes, second_exact)?;
+    native_nurbs_curve(
+        bytes,
+        native_loft_curve(target, &construction.center_curve)?,
+    )?;
+    for value in construction.center_parameters {
+        native_f64(bytes, value);
+    }
+    native_i64(bytes, construction.center_flag);
+    for range in construction.parameter_ranges {
+        native_f64(bytes, range[0]);
+        native_f64(bytes, range[1]);
+    }
+    for value in construction.trailing_parameters {
+        native_f64(bytes, value);
+    }
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for discontinuities in &construction.discontinuities {
+        native_i64(
+            bytes,
+            i64::try_from(discontinuities.len()).map_err(|_| {
+                CodecError::NotImplemented("G2 discontinuity count exceeds i64".into())
+            })?,
+        );
+        for value in discontinuities {
+            native_f64(bytes, *value);
+        }
+    }
+    bytes.push(0x10);
+    Ok(())
+}
+
+fn native_loft_curve<'a>(
+    target: &'a CadIr,
+    id: &cadmpeg_ir::ids::CurveId,
+) -> Result<&'a NurbsCurve, CodecError> {
+    let curve = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *id)
+        .ok_or_else(|| CodecError::Malformed(format!("loft references missing curve {id}")))?;
+    let CurveGeometry::Nurbs(curve) = &curve.geometry else {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D loft requires NURBS curve {id}"
+        )));
+    };
+    Ok(curve)
+}
+
+fn native_loft_subdata(
+    bytes: &mut Vec<u8>,
+    subdata: &cadmpeg_ir::geometry::LoftSubdata,
+) -> Result<(), CodecError> {
+    let expected_rows = if subdata.type_code == 211 {
+        1
+    } else {
+        usize::try_from(subdata.row_count)
+            .map_err(|_| CodecError::Malformed("negative loft row count".into()))?
+    };
+    let expected_columns = usize::try_from(subdata.column_count)
+        .map_err(|_| CodecError::Malformed("negative loft column count".into()))?;
+    if subdata.rows.len() != expected_rows
+        || (subdata.type_code != 211
+            && subdata
+                .rows
+                .iter()
+                .any(|row| row.columns.len() != expected_columns))
+    {
+        return Err(CodecError::Malformed(
+            "loft subdata counts do not match their rows".into(),
+        ));
+    }
+    native_i64(bytes, subdata.type_code);
+    native_i64(bytes, subdata.row_count);
+    native_i64(bytes, subdata.column_count);
+    for row in &subdata.rows {
+        for value in row.parameters {
+            native_f64(bytes, value);
+        }
+        for column in &row.columns {
+            native_f64(bytes, column[0]);
+            native_f64(bytes, column[1]);
+        }
+    }
+    Ok(())
+}
+
+fn native_loft_section(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    section: &cadmpeg_ir::geometry::LoftSection,
+) -> Result<(), CodecError> {
+    native_i64(
+        bytes,
+        i64::try_from(section.entries.len())
+            .map_err(|_| CodecError::NotImplemented("loft section count exceeds i64".into()))?,
+    );
+    for entry in &section.entries {
+        native_f64(bytes, entry.parameter);
+        native_i64(
+            bytes,
+            i64::try_from(entry.profile.len())
+                .map_err(|_| CodecError::NotImplemented("loft profile count exceeds i64".into()))?,
+        );
+        for member in &entry.profile {
+            native_i64(bytes, member.type_code);
+            native_nurbs_curve(bytes, native_loft_curve(target, &member.curve)?)?;
+            let surface = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == member.data.surface)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "loft references missing surface {}",
+                        member.data.surface
+                    ))
+                })?;
+            native_embedded_surface(bytes, &surface.geometry)?;
+            if let Some(pcurve) = &member.data.pcurve {
+                native_nurbs_pcurve_block(bytes, pcurve)?;
+            } else {
+                native_ident(bytes, "nullbs")?;
+            }
+            bytes.push(native_bool(member.data.first_flag));
+            native_i64(bytes, member.data.asm_extension);
+            native_loft_subdata(bytes, &member.data.subdata)?;
+            bytes.push(native_bool(member.data.direction.is_some()));
+            if let Some(direction) = member.data.direction {
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+        }
+        native_nurbs_curve(bytes, native_loft_curve(target, &entry.path.curve)?)?;
+        native_i64(
+            bytes,
+            i64::try_from(entry.path.auxiliaries.len()).map_err(|_| {
+                CodecError::NotImplemented("loft auxiliary count exceeds i64".into())
+            })?,
+        );
+        for auxiliary in &entry.path.auxiliaries {
+            native_nurbs_curve(bytes, native_loft_curve(target, auxiliary)?)?;
+        }
+        native_i64(bytes, entry.path.flag);
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn encode_native_loft(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    sections: &[cadmpeg_ir::geometry::LoftSection; 2],
+    parameter_ranges: &[[f64; 2]; 2],
+    closures: &[i64; 2],
+    singularities: &[i64; 2],
+    mode: i64,
+    bridge: &[cadmpeg_ir::geometry::LoftBridgeToken],
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "loft_spl_sur")?;
+    for section in sections {
+        native_loft_section(bytes, target, section)?;
+    }
+    for range in parameter_ranges {
+        native_f64(bytes, range[0]);
+        native_f64(bytes, range[1]);
+    }
+    for closure in closures {
+        native_enum(bytes, *closure);
+    }
+    for singularity in singularities {
+        native_enum(bytes, *singularity);
+    }
+    native_i64(bytes, mode);
+    for token in bridge {
+        match token {
+            cadmpeg_ir::geometry::LoftBridgeToken::Boolean(value) => {
+                bytes.push(native_bool(*value));
+            }
+            cadmpeg_ir::geometry::LoftBridgeToken::Integer(value) => native_i64(bytes, *value),
+            cadmpeg_ir::geometry::LoftBridgeToken::Double(value) => native_f64(bytes, *value),
+            cadmpeg_ir::geometry::LoftBridgeToken::Text(value) => native_string(bytes, value)?,
+            cadmpeg_ir::geometry::LoftBridgeToken::Enum(value) => native_enum(bytes, *value),
+        }
+    }
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    bytes.push(0x10);
+    Ok(())
 }
 
 fn encode_native_extrusion(
@@ -3234,6 +3942,534 @@ fn encode_native_extrusion(
     native_nurbs_curve(bytes, directrix_cache)?;
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    bytes.push(0x10);
+    Ok(())
+}
+
+fn native_optional_pcurve(
+    bytes: &mut Vec<u8>,
+    pcurve: Option<&PcurveGeometry>,
+) -> Result<(), CodecError> {
+    if let Some(pcurve) = pcurve {
+        native_nurbs_pcurve_block(bytes, pcurve)
+    } else {
+        native_ident(bytes, "nullbs")
+    }
+}
+
+fn native_variable_blend_value(
+    bytes: &mut Vec<u8>,
+    value: &cadmpeg_ir::geometry::VariableBlendValue,
+    depth: usize,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::{LoftBridgeToken, VariableBlendValuePayload};
+    if depth > 32 {
+        return Err(CodecError::Malformed(
+            "variable blend-value recursion exceeds 32 levels".into(),
+        ));
+    }
+    native_string(bytes, &value.name)?;
+    bytes.push(native_bool(value.modern_flag));
+    if value.discriminator != 1 {
+        native_i64(bytes, value.discriminator);
+    }
+    native_enum(bytes, value.calibrated);
+    match &value.payload {
+        VariableBlendValuePayload::TwoEnds { parameters, radii } => {
+            for parameter in parameters {
+                native_f64(bytes, *parameter);
+            }
+            for radius in radii {
+                native_f64(bytes, *radius / 10.0);
+            }
+        }
+        VariableBlendValuePayload::EdgeOffset { scalars, lengths } => {
+            let expected = if value.discriminator == 0 {
+                (2, 1)
+            } else {
+                (1, 2)
+            };
+            if (scalars.len(), lengths.len()) != expected {
+                return Err(CodecError::Malformed(
+                    "variable edge-offset payload has inconsistent arity".into(),
+                ));
+            }
+            for scalar in scalars {
+                native_f64(bytes, *scalar);
+            }
+            for length in lengths {
+                native_f64(bytes, *length / 10.0);
+            }
+        }
+        VariableBlendValuePayload::Functional {
+            parameter,
+            radius,
+            function,
+            terminal,
+        } => {
+            native_f64(bytes, *parameter);
+            native_f64(bytes, *radius / 10.0);
+            native_nurbs_pcurve_block(bytes, function)?;
+            match terminal {
+                LoftBridgeToken::Double(value) => native_f64(bytes, *value),
+                LoftBridgeToken::Text(value) => native_string(bytes, value)?,
+                _ => {
+                    return Err(CodecError::NotImplemented(
+                        "functional variable-blend terminal must be double or text".into(),
+                    ));
+                }
+            }
+        }
+        VariableBlendValuePayload::Constant {
+            parameters,
+            radius,
+            variable_chamfer,
+            chamfer_type,
+            nested,
+        } => {
+            for parameter in parameters {
+                native_f64(bytes, *parameter);
+            }
+            native_f64(bytes, *radius / 10.0);
+            native_enum(bytes, *variable_chamfer);
+            native_enum(bytes, *chamfer_type);
+            native_variable_blend_value(bytes, nested, depth + 1)?;
+        }
+        VariableBlendValuePayload::Interpolated {
+            parameter,
+            radius,
+            function,
+            enum_count,
+            points,
+            tail,
+        } => {
+            native_f64(bytes, *parameter);
+            native_f64(bytes, *radius / 10.0);
+            native_nurbs_pcurve_block(bytes, function)?;
+            native_i64(bytes, *enum_count);
+            native_i64(
+                bytes,
+                i64::try_from(points.len()).map_err(|_| {
+                    CodecError::NotImplemented("variable blend point count exceeds i64".into())
+                })?,
+            );
+            for point in points {
+                native_f64(bytes, point.parameter);
+                native_f64(bytes, point.radius / 10.0);
+                for tangent in point.tangents {
+                    native_f64(bytes, tangent);
+                }
+                native_point(
+                    bytes,
+                    [
+                        point.location.x / 10.0,
+                        point.location.y / 10.0,
+                        point.location.z / 10.0,
+                    ],
+                );
+                native_vector(bytes, [point.normal.x, point.normal.y, point.normal.z]);
+            }
+            native_i64(bytes, i64::from(tail.is_some()));
+            if let Some(tail) = tail {
+                native_f64(bytes, tail[0]);
+                native_f64(bytes, tail[1]);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn native_vertex_blend_bool(bytes: &mut Vec<u8>, value: i64) -> Result<(), CodecError> {
+    match value {
+        0 => bytes.push(native_bool(false)),
+        1 => bytes.push(native_bool(true)),
+        _ => {
+            return Err(CodecError::Malformed(
+                "vertex-blend boolean enum must be 0 or 1".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn native_vertex_blend_boundary(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    boundary: &cadmpeg_ir::geometry::VertexBlendBoundary,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::VertexBlendBoundaryGeometry;
+    let kind = match &boundary.geometry {
+        VertexBlendBoundaryGeometry::Circle { .. } => "circle",
+        VertexBlendBoundaryGeometry::Degenerate { .. } => "deg",
+        VertexBlendBoundaryGeometry::Pcurve { .. } => "pcurve",
+        VertexBlendBoundaryGeometry::Plane { .. } => "plane",
+    };
+    native_string(bytes, kind)?;
+    native_vertex_blend_bool(bytes, boundary.boundary_type)?;
+    native_point(
+        bytes,
+        [
+            boundary.magic.x / 10.0,
+            boundary.magic.y / 10.0,
+            boundary.magic.z / 10.0,
+        ],
+    );
+    native_vertex_blend_bool(bytes, boundary.u_smoothing)?;
+    native_vertex_blend_bool(bytes, boundary.v_smoothing)?;
+    native_f64(bytes, boundary.fullness);
+    match &boundary.geometry {
+        VertexBlendBoundaryGeometry::Circle {
+            curve,
+            form,
+            twists,
+            parameters,
+            sense,
+        } => {
+            let expected_twists = match form {
+                0 => 0,
+                1 => 1,
+                3 => 2,
+                _ => {
+                    return Err(CodecError::Malformed(
+                        "vertex-blend circle form must be 0, 1, or 3".into(),
+                    ));
+                }
+            };
+            if twists.len() != expected_twists {
+                return Err(CodecError::Malformed(
+                    "vertex-blend circle twist count conflicts with its form".into(),
+                ));
+            }
+            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            native_enum(bytes, *form);
+            for twist in twists {
+                native_point(bytes, [twist.x / 10.0, twist.y / 10.0, twist.z / 10.0]);
+            }
+            native_f64(bytes, parameters[0]);
+            native_f64(bytes, parameters[1]);
+            native_vertex_blend_bool(bytes, *sense)?;
+        }
+        VertexBlendBoundaryGeometry::Degenerate { location, normals } => {
+            native_point(
+                bytes,
+                [location.x / 10.0, location.y / 10.0, location.z / 10.0],
+            );
+            for normal in normals {
+                native_vector(bytes, [normal.x, normal.y, normal.z]);
+            }
+        }
+        VertexBlendBoundaryGeometry::Pcurve {
+            surface,
+            pcurve,
+            sense,
+            fit_tolerance,
+        } => {
+            let surface = target
+                .model
+                .surfaces
+                .iter()
+                .find(|candidate| candidate.id == *surface)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("vertex-blend support {surface} is missing"))
+                })?;
+            native_embedded_surface(bytes, &surface.geometry)?;
+            native_optional_pcurve(bytes, pcurve.as_ref())?;
+            native_vertex_blend_bool(bytes, *sense)?;
+            native_f64(bytes, *fit_tolerance);
+        }
+        VertexBlendBoundaryGeometry::Plane {
+            normal,
+            parameters,
+            curve,
+        } => {
+            native_vector(bytes, [normal.x, normal.y, normal.z]);
+            native_f64(bytes, parameters[0]);
+            native_f64(bytes, parameters[1]);
+            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+        }
+    }
+    Ok(())
+}
+
+fn encode_native_vertex_blend(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    construction: &cadmpeg_ir::geometry::VertexBlendConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "VBL_SURF")?;
+    native_i64(
+        bytes,
+        i64::try_from(construction.boundaries.len()).map_err(|_| {
+            CodecError::NotImplemented("vertex-blend boundary count exceeds i64".into())
+        })?,
+    );
+    for boundary in &construction.boundaries {
+        native_vertex_blend_boundary(bytes, target, boundary)?;
+    }
+    native_i64(bytes, construction.grid_size);
+    native_f64(bytes, construction.fit_tolerance / 10.0);
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, 0.0);
+    bytes.push(0x10);
+    Ok(())
+}
+
+fn native_variable_blend_side(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    side: &cadmpeg_ir::geometry::VariableBlendSide,
+) -> Result<(), CodecError> {
+    native_string(bytes, &side.label)?;
+    let surface = target
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == side.surface)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("variable support {} is missing", side.surface))
+        })?;
+    native_embedded_surface(bytes, &surface.geometry)?;
+    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    native_optional_pcurve(bytes, side.pcurve.as_ref())?;
+    native_point(
+        bytes,
+        [
+            side.location.x / 10.0,
+            side.location.y / 10.0,
+            side.location.z / 10.0,
+        ],
+    );
+    native_optional_pcurve(bytes, side.secondary_pcurve.as_ref())?;
+    native_f64(bytes, side.scalar);
+    native_optional_pcurve(bytes, side.tertiary_pcurve.as_ref())?;
+    Ok(())
+}
+
+fn encode_native_variable_blend(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::VariableBlendConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::LoftBridgeToken;
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "var_blend_spl_sur")?;
+    for side in construction.sides.iter() {
+        native_variable_blend_side(bytes, target, side)?;
+    }
+    native_nurbs_curve(
+        bytes,
+        native_loft_curve(target, &construction.primary_curve)?,
+    )?;
+    for offset in construction.offsets {
+        native_f64(bytes, offset / 10.0);
+    }
+    native_enum(bytes, construction.radius_kind);
+    native_variable_blend_value(bytes, &construction.first_value, 0)?;
+    if construction.radius_kind == 1 {
+        let second = construction.second_value.as_ref().ok_or_else(|| {
+            CodecError::Malformed("two-radii variable blend lacks its second value".into())
+        })?;
+        native_variable_blend_value(bytes, second, 0)?;
+        if let Some(chamfer) = &construction.chamfer {
+            native_enum(bytes, chamfer.variable_chamfer);
+            native_enum(bytes, chamfer.chamfer_type);
+            native_variable_blend_value(bytes, &chamfer.value, 0)?;
+        }
+    } else if construction.radius_kind == 0 {
+        if construction.second_value.is_some() || construction.chamfer.is_some() {
+            return Err(CodecError::Malformed(
+                "single-radius variable blend carries two-radii payloads".into(),
+            ));
+        }
+        if let Some(tail) = &construction.single_radius_tail {
+            match &tail.selector {
+                LoftBridgeToken::Integer(value) => native_i64(bytes, *value),
+                _ => {
+                    return Err(CodecError::NotImplemented(
+                        "variable single-radius selector must be an integer".into(),
+                    ));
+                }
+            }
+            for parameter in tail.parameters {
+                native_f64(bytes, parameter);
+            }
+        }
+    } else {
+        return Err(CodecError::Malformed(
+            "variable blend radius kind must be 0 or 1".into(),
+        ));
+    }
+    for range in [construction.u_range, construction.v_range] {
+        native_f64(bytes, range[0]);
+        native_f64(bytes, range[1]);
+    }
+    native_i64(bytes, construction.shape_prefix);
+    native_f64(bytes, construction.shape_parameter);
+    native_f64(bytes, construction.shape_length / 10.0);
+    native_i64(bytes, construction.shape_tail);
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for extension in construction.shape_extensions {
+        native_i64(bytes, extension);
+    }
+    native_nurbs_curve(
+        bytes,
+        native_loft_curve(target, &construction.secondary_curve)?,
+    )?;
+    bytes.push(native_bool(construction.convexity != 0));
+    bytes.push(native_bool(construction.render_blend != 0));
+    for value in construction.post_range {
+        native_f64(bytes, value);
+    }
+    native_nurbs_curve(bytes, native_loft_curve(target, &construction.post_curve)?)?;
+    native_optional_pcurve(bytes, construction.post_pcurve.as_ref())?;
+    bytes.push(0x10);
+    Ok(())
+}
+
+fn native_rolling_ball_side(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    side: &cadmpeg_ir::geometry::RollingBallSide,
+) -> Result<(), CodecError> {
+    native_string(bytes, &side.label)?;
+    if let Some(id) = &side.surface {
+        let surface = target
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == *id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("rolling-ball support {id} is missing"))
+            })?;
+        native_embedded_surface(bytes, &surface.geometry)?;
+    } else {
+        native_ident(bytes, "null_surface")?;
+    }
+    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    native_optional_pcurve(bytes, side.pcurve.as_ref())?;
+    native_point(
+        bytes,
+        [
+            side.location.x / 10.0,
+            side.location.y / 10.0,
+            side.location.z / 10.0,
+        ],
+    );
+    native_optional_pcurve(bytes, side.secondary_pcurve.as_ref())?;
+    if let Some(id) = &side.exact_support {
+        let surface = target
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == *id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("rolling-ball exact support {id} is missing"))
+            })?;
+        let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
+            return Err(CodecError::NotImplemented(
+                "rolling-ball exact support must be NURBS".into(),
+            ));
+        };
+        native_ident(bytes, "spline")?;
+        native_nurbs_surface(bytes, surface)?;
+    } else {
+        native_ident(bytes, "nullbs")?;
+    }
+    Ok(())
+}
+
+fn native_rolling_ball_third_side(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    side: &cadmpeg_ir::geometry::RollingBallThirdSide,
+) -> Result<(), CodecError> {
+    native_string(bytes, &side.label)?;
+    let surface = target
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == side.surface)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "rolling-ball third support {} is missing",
+                side.surface
+            ))
+        })?;
+    native_embedded_surface(bytes, &surface.geometry)?;
+    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    native_optional_pcurve(bytes, side.pcurve.as_ref())?;
+    native_vector(
+        bytes,
+        [side.direction.x, side.direction.y, side.direction.z],
+    );
+    native_optional_pcurve(bytes, side.secondary_pcurve.as_ref())?;
+    native_i64(bytes, side.extension);
+    native_optional_pcurve(bytes, side.tertiary_pcurve.as_ref())?;
+    bytes.push(native_bool(side.flag));
+    Ok(())
+}
+
+fn encode_complete_native_rolling_ball(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::RollingBallConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(
+        bytes,
+        if construction.third.is_some() {
+            "sss_blend_spl_sur"
+        } else {
+            "rb_blend_spl_sur"
+        },
+    )?;
+    for side in construction.sides.iter() {
+        native_rolling_ball_side(bytes, target, side)?;
+    }
+    native_nurbs_curve(bytes, native_loft_curve(target, &construction.slice)?)?;
+    for offset in construction.offsets {
+        native_f64(bytes, offset / 10.0);
+    }
+    match construction.radius_selector {
+        cadmpeg_ir::geometry::RollingBallRadiusSelector::None => native_enum(bytes, -1),
+        cadmpeg_ir::geometry::RollingBallRadiusSelector::Value { value } => {
+            native_f64(bytes, value);
+        }
+    }
+    for range in [construction.u_range, construction.v_range] {
+        native_f64(bytes, range[0]);
+        native_f64(bytes, range[1]);
+    }
+    for parameter in construction.parameters {
+        native_f64(bytes, parameter);
+    }
+    native_i64(bytes, construction.tail);
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for values in &construction.discontinuities {
+        native_i64(
+            bytes,
+            i64::try_from(values.len()).map_err(|_| {
+                CodecError::NotImplemented("rolling-ball discontinuity count exceeds i64".into())
+            })?,
+        );
+        for value in values {
+            native_f64(bytes, *value);
+        }
+    }
+    if let Some(third) = &construction.third {
+        native_rolling_ball_third_side(bytes, target, third)?;
+    }
     bytes.push(0x10);
     Ok(())
 }
@@ -5267,14 +6503,32 @@ fn validate_act_appearance_bindings(baseline: &CadIr, target: &CadIr) -> Result<
             "F3D ACT regeneration requires the unchanged appearance-binding count".into(),
         ));
     }
+    let target_bindings = target
+        .model
+        .appearance_bindings
+        .iter()
+        .map(|binding| {
+            (
+                (binding.target.clone(), binding.appearance.clone()),
+                binding,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let mut baseline_entities_by_source = HashMap::<_, Vec<_>>::new();
+    for entity in baseline_entities {
+        baseline_entities_by_source
+            .entry(entity.entity_id.as_str())
+            .or_default()
+            .push(entity);
+    }
+    let target_entities_by_id = target_entities
+        .iter()
+        .map(|entity| (entity.id.as_str(), entity))
+        .collect::<HashMap<_, _>>();
     for before in &baseline.model.appearance_bindings {
-        let after = target
-            .model
-            .appearance_bindings
-            .iter()
-            .find(|binding| {
-                binding.target == before.target && binding.appearance == before.appearance
-            })
+        let after = target_bindings
+            .get(&(before.target.clone(), before.appearance.clone()))
+            .copied()
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "F3D appearance binding target or appearance changed: {}",
@@ -5296,14 +6550,21 @@ fn validate_act_appearance_bindings(baseline: &CadIr, target: &CadIr) -> Result<
         if after == before {
             continue;
         }
-        let before_entity = baseline_entities.iter().find(|entity| {
-            before.source_entity_id.as_deref() == Some(entity.entity_id.as_str())
-                && before.channels == entity.channels
-        });
+        let before_entity = before
+            .source_entity_id
+            .as_deref()
+            .and_then(|source| baseline_entities_by_source.get(source))
+            .and_then(|entities| {
+                entities
+                    .iter()
+                    .copied()
+                    .find(|entity| before.channels == entity.channels)
+            });
         let after_entity = before_entity.and_then(|before_entity| {
-            target_entities
-                .iter()
-                .find(|entity| entity.id == before_entity.id && after.channels == entity.channels)
+            target_entities_by_id
+                .get(before_entity.id.as_str())
+                .copied()
+                .filter(|entity| after.channels == entity.channels)
         });
         if before_entity.is_none() || after_entity.is_none() {
             return Err(CodecError::NotImplemented(format!(
@@ -5323,37 +6584,56 @@ fn validate_act_appearance_bindings(baseline: &CadIr, target: &CadIr) -> Result<
             )));
         }
     }
-    for (before, after) in baseline_entities.iter().zip(target_entities) {
-        let derived_binding = baseline.model.appearance_bindings.iter().any(|binding| {
-            binding.source_entity_id.as_deref() == Some(before.entity_id.as_str())
-                && binding.channels == before.channels
+    let derived_bindings = baseline
+        .model
+        .appearance_bindings
+        .iter()
+        .filter_map(|binding| {
+            Some((
+                binding.source_entity_id.clone()?,
+                binding.channels.clone(),
+                binding,
+            ))
+        })
+        .fold(HashMap::<_, Vec<_>>::new(), |mut grouped, entry| {
+            grouped.entry(entry.0).or_default().push((entry.1, entry.2));
+            grouped
         });
-        let assignment_synchronized = target
-            .native
-            .f3d
-            .as_ref()
-            .into_iter()
-            .flat_map(|native| &native.design_material_assignments)
-            .any(|assignment| assignment.entity_id == after.entity_id);
+    let assignment_entities = target
+        .native
+        .f3d
+        .as_ref()
+        .into_iter()
+        .flat_map(|native| &native.design_material_assignments)
+        .map(|assignment| assignment.entity_id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    for (before, after) in baseline_entities.iter().zip(target_entities) {
+        let matching_bindings = derived_bindings.get(&before.entity_id);
+        let derived_binding = matching_bindings.is_some_and(|bindings| {
+            bindings
+                .iter()
+                .any(|(channels, _)| channels == &before.channels)
+        });
+        let assignment_synchronized = assignment_entities.contains(after.entity_id.as_str());
         if before.entity_id != after.entity_id && derived_binding && !assignment_synchronized {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity {} changed without its material-assignment carrier",
                 before.id
             )));
         }
-        let synchronized = baseline
-            .model
-            .appearance_bindings
-            .iter()
-            .any(|before_binding| {
-                before_binding.source_entity_id.as_deref() == Some(before.entity_id.as_str())
-                    && target.model.appearance_bindings.iter().any(|binding| {
-                        binding.target == before_binding.target
-                            && binding.appearance == before_binding.appearance
-                            && binding.source_entity_id.as_deref() == Some(after.entity_id.as_str())
+        let synchronized = matching_bindings.is_some_and(|bindings| {
+            bindings.iter().any(|(_, before_binding)| {
+                target_bindings
+                    .get(&(
+                        before_binding.target.clone(),
+                        before_binding.appearance.clone(),
+                    ))
+                    .is_some_and(|binding| {
+                        binding.source_entity_id.as_deref() == Some(after.entity_id.as_str())
                             && binding.channels == after.channels
                     })
-            });
+            })
+        });
         if (before.entity_id != after.entity_id || before.channels != after.channels)
             && derived_binding
             && !synchronized
@@ -7642,16 +8922,19 @@ fn validate_procedural_surface_edits(
                     spine: before_spine,
                     radius: before_radius,
                     cross_section: before_cross_section,
+                    native: before_native,
                 },
                 ProceduralSurfaceDefinition::Blend {
                     supports: after_supports,
                     spine: after_spine,
                     radius: after_radius,
                     cross_section: after_cross_section,
+                    native: after_native,
                 },
             ) if before_supports == after_supports
                 && before_spine == after_spine
-                && before_cross_section == after_cross_section =>
+                && before_cross_section == after_cross_section
+                && before_native == after_native =>
             {
                 let values = match after_radius {
                     BlendRadiusLaw::Constant { signed_radius } => [*signed_radius; 2],

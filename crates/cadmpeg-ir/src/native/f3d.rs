@@ -47,6 +47,36 @@ macro_rules! sort_f3d_arenas {
             pub(crate) fn finalize(&mut self) {
                 $(self.$field.sort_by(|left, right| left.id.cmp(&right.id));)*
             }
+
+            /// Return counts for every non-empty native arena.
+            pub(crate) fn loss_counts(&self) -> Vec<(&'static str, usize)> {
+                let mut counts = Vec::new();
+                $(
+                    if !self.$field.is_empty() {
+                        counts.push((stringify!($field), self.$field.len()));
+                    }
+                )*
+                let states = self.asm_histories.iter().flat_map(|history| &history.states);
+                let state_count = states.clone().count();
+                let board_count = states.clone().map(|state| state.bulletin_boards.len()).sum();
+                let change_count = states
+                    .clone()
+                    .flat_map(|state| &state.bulletin_boards)
+                    .map(|board| board.changes.len())
+                    .sum();
+                let record_count = states.map(|state| state.records.len()).sum();
+                for (kind, count) in [
+                    ("asm_delta_states", state_count),
+                    ("asm_bulletin_boards", board_count),
+                    ("asm_entity_changes", change_count),
+                    ("asm_history_records", record_count),
+                ] {
+                    if count != 0 {
+                        counts.push((kind, count));
+                    }
+                }
+                counts
+            }
         }
     };
 }

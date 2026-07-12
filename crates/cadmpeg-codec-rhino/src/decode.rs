@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write;
-
 use cadmpeg_ir::annotations::ExactnessNote;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -12,6 +9,7 @@ use cadmpeg_ir::geometry::{
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
     SurfaceGeometry,
 };
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
@@ -24,7 +22,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::LossProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
-use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chunks::ArchiveVersion;
 use crate::container::Scan;
@@ -288,15 +286,10 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn append_links(&mut self, source_order: usize, links: &[String]) -> bool {
-        let Some(unknown) = self
-            .ir
-            .unknowns
-            .get(source_order)
-            .map(|record| record.id.clone())
-        else {
+        let Some(record) = self.ir.unknowns.get_mut(source_order) else {
             return false;
         };
-        append_record_links(&mut self.ir, &unknown, links);
+        append_links_to_record(record, links);
         true
     }
 
@@ -757,11 +750,11 @@ impl<'a> DecodeContext<'a> {
         let mut owned_surfaces = BTreeSet::new();
         for edge in &self.ir.model.edges[before.edges..] {
             if let Some(curve) = &edge.curve {
-                owned_curves.insert(curve.to_string());
+                owned_curves.insert(curve.clone());
             }
         }
         for face in &self.ir.model.faces[before.faces..] {
-            owned_surfaces.insert(face.surface.to_string());
+            owned_surfaces.insert(face.surface.clone());
         }
         let mut links = Vec::new();
         let mut derived_ids = Vec::new();
@@ -777,14 +770,14 @@ impl<'a> DecodeContext<'a> {
             }
         }
         for curve in &mut self.ir.model.curves[before.curves..] {
-            if !owned_curves.contains(&curve.id.to_string()) {
+            if !owned_curves.contains(&curve.id) {
                 transform_curve(curve, transform)?;
                 links.push(curve.id.to_string());
                 derived_ids.push(curve.id.to_string());
             }
         }
         for surface in &mut self.ir.model.surfaces[before.surfaces..] {
-            if !owned_surfaces.contains(&surface.id.to_string()) {
+            if !owned_surfaces.contains(&surface.id) {
                 transform_surface(surface, transform)?;
                 links.push(surface.id.to_string());
                 derived_ids.push(surface.id.to_string());
@@ -922,14 +915,6 @@ impl<'a> DecodeContext<'a> {
         let Some(identity) = object.identity.as_ref() else {
             return false;
         };
-        let Some(unknown) = self
-            .ir
-            .unknowns
-            .get(source_order)
-            .map(|record| record.id.clone())
-        else {
-            return false;
-        };
         surface.source_object = Some(self.source_association(identity));
         let id = surface.id.to_string();
         let result = self.validate_candidate(|candidate| {
@@ -945,7 +930,7 @@ impl<'a> DecodeContext<'a> {
                     fields: BTreeMap::new(),
                 },
             );
-            append_record_links(candidate, &unknown, std::slice::from_ref(&id));
+            append_record_links_at(candidate, source_order, std::slice::from_ref(&id));
         });
         if let Err(findings) = result {
             self.scan_warning(
@@ -1406,9 +1391,9 @@ impl<'a> DecodeContext<'a> {
                     children,
                 } => {
                     return self.commit_procedural_surface(
+                        source_order,
                         &key,
                         association,
-                        &unknown,
                         geometry,
                         definition,
                         children,
@@ -1422,9 +1407,9 @@ impl<'a> DecodeContext<'a> {
 
     fn commit_procedural_surface(
         &mut self,
+        source_order: usize,
         key: &str,
         association: SourceObjectAssociation,
-        unknown: &UnknownId,
         geometry: cadmpeg_ir::geometry::NurbsSurface,
         definition: crate::surfaces::DecodedProceduralSurface,
         children: Vec<crate::curves::DecodedCurve>,
@@ -1437,6 +1422,13 @@ impl<'a> DecodeContext<'a> {
             return false;
         }
         let mut candidate = self.lightweight_candidate();
+        let Some(unknown) = candidate
+            .unknowns
+            .get(source_order)
+            .map(|record| record.id.clone())
+        else {
+            return false;
+        };
         let mut child_ids = Vec::with_capacity(children.len());
         for (index, child) in children.into_iter().enumerate() {
             let path = match (expected_children, index) {
@@ -1500,7 +1492,7 @@ impl<'a> DecodeContext<'a> {
                 },
             );
         }
-        append_record_links(&mut candidate, unknown, &[surface_id.to_string()]);
+        append_record_links_at(&mut candidate, source_order, &[surface_id.to_string()]);
         if let Err(findings) = self.commit_valid_candidate(candidate) {
             self.phase_warnings.push(format!(
                 "procedural-surface: candidate rejected by IR validation: {findings}"
@@ -1592,7 +1584,7 @@ impl<'a> DecodeContext<'a> {
             links.push(mesh.tessellation.id.clone());
             candidate.model.tessellations.push(mesh.tessellation);
         }
-        append_record_links(&mut candidate, &unknown, &links);
+        append_record_links_at(&mut candidate, source_order, &links);
         if let Err(findings) = self.commit_valid_candidate(candidate) {
             self.scan_warning(
                 source_order,
@@ -1637,7 +1629,7 @@ impl<'a> DecodeContext<'a> {
                     fields: BTreeMap::new(),
                 },
             );
-            append_record_links(candidate, &unknown, &[id.to_string()]);
+            append_record_links_at(candidate, source_order, &[id.to_string()]);
         }) {
             self.scan_warning(
                 source_order,
@@ -1802,7 +1794,7 @@ impl<'a> DecodeContext<'a> {
                 let fallback = staged.clone().free_carrier_fallback("IR validation");
                 let validation = self.validate_candidate(|candidate| {
                     staged.apply(candidate);
-                    append_record_links(candidate, &unknown, &links);
+                    append_record_links_at(candidate, source_order, &links);
                 });
                 if validation.is_ok() {
                     for warning in warnings {
@@ -1834,7 +1826,7 @@ impl<'a> DecodeContext<'a> {
                     let fallback_links = fallback.links.clone();
                     let fallback_validation = self.validate_candidate(|candidate| {
                         fallback.apply(candidate);
-                        append_record_links(candidate, &unknown, &fallback_links);
+                        append_record_links_at(candidate, source_order, &fallback_links);
                     });
                     if fallback_validation.is_ok() {
                         self.geometry_transferred |= emitted_geometry;
@@ -1884,11 +1876,22 @@ impl<'a> DecodeContext<'a> {
     }
 }
 
+#[cfg(test)]
 fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
     let Some(record) = ir.unknowns.iter_mut().find(|record| record.id == *unknown) else {
         return;
     };
-    let unknown = unknown.to_string();
+    append_links_to_record(record, links);
+}
+
+fn append_record_links_at(ir: &mut CadIr, source_order: usize, links: &[String]) {
+    if let Some(record) = ir.unknowns.get_mut(source_order) {
+        append_links_to_record(record, links);
+    }
+}
+
+fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {
+    let unknown = record.id.to_string();
     let mut additions = links
         .iter()
         .filter(|link| *link != &unknown)
@@ -3729,15 +3732,6 @@ fn source_meta(scan: &Scan) -> SourceMeta {
         format: "rhino".to_string(),
         attributes,
     }
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut result = String::with_capacity(64);
-    for byte in digest {
-        write!(&mut result, "{byte:02x}").expect("writing to a String cannot fail");
-    }
-    result
 }
 
 #[cfg(test)]

@@ -47,6 +47,99 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
     for procedural in &ir.model.procedural_surfaces {
         surfaces.insert(&procedural.surface.0);
         match &procedural.definition {
+            ProceduralSurfaceDefinition::Exact { .. } => {}
+            ProceduralSurfaceDefinition::Compound { components, .. } => {
+                surfaces.extend(components.iter().map(|component| component.0.as_str()));
+            }
+            ProceduralSurfaceDefinition::Taper {
+                support, reference, ..
+            } => {
+                surfaces.insert(&support.0);
+                curves.insert(&reference.0);
+            }
+            ProceduralSurfaceDefinition::Loft { sections, .. } => {
+                for entry in sections.iter().flat_map(|section| &section.entries) {
+                    curves.insert(&entry.path.curve.0);
+                    curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.0.as_str()));
+                    for member in &entry.profile {
+                        curves.insert(&member.curve.0);
+                        surfaces.insert(&member.data.surface.0);
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::CompoundLoft { construction } => {
+                let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
+                scales.extend(construction.fifth_scale.iter().map(Box::as_ref));
+                match &construction.tail {
+                    crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
+                        scales.extend(scale.iter().map(Box::as_ref));
+                        curves.insert(&curve.0);
+                    }
+                    crate::geometry::CompoundLoftTail::Seven {
+                        first_scale,
+                        second_scale,
+                        ..
+                    } => {
+                        scales.extend(first_scale.iter().map(Box::as_ref));
+                        scales.extend(second_scale.iter().map(Box::as_ref));
+                    }
+                    crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
+                        if let crate::geometry::CompoundLoftDirection::Curve { curve } = direction {
+                            curves.insert(&curve.0);
+                        }
+                    }
+                }
+                for scale in scales {
+                    curves.insert(&scale.path.0);
+                    curves.extend(scale.auxiliaries.iter().map(|curve| curve.0.as_str()));
+                    for member in &scale.members {
+                        curves.insert(&member.curve.0);
+                        surfaces.insert(&member.data.surface.0);
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::G2Blend { construction } => {
+                for side in [&construction.first, &construction.second] {
+                    surfaces.insert(&side.surface.0);
+                    curves.insert(&side.curve.0);
+                }
+                surfaces.insert(&construction.second_exact_surface.0);
+                curves.insert(&construction.center_curve.0);
+                if let crate::geometry::G2BlendFirstShape::Full {
+                    surface: Some(surface),
+                    ..
+                } = &construction.first_shape
+                {
+                    surfaces.insert(&surface.0);
+                }
+            }
+            ProceduralSurfaceDefinition::VariableBlend { construction } => {
+                for side in construction.sides.iter() {
+                    surfaces.insert(&side.surface.0);
+                    curves.insert(&side.curve.0);
+                }
+                curves.extend([
+                    construction.primary_curve.0.as_str(),
+                    construction.secondary_curve.0.as_str(),
+                    construction.post_curve.0.as_str(),
+                ]);
+            }
+            ProceduralSurfaceDefinition::VertexBlend { construction } => {
+                for boundary in &construction.boundaries {
+                    match &boundary.geometry {
+                        crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
+                        | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
+                            curves.insert(&curve.0);
+                        }
+                        crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
+                            surface, ..
+                        } => {
+                            surfaces.insert(&surface.0);
+                        }
+                        crate::geometry::VertexBlendBoundaryGeometry::Degenerate { .. } => {}
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 curves.insert(&directrix.0);
@@ -64,13 +157,32 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 curves.extend([first.0.as_str(), second.0.as_str()]);
             }
             ProceduralSurfaceDefinition::Blend {
-                supports, spine, ..
+                supports,
+                spine,
+                native,
+                ..
             } => {
                 for support in supports.iter().flatten() {
                     surfaces.insert(&support.surface.0);
                 }
                 if let Some(spine) = spine {
                     curves.insert(&spine.0);
+                }
+                if let Some(native) = native {
+                    curves.insert(&native.slice.0);
+                    for side in native.sides.iter() {
+                        curves.insert(&side.curve.0);
+                        if let Some(surface) = &side.surface {
+                            surfaces.insert(&surface.0);
+                        }
+                        if let Some(surface) = &side.exact_support {
+                            surfaces.insert(&surface.0);
+                        }
+                    }
+                    if let Some(side) = &native.third {
+                        curves.insert(&side.curve.0);
+                        surfaces.insert(&side.surface.0);
+                    }
                 }
             }
             ProceduralSurfaceDefinition::Unknown { .. } => {}

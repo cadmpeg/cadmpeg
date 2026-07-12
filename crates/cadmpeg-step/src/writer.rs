@@ -21,7 +21,7 @@ impl std::fmt::Display for Ref {
 pub struct Emitter {
     next: u64,
     lines: Vec<String>,
-    counts: BTreeMap<String, usize>,
+    counts: BTreeMap<&'static str, usize>,
     /// Leaf instances keyed by encoded type and parameters.
     interned: HashMap<String, Ref>,
 }
@@ -40,27 +40,27 @@ impl Emitter {
     ///
     /// `type_` is also the entity-count key. Complex instances use their leading
     /// keyword as the key.
-    pub fn emit(&mut self, type_: &str, params: &str) -> Ref {
+    pub fn emit(&mut self, type_: &'static str, params: &str) -> Ref {
         let id = self.next;
         self.next += 1;
         self.lines.push(format!("#{id} = {type_}({params});"));
-        *self.counts.entry(type_.to_string()).or_insert(0) += 1;
+        *self.counts.entry(type_).or_insert(0) += 1;
         Ref(id)
     }
 
     /// Append a preformatted entity or complex-instance body.
     ///
     /// `tally` supplies its entity-count key.
-    pub fn emit_raw(&mut self, tally: &str, body: &str) -> Ref {
+    pub fn emit_raw(&mut self, tally: &'static str, body: &str) -> Ref {
         let id = self.next;
         self.next += 1;
         self.lines.push(format!("#{id} = {body};"));
-        *self.counts.entry(tally.to_string()).or_insert(0) += 1;
+        *self.counts.entry(tally).or_insert(0) += 1;
         Ref(id)
     }
 
     /// Emit a value-like leaf or reuse an identical encoded instance.
-    pub fn emit_interned(&mut self, type_: &str, params: &str) -> Ref {
+    pub fn emit_interned(&mut self, type_: &'static str, params: &str) -> Ref {
         let key = format!("{type_}|{params}");
         if let Some(r) = self.interned.get(&key) {
             return *r;
@@ -70,8 +70,11 @@ impl Emitter {
         r
     }
 
-    pub fn counts(&self) -> &BTreeMap<String, usize> {
-        &self.counts
+    pub fn counts(&self) -> BTreeMap<String, usize> {
+        self.counts
+            .iter()
+            .map(|(type_, count)| ((*type_).to_string(), *count))
+            .collect()
     }
 
     pub fn total(&self) -> usize {
@@ -147,12 +150,14 @@ pub fn string(s: &str) -> String {
 
 /// Join instance references into a Part 21 aggregate such as `(#1,#2,#3)`.
 pub fn refs(items: &[Ref]) -> String {
+    use std::fmt::Write as _;
+
     let mut out = String::from("(");
     for (i, r) in items.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
-        out.push_str(&r.to_string());
+        write!(out, "{r}").expect("writing to a String cannot fail");
     }
     out.push(')');
     out

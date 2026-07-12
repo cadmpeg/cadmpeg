@@ -13,6 +13,7 @@
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::native::F3dNative;
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
@@ -56,7 +57,7 @@ pub fn decode(
             }
             let annotation_records = std::mem::take(&mut brep.annotation_records);
             let mut ir = build_geometry_ir(&scan, &active, brep);
-            if let Some(history) = decode_asm_history(reader, &active)? {
+            if let Some(history) = decode_asm_history(&scan, &active)? {
                 ir.native
                     .f3d
                     .get_or_insert_with(F3dNative::default)
@@ -100,22 +101,19 @@ pub fn decode(
                     .get_or_insert_with(F3dNative::default)
                     .design_entity_headers,
             )?;
-            let (record_headers, entity_headers) = {
+            let sketch_relations = {
                 let native = ir.native.f3d.get_or_insert_with(F3dNative::default);
-                (
-                    native.design_record_headers.clone(),
-                    native.design_entity_headers.clone(),
-                )
+                crate::design::decode_sketch_relations(
+                    reader,
+                    &scan,
+                    &native.design_record_headers,
+                    &native.design_entity_headers,
+                )?
             };
             ir.native
                 .f3d
                 .get_or_insert_with(F3dNative::default)
-                .sketch_relations = crate::design::decode_sketch_relations(
-                reader,
-                &scan,
-                &record_headers,
-                &entity_headers,
-            )?;
+                .sketch_relations = sketch_relations;
             extend_related_design_records(reader, &scan, &mut ir)?;
             ir.native
                 .f3d
@@ -191,7 +189,7 @@ pub fn decode(
     // No decodable SAB stream: use container metadata.
     let mut ir = build_metadata_ir(&scan);
     if let Some(active) = container::select_active_brep(&scan) {
-        if let Some(history) = decode_asm_history(reader, active)? {
+        if let Some(history) = decode_asm_history(&scan, active)? {
             ir.native
                 .f3d
                 .get_or_insert_with(F3dNative::default)
@@ -234,18 +232,19 @@ pub fn decode(
             .get_or_insert_with(F3dNative::default)
             .design_entity_headers,
     )?;
-    let (record_headers, entity_headers) = {
+    let sketch_relations = {
         let native = ir.native.f3d.get_or_insert_with(F3dNative::default);
-        (
-            native.design_record_headers.clone(),
-            native.design_entity_headers.clone(),
-        )
+        crate::design::decode_sketch_relations(
+            reader,
+            &scan,
+            &native.design_record_headers,
+            &native.design_entity_headers,
+        )?
     };
     ir.native
         .f3d
         .get_or_insert_with(F3dNative::default)
-        .sketch_relations =
-        crate::design::decode_sketch_relations(reader, &scan, &record_headers, &entity_headers)?;
+        .sketch_relations = sketch_relations;
     extend_related_design_records(reader, &scan, &mut ir)?;
     ir.native
         .f3d
@@ -326,18 +325,6 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
             .expect("CadIr serialization")
             .as_bytes(),
     )
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-
-    Sha256::digest(bytes)
-        .iter()
-        .fold(String::new(), |mut output, byte| {
-            use std::fmt::Write as _;
-            let _ = write!(output, "{byte:02x}");
-            output
-        })
 }
 
 fn populate_annotations(
@@ -466,12 +453,12 @@ fn trailing_offset(id: &str) -> u64 {
 }
 
 fn decode_asm_history(
-    reader: &mut dyn ReadSeek,
+    scan: &ContainerScan,
     active: &BrepFacts,
 ) -> Result<Option<cadmpeg_ir::history::AsmHistory>, CodecError> {
     let width = active.header.as_ref().map_or(8, |h| usize::from(h.width));
-    let bytes = container::decompress_entry(reader, &active.name)?;
-    Ok(crate::history::decode(&bytes, &active.name, width))
+    let bytes = scan.entry_bytes(&active.name)?;
+    Ok(crate::history::decode(bytes, &active.name, width))
 }
 
 fn extend_related_design_records(
@@ -517,7 +504,7 @@ fn extend_related_design_records(
 /// is not a decodable `BinaryFile4`/`BinaryFile8` SAB, or frames but yields no
 /// geometry (leaving the caller to fall back to the container-metadata IR).
 fn try_decode_brep(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     active: &BrepFacts,
 ) -> Result<Option<(Brep, DecodeReport)>, CodecError> {
@@ -526,18 +513,18 @@ fn try_decode_brep(
         return Ok(None);
     }
 
-    let bytes = container::decompress_entry(reader, &active.name)?;
-    let Some(start) = asm_header::record_stream_start(&bytes) else {
+    let bytes = scan.entry_bytes(&active.name)?;
+    let Some(start) = asm_header::record_stream_start(bytes) else {
         return Ok(None);
     };
     let limit = active.delta_state_offset.unwrap_or(bytes.len());
 
-    let records = match sab::frame(&bytes, start, limit, usize::from(width)) {
+    let records = match sab::frame(bytes, start, limit, usize::from(width)) {
         Ok(r) if !r.is_empty() => r,
         _ => return Ok(None),
     };
 
-    let decoded = brep::decode(&records, &bytes, &active.name);
+    let decoded = brep::decode(&records, bytes, &active.name);
     if decoded.surfaces.is_empty() && decoded.points.is_empty() && decoded.faces.is_empty() {
         return Ok(None);
     }
@@ -884,6 +871,12 @@ fn resolve_face_appearance_bindings(
             }
         }
     }
+    let mut bound_targets = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .map(|binding| binding.target.clone())
+        .collect::<std::collections::HashSet<_>>();
     for assignment in face_assignments {
         let Some(faces) = faces_by_guid.get(assignment.face_guid.as_str()) else {
             continue;
@@ -898,12 +891,7 @@ fn resolve_face_appearance_bindings(
         };
         for face in faces {
             let target = AppearanceTarget::Face(face.clone());
-            if ir
-                .model
-                .appearance_bindings
-                .iter()
-                .any(|binding| binding.target == target)
-            {
+            if !bound_targets.insert(target.clone()) {
                 continue;
             }
             ir.model.appearance_bindings.push(AppearanceBinding {

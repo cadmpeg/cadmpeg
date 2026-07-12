@@ -15,13 +15,6 @@ pub enum LengthUnit {
     Millimeter,
 }
 
-impl LengthUnit {
-    /// Scale factor to convert a length in `self` to millimeters.
-    pub fn to_millimeters(self) -> f64 {
-        1.0
-    }
-}
-
 /// Unit declaration for stored document coordinates.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Units {

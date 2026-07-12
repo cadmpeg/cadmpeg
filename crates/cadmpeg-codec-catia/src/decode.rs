@@ -11,12 +11,10 @@
 //! Partial paths preserve the reconstructed B-rep stream or complete file as an
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Write as _;
-
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
     UnknownId, VertexId,
@@ -30,7 +28,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
-use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::container::{self, ContainerScan};
 use crate::geometry;
@@ -759,12 +757,19 @@ fn attach_standard_topology(
     if supports.len() != topology.edge_rows().len() {
         return false;
     }
+    let surface_indices = ir
+        .model
+        .surfaces
+        .iter()
+        .enumerate()
+        .map(|(index, surface)| (surface.id.clone(), index))
+        .collect::<HashMap<_, _>>();
     let mut endpoint_pairs = Vec::with_capacity(supports.len());
     for support in &supports {
-        let Some(surface0) = face_surface(ir, bindings, support.faces[0]) else {
+        let Some(surface0) = face_surface(ir, bindings, &surface_indices, support.faces[0]) else {
             return false;
         };
-        let Some(surface1) = face_surface(ir, bindings, support.faces[1]) else {
+        let Some(surface1) = face_surface(ir, bindings, &surface_indices, support.faces[1]) else {
             return false;
         };
         let candidates: Vec<usize> = ir
@@ -794,8 +799,15 @@ fn attach_standard_topology(
     {
         let start_point = point_assignment[logical_vertices[0]];
         let end_point = point_assignment[logical_vertices[1]];
-        let curve =
-            build_standard_edge_curve(ir, annotations, bindings, support, start_point, end_point);
+        let curve = build_standard_edge_curve(
+            ir,
+            annotations,
+            bindings,
+            &surface_indices,
+            support,
+            start_point,
+            end_point,
+        );
         let id = EdgeId(format!("catia:standard:edge#{edge_index}"));
         annotate(
             annotations,
@@ -898,10 +910,11 @@ fn attach_standard_topology(
 fn face_surface<'a>(
     ir: &'a CadIr,
     bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
     face: usize,
 ) -> Option<&'a Surface> {
     let id = &bindings.get(face)?.0;
-    ir.model.surfaces.iter().find(|surface| surface.id == *id)
+    ir.model.surfaces.get(*surface_indices.get(id)?)
 }
 
 fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
@@ -968,6 +981,7 @@ fn build_standard_edge_curve(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
     support: &geometry::StandardCurveSupport,
     start_point: usize,
     end_point: usize,
@@ -990,7 +1004,7 @@ fn build_standard_edge_curve(
             let axes: Vec<Vector3> = support
                 .faces
                 .iter()
-                .filter_map(|face| face_surface(ir, bindings, *face))
+                .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
                 .filter_map(surface_axis)
                 .collect();
             let axis = *axes.first()?;
@@ -1455,15 +1469,4 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         losses,
         notes: summary.notes,
     }
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let mut h = Sha256::new();
-    h.update(bytes);
-    let digest = h.finalize();
-    let mut s = String::with_capacity(digest.len() * 2);
-    for b in digest {
-        let _ = write!(s, "{b:02x}");
-    }
-    s
 }

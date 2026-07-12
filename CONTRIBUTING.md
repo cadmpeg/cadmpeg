@@ -68,7 +68,7 @@ Run the stable CI gate from the repository root:
 cargo fmt --all --check
 cargo clippy --workspace -- -D warnings -W missing-docs
 cargo build --workspace
-cargo test --workspace
+cargo test-fast
 ```
 
 The excluded fuzz crate uses Rust nightly and `cargo-fuzz`. The scheduled [fuzz smoke workflow](.github/workflows/fuzz-smoke.yml) compiles every fuzz target without running it:
@@ -88,7 +88,7 @@ See [`seeds/README.md`](seeds/README.md) for seed regeneration and local fuzz-ru
 - [ ] `cargo fmt --all --check` passes.
 - [ ] `cargo clippy --workspace -- -D warnings -W missing-docs` passes.
 - [ ] `cargo build --workspace` passes.
-- [ ] `cargo test --workspace` passes.
+- [ ] `cargo test-fast` and `cargo test --workspace --doc` pass.
 - [ ] No CAD binaries committed outside the corpus donation pipeline or the generated fuzz seeds (see [`seeds/README.md`](seeds/README.md)).
 - [ ] IR exactness is classified as `ByteExact`, `Derived`, `Inferred`, or `Unknown` accurately (decoder PRs).
 

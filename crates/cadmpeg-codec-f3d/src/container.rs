@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Read, SeekFrom};
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
-use sha2::{Digest, Sha256};
+use cadmpeg_ir::hash::sha256_hex;
 use zip::CompressionMethod;
 
 use crate::asm_header;
@@ -132,6 +132,18 @@ pub struct ContainerScan {
     pub breps: Vec<BrepFacts>,
     /// The asset-folder prefix observed from BREP entry paths, if any.
     pub asset_folder: Option<String>,
+    /// Decompressed entry payloads, keyed by archive path.
+    inflated_entries: BTreeMap<String, Vec<u8>>,
+}
+
+impl ContainerScan {
+    /// Returns a decompressed entry retained during the single archive scan.
+    pub fn entry_bytes(&self, name: &str) -> Result<&[u8], CodecError> {
+        self.inflated_entries
+            .get(name)
+            .map(Vec::as_slice)
+            .ok_or_else(|| CodecError::Malformed(format!("entry {name} not found")))
+    }
 }
 
 /// Read and classify every entry, decoding ASM headers for BREP streams.
@@ -146,6 +158,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
     let mut entries = Vec::with_capacity(archive.len());
     let mut breps = Vec::new();
     let mut asset_folder = None;
+    let mut inflated_entries = BTreeMap::new();
 
     for i in 0..archive.len() {
         let mut file = archive
@@ -156,6 +169,9 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
         let mut attributes = BTreeMap::new();
 
         let is_brep = role == role::BREP_SMBH || role == role::BREP_SMB;
+        let mut buf = Vec::with_capacity(file.size() as usize);
+        file.read_to_end(&mut buf)
+            .map_err(|e| CodecError::Malformed(format!("cannot read {name}: {e}")))?;
         if is_brep {
             if asset_folder.is_none() {
                 if let Some((folder, _)) = name.split_once("/Breps.BlobParts") {
@@ -163,13 +179,9 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
                 }
             }
             // Decompress and read the header fields.
-            let mut buf = Vec::with_capacity(file.size() as usize);
-            file.read_to_end(&mut buf)
-                .map_err(|e| CodecError::Malformed(format!("cannot read {name}: {e}")))?;
-
             let header = asm_header::parse(&buf);
             let delta = asm_header::first_delta_state_offset(&buf);
-            let sha = hex_sha256(&buf);
+            let sha = sha256_hex(&buf);
 
             attributes.insert("asm_magic".to_string(), asm_magic_label(&buf));
             if let Some(h) = &header {
@@ -227,13 +239,14 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
         }
 
         entries.push(ContainerEntry {
-            name,
+            name: name.clone(),
             role: role.to_string(),
             compression: compression_label(file.compression()),
             compressed_size: file.compressed_size(),
             uncompressed_size: file.size(),
             attributes,
         });
+        inflated_entries.insert(name, buf);
     }
 
     Ok(ContainerScan {
@@ -241,6 +254,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
         entries,
         breps,
         asset_folder,
+        inflated_entries,
     })
 }
 
@@ -277,41 +291,12 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     }
 }
 
-/// Decompress a named ZIP entry.
-pub fn decompress_entry(reader: &mut dyn ReadSeek, name: &str) -> Result<Vec<u8>, CodecError> {
-    reader
-        .seek(std::io::SeekFrom::Start(0))
-        .map_err(CodecError::Io)?;
-    let mut archive = zip::ZipArchive::new(reader)
-        .map_err(|e| CodecError::Malformed(format!("not a readable ZIP: {e}")))?;
-    let mut file = archive
-        .by_name(name)
-        .map_err(|e| CodecError::Malformed(format!("entry {name} not found: {e}")))?;
-    let mut buf = Vec::with_capacity(file.size() as usize);
-    file.read_to_end(&mut buf)
-        .map_err(|e| CodecError::Malformed(format!("cannot read {name}: {e}")))?;
-    Ok(buf)
-}
-
 /// Select the first `.smbh` B-rep, falling back to the first `.smb`.
 pub fn select_active_brep(scan: &ContainerScan) -> Option<&BrepFacts> {
     scan.breps
         .iter()
         .find(|b| b.is_smbh)
         .or_else(|| scan.breps.first())
-}
-
-fn hex_sha256(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-
-    let mut h = Sha256::new();
-    h.update(bytes);
-    let digest = h.finalize();
-    let mut s = String::with_capacity(digest.len() * 2);
-    for b in digest {
-        let _ = write!(s, "{b:02x}");
-    }
-    s
 }
 
 fn asm_magic_label(bytes: &[u8]) -> String {

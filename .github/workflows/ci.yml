@@ -49,10 +49,13 @@ jobs:
         # blocking; drop it once the workspace is fully documented.
         run: cargo clippy --workspace -- -D warnings -W missing-docs
 
-      - name: Test
+      - name: Unit and integration tests
         # Builds the full workspace (libs, bins, test harnesses) before
         # running, so a separate `cargo build` step would be redundant.
-        run: cargo test --workspace
+        run: cargo test-fast
+
+      - name: Documentation tests
+        run: cargo test --workspace --doc
 
   # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
   # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.
@@ -153,8 +156,8 @@ jobs:
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
 
-      - name: Test
-        run: cargo test --workspace
+      - name: Unit and integration tests
+        run: cargo test-fast
 
   # RustSec advisory scan of the dependency tree.
   audit:

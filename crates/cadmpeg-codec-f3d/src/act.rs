@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::design::{ActEntity, ActGuid, ActRootComponent};
+use cadmpeg_ir::le::{lp_u32_bytes_at, u32_at, utf16le_at};
 
-use crate::container::{self, role, ContainerScan};
+use crate::container::{role, ContainerScan};
 
 pub struct DecodedAct {
     pub entities: Vec<ActEntity>,
@@ -14,17 +15,17 @@ pub struct DecodedAct {
     pub root_components: Vec<ActRootComponent>,
 }
 
-pub fn decode(reader: &mut dyn ReadSeek, scan: &ContainerScan) -> Result<DecodedAct, CodecError> {
+pub fn decode(_reader: &mut dyn ReadSeek, scan: &ContainerScan) -> Result<DecodedAct, CodecError> {
     let mut entities = Vec::new();
     let mut guids = Vec::new();
     let mut root_components = Vec::new();
     for entry in scan.entries.iter().filter(|entry| {
         entry.role == role::BULKSTREAM && entry.name.contains("FusionACTSegmentType")
     }) {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
-        let (table, stream_guids) = decode_table(&bytes);
-        let groups = decode_channel_groups(&bytes);
-        root_components.extend(decode_root_components(&bytes, &entry.name));
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let (table, stream_guids) = decode_table(bytes);
+        let groups = decode_channel_groups(bytes);
+        root_components.extend(decode_root_components(bytes, &entry.name));
         let mut by_key: BTreeMap<(u32, String), ActEntity> = BTreeMap::new();
         for item in table {
             by_key.insert(
@@ -361,32 +362,21 @@ fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
 }
 
 fn lp_ascii(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let length = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
+    let length = usize::try_from(u32_at(bytes, position)?).ok()?;
     if !(1..=128).contains(&length) {
         return None;
     }
-    let end = position.checked_add(4 + length)?;
-    let value = std::str::from_utf8(bytes.get(position + 4..end)?).ok()?;
+    let (raw, end) = lp_u32_bytes_at(bytes, position)?;
+    let value = std::str::from_utf8(raw).ok()?;
     Some((value.into(), end))
 }
 
 fn lp_utf16(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let count = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
+    let count = usize::try_from(u32_at(bytes, position)?).ok()?;
     if count > 1024 {
         return None;
     }
-    let end = position.checked_add(4 + count.checked_mul(2)?)?;
-    let units = bytes
-        .get(position + 4..end)?
-        .chunks_exact(2)
-        .map(|pair| {
-            u16::from_le_bytes(
-                pair.try_into()
-                    .expect("invariant: chunks_exact(2) yields 2-byte slices"),
-            )
-        })
-        .collect::<Vec<_>>();
-    Some((String::from_utf16(&units).ok()?, end))
+    utf16le_at(bytes, position.checked_add(4)?, count)
 }
 
 fn is_guid(value: &str) -> bool {

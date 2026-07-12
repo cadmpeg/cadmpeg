@@ -83,7 +83,7 @@ use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder, ReadSeek,
 };
 use cadmpeg_ir::document::CadIr;
-use sha2::{Digest, Sha256};
+use cadmpeg_ir::hash::sha256_hex;
 use std::io::Write;
 
 /// The ZIP local-file-header magic.
@@ -116,13 +116,7 @@ impl F3dCodec {
         let data = record.data.as_ref().ok_or_else(|| {
             CodecError::Malformed("retained F3D source image has no bytes".into())
         })?;
-        let hash = Sha256::digest(data)
-            .iter()
-            .fold(String::new(), |mut output, byte| {
-                use std::fmt::Write as _;
-                let _ = write!(output, "{byte:02x}");
-                output
-            });
+        let hash = sha256_hex(data);
         if data.len() as u64 != record.byte_len || hash != record.sha256 {
             return Err(CodecError::Malformed(
                 "retained F3D source image failed integrity validation".into(),

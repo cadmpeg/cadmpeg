@@ -9,6 +9,7 @@ use cadmpeg_ir::history::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
     AsmHistoryRecord,
 };
+use cadmpeg_ir::le::int_at;
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
@@ -195,12 +196,7 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
     if bytes.get(*position) != Some(&tag) {
         return None;
     }
-    let slice = bytes.get(*position + 1..*position + 1 + width)?;
-    let value = match width {
-        8 => i64::from_le_bytes(slice.try_into().ok()?),
-        4 => i64::from(i32::from_le_bytes(slice.try_into().ok()?)),
-        _ => return None,
-    };
+    let value = int_at(bytes, *position + 1, width)?;
     *position += 1 + width;
     Some(value)
 }
