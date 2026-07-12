@@ -2079,6 +2079,65 @@ fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
     bytes
 }
 
+fn synthetic_skin_spl_sur_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "skin_spl_sur");
+    for value in [1i64, 2, 3] {
+        surface.push(0x15);
+        surface.extend_from_slice(&value.to_le_bytes());
+    }
+    t_long(&mut surface, 4);
+    t_dbl(&mut surface, 0.25);
+    t_long(&mut surface, 1);
+    surface.extend_from_slice(&generated_curve_block());
+    t_long(&mut surface, 211);
+    t_long(&mut surface, 4);
+    t_long(&mut surface, 0);
+    t_dbl(&mut surface, -0.5);
+    t_dbl(&mut surface, 1.5);
+    t_long(&mut surface, -1);
+    surface.extend_from_slice(&generated_curve_block());
+    t_long(&mut surface, 7);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    t_dbl(&mut surface, 0.75);
+    push_u8_string(&mut surface, "skin-law");
+    t_long(&mut surface, 1);
+    push_u8_string(&mut surface, "SPLINE_LAW");
+    t_long(&mut surface, 5);
+    append_generated_float_array(&mut surface, &[0.0, 0.5, 1.0]);
+    append_generated_float_array(&mut surface, &[1.0, 2.0, 3.0]);
+    t_pos(&mut surface, [1.0, 2.0, 3.0]);
+    surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.006);
+    for values in [
+        &[0.1][..],
+        &[0.2, 0.3][..],
+        &[][..],
+        &[][..],
+        &[][..],
+        &[][..],
+    ] {
+        append_generated_float_array(&mut surface, values);
+    }
+    surface.push(0x0a);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
     push_u8_string(bytes, label);
     t_ident(bytes, "plane");
@@ -8196,6 +8255,67 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
     assert!(matches!(
         round_trip.ir.model.procedural_surfaces[0].definition,
         ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
+    ));
+}
+
+#[test]
+fn generated_skin_surface_decodes_recursive_spline_law() {
+    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition, SkinSurfaceLayout};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("skin surface decode");
+    let ProceduralSurfaceDefinition::Skin { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected skin surface")
+    };
+    assert_eq!(construction.surface_boolean, 1);
+    assert_eq!(construction.surface_normal, 2);
+    assert_eq!(construction.surface_direction, 3);
+    assert_eq!(construction.count, 4);
+    assert_eq!(construction.parameter, 0.25);
+    assert!(matches!(
+        construction.layout,
+        SkinSurfaceLayout::Compact { .. }
+    ));
+    assert_eq!(construction.direction.z, 1.0);
+    assert_eq!(construction.trailing_parameter, 0.75);
+    assert_eq!(construction.formula.name, "skin-law");
+    assert!(matches!(
+        construction.formula.variables.as_slice(),
+        [LawExpression::Spline {
+            native_id: 5,
+            knots,
+            controls,
+            ..
+        }] if knots == &[0.0, 0.5, 1.0] && controls == &[1.0, 2.0, 3.0]
+    ));
+    assert_eq!(construction.discontinuities[0], [0.1]);
+    assert_eq!(construction.discontinuities[1], [0.2, 0.3]);
+    assert!(construction.discontinuity_flag);
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less skin surface encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less skin surface round trip");
+    let ProceduralSurfaceDefinition::Skin { construction } =
+        &round_trip.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected round-trip skin surface")
+    };
+    assert!(matches!(
+        construction.formula.variables.as_slice(),
+        [LawExpression::Spline { native_id: 5, .. }]
     ));
 }
 

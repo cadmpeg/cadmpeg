@@ -401,6 +401,61 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralSurfaceDefinition::Skin { construction } => {
+                fn check_law_curves(
+                    expression: &crate::geometry::LawExpression,
+                    ids: &IdSets,
+                    procedural: &crate::geometry::ProceduralSurface,
+                    findings: &mut Vec<Finding>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            if !ids.curves.contains(&curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            }
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                check_law_curves(operand, ids, procedural, findings);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                };
+                match &construction.layout {
+                    crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
+                        check_curve(path, findings);
+                        for profile in profiles {
+                            check_curve(&profile.curve, findings);
+                            if !ids.surfaces.contains(&profile.data.surface.0) {
+                                ref_error(
+                                    findings,
+                                    &procedural.id.0,
+                                    "surface",
+                                    &profile.data.surface.0,
+                                );
+                            }
+                        }
+                    }
+                    crate::geometry::SkinSurfaceLayout::Compact {
+                        curve,
+                        secondary_curve,
+                        ..
+                    } => {
+                        check_curve(curve, findings);
+                        check_curve(secondary_curve, findings);
+                    }
+                }
+                check_curve(&construction.parameter_curve, findings);
+                for variable in &construction.formula.variables {
+                    check_law_curves(variable, ids, procedural, findings);
+                }
+            }
             ProceduralSurfaceDefinition::G2Blend { construction } => {
                 for surface in [&construction.first.surface, &construction.second.surface]
                     .into_iter()

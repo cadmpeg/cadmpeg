@@ -133,6 +133,45 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
+            ProceduralSurfaceDefinition::Skin { construction } => {
+                fn collect_law_curves<'a>(
+                    expression: &'a crate::geometry::LawExpression,
+                    curves: &mut HashSet<&'a str>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            curves.insert(&curve.0);
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                collect_law_curves(operand, curves);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                match &construction.layout {
+                    crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
+                        curves.insert(&path.0);
+                        for profile in profiles {
+                            curves.insert(&profile.curve.0);
+                            surfaces.insert(&profile.data.surface.0);
+                        }
+                    }
+                    crate::geometry::SkinSurfaceLayout::Compact {
+                        curve,
+                        secondary_curve,
+                        ..
+                    } => {
+                        curves.insert(&curve.0);
+                        curves.insert(&secondary_curve.0);
+                    }
+                }
+                curves.insert(&construction.parameter_curve.0);
+                for variable in &construction.formula.variables {
+                    collect_law_curves(variable, &mut curves);
+                }
+            }
             ProceduralSurfaceDefinition::G2Blend { construction } => {
                 for side in [&construction.first, &construction.second] {
                     surfaces.insert(&side.surface.0);

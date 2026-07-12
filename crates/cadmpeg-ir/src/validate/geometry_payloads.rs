@@ -542,6 +542,98 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::Skin { construction } = &procedural.definition {
+            fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
+                if depth > 64 {
+                    return false;
+                }
+                match expression {
+                    crate::geometry::LawExpression::Null => true,
+                    crate::geometry::LawExpression::Transform { scalars, .. } => {
+                        scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Edge { parameters, .. } => {
+                        parameters.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Spline {
+                        knots,
+                        controls,
+                        point,
+                        ..
+                    } => {
+                        knots.iter().chain(controls).all(|value| value.is_finite())
+                            && point.x.is_finite()
+                            && point.y.is_finite()
+                            && point.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                        operands.iter().all(|operand| law_valid(operand, depth + 1))
+                    }
+                }
+            }
+            let vector_finite = |vector: &Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let layout_valid = match &construction.layout {
+                crate::geometry::SkinSurfaceLayout::Profiles { profiles, .. } => {
+                    usize::try_from(construction.inner_count).ok() == Some(profiles.len())
+                        && profiles.iter().all(|profile| {
+                            let table = &profile.data.subdata;
+                            let expected_rows = if table.type_code == 211 {
+                                1
+                            } else {
+                                usize::try_from(table.row_count).unwrap_or(usize::MAX)
+                            };
+                            table.rows.len() == expected_rows
+                                && table.rows.iter().all(|row| {
+                                    row.parameters.iter().all(|value| value.is_finite())
+                                        && row
+                                            .columns
+                                            .iter()
+                                            .flatten()
+                                            .all(|value| value.is_finite())
+                                })
+                                && profile.data.direction.as_ref().is_none_or(&vector_finite)
+                        })
+                }
+                crate::geometry::SkinSurfaceLayout::Compact { subdata, .. } => {
+                    let expected_rows = if subdata.type_code == 211 {
+                        1
+                    } else {
+                        usize::try_from(subdata.row_count).unwrap_or(usize::MAX)
+                    };
+                    subdata.rows.len() == expected_rows
+                        && subdata.rows.iter().all(|row| {
+                            row.parameters.iter().all(|value| value.is_finite())
+                                && row.columns.iter().flatten().all(|value| value.is_finite())
+                        })
+                }
+            };
+            let formula_valid = if construction.formula.name == "null_law" {
+                construction.formula.variables.is_empty()
+            } else {
+                construction
+                    .formula
+                    .variables
+                    .iter()
+                    .all(|variable| law_valid(variable, 0))
+            };
+            let scalars_valid = construction.parameter.is_finite()
+                && construction.trailing_parameter.is_finite()
+                && vector_finite(&construction.direction)
+                && construction
+                    .discontinuities
+                    .iter()
+                    .flatten()
+                    .all(|value| value.is_finite());
+            if !layout_valid || !formula_valid || !scalars_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "skin surface construction payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::G2Blend { construction } = &procedural.definition {
             let direction_finite = |direction: &Vector3| {
                 direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()

@@ -689,6 +689,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     CompoundLoft(Box<EmbeddedCompoundLoft>),
     /// Native scaled compound-loft graph with embedded carriers.
     ScaledCompoundLoft(Box<EmbeddedScaledCompoundLoft>),
+    /// Native skinned surface graph with embedded carriers.
+    Skin(Box<EmbeddedSkinSurface>),
     /// Native G2 blend construction with embedded carriers.
     G2Blend(Box<EmbeddedG2Blend>),
     /// Ruled interpolation between two ordered profile curves.
@@ -1197,6 +1199,53 @@ pub struct EmbeddedScaledCompoundLoft {
     pub(crate) tail_directions: [Vector3; 2],
     pub(crate) tail_singularity: i64,
     pub(crate) tail_curve: NurbsCurve,
+}
+
+pub(crate) enum EmbeddedLawExpression {
+    Null,
+    Spline {
+        native_id: i64,
+        knots: Vec<f64>,
+        controls: Vec<f64>,
+        point: Point3,
+    },
+}
+
+pub(crate) struct EmbeddedLawFormula {
+    pub(crate) name: String,
+    pub(crate) variables: Vec<EmbeddedLawExpression>,
+}
+
+pub(crate) enum EmbeddedSkinSurfaceLayout {
+    Profiles {
+        profiles: Vec<EmbeddedLoftProfileMember>,
+        path: NurbsCurve,
+        tail: [i64; 2],
+    },
+    Compact {
+        curve: NurbsCurve,
+        subdata: cadmpeg_ir::geometry::LoftSubdata,
+        first_tail: i64,
+        secondary_curve: NurbsCurve,
+        second_tail: i64,
+    },
+}
+
+/// Embedded native skin surface before stable IR ids are assigned.
+pub struct EmbeddedSkinSurface {
+    pub(crate) surface_boolean: i64,
+    pub(crate) surface_normal: i64,
+    pub(crate) surface_direction: i64,
+    pub(crate) count: i64,
+    pub(crate) parameter: f64,
+    pub(crate) inner_count: i64,
+    pub(crate) layout: EmbeddedSkinSurfaceLayout,
+    pub(crate) direction: Vector3,
+    pub(crate) trailing_parameter: f64,
+    pub(crate) formula: EmbeddedLawFormula,
+    pub(crate) parameter_curve: NurbsCurve,
+    pub(crate) discontinuities: [Vec<f64>; 6],
+    pub(crate) discontinuity_flag: bool,
 }
 
 #[allow(clippy::option_option)] // Outer None is parse failure; inner None is an absent scale slot.
@@ -1709,6 +1758,152 @@ fn decode_scaled_compound_loft_spl_sur(
                 tail_curve: tail_curve.curve,
             },
         )),
+        cache_fit_tolerance,
+    })
+}
+
+fn decode_law_expression(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<EmbeddedLawExpression> {
+    match take_native_string(bytes, position)?.as_str() {
+        "null_law" => Some(EmbeddedLawExpression::Null),
+        "SPLINE_LAW" => {
+            let native_id = take_tagged_int(bytes, position, 0x04, int_width)?;
+            let knots = take_float_array(bytes, position, int_width)?;
+            let controls = take_float_array(bytes, position, int_width)?;
+            let point = take_native_vec3(bytes, position, 0x13)?;
+            Some(EmbeddedLawExpression::Spline {
+                native_id,
+                knots,
+                controls,
+                point: Point3::new(
+                    point[0] * LEN_TO_MM,
+                    point[1] * LEN_TO_MM,
+                    point[2] * LEN_TO_MM,
+                ),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn decode_law_formula(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<EmbeddedLawFormula> {
+    let name = take_native_string(bytes, position)?;
+    if name == "null_law" {
+        return Some(EmbeddedLawFormula {
+            name,
+            variables: Vec::new(),
+        });
+    }
+    let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+    if count > 100_000 {
+        return None;
+    }
+    let variables = (0..count)
+        .map(|_| decode_law_expression(bytes, position, int_width))
+        .collect::<Option<Vec<_>>>()?;
+    Some(EmbeddedLawFormula { name, variables })
+}
+
+fn decode_skin_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    let name = b"skin_spl_sur";
+    let start = record_bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name.len() + 3;
+    let surface_boolean = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let surface_normal = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let surface_direction = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let count = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let parameter = take_f64(span, &mut position)?;
+    let inner_count = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let layout = if matches!(span.get(position), Some(0x0d | 0x0e)) {
+        let curve = decode_curve_block(span, position, int_width)?;
+        position = curve.end;
+        let subdata = decode_loft_subdata(span, &mut position, int_width)?;
+        let first_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        let secondary_curve = decode_curve_block(span, position, int_width)?;
+        position = secondary_curve.end;
+        let second_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        EmbeddedSkinSurfaceLayout::Compact {
+            curve: curve.curve,
+            subdata,
+            first_tail,
+            secondary_curve: secondary_curve.curve,
+            second_tail,
+        }
+    } else {
+        let profile_count = usize::try_from(inner_count).ok()?;
+        if profile_count > 100_000 {
+            return None;
+        }
+        let mut profiles = Vec::with_capacity(profile_count);
+        for _ in 0..profile_count {
+            let type_code = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let curve = decode_curve_block(span, position, int_width)?;
+            position = curve.end;
+            let data = decode_loft_profile_data(span, &mut position, int_width)?;
+            profiles.push(EmbeddedLoftProfileMember {
+                type_code,
+                curve: curve.curve,
+                data,
+            });
+        }
+        let path = decode_curve_block(span, position, int_width)?;
+        position = path.end;
+        let tail = [
+            take_tagged_int(span, &mut position, 0x04, int_width)?,
+            take_tagged_int(span, &mut position, 0x04, int_width)?,
+        ];
+        EmbeddedSkinSurfaceLayout::Profiles {
+            profiles,
+            path: path.curve,
+            tail,
+        }
+    };
+    let direction = take_native_vec3(span, &mut position, 0x14)?;
+    let trailing_parameter = take_f64(span, &mut position)?;
+    let formula = decode_law_formula(span, &mut position, int_width)?;
+    let parameter_curve = decode_curve_block(span, position, int_width)?;
+    position = parameter_curve.end;
+    let cache = decode_surface_block(span, position, int_width)?;
+    position = cache.end;
+    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let discontinuities = [
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+    ];
+    let discontinuity_flag = take_bool(span, &mut position)?;
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Skin(Box::new(EmbeddedSkinSurface {
+            surface_boolean,
+            surface_normal,
+            surface_direction,
+            count,
+            parameter,
+            inner_count,
+            layout,
+            direction: Vector3::new(direction[0], direction[1], direction[2]),
+            trailing_parameter,
+            formula,
+            parameter_curve: parameter_curve.curve,
+            discontinuities,
+            discontinuity_flag,
+        })),
         cache_fit_tolerance,
     })
 }
@@ -2937,6 +3132,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_compound_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_scaled_compound_loft_spl_sur(bytes, int_width))
+        .or_else(|| decode_skin_spl_sur(bytes, int_width))
         .or_else(|| decode_g2_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_ruled_spl_sur(bytes, int_width))
         .or_else(|| decode_sum_spl_sur(bytes, int_width))

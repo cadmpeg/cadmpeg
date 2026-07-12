@@ -337,6 +337,11 @@ pub enum ProceduralSurfaceDefinition {
         /// Complete native scaled compound-loft graph.
         construction: Box<ScaledCompoundLoftConstruction>,
     },
+    /// Native skinned spline surface.
+    Skin {
+        /// Complete native skin construction graph.
+        construction: Box<SkinSurfaceConstruction>,
+    },
     /// Native curvature-continuous two-sided blend.
     G2Blend {
         /// Complete native G2 construction graph.
@@ -1205,6 +1210,125 @@ pub struct ScaledCompoundLoftConstruction {
     pub tail_singularity: i64,
     /// Native trailing BS3 curve.
     pub tail_curve: CurveId,
+}
+
+/// One recursively framed native law formula.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LawFormula {
+    /// Native formula name, or `null_law` for the sentinel.
+    pub name: String,
+    /// Ordered recursive variables; empty for `null_law`.
+    pub variables: Vec<LawExpression>,
+}
+
+/// One native law-expression node.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LawExpression {
+    /// Zero-payload `null_law` sentinel.
+    Null,
+    /// Inline transform-law payload.
+    Transform {
+        /// Thirteen ordered transform scalars.
+        scalars: [f64; 13],
+        /// Three ordered transform enums.
+        enums: [i64; 3],
+    },
+    /// Curve-backed edge law.
+    Edge {
+        /// Embedded curve carrier.
+        curve: CurveId,
+        /// Two native curve parameters.
+        parameters: [f64; 2],
+    },
+    /// Spline-law payload.
+    Spline {
+        /// Native spline-law integer.
+        native_id: i64,
+        /// Ordered spline-law knots.
+        knots: Vec<f64>,
+        /// Ordered spline-law controls.
+        controls: Vec<f64>,
+        /// Native model-space point.
+        point: Point3,
+    },
+    /// Algebraic operator and its recursively framed operands.
+    Algebraic {
+        /// Native operator token.
+        operator: String,
+        /// Ordered operands.
+        operands: Vec<LawExpression>,
+    },
+}
+
+/// One profile entry in the expanded skin layout.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SkinSurfaceProfile {
+    /// Native profile type integer.
+    pub type_code: i64,
+    /// Profile curve.
+    pub curve: CurveId,
+    /// Native loft constraint data.
+    pub data: LoftProfileData,
+}
+
+/// Structurally selected native skin payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SkinSurfaceLayout {
+    /// Expanded sequence of profile curves and loft constraints.
+    Profiles {
+        /// Ordered profile entries.
+        profiles: Vec<SkinSurfaceProfile>,
+        /// Trailing path curve.
+        path: CurveId,
+        /// Two native trailing integers.
+        tail: [i64; 2],
+    },
+    /// Compact curve/subdata form.
+    Compact {
+        /// Primary curve.
+        curve: CurveId,
+        /// Native loft subdata.
+        subdata: LoftSubdata,
+        /// Integer after the subdata.
+        first_tail: i64,
+        /// Secondary curve.
+        secondary_curve: CurveId,
+        /// Final compact-layout integer.
+        second_tail: i64,
+    },
+}
+
+/// Complete native `skin_spl_sur` construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SkinSurfaceConstruction {
+    /// Native `SURF_BOOL` enum.
+    pub surface_boolean: i64,
+    /// Native `SURF_NORM` enum.
+    pub surface_normal: i64,
+    /// Native `SURF_DIR` enum.
+    pub surface_direction: i64,
+    /// Native leading count.
+    pub count: i64,
+    /// Native leading scalar.
+    pub parameter: f64,
+    /// Native inner count.
+    pub inner_count: i64,
+    /// Structurally selected skin payload.
+    pub layout: SkinSurfaceLayout,
+    /// Stored direction vector.
+    pub direction: Vector3,
+    /// Native scalar before the formula.
+    pub trailing_parameter: f64,
+    /// Recursive parametric law.
+    pub formula: LawFormula,
+    /// Trailing curve after the formula.
+    pub parameter_curve: CurveId,
+    /// Six ordered solved-surface discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
+    pub discontinuity_flag: bool,
 }
 
 /// Radius law for a procedural blend.

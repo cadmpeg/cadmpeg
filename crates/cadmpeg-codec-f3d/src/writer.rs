@@ -3377,6 +3377,9 @@ fn native_procedural_surface(
                 Some(solved_cache),
             )?;
         }
+        ProceduralSurfaceDefinition::Skin { construction } => {
+            encode_native_skin_surface(bytes, target, procedural, construction, solved_cache)?;
+        }
         ProceduralSurfaceDefinition::G2Blend { construction } => {
             encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
         }
@@ -4209,6 +4212,184 @@ fn native_cacheless_procedural_surface(
     }
     encode_native_scaled_compound_loft(bytes, target, procedural, construction, None)?;
     Ok(true)
+}
+
+fn native_law_expression(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    expression: &cadmpeg_ir::geometry::LawExpression,
+    depth: usize,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::LawExpression;
+    if depth > 64 {
+        return Err(CodecError::Malformed(
+            "native law expression exceeds 64 recursive levels".into(),
+        ));
+    }
+    match expression {
+        LawExpression::Null => native_string(bytes, "null_law")?,
+        LawExpression::Transform { scalars, enums } => {
+            native_string(bytes, "TRANS")?;
+            for scalar in scalars {
+                native_f64(bytes, *scalar);
+            }
+            for value in enums {
+                native_enum(bytes, *value);
+            }
+        }
+        LawExpression::Edge { curve, parameters } => {
+            native_string(bytes, "EDGE")?;
+            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            for parameter in parameters {
+                native_f64(bytes, *parameter);
+            }
+        }
+        LawExpression::Spline {
+            native_id,
+            knots,
+            controls,
+            point,
+        } => {
+            native_string(bytes, "SPLINE_LAW")?;
+            native_i64(bytes, *native_id);
+            native_compound_loft_float_array(bytes, knots)?;
+            native_compound_loft_float_array(bytes, controls)?;
+            native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+        }
+        LawExpression::Algebraic { operator, operands } => {
+            native_string(bytes, operator)?;
+            for operand in operands {
+                native_law_expression(bytes, target, operand, depth + 1)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn native_law_formula(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    formula: &cadmpeg_ir::geometry::LawFormula,
+) -> Result<(), CodecError> {
+    native_string(bytes, &formula.name)?;
+    if formula.name == "null_law" {
+        if !formula.variables.is_empty() {
+            return Err(CodecError::Malformed(
+                "null_law formula cannot carry variables".into(),
+            ));
+        }
+        return Ok(());
+    }
+    native_i64(
+        bytes,
+        i64::try_from(formula.variables.len())
+            .map_err(|_| CodecError::NotImplemented("law variable count exceeds i64".into()))?,
+    );
+    for variable in &formula.variables {
+        native_law_expression(bytes, target, variable, 0)?;
+    }
+    Ok(())
+}
+
+fn native_skin_profile_data(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    data: &cadmpeg_ir::geometry::LoftProfileData,
+) -> Result<(), CodecError> {
+    let surface = target
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == data.surface)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("skin references missing surface {}", data.surface))
+        })?;
+    native_embedded_surface(bytes, &surface.geometry)?;
+    native_optional_pcurve(bytes, data.pcurve.as_ref())?;
+    bytes.push(native_bool(data.first_flag));
+    native_i64(bytes, data.asm_extension);
+    native_loft_subdata(bytes, &data.subdata)?;
+    bytes.push(native_bool(data.direction.is_some()));
+    if let Some(direction) = data.direction {
+        native_vector(bytes, [direction.x, direction.y, direction.z]);
+    }
+    Ok(())
+}
+
+fn encode_native_skin_surface(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::SkinSurfaceConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::SkinSurfaceLayout;
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "skin_spl_sur")?;
+    native_enum(bytes, construction.surface_boolean);
+    native_enum(bytes, construction.surface_normal);
+    native_enum(bytes, construction.surface_direction);
+    native_i64(bytes, construction.count);
+    native_f64(bytes, construction.parameter);
+    native_i64(bytes, construction.inner_count);
+    match &construction.layout {
+        SkinSurfaceLayout::Profiles {
+            profiles,
+            path,
+            tail,
+        } => {
+            if usize::try_from(construction.inner_count).ok() != Some(profiles.len()) {
+                return Err(CodecError::Malformed(
+                    "skin profile count conflicts with its inner count".into(),
+                ));
+            }
+            for profile in profiles {
+                native_i64(bytes, profile.type_code);
+                native_nurbs_curve(bytes, native_loft_curve(target, &profile.curve)?)?;
+                native_skin_profile_data(bytes, target, &profile.data)?;
+            }
+            native_nurbs_curve(bytes, native_loft_curve(target, path)?)?;
+            for value in tail {
+                native_i64(bytes, *value);
+            }
+        }
+        SkinSurfaceLayout::Compact {
+            curve,
+            subdata,
+            first_tail,
+            secondary_curve,
+            second_tail,
+        } => {
+            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            native_loft_subdata(bytes, subdata)?;
+            native_i64(bytes, *first_tail);
+            native_nurbs_curve(bytes, native_loft_curve(target, secondary_curve)?)?;
+            native_i64(bytes, *second_tail);
+        }
+    }
+    native_vector(
+        bytes,
+        [
+            construction.direction.x,
+            construction.direction.y,
+            construction.direction.z,
+        ],
+    );
+    native_f64(bytes, construction.trailing_parameter);
+    native_law_formula(bytes, target, &construction.formula)?;
+    native_nurbs_curve(
+        bytes,
+        native_loft_curve(target, &construction.parameter_curve)?,
+    )?;
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for values in &construction.discontinuities {
+        native_compound_loft_float_array(bytes, values)?;
+    }
+    bytes.push(native_bool(construction.discontinuity_flag));
+    bytes.push(0x10);
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

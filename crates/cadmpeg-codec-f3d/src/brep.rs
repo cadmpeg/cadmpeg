@@ -1502,6 +1502,149 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 ),
                             }
                         }
+                        nurbs::DecodedProceduralSurfaceDefinition::Skin(embedded) => {
+                            let embedded = *embedded;
+                            let layout = match embedded.layout {
+                                nurbs::EmbeddedSkinSurfaceLayout::Compact {
+                                    curve,
+                                    subdata,
+                                    first_tail,
+                                    secondary_curve,
+                                    second_tail,
+                                } => {
+                                    let curve_id = CurveId(format!(
+                                        "f3d:brep:procedural_surface#{i}:skin:curve"
+                                    ));
+                                    out.curves.push(Curve {
+                                        id: curve_id.clone(),
+                                        geometry: CurveGeometry::Nurbs(curve),
+                                        source_object: None,
+                                    });
+                                    let secondary_id = CurveId(format!(
+                                        "f3d:brep:procedural_surface#{i}:skin:secondary"
+                                    ));
+                                    out.curves.push(Curve {
+                                        id: secondary_id.clone(),
+                                        geometry: CurveGeometry::Nurbs(secondary_curve),
+                                        source_object: None,
+                                    });
+                                    cadmpeg_ir::geometry::SkinSurfaceLayout::Compact {
+                                        curve: curve_id,
+                                        subdata,
+                                        first_tail,
+                                        secondary_curve: secondary_id,
+                                        second_tail,
+                                    }
+                                }
+                                nurbs::EmbeddedSkinSurfaceLayout::Profiles {
+                                    profiles,
+                                    path,
+                                    tail,
+                                } => {
+                                    let profiles = profiles
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(|(index, profile)| {
+                                            let curve = CurveId(format!(
+                                                "f3d:brep:procedural_surface#{i}:skin:profile:{index}:curve"
+                                            ));
+                                            out.curves.push(Curve {
+                                                id: curve.clone(),
+                                                geometry: CurveGeometry::Nurbs(profile.curve),
+                                                source_object: None,
+                                            });
+                                            let surface = SurfaceId(format!(
+                                                "f3d:brep:procedural_surface#{i}:skin:profile:{index}:surface"
+                                            ));
+                                            out.surfaces.push(Surface {
+                                                id: surface.clone(),
+                                                geometry: profile.data.surface,
+                                                source_object: None,
+                                            });
+                                            cadmpeg_ir::geometry::SkinSurfaceProfile {
+                                                type_code: profile.type_code,
+                                                curve,
+                                                data: cadmpeg_ir::geometry::LoftProfileData {
+                                                    surface,
+                                                    pcurve: profile
+                                                        .data
+                                                        .pcurve
+                                                        .map(embedded_pcurve_geometry),
+                                                    first_flag: profile.data.first_flag,
+                                                    asm_extension: profile.data.asm_extension,
+                                                    subdata: profile.data.subdata,
+                                                    direction: profile.data.direction,
+                                                },
+                                            }
+                                        })
+                                        .collect();
+                                    let path_id = CurveId(format!(
+                                        "f3d:brep:procedural_surface#{i}:skin:path"
+                                    ));
+                                    out.curves.push(Curve {
+                                        id: path_id.clone(),
+                                        geometry: CurveGeometry::Nurbs(path),
+                                        source_object: None,
+                                    });
+                                    cadmpeg_ir::geometry::SkinSurfaceLayout::Profiles {
+                                        profiles,
+                                        path: path_id,
+                                        tail,
+                                    }
+                                }
+                            };
+                            let parameter_curve = CurveId(format!(
+                                "f3d:brep:procedural_surface#{i}:skin:parameter_curve"
+                            ));
+                            out.curves.push(Curve {
+                                id: parameter_curve.clone(),
+                                geometry: CurveGeometry::Nurbs(embedded.parameter_curve),
+                                source_object: None,
+                            });
+                            let formula = cadmpeg_ir::geometry::LawFormula {
+                                name: embedded.formula.name,
+                                variables: embedded
+                                    .formula
+                                    .variables
+                                    .into_iter()
+                                    .map(|variable| match variable {
+                                        nurbs::EmbeddedLawExpression::Null => {
+                                            cadmpeg_ir::geometry::LawExpression::Null
+                                        }
+                                        nurbs::EmbeddedLawExpression::Spline {
+                                            native_id,
+                                            knots,
+                                            controls,
+                                            point,
+                                        } => cadmpeg_ir::geometry::LawExpression::Spline {
+                                            native_id,
+                                            knots,
+                                            controls,
+                                            point,
+                                        },
+                                    })
+                                    .collect(),
+                            };
+                            ProceduralSurfaceDefinition::Skin {
+                                construction: Box::new(
+                                    cadmpeg_ir::geometry::SkinSurfaceConstruction {
+                                        surface_boolean: embedded.surface_boolean,
+                                        surface_normal: embedded.surface_normal,
+                                        surface_direction: embedded.surface_direction,
+                                        count: embedded.count,
+                                        parameter: embedded.parameter,
+                                        inner_count: embedded.inner_count,
+                                        layout,
+                                        direction: embedded.direction,
+                                        trailing_parameter: embedded.trailing_parameter,
+                                        formula,
+                                        parameter_curve,
+                                        discontinuities: embedded.discontinuities,
+                                        discontinuity_flag: embedded.discontinuity_flag,
+                                    },
+                                ),
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::G2Blend(embedded) => {
                             let embedded = *embedded;
                             let mut add_side = |name: &str, side: nurbs::EmbeddedG2Side| {
