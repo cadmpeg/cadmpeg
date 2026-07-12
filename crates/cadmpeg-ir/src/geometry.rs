@@ -327,6 +327,11 @@ pub enum ProceduralSurfaceDefinition {
         /// Variable native tokens between the mode and solved cache.
         bridge: Vec<LoftBridgeToken>,
     },
+    /// Native compound-loft construction.
+    CompoundLoft {
+        /// Complete native compound-loft graph.
+        construction: Box<CompoundLoftConstruction>,
+    },
     /// Native curvature-continuous two-sided blend.
     G2Blend {
         /// Complete native G2 construction graph.
@@ -1006,6 +1011,112 @@ pub struct VertexBlendConstruction {
     pub grid_size: i64,
     /// Native model-space fit tolerance.
     pub fit_tolerance: f64,
+}
+
+/// One member of a compound-loft scale block.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompoundLoftScaleMember {
+    /// Native member integer.
+    pub type_code: i64,
+    /// Member curve.
+    pub curve: CurveId,
+    /// Native loft constraint data.
+    pub data: LoftProfileData,
+}
+
+/// Complete `_readScaleClLoft` payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompoundLoftScale {
+    /// Ordered scale members.
+    pub members: Vec<CompoundLoftScaleMember>,
+    /// Scale path curve.
+    pub path: CurveId,
+    /// Ordered BS3 auxiliary curves.
+    pub auxiliaries: Vec<CurveId>,
+    /// Two native trailing integers.
+    pub tail: [i64; 2],
+}
+
+/// Direction carrier in the zero-kind compound-loft tail.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CompoundLoftDirection {
+    /// Inline direction vector when the selector is zero.
+    Vector {
+        /// Stored direction.
+        value: Vector3,
+    },
+    /// BS3 direction curve when the selector is nonzero.
+    Curve {
+        /// Stored curve.
+        curve: CurveId,
+    },
+}
+
+/// Structurally selected tail of `cl_loft_spl_sur`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CompoundLoftTail {
+    /// Native kind `6` tail.
+    Six {
+        /// Two leading flags.
+        flags: [bool; 2],
+        /// Optional scale block.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale: Option<Box<CompoundLoftScale>>,
+        /// Native integer following the scale.
+        selector: i64,
+        /// Stored direction.
+        direction: Vector3,
+        /// Native parameter interval.
+        parameter_range: [f64; 2],
+        /// BS3 tail curve.
+        curve: CurveId,
+    },
+    /// Native kind `7` tail.
+    Seven {
+        /// First flag.
+        first_flag: bool,
+        /// First optional scale block.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        first_scale: Option<Box<CompoundLoftScale>>,
+        /// Second flag.
+        second_flag: bool,
+        /// Second optional scale block.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        second_scale: Option<Box<CompoundLoftScale>>,
+        /// Native selector integer.
+        selector: i64,
+        /// Stored direction.
+        direction: Vector3,
+        /// Two trailing flags.
+        trailing_flags: [bool; 2],
+    },
+    /// Native kind `0` tail.
+    Zero {
+        /// Two leading flags.
+        flags: [bool; 2],
+        /// Native direction selector.
+        selector: i64,
+        /// Vector or BS3 curve selected structurally.
+        direction: CompoundLoftDirection,
+        /// Two trailing flags.
+        trailing_flags: [bool; 2],
+    },
+}
+
+/// Complete native compound-loft construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompoundLoftConstruction {
+    /// Four mandatory scale slots; a boolean token encodes an absent slot.
+    pub scales: Box<[Option<CompoundLoftScale>; 4]>,
+    /// Optional fifth leading scale slot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fifth_scale: Option<Box<CompoundLoftScale>>,
+    /// Two flags before the tail kind.
+    pub flags: [bool; 2],
+    /// Kind-specific trailing graph.
+    pub tail: CompoundLoftTail,
 }
 
 /// Radius law for a procedural blend.

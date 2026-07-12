@@ -390,6 +390,66 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::CompoundLoft { construction } = &procedural.definition {
+            let vector_finite = |vector: &Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
+            scales.extend(construction.fifth_scale.iter().map(Box::as_ref));
+            let tail_valid = match &construction.tail {
+                crate::geometry::CompoundLoftTail::Six {
+                    scale,
+                    direction,
+                    parameter_range,
+                    ..
+                } => {
+                    scales.extend(scale.iter().map(Box::as_ref));
+                    vector_finite(direction)
+                        && parameter_range.iter().all(|value| value.is_finite())
+                        && parameter_range[0] <= parameter_range[1]
+                }
+                crate::geometry::CompoundLoftTail::Seven {
+                    first_scale,
+                    second_scale,
+                    direction,
+                    ..
+                } => {
+                    scales.extend(first_scale.iter().map(Box::as_ref));
+                    scales.extend(second_scale.iter().map(Box::as_ref));
+                    vector_finite(direction)
+                }
+                crate::geometry::CompoundLoftTail::Zero { direction, .. } => match direction {
+                    crate::geometry::CompoundLoftDirection::Vector { value } => {
+                        vector_finite(value)
+                    }
+                    crate::geometry::CompoundLoftDirection::Curve { .. } => true,
+                },
+            };
+            let scales_valid = scales.iter().all(|scale| {
+                scale.members.iter().all(|member| {
+                    let data = &member.data;
+                    let table = &data.subdata;
+                    let expected_rows = if table.type_code == 211 {
+                        1
+                    } else {
+                        usize::try_from(table.row_count).unwrap_or(usize::MAX)
+                    };
+                    table.rows.len() == expected_rows
+                        && table.rows.iter().all(|row| {
+                            row.parameters.iter().all(|value| value.is_finite())
+                                && row.columns.iter().flatten().all(|value| value.is_finite())
+                        })
+                        && data.direction.as_ref().is_none_or(&vector_finite)
+                })
+            });
+            if !tail_valid || !scales_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "compound loft construction payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::G2Blend { construction } = &procedural.definition {
             let direction_finite = |direction: &Vector3| {
                 direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()
