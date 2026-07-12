@@ -246,6 +246,19 @@ pub enum FeatureDefinition {
         /// as opposed to inward.
         outward: bool,
     },
+    /// Taper applied to selected faces about a neutral plane.
+    Draft {
+        /// Faces whose angle is modified.
+        faces: FaceSelection,
+        /// Neutral plane that remains fixed during the operation.
+        neutral_plane: FaceSelection,
+        /// Pull direction used to measure the draft angle.
+        pull_direction: Vector3,
+        /// Signed draft angle.
+        angle: Angle,
+        /// Whether material is added away from the pull direction.
+        outward: bool,
+    },
     /// Drilled or machined hole.
     Hole {
         /// Face the hole is placed on, when known.

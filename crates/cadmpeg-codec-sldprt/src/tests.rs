@@ -3340,6 +3340,77 @@ fn semantic_writer_round_trips_typed_shell() {
 }
 
 #[test]
+fn semantic_writer_round_trips_typed_draft() {
+    use cadmpeg_ir::features::{Angle, FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::math::Vector3;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Draft Name="Taper" Type="Draft" id="18" Faces="face:1,face:2" NeutralPlane="face:3" Direction="0,0,1" Outward="false"><Dimension Name="Angle">3deg</Dimension></Draft></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native_id = decoded.ir.model.features[0].native_ref.clone().unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Draft {
+            faces: FaceSelection::Native(faces),
+            neutral_plane: FaceSelection::Native(neutral_plane),
+            pull_direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+            angle: Angle(value),
+            outward: false,
+        } if faces == &native_id
+            && neutral_plane == &native_id
+            && (*value - 3f64.to_radians()).abs() < 1e-12
+    ));
+
+    let FeatureDefinition::Draft {
+        pull_direction,
+        angle,
+        outward,
+        ..
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed draft");
+    };
+    *pull_direction = Vector3::new(0.0, 1.0, 0.0);
+    *angle = Angle(7f64.to_radians());
+    *outward = true;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.properties["Faces"], "face:1,face:2");
+    assert_eq!(feature.properties["NeutralPlane"], "face:3");
+    assert_eq!(feature.properties["Direction"], "0,1,0");
+    assert_eq!(feature.properties["Outward"], "true");
+    assert_eq!(
+        feature.parameters["Angle"],
+        format!("{}rad", 7f64.to_radians())
+    );
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Draft {
+            pull_direction: Vector3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0
+            },
+            outward: true,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition, HoleKind, Length};
 

@@ -938,6 +938,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::Shell { removed_faces, .. } => {
                 face_selections.push(removed_faces);
             }
+            FeatureDefinition::Draft {
+                faces,
+                neutral_plane,
+                ..
+            } => {
+                face_selections.push(faces);
+                face_selections.push(neutral_plane);
+            }
             FeatureDefinition::Hole { face, extent, .. } => {
                 face_selections.extend(face);
                 extents.push(extent);

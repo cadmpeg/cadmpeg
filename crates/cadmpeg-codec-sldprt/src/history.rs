@@ -365,6 +365,8 @@ fn project_definition(
         project_chamfer(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Shell") {
         project_shell(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature.kind.eq_ignore_ascii_case("Draft") {
+        project_draft(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Hole") {
         project_hole(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Revolve") {
@@ -688,6 +690,25 @@ fn project_shell(feature: &Feature) -> Option<FeatureDefinition> {
         removed_faces: FaceSelection::Native(feature.id.clone()),
         thickness: Length(thickness),
         outward,
+    })
+}
+
+fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
+    let pull_direction = parse_vector3(feature.properties.get("Direction")?)?;
+    if !(pull_direction.norm().is_finite() && pull_direction.norm() > 0.0) {
+        return None;
+    }
+    Some(FeatureDefinition::Draft {
+        faces: FaceSelection::Native(feature.id.clone()),
+        neutral_plane: FaceSelection::Native(feature.id.clone()),
+        pull_direction,
+        angle: Angle(
+            feature
+                .parameters
+                .get("Angle")
+                .and_then(|value| parse_angle_rad(value))?,
+        ),
+        outward: parse_bool(feature.properties.get("Outward")?)?,
     })
 }
 
@@ -1398,6 +1419,42 @@ pub fn sync_neutral_features(
                 let mut parameters = record.parameters.clone();
                 parameters.insert("Thickness".into(), format_length_mm(thickness.0));
                 let mut properties = record.properties.clone();
+                properties.insert("Outward".into(), outward.to_string());
+                (record.kind.clone(), parameters, properties)
+            }
+            FeatureDefinition::Draft {
+                faces: FaceSelection::Native(faces),
+                neutral_plane: FaceSelection::Native(neutral_plane),
+                pull_direction,
+                angle,
+                outward,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained draft record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("Draft")
+                    || faces != &record.id
+                    || neutral_plane != &record.id
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported draft semantics",
+                        feature.id
+                    )));
+                }
+                require_direction(*pull_direction, &feature.id, "draft direction")?;
+                if !angle.0.is_finite() {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has a non-finite draft angle",
+                        feature.id
+                    )));
+                }
+                let mut parameters = record.parameters.clone();
+                parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                let mut properties = record.properties.clone();
+                properties.insert("Direction".into(), format_vector3(*pull_direction));
                 properties.insert("Outward".into(), outward.to_string());
                 (record.kind.clone(), parameters, properties)
             }
