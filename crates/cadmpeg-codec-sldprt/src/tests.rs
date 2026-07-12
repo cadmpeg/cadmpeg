@@ -3402,6 +3402,54 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
 }
 
 #[test]
+fn semantic_writer_round_trips_extrusion_to_face() {
+    use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Profile" Type="Sketch" id="30"/><Extrusion Name="UpTo" Type="BossExtrude" id="31" Profile="30" EndCondition="ToFace" Face="face:12" Operation="Join"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let FeatureDefinition::Extrude { extent, .. } = &mut decoded.ir.model.features[1].definition
+    else {
+        panic!("typed extrusion");
+    };
+    assert_eq!(
+        extent,
+        &Extent::ToFace {
+            face: FaceSelection::Native("face:12".into())
+        }
+    );
+    *extent = Extent::ToFace {
+        face: FaceSelection::Native("face:13".into()),
+    };
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[1];
+    assert_eq!(native.properties["EndCondition"], "ToFace");
+    assert_eq!(native.properties["Face"], "face:13");
+    assert!(matches!(
+        &regenerated.ir.model.features[1].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::ToFace {
+                face: FaceSelection::Native(face)
+            },
+            ..
+        } if face == "face:13"
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_fillet_radius() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

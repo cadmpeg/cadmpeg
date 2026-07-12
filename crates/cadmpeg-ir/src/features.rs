@@ -435,7 +435,7 @@ pub enum Extent {
     /// Extends until it reaches a target face.
     ToFace {
         /// Face terminating the operation.
-        face: FaceId,
+        face: FaceSelection,
     },
     /// Fixed angular extent.
     Angle {

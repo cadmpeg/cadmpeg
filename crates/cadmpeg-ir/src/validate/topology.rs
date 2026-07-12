@@ -1024,10 +1024,17 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for extent in extents {
-            if let Extent::ToFace { face } = extent {
-                if !ids.faces.contains(&face.0) {
-                    ref_error(findings, &feature.id.0, "termination face", &face.0);
-                }
+            if let Extent::ToFace {
+                face: FaceSelection::Faces(faces),
+            } = extent
+            {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "termination face",
+                    faces.iter().map(|id| id.0.as_str()),
+                    &ids.faces,
+                );
             }
         }
         for selection in edge_selections {

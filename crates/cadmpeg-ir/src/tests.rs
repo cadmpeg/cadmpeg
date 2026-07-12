@@ -578,7 +578,9 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 
 #[test]
 fn feature_history_rejects_dangling_and_forward_dependencies() {
-    use crate::features::{BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, ProfileRef};
+    use crate::features::{
+        BooleanOp, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId, ProfileRef,
+    };
     use crate::ids::{BodyId, FaceId};
 
     let mut ir = unit_cube();
@@ -594,7 +596,9 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
             profile: ProfileRef::Faces(vec![FaceId("synthetic:test:face#profile-missing".into())]),
             direction: None,
             extent: Extent::ToFace {
-                face: FaceId("synthetic:test:face#termination-missing".into()),
+                face: FaceSelection::Faces(vec![FaceId(
+                    "synthetic:test:face#termination-missing".into(),
+                )]),
             },
             op: BooleanOp::NewBody,
             draft: None,
@@ -1607,7 +1611,7 @@ fn pcurve_surface_mismatch_is_flagged() {
 
 #[test]
 fn feature_extents_round_trip_through_json() {
-    use crate::features::{Angle, Extent, Length};
+    use crate::features::{Angle, Extent, FaceSelection, Length};
     use crate::ids::FaceId;
 
     let extents = vec![
@@ -1623,7 +1627,7 @@ fn feature_extents_round_trip_through_json() {
         },
         Extent::ThroughAll,
         Extent::ToFace {
-            face: FaceId("synthetic:test:face#0".into()),
+            face: FaceSelection::Faces(vec![FaceId("synthetic:test:face#0".into())]),
         },
         Extent::Angle {
             angle: Angle(std::f64::consts::PI),

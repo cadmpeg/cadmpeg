@@ -411,6 +411,9 @@ fn project_extrude(
             second: length("Depth2")?,
         },
         Some("ThroughAll") => Extent::ThroughAll,
+        Some("ToFace") => Extent::ToFace {
+            face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
+        },
         Some(_) => return None,
     };
     let direction = match feature.properties.get("Direction") {
@@ -1587,6 +1590,7 @@ pub fn sync_neutral_features(
                 parameters.remove("Depth2");
                 parameters.remove("Draft");
                 properties.remove("Direction");
+                properties.remove("Face");
                 match extent {
                     Extent::Blind { length } => {
                         properties.insert("EndCondition".into(), "Blind".into());
@@ -1604,8 +1608,19 @@ pub fn sync_neutral_features(
                     Extent::ThroughAll => {
                         properties.insert("EndCondition".into(), "ThroughAll".into());
                     }
-                    Extent::ToFace { .. }
-                    | Extent::Angle { .. }
+                    Extent::ToFace {
+                        face: FaceSelection::Native(selection),
+                    } if !selection.is_empty() => {
+                        properties.insert("EndCondition".into(), "ToFace".into());
+                        properties.insert("Face".into(), selection.clone());
+                    }
+                    Extent::ToFace { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses an unsupported extrusion face selection",
+                            feature.id
+                        )));
+                    }
+                    Extent::Angle { .. }
                     | Extent::SymmetricAngle { .. }
                     | Extent::TwoSidedAngles { .. } => {
                         return Err(CodecError::NotImplemented(format!(
