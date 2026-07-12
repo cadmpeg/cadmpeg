@@ -1747,12 +1747,17 @@ fn decode_scaled_compound_loft_spl_sur(
     record_bytes: &[u8],
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
-    let name = b"scaled_cloft_spl_sur";
-    let start = record_bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
+    let names: [&[u8]; 2] = [b"scaled_cloft_spl_sur", b"sclclftsur"];
+    let (start, name) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name))
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
@@ -1999,12 +2004,17 @@ fn decode_law_formula(
 }
 
 fn decode_skin_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
-    let name = b"skin_spl_sur";
-    let start = record_bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
+    let names: [&[u8]; 2] = [b"skin_spl_sur", b"skinsur"];
+    let (start, name) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name))
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
@@ -2096,12 +2106,17 @@ fn decode_skin_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
 }
 
 fn decode_net_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
-    let name = b"net_spl_sur";
-    let start = record_bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
+    let names: [&[u8]; 2] = [b"net_spl_sur", b"netsur"];
+    let (start, name) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name))
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
@@ -2151,7 +2166,7 @@ fn decode_net_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
 }
 
 fn decode_sweep_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"sweep_spl_sur", b"sweep_sur"];
+    let names: [&[u8]; 3] = [b"sweep_spl_sur", b"sweep_sur", b"sweepsur"];
     let (start, name_len) = names.into_iter().find_map(|name| {
         record_bytes
             .windows(name.len() + 3)
@@ -2753,16 +2768,24 @@ fn decode_cyl_spl_sur_at(
     record_bytes: &[u8],
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
-    let marker = b"\x0f\x0d\x0bcyl_spl_sur";
-    let start = record_bytes
-        .windows(marker.len())
-        .position(|w| w == marker)?;
+    let names: [&[u8]; 2] = [b"cyl_spl_sur", b"cylsur"];
+    let (start, name) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name))
+    })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let directrix = decode_curve_cache_at(span, int_width)?;
 
     let mut doubles = Vec::new();
     let mut direction = None;
-    let mut pos = marker.len();
+    let mut pos = name.len() + 3;
     while pos < span.len() {
         match span[pos] {
             0x06 if direction.is_none() => doubles.push(read_f64(span, pos + 1)?),
@@ -3132,7 +3155,12 @@ fn decode_var_blend_spl_sur(
     use cadmpeg_ir::geometry::{
         LoftBridgeToken, VariableBlendChamfer, VariableBlendSingleRadiusTail,
     };
-    let names: [&[u8]; 2] = [b"var_blend_spl_sur", b"srf_srf_v_bl_spl_sur"];
+    let names: [&[u8]; 4] = [
+        b"var_blend_spl_sur",
+        b"varblendsplsur",
+        b"srf_srf_v_bl_spl_sur",
+        b"srfsrfblndsur",
+    ];
     let (start, name_len) = names.into_iter().find_map(|name| {
         record_bytes
             .windows(name.len() + 3)

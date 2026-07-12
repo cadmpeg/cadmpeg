@@ -105,6 +105,21 @@ fn t_ident(b: &mut Vec<u8>, s: &str) {
     b.push(s.len() as u8);
     b.extend_from_slice(s.as_bytes());
 }
+
+fn renamed_generated_subtype(mut bytes: Vec<u8>, old: &str, new: &str) -> Vec<u8> {
+    let old = old.as_bytes();
+    let position = bytes
+        .windows(old.len())
+        .position(|window| window == old)
+        .expect("generated subtype name");
+    assert!(matches!(
+        bytes.get(position.wrapping_sub(2)),
+        Some(0x0d | 0x0e)
+    ));
+    bytes[position - 1] = u8::try_from(new.len()).expect("short subtype name");
+    bytes.splice(position..position + old.len(), new.bytes());
+    bytes
+}
 fn t_subident(b: &mut Vec<u8>, s: &str) {
     b.push(0x0e);
     b.push(s.len() as u8);
@@ -8563,6 +8578,69 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
 }
 
 #[test]
+fn generated_legacy_surface_names_select_modern_layouts() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let cases = [
+        (
+            renamed_generated_subtype(
+                synthetic_skin_spl_sur_smbh(0, false),
+                "skin_spl_sur",
+                "skinsur",
+            ),
+            "skin",
+        ),
+        (
+            renamed_generated_subtype(synthetic_net_spl_sur_smbh(), "net_spl_sur", "netsur"),
+            "net",
+        ),
+        (
+            renamed_generated_subtype(
+                synthetic_profile_first_sweep_smbh(),
+                "sweep_spl_sur",
+                "sweepsur",
+            ),
+            "sweep",
+        ),
+        (
+            renamed_generated_subtype(
+                synthetic_scaled_compound_loft_smbh(true),
+                "scaled_cloft_spl_sur",
+                "sclclftsur",
+            ),
+            "scaled_compound_loft",
+        ),
+        (
+            renamed_generated_subtype(synthetic_cyl_spl_sur_smbh(), "cyl_spl_sur", "cylsur"),
+            "extrusion",
+        ),
+    ];
+    for (smbh, expected) in cases {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{expected} legacy decode: {error}"));
+        let definition = &decoded.ir.model.procedural_surfaces[0].definition;
+        assert!(
+            matches!(
+                (expected, definition),
+                ("skin", ProceduralSurfaceDefinition::Skin { .. })
+                    | ("net", ProceduralSurfaceDefinition::Net { .. })
+                    | ("sweep", ProceduralSurfaceDefinition::Sweep { .. })
+                    | (
+                        "scaled_compound_loft",
+                        ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
+                    )
+                    | ("extrusion", ProceduralSurfaceDefinition::Extrusion { .. })
+            ),
+            "wrong definition for {expected}: {definition:?}"
+        );
+    }
+}
+
+#[test]
 fn generated_compound_loft_decodes_scale_and_zero_tail() {
     use cadmpeg_ir::geometry::{
         CompoundLoftDirection, CompoundLoftTail, ProceduralSurfaceDefinition,
@@ -9279,7 +9357,12 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
 fn generated_variable_blends_decode_complete_single_radius_graphs() {
     use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendValuePayload};
 
-    for name in ["var_blend_spl_sur", "srf_srf_v_bl_spl_sur"] {
+    for name in [
+        "var_blend_spl_sur",
+        "varblendsplsur",
+        "srf_srf_v_bl_spl_sur",
+        "srfsrfblndsur",
+    ] {
         let result = F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh(name))),
