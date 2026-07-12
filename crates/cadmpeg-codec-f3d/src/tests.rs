@@ -2372,7 +2372,7 @@ fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
     bytes
 }
 
-fn synthetic_full_deformable_surface_smbh() -> Vec<u8> {
+fn synthetic_full_deformable_surface_smbh(version_value: Option<i64>) -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -2411,7 +2411,9 @@ fn synthetic_full_deformable_surface_smbh() -> Vec<u8> {
     t_long(&mut surface, 42);
     surface.push(0x0a);
     t_dbl(&mut surface, 0.2);
-    t_long(&mut surface, 226);
+    if let Some(version_value) = version_value {
+        t_long(&mut surface, version_value);
+    }
     t_dbl(&mut surface, 0.3);
     surface.extend_from_slice(&generated_curve_block());
     for frame in 0..2 {
@@ -9036,45 +9038,55 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
 #[test]
 fn generated_full_deformable_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{DeformableSurfaceData, ProceduralSurfaceDefinition};
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_full_deformable_surface_smbh())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let ProceduralSurfaceDefinition::Deformable { construction } =
-        &decoded.ir.model.procedural_surfaces[0].definition
-    else {
-        panic!()
-    };
-    let DeformableSurfaceData::Full {
-        selector,
-        native_id,
-        version_value,
-        frames,
-        trailing_value,
-        ..
-    } = &construction.data
-    else {
-        panic!()
-    };
-    assert_eq!((*selector, *native_id), (7, 42));
-    assert_eq!(*version_value, Some(226));
-    assert_eq!(frames[0].parameter, 0.4);
-    assert_eq!(frames[1].parameter, 0.5);
-    assert_eq!(*trailing_value, 99);
-    let mut source_less = decoded.ir;
-    source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let mut encoded = Vec::new();
-    F3dCodec.encode(&source_less, &mut encoded).unwrap();
-    let round = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
-    assert!(matches!(
-        round.ir.model.procedural_surfaces[0].definition,
-        ProceduralSurfaceDefinition::Deformable { .. }
-    ));
+    for expected_version_value in [None, Some(226)] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_full_deformable_surface_smbh(
+                    expected_version_value,
+                ))),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let ProceduralSurfaceDefinition::Deformable { construction } =
+            &decoded.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!()
+        };
+        let DeformableSurfaceData::Full {
+            selector,
+            native_id,
+            version_value,
+            frames,
+            trailing_value,
+            ..
+        } = &construction.data
+        else {
+            panic!()
+        };
+        assert_eq!((*selector, *native_id), (7, 42));
+        assert_eq!(*version_value, expected_version_value);
+        assert_eq!(frames[0].parameter, 0.4);
+        assert_eq!(frames[1].parameter, 0.5);
+        assert_eq!(*trailing_value, 99);
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let mut encoded = Vec::new();
+        F3dCodec.encode(&source_less, &mut encoded).unwrap();
+        let round = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap();
+        let ProceduralSurfaceDefinition::Deformable { construction } =
+            &round.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!()
+        };
+        assert!(matches!(
+            construction.data,
+            DeformableSurfaceData::Full { version_value, .. }
+                if version_value == expected_version_value
+        ));
+    }
 }
 
 #[test]
