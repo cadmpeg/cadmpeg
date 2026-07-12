@@ -1555,15 +1555,7 @@ pub fn sync_neutral_features(
                 normal,
                 u_axis,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained reference-plane record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("ReferencePlane")
-                    || !valid_plane_frame(*normal, *u_axis)
-                {
+                if !valid_plane_frame(*normal, *u_axis) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported reference-plane semantics",
                         feature.id
@@ -1578,22 +1570,35 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let mut properties = record.properties.clone();
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("ReferencePlane"))
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
                 properties.insert("Origin".into(), format_point3_mm(*origin));
                 properties.insert("Normal".into(), format_vector3(*normal));
                 properties.insert("UAxis".into(), format_vector3(*u_axis));
-                (record.kind.clone(), record.parameters.clone(), properties)
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "ReferencePlane".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
             }
             FeatureDefinition::DatumAxis { origin, direction } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained reference-axis record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("ReferenceAxis")
-                    || !valid_direction(*direction)
-                {
+                if !valid_direction(*direction) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported reference-axis semantics",
                         feature.id
@@ -1608,49 +1613,89 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let mut properties = record.properties.clone();
-                properties.insert("Origin".into(), format_point3_mm(*origin));
-                properties.insert("Direction".into(), format_vector3(*direction));
-                (record.kind.clone(), record.parameters.clone(), properties)
-            }
-            FeatureDefinition::DatumPoint { position } => {
-                let Some(record) = existing.as_deref() else {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("ReferenceAxis"))
+                {
                     return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained reference-point record",
+                        "SLDPRT feature {} changes operation family",
                         feature.id
                     )));
-                };
-                if !record.kind.eq_ignore_ascii_case("ReferencePoint")
-                    || ![position.x, position.y, position.z]
-                        .iter()
-                        .all(|value| value.is_finite())
+                }
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
+                properties.insert("Origin".into(), format_point3_mm(*origin));
+                properties.insert("Direction".into(), format_vector3(*direction));
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "ReferenceAxis".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
+            }
+            FeatureDefinition::DatumPoint { position } => {
+                if ![position.x, position.y, position.z]
+                    .iter()
+                    .all(|value| value.is_finite())
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported reference-point semantics",
                         feature.id
                     )));
                 }
-                let mut properties = record.properties.clone();
-                properties.insert("Position".into(), format_point3_mm(*position));
-                (record.kind.clone(), record.parameters.clone(), properties)
-            }
-            FeatureDefinition::Sketch { .. } => {
-                let Some(record) = existing.as_deref() else {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("ReferencePoint"))
+                {
                     return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT sketch feature {} requires a retained native record",
+                        "SLDPRT feature {} changes operation family",
                         feature.id
                     )));
-                };
-                if !record.kind.eq_ignore_ascii_case("Sketch") {
+                }
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
+                properties.insert("Position".into(), format_point3_mm(*position));
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "ReferencePoint".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
+            }
+            FeatureDefinition::Sketch { .. } => {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Sketch"))
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
                         feature.id
                     )));
                 }
                 (
-                    record.kind.clone(),
-                    record.parameters.clone(),
-                    record.properties.clone(),
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Sketch".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    existing
+                        .as_deref()
+                        .map(|record| record.properties.clone())
+                        .unwrap_or_default(),
                 )
             }
             FeatureDefinition::Extrude {

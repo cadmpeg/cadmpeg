@@ -1373,6 +1373,7 @@ fn encoder_writes_source_less_ir() {
 
 #[test]
 fn encoder_writes_source_less_line_sketches() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
@@ -1409,7 +1410,7 @@ fn encoder_writes_source_less_line_sketches() {
         });
     }
     ir.model.sketches.push(Sketch {
-        id: sketch_id,
+        id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
         origin: Point3::new(0.0, 0.0, 0.0),
@@ -1422,6 +1423,18 @@ fn encoder_writes_source_less_line_sketches() {
                 reversed: false,
             })
             .collect()],
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#profile".into()),
+        ordinal: 0,
+        name: Some("Profile".into()),
+        suppressed: false,
+        parent: None,
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            sketch: Some(sketch_id),
+        },
         native_ref: None,
     });
 
@@ -1446,6 +1459,10 @@ fn encoder_writes_source_less_line_sketches() {
         .sketch_entities
         .iter()
         .all(|entity| matches!(entity.geometry, SketchGeometry::Line { .. })));
+    assert!(decoded.ir.model.features.iter().any(|feature| matches!(
+        feature.definition,
+        FeatureDefinition::Sketch { sketch: Some(_) }
+    )));
 }
 
 #[test]
@@ -1689,6 +1706,64 @@ fn semantic_writer_round_trips_unknown_feature_properties() {
             && properties.get("Mode").map(String::as_str) == Some("Twisting")
             && properties.get("Axis").map(String::as_str) == Some("0,1,0")
             && properties.get("NeutralPlane").map(String::as_str) == Some("face:12")
+    ));
+}
+
+#[test]
+fn encoder_writes_source_less_datum_features() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.model.bodies[0].name = None;
+    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    ir.model
+        .edges
+        .iter_mut()
+        .for_each(|edge| edge.param_range = None);
+    let definitions = [
+        FeatureDefinition::DatumPlane {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        FeatureDefinition::DatumAxis {
+            origin: Point3::new(4.0, 5.0, 6.0),
+            direction: Vector3::new(0.0, 1.0, 0.0),
+        },
+        FeatureDefinition::DatumPoint {
+            position: Point3::new(7.0, 8.0, 9.0),
+        },
+    ];
+    for (ordinal, definition) in definitions.into_iter().enumerate() {
+        ir.model.features.push(Feature {
+            id: FeatureId(format!("synthetic:test:feature#datum-{ordinal}")),
+            ordinal: ordinal as u64,
+            name: Some(format!("Datum {ordinal}")),
+            suppressed: false,
+            parent: None,
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        });
+    }
+
+    let mut encoded = Vec::new();
+    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::DatumPlane { .. }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::DatumAxis { .. }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[2].definition,
+        FeatureDefinition::DatumPoint { .. }
     ));
 }
 
