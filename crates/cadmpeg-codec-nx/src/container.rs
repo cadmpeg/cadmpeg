@@ -7,6 +7,7 @@
 //! `/Root/UG_PART/UG_PART` span to bound its compressed-stream scan.
 
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::le::{u32_at as u32_le, u64_at as u64_le};
 
 /// The eight-byte signature used to identify an SPLMSSTR container.
 pub const MAGIC: &[u8; 8] = b"SPLMSSTR";
@@ -183,16 +184,6 @@ fn u48_le(d: &[u8], at: usize) -> u64 {
         }
     }
     v
-}
-
-fn u32_le(d: &[u8], at: usize) -> Option<u32> {
-    d.get(at..at + 4)
-        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
-}
-
-fn u64_le(d: &[u8], at: usize) -> Option<u64> {
-    d.get(at..at + 8)
-        .map(|s| u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
 }
 
 /// Read a complete SPLMSSTR file and parse its header and directories.

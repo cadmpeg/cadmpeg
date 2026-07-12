@@ -5,11 +5,8 @@ use crate::container::ContainerScan;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
+use cadmpeg_ir::le::{f64_at as f64_le, u32_at as u32_le, u64_at as u64_le};
 use cadmpeg_ir::Exactness;
-
-fn f64_le(bytes: &[u8], at: usize) -> Option<f64> {
-    Some(f64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
-}
 
 pub fn attributes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<SourceAttribute> {
     let mut out = Vec::new();
@@ -198,13 +195,6 @@ fn scan_configuration_manager(
             annotations,
         ));
     }
-}
-
-fn u32_le(bytes: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
-}
-fn u64_le(bytes: &[u8], at: usize) -> Option<u64> {
-    Some(u64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
 }
 
 fn attribute(
