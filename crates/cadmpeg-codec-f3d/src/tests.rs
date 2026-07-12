@@ -1077,6 +1077,7 @@ fn synthetic_geometry_with_projection_smbh() -> Vec<u8> {
         .windows(b"\x0d\x04nubs".len())
         .rposition(|window| window == b"\x0d\x04nubs")
         .expect("generated solved curve cache");
+    bytes[solved - 19] = 0x0a;
     let mut tail = generated_curve_block();
     tail.push(0x0a);
     t_dbl(&mut tail, -2.0);
@@ -11787,6 +11788,7 @@ fn generated_projection_decodes_and_writes_source_less() {
         .expect("projection decode");
     let ProceduralCurveDefinition::Projection {
         context,
+        discontinuity_flag,
         source,
         tail,
     } = &result.ir.model.procedural_curves[0].definition
@@ -11794,6 +11796,7 @@ fn generated_projection_decodes_and_writes_source_less() {
         panic!("expected projection")
     };
     assert!(context.sides.iter().all(|side| side.surface.is_some()));
+    assert!(*discontinuity_flag);
     assert!(result
         .ir
         .model
@@ -11819,11 +11822,15 @@ fn generated_projection_decodes_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less projection round trip");
-    let ProceduralCurveDefinition::Projection { tail, .. } =
-        &round_trip.ir.model.procedural_curves[0].definition
+    let ProceduralCurveDefinition::Projection {
+        discontinuity_flag,
+        tail,
+        ..
+    } = &round_trip.ir.model.procedural_curves[0].definition
     else {
         panic!("expected round-trip projection")
     };
+    assert!(*discontinuity_flag);
     assert_eq!(
         tail,
         &ProjectionTail::Ranged {
@@ -11849,6 +11856,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
     assert!(matches!(
         result.ir.model.procedural_curves[0].definition,
         ProceduralCurveDefinition::Projection {
+            discontinuity_flag: true,
             tail: ProjectionTail::EarlyClose { flag: true },
             ..
         }
@@ -11867,6 +11875,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
     assert!(matches!(
         round_trip.ir.model.procedural_curves[0].definition,
         ProceduralCurveDefinition::Projection {
+            discontinuity_flag: true,
             tail: ProjectionTail::EarlyClose { flag: true },
             ..
         }

@@ -2111,6 +2111,8 @@ pub enum ProceduralCurveDefinition {
     Projection {
         /// Shared surfaces, UV curves, interval, and discontinuity metadata.
         context: IntcurveSupportContext,
+        /// Native boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
         /// Curve being projected.
         source: CurveId,
         /// Native post-source tail form.

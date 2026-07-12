@@ -5957,6 +5957,7 @@ fn native_procedural_curve(
     }
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
         context,
+        discontinuity_flag,
         source,
         tail,
     } = &procedural.definition
@@ -5976,7 +5977,7 @@ fn native_procedural_curve(
         bytes.push(0x0f);
         native_ident(bytes, "proj_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
-        bytes.push(0x0b);
+        bytes.push(native_bool(*discontinuity_flag));
         native_nurbs_curve(bytes, source)?;
         match tail {
             cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag } => {

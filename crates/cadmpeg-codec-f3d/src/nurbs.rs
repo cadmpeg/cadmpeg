@@ -4362,6 +4362,7 @@ pub(crate) struct EmbeddedProjection {
     pub(crate) pcurves: [NurbsPcurve; 2],
     pub(crate) parameter_range: [f64; 2],
     pub(crate) discontinuities: [Vec<f64>; 3],
+    pub(crate) discontinuity_flag: bool,
     pub(crate) source: NurbsCurve,
     pub(crate) tail: cadmpeg_ir::geometry::ProjectionTail,
 }
@@ -4964,7 +4965,7 @@ fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<Embedded
         take_float_array(bytes, &mut position, int_width)?,
         take_float_array(bytes, &mut position, int_width)?,
     ];
-    take_bool(bytes, &mut position)?;
+    let discontinuity_flag = take_bool(bytes, &mut position)?;
     let source = decode_curve_block(bytes, position, int_width)?;
     position = source.end;
     let flag = take_bool(bytes, &mut position)?;
@@ -4985,6 +4986,7 @@ fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<Embedded
         pcurves: [first_pcurve, second_pcurve],
         parameter_range,
         discontinuities,
+        discontinuity_flag,
         source: source.curve,
         tail,
     })
