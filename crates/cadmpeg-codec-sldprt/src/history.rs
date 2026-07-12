@@ -530,7 +530,13 @@ fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
         }
     };
     Some(FeatureDefinition::Fillet {
-        edges: EdgeSelection::Native(feature.id.clone()),
+        edges: EdgeSelection::Native(
+            feature
+                .properties
+                .get("Edges")
+                .cloned()
+                .unwrap_or_else(|| feature.id.clone()),
+        ),
         radius,
     })
 }
@@ -828,7 +834,13 @@ fn project_shell(feature: &Feature) -> Option<FeatureDefinition> {
         .and_then(|value| parse_length_mm(value))?;
     let outward = parse_bool(feature.properties.get("Outward")?)?;
     Some(FeatureDefinition::Shell {
-        removed_faces: FaceSelection::Native(feature.id.clone()),
+        removed_faces: FaceSelection::Native(
+            feature
+                .properties
+                .get("RemovedFaces")
+                .cloned()
+                .unwrap_or_else(|| feature.id.clone()),
+        ),
         thickness: Length(thickness),
         outward,
     })
@@ -840,8 +852,20 @@ fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
         return None;
     }
     Some(FeatureDefinition::Draft {
-        faces: FaceSelection::Native(feature.id.clone()),
-        neutral_plane: FaceSelection::Native(feature.id.clone()),
+        faces: FaceSelection::Native(
+            feature
+                .properties
+                .get("Faces")
+                .cloned()
+                .unwrap_or_else(|| feature.id.clone()),
+        ),
+        neutral_plane: FaceSelection::Native(
+            feature
+                .properties
+                .get("NeutralPlane")
+                .cloned()
+                .unwrap_or_else(|| feature.id.clone()),
+        ),
         pull_direction,
         angle: Angle(
             feature
@@ -953,7 +977,13 @@ fn project_chamfer(feature: &Feature) -> Option<FeatureDefinition> {
         }
     };
     Some(FeatureDefinition::Chamfer {
-        edges: EdgeSelection::Native(feature.id.clone()),
+        edges: EdgeSelection::Native(
+            feature
+                .properties
+                .get("Edges")
+                .cloned()
+                .unwrap_or_else(|| feature.id.clone()),
+        ),
         spec,
     })
 }
@@ -1016,6 +1046,19 @@ fn format_point3_mm(value: Point3) -> String {
 
 fn format_vector3(value: Vector3) -> String {
     format!("{},{},{}", value.x, value.y, value.z)
+}
+
+fn write_native_selection(
+    properties: &mut BTreeMap<String, String>,
+    key: &str,
+    selection: &str,
+    fallback: &str,
+) {
+    if selection != fallback || properties.contains_key(key) {
+        properties.insert(key.into(), selection.into());
+    } else {
+        properties.remove(key);
+    }
 }
 
 fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
@@ -1656,7 +1699,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 };
-                if !record.kind.eq_ignore_ascii_case("Fillet") || selection != &record.id {
+                if !record.kind.eq_ignore_ascii_case("Fillet") || selection.trim().is_empty() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported fillet semantics",
                         feature.id
@@ -1697,7 +1740,9 @@ pub fn sync_neutral_features(
                         }
                     }
                 }
-                (record.kind.clone(), parameters, record.properties.clone())
+                let mut properties = record.properties.clone();
+                write_native_selection(&mut properties, "Edges", selection, &record.id);
+                (record.kind.clone(), parameters, properties)
             }
             FeatureDefinition::Chamfer {
                 edges: EdgeSelection::Native(selection),
@@ -1709,7 +1754,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 };
-                if !record.kind.eq_ignore_ascii_case("Chamfer") || selection != &record.id {
+                if !record.kind.eq_ignore_ascii_case("Chamfer") || selection.trim().is_empty() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported chamfer semantics",
                         feature.id
@@ -1757,7 +1802,9 @@ pub fn sync_neutral_features(
                         parameters.insert("Angle".into(), format_angle_rad(angle.0));
                     }
                 }
-                (record.kind.clone(), parameters, record.properties.clone())
+                let mut properties = record.properties.clone();
+                write_native_selection(&mut properties, "Edges", selection, &record.id);
+                (record.kind.clone(), parameters, properties)
             }
             FeatureDefinition::Shell {
                 removed_faces: FaceSelection::Native(selection),
@@ -1770,7 +1817,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 };
-                if !record.kind.eq_ignore_ascii_case("Shell") || selection != &record.id {
+                if !record.kind.eq_ignore_ascii_case("Shell") || selection.trim().is_empty() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported shell semantics",
                         feature.id
@@ -1779,6 +1826,7 @@ pub fn sync_neutral_features(
                 let mut parameters = record.parameters.clone();
                 parameters.insert("Thickness".into(), format_length_mm(thickness.0));
                 let mut properties = record.properties.clone();
+                write_native_selection(&mut properties, "RemovedFaces", selection, &record.id);
                 properties.insert("Outward".into(), outward.to_string());
                 (record.kind.clone(), parameters, properties)
             }
@@ -1796,8 +1844,8 @@ pub fn sync_neutral_features(
                     )));
                 };
                 if !record.kind.eq_ignore_ascii_case("Draft")
-                    || faces != &record.id
-                    || neutral_plane != &record.id
+                    || faces.trim().is_empty()
+                    || neutral_plane.trim().is_empty()
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported draft semantics",
@@ -1814,6 +1862,8 @@ pub fn sync_neutral_features(
                 let mut parameters = record.parameters.clone();
                 parameters.insert("Angle".into(), format_angle_rad(angle.0));
                 let mut properties = record.properties.clone();
+                write_native_selection(&mut properties, "Faces", faces, &record.id);
+                write_native_selection(&mut properties, "NeutralPlane", neutral_plane, &record.id);
                 properties.insert("Direction".into(), format_vector3(*pull_direction));
                 properties.insert("Outward".into(), outward.to_string());
                 (record.kind.clone(), parameters, properties)

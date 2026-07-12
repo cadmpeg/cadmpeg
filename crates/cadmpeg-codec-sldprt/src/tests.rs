@@ -3455,15 +3455,11 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Fillet Name="Round" Type="Fillet" id="10"><Dimension Name="Radius">2mm</Dimension></Fillet></Keywords>"#,
+        br#"<Keywords><Fillet Name="Round" Type="Fillet" id="10" Edges="edge:1,edge:2"><Dimension Name="Radius">2mm</Dimension></Fillet></Keywords>"#,
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native_id = decoded.ir.model.features[0]
-        .native_ref
-        .clone()
-        .expect("native fillet record");
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
@@ -3471,10 +3467,10 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
             radius: cadmpeg_ir::features::RadiusSpec::Constant {
                 radius: cadmpeg_ir::features::Length(2.0),
             },
-        } if selection == &native_id
+        } if selection == "edge:1,edge:2"
     ));
 
-    let cadmpeg_ir::features::FeatureDefinition::Fillet { radius, .. } =
+    let cadmpeg_ir::features::FeatureDefinition::Fillet { edges, radius } =
         &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed fillet feature");
@@ -3482,6 +3478,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
     *radius = cadmpeg_ir::features::RadiusSpec::Constant {
         radius: cadmpeg_ir::features::Length(3.5),
     };
+    *edges = cadmpeg_ir::features::EdgeSelection::Native("edge:3".into());
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -3493,6 +3490,10 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
     assert_eq!(
         sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters["Radius"],
         "3.5mm"
+    );
+    assert_eq!(
+        sldprt_native(&regenerated.ir).feature_histories[0].features[0].properties["Edges"],
+        "edge:3"
     );
     assert!(matches!(
         &regenerated.ir.model.features[0].definition,
@@ -3578,16 +3579,16 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
 
 #[test]
 fn semantic_writer_round_trips_all_typed_chamfer_forms() {
-    use cadmpeg_ir::features::{ChamferSpec, FeatureDefinition, Length};
+    use cadmpeg_ir::features::{ChamferSpec, EdgeSelection, FeatureDefinition, Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
         br#"<Keywords>
-            <Chamfer Name="Equal" Type="Chamfer" id="11"><Dimension Name="Distance">2mm</Dimension></Chamfer>
-            <Chamfer Name="Unequal" Type="Chamfer" id="12"><Dimension Name="Distance1">3mm</Dimension><Dimension Name="Distance2">0.25in</Dimension></Chamfer>
-            <Chamfer Name="Angled" Type="Chamfer" id="13"><Dimension Name="Distance">4mm</Dimension><Dimension Name="Angle">45deg</Dimension></Chamfer>
+            <Chamfer Name="Equal" Type="Chamfer" id="11" Edges="edge:1"><Dimension Name="Distance">2mm</Dimension></Chamfer>
+            <Chamfer Name="Unequal" Type="Chamfer" id="12" Edges="edge:2"><Dimension Name="Distance1">3mm</Dimension><Dimension Name="Distance2">0.25in</Dimension></Chamfer>
+            <Chamfer Name="Angled" Type="Chamfer" id="13" Edges="edge:3"><Dimension Name="Distance">4mm</Dimension><Dimension Name="Angle">45deg</Dimension></Chamfer>
         </Keywords>"#,
     ));
     let mut decoded = SldprtCodec
@@ -3596,11 +3597,11 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Chamfer {
+            edges: EdgeSelection::Native(edges),
             spec: ChamferSpec::Distance {
                 distance: Length(2.0),
             },
-            ..
-        }
+        } if edges == "edge:1"
     ));
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
@@ -3636,11 +3637,19 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
             angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_6),
         },
     ];
-    for (feature, replacement) in decoded.ir.model.features.iter_mut().zip(replacements) {
-        let FeatureDefinition::Chamfer { spec, .. } = &mut feature.definition else {
+    for (index, (feature, replacement)) in decoded
+        .ir
+        .model
+        .features
+        .iter_mut()
+        .zip(replacements)
+        .enumerate()
+    {
+        let FeatureDefinition::Chamfer { edges, spec } = &mut feature.definition else {
             panic!("typed chamfer feature");
         };
         *spec = replacement;
+        *edges = EdgeSelection::Native(format!("edge:{}", index + 4));
     }
 
     let mut encoded = Vec::new();
@@ -3652,6 +3661,9 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         .unwrap();
     let features = &sldprt_native(&regenerated.ir).feature_histories[0].features;
     assert_eq!(features[0].parameters["Distance"], "2.5mm");
+    assert_eq!(features[0].properties["Edges"], "edge:4");
+    assert_eq!(features[1].properties["Edges"], "edge:5");
+    assert_eq!(features[2].properties["Edges"], "edge:6");
     assert_eq!(features[1].parameters["Distance1"], "3.5mm");
     assert_eq!(features[1].parameters["Distance2"], "7mm");
     assert_eq!(
@@ -3668,32 +3680,31 @@ fn semantic_writer_round_trips_typed_shell() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Shell Name="Thin" Type="Shell" id="14" Outward="false"><Dimension Name="Thickness">0.08in</Dimension></Shell></Keywords>"#,
+        br#"<Keywords><Shell Name="Thin" Type="Shell" id="14" RemovedFaces="face:4" Outward="false"><Dimension Name="Thickness">0.08in</Dimension></Shell></Keywords>"#,
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native_id = decoded.ir.model.features[0]
-        .native_ref
-        .clone()
-        .expect("native shell record");
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Shell {
             removed_faces: FaceSelection::Native(selection),
             thickness: Length(value),
             outward: false,
-        } if selection == &native_id && (*value - 2.032).abs() < 1e-12
+        } if selection == "face:4" && (*value - 2.032).abs() < 1e-12
     ));
 
     let FeatureDefinition::Shell {
-        thickness, outward, ..
+        removed_faces,
+        thickness,
+        outward,
     } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed shell feature");
     };
     *thickness = Length(3.0);
     *outward = true;
+    *removed_faces = FaceSelection::Native("face:5,face:6".into());
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -3704,6 +3715,7 @@ fn semantic_writer_round_trips_typed_shell() {
         .unwrap();
     let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
     assert_eq!(feature.parameters["Thickness"], "3mm");
+    assert_eq!(feature.properties["RemovedFaces"], "face:5,face:6");
     assert_eq!(feature.properties["Outward"], "true");
     assert!(matches!(
         &regenerated.ir.model.features[0].definition,
@@ -3729,7 +3741,6 @@ fn semantic_writer_round_trips_typed_draft() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native_id = decoded.ir.model.features[0].native_ref.clone().unwrap();
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Draft {
@@ -3738,16 +3749,17 @@ fn semantic_writer_round_trips_typed_draft() {
             pull_direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
             angle: Angle(value),
             outward: false,
-        } if faces == &native_id
-            && neutral_plane == &native_id
+        } if faces == "face:1,face:2"
+            && neutral_plane == "face:3"
             && (*value - 3f64.to_radians()).abs() < 1e-12
     ));
 
     let FeatureDefinition::Draft {
+        faces,
+        neutral_plane,
         pull_direction,
         angle,
         outward,
-        ..
     } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed draft");
@@ -3755,6 +3767,8 @@ fn semantic_writer_round_trips_typed_draft() {
     *pull_direction = Vector3::new(0.0, 1.0, 0.0);
     *angle = Angle(7f64.to_radians());
     *outward = true;
+    *faces = FaceSelection::Native("face:4".into());
+    *neutral_plane = FaceSelection::Native("face:5".into());
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -3764,8 +3778,8 @@ fn semantic_writer_round_trips_typed_draft() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
-    assert_eq!(feature.properties["Faces"], "face:1,face:2");
-    assert_eq!(feature.properties["NeutralPlane"], "face:3");
+    assert_eq!(feature.properties["Faces"], "face:4");
+    assert_eq!(feature.properties["NeutralPlane"], "face:5");
     assert_eq!(feature.properties["Direction"], "0,1,0");
     assert_eq!(feature.properties["Outward"], "true");
     assert_eq!(
