@@ -41,7 +41,7 @@ pub struct Appearance {
 }
 
 /// A topology entity which receives an appearance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum AppearanceTarget {
     /// Whole-body appearance.

@@ -286,15 +286,10 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn append_links(&mut self, source_order: usize, links: &[String]) -> bool {
-        let Some(unknown) = self
-            .ir
-            .unknowns
-            .get(source_order)
-            .map(|record| record.id.clone())
-        else {
+        let Some(record) = self.ir.unknowns.get_mut(source_order) else {
             return false;
         };
-        append_record_links(&mut self.ir, &unknown, links);
+        append_links_to_record(record, links);
         true
     }
 
@@ -943,7 +938,7 @@ impl<'a> DecodeContext<'a> {
                     fields: BTreeMap::new(),
                 },
             );
-            append_record_links(candidate, &unknown, std::slice::from_ref(&id));
+            append_record_links_at(candidate, source_order, std::slice::from_ref(&id));
         });
         if let Err(findings) = result {
             self.scan_warning(
@@ -1498,7 +1493,7 @@ impl<'a> DecodeContext<'a> {
                 },
             );
         }
-        append_record_links(&mut candidate, unknown, &[surface_id.to_string()]);
+        append_record_links_at(&mut candidate, source_order, &[surface_id.to_string()]);
         if let Err(findings) = self.commit_valid_candidate(candidate) {
             self.phase_warnings.push(format!(
                 "procedural-surface: candidate rejected by IR validation: {findings}"
@@ -1590,7 +1585,7 @@ impl<'a> DecodeContext<'a> {
             links.push(mesh.tessellation.id.clone());
             candidate.model.tessellations.push(mesh.tessellation);
         }
-        append_record_links(&mut candidate, &unknown, &links);
+        append_record_links_at(&mut candidate, source_order, &links);
         if let Err(findings) = self.commit_valid_candidate(candidate) {
             self.scan_warning(
                 source_order,
@@ -1635,7 +1630,7 @@ impl<'a> DecodeContext<'a> {
                     fields: BTreeMap::new(),
                 },
             );
-            append_record_links(candidate, &unknown, &[id.to_string()]);
+            append_record_links_at(candidate, source_order, &[id.to_string()]);
         }) {
             self.scan_warning(
                 source_order,
@@ -1800,7 +1795,7 @@ impl<'a> DecodeContext<'a> {
                 let fallback = staged.clone().free_carrier_fallback("IR validation");
                 let validation = self.validate_candidate(|candidate| {
                     staged.apply(candidate);
-                    append_record_links(candidate, &unknown, &links);
+                    append_record_links_at(candidate, source_order, &links);
                 });
                 if validation.is_ok() {
                     for warning in warnings {
@@ -1832,7 +1827,7 @@ impl<'a> DecodeContext<'a> {
                     let fallback_links = fallback.links.clone();
                     let fallback_validation = self.validate_candidate(|candidate| {
                         fallback.apply(candidate);
-                        append_record_links(candidate, &unknown, &fallback_links);
+                        append_record_links_at(candidate, source_order, &fallback_links);
                     });
                     if fallback_validation.is_ok() {
                         self.geometry_transferred |= emitted_geometry;
@@ -1886,7 +1881,17 @@ fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
     let Some(record) = ir.unknowns.iter_mut().find(|record| record.id == *unknown) else {
         return;
     };
-    let unknown = unknown.to_string();
+    append_links_to_record(record, links);
+}
+
+fn append_record_links_at(ir: &mut CadIr, source_order: usize, links: &[String]) {
+    if let Some(record) = ir.unknowns.get_mut(source_order) {
+        append_links_to_record(record, links);
+    }
+}
+
+fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {
+    let unknown = record.id.to_string();
     let mut additions = links
         .iter()
         .filter(|link| *link != &unknown)

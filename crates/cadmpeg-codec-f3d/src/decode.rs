@@ -870,6 +870,12 @@ fn resolve_face_appearance_bindings(
             }
         }
     }
+    let mut bound_targets = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .map(|binding| binding.target.clone())
+        .collect::<std::collections::HashSet<_>>();
     for assignment in face_assignments {
         let Some(faces) = faces_by_guid.get(assignment.face_guid.as_str()) else {
             continue;
@@ -884,12 +890,7 @@ fn resolve_face_appearance_bindings(
         };
         for face in faces {
             let target = AppearanceTarget::Face(face.clone());
-            if ir
-                .model
-                .appearance_bindings
-                .iter()
-                .any(|binding| binding.target == target)
-            {
+            if !bound_targets.insert(target.clone()) {
                 continue;
             }
             ir.model.appearance_bindings.push(AppearanceBinding {

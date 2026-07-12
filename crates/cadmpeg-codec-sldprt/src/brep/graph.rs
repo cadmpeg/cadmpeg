@@ -811,9 +811,15 @@ fn derive_planar_pcurves(
         };
         derived.push((coedge.id.clone(), id, pcurve));
     }
+    let coedge_indices = out
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(index, coedge)| (coedge.id.clone(), index))
+        .collect::<HashMap<_, _>>();
     for (coedge_id, id, pcurve) in derived {
-        if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == coedge_id) {
-            coedge.pcurve = Some(id.clone());
+        if let Some(index) = coedge_indices.get(&coedge_id) {
+            out.coedges[*index].pcurve = Some(id.clone());
         }
         annotations
             .note(&id, source_stream, 0)
@@ -960,9 +966,15 @@ fn derive_cylindrical_pcurves(
             },
         ));
     }
+    let coedge_indices = out
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(index, coedge)| (coedge.id.clone(), index))
+        .collect::<HashMap<_, _>>();
     for (coedge_id, id, pcurve) in derived {
-        if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == coedge_id) {
-            coedge.pcurve = Some(id.clone());
+        if let Some(index) = coedge_indices.get(&coedge_id) {
+            out.coedges[*index].pcurve = Some(id.clone());
         }
         annotations
             .note(&id, source_stream, 0)
@@ -1086,9 +1098,15 @@ fn derive_spherical_pcurves(
             },
         ));
     }
+    let coedge_indices = out
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(index, coedge)| (coedge.id.clone(), index))
+        .collect::<HashMap<_, _>>();
     for (coedge_id, id, pcurve) in derived {
-        if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == coedge_id) {
-            coedge.pcurve = Some(id.clone());
+        if let Some(index) = coedge_indices.get(&coedge_id) {
+            out.coedges[*index].pcurve = Some(id.clone());
         }
         annotations
             .note(&id, source_stream, 0)
@@ -1225,9 +1243,15 @@ fn derive_nurbs_boundary_pcurves(
             },
         ));
     }
+    let coedge_indices = out
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(index, coedge)| (coedge.id.clone(), index))
+        .collect::<HashMap<_, _>>();
     for (coedge_id, id, pcurve) in derived {
-        if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == coedge_id) {
-            coedge.pcurve = Some(id.clone());
+        if let Some(index) = coedge_indices.get(&coedge_id) {
+            out.coedges[*index].pcurve = Some(id.clone());
         }
         annotations
             .note(&id, source_stream, 0)
@@ -1365,6 +1389,12 @@ fn synthesize_cylinder_seams(
     }
 
     let mut removed = HashSet::new();
+    let mut coedge_indices = out
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(index, coedge)| (coedge.id.clone(), index))
+        .collect::<HashMap<_, _>>();
     for (face_id, loop_a, loop_b, circle_a, circle_b, vertex_a, vertex_b) in candidates {
         let point_for = |vertex: &Vertex| {
             out.points
@@ -1425,6 +1455,7 @@ fn synthesize_cylinder_seams(
             param_range: Some([0.0, norm]),
             tolerance: None,
         });
+        coedge_indices.insert(seam_a.clone(), out.coedges.len());
         out.coedges.push(Coedge {
             id: seam_a.clone(),
             owner_loop: loop_a.clone(),
@@ -1435,6 +1466,7 @@ fn synthesize_cylinder_seams(
             sense: Sense::Forward,
             pcurve: None,
         });
+        coedge_indices.insert(seam_b.clone(), out.coedges.len());
         out.coedges.push(Coedge {
             id: seam_b.clone(),
             owner_loop: loop_a.clone(),
@@ -1447,7 +1479,8 @@ fn synthesize_cylinder_seams(
         });
         let ring = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
         for (index, id) in ring.iter().enumerate() {
-            if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == *id) {
+            if let Some(coedge_index) = coedge_indices.get(id) {
+                let coedge = &mut out.coedges[*coedge_index];
                 coedge.owner_loop = loop_a.clone();
                 coedge.previous = ring[(index + 3) % 4].clone();
                 coedge.next = ring[(index + 1) % 4].clone();
@@ -1524,6 +1557,12 @@ fn synthesize_sphere_seams(
             ));
         }
     }
+    let mut coedge_indices = out
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(index, coedge)| (coedge.id.clone(), index))
+        .collect::<HashMap<_, _>>();
     for (face, loop_id, mut ring, center, radius, axis) in candidates {
         let suffix = face.0.rsplit('#').next().unwrap_or("0");
         let point_id = PointId(format!("sldprt:brep:point#sphere-seam:{suffix}"));
@@ -1558,6 +1597,7 @@ fn synthesize_sphere_seams(
             tolerance: None,
         });
         ring.push(coedge_id.clone());
+        coedge_indices.insert(coedge_id.clone(), out.coedges.len());
         out.coedges.push(Coedge {
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
@@ -1569,7 +1609,8 @@ fn synthesize_sphere_seams(
             pcurve: None,
         });
         for (index, id) in ring.iter().enumerate() {
-            if let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == *id) {
+            if let Some(coedge_index) = coedge_indices.get(id) {
+                let coedge = &mut out.coedges[*coedge_index];
                 coedge.next = ring[(index + 1) % ring.len()].clone();
                 coedge.previous = ring[(index + ring.len() - 1) % ring.len()].clone();
             }

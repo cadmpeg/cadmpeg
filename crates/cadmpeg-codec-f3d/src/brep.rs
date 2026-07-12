@@ -2821,54 +2821,71 @@ fn clamp_edge_ranges_to_carrier_domains(out: &mut Brep) {
 }
 
 fn classify_body_kinds(out: &mut Brep) {
+    let mut shell_bodies = HashMap::new();
+    for region in &out.regions {
+        for shell in &region.shells {
+            shell_bodies.insert(shell.clone(), region.body.clone());
+        }
+    }
+    let mut body_has_faces = HashSet::new();
+    let mut body_has_wire_edges = HashSet::new();
+    let mut face_bodies = HashMap::new();
+    for shell in &out.shells {
+        let Some(body) = shell_bodies.get(&shell.id) else {
+            continue;
+        };
+        if !shell.wire_edges.is_empty() {
+            body_has_wire_edges.insert(body.clone());
+        }
+        if !shell.faces.is_empty() {
+            body_has_faces.insert(body.clone());
+        }
+        for face in &shell.faces {
+            face_bodies.insert(face.clone(), body.clone());
+        }
+    }
+    let mut loop_bodies = HashMap::new();
+    for face in &out.faces {
+        let Some(body) = face_bodies.get(&face.id) else {
+            continue;
+        };
+        for loop_id in &face.loops {
+            loop_bodies.insert(loop_id.clone(), body.clone());
+        }
+    }
+    let mut coedge_bodies = HashMap::new();
+    for loop_ in &out.loops {
+        let Some(body) = loop_bodies.get(&loop_.id) else {
+            continue;
+        };
+        for coedge in &loop_.coedges {
+            coedge_bodies.insert(coedge.clone(), body.clone());
+        }
+    }
+    let mut edge_use_counts = HashMap::<_, HashMap<EdgeId, usize>>::new();
+    for coedge in &out.coedges {
+        if let Some(body) = coedge_bodies.get(&coedge.id) {
+            *edge_use_counts
+                .entry(body.clone())
+                .or_default()
+                .entry(coedge.edge.clone())
+                .or_default() += 1;
+        }
+    }
     for body in &mut out.bodies {
-        let shell_ids = out
-            .regions
-            .iter()
-            .filter(|region| region.body == body.id)
-            .flat_map(|region| &region.shells)
-            .collect::<HashSet<_>>();
-        let face_ids = out
-            .shells
-            .iter()
-            .filter(|shell| shell_ids.contains(&shell.id))
-            .flat_map(|shell| &shell.faces)
-            .collect::<HashSet<_>>();
-        let has_wire_edges = out
-            .shells
-            .iter()
-            .filter(|shell| shell_ids.contains(&shell.id))
-            .any(|shell| !shell.wire_edges.is_empty());
-        if face_ids.is_empty() {
+        if !body_has_faces.contains(&body.id) {
             body.kind = cadmpeg_ir::topology::BodyKind::Wire;
             continue;
         }
-        if has_wire_edges {
+        if body_has_wire_edges.contains(&body.id) {
             body.kind = cadmpeg_ir::topology::BodyKind::General;
             continue;
         }
-        let loop_ids = out
-            .faces
-            .iter()
-            .filter(|face| face_ids.contains(&face.id))
-            .flat_map(|face| &face.loops)
-            .collect::<HashSet<_>>();
-        let coedge_ids = out
-            .loops
-            .iter()
-            .filter(|loop_| loop_ids.contains(&loop_.id))
-            .flat_map(|loop_| &loop_.coedges)
-            .collect::<HashSet<_>>();
-        let mut edge_use_counts = HashMap::<&EdgeId, usize>::new();
-        for coedge in out
-            .coedges
-            .iter()
-            .filter(|coedge| coedge_ids.contains(&coedge.id))
-        {
-            *edge_use_counts.entry(&coedge.edge).or_default() += 1;
-        }
+        let counts = edge_use_counts.get(&body.id);
         body.kind =
-            if !edge_use_counts.is_empty() && edge_use_counts.values().all(|count| *count == 2) {
+            if counts.is_some_and(|counts| {
+                !counts.is_empty() && counts.values().all(|count| *count == 2)
+            }) {
                 cadmpeg_ir::topology::BodyKind::Solid
             } else {
                 cadmpeg_ir::topology::BodyKind::Sheet

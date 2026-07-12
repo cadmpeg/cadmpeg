@@ -2560,22 +2560,27 @@ fn color_attribute_ref(
     native_record_index(attribute_start, preceding)
 }
 
-fn body_persistent_links<'a>(target: &'a CadIr, body: &Body) -> Vec<&'a PersistentDesignLink> {
+fn persistent_links<'a>(
+    target: &'a CadIr,
+    entity: &cadmpeg_ir::attributes::AttributeTarget,
+) -> Vec<&'a PersistentDesignLink> {
     let mut links = target
         .native
         .f3d
         .as_ref()
         .into_iter()
         .flat_map(|native| &native.persistent_design_links)
-        .filter(|link| {
-            matches!(
-                &link.target,
-                cadmpeg_ir::attributes::AttributeTarget::Body(id) if id == &body.id
-            )
-        })
+        .filter(|link| &link.target == entity)
         .collect::<Vec<_>>();
     links.sort_by_key(|link| link.ordinal);
     links
+}
+
+fn body_persistent_links<'a>(target: &'a CadIr, body: &Body) -> Vec<&'a PersistentDesignLink> {
+    persistent_links(
+        target,
+        &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
+    )
 }
 
 fn persistent_body_group_count(target: &CadIr) -> usize {
@@ -2588,39 +2593,17 @@ fn persistent_body_group_count(target: &CadIr) -> usize {
 }
 
 fn face_persistent_links<'a>(target: &'a CadIr, face: &Face) -> Vec<&'a PersistentDesignLink> {
-    let mut links = target
-        .native
-        .f3d
-        .as_ref()
-        .into_iter()
-        .flat_map(|native| &native.persistent_design_links)
-        .filter(|link| {
-            matches!(
-                &link.target,
-                cadmpeg_ir::attributes::AttributeTarget::Face(id) if id == &face.id
-            )
-        })
-        .collect::<Vec<_>>();
-    links.sort_by_key(|link| link.ordinal);
-    links
+    persistent_links(
+        target,
+        &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
+    )
 }
 
 fn edge_persistent_links<'a>(target: &'a CadIr, edge: &Edge) -> Vec<&'a PersistentDesignLink> {
-    let mut links = target
-        .native
-        .f3d
-        .as_ref()
-        .into_iter()
-        .flat_map(|native| &native.persistent_design_links)
-        .filter(|link| {
-            matches!(
-                &link.target,
-                cadmpeg_ir::attributes::AttributeTarget::Edge(id) if id == &edge.id
-            )
-        })
-        .collect::<Vec<_>>();
-    links.sort_by_key(|link| link.ordinal);
-    links
+    persistent_links(
+        target,
+        &cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone()),
+    )
 }
 
 fn persistent_face_group_count(target: &CadIr) -> usize {
@@ -6503,14 +6486,32 @@ fn validate_act_appearance_bindings(baseline: &CadIr, target: &CadIr) -> Result<
             "F3D ACT regeneration requires the unchanged appearance-binding count".into(),
         ));
     }
+    let target_bindings = target
+        .model
+        .appearance_bindings
+        .iter()
+        .map(|binding| {
+            (
+                (binding.target.clone(), binding.appearance.clone()),
+                binding,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let mut baseline_entities_by_source = HashMap::<_, Vec<_>>::new();
+    for entity in baseline_entities {
+        baseline_entities_by_source
+            .entry(entity.entity_id.as_str())
+            .or_default()
+            .push(entity);
+    }
+    let target_entities_by_id = target_entities
+        .iter()
+        .map(|entity| (entity.id.as_str(), entity))
+        .collect::<HashMap<_, _>>();
     for before in &baseline.model.appearance_bindings {
-        let after = target
-            .model
-            .appearance_bindings
-            .iter()
-            .find(|binding| {
-                binding.target == before.target && binding.appearance == before.appearance
-            })
+        let after = target_bindings
+            .get(&(before.target.clone(), before.appearance.clone()))
+            .copied()
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "F3D appearance binding target or appearance changed: {}",
@@ -6532,14 +6533,21 @@ fn validate_act_appearance_bindings(baseline: &CadIr, target: &CadIr) -> Result<
         if after == before {
             continue;
         }
-        let before_entity = baseline_entities.iter().find(|entity| {
-            before.source_entity_id.as_deref() == Some(entity.entity_id.as_str())
-                && before.channels == entity.channels
-        });
+        let before_entity = before
+            .source_entity_id
+            .as_deref()
+            .and_then(|source| baseline_entities_by_source.get(source))
+            .and_then(|entities| {
+                entities
+                    .iter()
+                    .copied()
+                    .find(|entity| before.channels == entity.channels)
+            });
         let after_entity = before_entity.and_then(|before_entity| {
-            target_entities
-                .iter()
-                .find(|entity| entity.id == before_entity.id && after.channels == entity.channels)
+            target_entities_by_id
+                .get(before_entity.id.as_str())
+                .copied()
+                .filter(|entity| after.channels == entity.channels)
         });
         if before_entity.is_none() || after_entity.is_none() {
             return Err(CodecError::NotImplemented(format!(
@@ -6559,37 +6567,56 @@ fn validate_act_appearance_bindings(baseline: &CadIr, target: &CadIr) -> Result<
             )));
         }
     }
-    for (before, after) in baseline_entities.iter().zip(target_entities) {
-        let derived_binding = baseline.model.appearance_bindings.iter().any(|binding| {
-            binding.source_entity_id.as_deref() == Some(before.entity_id.as_str())
-                && binding.channels == before.channels
+    let derived_bindings = baseline
+        .model
+        .appearance_bindings
+        .iter()
+        .filter_map(|binding| {
+            Some((
+                binding.source_entity_id.clone()?,
+                binding.channels.clone(),
+                binding,
+            ))
+        })
+        .fold(HashMap::<_, Vec<_>>::new(), |mut grouped, entry| {
+            grouped.entry(entry.0).or_default().push((entry.1, entry.2));
+            grouped
         });
-        let assignment_synchronized = target
-            .native
-            .f3d
-            .as_ref()
-            .into_iter()
-            .flat_map(|native| &native.design_material_assignments)
-            .any(|assignment| assignment.entity_id == after.entity_id);
+    let assignment_entities = target
+        .native
+        .f3d
+        .as_ref()
+        .into_iter()
+        .flat_map(|native| &native.design_material_assignments)
+        .map(|assignment| assignment.entity_id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    for (before, after) in baseline_entities.iter().zip(target_entities) {
+        let matching_bindings = derived_bindings.get(&before.entity_id);
+        let derived_binding = matching_bindings.is_some_and(|bindings| {
+            bindings
+                .iter()
+                .any(|(channels, _)| channels == &before.channels)
+        });
+        let assignment_synchronized = assignment_entities.contains(after.entity_id.as_str());
         if before.entity_id != after.entity_id && derived_binding && !assignment_synchronized {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity {} changed without its material-assignment carrier",
                 before.id
             )));
         }
-        let synchronized = baseline
-            .model
-            .appearance_bindings
-            .iter()
-            .any(|before_binding| {
-                before_binding.source_entity_id.as_deref() == Some(before.entity_id.as_str())
-                    && target.model.appearance_bindings.iter().any(|binding| {
-                        binding.target == before_binding.target
-                            && binding.appearance == before_binding.appearance
-                            && binding.source_entity_id.as_deref() == Some(after.entity_id.as_str())
+        let synchronized = matching_bindings.is_some_and(|bindings| {
+            bindings.iter().any(|(_, before_binding)| {
+                target_bindings
+                    .get(&(
+                        before_binding.target.clone(),
+                        before_binding.appearance.clone(),
+                    ))
+                    .is_some_and(|binding| {
+                        binding.source_entity_id.as_deref() == Some(after.entity_id.as_str())
                             && binding.channels == after.channels
                     })
-            });
+            })
+        });
         if (before.entity_id != after.entity_id || before.channels != after.channels)
             && derived_binding
             && !synchronized
