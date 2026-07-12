@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::annotations::Annotations;
 use crate::appearance::{Appearance, AppearanceBinding};
@@ -76,6 +76,26 @@ pub const IR_VERSION: &str = "2";
 
 arena_registry!(declare_model);
 
+fn deserialize_ir_version<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let version = String::deserialize(deserializer)?;
+    if version != IR_VERSION {
+        return Err(serde::de::Error::custom(format!(
+            "unsupported ir_version {version:?}; expected {IR_VERSION}"
+        )));
+    }
+    Ok(version)
+}
+
+fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "string",
+        "const": IR_VERSION
+    })
+}
+
 /// A versioned CAD document.
 ///
 /// `model` holds the format-neutral graph. `annotations`, `native`, and
@@ -84,6 +104,8 @@ arena_registry!(declare_model);
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CadIr {
     /// IR schema version.
+    #[serde(deserialize_with = "deserialize_ir_version")]
+    #[schemars(schema_with = "ir_version_schema")]
     pub ir_version: String,
     /// Source-container metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]

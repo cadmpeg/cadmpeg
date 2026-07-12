@@ -1,18 +1,45 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded Rhino NURBS and plane-surface payload decoding.
 
+use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::chunks::{checked_count_bytes, BoundedReader};
-use crate::curves::{error, unsupported, GeometryError, MAX_CURVE_ITEMS};
-use crate::settings::{interval, plane, Plane, Point3 as NativePoint3};
+use crate::chunks::{checked_count_bytes, ArchiveVersion, BoundedReader};
+use crate::curves::{
+    decode_embedded_curve, error, exact_nurbs, unsupported, DecodedCurve, GeometryError,
+    MAX_CURVE_ITEMS,
+};
+use crate::settings::{
+    bbox, interval, plane, point, vector as native_vector, Plane, Point3 as NativePoint3,
+};
+use crate::wire::Uuid;
 
-pub(crate) const NURBS_CURVE: &str = "4ed7d4dd-e947-11d3-bfe5-0010830122f0";
-pub(crate) const NURBS_SURFACE: &str = "4ed7d4de-e947-11d3-bfe5-0010830122f0";
-pub(crate) const PLANE_SURFACE: &str = "4ed7d4df-e947-11d3-bfe5-0010830122f0";
+pub(crate) const NURBS_CURVE: Uuid = Uuid::from_canonical([
+    0x4e, 0xd7, 0xd4, 0xdd, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
+pub(crate) const NURBS_SURFACE: Uuid = Uuid::from_canonical([
+    0x4e, 0xd7, 0xd4, 0xde, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
+pub(crate) const PLANE_SURFACE: Uuid = Uuid::from_canonical([
+    0x4e, 0xd7, 0xd4, 0xdf, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
+pub(crate) const REV_SURFACE: Uuid = Uuid::from_canonical([
+    0xa1, 0x62, 0x20, 0xd3, 0x16, 0x3b, 0x11, 0xd4, 0x80, 0x00, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
+pub(crate) const REV_SURFACE_LEGACY: Uuid = Uuid::from_canonical([
+    0x0a, 0x84, 0x01, 0xb6, 0x4d, 0x34, 0x4b, 0x99, 0x86, 0x15, 0x1b, 0x4e, 0x72, 0x3d, 0xc4, 0xe5,
+]);
+pub(crate) const SUM_SURFACE: Uuid = Uuid::from_canonical([
+    0xc4, 0xcd, 0x53, 0x59, 0x44, 0x6d, 0x46, 0x90, 0x9f, 0xf5, 0x29, 0x05, 0x97, 0x32, 0x47, 0x2b,
+]);
+
+/// Returns whether a class is one of the native procedural surfaces.
+pub(crate) fn is_procedural_class(uuid: Uuid) -> bool {
+    matches!(uuid, REV_SURFACE | REV_SURFACE_LEGACY | SUM_SURFACE)
+}
 
 #[derive(Debug, Clone)]
 pub(crate) enum DecodedSurface {
@@ -23,28 +50,66 @@ pub(crate) enum DecodedSurface {
         /// Whether native coordinates were scaled or reconstructed.
         derived: bool,
     },
+    /// A solved native procedural surface and its ordered child trees.
+    Procedural {
+        /// Exact solved NURBS carrier.
+        geometry: NurbsSurface,
+        /// Native construction fields.
+        definition: DecodedProceduralSurface,
+        /// Ordered embedded child curves.
+        children: Vec<DecodedCurve>,
+    },
+}
+
+/// Native procedural fields before deterministic child IDs are assigned.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum DecodedProceduralSurface {
+    /// Revolution of the first child.
+    Revolution {
+        /// Scaled axis origin.
+        axis_origin: Point3,
+        /// Unit axis direction.
+        axis_direction: Vector3,
+        /// Native angular interval.
+        angular_interval: [f64; 2],
+        /// Native revolution parameter interval.
+        parameter_interval: [f64; 2],
+        /// Source parameter-direction transpose flag.
+        transposed: bool,
+    },
+    /// Sum of the first and second children.
+    Sum {
+        /// Scaled basepoint vector.
+        basepoint: Vector3,
+    },
 }
 
 pub(crate) fn decode(
     data: &[u8],
-    class: &str,
+    class: Uuid,
     range: Range<usize>,
     scale: f64,
+    archive: ArchiveVersion,
+    depth: usize,
 ) -> Result<DecodedSurface, GeometryError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    let result = match class {
-        NURBS_SURFACE => DecodedSurface::Typed {
+    let result = if class == NURBS_SURFACE {
+        DecodedSurface::Typed {
             geometry: SurfaceGeometry::Nurbs(read_nurbs_surface(&mut reader, scale)?),
             derived: true,
-        },
-        PLANE_SURFACE => {
-            let geometry = read_plane_surface(&mut reader, scale)?;
-            DecodedSurface::Typed {
-                geometry,
-                derived: scale != 1.0,
-            }
         }
-        _ => return Err(unsupported(range.start, "unsupported Rhino surface class")),
+    } else if class == PLANE_SURFACE {
+        let geometry = read_plane_surface(&mut reader, scale)?;
+        DecodedSurface::Typed {
+            geometry,
+            derived: scale != 1.0,
+        }
+    } else if matches!(class, REV_SURFACE | REV_SURFACE_LEGACY) {
+        read_revolution(data, &mut reader, scale, archive, depth)?
+    } else if class == SUM_SURFACE {
+        read_sum(data, &mut reader, scale, archive, depth)?
+    } else {
+        return Err(unsupported(range.start, "unsupported Rhino surface class"));
     };
     if reader.remaining() != 0 {
         return Err(error(
@@ -55,6 +120,420 @@ pub(crate) fn decode(
     Ok(result)
 }
 
+fn read_revolution(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+    archive: ArchiveVersion,
+    depth: usize,
+) -> Result<DecodedSurface, GeometryError> {
+    let version_offset = reader.position();
+    let version = reader.u8()?;
+    let major = version >> 4;
+    if !(major == 1 || major == 2) || version & 0x0f != 0 {
+        return Err(unsupported(
+            version_offset,
+            "unsupported revolution-surface version",
+        ));
+    }
+    let from = scale_native_point(point(reader)?, scale)
+        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
+    let to = scale_native_point(point(reader)?, scale)
+        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
+    let angular_interval =
+        finite_increasing(interval(reader)?.0, reader.position(), "revolution angle")?;
+    if angular_interval[1] - angular_interval[0] > TAU + 1.0e-10 {
+        return Err(error(
+            reader.position(),
+            "revolution angle span exceeds one turn",
+        ));
+    }
+    let parameter_interval = if major >= 2 {
+        finite_increasing(
+            interval(reader)?.0,
+            reader.position(),
+            "revolution parameter interval",
+        )?
+    } else {
+        angular_interval
+    };
+    bbox(reader)?;
+    let transposed = match reader.i32()? {
+        0 => false,
+        1 => true,
+        _ => {
+            return Err(error(
+                reader.position(),
+                "revolution transpose flag is invalid",
+            ))
+        }
+    };
+    if reader.u8()? != 1 {
+        return Err(error(
+            reader.position(),
+            "revolution profile presence flag is invalid",
+        ));
+    }
+    let axis_delta = Vector3::new(to.x - from.x, to.y - from.y, to.z - from.z);
+    let axis_length = axis_delta.norm();
+    if !axis_length.is_finite() || axis_length <= 0.0 {
+        return Err(error(reader.position(), "revolution axis is invalid"));
+    }
+    let axis_direction = Vector3::new(
+        axis_delta.x / axis_length,
+        axis_delta.y / axis_length,
+        axis_delta.z / axis_length,
+    );
+    let child = decode_embedded_curve(data, reader, scale, archive, depth + 1)?;
+    let profile = exact_nurbs(&child, version_offset)?;
+    let geometry = revolution_nurbs(
+        &profile,
+        from,
+        axis_direction,
+        angular_interval,
+        parameter_interval,
+        transposed,
+        version_offset,
+    )?;
+    Ok(DecodedSurface::Procedural {
+        geometry,
+        definition: DecodedProceduralSurface::Revolution {
+            axis_origin: from,
+            axis_direction,
+            angular_interval,
+            parameter_interval,
+            transposed,
+        },
+        children: vec![child],
+    })
+}
+
+fn read_sum(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+    archive: ArchiveVersion,
+    depth: usize,
+) -> Result<DecodedSurface, GeometryError> {
+    let version_offset = reader.position();
+    if reader.u8()? != 0x10 {
+        return Err(unsupported(
+            version_offset,
+            "unsupported sum-surface version",
+        ));
+    }
+    let native = native_vector(reader)?;
+    let basepoint = Vector3::new(
+        crate::wire::scaled_coordinate(native.0[0], scale)
+            .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?,
+        crate::wire::scaled_coordinate(native.0[1], scale)
+            .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?,
+        crate::wire::scaled_coordinate(native.0[2], scale)
+            .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?,
+    );
+    bbox(reader)?;
+    let first = decode_embedded_curve(data, reader, scale, archive, depth + 1)?;
+    let second = decode_embedded_curve(data, reader, scale, archive, depth + 1)?;
+    let first_nurbs = exact_nurbs(&first, version_offset)?;
+    let second_nurbs = exact_nurbs(&second, version_offset)?;
+    let geometry = sum_nurbs(&first_nurbs, &second_nurbs, basepoint, version_offset)?;
+    Ok(DecodedSurface::Procedural {
+        geometry,
+        definition: DecodedProceduralSurface::Sum { basepoint },
+        children: vec![first, second],
+    })
+}
+
+fn revolution_nurbs(
+    profile: &NurbsCurve,
+    axis_origin: Point3,
+    axis: Vector3,
+    angle: [f64; 2],
+    parameter: [f64; 2],
+    transposed: bool,
+    offset: usize,
+) -> Result<NurbsSurface, GeometryError> {
+    validate_curve_shape(profile, offset)?;
+    let span_count = ((angle[1] - angle[0]) / FRAC_PI_2).ceil().max(1.0) as usize;
+    let angular_count = span_count
+        .checked_mul(2)
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| error(offset, "revolution control count overflow"))?;
+    let profile_count = profile.control_points.len();
+    angular_count
+        .checked_mul(profile_count)
+        .filter(|count| *count <= MAX_CURVE_ITEMS)
+        .ok_or_else(|| error(offset, "revolution surface is too large"))?;
+    let angle_step = (angle[1] - angle[0]) / span_count as f64;
+    let parameter_step = (parameter[1] - parameter[0]) / span_count as f64;
+    let mut angular = Vec::with_capacity(angular_count);
+    let mut angular_weights = Vec::with_capacity(angular_count);
+    let mut knots = Vec::with_capacity(angular_count + 3);
+    for span in 0..span_count {
+        let a0 = angle[0] + angle_step * span as f64;
+        let a1 = angle[0] + angle_step * (span + 1) as f64;
+        let middle = (a0 + a1) * 0.5;
+        let middle_weight = ((a1 - a0) * 0.5).cos();
+        if span == 0 {
+            angular.push((a0, 1.0));
+            angular_weights.push(1.0);
+        }
+        angular.push((middle, 1.0 / middle_weight));
+        angular_weights.push(middle_weight);
+        angular.push((a1, 1.0));
+        angular_weights.push(1.0);
+        let t0 = parameter[0] + parameter_step * span as f64;
+        let t1 = parameter[0] + parameter_step * (span + 1) as f64;
+        if span == 0 {
+            knots.extend([t0, t0, t0]);
+        } else {
+            knots.extend([t0, t0]);
+        }
+        if span + 1 == span_count {
+            knots.extend([t1, t1, t1]);
+        }
+    }
+    let profile_weights = profile
+        .weights
+        .clone()
+        .unwrap_or_else(|| vec![1.0; profile_count]);
+    let mut control_points = Vec::with_capacity(angular_count * profile_count);
+    let mut weights = Vec::with_capacity(control_points.capacity());
+    for ((theta, radial_scale), angular_weight) in angular.into_iter().zip(angular_weights) {
+        for (profile_point, profile_weight) in profile
+            .control_points
+            .iter()
+            .zip(profile_weights.iter().copied())
+        {
+            let relative = Vector3::new(
+                profile_point.x - axis_origin.x,
+                profile_point.y - axis_origin.y,
+                profile_point.z - axis_origin.z,
+            );
+            let axial_length = dot(relative, axis);
+            let axial = scale_vector(axis, axial_length);
+            let radial = subtract(relative, axial);
+            let rotated = rodrigues(radial, axis, theta);
+            let point =
+                add_point_vector(axis_origin, add(axial, scale_vector(rotated, radial_scale)));
+            control_points.push(point);
+            weights.push(profile_weight * angular_weight);
+        }
+    }
+    let mut result = NurbsSurface {
+        u_degree: 2,
+        v_degree: profile.degree,
+        u_knots: knots,
+        v_knots: profile.knots.clone(),
+        u_count: u32::try_from(angular_count)
+            .map_err(|_| error(offset, "revolution U count overflow"))?,
+        v_count: u32::try_from(profile_count)
+            .map_err(|_| error(offset, "revolution V count overflow"))?,
+        control_points,
+        weights: Some(weights),
+        u_periodic: false,
+        v_periodic: profile.periodic,
+    };
+    if transposed {
+        transpose_surface(&mut result, offset)?;
+    }
+    Ok(result)
+}
+
+fn sum_nurbs(
+    first: &NurbsCurve,
+    second: &NurbsCurve,
+    basepoint: Vector3,
+    offset: usize,
+) -> Result<NurbsSurface, GeometryError> {
+    validate_curve_shape(first, offset)?;
+    validate_curve_shape(second, offset)?;
+    let u_count = first.control_points.len();
+    let v_count = second.control_points.len();
+    u_count
+        .checked_mul(v_count)
+        .filter(|count| *count <= MAX_CURVE_ITEMS)
+        .ok_or_else(|| error(offset, "sum surface is too large"))?;
+    let first_weights = first.weights.clone().unwrap_or_else(|| vec![1.0; u_count]);
+    let second_weights = second.weights.clone().unwrap_or_else(|| vec![1.0; v_count]);
+    let rational = first.weights.is_some() || second.weights.is_some();
+    let mut control_points = Vec::with_capacity(u_count * v_count);
+    let mut weights = rational.then(|| Vec::with_capacity(control_points.capacity()));
+    for (first_point, first_weight) in first
+        .control_points
+        .iter()
+        .zip(first_weights.iter().copied())
+    {
+        for (second_point, second_weight) in second
+            .control_points
+            .iter()
+            .zip(second_weights.iter().copied())
+        {
+            let product = first_weight * second_weight;
+            if !product.is_finite() || product == 0.0 {
+                return Err(error(offset, "sum surface weight is invalid"));
+            }
+            control_points.push(Point3::new(
+                first_point.x + second_point.x + basepoint.x,
+                first_point.y + second_point.y + basepoint.y,
+                first_point.z + second_point.z + basepoint.z,
+            ));
+            if let Some(values) = &mut weights {
+                values.push(product);
+            }
+        }
+    }
+    Ok(NurbsSurface {
+        u_degree: first.degree,
+        v_degree: second.degree,
+        u_knots: first.knots.clone(),
+        v_knots: second.knots.clone(),
+        u_count: u32::try_from(u_count).map_err(|_| error(offset, "sum U count overflow"))?,
+        v_count: u32::try_from(v_count).map_err(|_| error(offset, "sum V count overflow"))?,
+        control_points,
+        weights,
+        u_periodic: first.periodic,
+        v_periodic: second.periodic,
+    })
+}
+
+/// Constructs the exact degree-one tensor interpolation between two profile curves.
+pub(crate) fn extrusion_nurbs(
+    start: &NurbsCurve,
+    end: &NurbsCurve,
+    path_domain: [f64; 2],
+    transposed: bool,
+    offset: usize,
+) -> Result<NurbsSurface, GeometryError> {
+    validate_curve_shape(start, offset)?;
+    validate_curve_shape(end, offset)?;
+    if start.degree != end.degree
+        || start.knots != end.knots
+        || start.control_points.len() != end.control_points.len()
+        || start.weights != end.weights
+        || start.periodic != end.periodic
+        || !path_domain.iter().all(|value| value.is_finite())
+        || path_domain[0] >= path_domain[1]
+    {
+        return Err(error(offset, "extrusion tensor inputs are incompatible"));
+    }
+    let profile_count = start.control_points.len();
+    profile_count
+        .checked_mul(2)
+        .filter(|count| *count <= MAX_CURVE_ITEMS)
+        .ok_or_else(|| error(offset, "extrusion surface is too large"))?;
+    let mut control_points = Vec::with_capacity(profile_count * 2);
+    let mut weights = start
+        .weights
+        .as_ref()
+        .map(|_| Vec::with_capacity(profile_count * 2));
+    for index in 0..profile_count {
+        control_points.push(start.control_points[index]);
+        control_points.push(end.control_points[index]);
+        if let (Some(source), Some(target)) = (&start.weights, &mut weights) {
+            target.push(source[index]);
+            target.push(source[index]);
+        }
+    }
+    let mut surface = NurbsSurface {
+        u_degree: start.degree,
+        v_degree: 1,
+        u_knots: start.knots.clone(),
+        v_knots: vec![
+            path_domain[0],
+            path_domain[0],
+            path_domain[1],
+            path_domain[1],
+        ],
+        u_count: u32::try_from(profile_count)
+            .map_err(|_| error(offset, "extrusion profile count overflow"))?,
+        v_count: 2,
+        control_points,
+        weights,
+        u_periodic: start.periodic,
+        v_periodic: false,
+    };
+    if transposed {
+        transpose_surface(&mut surface, offset)?;
+    }
+    Ok(surface)
+}
+
+fn validate_curve_shape(curve: &NurbsCurve, offset: usize) -> Result<(), GeometryError> {
+    let expected_knots = usize::try_from(curve.degree)
+        .ok()
+        .and_then(|degree| degree.checked_add(curve.control_points.len()))
+        .and_then(|value| value.checked_add(1));
+    if curve.control_points.is_empty()
+        || expected_knots != Some(curve.knots.len())
+        || curve
+            .weights
+            .as_ref()
+            .is_some_and(|weights| weights.len() != curve.control_points.len())
+    {
+        return Err(error(offset, "child NURBS shape is invalid"));
+    }
+    Ok(())
+}
+
+fn transpose_surface(surface: &mut NurbsSurface, offset: usize) -> Result<(), GeometryError> {
+    let old_u = usize::try_from(surface.u_count)
+        .map_err(|_| error(offset, "surface U count does not fit memory"))?;
+    let old_v = usize::try_from(surface.v_count)
+        .map_err(|_| error(offset, "surface V count does not fit memory"))?;
+    let mut points = Vec::with_capacity(surface.control_points.len());
+    let mut weights = surface
+        .weights
+        .as_ref()
+        .map(|_| Vec::with_capacity(surface.control_points.len()));
+    for new_u in 0..old_v {
+        for new_v in 0..old_u {
+            let old_index = new_v * old_v + new_u;
+            points.push(surface.control_points[old_index]);
+            if let (Some(source), Some(target)) = (&surface.weights, &mut weights) {
+                target.push(source[old_index]);
+            }
+        }
+    }
+    std::mem::swap(&mut surface.u_degree, &mut surface.v_degree);
+    std::mem::swap(&mut surface.u_knots, &mut surface.v_knots);
+    std::mem::swap(&mut surface.u_count, &mut surface.v_count);
+    std::mem::swap(&mut surface.u_periodic, &mut surface.v_periodic);
+    surface.control_points = points;
+    surface.weights = weights;
+    Ok(())
+}
+
+fn scale_vector(value: Vector3, factor: f64) -> Vector3 {
+    Vector3::new(value.x * factor, value.y * factor, value.z * factor)
+}
+
+fn add(a: Vector3, b: Vector3) -> Vector3 {
+    Vector3::new(a.x + b.x, a.y + b.y, a.z + b.z)
+}
+
+fn subtract(a: Vector3, b: Vector3) -> Vector3 {
+    Vector3::new(a.x - b.x, a.y - b.y, a.z - b.z)
+}
+
+fn add_point_vector(point: Point3, vector: Vector3) -> Point3 {
+    Point3::new(point.x + vector.x, point.y + vector.y, point.z + vector.z)
+}
+
+fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
+    let cosine = angle.cos();
+    let sine = angle.sin();
+    let cross = Vector3::new(
+        axis.y * value.z - axis.z * value.y,
+        axis.z * value.x - axis.x * value.z,
+        axis.x * value.y - axis.y * value.x,
+    );
+    add(
+        add(scale_vector(value, cosine), scale_vector(cross, sine)),
+        scale_vector(axis, dot(axis, value) * (1.0 - cosine)),
+    )
+}
+
 pub(crate) fn read_nurbs_curve(
     reader: &mut BoundedReader<'_>,
     scale: f64,
@@ -62,7 +541,7 @@ pub(crate) fn read_nurbs_curve(
     read_nurbs_curve_inner(reader, scale, Some(3))
 }
 
-/// Reads an `OpenNURBS` NURBS curve whose poles are two-dimensional UV values.
+/// Reads a Rhino NURBS curve whose poles are two-dimensional UV values.
 pub(crate) fn read_nurbs_curve_2d(
     reader: &mut BoundedReader<'_>,
 ) -> Result<NurbsCurve, GeometryError> {
@@ -161,9 +640,12 @@ fn read_curve_poles(
             [x, y, z]
         };
         points.push(Point3::new(
-            point[0] * scale,
-            point[1] * scale,
-            point[2] * scale,
+            crate::wire::scaled_coordinate(point[0], scale)
+                .ok_or_else(|| error(reader.position(), "scaled NURBS pole is invalid"))?,
+            crate::wire::scaled_coordinate(point[1], scale)
+                .ok_or_else(|| error(reader.position(), "scaled NURBS pole is invalid"))?,
+            crate::wire::scaled_coordinate(point[2], scale)
+                .ok_or_else(|| error(reader.position(), "scaled NURBS pole is invalid"))?,
         ));
     }
     Ok((points, weights))
@@ -266,7 +748,8 @@ fn read_plane_surface(
     };
     let _ = (u_extents, v_extents);
     let plane = SurfaceGeometry::Plane {
-        origin: scale_native_point(native_plane.origin, scale),
+        origin: scale_native_point(native_plane.origin, scale)
+            .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
         normal: vector(native_plane.zaxis),
         u_axis: vector(native_plane.xaxis),
     };
@@ -444,8 +927,12 @@ fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
     Ok(())
 }
 
-fn scale_native_point(value: NativePoint3, scale: f64) -> Point3 {
-    Point3::new(value.0[0] * scale, value.0[1] * scale, value.0[2] * scale)
+fn scale_native_point(value: NativePoint3, scale: f64) -> Option<Point3> {
+    Some(Point3::new(
+        crate::wire::scaled_coordinate(value.0[0], scale)?,
+        crate::wire::scaled_coordinate(value.0[1], scale)?,
+        crate::wire::scaled_coordinate(value.0[2], scale)?,
+    ))
 }
 
 fn vector(value: crate::settings::Vector3) -> Vector3 {
@@ -469,12 +956,14 @@ fn close(a: Vector3, b: Vector3) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{
         periodic_knots, read_nurbs_curve, read_nurbs_curve_2d, read_nurbs_surface,
-        read_plane_surface, reconstruct_knots,
+        read_plane_surface, reconstruct_knots, revolution_nurbs, sum_nurbs,
     };
     use crate::chunks::{ArchiveVersion, BoundedReader};
+    use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+    use cadmpeg_ir::math::{Point3, Vector3};
 
     fn push_i32(bytes: &mut Vec<u8>, value: i32) {
         bytes.extend(value.to_le_bytes());
@@ -613,6 +1102,92 @@ mod tests {
         bytes
     }
 
+    fn test_curve(points: Vec<Point3>, weights: Option<Vec<f64>>, domain: [f64; 2]) -> NurbsCurve {
+        NurbsCurve {
+            degree: 1,
+            knots: vec![domain[0], domain[0], domain[1], domain[1]],
+            control_points: points,
+            weights,
+            periodic: false,
+        }
+    }
+
+    fn revolution_prefix(version: u8) -> Vec<u8> {
+        let mut bytes = vec![version];
+        for value in [1.0, 2.0, 3.0, 1.0, 2.0, 5.0, 0.25, 1.25] {
+            push_f64(&mut bytes, value);
+        }
+        if version >> 4 >= 2 {
+            for value in [4.0, 9.0] {
+                push_f64(&mut bytes, value);
+            }
+        }
+        for value in [-10.0, -10.0, -10.0, 10.0, 10.0, 10.0] {
+            push_f64(&mut bytes, value);
+        }
+        push_i32(&mut bytes, 0);
+        bytes.push(0);
+        bytes
+    }
+
+    fn long_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
+        let mut bytes = typecode.to_le_bytes().to_vec();
+        bytes.extend((body.len() as i64).to_le_bytes());
+        bytes.extend(body);
+        bytes
+    }
+
+    fn crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
+        let mut payload = body.to_vec();
+        payload.extend(crc32fast::hash(body).to_le_bytes());
+        long_chunk(typecode, &payload)
+    }
+
+    fn line_wrapper(scale_source: f64) -> Vec<u8> {
+        let mut line = vec![0x10];
+        for value in [
+            2.0 * scale_source,
+            0.0,
+            0.0,
+            3.0 * scale_source,
+            0.0,
+            0.0,
+            6.0,
+            8.0,
+        ] {
+            push_f64(&mut line, value);
+        }
+        push_i32(&mut line, 3);
+        let wire_uuid = [
+            0xdb, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
+            0x22, 0xf0,
+        ];
+        let mut uuid_body = wire_uuid.to_vec();
+        uuid_body.extend(crc32fast::hash(&wire_uuid).to_le_bytes());
+        let mut class_body = long_chunk(0x0002_fffb, &uuid_body);
+        class_body.extend(crc_chunk(0x0002_fffc, &line));
+        class_body.extend(0x8002_7fff_u32.to_le_bytes());
+        class_body.extend(0_i64.to_le_bytes());
+        long_chunk(0x0002_7ffa, &class_body)
+    }
+
+    pub(crate) fn valid_revolution_payload(version: u8) -> Vec<u8> {
+        let mut bytes = revolution_prefix(version);
+        *bytes.last_mut().unwrap() = 1;
+        bytes.extend(line_wrapper(1.0));
+        bytes
+    }
+
+    fn valid_sum_payload() -> Vec<u8> {
+        let mut bytes = vec![0x10];
+        for value in [1.0, 2.0, 3.0, -10.0, -10.0, -10.0, 10.0, 10.0, 10.0] {
+            push_f64(&mut bytes, value);
+        }
+        bytes.extend(line_wrapper(1.0));
+        bytes.extend(line_wrapper(1.0));
+        bytes
+    }
+
     #[test]
     fn reconstructs_spec_examples_and_one_sided_vectors() {
         assert_eq!(
@@ -748,5 +1323,271 @@ mod tests {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
             assert!(read_plane_surface(&mut reader, 1.0).is_err());
         }
+    }
+
+    #[test]
+    fn sum_surface_preserves_asymmetric_domains_and_u_major_order() {
+        let first = test_curve(
+            vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+            None,
+            [2.0, 5.0],
+        );
+        let second = NurbsCurve {
+            degree: 2,
+            knots: vec![7.0, 7.0, 7.0, 9.0, 9.0, 9.0],
+            control_points: vec![
+                Point3::new(10.0, 0.0, 0.0),
+                Point3::new(20.0, 0.0, 0.0),
+                Point3::new(30.0, 0.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        let surface = sum_nurbs(&first, &second, Vector3::new(0.5, 1.5, 2.5), 0).unwrap();
+        assert_eq!((surface.u_count, surface.v_count), (2, 3));
+        assert_eq!(surface.u_knots, first.knots);
+        assert_eq!(surface.v_knots, second.knots);
+        assert_eq!(surface.control_points[0], Point3::new(11.5, 3.5, 5.5));
+        assert_eq!(surface.control_points[3], Point3::new(14.5, 6.5, 8.5));
+        assert!(surface.weights.is_none());
+    }
+
+    #[test]
+    fn sum_surface_multiplies_each_rational_weight_pair() {
+        for (first_weights, second_weights, expected) in [
+            (Some(vec![2.0, 3.0]), None, vec![2.0, 2.0, 3.0, 3.0]),
+            (None, Some(vec![5.0, 7.0]), vec![5.0, 7.0, 5.0, 7.0]),
+            (
+                Some(vec![2.0, 3.0]),
+                Some(vec![5.0, 7.0]),
+                vec![10.0, 14.0, 15.0, 21.0],
+            ),
+        ] {
+            let first = test_curve(
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                first_weights,
+                [0.0, 1.0],
+            );
+            let second = test_curve(
+                vec![Point3::new(0.0, 3.0, 0.0), Point3::new(0.0, 4.0, 0.0)],
+                second_weights,
+                [4.0, 8.0],
+            );
+            let surface = sum_nurbs(&first, &second, Vector3::new(9.0, 8.0, 7.0), 0).unwrap();
+            assert_eq!(surface.weights.unwrap(), expected);
+            assert_eq!(surface.control_points[3], Point3::new(11.0, 12.0, 7.0));
+        }
+    }
+
+    #[test]
+    fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
+        let start = NurbsCurve {
+            degree: 2,
+            knots: vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(3.0, 0.0, 0.0),
+            ],
+            weights: Some(vec![1.0, 0.5, 1.0]),
+            periodic: false,
+        };
+        let mut end = start.clone();
+        for point in &mut end.control_points {
+            point.z = 7.0;
+        }
+        let plain = super::extrusion_nurbs(&start, &end, [10.0, 20.0], false, 0).unwrap();
+        assert_eq!((plain.u_degree, plain.v_degree), (2, 1));
+        assert_eq!(plain.u_knots, start.knots);
+        assert_eq!(plain.v_knots, vec![10.0, 10.0, 20.0, 20.0]);
+        assert_eq!(plain.weights, Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]));
+        assert_eq!(plain.control_points[3], end.control_points[1]);
+        let transposed = super::extrusion_nurbs(&start, &end, [10.0, 20.0], true, 0).unwrap();
+        assert_eq!((transposed.u_degree, transposed.v_degree), (1, 2));
+        assert_eq!((transposed.u_count, transposed.v_count), (2, 3));
+        assert_eq!(transposed.u_knots, vec![10.0, 10.0, 20.0, 20.0]);
+        assert_eq!(transposed.control_points[1], start.control_points[1]);
+        assert_eq!(transposed.control_points[3], end.control_points[0]);
+    }
+
+    #[test]
+    fn revolution_preserves_partial_angle_parameter_domain_and_product_weights() {
+        let profile = test_curve(
+            vec![Point3::new(3.0, 0.0, 1.0), Point3::new(4.0, 0.0, 2.0)],
+            Some(vec![2.0, 3.0]),
+            [11.0, 13.0],
+        );
+        let surface = revolution_nurbs(
+            &profile,
+            Point3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            [0.0, std::f64::consts::FRAC_PI_2],
+            [20.0, 30.0],
+            false,
+            0,
+        )
+        .unwrap();
+        assert_eq!((surface.u_count, surface.v_count), (3, 2));
+        assert_eq!(surface.u_knots, vec![20.0, 20.0, 20.0, 30.0, 30.0, 30.0]);
+        assert_eq!(surface.v_knots, profile.knots);
+        assert_eq!(surface.weights.as_ref().unwrap()[0], 2.0);
+        assert!((surface.weights.as_ref().unwrap()[2] - 2.0 / 2.0_f64.sqrt()).abs() < 1.0e-12);
+        assert_eq!(surface.control_points[0], profile.control_points[0]);
+        assert!((surface.control_points[4].x - 1.0).abs() < 1.0e-12);
+        assert!((surface.control_points[4].y - 2.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn revolution_transpose_swaps_shape_and_reindexes_u_major_poles() {
+        let profile = test_curve(
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+            None,
+            [4.0, 6.0],
+        );
+        let plain = revolution_nurbs(
+            &profile,
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            [0.0, std::f64::consts::FRAC_PI_2],
+            [8.0, 9.0],
+            false,
+            0,
+        )
+        .unwrap();
+        let transposed = revolution_nurbs(
+            &profile,
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            [0.0, std::f64::consts::FRAC_PI_2],
+            [8.0, 9.0],
+            true,
+            0,
+        )
+        .unwrap();
+        assert_eq!((transposed.u_count, transposed.v_count), (2, 3));
+        assert_eq!((transposed.u_degree, transposed.v_degree), (1, 2));
+        assert_eq!(transposed.u_knots, profile.knots);
+        assert_eq!(transposed.control_points[1], plain.control_points[2]);
+        assert_eq!(transposed.control_points[3], plain.control_points[1]);
+    }
+
+    #[test]
+    fn revolution_rejects_versions_axis_intervals_transpose_and_presence() {
+        let bad_version = [0x30];
+        let mut reader = BoundedReader::new(&bad_version, 0, bad_version.len()).unwrap();
+        assert!(
+            super::read_revolution(&bad_version, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err()
+        );
+
+        let valid = revolution_prefix(0x20);
+        let axis_end_offset = 1 + 3 * 8;
+        let angle_end_offset = 1 + 6 * 8 + 8;
+        let parameter_end_offset = 1 + 8 * 8 + 8;
+        let transpose_offset = valid.len() - 5;
+        let mut cases = Vec::new();
+        let mut zero_axis = valid.clone();
+        let start = zero_axis[1..1 + 24].to_vec();
+        zero_axis[axis_end_offset..axis_end_offset + 24].copy_from_slice(&start);
+        cases.push(zero_axis);
+        let mut bad_angle = valid.clone();
+        bad_angle[angle_end_offset..angle_end_offset + 8].copy_from_slice(&0.25_f64.to_le_bytes());
+        cases.push(bad_angle);
+        let mut bad_parameter = valid.clone();
+        bad_parameter[parameter_end_offset..parameter_end_offset + 8]
+            .copy_from_slice(&4.0_f64.to_le_bytes());
+        cases.push(bad_parameter);
+        let mut bad_transpose = valid.clone();
+        bad_transpose[transpose_offset..transpose_offset + 4].copy_from_slice(&2_i32.to_le_bytes());
+        cases.push(bad_transpose);
+        for bytes in cases {
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+            assert!(
+                super::read_revolution(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err()
+            );
+        }
+        let mut reader = BoundedReader::new(&valid, 0, valid.len()).unwrap();
+        assert!(super::read_revolution(&valid, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err());
+    }
+
+    #[test]
+    fn sum_surface_rejects_future_packed_version_before_children() {
+        let bytes = [0x11];
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+        assert!(matches!(
+            super::read_sum(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0),
+            Err(crate::curves::GeometryError::UnsupportedVersion { .. })
+        ));
+    }
+
+    #[test]
+    fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
+        for version in [0x10, 0x20] {
+            let bytes = valid_revolution_payload(version);
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+            let decoded =
+                super::read_revolution(&bytes, &mut reader, 25.4, ArchiveVersion::V5, 0).unwrap();
+            let super::DecodedSurface::Procedural {
+                geometry,
+                definition,
+                children,
+            } = decoded
+            else {
+                panic!("expected procedural revolution");
+            };
+            assert_eq!(reader.remaining(), 0);
+            assert_eq!(children.len(), 1);
+            let super::DecodedProceduralSurface::Revolution {
+                axis_origin,
+                angular_interval,
+                parameter_interval,
+                ..
+            } = definition
+            else {
+                panic!("expected revolution fields");
+            };
+            assert!((axis_origin.x - 25.4).abs() < 1.0e-12);
+            assert!((axis_origin.y - 50.8).abs() < 1.0e-12);
+            assert!((axis_origin.z - 76.2).abs() < 1.0e-12);
+            assert_eq!(angular_interval, [0.25, 1.25]);
+            assert_eq!(
+                parameter_interval,
+                if version == 0x10 {
+                    [0.25, 1.25]
+                } else {
+                    [4.0, 9.0]
+                }
+            );
+            let CurveGeometry::Nurbs(child) = &children[0].geometry else {
+                panic!("expected NURBS child");
+            };
+            assert_eq!(child.control_points[0].x, 2.0 * 25.4);
+            assert_eq!(geometry.u_knots[2], parameter_interval[0]);
+        }
+    }
+
+    #[test]
+    fn sum_surface_decodes_ordered_children_and_scales_once() {
+        let bytes = valid_sum_payload();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+        let decoded = super::read_sum(&bytes, &mut reader, 25.4, ArchiveVersion::V5, 0).unwrap();
+        let super::DecodedSurface::Procedural {
+            geometry,
+            definition,
+            children,
+        } = decoded
+        else {
+            panic!("expected procedural sum");
+        };
+        assert_eq!(reader.remaining(), 0);
+        assert_eq!(children.len(), 2);
+        let super::DecodedProceduralSurface::Sum { basepoint } = definition else {
+            panic!("expected sum fields");
+        };
+        assert!((basepoint.x - 25.4).abs() < 1.0e-12);
+        assert!((basepoint.y - 50.8).abs() < 1.0e-12);
+        assert!((basepoint.z - 76.2).abs() < 1.0e-12);
+        assert!((geometry.control_points[0].x - 127.0).abs() < 1.0e-12);
+        assert!((geometry.control_points[0].y - 50.8).abs() < 1.0e-12);
+        assert!((geometry.control_points[0].z - 76.2).abs() < 1.0e-12);
     }
 }

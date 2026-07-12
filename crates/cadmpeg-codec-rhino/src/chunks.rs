@@ -22,7 +22,7 @@ const TCODE_CLASS_WRAPPER: u32 = 0x0002_7ffa;
 const TCODE_CLASS_USERDATA: u32 = 0x0002_7ffd;
 const TCODE_CLASS_USERDATA_HEADER: u32 = 0x0002_fff9;
 const TCODE_CLASS_DATA: u32 = 0x0002_fffc;
-const TCODE_CLASS_END: u32 = 0x8202_7fff;
+const TCODE_CLASS_END: u32 = 0x8002_7fff;
 
 /// Archive versions understood by the chunk layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -292,6 +292,14 @@ impl<'a> BoundedReader<'a> {
         ))
     }
 
+    /// Reads a little-endian unsigned 16-bit value.
+    pub(crate) fn u16(&mut self) -> Result<u16, FramingError> {
+        let bytes = self.take(2)?;
+        Ok(u16::from_le_bytes(
+            bytes.try_into().expect("length checked"),
+        ))
+    }
+
     /// Reads a little-endian IEEE-754 binary64 value.
     pub(crate) fn f64(&mut self) -> Result<f64, FramingError> {
         let bytes = self.take(8)?;
@@ -332,6 +340,11 @@ impl<'a> BoundedReader<'a> {
         let result = &self.bytes[self.position..end];
         self.position = end;
         Ok(result)
+    }
+
+    /// Reads a fixed-width byte array.
+    pub(crate) fn array<const N: usize>(&mut self) -> Result<[u8; N], FramingError> {
+        Ok(self.take(N)?.try_into().expect("array length checked"))
     }
 
     fn require(&self, end: usize) -> Result<(), FramingError> {

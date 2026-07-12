@@ -3,14 +3,11 @@
 //! SolidWorks, CATIA, Creo, and NX. Existing F3D seeds remain unchanged.
 
 use std::fs;
-use std::io::{Cursor, Write};
+use std::io::Write;
 use std::path::Path;
 
 use flate2::write::DeflateEncoder;
-use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use zip::write::SimpleFileOptions;
-use zip::CompressionMethod;
 
 fn main() {
     generate_f3d_seeds();

@@ -504,10 +504,50 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
                 object.remove("ir_version");
             }
         }
-        let error = CadIr::from_json(&serde_json::to_string(&value).unwrap()).unwrap_err();
+        let json = serde_json::to_string(&value).unwrap();
+        let error = CadIr::from_json(&json).unwrap_err();
         assert!(!error.is_syntax());
         assert!(error.to_string().contains("unsupported ir_version"));
+        assert!(serde_json::from_str::<CadIr>(&json).is_err());
     }
+}
+
+#[test]
+fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
+    let ir = unit_cube();
+    let json = ir.to_canonical_json().unwrap();
+    let parsed = serde_json::from_str::<CadIr>(&json).unwrap();
+    assert_eq!(parsed, ir);
+    assert_eq!(parsed.to_canonical_json().unwrap(), json);
+}
+
+#[test]
+fn schema_constrains_version_and_requires_subd_arena() {
+    let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
+    assert_eq!(
+        schema.pointer("/properties/ir_version/const"),
+        Some(&serde_json::json!(crate::IR_VERSION))
+    );
+    assert!(schema
+        .pointer("/properties/model/$ref")
+        .and_then(serde_json::Value::as_str)
+        .is_some());
+
+    let model_schema = schema.pointer("/$defs/Model").unwrap();
+    assert!(model_schema
+        .pointer("/required")
+        .and_then(serde_json::Value::as_array)
+        .unwrap()
+        .contains(&serde_json::json!("subds")));
+
+    let mut value = serde_json::to_value(unit_cube()).unwrap();
+    value
+        .pointer_mut("/model")
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .remove("subds");
+    assert!(serde_json::from_value::<CadIr>(value).is_err());
 }
 
 #[test]

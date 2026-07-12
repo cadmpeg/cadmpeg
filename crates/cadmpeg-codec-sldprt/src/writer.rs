@@ -154,6 +154,7 @@ fn sort_arenas(ir: &mut CadIr) {
     ir.model.points.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.surfaces.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.curves.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.model.subds.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.pcurves.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.procedural_surfaces.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.procedural_curves.sort_by(|a, b| a.id.cmp(&b.id));
@@ -304,6 +305,11 @@ fn section_type_ids(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Result<Vec<u3
 }
 
 fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
+    if !ir.model.subds.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT semantic writer does not support SubD surfaces".into(),
+        ));
+    }
     let regions = ir
         .model
         .regions

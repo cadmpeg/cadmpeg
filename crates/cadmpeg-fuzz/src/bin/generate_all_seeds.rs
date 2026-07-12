@@ -1169,9 +1169,13 @@ fn generate_ir_seeds() {
     let cube = cadmpeg_ir::examples::unit_cube()
         .to_canonical_json()
         .unwrap();
+    let directed_subd_sum = cadmpeg_ir::examples::directed_subd_sum()
+        .to_canonical_json()
+        .unwrap();
     let canonical = [
         ("minimal_v2.json", minimal.as_bytes()),
         ("unit_cube_v2.json", cube.as_bytes()),
+        ("directed_subd_sum_v2.json", directed_subd_sum.as_bytes()),
     ];
     let valid_v0 = minimal.replacen(r#""ir_version": "2""#, r#""ir_version": "0""#, 1);
 

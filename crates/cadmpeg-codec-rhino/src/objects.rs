@@ -1,74 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino object-record identity and framing.
 
-use std::collections::HashSet;
-use std::fmt;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
-use crate::chunks::{chunk_at, verify_checksum, ArchiveVersion, ChecksumStatus, FramingError};
+use crate::chunks::{
+    chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
+};
 use crate::container::Record;
 use crate::settings::{self, DocumentMetadata, SourceRange, Xform};
+use crate::wire::Uuid;
 
-const OBJECT_RECORD_TYPE: u32 = 0x82a0_0071;
+const OBJECT_RECORD_TYPE: u32 = 0x8200_0071;
 const OBJECT_RECORD_ATTRIBUTES: u32 = 0x0200_8072;
 const OBJECT_RECORD_ATTRIBUTES_USERDATA: u32 = 0x0200_0073;
 const OBJECT_RECORD_HISTORY: u32 = 0x0200_8074;
-const OBJECT_RECORD_END: u32 = 0x82a0_007f;
+const OBJECT_RECORD_END: u32 = 0x8200_007f;
 const OPENNURBS_CLASS: u32 = 0x0002_7ffa;
 const CLASS_USERDATA: u32 = 0x0002_7ffd;
 const CLASS_USERDATA_HEADER: u32 = 0x0002_fff9;
 const CLASS_UUID: u32 = 0x0002_fffb;
 const CLASS_DATA: u32 = 0x0002_fffc;
-const CLASS_END: u32 = 0x8202_7fff;
+const CLASS_END: u32 = 0x8002_7fff;
 const ANONYMOUS: u32 = 0x4000_8000;
 const HISTORY_HEADER: u32 = 0x0200_8075;
 const HISTORY_DATA: u32 = 0x0200_8076;
 const HIDDEN_OBJECT_MODE: u8 = 2;
 const IDEF_OBJECT_MODE: u8 = 3;
-
-/// A UUID in canonical textual byte order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct Uuid {
-    bytes: [u8; 16],
-}
-
-impl Uuid {
-    /// Parses the mixed-endian UUID wire representation.
-    pub(crate) fn from_wire(bytes: [u8; 16]) -> Self {
-        let mut canonical = [0; 16];
-        for index in 0..4 {
-            canonical[index] = bytes[3 - index];
-        }
-        for index in 0..2 {
-            canonical[4 + index] = bytes[5 - index];
-            canonical[6 + index] = bytes[7 - index];
-        }
-        canonical[8..].copy_from_slice(&bytes[8..]);
-        Self { bytes: canonical }
-    }
-
-    /// Returns the nil UUID.
-    pub(crate) fn nil() -> Self {
-        Self { bytes: [0; 16] }
-    }
-
-    /// Returns whether this UUID is nil.
-    pub(crate) fn is_nil(self) -> bool {
-        self == Self::nil()
-    }
-}
-
-impl fmt::Display for Uuid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (index, byte) in self.bytes.iter().enumerate() {
-            if matches!(index, 4 | 6 | 8 | 10) {
-                f.write_str("-")?;
-            }
-            write!(f, "{byte:02x}")?;
-        }
-        Ok(())
-    }
-}
 
 /// A class-userdata descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -280,6 +238,8 @@ pub(crate) struct ObjectDescriptor {
     pub(crate) class_uuid: Uuid,
     /// Class-data payload range.
     pub(crate) class_data_range: Range<usize>,
+    /// Whether bounded inner framing was malformed and only the outer record survived.
+    pub(crate) framing_degraded: bool,
     /// Parsed object attributes, if valid.
     pub(crate) attributes: Option<ObjectAttributes>,
     /// Whether the framed attributes payload degraded during parsing.
@@ -308,7 +268,7 @@ pub(crate) struct ObjectDescriptor {
     pub(crate) warnings: Vec<String>,
 }
 
-/// A fully framed `OpenNURBS` class wrapper used by table records.
+/// A fully framed Rhino class wrapper used by table records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ClassDescriptor {
     /// Class UUID.
@@ -317,55 +277,8 @@ pub(crate) struct ClassDescriptor {
     pub(crate) class_data_range: Range<usize>,
 }
 
-struct Bytes<'a> {
-    data: &'a [u8],
-    position: usize,
-    end: usize,
-}
-
-impl<'a> Bytes<'a> {
-    fn new(bytes: &'a [u8], range: Range<usize>) -> Self {
-        Self {
-            data: bytes,
-            position: range.start,
-            end: range.end,
-        }
-    }
-
-    fn take(&mut self, count: usize) -> Result<&'a [u8], FramingError> {
-        let end = self
-            .position
-            .checked_add(count)
-            .ok_or(FramingError::Overflow {
-                offset: self.position,
-            })?;
-        if end > self.end {
-            return Err(FramingError::OutOfBounds {
-                offset: self.position,
-                end,
-                bound: self.end,
-            });
-        }
-        let result = &self.data[self.position..end];
-        self.position = end;
-        Ok(result)
-    }
-
-    fn u8(&mut self) -> Result<u8, FramingError> {
-        Ok(self.take(1)?[0])
-    }
-
-    fn i32(&mut self) -> Result<i32, FramingError> {
-        Ok(i32::from_le_bytes(
-            self.take(4)?.try_into().expect("length checked"),
-        ))
-    }
-
-    fn uuid(&mut self) -> Result<Uuid, FramingError> {
-        Ok(Uuid::from_wire(
-            self.take(16)?.try_into().expect("length checked"),
-        ))
-    }
+fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
+    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn malformed_at(offset: usize, message: impl Into<String>) -> FramingError {
@@ -428,7 +341,7 @@ fn checksum_warning(
     }
 }
 
-/// Parses a table-record `OpenNURBS` class wrapper without decoding its payload.
+/// Parses a table-record Rhino class wrapper without decoding its payload.
 pub(crate) fn parse_class_wrapper(
     bytes: &[u8],
     body: Range<usize>,
@@ -494,17 +407,17 @@ fn parse_userdata(
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Result<UserdataDescriptor, FramingError> {
-    let mut reader = Bytes::new(bytes, wrapper.body.clone());
+    let mut reader = BoundedReader::new(bytes, wrapper.body.start, wrapper.body.end)?;
     let packed = reader.u8()?;
     let version = (packed >> 4, packed & 0x0f);
     if version.0 == 1 {
-        let class_uuid = reader.uuid()?;
-        let item_uuid = reader.uuid()?;
+        let class_uuid = uuid(&mut reader)?;
+        let item_uuid = uuid(&mut reader)?;
         let copy_count = reader.i32()?;
-        let transform_start = reader.position;
+        let transform_start = reader.position();
         reader.take(16 * 8)?;
-        let transform_range = transform_start..reader.position;
-        let payload = child(bytes, reader.position, wrapper.body.end, archive, false)?;
+        let transform_range = transform_start..reader.position();
+        let payload = child(bytes, reader.position(), wrapper.body.end, archive, false)?;
         require_long(&payload, ANONYMOUS)?;
         if let Some(note) = checksum_warning(bytes, &payload)? {
             warnings.push(note);
@@ -549,24 +462,26 @@ fn parse_userdata(
             unknown_version: true,
         });
     }
-    let header = child(bytes, reader.position, wrapper.body.end, archive, false)?;
+    let header = child(bytes, reader.position(), wrapper.body.end, archive, false)?;
     require_long(&header, CLASS_USERDATA_HEADER)?;
     if let Some(note) = checksum_warning(bytes, &header)? {
         warnings.push(note);
     }
-    let mut header_reader = Bytes::new(bytes, header.body.clone());
-    let class_uuid = header_reader.uuid()?;
-    let item_uuid = header_reader.uuid()?;
+    let mut header_reader = BoundedReader::new(bytes, header.body.start, header.body.end)?;
+    let class_uuid = uuid(&mut header_reader)?;
+    let item_uuid = uuid(&mut header_reader)?;
     let copy_count = header_reader.i32()?;
-    let transform_start = header_reader.position;
+    let transform_start = header_reader.position();
     header_reader.take(16 * 8)?;
-    let transform_range = transform_start..header_reader.position;
-    let application_uuid = (version.1 >= 1).then(|| header_reader.uuid()).transpose()?;
+    let transform_range = transform_start..header_reader.position();
+    let application_uuid = (version.1 >= 1)
+        .then(|| uuid(&mut header_reader))
+        .transpose()?;
     let last_saved_as_goo = if version.1 >= 2 {
         let value = header_reader.u8()?;
         if value > 1 {
             return Err(malformed_at(
-                header_reader.position - 1,
+                header_reader.position() - 1,
                 "last-saved-as-goo must be encoded as 0 or 1",
             ));
         }
@@ -576,9 +491,9 @@ fn parse_userdata(
     };
     let archive_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
     let writer_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
-    if header_reader.position != header.body.end {
+    if header_reader.position() != header.body.end {
         return Err(malformed_at(
-            header_reader.position,
+            header_reader.position(),
             "userdata header has trailing bytes",
         ));
     }
@@ -615,9 +530,9 @@ fn parse_history(
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Result<HistoryDescriptor, FramingError> {
-    let mut reader = Bytes::new(bytes, wrapper.body.clone());
+    let mut reader = BoundedReader::new(bytes, wrapper.body.start, wrapper.body.end)?;
     let packed = reader.u8()?;
-    let mut offset = reader.position;
+    let mut offset = reader.position();
     let mut header_range = None;
     let mut data_range = None;
     while offset < wrapper.body.end {
@@ -1142,7 +1057,7 @@ pub(crate) fn parse_attribute_userdata(
 
 fn resolve_identity(
     descriptor: &mut ObjectDescriptor,
-    metadata: &DocumentMetadata,
+    layers: &HashMap<i32, &crate::settings::LayerRecord>,
     warnings: &mut Vec<String>,
     index: usize,
     seen_ids: &mut HashSet<Uuid>,
@@ -1150,10 +1065,7 @@ fn resolve_identity(
     let attributes = descriptor.attributes.as_ref();
     let object_id = attributes.map_or(Uuid::nil(), |value| value.object_id);
     let layer_index = attributes.map_or(-1, |value| value.layer_index);
-    let layer = metadata
-        .layers
-        .iter()
-        .find(|value| value.index == layer_index);
+    let layer = layers.get(&layer_index).copied();
     if attributes.is_some() && layer.is_none() {
         warnings.push(format!(
             "object {object_id} references missing layer index {layer_index}"
@@ -1331,8 +1243,9 @@ pub(crate) fn parse_object_record(
                 history = Some(parse_history(bytes, &item, archive, &mut warnings)?);
                 phase = 3;
             }
-            _ if !item.short && phase >= 3 => {
+            _ if !item.short => {
                 unknown_trailer.push(chunk_range(&item));
+                phase = 3;
             }
             _ => {
                 return Err(malformed_at(
@@ -1383,6 +1296,7 @@ pub(crate) fn parse_object_record(
         object_type,
         class_uuid,
         class_data_range,
+        framing_degraded: false,
         attributes,
         attributes_degraded,
         attributes_userdata,
@@ -1402,6 +1316,33 @@ pub(crate) fn parse_object_record(
     })
 }
 
+/// Builds a range-preserving descriptor for a malformed bounded object record.
+pub(crate) fn degraded_object_record(record: &Record, error: &FramingError) -> ObjectDescriptor {
+    ObjectDescriptor {
+        range: record.range.clone(),
+        object_type: 0,
+        class_uuid: Uuid::nil(),
+        class_data_range: record.body.start..record.body.start,
+        framing_degraded: true,
+        attributes: None,
+        attributes_degraded: false,
+        attributes_userdata: Vec::new(),
+        identity: None,
+        userdata: Vec::new(),
+        attributes_range: None,
+        attributes_body_range: None,
+        attributes_userdata_range: None,
+        attributes_userdata_body_range: None,
+        history: None,
+        unknown_trailer: Vec::new(),
+        checksum_warnings: Vec::new(),
+        warnings: vec![format!(
+            "bounded object record at {} degraded: {error}",
+            record.range.start
+        )],
+    }
+}
+
 /// Resolves per-object source identity after document layer metadata is known.
 pub(crate) fn resolve_identities(
     objects: &mut [ObjectDescriptor],
@@ -1409,9 +1350,13 @@ pub(crate) fn resolve_identities(
     warnings: &mut Vec<String>,
 ) {
     let mut seen_ids = HashSet::new();
+    let mut layers = HashMap::with_capacity(metadata.layers.len());
+    for layer in &metadata.layers {
+        layers.entry(layer.index).or_insert(layer);
+    }
     for (index, object) in objects.iter_mut().enumerate() {
         let mut local_warnings = Vec::new();
-        resolve_identity(object, metadata, &mut local_warnings, index, &mut seen_ids);
+        resolve_identity(object, &layers, &mut local_warnings, index, &mut seen_ids);
         warnings.extend(local_warnings.iter().cloned());
         object.warnings.extend(local_warnings);
     }

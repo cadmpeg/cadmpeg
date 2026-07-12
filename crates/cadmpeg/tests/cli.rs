@@ -29,6 +29,138 @@ fn geometryless_creo(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     path
 }
 
+fn rhino_header(version: &str) -> Vec<u8> {
+    let mut bytes = b"3D Geometry File Format ".to_vec();
+    let mut version_field = [b' '; 8];
+    let start = version_field.len() - version.len();
+    version_field[start..].copy_from_slice(version.as_bytes());
+    bytes.extend(version_field);
+    assert_eq!(bytes.len(), 32);
+    bytes
+}
+
+fn rhino_long_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
+    let mut bytes = typecode.to_le_bytes().to_vec();
+    if version >= 50 {
+        bytes.extend((body.len() as i64).to_le_bytes());
+    } else {
+        bytes.extend((body.len() as i32).to_le_bytes());
+    }
+    bytes.extend(body);
+    bytes
+}
+
+fn rhino_short_chunk(version: u64, typecode: u32, value: i64) -> Vec<u8> {
+    let mut bytes = typecode.to_le_bytes().to_vec();
+    if version >= 50 {
+        bytes.extend(value.to_le_bytes());
+    } else {
+        bytes.extend((value as i32).to_le_bytes());
+    }
+    bytes
+}
+
+fn rhino_crc_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
+    let mut payload = body.to_vec();
+    payload.extend(crc32fast::hash(body).to_le_bytes());
+    rhino_long_chunk(version, typecode, &payload)
+}
+
+fn rhino_table(version: u64, typecode: u32) -> Vec<u8> {
+    let end = rhino_short_chunk(version, 0xffff_ffff, 0);
+    rhino_long_chunk(version, typecode, &end)
+}
+
+fn rhino_object_record(version: u64, class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
+    let object_type = rhino_short_chunk(version, 0x8200_0071, 1);
+    let mut uuid_body = class_uuid.to_vec();
+    uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
+    let uuid = rhino_long_chunk(version, 0x0002_fffb, &uuid_body);
+    let class_data = rhino_crc_chunk(version, 0x0002_fffc, payload);
+    let class_end = rhino_short_chunk(version, 0x8002_7fff, 0);
+    let class = rhino_long_chunk(
+        version,
+        0x0002_7ffa,
+        &[uuid, class_data, class_end].concat(),
+    );
+    let object_end = rhino_short_chunk(version, 0x8200_007f, 0);
+    rhino_crc_chunk(
+        version,
+        0x2000_8070,
+        &[object_type, class, object_end].concat(),
+    )
+}
+
+fn synthetic_rhino_point(dir: &std::path::Path, name: &str, point: [f64; 3]) -> std::path::PathBuf {
+    let version = 50;
+    let mut payload = vec![0x10];
+    for coordinate in point {
+        payload.extend(coordinate.to_le_bytes());
+    }
+    let point_class = [
+        0x1d, 0x1a, 0x10, 0xc3, 0x57, 0xf1, 0xd3, 0x11, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22,
+        0xf0,
+    ];
+    let object = rhino_object_record(version, point_class, &payload);
+    let end = rhino_short_chunk(version, 0xffff_ffff, 0);
+    let object_table = rhino_long_chunk(version, 0x1000_0013, &[object, end].concat());
+
+    let mut units = 100_i32.to_le_bytes().to_vec();
+    units.extend(2_i32.to_le_bytes());
+    units.extend(0.01_f64.to_le_bytes());
+    units.extend(0.1_f64.to_le_bytes());
+    units.extend(0.001_f64.to_le_bytes());
+    let units = rhino_crc_chunk(version, 0x2000_8031, &units);
+    let settings_table = rhino_long_chunk(
+        version,
+        0x1000_0015,
+        &[units, rhino_short_chunk(version, 0xffff_ffff, 0)].concat(),
+    );
+
+    let mut bytes = rhino_header("50");
+    bytes.extend(rhino_long_chunk(version, 1, b"cadmpeg CLI geometry"));
+    bytes.extend(rhino_table(version, 0x1000_0014));
+    bytes.extend(settings_table);
+    bytes.extend(object_table);
+    let eof_offset = bytes.len();
+    bytes.extend(rhino_long_chunk(version, 0x0000_7fff, &[0; 8]));
+    let eof = rhino_long_chunk(version, 0x0000_7fff, &(bytes.len() as u64).to_le_bytes());
+    bytes[eof_offset..].copy_from_slice(&eof);
+
+    let path = dir.join(name);
+    fs::write(&path, bytes).unwrap();
+    path
+}
+
+fn minimal_rhino_archive(
+    dir: &std::path::Path,
+    name: &str,
+    version_text: &str,
+) -> std::path::PathBuf {
+    let version = version_text.parse::<u64>().unwrap();
+    let mut bytes = rhino_header(version_text);
+    bytes.extend(rhino_long_chunk(version, 0x0000_0001, b"cadmpeg test"));
+    bytes.extend(rhino_table(version, 0x1000_0014));
+    bytes.extend(rhino_table(version, 0x1000_0015));
+    bytes.extend(rhino_table(version, 0x1000_0013));
+
+    let eof_offset = bytes.len();
+    let width = if version >= 50 { 8 } else { 4 };
+    bytes.extend(rhino_long_chunk(version, 0x0000_7fff, &vec![0; width]));
+    let file_size = bytes.len();
+    let eof_body = if version >= 50 {
+        (file_size as u64).to_le_bytes().to_vec()
+    } else {
+        (file_size as u32).to_le_bytes().to_vec()
+    };
+    let eof = rhino_long_chunk(version, 0x0000_7fff, &eof_body);
+    bytes[eof_offset..].copy_from_slice(&eof);
+
+    let path = dir.join(name);
+    fs::write(&path, bytes).unwrap();
+    path
+}
+
 fn sldprt_cube() -> cadmpeg_ir::CadIr {
     let mut ir = unit_cube();
     ir.model.bodies[0].name = None;
@@ -225,6 +357,239 @@ fn garbage_reports_supported_formats() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["validate", input.to_str().unwrap()])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM",
+        ));
+}
+
+#[test]
+fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
+    let dir = tempdir().unwrap();
+    let input = minimal_rhino_archive(dir.path(), "empty.3dm", "50");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["inspect", input.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("format: rhino (detected high)")
+                .and(predicate::str::contains("container: 3dm-chunks"))
+                .and(predicate::str::contains("entries: 3"))
+                .and(predicate::str::contains("table-0x10000014"))
+                .and(predicate::str::contains("table-0x10000015"))
+                .and(predicate::str::contains("table-0x10000013"))
+                .and(predicate::str::contains("archive version 50")),
+        );
+
+    let output = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["inspect", input.to_str().unwrap(), "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["command"], "inspect");
+    assert_eq!(value["confidence"], "high");
+    assert_eq!(value["summary"]["format"], "rhino");
+    assert_eq!(value["summary"]["container_kind"], "3dm-chunks");
+    assert_eq!(value["summary"]["entries"].as_array().unwrap().len(), 3);
+    assert_eq!(value["summary"]["notes"][0], "archive version 50");
+}
+
+#[test]
+fn rhino_forced_input_format_and_3dm_alias_bypass_detection() {
+    let dir = tempdir().unwrap();
+    let input = minimal_rhino_archive(dir.path(), "extensionless", "50");
+
+    for input_format in ["rhino", "3dm"] {
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "inspect",
+                input.to_str().unwrap(),
+                "--input-format",
+                input_format,
+            ])
+            .assert()
+            .success()
+            .stdout(
+                predicate::str::contains("format: rhino (forced)")
+                    .and(predicate::str::contains("container: 3dm-chunks")),
+            );
+
+        let output = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "decode",
+                input.to_str().unwrap(),
+                "--input-format",
+                input_format,
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["ir_version"], "2");
+        assert_eq!(value["source"]["format"], "rhino");
+    }
+}
+
+#[test]
+fn rhino_full_band_empty_archive_decodes_to_current_ir_v2() {
+    let dir = tempdir().unwrap();
+    for version in ["50", "60", "70", "80"] {
+        let input = minimal_rhino_archive(dir.path(), &format!("empty-{version}.3dm"), version);
+        for extra in [None, Some("--container-only")] {
+            let mut command = Command::cargo_bin("cadmpeg").unwrap();
+            command.args(["decode", input.to_str().unwrap()]);
+            if let Some(argument) = extra {
+                command.arg(argument);
+            }
+            let output = command.output().unwrap();
+            assert!(
+                output.status.success(),
+                "archive {version}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(value["ir_version"], "2");
+            assert_eq!(value["source"]["format"], "rhino");
+            assert_eq!(value["source"]["attributes"]["archive_version"], version);
+            assert_eq!(
+                value["source"]["attributes"]["container_kind"],
+                "3dm-chunks"
+            );
+            assert_eq!(value["model"]["subds"], serde_json::json!([]));
+        }
+    }
+}
+
+#[test]
+fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
+    let dir = tempdir().unwrap();
+    let input = synthetic_rhino_point(dir.path(), "point.3dm", [1.25, -2.5, 3.75]);
+
+    let inspect = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["inspect", input.to_str().unwrap(), "--json"])
+        .output()
+        .unwrap();
+    assert!(inspect.status.success());
+    let summary: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
+    assert_eq!(
+        summary["summary"]["entries"][2]["attributes"]["record_count"],
+        "1"
+    );
+
+    let decoded = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["decode", input.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(decoded.status.success());
+    let ir: serde_json::Value = serde_json::from_slice(&decoded.stdout).unwrap();
+    assert_eq!(ir["model"]["points"][0]["position"]["x"], 1.25);
+    assert_eq!(ir["model"]["points"][0]["position"]["y"], -2.5);
+    assert_eq!(ir["model"]["points"][0]["position"]["z"], 3.75);
+    let body_id = ir["model"]["bodies"][0]["id"].as_str().unwrap();
+    assert!(ir["unknowns"][0]["links"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|link| link == body_id));
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["validate", input.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("validation: OK"));
+}
+
+#[test]
+fn rhino_v3_v4_decode_metadata_but_legacy_bands_are_header_only() {
+    let dir = tempdir().unwrap();
+    for version in ["3", "4"] {
+        let input = minimal_rhino_archive(dir.path(), &format!("empty-{version}.3dm"), version);
+        let output = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(["decode", input.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["ir_version"], "2");
+        assert_eq!(value["source"]["attributes"]["archive_version"], version);
+        assert_eq!(value["model"]["subds"], serde_json::json!([]));
+    }
+
+    for version in ["1", "2", "5"] {
+        let input = dir.path().join(format!("header-{version}.3dm"));
+        fs::write(&input, rhino_header(version)).unwrap();
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(["inspect", input.to_str().unwrap()])
+            .assert()
+            .success()
+            .stdout(
+                predicate::str::contains("container: 3dm-chunks")
+                    .and(predicate::str::contains("entries: 0"))
+                    .and(predicate::str::contains(format!(
+                        "archive version {version}"
+                    ))),
+            );
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(["decode", input.to_str().unwrap()])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(format!(
+                "Rhino archive version {version} decode is not implemented"
+            )));
+    }
+}
+
+#[test]
+fn rhino_cli_rejects_truncated_and_malformed_archives_with_context() {
+    let dir = tempdir().unwrap();
+    let truncated = dir.path().join("truncated.3dm");
+    let mut bytes = rhino_header("50");
+    bytes.extend([1, 0, 0]);
+    fs::write(&truncated, bytes).unwrap();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["inspect", truncated.to_str().unwrap()])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("inspecting").and(predicate::str::contains("truncated")));
+
+    let malformed = minimal_rhino_archive(dir.path(), "malformed.3dm", "50");
+    let mut bytes = fs::read(&malformed).unwrap();
+    bytes.truncate(bytes.len() - 20);
+    fs::write(&malformed, bytes).unwrap();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["decode", malformed.to_str().unwrap()])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("decoding")
+                .and(predicate::str::contains("missing end-of-file chunk")),
+        );
+}
+
+#[test]
+fn inspect_garbage_reports_rhino_among_supported_formats() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("garbage.bin");
+    fs::write(&input, b"not a CAD file").unwrap();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["inspect", input.to_str().unwrap()])
         .assert()
         .code(2)
         .stderr(predicate::str::contains(

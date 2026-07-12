@@ -1,36 +1,28 @@
 # Rhino 3DM format
 
-## 1. Scope and archive bands
+## 1. Archive bands
 
-Rhino 3DM is a little-endian chunk stream. The supported archive bands are:
+Rhino 3DM is a little-endian chunk stream. Archive versions select these
+container grammars:
 
-| Archive version | Band              | Chunk value width | Geometry policy                                        |
-| --------------: | ----------------- | ----------------: | ------------------------------------------------------ |
-|               1 | V1                |           4 bytes | header-only inspection; decode `NotImplemented`        |
-|               2 | V2                |           4 bytes | header-only inspection; decode `NotImplemented`        |
-|               3 | V3                |           4 bytes | metadata and object framing; geometry retained unknown |
-|               4 | V4                |           4 bytes | metadata and object framing; geometry retained unknown |
-|               5 | legacy V5 grammar |           4 bytes | header-only inspection; decode `NotImplemented`        |
-|              50 | V5                |           8 bytes | built-in geometry decode                               |
-|              60 | V6                |           8 bytes | built-in geometry decode                               |
-|              70 | V7                |           8 bytes | built-in geometry decode                               |
-|              80 | V8                |           8 bytes | built-in geometry decode                               |
+| Archive version | Band              | Chunk value width | Container grammar |
+| --------------: | ----------------- | ----------------: | ----------------- |
+|               1 | V1                |           4 bytes | flat chunks       |
+|               2 | V2                |           4 bytes | table sequence    |
+|               3 | V3                |           4 bytes | table sequence    |
+|               4 | V4                |           4 bytes | table sequence    |
+|               5 | legacy V5 grammar |           4 bytes | table sequence    |
+|              50 | V5                |           8 bytes | table sequence    |
+|              60 | V6                |           8 bytes | table sequence    |
+|              70 | V7                |           8 bytes | table sequence    |
+|              80 | V8                |           8 bytes | table sequence    |
 
 The archive version is the decimal value in the header. Version `5` and version
 `50` are distinct. Any positive decimal version fitting the eight-byte header
-field is syntactically readable; geometry support is gated by the table above.
-The full geometry decoder accepts archive versions `50`, `60`, `70`, and `80`.
-Archive version `5` uses the four-byte container grammar but is not an agreed
-metadata-decode band.
+field is syntactically valid.
 
-V1 has a documented flat-chunk grammar and may omit the end marker. V2 and
-later use the table sequence below and require an end-of-file chunk. V1
-inspection is header-only. V2 inspection is header-only. Decode for V1 and V2
-returns `NotImplemented`. V3 and V4 support chunk inspection, metadata,
-attributes, and object identity; their geometry payloads are retained as
-bounded unknown records. Version 5 is header-only and decode returns
-`NotImplemented`. Versions 50, 60, 70, and 80 support full built-in geometry
-decode.
+V1 uses a flat-chunk grammar and may omit the end marker. V2 and later use the
+table sequence below and require an end-of-file chunk.
 
 ## 2. Header
 
@@ -220,9 +212,8 @@ CRC32(empty)       = 0x00000000
 CRC32("123456789") = 0xcbf43926
 ```
 
-A checksum mismatch does not invalidate framing when the declared boundary is
-valid. Consume the complete chunk and report a warning. A missing checksum or
-invalid boundary is a framing failure.
+A checksum mismatch does not change the declared framing boundary. A missing
+checksum or invalid boundary makes the chunk structurally invalid.
 
 ### 4.2 Bounded cursors
 
@@ -235,10 +226,9 @@ crc_start = declared_end - checksum_width
 body_end = crc_start
 ```
 
-The child cursor may not read beyond `body_end`. At close, skip unread body
-bytes, read and validate the checksum, and resume at `declared_end`. Unknown
-chunks are skipped to their declared end. Semantic failure inside a valid bound
-does not consume a parent trailer.
+The chunk body cannot extend beyond `body_end`. The checksum occupies the bytes
+from `crc_start` to `declared_end`. Child payload bytes cannot overlap a parent
+trailer.
 
 ## 5. Versions and end of file
 
@@ -417,12 +407,12 @@ The values below are the defined bits:
 | `0x40000000` | extrusion                | `ON_Extrusion`                     |
 | `0xffffffff` | any                      | all bits                           |
 
-The value may contain multiple bits. A zero filter passed to the object reader
-means all objects; otherwise an object is selected when its nonzero type value
-has any bit in common with the filter:
+The value may contain multiple bits. A zero filter selects all objects;
+otherwise an object is selected when its nonzero type value has any bit in
+common with the filter:
 `(object_type & filter) != 0`. Filter-only bits are valid in a filter but do
-not identify standalone model records. A zero object-type value is retained as
-unknown and is not rejected solely for lacking a type bit.
+not identify standalone model records. A zero object-type value denotes an
+unknown type.
 
 ## 7. Tables and object records
 
@@ -449,7 +439,7 @@ The normal V2+ table sequence is:
 
 Optional tables may be absent. A table is a bounded table chunk containing
 record chunks followed by a short `TCODE_ENDOFTABLE` whose value is zero.
-Unknown records inside a valid table are skipped within their bounds.
+Every record is contained within the table bound.
 
 An object record is:
 
@@ -591,7 +581,7 @@ f64 meters per unit                       version >= 102
 UTF-16 custom unit name                   version >= 102
 ```
 
-Supported structure versions are 100, 101, and 102. Unit values are:
+Defined structure versions are 100, 101, and 102. Unit values are:
 
 | Value | Unit               |
 | ----: | ------------------ |
@@ -665,7 +655,7 @@ minor >= 3:  plot color, plot weight f64
 minor >= 4:  bool locked
 minor >= 5:  layer UUID
 minor >= 6:  parent UUID, bool expanded
-minor >= 7:  rendering attributes
+minor >= 7:  [rendering attributes](#84-rendering-attributes)
 minor >= 8:  display-material UUID
 minor == 9:   two obsolete u8 style fields
 minor >= 10:  tagged extension stream
@@ -684,6 +674,43 @@ minor >= 15: item 35 embedded section style, item 36 obsolete clipping type
 
 The extension stream is item byte, payload, next item byte, terminated by item
 zero. Layer visibility and lock state are independent.
+
+### 8.4 Rendering attributes
+
+Rendering attributes are shared by layer records and object attributes. The
+outer record is a long `TCODE_ANONYMOUS_CHUNK` with a CRC32-selected typecode.
+Its payload is:
+
+```text
+i32 anonymous major = 1
+i32 anonymous minor = 0
+i32 material-reference count
+count × anonymous material-reference chunk
+```
+
+The count is nonnegative. Each material reference is a long
+`TCODE_ANONYMOUS_CHUNK` with this payload:
+
+```text
+i32 anonymous major = 1
+i32 anonymous minor = 0 or 1
+UUID plug-in ID                         16 bytes
+UUID front-face material ID             16 bytes
+i32 obsolete mapping-channel count
+obsolete mapping-channel array
+minor >= 1:
+  UUID back-face material ID            16 bytes
+  u8 material source
+  u8 reserved[3]
+```
+
+The obsolete mapping-channel array contains exactly the declared number of
+mapping-channel records. Its count is zero, so no mapping-channel bytes follow
+the count. Material-reference minor 0 ends after the empty mapping array.
+Minor 1 appends the back-face material UUID, one-byte material-source selector,
+and three reserved bytes in that order. Both anonymous chunks end exactly
+after their version-gated fields; their counts and nested chunk boundaries
+cannot exceed the containing rendering-attributes chunk.
 
 ## 9. Object attributes
 
@@ -719,12 +746,12 @@ minor >= 4: i32 decoration, plot-color source, plot color,
              plot-weight source, plot-weight f64
 minor >= 5: i32 linetype referenced index
 minor >= 6: u8 active space, explicit display-material UUID pairs
-minor >= 7: rendering attributes
+minor >= 7: [rendering attributes](#84-rendering-attributes)
 ```
 
 Defaults are normal object mode, visible unless hidden, layer color/linetype/
 material/plot color/plot weight sources, model space, wire density 1, and plot
-weight 0.0. The active-space value and every selector are retained.
+weight 0.0.
 
 ### 9.2 V5 through V8 tagged attributes
 
@@ -747,7 +774,7 @@ Item payloads:
 |   2 | UTF-16 URL                                   |
 |   3 | linetype referenced index `i32`              |
 |   4 | material referenced index `i32`              |
-|   5 | rendering attributes                         |
+|   5 | [rendering attributes](#84-rendering-attributes) |
 |   6 | object `ON_Color`                            |
 |   7 | plot `ON_Color`                              |
 |   8 | plot weight `f64` in millimeters             |
@@ -813,7 +840,7 @@ hidden, and default frame/label style.
 The effective display state is object visibility combined with layer visibility.
 Each color, material, linetype, plot color, and plot weight uses the object
 value only when its selector selects the object; otherwise it uses the layer or
-document value. Preserve raw selectors beside resolved values.
+document value.
 
 ## 10. Compressed buffers
 
@@ -834,11 +861,9 @@ method 0: stored bytes, exactly uncompressed size
 method 1: zlib/DEFLATE bytes
 ```
 
-The CRC covers the uncompressed bytes. The decoder imposes a configured output
-ceiling below the `u32` maximum, bounds compressed input by its parent chunk,
-and rejects output shorter or longer than the declared size. Unknown methods,
-zlib failure, truncation, checksum failure, or ceiling exhaustion degrade only
-the containing record when framing survives.
+The CRC covers the uncompressed bytes. Inflated output has exactly the declared
+size. Unknown methods, zlib failure, truncation, and checksum failure make the
+buffer invalid.
 
 ## 11. Class UUID registry
 
@@ -874,10 +899,6 @@ value types; their object wrapper is `ON_ArcCurve`.
 
 ## 12. Curves and points
 
-All geometry coordinates and length-valued tolerances are converted to
-millimeters by the decoder. Angles, unit vectors, knot values, UV values, and
-relative tolerances are not scaled.
-
 ### 12.1 Point
 
 Packed version `1.0`; major 1 is accepted. The payload is:
@@ -886,9 +907,6 @@ Packed version `1.0`; major 1 is accepted. The payload is:
 u8 version
 ON_3dPoint point
 ```
-
-The reachable IR representation is a general body containing a region, shell,
-free vertex, and point. A free point carrier without topology is not emitted.
 
 ### 12.2 Point cloud
 
@@ -912,9 +930,7 @@ minor >= 2:
 ```
 
 Optional counts are zero or the point count. Flags bit 0 means ordered points;
-bit 1 means the plane is set. Points map to a reachable general body with one
-free vertex per point. Normals, colors, values, ordering, plane, and bounds are
-retained as native metadata.
+bit 1 means the plane is set.
 
 ### 12.3 Line curve
 
@@ -927,9 +943,7 @@ ON_Interval domain
 i32 dimension
 ```
 
-The line is bounded. `dimension` is serialized without fallback. A valid
-conversion to a degree-one NURBS uses control points `[from,to]` and knots
-`[t0,t0,t1,t1]`.
+The line is bounded. `dimension` is serialized without fallback.
 
 ### 12.4 Arc curve
 
@@ -943,10 +957,8 @@ ON_Interval curve domain
 i32 dimension
 ```
 
-Invalid dimensions are normalized to 3 by the native payload rule. Radius and
-both intervals must be valid. A full canonical circle may map to an analytic
-circle; a partial arc or a full circle with a noncanonical seam maps to an
-exact rational NURBS preserving the angle and curve domain.
+Invalid dimensions are normalized to 3 by the payload rule. Radius and both
+intervals must be valid.
 
 ### 12.5 Polyline curve
 
@@ -971,8 +983,7 @@ for parameters `t[0..n)` is:
 
 ### 12.6 Polycurve
 
-Packed version `1.0`; the payload reader does not reject a different version
-before reading the bounded layout:
+A packed version byte precedes this bounded layout:
 
 ```
 u8 version
@@ -986,9 +997,7 @@ segment count × polymorphic ON_Curve
 ```
 
 Parameter count is segment count plus one. Segment parameters are finite and
-nondecreasing. Each child must be a curve. Emit a compound procedural curve
-with ordered children and the full parameter array; do not merge heterogeneous
-children into one speculative primitive.
+nondecreasing. Each child is a curve.
 
 ## 13. NURBS curves and surfaces
 
@@ -1023,9 +1032,8 @@ domain.max = K[CV count - 1]
 ```
 
 Rational CVs are homogeneous `[xw,yw,zw,w]`; Euclidean points are
-`[xw/w,yw/w,zw/w]` and weights are retained. Weights must be finite and
-nonzero. Periodicity is derived from the reconstructed knot vector, not
-serialized as a boolean.
+`[xw/w,yw/w,zw/w]`. Weights are finite and nonzero. Periodicity is derived
+from the reconstructed knot vector, not serialized as a boolean.
 
 The stored vector omits two endpoint knots. Let `o=order`, `n=CV count`,
 `m=o+n-2`, and `K[0..m)` be stored knots. The full vector has `o+n` entries:
@@ -1102,8 +1110,7 @@ minor >= 1:
 ```
 
 Version 1.0 uses domains as extents. Domains and extents are independent; the
-domain controls parameterization. The IR plane carrier preserves bounded
-domains in native association.
+domain controls parameterization.
 
 ### 13.4 Revolution surface
 
@@ -1122,10 +1129,7 @@ if present: polymorphic ON_Curve profile
 ```
 
 Major 1 defaults the surface parameter interval to the angular interval. A
-valid profile is required for an exact procedural revolution. The IR retains
-the profile, axis, angular interval, surface interval, and transpose flag and
-also emits a solved NURBS carrier. Missing or invalid profiles degrade the
-whole surface.
+present profile is a curve.
 
 ### 13.5 Sum surface
 
@@ -1142,14 +1146,13 @@ polymorphic ON_Curve second
 The exact surface is `S(u,v)=basepoint+C0(u)+C1(v)`. For child homogeneous
 poles `H0=(wP,w)` and `H1=(vQ,v)`, the surface weight is `wv` and the
 homogeneous point is `v(wP)+w(vQ)+wv*basepoint`. U inherits the first curve;
-V inherits the second. The IR emits both a solved NURBS and a `Sum` procedural
-definition referencing both children.
+V inherits the second.
 
 ## 14. Mesh
 
 `ON_Mesh` begins with a packed version byte in its class-data payload. Major 1
-is uncompressed; major 3 is compressed; major 2 is unsupported. The common
-prefix is:
+is uncompressed, major 3 is compressed, and major 2 has no defined payload
+layout. The common prefix is:
 
 ```
 u8 version
@@ -1212,11 +1215,6 @@ and face indices. Double vertices contain a `u32` count and, when nonzero, a
 compressed `3*f64` channel. A valid double channel has exactly the declared
 mesh vertex count and finite values.
 
-Mesh vertices, faces, exact normals, and UVs map to IR tessellation. Curvature,
-surface parameters, mapping, bounds, and tri-state flags remain metadata.
-Triangle splitting, ngon retention or triangulation, and double-precision
-preference are decoder mappings; they do not change the wire facts.
-
 ## 15. Brep
 
 `ON_Brep` major 3 uses payload version 3.minor, with minors 0 through 3:
@@ -1239,9 +1237,10 @@ minor >= 3: anonymous region-topology chunk
 
 Polymorphic C2/C3/surface arrays are anonymous version 1.0, then `i32 count`
 and for each slot an `i32 present` flag followed by one polymorphic object when
-present is 1. Zero preserves a null slot. Vertices, edges, trims, loops, and
-faces are raw anonymous version 1.0 arrays with a packed `1.0` byte and inline
-records. Face array version is 1.1 before archive 70 and 1.2 at archive 70+;
+present is 1. Zero denotes a positional null slot. Vertices, edges, trims,
+loops, and faces are raw anonymous version 1.0 arrays with a packed `1.0` byte
+and inline records. Face array version is 1.1 before archive 70 and 1.2 at
+archive 70+;
 minor 1 adds one UUID per face and minor 2 adds a presence byte and one color
 per face.
 
@@ -1305,8 +1304,8 @@ legacy 2D and 3D tolerance doubles.
 Trim types are 0 unknown, 1 boundary, 2 mated, 3 seam, 4 singular, 5
 curve-on-surface, 6 point-on-surface, and 7 slit/reserved. ISO values are 0
 not-iso, 1 interior U, 2 interior V, 3 west, 4 south, 5 east, and 6 north.
-Unknown values are preserved as unknown. Singular and point-on-surface trims
-use edge index -1 and identical endpoint vertices.
+Values outside the defined sets are unknown. Singular and point-on-surface
+trims use edge index -1 and identical endpoint vertices.
 
 ### 15.4 Loop and face
 
@@ -1375,18 +1374,14 @@ correspond to face `f` with directions +1 and -1. There is exactly one
 infinite region; region membership is reciprocal, face sides are not duplicated
 within a region, and unassigned sides use region index -1.
 
-Decode all arrays into an isolated intermediate Brep. Validate every reference,
-domain, reversal, ring, and region invariant before emitting topology. For
-minor 0 through 2, derive shells from validated face-edge incidence. For minor
-3, use serialized region membership only after validating it against incidence.
-A malformed Brep emits no partial topology. Valid C3 curves and surfaces may
-remain free carriers linked to the retained object; C2 pcurves are emitted only
-when a Brep topology commit references them.
+Every reference, domain, reversal, ring, and region satisfies the invariants
+above. For minor 3, serialized region membership agrees with face-edge
+incidence.
 
 ## 16. Extrusion
 
 `ON_Extrusion` uses an anonymous chunk version `(i32 major, i32 minor)`.
-Supported versions are 1.0 through 1.3. The common fields are:
+Defined versions are 1.0 through 1.3. The common fields are:
 
 ```
 polymorphic ON_Curve profile
@@ -1410,11 +1405,8 @@ true; otherwise both defaults are false. The mesh cache is display data and is
 not analytic extrusion geometry.
 
 A multiple-profile extrusion stores a polycurve whose segment count is the
-profile count. The decoder requires closed profile segments, an outer segment
-and inner segments, and consistent profile-plane geometry before constructing
-lateral surfaces and optional planar cap topology. A failed required child or
-cap topology invalidates the whole extrusion; no generic sweep substitute is
-emitted.
+profile count. Profile segments are closed and contain one outer segment
+followed by inner segments in a common profile plane.
 
 ## 17. SubD
 
@@ -1457,9 +1449,7 @@ u8 render-mesh-present
 ```
 
 Archive IDs are contiguous, one-based, partitioned vertex/edge/face, and
-records occur in archive-ID order. Level zero is the control cage. Higher
-levels are fully bounded and must be consumed and validated for framing, then
-may be discarded as derived levels.
+records occur in archive-ID order. Level zero is the control cage.
 
 A component pointer is `u32 archive ID` followed by `u8 flags`. Bit 0 is
 direction; bits 1 and 2 encode type: `0x2` vertex, `0x4` edge, `0x6` face.
@@ -1474,16 +1464,14 @@ edge pointers, face pointers, and a V5/V6 zero end marker. Tags are 0 unset,
 Edge records contain tag, face count, two sector coefficients, start
 sharpness, two vertex pointers, face pointers, the pre-V7 zero marker, and in
 V8 an optional eight-byte end sharpness addition. V5 through V7 map scalar
-sharpness to both endpoints; V8 preserves `[start,end]`. Edge tags are 0
+sharpness to both endpoints; V8 stores `[start,end]`. Edge tags are 0
 unset, 1 smooth, 2 crease, and 4 smooth-X.
 
 Face records contain level-zero ancestor ID, obsolete parent ID, directed edge
 count and edge pointers, then pre-V7 zero marker or V7+ additions including
 packing rectangle, material channel, color, pack ID, custom texture points, and
-end marker 255. Face rings must have at least three uses, valid edges, endpoint
-continuity, and closure. The IR materializes Catmull-Clark level zero with
-directed edge uses, vertex tags, edge tags, sector coefficients, and endpoint
-sharpness.
+end marker 255. Face rings have at least three uses, valid edges, endpoint
+continuity, and closure.
 
 ## 18. Instance definitions and references
 
@@ -1541,108 +1529,12 @@ ON_BoundingBox bounds
 Definition membership comes from the definition UUID array, not object
 attributes. The reference payload carries the transform and bounding box.
 
-Expansion is a decoder mapping: recursively duplicate definition members per
-reference, compose nested transforms, bake transforms into free geometry or
-body transforms, and derive IDs from instance path plus member UUID. Detect
-cycles, missing definitions, absent members, and nonfinite or singular
-transforms. Retain the affected reference and commit no partial expansion.
+## 19. Exact gates and invariants
 
-## 19. Identity, retention, and degradation
+This section collects exact version gates, field widths, and invariants for
+built-in payload families.
 
-Every object retains its UUID, class UUID, layer index, attributes, userdata,
-instance membership, and local identity before geometry conversion. Effective
-color and visibility preserve both selectors and resolved values. Unit scaling
-marks converted lengths as derived; verbatim fields remain byte-exact.
-
-Unknown bounded object records use IDs of the form
-`rhino:object:record#NNNNNN`, a SHA-256 hash, and complete byte length. Retention
-data is omitted when the complete record exceeds the configured cap; an
-ambiguous truncated prefix is never retained. Per-record and per-document
-limits apply before allocation or decompression.
-
-| Condition                         | Recovery                                 | Result                   |
-| --------------------------------- | ---------------------------------------- | ------------------------ |
-| invalid header/version            | none                                     | blocking                 |
-| impossible length/overflow        | none                                     | blocking                 |
-| lost table framing                | none                                     | blocking                 |
-| checksum mismatch                 | consume declared span                    | warning                  |
-| unknown table record              | skip bounded record                      | retained/warning         |
-| unknown class UUID                | consume class wrapper                    | retained/warning         |
-| future built-in payload version   | consume bounded class data               | retained/warning         |
-| plugin userdata                   | consume bounded userdata                 | retained/warning         |
-| unsupported V1/V2 geometry        | consume bounded record                   | retained/not implemented |
-| invalid attributes                | retain complete attribute chunk          | warning                  |
-| missing child reference           | degrade containing object                | warning                  |
-| compressed-buffer failure         | retain enclosing record                  | warning                  |
-| cap exhaustion                    | retain metadata and complete-record hash | warning                  |
-| malformed Brep/SubD topology      | discard that topology atomically         | warning                  |
-| missing instance definition/cycle | retain affected reference                | warning                  |
-
-## 20. IR mappings and invariants
-
-Free curves and surfaces link their emitted carrier IDs from the owning object
-record. Compound, Sum, Revolution, and instance expansion nodes make child
-carriers reachable. Pcurves exist only through committed Brep coedges.
-
-NURBS domains, full reconstructed knots, rational weights, periodic flags,
-surface U-major indexing, polyline parameters, bounded line domains, partial
-arc intervals, revolution intervals, and Sum child references are preserved.
-Every procedural reference must resolve. Directed Brep loops and SubD face
-rings must be closed and endpoint-continuous. A failed object never commits
-partial topology. V3/V4 geometry emits no typed geometry.
-
-## 21. Synthetic fixture cases
-
-Fixtures must cover:
-
-1. Header versions 4, 5, 50, 60, 70, and 80.
-2. Four-byte and eight-byte chunk values, short and long chunks.
-3. CRC16 vectors, CRC32 vectors, mismatches, truncation, overflow, and EOF
-   file-size equality/mismatch.
-4. Complete table sequence with optional tables omitted and repeated user
-   tables.
-5. Object wrapper with unknown class, class UUID length 20, userdata 2.1, and
-   valid attributes.
-6. UTF-8 and UTF-16 NUL-inclusive counts; malformed terminators.
-7. Units 100/101/102, inches, custom units, and length-only scaling.
-8. V3/V4 fixed attributes and V5 item streams through item 41, including an
-   unknown future item retention case.
-9. Layer minors 8, 10, and 15 with extension items.
-10. Stored and zlib compressed buffers, zero-size buffers, bad methods, bad
-    CRCs, and output-cap rejection.
-11. Point, point cloud, bounded line, partial arc, full circle, polyline, and
-    polycurve child failure.
-12. Clamped and non-clamped NURBS knots, rational CVs, asymmetric surface
-    counts, and independent U/V reconstruction.
-13. Revolution majors 1 and 2, Sum with rational children, and extrusion
-    versions 1.0 through 1.3 with holes and independent caps.
-14. Mesh index widths at vertex counts 255, 256, 65535, and 65536; triangle
-    sentinel, quad, every major-3 minor through 3.8, channels, ngons, and
-    double vertices.
-15. One-face Brep, null C2/C3/surface slots, reversal composition, singular
-    trim, render/analysis side caches, all face-array versions, is-solid values,
-    and invalid region topology.
-16. Empty SubD, one directed quad for minors 0, 1, 2, 3, and 4, V8 endpoint
-    sharpness, invalid archive partitions, null pointers, and higher-level
-    bounded skipping.
-17. Static, linked, nested, missing, cyclic, and singular-transform instances.
-
-## 22. Required behavior summary
-
-The decoder first validates framing and preserves object identity, then decodes
-bounded payloads into temporary results. It commits only semantically valid
-geometry and topology. Unknown UUIDs, future bounded payloads, plugin-owned
-userdata, unsupported V1/V2 geometry, and failed optional display caches remain
-retained records. A framing failure stops the enclosing scan; a semantic
-failure consumes its bounded record and continues.
-
-## 23. Closure tables
-
-This section gives the exact gate, field-width, invariant, mapping, and
-recovery contract for each full-decode family. A payload is accepted only when
-its framing and version gate are valid.
-
-### 23.1 Point and simple-curve gate table
+### 19.1 Point and simple-curve gate table
 
 | Class              | Framing     | Written version | Accepted major/minor                                       | Required invariants                                                                       |
 | ------------------ | ----------- | --------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
@@ -1651,12 +1543,11 @@ its framing and version gate are valid.
 | `ON_LineCurve`     | packed byte | 1.0             | major 1; minor ignored                                     | finite distinct endpoints; increasing domain; dimension 2 or 3                            |
 | `ON_ArcCurve`      | packed byte | 1.0             | major 1; minor ignored                                     | positive radius; finite plane; increasing angle and curve domains                         |
 | `ON_PolylineCurve` | packed byte | 1.0             | major 1; minor ignored                                     | at least two points; parameter count equals point count; strict parameter increase        |
-| `ON_PolyCurve`     | packed byte | 1.0             | reader consumes bounded layout without a version rejection | positive segment count; parameter count is segment count plus one; every child is a curve |
+| `ON_PolyCurve`     | packed byte | 1.0             | version byte does not alter the bounded layout             | positive segment count; parameter count is segment count plus one; every child is a curve |
 
 `ON_LineCurve` and `ON_PolylineCurve` serialize their `i32 dimension` without
 normalizing invalid values. `ON_ArcCurve` normalizes a dimension other than 2
-or 3 to 3. `ON_Point` has no dimension field. A 3D IR decoder rejects or
-retains non-3D line/polyline payloads rather than padding them.
+or 3 to 3. `ON_Point` has no dimension field.
 
 The point-cloud optional arrays are exactly:
 
@@ -1668,32 +1559,31 @@ minor 2: i32 value_count, value_count × f64
 ```
 
 The point-cloud `flags` bits are bit 0 ordered stream and bit 1 plane set.
-Point-cloud point count must be positive for a typed carrier. A malformed
-optional array invalidates the complete point-cloud carrier.
+Point-cloud point count is positive. Optional array counts are zero or equal
+to the point count.
 
-The bounded line maps to degree one with `[t0,t0,t1,t1]`. A polyline with
-parameters `t[0..n)` maps to `[t0,t0,t1,...,t[n-2],t[n-1],t[n-1]]`.
-Polycurve children remain separate carriers and the parent is a compound
-construction with `segment_parameters.len() == child_count + 1`. If any
-required child fails, no partial compound is committed.
+A degree-one knot vector corresponding to a bounded line is
+`[t0,t0,t1,t1]`. For polyline parameters `t[0..n)`, the corresponding knot
+vector is `[t0,t0,t1,...,t[n-2],t[n-1],t[n-1]]`. A polycurve has
+`segment_parameters.len() == child_count + 1`.
 
-### 23.2 NURBS acceptance table
+### 19.2 NURBS acceptance table
 
-| Class   | Version gate                             | Counts                                                                   | Domain                                                | IR mapping                                              |
-| ------- | ---------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------- |
-| curve   | packed 1.0 before archive 60; 1.1 at 60+ | `stored_knots = order + cv_count - 2`; stored CV count equals `cv_count` | `[K[order-2], K[cv_count-1]]`                         | degree `order-1`, reconstructed knots, rational weights |
-| surface | packed 1.0                               | U/V stored counts `order + count - 2`; CV count `u_count*v_count`        | each direction uses its own interior stored endpoints | U-major tensor-product NURBS                            |
+| Class   | Version gate                             | Counts                                                                   | Domain                                                |
+| ------- | ---------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------- |
+| curve   | packed 1.0 before archive 60; 1.1 at 60+ | `stored_knots = order + cv_count - 2`; stored CV count equals `cv_count` | `[K[order-2], K[cv_count-1]]`                         |
+| surface | packed 1.0                               | U/V stored counts `order + count - 2`; CV count `u_count*v_count`        | each direction uses its own interior stored endpoints |
 
-Order is at least 2, CV count is at least order, dimensions are positive and
-3D for the target IR, knots are finite and nondecreasing, and every rational
-weight is finite and nonzero. The SubD-friendly curve tag is one byte and is
-metadata only. Periodicity is derived from the reconstructed knot vectors.
+Order is at least 2, CV count is at least order, dimensions are positive,
+knots are finite and nondecreasing, and every rational weight is finite and
+nonzero. The SubD-friendly curve tag is one byte. Periodicity is derived from
+the reconstructed knot vectors.
 
 For rational curves and surfaces, each wire CV has `dimension+1` doubles:
-`[xw,yw,zw,w]`; the Euclidean pole is `[xw/w,yw/w,zw/w]`. Surface wire order
-and IR flat order are both `i * v_count + j`.
+`[xw,yw,zw,w]`; the Euclidean pole is `[xw/w,yw/w,zw/w]`. Surface flat wire
+order is `i * v_count + j`.
 
-### 23.3 Mesh channel and minor table
+### 19.3 Mesh channel and minor table
 
 The mesh version is a packed byte. Writer bands are:
 
@@ -1702,9 +1592,9 @@ The mesh version is a packed byte. Writer bands are:
 | 50           | 3.5                  |
 | 60, 70, 80   | 3.8                  |
 
-Major 1 is accepted for older full-decode payloads and uses raw arrays. Major 2
-is not accepted. Major 3 uses five compressed buffers after the face array.
-Every buffer is present in sequence, including a zero-size absent channel.
+Major 1 uses raw arrays. Major 2 has no defined payload layout. Major 3 uses
+five compressed buffers after the face array. Every buffer is present in
+sequence, including a zero-size absent channel.
 
 | Channel             | Element encoding                      | Expected nonzero uncompressed size |
 | ------------------- | ------------------------------------- | ---------------------------------: |
@@ -1716,11 +1606,9 @@ Every buffer is present in sequence, including a zero-size absent channel.
 | surface parameters  | `vertex_count × 2 × f64`              |                `vertex_count * 16` |
 
 The first five channels use the compressed-buffer protocol. A nonzero channel
-whose size differs from its expected size is invalid for that channel. The
-mesh may retain other valid channels if the parent bound remains recoverable.
-Vertex and face count are nonnegative; each face index is less than vertex
-count. The explicit index-width field accepts only 1, 2, or 4 and must match
-the writer selection from vertex count.
+whose size differs from its expected size is invalid. Vertex and face count are
+nonnegative; each face index is less than vertex count. The explicit
+index-width field is 1, 2, or 4 and matches the selection from vertex count.
 
 Major 3 gates are exact:
 
@@ -1735,8 +1623,8 @@ minor >= 8: ON_BoundingBox vertex bounds
 ```
 
 The three minor-5 values are tri-state bytes: zero means unset, one means
-false, and two means true. Values outside 0, 1, and 2 are retained as invalid
-tri-state values. They are not ordinary booleans.
+false, and two means true. Other values are invalid. They are not ordinary
+booleans.
 
 The mapping tag is an anonymous chunk with packed version 1.0 or 1.1:
 
@@ -1768,12 +1656,10 @@ if double_vertex_count != 0:
   compressed buffer of double_vertex_count × 3 × f64
 ```
 
-The channel is usable only when its count equals mesh vertex count and every
-value is finite. Invalid optional mesh channels are dropped with a warning;
-invalid vertex or face indices invalidate mesh topology but preserve the
-bounded object record.
+The double-vertex count equals mesh vertex count and every value is finite.
+Vertex and face indices are in range.
 
-### 23.4 Brep framing and version table
+### 19.4 Brep framing and version table
 
 The Brep class-data payload starts with packed version `3.minor`. C2, C3, and
 surface arrays are anonymous version 1.0 wrappers:
@@ -1836,7 +1722,7 @@ unset values; tolerances are finite nonnegative values or explicit unset
 sentinels; singular and point-on-surface trims use edge -1 and identical
 endpoints; loop rings are directed, continuous, and closed.
 
-### 23.5 SubD exact record tables
+### 19.5 SubD exact record tables
 
 The SubDimple anonymous chunk is major 1, minor 0 through 4. The outer
 `ON_SubD` byte is `has_subdimple`: 0 means no following payload and 1 means
@@ -1966,7 +1852,7 @@ archive >= 70: component additions
 Edge tags are 0 unset, 1 smooth, 2 crease, and 4 smooth-X. Pointer type bits
 are 0x2 vertex, 0x4 edge, and 0x6 face; bit 0 is direction. A null pointer has
 archive ID zero. Edge and face directions reverse traversal; vertex direction
-is reserved and preserved.
+is reserved.
 
 Face record:
 
@@ -1998,7 +1884,7 @@ The custom texture-point count must equal `edge_count / 10` for full ten-point
 chunks, with the final remainder equal to `edge_count % 10`. A face ring has at
 least three directed uses, valid edge pointers, and endpoint continuity.
 
-### 23.6 Instance-definition exact tables
+### 19.6 Instance-definition exact tables
 
 The instance-definition table record contains the class payload. Archive 50
 uses packed version 1.6. Archive 60 may use packed version 1.7 or the
@@ -2068,52 +1954,5 @@ UUID definition ID
 ON_BoundingBox
 ```
 
-The transform and definition UUID are authoritative. Definition members are
-not world objects until expanded through a reference. Cycles, absent
-definitions or members, and nonfinite or singular transforms retain the
-affected reference and commit no partial expansion.
-
-### 23.7 Failure and cursor-recovery matrix
-
-| Family             | Malformed condition                                                  | Cursor action                                              | Emitted result                                   | Severity |
-| ------------------ | -------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------ | -------- |
-| header/container   | invalid header, version, table order, EOF size, or impossible length | stop at last reliable parent                               | no further decode                                | blocking |
-| chunk/checksum     | CRC mismatch with valid declared span                                | consume complete span                                      | bounded record retained                          | warning  |
-| object wrapper     | missing class end, attributes, history, or object end                | consume enclosing object only if child bounds remain valid | no partial object                                | error    |
-| class/userdata     | unknown UUID or plugin payload                                       | skip bounded class/userdata chunks                         | identity plus retained record                    | warning  |
-| attributes/layers  | unsupported item width or malformed count                            | consume complete attribute/layer record                    | metadata retained, geometry unaffected           | warning  |
-| point/simple curve | invalid version, count, dimension, domain, or child                  | consume class-data bound                                   | no typed carrier or compound                     | warning  |
-| NURBS              | knot/CV count, weight, dimension, or domain failure                  | consume class-data bound                                   | no partial curve/surface                         | warning  |
-| compressed mesh    | size, method, inflation, or CRC failure                              | consume enclosing mesh bound                               | valid sibling channels only                      | warning  |
-| mesh topology      | out-of-range face index or malformed ngon                            | consume mesh bound                                         | no mesh topology                                 | error    |
-| Brep arrays        | null required slot, invalid reference, bad record suffix             | consume Brep bound                                         | no Brep topology; valid C3/S carriers may remain | error    |
-| Brep caches        | wrong side type or bad side entry                                    | consume side-chunk bound                                   | affected cache omitted                           | warning  |
-| Brep regions       | invalid count, direction, membership, or region type                 | consume region bound                                       | use validated incidence shells only              | warning  |
-| Extrusion/Sum/Rev  | missing child, invalid version or construction parameter             | consume class-data bound                                   | no partial procedural surface                    | warning  |
-| SubD               | bad partition, pointer type, count, addition tag, or ring            | consume level/SubD bound                                   | no partial SubD topology                         | error    |
-| instances          | missing definition/member, cycle, bad transform                      | consume reference record                                   | no partial expansion                             | warning  |
-
-For every nonblocking row, the complete bounded record remains hashable and
-retained subject to the configured cap. No decoder branch allocates from a raw
-count until the count fits both the parent remaining bytes and the configured
-limit.
-
-### 23.8 Gate-tied synthetic fixtures
-
-| Fixture             | Required bytes and assertion                                                                                                                               |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| archive scope       | headers 1/2/3/4/5/50/60/70/80; V1/V2/V5 header-only and decode `NotImplemented`; V3/V4 metadata; 50/60/70/80 typed geometry                                |
-| object filter       | type values 0, curve, mesh, SubD, extrusion, and combined curve                                                                                            | surface; zero filter selects all; intersection selects |
-| object framing      | class UUID body length 20, class-data CRC, userdata 2.1, class end, attributes, history, object end                                                        |
-| point/simple curves | point 1.0; cloud minors 0/1/2 with zero and full optional arrays; line dimensions 2/3; arc invalid dimension; polyline parameters; polycurve child failure |
-| NURBS               | curve 1.0/1.1, rational and nonrational, clamped/non-clamped endpoints, bad knot/CV counts, asymmetric U/V surface                                         |
-| mesh versions       | major 1 raw channels; major 3 minors 0 through 8; every gate field present and absent at its boundary                                                      |
-| mesh channels       | exact byte sizes for all six compressed channel kinds, zero-size channels, invalid method/CRC/size, mapping tags 1.0/1.1, ngons, double vertices           |
-| Brep arrays         | C2/C3/S null slots, raw arrays, face 1.1 UUID suffix, face 1.2 color suffix, side version 0x00, wrong side type                                            |
-| Brep topology       | one-face loop, singular trim, reversal composition, invalid incidence, is-solid 0/1/2/3/invalid, raw V5 and polymorphic V6 region arrays                   |
-| Extrusion           | anonymous 1.0/1.1/1.2/1.3, legacy cap defaults, multiple closed profiles, independent caps, mesh-cache bound                                               |
-| SubD base           | pre-70 saved-point sizes 0/4 and deprecated size, 70+ sizes 24/4/5/254/255, invalid tag                                                                    |
-| SubD records        | vertex saved limit list and `u16` pointer counts, edge V8 size 255/8, all face additions including ten-point remainder                                     |
-| SubD level          | anonymous 1.1, partitions, all three 4 algorithm bytes, noncontiguous IDs, higher-level bounded skip                                                       |
-| instances           | V5 1.6/1.7, V6 anonymous 1.0, linked-type 1.0, static/linked members, empty linked list, nested depth, ref transform                                       |
-| degradation         | each failure row followed by a valid sibling chunk; assert cursor resumes at sibling and no partial topology is committed                                  |
+The transform and definition UUID identify the reference. Definition
+membership comes from the member UUID array, not object attributes.

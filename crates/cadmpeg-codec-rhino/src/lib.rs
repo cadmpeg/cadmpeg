@@ -13,10 +13,17 @@ pub(crate) mod chunks;
 pub(crate) mod container;
 pub(crate) mod curves;
 pub(crate) mod decode;
+pub(crate) mod extrusion;
+pub(crate) mod instances;
 pub(crate) mod mesh;
 pub(crate) mod objects;
 pub(crate) mod settings;
+pub(crate) mod subd;
 pub(crate) mod surfaces;
+pub(crate) mod wire;
+
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
 
 const MAGIC: &[u8] = chunks::MAGIC;
 
@@ -50,5 +57,9 @@ impl Codec for RhinoCodec {
     }
 }
 
+#[cfg(test)]
+mod archive_test_support;
+#[cfg(test)]
+mod archive_tests;
 #[cfg(test)]
 mod tests;

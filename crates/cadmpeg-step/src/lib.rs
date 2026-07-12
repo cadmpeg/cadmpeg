@@ -725,6 +725,65 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        if !self.ir.model.subds.is_empty() {
+            self.loss(
+                LossCategory::Geometry,
+                Severity::Warning,
+                format!(
+                    "{} subdivision surface(s) were omitted because this STEP writer \
+                     does not encode SubD control cages",
+                    self.ir.model.subds.len()
+                ),
+            );
+        }
+        if !self.ir.model.tessellations.is_empty() {
+            self.loss(
+                LossCategory::Geometry,
+                Severity::Warning,
+                format!(
+                    "{} tessellation(s) were omitted because this STEP writer emits \
+                     exact B-rep geometry only",
+                    self.ir.model.tessellations.len()
+                ),
+            );
+        }
+        let source_object_count = self
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.source_object.is_some())
+            .count()
+            + self
+                .ir
+                .model
+                .curves
+                .iter()
+                .filter(|curve| curve.source_object.is_some())
+                .count()
+            + self
+                .ir
+                .model
+                .subds
+                .iter()
+                .filter(|subd| subd.source_object.is_some())
+                .count()
+            + self
+                .ir
+                .model
+                .tessellations
+                .iter()
+                .filter(|tessellation| tessellation.source_object.is_some())
+                .count();
+        if source_object_count > 0 {
+            self.loss(
+                LossCategory::Metadata,
+                Severity::Info,
+                format!(
+                    "{source_object_count} source-object association(s) were not represented in STEP"
+                ),
+            );
+        }
         if !self.ir.unknowns.is_empty() {
             self.loss(
                 LossCategory::Metadata,

@@ -13,13 +13,19 @@ use crate::chunks::{
     chunk_at, parse_eof, parse_header, verify_checksum, ArchiveVersion, ChecksumStatus,
     FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
-use crate::objects::{parse_object_record, resolve_identities, ObjectDescriptor, Uuid};
+use crate::instances::{parse_definitions, DefinitionScan};
+use crate::objects::{
+    degraded_object_record, parse_object_record, resolve_identities, ObjectDescriptor,
+};
+use crate::wire::Uuid;
 
 /// Maximum input accepted by the Rhino container scanner.
 ///
 /// The cap limits the one required in-memory input copy and is checked before
 /// converting the stream length to allocation-sized offsets.
 pub(crate) const INPUT_CAP: u64 = 256 * 1024 * 1024;
+/// Maximum direct table records retained or described in one document.
+pub(crate) const TABLE_RECORD_CAP: usize = 1 << 20;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
 const TCODE_PROPERTIES: u32 = 0x1000_0014;
@@ -107,15 +113,14 @@ pub(crate) struct Table {
     pub(crate) body: std::ops::Range<usize>,
     /// Direct records in the table.
     pub(crate) records: Vec<Record>,
+    /// Number of direct records, including compactly summarized records.
+    pub(crate) record_count: usize,
     /// Object record typecode counts discovered without class parsing.
     pub(crate) object_typecodes: BTreeMap<u32, usize>,
-    /// Fully parsed object records in this table.
-    pub(crate) objects: Vec<ObjectDescriptor>,
 }
 
 /// The result of scanning a complete supported container.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) struct Scan {
     /// Complete input bytes.
     pub(crate) data: Vec<u8>,
@@ -127,6 +132,8 @@ pub(crate) struct Scan {
     pub(crate) tables: Vec<Table>,
     /// All object records in source order.
     pub(crate) objects: Vec<ObjectDescriptor>,
+    /// Parsed instance definitions and recoverable definition diagnostics.
+    pub(crate) definitions: DefinitionScan,
     /// Validated EOF descriptor.
     pub(crate) eof_offset: usize,
     /// Recoverable checksum and unknown-record notes.
@@ -223,6 +230,13 @@ fn table_base(typecode: u32) -> u32 {
     typecode & !TCODE_CRC
 }
 
+fn retain_record_descriptors(typecode: u32) -> bool {
+    matches!(
+        table_base(typecode),
+        TCODE_PROPERTIES | TCODE_SETTINGS | TCODE_LAYER | TCODE_INSTANCE_DEFINITION | TCODE_OBJECTS
+    )
+}
+
 fn record_is_allowed(table: u32, record: u32, short: bool) -> bool {
     if !expected_record(table_base(table), record) {
         return false;
@@ -314,6 +328,10 @@ fn known_record(record: u32) -> bool {
 
 /// Scan a V3/V4 or V5–V8 Rhino container.
 pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
+    scan_with_record_limit(data, TABLE_RECORD_CAP)
+}
+
+fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, CodecError> {
     let header = parse_header(&data).map_err(|error| malformed(&error))?;
     let archive = header.archive_version;
     let comment = parse_record(&data, 32, data.len(), archive)?;
@@ -334,6 +352,8 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
     let mut saw_settings = false;
     let mut saw_objects = false;
     let mut all_objects = Vec::new();
+    let mut definitions = DefinitionScan::default();
+    let mut record_count = 0_usize;
     while offset < data.len() {
         let chunk = chunk_at(&data, offset, data.len(), archive, false)
             .map_err(|error| malformed(&error))?;
@@ -346,22 +366,13 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
             parse_eof(&data, offset, archive).map_err(|error| malformed(&error))?;
             let metadata = crate::settings::parse_metadata(&data, archive, &tables, &mut warnings);
             resolve_identities(&mut all_objects, &metadata, &mut warnings);
-            for table in &mut tables {
-                for object in &mut table.objects {
-                    if let Some(resolved) = all_objects
-                        .iter()
-                        .find(|candidate| candidate.range == object.range)
-                    {
-                        *object = resolved.clone();
-                    }
-                }
-            }
             return Ok(Scan {
                 data,
                 archive,
                 comment,
                 tables,
                 objects: all_objects,
+                definitions,
                 eof_offset: offset,
                 warnings,
                 metadata,
@@ -397,9 +408,10 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
             }
             last_rank = rank;
         }
+        let retain_records = retain_record_descriptors(chunk.typecode);
         let mut records = Vec::new();
+        let mut table_record_count = 0_usize;
         let mut object_typecodes = BTreeMap::new();
-        let mut objects = Vec::new();
         let mut child_offset = chunk.body.start;
         let mut terminated = false;
         while child_offset < chunk.body.end {
@@ -419,6 +431,17 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
                 terminated = true;
                 break;
             }
+            record_count = record_count
+                .checked_add(1)
+                .filter(|count| *count <= record_limit)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "document table record budget of {record_limit} exceeded"
+                    ))
+                })?;
+            table_record_count = table_record_count
+                .checked_add(1)
+                .expect("document record budget bounds table count");
             let record = Record {
                 typecode: child.typecode,
                 range: child_offset..child.next_offset,
@@ -455,13 +478,21 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
-                let descriptor = parse_object_record(&data, &record, archive, &mut warnings)
-                    .map_err(|error| malformed(&error))?;
+                let descriptor = match parse_object_record(&data, &record, archive, &mut warnings) {
+                    Ok(descriptor) => descriptor,
+                    Err(error) => {
+                        warnings.push(format!(
+                            "bounded object record at {child_offset} is malformed: {error}"
+                        ));
+                        degraded_object_record(&record, &error)
+                    }
+                };
                 *object_typecodes.entry(descriptor.object_type).or_insert(0) += 1;
-                all_objects.push(descriptor.clone());
-                objects.push(descriptor);
+                all_objects.push(descriptor);
             }
-            records.push(record);
+            if retain_records {
+                records.push(record);
+            }
             child_offset = child.next_offset;
         }
         if !terminated {
@@ -475,19 +506,30 @@ pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
         {
             warnings.push(note);
         }
+        if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
+            definitions = parse_definitions(&data, &records, archive);
+        }
         tables.push(Table {
             typecode: chunk.typecode,
             range: offset..chunk.next_offset,
             body: chunk.body,
             records,
+            record_count: table_record_count,
             object_typecodes,
-            objects,
         });
         offset = chunk.next_offset;
     }
     Err(CodecError::Malformed(
         "missing end-of-file chunk".to_string(),
     ))
+}
+
+#[cfg(test)]
+pub(crate) fn scan_with_test_record_limit(
+    data: Vec<u8>,
+    record_limit: usize,
+) -> Result<Scan, CodecError> {
+    scan_with_record_limit(data, record_limit)
 }
 
 /// Build the format-neutral container summary.
@@ -498,7 +540,7 @@ pub(crate) fn summarize(scan: &Scan) -> ContainerSummary {
         attributes.insert("offset".to_string(), table.range.start.to_string());
         attributes.insert("size".to_string(), table.range.len().to_string());
         attributes.insert("body_offset".to_string(), table.body.start.to_string());
-        attributes.insert("record_count".to_string(), table.records.len().to_string());
+        attributes.insert("record_count".to_string(), table.record_count.to_string());
         for (typecode, count) in &table.object_typecodes {
             attributes.insert(format!("object_typecode_{typecode:#x}"), count.to_string());
         }
@@ -534,6 +576,12 @@ pub(crate) fn summarize(scan: &Scan) -> ContainerSummary {
     }
     let mut notes = vec![scan.version_note()];
     notes.extend(scan.warnings.iter().cloned());
+    notes.extend(
+        scan.definitions
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.message.clone()),
+    );
     ContainerSummary {
         format: "rhino".to_string(),
         container_kind: "3dm-chunks".to_string(),
@@ -549,6 +597,16 @@ fn source_meta(scan: &Scan) -> SourceMeta {
         scan.archive.value().to_string(),
     );
     attributes.insert("container_kind".to_string(), "3dm-chunks".to_string());
+    attributes.insert(
+        "comment_offset".to_string(),
+        scan.comment.range.start.to_string(),
+    );
+    attributes.insert("eof_offset".to_string(), scan.eof_offset.to_string());
+    attributes.insert("table_count".to_string(), scan.tables.len().to_string());
+    attributes.insert(
+        "instance_definition_count".to_string(),
+        scan.definitions.definitions.len().to_string(),
+    );
     SourceMeta {
         format: "rhino".to_string(),
         attributes,
@@ -561,7 +619,13 @@ pub(crate) fn container_only_result(scan: &Scan) -> cadmpeg_ir::codec::DecodeRes
     ir.source = Some(source_meta(scan));
     let mut notes = vec![scan.version_note()];
     notes.extend(scan.warnings.iter().cloned());
-    let losses = scan
+    notes.extend(
+        scan.definitions
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.message.clone()),
+    );
+    let mut losses: Vec<_> = scan
         .warnings
         .iter()
         .map(|message| LossNote {
@@ -571,6 +635,22 @@ pub(crate) fn container_only_result(scan: &Scan) -> cadmpeg_ir::codec::DecodeRes
             provenance: None,
         })
         .collect();
+    losses.extend(
+        scan.definitions
+            .diagnostics
+            .iter()
+            .map(|diagnostic| LossNote {
+                category: LossCategory::Other,
+                severity: Severity::Warning,
+                message: diagnostic.message.clone(),
+                provenance: Some(cadmpeg_ir::LossProvenance {
+                    format: "rhino".to_string(),
+                    stream: String::new(),
+                    offset: diagnostic.source_range.start as u64,
+                    tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
+                }),
+            }),
+    );
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
         DecodeReport {

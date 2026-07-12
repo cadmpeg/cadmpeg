@@ -147,6 +147,7 @@ dependencies = [
  "cadmpeg-ir",
  "cadmpeg-step",
  "clap",
+ "crc32fast",
  "predicates",
  "serde_json",
  "tempfile",
@@ -194,6 +195,7 @@ dependencies = [
  "cadmpeg-ir",
  "crc32fast",
  "flate2",
+ "serde_json",
  "sha2",
 ]
 

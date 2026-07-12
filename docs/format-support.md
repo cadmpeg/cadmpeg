@@ -37,13 +37,16 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | ------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
 | Autodesk Fusion `.f3d`                     | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
 | SolidWorks `.sldprt`                       | **L3 tested**  | feature metadata and input lanes, tessellation, native replay + bounded generation                    |
+| Rhino `.3dm` (archive 50/60/70/80)         | **L3 tested**  | SubD control cages, display meshes, native extrusion and instance constructions                        |
 | CATIA V5 `.CATPart` (standard-nested band) | **L2 claimed** | conditionally connected B-rep                                                                         |
 | Siemens NX `.prt`                          | **L2 claimed** | conditional connected B-rep, external-dependency inspection                                           |
 | CATIA V5 `.CATPart` (other layout bands)   | **L1 claimed** |                                                                                                       |
 | Creo Parametric `.prt`                     | **L1 claimed** | derived datum planes, prototype geometry census                                                       |
+| Rhino `.3dm` (V3/V4)                       | **L1 tested**  | metadata and bounded object-record retention                                                          |
+| Rhino `.3dm` (V1/V2 and archive 5)         | **L0 tested**  | header-only inspection; decode is rejected                                                            |
 | STEP AP214                                 | translation    | partial B-rep export with explicit loss reporting                                                     |
 
-Each current score applies to the envelope described in its profile. The codecs have yet to declare explicit version bands.
+Each current score applies to the envelope described in its profile.
 
 ## Status terms
 
@@ -60,10 +63,35 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 
 - **Autodesk Fusion `.f3d` (L4 tested):** design records, partial B-rep and appearance reads, byte-exact replay, native patching, and source-less generation.
 - **SolidWorks `.sldprt` (L3 tested):** connected model reads, feature metadata, native writes, and round trips.
+- **Rhino `.3dm` (L3 tested for archive 50/60/70/80):** curves, surfaces, meshes, connected B-rep, SubD, extrusions, and expanded instances. V3/V4 score L1; V1/V2 and archive 5 score L0. Read only.
 - **CATIA V5 `.CATPart` (L2 claimed for the standard-nested band):** exact carriers and conditionally connected topology. Other layout bands score L1. Read only.
 - **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.
 - **Creo Parametric `.prt` (L1 claimed):** container navigation, derived datum planes, and prototype geometry inspection. Read only.
 - **STEP AP214 (translation):** partial B-rep export with explicit loss reporting.
+
+## Rhino `.3dm`
+
+**Model:** 3DM object graph
+
+**Ladder: L3 tested for archive 50/60/70/80; L1 tested for V3/V4; L0 tested for V1/V2 and archive 5.** L4 requires typed design-operation history.
+
+### Read profile
+
+- **Container and versions: Partial.** Archive 50/60/70/80 and V3/V4 use bounded chunk, checksum, table, object-record, class, attribute, userdata, properties, settings, layer, and EOF framing. V1/V2 and archive 5 expose the 32-byte header and archive version only; normal decode returns `NotImplemented`.
+- **Geometry: Partial for archive 50/60/70/80.** Points, point clouds, lines, arcs, polylines, polycurves, NURBS curves, NURBS surfaces, plane surfaces, revolution surfaces, sum surfaces, meshes, extrusions, and SubD control cages transfer into typed IR. Lengths and length-valued tolerances convert to millimeters; angles, unit vectors, knot values, UV values, and relative tolerances remain unscaled. Unsupported classes and future payload versions remain native unknown records with bounded bytes or a complete-record length and digest. V3/V4 geometry remains unknown.
+- **Topology: Partial for archive 50/60/70/80.** Supported Breps transfer atomically into connected body, region, shell, face, loop, coedge, edge, vertex, 3D-curve, surface, and pcurve graphs. Invalid Brep topology retains the source record and decoded child carriers without committing a partial graph.
+- **Tessellation: Partial for archive 50/60/70/80.** Mesh vertices, normals, faces, texture coordinates, colors, surface parameters, and ngons transfer where their channel invariants pass. Unsupported cache and channel metadata remains retained.
+- **Design intent: Partial.** Native revolution, sum-surface, polycurve, and extrusion constructions transfer with exact solved carriers. Feature history, dimensions, hatches, annotations, and application-specific userdata remain opaque.
+- **Product structure: Partial.** Instance definitions and references expand recursively with composed transforms and source instance paths. Cycles, missing or ambiguous definitions, linked definitions without local members, invalid transforms, and members that cannot decode retain the affected reference.
+- **Presentation and metadata: Partial.** Document units and tolerances, application properties, notes, current selectors, layers, object identity, names, effective color and visibility, and source associations transfer. Rendering attributes and nested material references are structurally framed but not transferred as typed appearance data. Materials, line styles, dimensions, hatches, plugin classes, and plugin userdata remain retained rather than typed.
+- **Recovery and retention:** Chunk boundaries isolate semantic failures. Complete unknown records are retained within per-record and per-document limits; larger records retain exact length and SHA-256 digest, and truncated prefixes are not retained as complete records. Invalid Brep, extrusion, SubD, and instance candidates do not commit partial topology.
+
+### Write and round trip
+
+- **Native write: None.**
+- **Round trip: None.**
+
+See [`formats/rhino_3dm.md`](formats/rhino_3dm.md) and [`formats/rhino_3dm-open-items.md`](formats/rhino_3dm-open-items.md).
 
 ## SolidWorks `.sldprt`
 

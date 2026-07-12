@@ -11,11 +11,14 @@ use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk,
 };
 use crate::curves::{error, unsupported, GeometryError};
-use crate::objects::{parse_class_wrapper, Uuid};
+use crate::objects::parse_class_wrapper;
 use crate::settings::{bbox, interval, BoundingBox, Interval, Point3};
+use crate::wire::Uuid;
 
 /// `ON_Brep` class UUID.
-pub(crate) const ON_BREP: &str = "60b5dbc5-e660-11d3-bfe4-0010830122f0";
+pub(crate) const ON_BREP: Uuid = Uuid::from_canonical([
+    0x60, 0xb5, 0xdb, 0xc5, 0xe6, 0x60, 0x11, 0xd3, 0xbf, 0xe4, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
 /// Maximum number of records in one Brep array.
 pub(crate) const MAX_BREP_ITEMS: usize = 1 << 20;
 /// Maximum nesting depth used while reading polymorphic children.
@@ -32,9 +35,9 @@ type RegionRead = (
 /// The base class family expected by a polymorphic Brep slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RawBrepBaseType {
-    /// A curve-derived `OpenNURBS` class.
+    /// A curve-derived Rhino class.
     Curve,
-    /// A surface-derived `OpenNURBS` class.
+    /// A surface-derived Rhino class.
     Surface,
     /// A class outside the expected family.
     Other,
@@ -308,14 +311,37 @@ pub(crate) fn parse(
     }
     let minor = version & 0x0f;
     let mut warnings = Vec::new();
-    let c2 = read_children(bytes, &mut reader, archive, RawBrepBaseType::Curve, 0)?;
-    let c3 = read_children(bytes, &mut reader, archive, RawBrepBaseType::Curve, 0)?;
-    let surfaces = read_children(bytes, &mut reader, archive, RawBrepBaseType::Surface, 0)?;
-    let (vertices, vertex_array_range) = read_vertices(bytes, &mut reader, archive)?;
-    let (edges, edge_array_range) = read_edges(bytes, &mut reader, archive, writer_version)?;
-    let (trims, trim_array_range) = read_trims(bytes, &mut reader, archive, writer_version)?;
-    let (loops, loop_array_range) = read_loops(bytes, &mut reader, archive)?;
-    let (faces, face_array_range) = read_faces(bytes, &mut reader, archive)?;
+    let c2 = read_children(
+        bytes,
+        &mut reader,
+        archive,
+        RawBrepBaseType::Curve,
+        0,
+        &mut warnings,
+    )?;
+    let c3 = read_children(
+        bytes,
+        &mut reader,
+        archive,
+        RawBrepBaseType::Curve,
+        0,
+        &mut warnings,
+    )?;
+    let surfaces = read_children(
+        bytes,
+        &mut reader,
+        archive,
+        RawBrepBaseType::Surface,
+        0,
+        &mut warnings,
+    )?;
+    let (vertices, vertex_array_range) = read_vertices(bytes, &mut reader, archive, &mut warnings)?;
+    let (edges, edge_array_range) =
+        read_edges(bytes, &mut reader, archive, writer_version, &mut warnings)?;
+    let (trims, trim_array_range) =
+        read_trims(bytes, &mut reader, archive, writer_version, &mut warnings)?;
+    let (loops, loop_array_range) = read_loops(bytes, &mut reader, archive, &mut warnings)?;
+    let (faces, face_array_range) = read_faces(bytes, &mut reader, archive, &mut warnings)?;
     let bounds = bbox(&mut reader)?;
     let (render_meshes, render_mesh_array_range, analysis_meshes, analysis_mesh_array_range) =
         if minor >= 1 {
@@ -392,7 +418,7 @@ pub(crate) fn parse(
 
 /// Returns whether a UUID is `ON_Brep`.
 pub(crate) fn supported_class(uuid: Uuid) -> bool {
-    uuid.to_string() == ON_BREP
+    uuid == ON_BREP
 }
 
 fn read_children(
@@ -401,6 +427,7 @@ fn read_children(
     archive: ArchiveVersion,
     expected_type: RawBrepBaseType,
     depth: usize,
+    warnings: &mut Vec<String>,
 ) -> Result<RawBrepChildren, GeometryError> {
     if depth > MAX_BREP_DEPTH {
         return Err(error(
@@ -411,10 +438,11 @@ fn read_children(
     let start = reader.position();
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child_reader = body_reader(bytes, &chunk)?;
-    let (major, minor) = (child_reader.i32()?, child_reader.i32()?);
-    if major != 1 || minor != 0 {
+    let version_offset = child_reader.position();
+    let version = child_reader.u8()?;
+    if version != 0x10 {
         return Err(unsupported(
-            child_reader.position() - 8,
+            version_offset,
             "unsupported Brep polymorphic-array version",
         ));
     }
@@ -428,12 +456,8 @@ fn read_children(
                 let child_start = child_reader.position();
                 let child_chunk = chunk_at(bytes, child_start, child_reader.end(), archive, false)?;
                 let child_end = child_chunk.next_offset;
-                let class = parse_class_wrapper(
-                    bytes,
-                    chunk_start_range(&child_chunk),
-                    archive,
-                    &mut Vec::new(),
-                )?;
+                let class =
+                    parse_class_wrapper(bytes, chunk_start_range(&child_chunk), archive, warnings)?;
                 child_reader.skip(child_end - child_start)?;
                 let base_type = classify_base_type(class.class_uuid);
                 slots.push(Some(RawBrepChild {
@@ -451,7 +475,7 @@ fn read_children(
             }
         }
     }
-    finish_anonymous(bytes, reader, &chunk, child_reader)?;
+    finish_anonymous(bytes, reader, &chunk, child_reader, warnings)?;
     Ok(RawBrepChildren {
         slots,
         source_range: start..chunk.next_offset,
@@ -463,6 +487,7 @@ fn read_vertices(
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
 ) -> Result<(Vec<RawBrepVertex>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
@@ -483,7 +508,7 @@ fn read_vertices(
         });
     }
     let range = chunk.range();
-    finish_anonymous(bytes, reader, &chunk, child)?;
+    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
     Ok((result, range))
 }
 
@@ -492,6 +517,7 @@ fn read_edges(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
+    warnings: &mut Vec<String>,
 ) -> Result<(Vec<RawBrepEdge>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
@@ -525,7 +551,7 @@ fn read_edges(
         });
     }
     let range = chunk.range();
-    finish_anonymous(bytes, reader, &chunk, child)?;
+    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
     Ok((result, range))
 }
 
@@ -534,6 +560,7 @@ fn read_trims(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
+    warnings: &mut Vec<String>,
 ) -> Result<(Vec<RawBrepTrim>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
@@ -581,7 +608,7 @@ fn read_trims(
         });
     }
     let range = chunk.range();
-    finish_anonymous(bytes, reader, &chunk, child)?;
+    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
     Ok((result, range))
 }
 
@@ -589,6 +616,7 @@ fn read_loops(
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
 ) -> Result<(Vec<RawBrepLoop>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
@@ -609,7 +637,7 @@ fn read_loops(
         });
     }
     let range = chunk.range();
-    finish_anonymous(bytes, reader, &chunk, child)?;
+    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
     Ok((result, range))
 }
 
@@ -617,6 +645,7 @@ fn read_faces(
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
 ) -> Result<(Vec<RawBrepFace>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
@@ -673,7 +702,7 @@ fn read_faces(
         }
     }
     let range = chunk.range();
-    finish_anonymous(bytes, reader, &chunk, child)?;
+    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
     Ok((result, range))
 }
 
@@ -727,7 +756,7 @@ fn read_mesh_sides(
             };
             result.push(RawBrepMeshSlot { mesh, present });
         }
-        finish_anonymous(bytes, reader, &chunk, child)?;
+        finish_anonymous(bytes, reader, &chunk, child, warnings)?;
         Ok((result, chunk.range()))
     })();
     match parsed {
@@ -779,9 +808,9 @@ fn read_regions(
                 "unsupported Brep region-topology version",
             ));
         }
-        let sides = read_region_sides(bytes, &mut topology, archive)?;
-        let regions = read_region_records(bytes, &mut topology, archive)?;
-        finish_anonymous(bytes, &mut outer, &nested_chunk, topology)?;
+        let sides = read_region_sides(bytes, &mut topology, archive, warnings)?;
+        let regions = read_region_records(bytes, &mut topology, archive, warnings)?;
+        finish_anonymous(bytes, &mut outer, &nested_chunk, topology, warnings)?;
         if sides.len() != face_count.saturating_mul(2) {
             return Err(error(outer.position(), "region face-side count mismatch"));
         }
@@ -814,6 +843,7 @@ fn read_region_sides<'a>(
     bytes: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
 ) -> Result<Vec<RawBrepFaceSide>, GeometryError> {
     let (chunk, mut child, count) = region_array(bytes, reader, archive)?;
     let mut result = Vec::with_capacity(count);
@@ -834,7 +864,7 @@ fn read_region_sides<'a>(
             ));
         }
     }
-    finish_anonymous(bytes, reader, &chunk, child)?;
+    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
     Ok(result)
 }
 
@@ -842,6 +872,7 @@ fn read_region_records<'a>(
     bytes: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
 ) -> Result<Vec<RawBrepRegion>, GeometryError> {
     let (chunk, mut child, count) = region_array(bytes, reader, archive)?;
     let mut result = Vec::with_capacity(count);
@@ -863,7 +894,7 @@ fn read_region_records<'a>(
             source_range: source,
         });
     }
-    finish_anonymous(bytes, reader, &chunk, child)?;
+    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
     Ok(result)
 }
 
@@ -1097,8 +1128,8 @@ fn validate_rings(raw: &RawBrep) -> Result<(), GeometryError> {
         for pair in loop_record.trims.windows(2) {
             let left = &raw.trims[pair[0] as usize];
             let right = &raw.trims[pair[1] as usize];
-            let left_end = left.vertices[1 - usize::from(left.reversed_3d != 0)];
-            let right_start = right.vertices[usize::from(right.reversed_3d != 0)];
+            let left_end = left.vertices[1];
+            let right_start = right.vertices[0];
             if left_end != right_start {
                 return Err(error(
                     loop_record.source_range.start,
@@ -1108,8 +1139,8 @@ fn validate_rings(raw: &RawBrep) -> Result<(), GeometryError> {
         }
         let first = &raw.trims[loop_record.trims[0] as usize];
         let last = &raw.trims[*loop_record.trims.last().expect("nonempty") as usize];
-        let first_start = first.vertices[usize::from(first.reversed_3d != 0)];
-        let last_end = last.vertices[1 - usize::from(last.reversed_3d != 0)];
+        let first_start = first.vertices[0];
+        let last_end = last.vertices[1];
         if first_start != last_end {
             return Err(error(
                 loop_record.source_range.start,
@@ -1375,7 +1406,7 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, GeometryError> {
 }
 
 fn supported_mesh(uuid: Uuid) -> bool {
-    uuid.to_string() == crate::mesh::ON_MESH
+    uuid == crate::mesh::ON_MESH
 }
 
 fn chunk_start_range(chunk: &crate::chunks::Chunk) -> Range<usize> {
@@ -1406,6 +1437,7 @@ fn finish_anonymous(
     parent: &mut BoundedReader<'_>,
     chunk: &Chunk,
     child: BoundedReader<'_>,
+    warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
     if child.remaining() != 0 {
         return Err(error(
@@ -1417,8 +1449,10 @@ fn finish_anonymous(
         verify_checksum(bytes, chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        // A checksum mismatch is recoverable once the declared boundary is
-        // valid. The containing Brep remains structurally consumable.
+        warnings.push(format!(
+            "Brep anonymous CRC mismatch at offset {}",
+            chunk.header_start
+        ));
     }
     parent.skip(chunk.next_offset - parent.position())?;
     Ok(())
@@ -1478,7 +1512,7 @@ mod tests {
         class_data.extend_from_slice(&i64::try_from(data.len() + 4).expect("length").to_le_bytes());
         class_data.extend_from_slice(data);
         class_data.extend_from_slice(&crc32fast::hash(data).to_le_bytes());
-        let mut end = 0x8202_7fff_u32.to_le_bytes().to_vec();
+        let mut end = 0x8002_7fff_u32.to_le_bytes().to_vec();
         end.extend_from_slice(&0_i64.to_le_bytes());
         let mut body = uuid;
         body.extend(class_data);
@@ -1735,9 +1769,7 @@ mod tests {
 
     #[test]
     fn negative_array_count_is_rejected_before_allocation() {
-        let mut bytes = vec![0x30];
-        bytes.extend_from_slice(&1_i32.to_le_bytes());
-        bytes.extend_from_slice(&0_i32.to_le_bytes());
+        let mut bytes = vec![0x30, 0x10];
         bytes.extend_from_slice(&(-1_i32).to_le_bytes());
         let error = parse(&bytes, 0..bytes.len(), ArchiveVersion::V5, None)
             .expect_err("negative C2 count must fail");
@@ -1748,9 +1780,24 @@ mod tests {
     fn raw_arrays_consume_complete_anonymous_wrappers() {
         let bytes = packed_array(0, &[]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let (_, range) = read_vertices(&bytes, &mut reader, ArchiveVersion::V5).expect("vertex");
+        let (_, range) = read_vertices(&bytes, &mut reader, ArchiveVersion::V5, &mut Vec::new())
+            .expect("vertex");
         assert_eq!(range, 0..bytes.len());
         assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
+    fn raw_array_crc_mismatch_warns_and_consumes_wrapper() {
+        let mut bytes = packed_array(0, &[]);
+        let crc = bytes.len() - 1;
+        bytes[crc] ^= 1;
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let mut warnings = Vec::new();
+        read_vertices(&bytes, &mut reader, ArchiveVersion::V5, &mut warnings)
+            .expect("recoverable vertex wrapper");
+        assert_eq!(reader.remaining(), 0);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("Brep anonymous CRC mismatch"));
     }
 
     #[test]
@@ -1762,7 +1809,8 @@ mod tests {
             }
             let bytes = anonymous(&body);
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let (faces, _) = read_faces(&bytes, &mut reader, ArchiveVersion::V5).expect("faces");
+            let (faces, _) = read_faces(&bytes, &mut reader, ArchiveVersion::V5, &mut Vec::new())
+                .expect("faces");
             assert!(faces.is_empty());
         }
     }
@@ -1774,8 +1822,14 @@ mod tests {
             assert_eq!(record.len(), 132);
             let bytes = packed_array(1, &record);
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let (trims, range) =
-                read_trims(&bytes, &mut reader, ArchiveVersion::V5, Some(writer)).expect("trims");
+            let (trims, range) = read_trims(
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                Some(writer),
+                &mut Vec::new(),
+            )
+            .expect("trims");
             assert_eq!(range, 0..bytes.len());
             assert_eq!(trims[0].legacy_tolerances, [0.0, 0.0]);
         }
@@ -1795,8 +1849,7 @@ mod tests {
 
     #[test]
     fn polymorphic_array_preserves_null_and_classifies_wrong_base() {
-        let mut body = 1_i32.to_le_bytes().to_vec();
-        body.extend_from_slice(&0_i32.to_le_bytes());
+        let mut body = vec![0x10];
         body.extend_from_slice(&2_i32.to_le_bytes());
         body.extend_from_slice(&0_i32.to_le_bytes());
         body.extend_from_slice(&1_i32.to_le_bytes());
@@ -1809,6 +1862,7 @@ mod tests {
             ArchiveVersion::V5,
             RawBrepBaseType::Curve,
             0,
+            &mut Vec::new(),
         )
         .expect("children");
         assert!(array.slots[0].is_none());

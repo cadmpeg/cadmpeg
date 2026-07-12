@@ -1915,6 +1915,32 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
 }
 
 #[test]
+fn generated_source_less_f3d_rejects_subds() {
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    source_less.model.subds.push(cadmpeg_ir::SubdSurface {
+        id: cadmpeg_ir::ids::SubdId("test:f3d:subd#0".into()),
+        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+        vertices: Vec::new(),
+        edges: Vec::new(),
+        faces: Vec::new(),
+        source_object: None,
+    });
+
+    let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+            if message.contains("does not support SubD surfaces")
+    ));
+}
+
+#[test]
 fn generated_source_less_writes_document_tolerance_contract() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec

@@ -5,10 +5,19 @@ use std::collections::HashMap;
 
 use crate::annotations::AnnotationBuilder;
 use crate::document::CadIr;
-use crate::geometry::{derive_reference_direction, Curve, CurveGeometry, Surface, SurfaceGeometry};
-use crate::ids::{CoedgeId, CurveId, EdgeId, PointId, SurfaceId, VertexId};
+use crate::geometry::{
+    derive_reference_direction, Curve, CurveGeometry, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use crate::ids::{
+    CoedgeId, CurveId, EdgeId, PointId, ProceduralSurfaceId, SubdId, SurfaceId, VertexId,
+};
 use crate::math::{Point3, Vector3};
 use crate::provenance::Exactness;
+use crate::subd::{
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
+    SubdVertexTag,
+};
 use crate::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -286,6 +295,105 @@ pub fn unit_cube() -> CadIr {
     ir
 }
 
+/// A canonical fixture covering directed `SubD` and a Sum procedural surface.
+pub fn directed_subd_sum() -> CadIr {
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves = vec![
+        Curve {
+            id: CurveId("synthetic:v2:curve#u".into()),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Curve {
+            id: CurveId("synthetic:v2:curve#v".into()),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 1.0, 0.0),
+            },
+            source_object: None,
+        },
+    ];
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId("synthetic:v2:surface#sum-cache".into()),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("synthetic:v2:procedural-surface#sum".into()),
+        surface: SurfaceId("synthetic:v2:surface#sum-cache".into()),
+        definition: ProceduralSurfaceDefinition::Sum {
+            first: CurveId("synthetic:v2:curve#u".into()),
+            second: CurveId("synthetic:v2:curve#v".into()),
+            basepoint: Vector3::new(0.0, 0.0, 0.0),
+        },
+        cache_fit_tolerance: Some(1.0e-9),
+    });
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:v2:subd#directed".into()),
+        scheme: SubdScheme::CatmullClark,
+        vertices: vec![
+            SubdVertex {
+                point: Point3::new(0.0, 0.0, 0.0),
+                tag: SubdVertexTag::Crease,
+            },
+            SubdVertex {
+                point: Point3::new(1.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+            },
+            SubdVertex {
+                point: Point3::new(0.0, 1.0, 0.0),
+                tag: SubdVertexTag::Corner,
+            },
+        ],
+        edges: vec![
+            SubdEdge {
+                vertices: [0, 1],
+                sharpness: [0.25, 0.75],
+                tag: SubdEdgeTag::Crease,
+                sector_coefficients: [0.125, 0.875],
+            },
+            SubdEdge {
+                vertices: [1, 2],
+                sharpness: [0.0, 0.5],
+                tag: SubdEdgeTag::SmoothX,
+                sector_coefficients: [0.25, 0.75],
+            },
+            SubdEdge {
+                vertices: [2, 0],
+                sharpness: [1.0, 0.0],
+                tag: SubdEdgeTag::Smooth,
+                sector_coefficients: [0.5, 0.5],
+            },
+        ],
+        faces: vec![SubdFace {
+            edges: vec![
+                SubdEdgeUse {
+                    edge: 0,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 1,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 2,
+                    reversed: false,
+                },
+            ],
+        }],
+        source_object: None,
+    });
+    ir.finalize();
+    ir
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,5 +422,20 @@ mod tests {
             .exactness
             .values()
             .all(|note| note.entity == Exactness::Inferred && note.fields.is_empty()));
+    }
+
+    #[test]
+    fn directed_subd_sum_fixture_round_trips_validates_and_matches_schema_shape() {
+        let ir = directed_subd_sum();
+        let report = crate::validate(&ir, Vec::new());
+        assert!(report.is_ok(), "{:?}", report.findings);
+        let json = ir.to_canonical_json().expect("serialize fixture");
+        assert_eq!(CadIr::from_json(&json).expect("parse fixture"), ir);
+
+        let schema = serde_json::to_value(crate::cadir_json_schema()).expect("serialize schema");
+        let schema_text = schema.to_string();
+        assert!(schema_text.contains("procedural_surfaces"));
+        assert!(schema_text.contains("sharpness"));
+        assert!(schema_text.contains("\"sum\""));
     }
 }

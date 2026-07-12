@@ -100,9 +100,9 @@ Exit status `1` indicates a difference.
 
 ## Inputs and outputs
 
-The built-in codecs recognize `.f3d`, `.sldprt`, `.CATPart`, and the NX and
-Creo `.prt` layouts by content. Commands that load models also accept CADIR
-JSON. Use `--input-format` to bypass detection for an ambiguous or
+The built-in codecs recognize `.f3d`, `.sldprt`, `.3dm`, `.CATPart`, and the
+NX and Creo `.prt` layouts by content. Commands that load models also accept
+CADIR JSON. Use `--input-format` to bypass detection for an ambiguous or
 extensionless input.
 
 Output formats are:
