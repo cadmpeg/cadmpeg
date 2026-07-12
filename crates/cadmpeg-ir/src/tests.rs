@@ -217,6 +217,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
             part_name: None,
             configurations: vec![Configuration {
                 id: "sldprt:test:configuration#0".into(),
+                parent: "sldprt:test:feature-history#0".into(),
                 name: "Default".into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
@@ -1008,6 +1009,7 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
     assert_base64_round_trip_and_rejection(
         &AsmHistoryRecord {
             id: "f3d:test:asm-history-record#0".into(),
+            parent: "f3d:test:asm-delta-state#0".into(),
             index: 0,
             name: "record".into(),
             raw_bytes: vec![1, 2, 3],

@@ -34,11 +34,36 @@ impl Default for SldprtNative {
 
 impl SldprtNative {
     pub fn load(namespace: &super::NativeNamespace) -> Result<Self, super::NativeConvertError> {
-        Ok(Self {
+        let mut native = Self {
             version: namespace.version,
             feature_histories: namespace.arena_as("feature_histories")?,
             feature_input_lanes: namespace.arena_as("feature_input_lanes")?,
-        })
+        };
+        let configurations: Vec<crate::history::Configuration> =
+            namespace.arena_as("configurations")?;
+        let features: Vec<crate::history::Feature> = namespace.arena_as("features")?;
+        let entities: Vec<crate::history::SketchInputEntity> =
+            namespace.arena_as("sketch_input_entities")?;
+        for history in &mut native.feature_histories {
+            history.configurations = configurations
+                .iter()
+                .filter(|record| record.parent == history.id)
+                .cloned()
+                .collect();
+            history.features = features
+                .iter()
+                .filter(|record| record.parent == history.id)
+                .cloned()
+                .collect();
+        }
+        for lane in &mut native.feature_input_lanes {
+            lane.sketch_entities = entities
+                .iter()
+                .filter(|record| record.parent == lane.id)
+                .cloned()
+                .collect();
+        }
+        Ok(native)
     }
 
     pub fn store(
@@ -46,7 +71,17 @@ impl SldprtNative {
         namespace: &mut super::NativeNamespace,
     ) -> Result<(), super::NativeConvertError> {
         namespace.version = SLDPRT_NATIVE_VERSION;
-        namespace.set_arena("feature_histories", &self.feature_histories)?;
+        let histories = self
+            .feature_histories
+            .iter()
+            .cloned()
+            .map(|mut history| {
+                history.configurations.clear();
+                history.features.clear();
+                history
+            })
+            .collect::<Vec<_>>();
+        namespace.set_arena("feature_histories", &histories)?;
         namespace.set_arena(
             "configurations",
             &self
@@ -63,7 +98,16 @@ impl SldprtNative {
                 .flat_map(|history| history.features.clone())
                 .collect::<Vec<_>>(),
         )?;
-        namespace.set_arena("feature_input_lanes", &self.feature_input_lanes)?;
+        let lanes = self
+            .feature_input_lanes
+            .iter()
+            .cloned()
+            .map(|mut lane| {
+                lane.sketch_entities.clear();
+                lane
+            })
+            .collect::<Vec<_>>();
+        namespace.set_arena("feature_input_lanes", &lanes)?;
         namespace.set_arena(
             "sketch_input_entities",
             &self

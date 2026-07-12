@@ -11,6 +11,8 @@ use std::collections::BTreeMap;
 pub struct Configuration {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Owning feature-history record id.
+    pub parent: String,
     /// Source configuration name.
     pub name: String,
     /// Material assigned in this configuration, when overridden; `None` when the
@@ -27,6 +29,8 @@ pub struct Configuration {
 pub struct Feature {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Owning feature-history record id.
+    pub parent: String,
     /// Native identifier of this feature, when the source assigned one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,
@@ -92,6 +96,8 @@ pub struct FeatureInputLane {
 pub struct SketchInputEntity {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Owning feature-input lane record id.
+    pub parent: String,
     /// Position of this marker within the owning `FeatureInputLane`, in stream order.
     pub ordinal: u32,
     /// Byte offset of this marker within `FeatureInputLane::native_payload`.
@@ -164,6 +170,8 @@ pub struct AsmHistory {
 pub struct AsmDeltaState {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Owning ASM history record id.
+    pub parent: String,
     /// Byte offset of the leading `END` token immediately before this `delta_state` record.
     pub byte_offset: u64,
     /// Construction-state id; the head node's `state_id` equals the history
@@ -199,6 +207,8 @@ pub struct AsmDeltaState {
 pub struct AsmHistoryRecord {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Owning delta-state record id.
+    pub parent: String,
     /// Index of this record within its owning `delta_state`'s local record table.
     pub index: u64,
     /// Source class/record-type name.
@@ -214,6 +224,8 @@ pub struct AsmHistoryRecord {
 pub struct AsmBulletinBoard {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Owning delta-state record id.
+    pub parent: String,
     /// Byte offset of this board's leading presence token.
     pub byte_offset: u64,
     /// Reference to the entity or container this bulletin board is attached to.
@@ -229,6 +241,8 @@ pub struct AsmBulletinBoard {
 pub struct AsmEntityChange {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
+    /// Owning bulletin-board record id.
+    pub parent: String,
     /// Byte offset of this change's leading presence token.
     pub byte_offset: u64,
     /// Whether this bulletin records an entity insert, delete, or update.

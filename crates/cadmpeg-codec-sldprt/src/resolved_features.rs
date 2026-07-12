@@ -17,6 +17,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
             if !section.to_ascii_lowercase().contains("resolvedfeatures") {
                 return None;
             }
+            let parent = format!("sldprt:feature-input:resolved-features#{}", block.offset);
             let mut sketch_entities = block
                 .payload
                 .windows(SKETCH_MARKER.len())
@@ -48,6 +49,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                     );
                     SketchInputEntity {
                         id,
+                        parent: parent.clone(),
                         ordinal: ordinal as u32,
                         offset: offset as u64,
                         kind: SketchInputKind::from_native_code(code),
@@ -55,7 +57,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 })
                 .collect::<Vec<_>>();
             sketch_entities.sort_by(|a, b| a.id.cmp(&b.id));
-            let id = format!("sldprt:feature-input:resolved-features#{}", block.offset);
+            let id = parent;
             crate::annotations::note(
                 annotations,
                 id.clone(),

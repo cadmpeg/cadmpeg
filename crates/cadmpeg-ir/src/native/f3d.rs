@@ -43,15 +43,36 @@ macro_rules! sort_f3d_arenas {
     ($($field:ident: $ty:ty;)*) => {
         impl F3dNative {
             pub fn load(namespace: &super::NativeNamespace) -> Result<Self, super::NativeConvertError> {
-                Ok(Self {
+                let mut native = Self {
                     version: namespace.version,
                     $($field: namespace.arena_as(stringify!($field))?,)*
-                })
+                };
+                let mut states: Vec<crate::history::AsmDeltaState> = namespace.arena_as("asm_delta_states")?;
+                let mut boards: Vec<crate::history::AsmBulletinBoard> = namespace.arena_as("asm_bulletin_boards")?;
+                let changes: Vec<crate::history::AsmEntityChange> = namespace.arena_as("asm_entity_changes")?;
+                let records: Vec<crate::history::AsmHistoryRecord> = namespace.arena_as("asm_history_records")?;
+                for board in &mut boards { board.changes = changes.iter().filter(|change| change.parent == board.id).cloned().collect(); }
+                for state in &mut states {
+                    state.bulletin_boards = boards.iter().filter(|board| board.parent == state.id).cloned().collect();
+                    state.records = records.iter().filter(|record| record.parent == state.id).cloned().collect();
+                }
+                for history in &mut native.asm_histories { history.states = states.iter().filter(|state| state.parent == history.id).cloned().collect(); }
+                Ok(native)
             }
 
             pub fn store(&self, namespace: &mut super::NativeNamespace) -> Result<(), super::NativeConvertError> {
                 namespace.version = F3D_NATIVE_VERSION;
                 $(namespace.set_arena(stringify!($field), &self.$field)?;)*
+                let histories = self.asm_histories.iter().cloned().map(|mut history| { history.states.clear(); history }).collect::<Vec<_>>();
+                let states = self.asm_histories.iter().flat_map(|history| history.states.iter().cloned()).map(|mut state| { state.bulletin_boards.clear(); state.records.clear(); state }).collect::<Vec<_>>();
+                let boards = self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| state.bulletin_boards.iter().cloned()).map(|mut board| { board.changes.clear(); board }).collect::<Vec<_>>();
+                let changes = self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| &state.bulletin_boards).flat_map(|board| board.changes.iter().cloned()).collect::<Vec<_>>();
+                let records = self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| state.records.iter().cloned()).collect::<Vec<_>>();
+                namespace.set_arena("asm_histories", &histories)?;
+                namespace.set_arena("asm_delta_states", &states)?;
+                namespace.set_arena("asm_bulletin_boards", &boards)?;
+                namespace.set_arena("asm_entity_changes", &changes)?;
+                namespace.set_arena("asm_history_records", &records)?;
                 Ok(())
             }
             /// Sort every native arena by its normative record identity.
