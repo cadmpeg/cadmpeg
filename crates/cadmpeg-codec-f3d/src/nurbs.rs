@@ -4335,6 +4335,7 @@ pub(crate) struct EmbeddedTwoSidedOffset {
     pub(crate) parameter_range: [f64; 2],
     /// Three discontinuity arrays.
     pub(crate) discontinuities: [Vec<f64>; 3],
+    pub(crate) discontinuity_flag: bool,
     /// Signed side offsets in document length units.
     pub(crate) offsets: [f64; 2],
 }
@@ -5062,10 +5063,7 @@ fn decode_embedded_two_sided_offset(
         take_float_array(bytes, &mut position, int_width)?,
         take_float_array(bytes, &mut position, int_width)?,
     ];
-    if !matches!(bytes.get(position), Some(0x0a | 0x0b)) {
-        return None;
-    }
-    position += 1;
+    let discontinuity_flag = take_bool(bytes, &mut position)?;
     let offsets = [
         take_range_value(bytes, &mut position)? * LEN_TO_MM,
         take_range_value(bytes, &mut position)? * LEN_TO_MM,
@@ -5075,6 +5073,7 @@ fn decode_embedded_two_sided_offset(
         pcurves,
         parameter_range,
         discontinuities,
+        discontinuity_flag,
         offsets,
     })
 }
@@ -5225,10 +5224,7 @@ fn decode_two_sided_offset(
         take_float_array(bytes, &mut position, int_width)?,
         take_float_array(bytes, &mut position, int_width)?,
     ];
-    if !matches!(bytes.get(position), Some(0x0a | 0x0b)) {
-        return None;
-    }
-    position += 1;
+    let discontinuity_flag = take_bool(bytes, &mut position)?;
     let offsets = [
         take_range_value(bytes, &mut position)? * LEN_TO_MM,
         take_range_value(bytes, &mut position)? * LEN_TO_MM,
@@ -5248,6 +5244,7 @@ fn decode_two_sided_offset(
             parameter_range,
             discontinuities,
         },
+        discontinuity_flag,
         offsets,
     })
 }

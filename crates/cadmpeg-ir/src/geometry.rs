@@ -2135,6 +2135,8 @@ pub enum ProceduralCurveDefinition {
     TwoSidedOffset {
         /// Shared surfaces, UV curves, interval, and discontinuity metadata.
         context: IntcurveSupportContext,
+        /// Native boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
         /// Signed offset distance for each support side, in document length units.
         offsets: [f64; 2],
     },

@@ -3052,6 +3052,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 parameter_range: embedded.parameter_range,
                                 discontinuities: embedded.discontinuities,
                             },
+                            discontinuity_flag: embedded.discontinuity_flag,
                             offsets: embedded.offsets,
                         }
                     } else if let Some((embedded, discontinuity_flag)) = procedural.6 {

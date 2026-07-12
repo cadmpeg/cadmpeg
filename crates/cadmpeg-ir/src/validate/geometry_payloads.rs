@@ -1537,8 +1537,9 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
-            &procedural.definition
+        if let ProceduralCurveDefinition::TwoSidedOffset {
+            context, offsets, ..
+        } = &procedural.definition
         {
             let finite =
                 support_context_is_finite(context) && offsets.iter().all(|value| value.is_finite());

@@ -940,7 +940,7 @@ fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
     t_long(&mut curve, 0);
     t_long(&mut curve, 1);
     t_dbl(&mut curve, 0.5);
-    curve.push(0x0b);
+    curve.push(0x0a);
     t_dbl(&mut curve, -0.2);
     t_dbl(&mut curve, 0.4);
     curve.extend_from_slice(&generated_curve_block());
@@ -11511,12 +11511,16 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("generated two-sided offset decode");
-    let ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
-        &result.ir.model.procedural_curves[0].definition
+    let ProceduralCurveDefinition::TwoSidedOffset {
+        context,
+        discontinuity_flag,
+        offsets,
+    } = &result.ir.model.procedural_curves[0].definition
     else {
         panic!("expected two-sided offset construction")
     };
     assert_eq!(context.parameter_range, [-1.0, 2.0]);
+    assert!(*discontinuity_flag);
     assert_eq!(
         context.discontinuities,
         [vec![0.25, 0.75], vec![], vec![0.5]]
@@ -11528,8 +11532,9 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
     assert_eq!(*offsets, [-2.0, 4.0]);
 
     let mut edited = result.ir.clone();
-    let ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
-        &mut edited.model.procedural_curves[0].definition
+    let ProceduralCurveDefinition::TwoSidedOffset {
+        context, offsets, ..
+    } = &mut edited.model.procedural_curves[0].definition
     else {
         unreachable!()
     };
@@ -11577,8 +11582,9 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
             &DecodeOptions::default(),
         )
         .expect("embedded offset-support decode");
-    let ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
-        &result.ir.model.procedural_curves[0].definition
+    let ProceduralCurveDefinition::TwoSidedOffset {
+        context, offsets, ..
+    } = &result.ir.model.procedural_curves[0].definition
     else {
         panic!("expected embedded two-sided offset")
     };
@@ -11658,8 +11664,9 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
             &DecodeOptions::default(),
         )
         .expect("analytic offset-support decode");
-    let ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
-        &result.ir.model.procedural_curves[0].definition
+    let ProceduralCurveDefinition::TwoSidedOffset {
+        context, offsets, ..
+    } = &result.ir.model.procedural_curves[0].definition
     else {
         panic!("expected analytic two-sided offset")
     };
@@ -11695,8 +11702,9 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less analytic offset-support round trip");
-    let ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
-        &round_trip.ir.model.procedural_curves[0].definition
+    let ProceduralCurveDefinition::TwoSidedOffset {
+        context, offsets, ..
+    } = &round_trip.ir.model.procedural_curves[0].definition
     else {
         panic!("expected round-trip analytic offset supports")
     };

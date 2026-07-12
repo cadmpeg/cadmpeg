@@ -6293,14 +6293,17 @@ fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
-        &procedural.definition
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
+        context,
+        discontinuity_flag,
+        offsets,
+    } = &procedural.definition
     {
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "off_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
-        bytes.push(0x0b);
+        bytes.push(native_bool(*discontinuity_flag));
         for offset in offsets {
             native_f64(bytes, *offset / 10.0);
         }
@@ -11441,8 +11444,9 @@ fn patch_two_sided_offset_definition(
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
-        definition
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
+        context, offsets, ..
+    } = definition
     else {
         return Err(CodecError::Malformed(
             "two-sided offset patch received another definition".into(),
