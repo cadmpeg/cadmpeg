@@ -2005,6 +2005,54 @@ fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "sweep_spl_sur");
+    surface.push(0x15);
+    surface.extend_from_slice(&3i64.to_le_bytes());
+    surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&generated_curve_block());
+    surface.push(0x15);
+    surface.extend_from_slice(&4i64.to_le_bytes());
+    for direction in [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [-1.0, 0.0, 0.0],
+        [0.0, -1.0, 0.0],
+    ] {
+        t_vec(&mut surface, direction);
+    }
+    t_pos(&mut surface, [1.0, 2.0, 3.0]);
+    for value in [0.1, 0.2, 0.3, 0.4] {
+        t_dbl(&mut surface, value);
+    }
+    for _ in 0..3 {
+        push_u8_string(&mut surface, "null_law");
+    }
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.005);
+    for values in [&[0.25][..], &[][..], &[][..], &[][..], &[][..], &[][..]] {
+        append_generated_float_array(&mut surface, values);
+    }
+    surface.push(0x0a);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
     t_long(bytes, 1);
     t_long(bytes, 9);
@@ -8034,6 +8082,57 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
     assert!(matches!(
         round_trip.ir.model.procedural_surfaces[0].definition,
         ProceduralSurfaceDefinition::Net { .. }
+    ));
+}
+
+#[test]
+fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SweepSurfaceLayout};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_profile_first_sweep_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("profile-first sweep decode");
+    let ProceduralSurfaceDefinition::Sweep {
+        native: Some(native),
+        ..
+    } = &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected native sweep")
+    };
+    assert_eq!(native.primary_kind, 3);
+    let SweepSurfaceLayout::ProfileFirst {
+        secondary_kind,
+        directions,
+        origin,
+        parameters,
+        formulas,
+    } = &native.layout;
+    assert_eq!(*secondary_kind, 4);
+    assert_eq!(directions[2].z, 1.0);
+    assert_eq!(origin.z, 30.0);
+    assert_eq!(*parameters, [0.1, 0.2, 0.3, 0.4]);
+    assert!(formulas.iter().all(|formula| formula.name == "null_law"));
+    assert_eq!(native.discontinuities[0], [0.25]);
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less profile-first sweep encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less profile-first sweep round trip");
+    assert!(matches!(
+        round_trip.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::Sweep {
+            native: Some(_),
+            ..
+        }
     ));
 }
 

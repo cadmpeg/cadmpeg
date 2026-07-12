@@ -3383,6 +3383,19 @@ fn native_procedural_surface(
         ProceduralSurfaceDefinition::Net { construction } => {
             encode_native_net_surface(bytes, target, procedural, construction, solved_cache)?;
         }
+        ProceduralSurfaceDefinition::Sweep {
+            profile,
+            spine,
+            native: Some(construction),
+        } => encode_native_sweep_surface(
+            bytes,
+            target,
+            procedural,
+            profile,
+            spine,
+            construction,
+            solved_cache,
+        )?,
         ProceduralSurfaceDefinition::G2Blend { construction } => {
             encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
         }
@@ -4425,6 +4438,54 @@ fn encode_native_net_surface(
     }
     for formula in construction.formulas.iter() {
         native_law_formula(bytes, target, formula)?;
+    }
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for values in &construction.discontinuities {
+        native_compound_loft_float_array(bytes, values)?;
+    }
+    bytes.push(native_bool(construction.discontinuity_flag));
+    bytes.push(0x10);
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn encode_native_sweep_surface(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    profile: &cadmpeg_ir::ids::CurveId,
+    spine: &cadmpeg_ir::ids::CurveId,
+    construction: &cadmpeg_ir::geometry::SweepSurfaceConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::SweepSurfaceLayout;
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "sweep_spl_sur")?;
+    native_enum(bytes, construction.primary_kind);
+    match &construction.layout {
+        SweepSurfaceLayout::ProfileFirst {
+            secondary_kind,
+            directions,
+            origin,
+            parameters,
+            formulas,
+        } => {
+            native_nurbs_curve(bytes, native_loft_curve(target, profile)?)?;
+            native_nurbs_curve(bytes, native_loft_curve(target, spine)?)?;
+            native_enum(bytes, *secondary_kind);
+            for direction in directions {
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            for parameter in parameters {
+                native_f64(bytes, *parameter);
+            }
+            for formula in formulas.iter() {
+                native_law_formula(bytes, target, formula)?;
+            }
+        }
     }
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);

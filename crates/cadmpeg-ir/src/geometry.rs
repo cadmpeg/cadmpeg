@@ -399,6 +399,9 @@ pub enum ProceduralSurfaceDefinition {
         profile: CurveId,
         /// Path curve the profile is swept along.
         spine: CurveId,
+        /// Complete native sweep graph when retained.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native: Option<Box<SweepSurfaceConstruction>>,
     },
     /// Offset from a support surface.
     Offset {
@@ -1369,6 +1372,38 @@ pub struct NetSurfaceConstruction {
     pub directions: [Vector3; 4],
     /// Four ordered parameter laws.
     pub formulas: Box<[LawFormula; 4]>,
+    /// Six ordered solved-surface discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
+    pub discontinuity_flag: bool,
+}
+
+/// Structurally selected native sweep payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SweepSurfaceLayout {
+    /// Profile-first modern ASM sweep layout.
+    ProfileFirst {
+        /// Second native sweep enum.
+        secondary_kind: i64,
+        /// Five ordered frame directions.
+        directions: [Vector3; 5],
+        /// Native model-space frame origin.
+        origin: Point3,
+        /// Four ordered native frame scalars.
+        parameters: [f64; 4],
+        /// Three ordered parametric laws.
+        formulas: Box<[LawFormula; 3]>,
+    },
+}
+
+/// Complete native `sweep_spl_sur` construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SweepSurfaceConstruction {
+    /// Leading native sweep enum.
+    pub primary_kind: i64,
+    /// Structurally selected sweep layout.
+    pub layout: SweepSurfaceLayout,
     /// Six ordered solved-surface discontinuity arrays.
     pub discontinuities: [Vec<f64>; 6],
     /// Native discontinuity tail flag.

@@ -253,8 +253,37 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 curves.insert(&directrix.0);
             }
-            ProceduralSurfaceDefinition::Sweep { profile, spine } => {
+            ProceduralSurfaceDefinition::Sweep {
+                profile,
+                spine,
+                native,
+            } => {
+                fn collect_law_curves<'a>(
+                    expression: &'a crate::geometry::LawExpression,
+                    curves: &mut HashSet<&'a str>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            curves.insert(&curve.0);
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                collect_law_curves(operand, curves);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 curves.extend([profile.0.as_str(), spine.0.as_str()]);
+                if let Some(native) = native {
+                    let crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } =
+                        &native.layout;
+                    for formula in formulas.iter() {
+                        for variable in &formula.variables {
+                            collect_law_curves(variable, &mut curves);
+                        }
+                    }
+                }
             }
             ProceduralSurfaceDefinition::Offset { support, .. } => {
                 surfaces.insert(&support.0);

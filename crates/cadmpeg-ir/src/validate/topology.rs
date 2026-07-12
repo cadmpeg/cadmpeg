@@ -580,10 +580,43 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ref_error(findings, &procedural.id.0, "curve", &directrix.0);
                 }
             }
-            ProceduralSurfaceDefinition::Sweep { profile, spine } => {
+            ProceduralSurfaceDefinition::Sweep {
+                profile,
+                spine,
+                native,
+            } => {
+                fn check_law_curves(
+                    expression: &crate::geometry::LawExpression,
+                    ids: &IdSets,
+                    procedural: &crate::geometry::ProceduralSurface,
+                    findings: &mut Vec<Finding>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            if !ids.curves.contains(&curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            }
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                check_law_curves(operand, ids, procedural, findings);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 for curve in [profile, spine] {
                     if !ids.curves.contains(&curve.0) {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                }
+                if let Some(native) = native {
+                    let crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } =
+                        &native.layout;
+                    for formula in formulas.iter() {
+                        for variable in &formula.variables {
+                            check_law_curves(variable, ids, procedural, findings);
+                        }
                     }
                 }
             }

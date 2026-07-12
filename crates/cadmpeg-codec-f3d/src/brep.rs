@@ -1914,6 +1914,166 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 ),
                             }
                         }
+                        nurbs::DecodedProceduralSurfaceDefinition::Sweep(embedded) => {
+                            fn map_sweep_law(
+                                out: &mut Brep,
+                                owner: i64,
+                                path: &str,
+                                expression: nurbs::EmbeddedLawExpression,
+                            ) -> cadmpeg_ir::geometry::LawExpression {
+                                match expression {
+                                    nurbs::EmbeddedLawExpression::Null => {
+                                        cadmpeg_ir::geometry::LawExpression::Null
+                                    }
+                                    nurbs::EmbeddedLawExpression::Integer(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Integer { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Double(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Double { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Point(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Point { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Vector(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Vector { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Transform { scalars, enums } => {
+                                        cadmpeg_ir::geometry::LawExpression::Transform {
+                                            scalars,
+                                            enums,
+                                        }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Edge { curve, parameters } => {
+                                        let id = CurveId(format!(
+                                            "f3d:brep:procedural_surface#{owner}:sweep:law:{path}:edge"
+                                        ));
+                                        out.curves.push(Curve {
+                                            id: id.clone(),
+                                            geometry: CurveGeometry::Nurbs(curve),
+                                            source_object: None,
+                                        });
+                                        cadmpeg_ir::geometry::LawExpression::Edge {
+                                            curve: id,
+                                            parameters,
+                                        }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Spline {
+                                        native_id,
+                                        knots,
+                                        controls,
+                                        point,
+                                    } => cadmpeg_ir::geometry::LawExpression::Spline {
+                                        native_id,
+                                        knots,
+                                        controls,
+                                        point,
+                                    },
+                                    nurbs::EmbeddedLawExpression::Algebraic {
+                                        operator,
+                                        operands,
+                                    } => cadmpeg_ir::geometry::LawExpression::Algebraic {
+                                        operator,
+                                        operands: operands
+                                            .into_iter()
+                                            .enumerate()
+                                            .map(|(index, operand)| {
+                                                map_sweep_law(
+                                                    out,
+                                                    owner,
+                                                    &format!("{path}:{index}"),
+                                                    operand,
+                                                )
+                                            })
+                                            .collect(),
+                                    },
+                                }
+                            }
+                            let embedded = *embedded;
+                            let (
+                                profile_geometry,
+                                spine_geometry,
+                                secondary_kind,
+                                directions,
+                                origin,
+                                parameters,
+                                embedded_formulas,
+                            ) = match embedded.layout {
+                                nurbs::EmbeddedSweepSurfaceLayout::ProfileFirst {
+                                    profile,
+                                    spine,
+                                    secondary_kind,
+                                    directions,
+                                    origin,
+                                    parameters,
+                                    formulas,
+                                } => (
+                                    profile,
+                                    spine,
+                                    secondary_kind,
+                                    directions,
+                                    origin,
+                                    parameters,
+                                    formulas,
+                                ),
+                            };
+                            let profile =
+                                CurveId(format!("f3d:brep:procedural_surface#{i}:sweep:profile"));
+                            out.curves.push(Curve {
+                                id: profile.clone(),
+                                geometry: CurveGeometry::Nurbs(profile_geometry),
+                                source_object: None,
+                            });
+                            let spine =
+                                CurveId(format!("f3d:brep:procedural_surface#{i}:sweep:spine"));
+                            out.curves.push(Curve {
+                                id: spine.clone(),
+                                geometry: CurveGeometry::Nurbs(spine_geometry),
+                                source_object: None,
+                            });
+                            let formulas = embedded_formulas
+                                .into_iter()
+                                .enumerate()
+                                .map(
+                                    |(formula_index, formula)| cadmpeg_ir::geometry::LawFormula {
+                                        name: formula.name,
+                                        variables: formula
+                                            .variables
+                                            .into_iter()
+                                            .enumerate()
+                                            .map(|(index, variable)| {
+                                                map_sweep_law(
+                                                    &mut out,
+                                                    i,
+                                                    &format!("{formula_index}:{index}"),
+                                                    variable,
+                                                )
+                                            })
+                                            .collect(),
+                                    },
+                                )
+                                .collect::<Vec<_>>()
+                                .try_into()
+                                .expect("three sweep formulas");
+                            ProceduralSurfaceDefinition::Sweep {
+                                profile,
+                                spine,
+                                native: Some(Box::new(
+                                    cadmpeg_ir::geometry::SweepSurfaceConstruction {
+                                        primary_kind: embedded.primary_kind,
+                                        layout:
+                                            cadmpeg_ir::geometry::SweepSurfaceLayout::ProfileFirst {
+                                                secondary_kind,
+                                                directions,
+                                                origin,
+                                                parameters,
+                                                formulas: Box::new(formulas),
+                                            },
+                                        discontinuities: embedded.discontinuities,
+                                        discontinuity_flag: embedded.discontinuity_flag,
+                                    },
+                                )),
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::G2Blend(embedded) => {
                             let embedded = *embedded;
                             let mut add_side = |name: &str, side: nurbs::EmbeddedG2Side| {
