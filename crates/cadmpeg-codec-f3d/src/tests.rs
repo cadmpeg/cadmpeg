@@ -11894,6 +11894,31 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         SurfaceGeometry::Torus { .. }
     ));
 
+    let mut edited = result.ir.clone();
+    let ProceduralCurveDefinition::Intersection {
+        context,
+        discontinuity_flag,
+    } = &mut edited.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    context.parameter_range = [-1.0, 2.0];
+    *discontinuity_flag = false;
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("intersection context regeneration");
+    let regenerated = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated intersection decode");
+    assert!(matches!(
+        regenerated.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::Intersection {
+            ref context,
+            discontinuity_flag: false,
+        } if context.parameter_range == [-1.0, 2.0]
+    ));
+
     let mut source_less = result.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
