@@ -6,15 +6,21 @@ Read [LEGAL.md](LEGAL.md) before contributing. It defines where format knowledge
 
 ## Two hard requirements
 
-### 1. DCO sign-off on every commit
+### 1. DCO sign-off
 
-cadmpeg uses the [Developer Certificate of Origin](https://developercertificate.org/). Every commit must be signed off. The sign-off certifies that you have the right to submit the contribution under the project's licenses:
+cadmpeg uses the [Developer Certificate of Origin](https://developercertificate.org/). Every contribution must be signed off. The sign-off certifies that you have the right to submit the contribution under the project's licenses. There are two ways to satisfy it:
+
+**Per commit** — sign off each commit:
 
 ```sh
 git commit -s -m "Your message"
 ```
 
-This appends a `Signed-off-by: Your Name <your@email>` line. Commits without sign-off cannot be merged. Use a consistent contributor identity and an email address where you can be reached. Do not forge authorship or sign off for someone else.
+This appends a `Signed-off-by: Your Name <your@email>` line to the commit. Use this when your commits merge as-is (rebase or merge-commit).
+
+**Per PR** — put one `Signed-off-by: Your Name <your@email>` line in the pull request description. A squash-merge builds its commit message from that description, so the trailer lands verbatim on the single commit that reaches `main`. This is the path to take when you squash-merge a branch of unsigned work-in-progress commits: one sign-off covers the PR.
+
+CI accepts either path; a PR-level sign-off waives the per-commit check for that PR. Use a consistent contributor identity and an email address where you can be reached. Do not forge authorship or sign off for someone else.
 
 ### 2. Provenance declaration on decoder and spec PRs
 
