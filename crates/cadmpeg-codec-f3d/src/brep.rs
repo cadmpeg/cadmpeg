@@ -962,6 +962,9 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 });
                 if let Some(procedural) = procedural_surface_defs.remove(&i) {
                     let definition = match procedural.definition {
+                        nurbs::DecodedProceduralSurfaceDefinition::Helix(construction) => {
+                            ProceduralSurfaceDefinition::Helix { construction }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::TSpline(construction) => {
                             ProceduralSurfaceDefinition::TSpline { construction }
                         }

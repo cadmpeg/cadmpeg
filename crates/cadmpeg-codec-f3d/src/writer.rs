@@ -4307,18 +4307,78 @@ fn native_cacheless_procedural_surface(
     else {
         return Ok(false);
     };
-    let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } = &procedural.definition
-    else {
-        return Ok(false);
-    };
-    if !matches!(
-        construction.shape,
-        cadmpeg_ir::geometry::ScaledCompoundLoftShape::None { .. }
-    ) {
-        return Ok(false);
+    if let ProceduralSurfaceDefinition::Helix { construction } = &procedural.definition {
+        use cadmpeg_ir::geometry::HelixSurfaceProfile;
+        native_surface_base(bytes, "spline")?;
+        bytes.push(0x0f);
+        let circular = matches!(construction.profile, HelixSurfaceProfile::Circle { .. });
+        native_ident(
+            bytes,
+            if circular {
+                "helix_spl_circ"
+            } else {
+                "helix_spl_line"
+            },
+        )?;
+        for value in construction.angle_range {
+            native_f64(bytes, value);
+        }
+        for value in construction.dimension_range {
+            native_f64(bytes, if circular { value / 10.0 } else { value });
+        }
+        if let HelixSurfaceProfile::Circle { length, .. } = construction.profile {
+            native_f64(bytes, length / 10.0);
+        }
+        for value in construction.path.angle_range {
+            native_f64(bytes, value);
+        }
+        native_point(
+            bytes,
+            [
+                construction.path.center.x / 10.0,
+                construction.path.center.y / 10.0,
+                construction.path.center.z / 10.0,
+            ],
+        );
+        for vector in [
+            construction.path.major,
+            construction.path.minor,
+            construction.path.pitch,
+        ] {
+            native_point(bytes, [vector.x / 10.0, vector.y / 10.0, vector.z / 10.0]);
+        }
+        native_f64(bytes, construction.path.apex_factor);
+        native_vector(
+            bytes,
+            [
+                construction.path.axis.x,
+                construction.path.axis.y,
+                construction.path.axis.z,
+            ],
+        );
+        for sentinel in ["null_surface", "null_surface", "nullbs", "nullbs"] {
+            native_ident(bytes, sentinel)?;
+        }
+        match construction.profile {
+            HelixSurfaceProfile::Circle { radius, .. } => native_f64(bytes, radius / 10.0),
+            HelixSurfaceProfile::Line { origin } => {
+                native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            }
+        }
+        bytes.push(0x10);
+        return Ok(true);
     }
-    encode_native_scaled_compound_loft(bytes, target, procedural, construction, None)?;
-    Ok(true)
+    if let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } = &procedural.definition
+    {
+        if matches!(
+            construction.shape,
+            cadmpeg_ir::geometry::ScaledCompoundLoftShape::None { .. }
+        ) {
+            encode_native_scaled_compound_loft(bytes, target, procedural, construction, None)?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn native_law_expression(

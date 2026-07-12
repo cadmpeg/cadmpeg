@@ -2164,6 +2164,56 @@ fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_helix_surface_smbh(circular: bool) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(
+        &mut surface,
+        if circular {
+            "helix_spl_circ"
+        } else {
+            "helix_spl_line"
+        },
+    );
+    t_dbl(&mut surface, -0.5);
+    t_dbl(&mut surface, 0.5);
+    t_dbl(&mut surface, -2.0);
+    t_dbl(&mut surface, 3.0);
+    if circular {
+        t_dbl(&mut surface, 1.25);
+    }
+    t_dbl(&mut surface, 0.0);
+    t_dbl(&mut surface, std::f64::consts::TAU);
+    t_pos(&mut surface, [1.0, 2.0, 3.0]);
+    t_pos(&mut surface, [2.0, 0.0, 0.0]);
+    t_pos(&mut surface, [0.0, 2.0, 0.0]);
+    t_pos(&mut surface, [0.0, 0.0, 4.0]);
+    t_dbl(&mut surface, 0.25);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    for sentinel in ["null_surface", "null_surface", "nullbs", "nullbs"] {
+        t_ident(&mut surface, sentinel);
+    }
+    if circular {
+        t_dbl(&mut surface, 0.75);
+    } else {
+        t_pos(&mut surface, [5.0, 6.0, 7.0]);
+    }
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -8574,6 +8624,60 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
         construction(&round_trip.ir.model.procedural_surfaces[0].definition),
         &native
     );
+}
+
+#[test]
+fn generated_helix_surfaces_decode_and_write_exact_constructions() {
+    use cadmpeg_ir::geometry::{HelixSurfaceProfile, ProceduralSurfaceDefinition, SurfaceGeometry};
+
+    for circular in [true, false] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_helix_surface_smbh(circular))),
+                &DecodeOptions::default(),
+            )
+            .expect("helix surface decode");
+        let ProceduralSurfaceDefinition::Helix { construction } =
+            &decoded.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected helix surface")
+        };
+        assert_eq!(construction.angle_range, [-0.5, 0.5]);
+        assert_eq!(construction.path.center.z, 30.0);
+        assert_eq!(construction.path.pitch.z, 40.0);
+        assert_eq!(
+            circular,
+            matches!(construction.profile, HelixSurfaceProfile::Circle { .. })
+        );
+
+        let surface_id = decoded.ir.model.procedural_surfaces[0].surface.clone();
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let surface = source_less
+            .model
+            .surfaces
+            .iter_mut()
+            .find(|surface| surface.id == surface_id)
+            .unwrap();
+        assert!(
+            matches!(surface.geometry, SurfaceGeometry::Unknown { .. }),
+            "unexpected helix carrier: {:?}",
+            surface.geometry
+        );
+        surface.geometry = SurfaceGeometry::Unknown { record: None };
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less helix surface encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("source-less helix surface round trip");
+        assert!(matches!(
+            round_trip.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::Helix { .. }
+        ));
+    }
 }
 
 #[test]

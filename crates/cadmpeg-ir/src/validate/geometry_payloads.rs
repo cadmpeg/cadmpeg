@@ -956,6 +956,44 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::Helix { construction } = &procedural.definition {
+            let path = &construction.path;
+            let finite = construction
+                .angle_range
+                .iter()
+                .chain(construction.dimension_range.iter())
+                .chain(path.angle_range.iter())
+                .all(|value| value.is_finite())
+                && [path.center.x, path.center.y, path.center.z]
+                    .into_iter()
+                    .chain([path.major.x, path.major.y, path.major.z])
+                    .chain([path.minor.x, path.minor.y, path.minor.z])
+                    .chain([path.pitch.x, path.pitch.y, path.pitch.z])
+                    .chain([path.axis.x, path.axis.y, path.axis.z])
+                    .chain(std::iter::once(path.apex_factor))
+                    .all(f64::is_finite);
+            let major_length =
+                (path.major.x.powi(2) + path.major.y.powi(2) + path.major.z.powi(2)).sqrt();
+            let minor_length =
+                (path.minor.x.powi(2) + path.minor.y.powi(2) + path.minor.z.powi(2)).sqrt();
+            let circular_path = major_length > 0.0
+                && (major_length - minor_length).abs() <= 1.0e-9 * major_length.max(1.0);
+            let profile_valid = match construction.profile {
+                crate::geometry::HelixSurfaceProfile::Circle { length, radius } => {
+                    length.is_finite() && radius.is_finite() && radius != 0.0
+                }
+                crate::geometry::HelixSurfaceProfile::Line { origin } => {
+                    origin.x.is_finite() && origin.y.is_finite() && origin.z.is_finite()
+                }
+            };
+            if !finite || !circular_path || !profile_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "helix surface construction payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::G2Blend { construction } = &procedural.definition {
             let direction_finite = |direction: &Vector3| {
                 direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()

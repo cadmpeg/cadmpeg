@@ -697,6 +697,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     Sweep(Box<EmbeddedSweepSurface>),
     /// Native T-spline wrapper and subtransform program.
     TSpline(Box<cadmpeg_ir::geometry::TSplineSurfaceConstruction>),
+    /// Native circular or linear helix surface.
+    Helix(Box<cadmpeg_ir::geometry::HelixSurfaceConstruction>),
     /// Native G2 blend construction with embedded carriers.
     G2Blend(Box<EmbeddedG2Blend>),
     /// Ruled interpolation between two ordered profile curves.
@@ -2854,6 +2856,103 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
     })
 }
 
+fn decode_helix_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    use cadmpeg_ir::geometry::{
+        HelixPathConstruction, HelixSurfaceConstruction, HelixSurfaceProfile,
+    };
+
+    let names: [(&[u8], bool); 2] = [(b"helix_spl_circ", true), (b"helix_spl_line", false)];
+    let (start, name_len, circular) = names.into_iter().find_map(|(name, circular)| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len(), circular))
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name_len + 3;
+    let angle_range = [
+        take_range_value(span, &mut position)?,
+        take_range_value(span, &mut position)?,
+    ];
+    let dimension_scale = if circular { LEN_TO_MM } else { 1.0 };
+    let dimension_range = [
+        take_range_value(span, &mut position)? * dimension_scale,
+        take_range_value(span, &mut position)? * dimension_scale,
+    ];
+    let length = circular
+        .then(|| take_f64(span, &mut position).map(|v| v * LEN_TO_MM))
+        .flatten();
+    let path_angle_range = [
+        take_range_value(span, &mut position)?,
+        take_range_value(span, &mut position)?,
+    ];
+    let center = take_native_vec3(span, &mut position, 0x13)?;
+    let major = take_native_vec3(span, &mut position, 0x13)?;
+    let minor = take_native_vec3(span, &mut position, 0x13)?;
+    let pitch = take_native_vec3(span, &mut position, 0x13)?;
+    let apex_factor = take_f64(span, &mut position)?;
+    let axis = normalized(take_native_vec3(span, &mut position, 0x14)?)?;
+    for sentinel in ["null_surface", "null_surface", "nullbs", "nullbs"] {
+        if take_native_ident(span, &mut position)?.as_str() != sentinel {
+            return None;
+        }
+    }
+    let path = HelixPathConstruction {
+        angle_range: path_angle_range,
+        center: Point3::new(
+            center[0] * LEN_TO_MM,
+            center[1] * LEN_TO_MM,
+            center[2] * LEN_TO_MM,
+        ),
+        major: Vector3::new(
+            major[0] * LEN_TO_MM,
+            major[1] * LEN_TO_MM,
+            major[2] * LEN_TO_MM,
+        ),
+        minor: Vector3::new(
+            minor[0] * LEN_TO_MM,
+            minor[1] * LEN_TO_MM,
+            minor[2] * LEN_TO_MM,
+        ),
+        pitch: Vector3::new(
+            pitch[0] * LEN_TO_MM,
+            pitch[1] * LEN_TO_MM,
+            pitch[2] * LEN_TO_MM,
+        ),
+        apex_factor,
+        axis,
+    };
+    let profile = if let Some(length) = length {
+        HelixSurfaceProfile::Circle {
+            length,
+            radius: take_f64(span, &mut position)? * LEN_TO_MM,
+        }
+    } else {
+        let origin = take_native_vec3(span, &mut position, 0x13)?;
+        HelixSurfaceProfile::Line {
+            origin: Point3::new(
+                origin[0] * LEN_TO_MM,
+                origin[1] * LEN_TO_MM,
+                origin[2] * LEN_TO_MM,
+            ),
+        }
+    };
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Helix(Box::new(HelixSurfaceConstruction {
+            angle_range,
+            dimension_range,
+            path,
+            profile,
+        })),
+        cache_fit_tolerance: None,
+    })
+}
+
 fn decode_t_spline_subtransform(
     bytes: &[u8],
     int_width: usize,
@@ -3812,7 +3911,8 @@ fn decode_procedural_resolving_refs(
     seen: &mut Vec<usize>,
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
-    if let Some(mut decoded) = decode_t_spl_sur(bytes, int_width)
+    if let Some(mut decoded) = decode_helix_spl_sur(bytes, int_width)
+        .or_else(|| decode_t_spl_sur(bytes, int_width))
         .or_else(|| decode_exact_spl_sur(bytes, int_width))
         .or_else(|| decode_comp_spl_sur(bytes, int_width))
         .or_else(|| decode_taper_spl_sur(bytes, int_width))
