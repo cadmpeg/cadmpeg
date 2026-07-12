@@ -12238,6 +12238,10 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
 
     let mut edited = result.ir.clone();
     let ProceduralCurveDefinition::SurfaceOffset {
+        discontinuity_flag,
+        base_u_range,
+        base_v_range,
+        base_range,
         distance,
         shift,
         scale,
@@ -12246,6 +12250,10 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     else {
         unreachable!()
     };
+    *discontinuity_flag = false;
+    *base_u_range = [-2.0, 5.0];
+    *base_v_range = [-6.0, 7.0];
+    *base_range = [-0.75, 1.75];
     (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
     let mut regenerated = Vec::new();
     F3dCodec
@@ -12257,6 +12265,10 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     assert!(matches!(
         regenerated.ir.model.procedural_curves[0].definition,
         ProceduralCurveDefinition::SurfaceOffset {
+            discontinuity_flag: false,
+            base_u_range: [-2.0, 5.0],
+            base_v_range: [-6.0, 7.0],
+            base_range: [-0.75, 1.75],
             distance: 3.5,
             shift: -0.25,
             scale: 0.8,

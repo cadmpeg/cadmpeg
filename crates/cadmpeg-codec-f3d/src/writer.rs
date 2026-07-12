@@ -10373,28 +10373,16 @@ fn validate_procedural_curve_edits(
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
                     context: before_context,
-                    discontinuity_flag: before_flag,
-                    base_u_range: before_u_range,
-                    base_v_range: before_v_range,
                     base: before_base,
-                    base_range: before_base_range,
                     ..
                 },
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
                     context: after_context,
-                    discontinuity_flag: after_flag,
-                    base_u_range: after_u_range,
-                    base_v_range: after_v_range,
                     base: after_base,
-                    base_range: after_base_range,
                     ..
                 },
             ) if before_context == after_context
-                && before_flag == after_flag
-                && before_u_range == after_u_range
-                && before_v_range == after_v_range
                 && before_base == after_base
-                && before_base_range == after_base_range
                 && before.definition != after.definition =>
             {
                 Some(after.definition.clone())
@@ -11622,6 +11610,10 @@ fn patch_surface_offset_definition(
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+        discontinuity_flag,
+        base_u_range,
+        base_v_range,
+        base_range,
         distance,
         shift,
         scale,
@@ -11635,6 +11627,15 @@ fn patch_surface_offset_definition(
     if !distance.is_finite() || !shift.is_finite() || !scale.is_finite() {
         return Err(CodecError::Malformed(
             "surface-offset scalars must be finite".into(),
+        ));
+    }
+    if [base_u_range, base_v_range, base_range]
+        .into_iter()
+        .flatten()
+        .any(|value| !value.is_finite())
+    {
+        return Err(CodecError::Malformed(
+            "surface-offset ranges must be finite".into(),
         ));
     }
     let end = record.offset.checked_add(record.len).ok_or_else(|| {
@@ -11651,30 +11652,74 @@ fn patch_surface_offset_definition(
             "record is not an off_surf_int_cur".into(),
         ));
     }
-    let solved = [b"\x0d\x04nubs".as_slice(), b"\x0d\x05nurbs".as_slice()]
+    let mut cache_markers = [b"\x0d\x04nubs".as_slice(), b"\x0d\x05nurbs".as_slice()]
         .into_iter()
-        .filter_map(|marker| {
+        .flat_map(|marker| {
             record_bytes
                 .windows(marker.len())
-                .rposition(|window| window == marker)
+                .enumerate()
+                .filter_map(move |(position, window)| (window == marker).then_some(position))
         })
-        .max()
+        .collect::<Vec<_>>();
+    cache_markers.sort_unstable();
+    cache_markers.dedup();
+    let solved = *cache_markers
+        .last()
         .ok_or_else(|| CodecError::Malformed("surface-offset solved cache is missing".into()))?;
+    let base = *cache_markers
+        .get(cache_markers.len().saturating_sub(2))
+        .ok_or_else(|| CodecError::Malformed("surface-offset base curve is missing".into()))?;
+    let all_offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    let before_base = all_offsets
+        .iter()
+        .copied()
+        .filter(|offset| *offset < record.offset + base)
+        .collect::<Vec<_>>();
+    let support_ranges = before_base
+        .get(before_base.len().saturating_sub(4)..)
+        .ok_or_else(|| {
+            CodecError::Malformed("surface-offset support ranges are incomplete".into())
+        })?;
+    let first_range = *support_ranges
+        .first()
+        .ok_or_else(|| CodecError::Malformed("surface-offset support ranges are missing".into()))?;
+    let flag_offset = first_range.checked_sub(1).ok_or_else(|| {
+        CodecError::Malformed("surface-offset discontinuity flag is missing".into())
+    })?;
+    if !matches!(bytes.get(flag_offset), Some(0x0a | 0x0b)) {
+        return Err(CodecError::Malformed(
+            "surface-offset discontinuity flag is malformed".into(),
+        ));
+    }
+    bytes[flag_offset] = native_bool(*discontinuity_flag);
+    for (offset, value) in support_ranges
+        .iter()
+        .zip(base_u_range.iter().chain(base_v_range.iter()))
+    {
+        bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+    }
     let boundary = record.offset + solved;
-    let offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
+    let offsets = all_offsets
         .into_iter()
         .filter(|offset| *offset < boundary)
         .collect::<Vec<_>>();
-    let scalar_offsets = offsets
-        .get(offsets.len().saturating_sub(3)..)
+    let tail_offsets = offsets
+        .get(offsets.len().saturating_sub(5)..)
         .ok_or_else(|| CodecError::Malformed("surface-offset scalar tail is incomplete".into()))?;
-    if scalar_offsets.len() != 3 {
+    if tail_offsets.len() != 5 {
         return Err(CodecError::Malformed(
             "surface-offset scalar tail is incomplete".into(),
         ));
     }
-    for (offset, value) in scalar_offsets.iter().zip([distance / 10.0, *shift, *scale]) {
+    for (offset, value) in
+        tail_offsets.iter().zip(
+            base_range
+                .iter()
+                .copied()
+                .chain([distance / 10.0, *shift, *scale]),
+        )
+    {
         bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
