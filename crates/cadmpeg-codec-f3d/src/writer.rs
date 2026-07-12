@@ -2,7 +2,7 @@
 //! Encode source-less F3D archives and apply supported edits to retained source
 //! archives.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecError, DecodeOptions};
@@ -1703,6 +1703,42 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
     let model = &target.model;
+    let region_ordinals: HashMap<_, _> = model
+        .regions
+        .iter()
+        .enumerate()
+        .map(|(ordinal, region)| (&region.id, ordinal))
+        .collect();
+    let shell_ordinals: HashMap<_, _> = model
+        .shells
+        .iter()
+        .enumerate()
+        .map(|(ordinal, shell)| (&shell.id, ordinal))
+        .collect();
+    let coedge_ordinals: HashMap<_, _> = model
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(ordinal, coedge)| (&coedge.id, ordinal))
+        .collect();
+    let edge_ordinals: HashMap<_, _> = model
+        .edges
+        .iter()
+        .enumerate()
+        .map(|(ordinal, edge)| (&edge.id, ordinal))
+        .collect();
+    let loop_ordinals: HashMap<_, _> = model
+        .loops
+        .iter()
+        .enumerate()
+        .map(|(ordinal, lp)| (&lp.id, ordinal))
+        .collect();
+    let pcurve_ordinals: HashMap<_, _> = model
+        .pcurves
+        .iter()
+        .enumerate()
+        .map(|(ordinal, pcurve)| (&pcurve.id, ordinal))
+        .collect();
     if model.bodies.is_empty()
         || model.regions.is_empty()
         || model.shells.is_empty()
@@ -1744,13 +1780,9 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .regions
             .first()
             .ok_or_else(|| CodecError::Malformed(format!("body {} has no region", body.id)))?;
-        let region_ordinal = model
-            .regions
-            .iter()
-            .position(|region| region.id == *first_region)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!("body references missing region {first_region}"))
-            })?;
+        let region_ordinal = region_ordinals.get(first_region).copied().ok_or_else(|| {
+            CodecError::Malformed(format!("body references missing region {first_region}"))
+        })?;
         let transform_ordinal = model.bodies[..body_ordinal]
             .iter()
             .filter(|candidate| candidate.transform.is_some())
@@ -1758,13 +1790,17 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         let first_wire = body
             .regions
             .iter()
-            .filter_map(|region_id| model.regions.iter().find(|region| region.id == *region_id))
+            .filter_map(|region_id| {
+                region_ordinals
+                    .get(region_id)
+                    .map(|ordinal| &model.regions[*ordinal])
+            })
             .flat_map(|region| &region.shells)
             .find_map(|shell_id| {
-                model
-                    .shells
-                    .iter()
-                    .position(|shell| shell.id == *shell_id && !shell.wire_edges.is_empty())
+                shell_ordinals
+                    .get(shell_id)
+                    .copied()
+                    .filter(|ordinal| !model.shells[*ordinal].wire_edges.is_empty())
             })
             .map(|shell_ordinal| wire_record_for_shell(model, wire_start, shell_ordinal))
             .transpose()?
@@ -2283,20 +2319,11 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     }
 
     for (coedge_ordinal, coedge) in model.coedges.iter().enumerate() {
-        let next = model.coedges.iter().position(|item| item.id == coedge.next);
-        let previous = model
-            .coedges
-            .iter()
-            .position(|item| item.id == coedge.previous);
-        let radial = model
-            .coedges
-            .iter()
-            .position(|item| item.id == coedge.radial_next);
-        let edge = model.edges.iter().position(|item| item.id == coedge.edge);
-        let owner = model
-            .loops
-            .iter()
-            .position(|item| item.id == coedge.owner_loop);
+        let next = coedge_ordinals.get(&coedge.next).copied();
+        let previous = coedge_ordinals.get(&coedge.previous).copied();
+        let radial = coedge_ordinals.get(&coedge.radial_next).copied();
+        let edge = edge_ordinals.get(&coedge.edge).copied();
+        let owner = loop_ordinals.get(&coedge.owner_loop).copied();
         let (Some(next), Some(previous), Some(radial), Some(edge), Some(owner)) =
             (next, previous, radial, edge, owner)
         else {
@@ -2316,13 +2343,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         native_ref(&mut records, native_record_index(coedge_start, previous)?);
         native_ref(
             &mut records,
-            if radial
-                == model
-                    .coedges
-                    .iter()
-                    .position(|item| item.id == coedge.id)
-                    .unwrap_or(radial)
-            {
+            if radial == coedge_ordinals.get(&coedge.id).copied().unwrap_or(radial) {
                 -1
             } else {
                 native_record_index(coedge_start, radial)?
@@ -2336,10 +2357,9 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .pcurve
             .as_ref()
             .map(|pcurve_id| {
-                model
-                    .pcurves
-                    .iter()
-                    .position(|pcurve| pcurve.id == *pcurve_id)
+                pcurve_ordinals
+                    .get(pcurve_id)
+                    .copied()
                     .ok_or_else(|| {
                         CodecError::Malformed(format!(
                             "coedge references missing pcurve {pcurve_id}"
@@ -2361,13 +2381,9 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         }
         let wire_ref = wire_record_for_shell(model, wire_start, shell_ordinal)?;
         for (ordinal, edge_id) in shell.wire_edges.iter().enumerate() {
-            let edge_ordinal = model
-                .edges
-                .iter()
-                .position(|edge| edge.id == *edge_id)
-                .ok_or_else(|| {
-                    CodecError::Malformed(format!("wire references missing edge {edge_id}"))
-                })?;
+            let edge_ordinal = edge_ordinals.get(edge_id).copied().ok_or_else(|| {
+                CodecError::Malformed(format!("wire references missing edge {edge_id}"))
+            })?;
             let coedge_ordinal = wire_edge_base + ordinal;
             let owner = native_record_index(wire_coedge_start, coedge_ordinal)?;
             if wire_edge_owners.insert(edge_id.clone(), owner).is_some() {
@@ -2939,9 +2955,32 @@ fn encode_source_less_edges_vertices_points(
     edge_owners: Option<&BTreeMap<cadmpeg_ir::ids::EdgeId, i64>>,
 ) -> Result<(), CodecError> {
     let model = &target.model;
+    let vertex_ordinals: HashMap<_, _> = model
+        .vertices
+        .iter()
+        .enumerate()
+        .map(|(ordinal, vertex)| (&vertex.id, ordinal))
+        .collect();
+    let curve_ordinals: HashMap<_, _> = model
+        .curves
+        .iter()
+        .enumerate()
+        .map(|(ordinal, curve)| (&curve.id, ordinal))
+        .collect();
+    let point_ordinals: HashMap<_, _> = model
+        .points
+        .iter()
+        .enumerate()
+        .map(|(ordinal, point)| (&point.id, ordinal))
+        .collect();
+    let mut vertex_edges = HashMap::new();
+    for (ordinal, edge) in model.edges.iter().enumerate() {
+        vertex_edges.entry(&edge.start).or_insert(ordinal);
+        vertex_edges.entry(&edge.end).or_insert(ordinal);
+    }
     for (edge_ordinal, edge) in model.edges.iter().enumerate() {
-        let start = model.vertices.iter().position(|item| item.id == edge.start);
-        let end = model.vertices.iter().position(|item| item.id == edge.end);
+        let start = vertex_ordinals.get(&edge.start).copied();
+        let end = vertex_ordinals.get(&edge.end).copied();
         let (Some(start), Some(end)) = (start, end) else {
             return Err(CodecError::Malformed(format!(
                 "edge {} has an unresolved vertex",
@@ -2952,10 +2991,9 @@ fn encode_source_less_edges_vertices_points(
             .curve
             .as_ref()
             .map(|curve_id| {
-                model
-                    .curves
-                    .iter()
-                    .position(|curve| curve.id == *curve_id)
+                curve_ordinals
+                    .get(curve_id)
+                    .copied()
                     .ok_or_else(|| {
                         CodecError::Malformed(format!("edge references missing curve {curve_id}"))
                     })
@@ -2968,8 +3006,8 @@ fn encode_source_less_edges_vertices_points(
         // stream; line parameters are arc lengths, millimeters in the IR
         // and centimeters natively.
         if edge.curve.as_ref().is_some_and(|curve_id| {
-            model.curves.iter().any(|curve| {
-                curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Line { .. })
+            curve_ordinals.get(curve_id).is_some_and(|ordinal| {
+                matches!(model.curves[*ordinal].geometry, CurveGeometry::Line { .. })
             })
         }) {
             range[0] /= 10.0;
@@ -3000,11 +3038,8 @@ fn encode_source_less_edges_vertices_points(
         records.push(0x11);
     }
     for vertex in &model.vertices {
-        let point = model.points.iter().position(|item| item.id == vertex.point);
-        let edge = model
-            .edges
-            .iter()
-            .position(|item| item.start == vertex.id || item.end == vertex.id);
+        let point = point_ordinals.get(&vertex.point).copied();
+        let edge = vertex_edges.get(&vertex.id).copied();
         let (Some(point), Some(edge)) = (point, edge) else {
             return Err(CodecError::Malformed(format!(
                 "vertex {} has an unresolved carrier",
