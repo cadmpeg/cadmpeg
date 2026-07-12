@@ -2816,6 +2816,7 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
         }
         "ref" => TSplineSubtransform::Reference {
             index: take_tagged_int(span, &mut position, 0x04, int_width)?,
+            resolved: None,
         },
         _ => return None,
     };
@@ -2844,6 +2845,64 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
         )),
         cache_fit_tolerance,
     })
+}
+
+fn decode_t_spline_subtransform(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<cadmpeg_ir::geometry::TSplineSubtransform> {
+    use cadmpeg_ir::geometry::TSplineSubtransform;
+
+    let mut position = usize::from(bytes.first() == Some(&0x0f));
+    match take_native_ident(bytes, &mut position)?.as_str() {
+        "t_spl_subtrans_object" => {
+            let program = take_native_string(bytes, &mut position)?;
+            let separator = if bytes.get(position) == Some(&0x08) {
+                None
+            } else {
+                Some(take_bool(bytes, &mut position)?)
+            };
+            let values = take_native_string(bytes, &mut position)?;
+            Some(TSplineSubtransform::Inline {
+                program,
+                separator,
+                values,
+            })
+        }
+        "ref" => Some(TSplineSubtransform::Reference {
+            index: take_tagged_int(bytes, &mut position, 0x04, int_width)?,
+            resolved: None,
+        }),
+        _ => None,
+    }
+}
+
+fn resolve_t_spline_subtransform(
+    index: usize,
+    active_bytes: &[u8],
+    table: &[usize],
+    seen: &mut Vec<usize>,
+    int_width: usize,
+) -> Option<cadmpeg_ir::geometry::TSplineSubtransform> {
+    use cadmpeg_ir::geometry::TSplineSubtransform;
+
+    if seen.contains(&index) {
+        return None;
+    }
+    seen.push(index);
+    let target = *table.get(index)?;
+    let decoded =
+        decode_t_spline_subtransform(subtype_span(active_bytes, target, int_width)?, int_width)?;
+    match decoded {
+        inline @ TSplineSubtransform::Inline { .. } => Some(inline),
+        TSplineSubtransform::Reference { index, .. } => resolve_t_spline_subtransform(
+            usize::try_from(index).ok()?,
+            active_bytes,
+            table,
+            seen,
+            int_width,
+        ),
+    }
 }
 
 /// Decode an inline `cyl_spl_sur` translational-extrusion definition.
@@ -3746,7 +3805,7 @@ fn decode_procedural_resolving_refs(
     seen: &mut Vec<usize>,
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
-    if let Some(decoded) = decode_t_spl_sur(bytes, int_width)
+    if let Some(mut decoded) = decode_t_spl_sur(bytes, int_width)
         .or_else(|| decode_exact_spl_sur(bytes, int_width))
         .or_else(|| decode_comp_spl_sur(bytes, int_width))
         .or_else(|| decode_taper_spl_sur(bytes, int_width))
@@ -3767,6 +3826,26 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_full_rb_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_rb_blend_spl_sur_fallback(bytes, int_width))
     {
+        if let DecodedProceduralSurfaceDefinition::TSpline(construction) = &mut decoded.definition {
+            if let cadmpeg_ir::geometry::TSplineSubtransform::Reference { index, resolved } =
+                &mut construction.subtransform
+            {
+                let inline = resolve_t_spline_subtransform(
+                    usize::try_from(*index).ok()?,
+                    active_bytes,
+                    tables.for_width(int_width),
+                    &mut Vec::new(),
+                    int_width,
+                )?;
+                let program = match &inline {
+                    cadmpeg_ir::geometry::TSplineSubtransform::Inline { program, .. } => program,
+                    cadmpeg_ir::geometry::TSplineSubtransform::Reference { .. } => return None,
+                };
+                construction.program_graph =
+                    Some(cadmpeg_ir::geometry::TSplineProgram::parse(program));
+                *resolved = Some(Box::new(inline));
+            }
+        }
         return Some(decoded);
     }
     let table = tables.for_width(int_width);
@@ -5063,6 +5142,14 @@ impl SubtypeTables {
             .iter()
             .position(|&width| width == int_width)
             .map_or(&[], |slot| self.tables[slot].as_slice())
+    }
+
+    /// Return the table index assigned to an absolute subtype-definition offset.
+    #[cfg(test)]
+    pub(crate) fn index_of_offset(&self, int_width: usize, offset: usize) -> Option<usize> {
+        self.for_width(int_width)
+            .iter()
+            .position(|candidate| *candidate == offset)
     }
 }
 

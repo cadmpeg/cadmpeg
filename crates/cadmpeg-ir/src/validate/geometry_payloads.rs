@@ -924,8 +924,19 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         && construction.program_graph.as_ref()
                             == Some(&crate::geometry::TSplineProgram::parse(program))
                 }
-                crate::geometry::TSplineSubtransform::Reference { index } => {
-                    *index >= 0 && construction.program_graph.is_none()
+                crate::geometry::TSplineSubtransform::Reference { index, resolved } => {
+                    let resolved_program =
+                        resolved.as_deref().and_then(|resolved| match resolved {
+                            crate::geometry::TSplineSubtransform::Inline { program, .. } => {
+                                Some(program)
+                            }
+                            crate::geometry::TSplineSubtransform::Reference { .. } => None,
+                        });
+                    *index >= 0
+                        && resolved_program.is_some_and(|program| {
+                            construction.program_graph.as_ref()
+                                == Some(&crate::geometry::TSplineProgram::parse(program))
+                        })
                 }
             };
             if !ranges_valid || !source_valid {

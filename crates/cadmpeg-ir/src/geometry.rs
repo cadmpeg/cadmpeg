@@ -469,6 +469,9 @@ pub enum TSplineSubtransform {
     Reference {
         /// Native subtype-table index.
         index: i64,
+        /// Resolved shared program when the table target is available.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resolved: Option<Box<TSplineSubtransform>>,
     },
 }
 

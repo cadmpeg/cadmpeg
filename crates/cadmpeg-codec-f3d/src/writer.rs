@@ -3243,9 +3243,37 @@ fn native_procedural_surface(
                     }
                     native_u16_string(bytes, values)?;
                 }
-                TSplineSubtransform::Reference { .. } => {
+                TSplineSubtransform::Reference {
+                    resolved: Some(resolved),
+                    ..
+                } => {
+                    let TSplineSubtransform::Inline {
+                        program,
+                        separator,
+                        values,
+                    } = resolved.as_ref()
+                    else {
+                        return Err(CodecError::Malformed(
+                            "resolved T-spline subtransform must be inline".into(),
+                        ));
+                    };
+                    let parsed = cadmpeg_ir::geometry::TSplineProgram::parse(program);
+                    if construction.program_graph.as_ref() != Some(&parsed) {
+                        return Err(CodecError::Malformed(
+                            "T-spline parsed program graph diverges from its resolved program"
+                                .into(),
+                        ));
+                    }
+                    native_ident(bytes, "t_spl_subtrans_object")?;
+                    native_u16_string(bytes, program)?;
+                    if let Some(separator) = separator {
+                        bytes.push(native_bool(*separator));
+                    }
+                    native_u16_string(bytes, values)?;
+                }
+                TSplineSubtransform::Reference { resolved: None, .. } => {
                     return Err(CodecError::NotImplemented(
-                        "source-less referenced t_spl_subtrans_object requires shared subtype-table emission"
+                        "source-less referenced t_spl_subtrans_object has no resolved target"
                             .into(),
                     ));
                 }

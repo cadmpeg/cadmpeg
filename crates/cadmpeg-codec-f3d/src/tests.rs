@@ -1671,7 +1671,8 @@ fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
-    let old = &records[9];
+    let old_offset = records[9].offset;
+    let old_len = records[9].len;
 
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -1690,7 +1691,7 @@ fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
     t_dbl(&mut surface, 0.002);
     surface.push(0x10);
     t_end(&mut surface);
-    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes.splice(old_offset..old_offset + old_len, surface);
     bytes
 }
 
@@ -2110,6 +2111,62 @@ fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
     surface.push(0x10);
     t_end(&mut surface);
     bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
+fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old_offset = records[9].offset;
+    let old_len = records[9].len;
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    let shared_offset = surface.len();
+    surface.push(0x0f);
+    t_ident(&mut surface, "t_spl_subtrans_object");
+    t_u16_string(&mut surface, "degree 3\nv 1 0 0 0\n");
+    t_u16_string(&mut surface, "100verts 1\n");
+    surface.push(0x10);
+    surface.push(0x0f);
+    t_ident(&mut surface, "t_spl_sur");
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.004);
+    for values in [&[0.25][..], &[][..], &[][..], &[][..], &[][..], &[][..]] {
+        append_generated_float_array(&mut surface, values);
+    }
+    surface.push(0x0b);
+    for value in [-2.0, 3.0, -4.0, 5.0] {
+        t_dbl(&mut surface, value);
+    }
+    t_long(&mut surface, 7);
+    surface.push(0x0f);
+    t_ident(&mut surface, "ref");
+    let reference_value_offset = surface.len() + 1;
+    t_long(&mut surface, 0);
+    surface.push(0x10);
+    t_long(&mut surface, 9);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old_offset..old_offset + old_len, surface);
+    let records = crate::sab::frame(
+        &bytes,
+        asm_header::record_stream_start(&bytes).unwrap(),
+        asm_header::first_delta_state_offset(&bytes).unwrap(),
+        8,
+    )
+    .unwrap();
+    let tables = crate::nurbs::SubtypeTables::from_records(&records, &bytes);
+    let index = tables
+        .index_of_offset(8, old_offset + shared_offset)
+        .expect("shared T-spline subtype index");
+    bytes[old_offset + reference_value_offset..old_offset + reference_value_offset + 8]
+        .copy_from_slice(&i64::try_from(index).unwrap().to_le_bytes());
     bytes
 }
 
@@ -8463,6 +8520,59 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
         construction(&round_trip.ir.model.procedural_surfaces[0].definition),
         &native
     );
+}
+
+#[test]
+fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, TSplineSubtransform};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_referenced_t_spl_sur_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("referenced T-spline decode");
+    let ProceduralSurfaceDefinition::TSpline { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected T-spline surface")
+    };
+    let TSplineSubtransform::Reference {
+        index,
+        resolved: Some(resolved),
+    } = &construction.subtransform
+    else {
+        panic!("expected resolved T-spline reference")
+    };
+    assert!(*index >= 0);
+    assert!(matches!(
+        resolved.as_ref(),
+        TSplineSubtransform::Inline { program, .. } if program.contains("v 1 0 0 0")
+    ));
+    assert_eq!(
+        construction.program_graph.as_ref().unwrap().records.len(),
+        1
+    );
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less referenced T-spline encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less referenced T-spline round trip");
+    let ProceduralSurfaceDefinition::TSpline { construction } =
+        &round_trip.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected round-trip T-spline surface")
+    };
+    assert!(matches!(
+        construction.subtransform,
+        TSplineSubtransform::Inline { .. }
+    ));
 }
 
 #[test]
