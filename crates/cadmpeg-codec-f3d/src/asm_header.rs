@@ -107,7 +107,7 @@ pub fn parse(bytes: &[u8]) -> Option<AsmHeader> {
 
     match width {
         8 => {
-            header.release = read_le_u32(bytes, 15);
+            header.release = u32_at(bytes, 15);
             header.entity_count = read_le_u64(bytes, 31).and_then(|v| u32::try_from(v).ok());
             header.flags = read_le_u64(bytes, 39).and_then(|v| u32::try_from(v).ok());
         }
