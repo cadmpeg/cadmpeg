@@ -3668,6 +3668,86 @@ fn semantic_writer_round_trips_typed_dome() {
 }
 
 #[test]
+fn semantic_writer_round_trips_typed_reference_plane() {
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><ReferencePlane Name="Datum A" Type="ReferencePlane" id="25" Origin="1mm,2mm,3mm" Normal="0,0,1" UAxis="1,0,0"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::DatumPlane {
+            origin: Point3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0
+            },
+            normal: Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0
+            },
+            u_axis: Vector3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0
+            },
+        }
+    ));
+
+    let FeatureDefinition::DatumPlane {
+        origin,
+        normal,
+        u_axis,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed reference plane");
+    };
+    *origin = Point3::new(25.4, 0.0, -2.0);
+    *normal = Vector3::new(0.0, 1.0, 0.0);
+    *u_axis = Vector3::new(0.0, 0.0, 1.0);
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.properties["Origin"], "25.4mm,0mm,-2mm");
+    assert_eq!(feature.properties["Normal"], "0,1,0");
+    assert_eq!(feature.properties["UAxis"], "0,0,1");
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::DatumPlane {
+            origin: Point3 {
+                x: 25.4,
+                y: 0.0,
+                z: -2.0
+            },
+            normal: Vector3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0
+            },
+            u_axis: Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0
+            },
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition, HoleKind, Length};
 

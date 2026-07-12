@@ -141,6 +141,15 @@ pub struct Feature {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "definition", rename_all = "snake_case")]
 pub enum FeatureDefinition {
+    /// Constructed reference plane.
+    DatumPlane {
+        /// Plane origin in model space.
+        origin: Point3,
+        /// Plane normal.
+        normal: Vector3,
+        /// In-plane u-axis.
+        u_axis: Vector3,
+    },
     /// Solved sketch node in the construction history.
     Sketch {
         /// Neutral sketch geometry owned by this history node, when resolved.

@@ -339,6 +339,9 @@ fn project_definition(
     if feature.kind.eq_ignore_ascii_case("Sketch") {
         return FeatureDefinition::Sketch { sketch: None };
     }
+    if feature.kind.eq_ignore_ascii_case("ReferencePlane") {
+        return project_datum_plane(feature).unwrap_or_else(|| native_definition(feature));
+    }
     let op = match feature.kind.to_ascii_lowercase().as_str() {
         "bossextrude" => Some(BooleanOp::Join),
         "cutextrude" => Some(BooleanOp::Cut),
@@ -391,6 +394,28 @@ fn project_definition(
     } else {
         native_definition(feature)
     }
+}
+
+fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition> {
+    let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
+    let normal = parse_vector3(feature.properties.get("Normal")?)?;
+    let u_axis = parse_vector3(feature.properties.get("UAxis")?)?;
+    valid_plane_frame(normal, u_axis).then_some(FeatureDefinition::DatumPlane {
+        origin,
+        normal,
+        u_axis,
+    })
+}
+
+fn valid_plane_frame(normal: Vector3, u_axis: Vector3) -> bool {
+    let normal_length = normal.norm();
+    let u_length = u_axis.norm();
+    normal_length.is_finite()
+        && u_length.is_finite()
+        && normal_length > f64::EPSILON
+        && u_length > f64::EPSILON
+        && (normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z).abs()
+            <= 1.0e-9 * normal_length * u_length
 }
 
 fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
@@ -1324,6 +1349,40 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map_or_else(BTreeMap::new, |record| record.properties.clone()),
             ),
+            FeatureDefinition::DatumPlane {
+                origin,
+                normal,
+                u_axis,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained reference-plane record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("ReferencePlane")
+                    || !valid_plane_frame(*normal, *u_axis)
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported reference-plane semantics",
+                        feature.id
+                    )));
+                }
+                if ![origin.x, origin.y, origin.z]
+                    .iter()
+                    .all(|value| value.is_finite())
+                {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has a non-finite reference-plane origin",
+                        feature.id
+                    )));
+                }
+                let mut properties = record.properties.clone();
+                properties.insert("Origin".into(), format_point3_mm(*origin));
+                properties.insert("Normal".into(), format_vector3(*normal));
+                properties.insert("UAxis".into(), format_vector3(*u_axis));
+                (record.kind.clone(), record.parameters.clone(), properties)
+            }
             FeatureDefinition::Sketch { .. } => {
                 let Some(record) = existing.as_deref() else {
                     return Err(CodecError::NotImplemented(format!(
