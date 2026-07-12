@@ -4003,7 +4003,7 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
 }
 
 #[test]
-fn generated_f3d_rewrites_cone_ratio() {
+fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
     let decoded = F3dCodec
@@ -4032,10 +4032,14 @@ fn generated_f3d_rewrites_cone_ratio() {
         .decode(&mut Cursor::new(initial), &DecodeOptions::default())
         .expect("generated cone decode")
         .ir;
-    let SurfaceGeometry::Cone { ratio, .. } = &mut retained.model.surfaces[0].geometry else {
+    let SurfaceGeometry::Cone {
+        ratio, half_angle, ..
+    } = &mut retained.model.surfaces[0].geometry
+    else {
         panic!("expected cone")
     };
     *ratio = 0.4;
+    *half_angle = 0.35;
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -4046,7 +4050,11 @@ fn generated_f3d_rewrites_cone_ratio() {
         .expect("regenerated cone decode");
     assert!(matches!(
         round_trip.ir.model.surfaces[0].geometry,
-        SurfaceGeometry::Cone { ratio: 0.4, .. }
+        SurfaceGeometry::Cone {
+            ratio: 0.4,
+            half_angle,
+            ..
+        } if (half_angle - 0.35).abs() < 1.0e-12
     ));
 }
 

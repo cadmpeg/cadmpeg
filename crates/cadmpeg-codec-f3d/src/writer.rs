@@ -7279,7 +7279,7 @@ pub fn write_semantic(
             } => edited_surfaces.contains(surface.id.as_str()).then(|| {
                 (
                     surface.id.0.clone(),
-                    (origin, axis, ref_direction, radius, 1.0),
+                    (origin, axis, ref_direction, radius, 1.0, 0.0),
                 )
             }),
             SurfaceGeometry::Cone {
@@ -7288,11 +7288,11 @@ pub fn write_semantic(
                 ref_direction,
                 radius,
                 ratio,
-                ..
+                half_angle,
             } => edited_surfaces.contains(surface.id.as_str()).then(|| {
                 (
                     surface.id.0.clone(),
-                    (origin, axis, ref_direction, radius, ratio),
+                    (origin, axis, ref_direction, radius, ratio, half_angle),
                 )
             }),
             _ => None,
@@ -10070,20 +10070,16 @@ fn validate_surface_edits(
                 ratio,
                 half_angle,
             } => {
-                let unchanged_angle = matches!(
-                    before,
-                    SurfaceGeometry::Cone {
-                        half_angle: old,
-                        ..
-                    } if old == half_angle
-                );
-                unchanged_angle
+                matches!(before, SurfaceGeometry::Cone { .. })
                     && finite_point(*origin)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
                     && *radius != 0.0
                     && ratio.is_finite()
                     && *ratio > 0.0
+                    && half_angle.is_finite()
+                    && *half_angle >= 0.0
+                    && *half_angle < std::f64::consts::FRAC_PI_2
             }
             SurfaceGeometry::Nurbs(after) => {
                 let SurfaceGeometry::Nurbs(before) = before else {
@@ -10477,7 +10473,7 @@ fn patch_geometry(
     planes: &BTreeMap<String, (Point3, Vector3, Vector3)>,
     spheres: &BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
     tori: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
+    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64, f64)>,
     body_transforms: &BTreeMap<String, Transform>,
     entity_colors: &BTreeMap<String, Color>,
     edge_ranges: &BTreeMap<String, [f64; 2]>,
@@ -10535,7 +10531,7 @@ fn patch_framed_geometry(
     planes: &BTreeMap<String, (Point3, Vector3, Vector3)>,
     spheres: &BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
     tori: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
+    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64, f64)>,
     body_transforms: &BTreeMap<String, Transform>,
     entity_colors: &BTreeMap<String, Color>,
     edge_ranges: &BTreeMap<String, [f64; 2]>,
@@ -10824,7 +10820,18 @@ fn patch_framed_geometry(
                 )?;
             }
         } else if record.head == "cone" {
-            if let Some((origin, axis, ref_direction, radius, ratio)) = cones.get(&id) {
+            if let Some((origin, axis, ref_direction, radius, ratio, half_angle)) = cones.get(&id) {
+                let doubles = sab::payload_token_offsets(bytes, record, 8, 0x06)
+                    .map_err(|error| CodecError::Malformed(error.to_string()))?;
+                let old_sine = read_double_token(bytes, &doubles, 1, record)?;
+                let old_cosine = read_double_token(bytes, &doubles, 2, record)?;
+                let sine_sign = if old_sine < 0.0 { -1.0 } else { 1.0 };
+                let cosine_sign = if old_cosine < 0.0 { -1.0 } else { 1.0 };
+                let native_axis = if *half_angle > 0.0 && sine_sign * cosine_sign < 0.0 {
+                    Vector3::new(-axis.x, -axis.y, -axis.z)
+                } else {
+                    *axis
+                };
                 patch_vec3_token(
                     bytes,
                     record,
@@ -10832,7 +10839,13 @@ fn patch_framed_geometry(
                     0,
                     [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
                 )?;
-                patch_vec3_token(bytes, record, 0x14, 0, [axis.x, axis.y, axis.z])?;
+                patch_vec3_token(
+                    bytes,
+                    record,
+                    0x14,
+                    0,
+                    [native_axis.x, native_axis.y, native_axis.z],
+                )?;
                 let scaled_radius = radius / 10.0;
                 patch_vec3_token(
                     bytes,
@@ -10846,6 +10859,8 @@ fn patch_framed_geometry(
                     ],
                 )?;
                 patch_double_token(bytes, record, 0, *ratio)?;
+                patch_double_token(bytes, record, 1, sine_sign * half_angle.sin())?;
+                patch_double_token(bytes, record, 2, cosine_sign * half_angle.cos())?;
                 patch_double_token(bytes, record, 3, scaled_radius)?;
             }
         }
@@ -10870,6 +10885,26 @@ fn patch_double_token(
         })?;
     bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
     Ok(())
+}
+
+fn read_double_token(
+    bytes: &[u8],
+    offsets: &[usize],
+    ordinal: usize,
+    record: &sab::Record,
+) -> Result<f64, CodecError> {
+    let offset = offsets.get(ordinal).copied().ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "{} record {} lacks double token [{ordinal}]",
+            record.head, record.index
+        ))
+    })?;
+    let value = bytes
+        .get(offset + 1..offset + 9)
+        .and_then(|value| value.try_into().ok())
+        .map(f64::from_le_bytes)
+        .ok_or_else(|| CodecError::Malformed("truncated F3D double token".into()))?;
+    Ok(value)
 }
 
 fn patch_signed_ratio_token(
@@ -12029,6 +12064,7 @@ mod tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 40.0,
                 1.0,
+                0.0,
             ),
         )]);
         patch_framed_geometry(
