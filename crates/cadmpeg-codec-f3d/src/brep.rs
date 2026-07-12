@@ -866,6 +866,42 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 components: component_ids,
                             }
                         }
+                        nurbs::DecodedProceduralSurfaceDefinition::Taper {
+                            support,
+                            reference,
+                            pcurve,
+                            parameter,
+                            taper,
+                        } => {
+                            let support_id =
+                                SurfaceId(format!("f3d:brep:procedural_surface#{i}:support"));
+                            out.surfaces.push(Surface {
+                                id: support_id.clone(),
+                                geometry: support,
+                                source_object: None,
+                            });
+                            let reference_id =
+                                CurveId(format!("f3d:brep:procedural_surface#{i}:reference"));
+                            out.curves.push(Curve {
+                                id: reference_id.clone(),
+                                geometry: CurveGeometry::Nurbs(reference),
+                                source_object: None,
+                            });
+                            let pcurve = pcurve.map(|pcurve| PcurveGeometry::Nurbs {
+                                degree: pcurve.degree,
+                                knots: pcurve.knots,
+                                control_points: pcurve.control_points,
+                                weights: pcurve.weights,
+                                periodic: pcurve.periodic,
+                            });
+                            ProceduralSurfaceDefinition::Taper {
+                                support: support_id,
+                                reference: reference_id,
+                                pcurve,
+                                parameter,
+                                taper,
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::Ruled { first, second } => {
                             let first_id =
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:profile0"));

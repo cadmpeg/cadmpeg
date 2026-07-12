@@ -252,6 +252,47 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::Taper {
+            parameter, taper, ..
+        } = &procedural.definition
+        {
+            let vector_finite = |vector: &Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let tail_finite = match taper {
+                crate::geometry::TaperSurfaceKind::Standard
+                | crate::geometry::TaperSurfaceKind::Orthogonal { .. } => true,
+                crate::geometry::TaperSurfaceKind::Edge { draft } => vector_finite(draft),
+                crate::geometry::TaperSurfaceKind::Shadow {
+                    draft,
+                    sine,
+                    cosine,
+                }
+                | crate::geometry::TaperSurfaceKind::Swept {
+                    draft,
+                    sine,
+                    cosine,
+                } => vector_finite(draft) && sine.is_finite() && cosine.is_finite(),
+                crate::geometry::TaperSurfaceKind::Ruled {
+                    draft,
+                    sine,
+                    cosine,
+                    factor,
+                } => {
+                    vector_finite(draft)
+                        && sine.is_finite()
+                        && cosine.is_finite()
+                        && factor.is_finite()
+                }
+            };
+            if !parameter.is_finite() || !tail_finite {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "taper surface parameter or subtype tail is not finite",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Offset {
             distance,
             extension_flags,

@@ -374,6 +374,8 @@ Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus
 
 **Rolling-ball aliases**: `rb_blend_spl_sur`, `rbblnsur`, `pipe_spl_sur`, and `pipesur` select the same rolling-ball blend layout. The pipe names denote its surface-surface specialization. Native generation uses `rb_blend_spl_sur`.
 
+**Taper spline surfaces**: `taper_spl_sur`, `ortho_spl_sur`/`orthosur`, `edge_tpr_spl_sur`, `shadow_tpr_spl_sur`/`shadowtapersur`, `ruled_tpr_spl_sur`/`ruledtapersur`, and `swept_tpr_spl_sur`/`swepttapersur` share a support surface, reference curve, nullable BS2 pcurve, taper parameter, solved NURBS surface, and fit tolerance. Standard taper has no tail; orthogonal adds a sense boolean; edge adds a draft vector; shadow and swept each add a draft vector plus stored sine/cosine values; ruled adds the same fields plus a factor. Shadow and swept are distinguished by subtype name, not tail shape. Native generation uses the modern subtype corresponding to the retained variant.
+
 ### 7.4 Pcurves (2D UV trimming curves)
 
 A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at record-relative **+37**:

@@ -3207,6 +3207,90 @@ fn native_procedural_surface(
             }
             bytes.push(0x10);
         }
+        ProceduralSurfaceDefinition::Taper {
+            support,
+            reference,
+            pcurve,
+            parameter,
+            taper,
+        } => {
+            let support = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == *support)
+                .ok_or_else(|| CodecError::Malformed("taper support surface is missing".into()))?;
+            let reference = target
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *reference)
+                .ok_or_else(|| CodecError::Malformed("taper reference curve is missing".into()))?;
+            let CurveGeometry::Nurbs(reference) = &reference.geometry else {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D taper requires a NURBS reference curve".into(),
+                ));
+            };
+            let subtype = match taper {
+                cadmpeg_ir::geometry::TaperSurfaceKind::Standard => "taper_spl_sur",
+                cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. } => "ortho_spl_sur",
+                cadmpeg_ir::geometry::TaperSurfaceKind::Edge { .. } => "edge_tpr_spl_sur",
+                cadmpeg_ir::geometry::TaperSurfaceKind::Shadow { .. } => "shadow_tpr_spl_sur",
+                cadmpeg_ir::geometry::TaperSurfaceKind::Ruled { .. } => "ruled_tpr_spl_sur",
+                cadmpeg_ir::geometry::TaperSurfaceKind::Swept { .. } => "swept_tpr_spl_sur",
+            };
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, subtype)?;
+            native_embedded_surface(bytes, &support.geometry)?;
+            native_nurbs_curve(bytes, reference)?;
+            if let Some(pcurve) = pcurve {
+                native_nurbs_pcurve_block(bytes, pcurve)?;
+            } else {
+                native_ident(bytes, "nullbs")?;
+            }
+            native_f64(bytes, *parameter);
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            let write_draft = |bytes: &mut Vec<u8>, draft: Vector3| {
+                native_vector(bytes, [draft.x, draft.y, draft.z]);
+            };
+            match taper {
+                cadmpeg_ir::geometry::TaperSurfaceKind::Standard => {}
+                cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense } => {
+                    bytes.push(native_bool(*sense));
+                }
+                cadmpeg_ir::geometry::TaperSurfaceKind::Edge { draft } => {
+                    write_draft(bytes, *draft);
+                }
+                cadmpeg_ir::geometry::TaperSurfaceKind::Shadow {
+                    draft,
+                    sine,
+                    cosine,
+                }
+                | cadmpeg_ir::geometry::TaperSurfaceKind::Swept {
+                    draft,
+                    sine,
+                    cosine,
+                } => {
+                    write_draft(bytes, *draft);
+                    native_f64(bytes, *sine);
+                    native_f64(bytes, *cosine);
+                }
+                cadmpeg_ir::geometry::TaperSurfaceKind::Ruled {
+                    draft,
+                    sine,
+                    cosine,
+                    factor,
+                } => {
+                    write_draft(bytes, *draft);
+                    native_f64(bytes, *sine);
+                    native_f64(bytes, *cosine);
+                    native_f64(bytes, *factor);
+                }
+            }
+            bytes.push(0x10);
+        }
         ProceduralSurfaceDefinition::Ruled { first, second } => {
             let profiles = [first, second]
                 .map(|id| {

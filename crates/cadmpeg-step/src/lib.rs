@@ -993,6 +993,7 @@ impl<'a> Builder<'a> {
             .filter(|procedural| match &procedural.definition {
                 ProceduralSurfaceDefinition::Exact { .. }
                 | ProceduralSurfaceDefinition::Compound { .. }
+                | ProceduralSurfaceDefinition::Taper { .. }
                 | ProceduralSurfaceDefinition::Extrusion { .. }
                 | ProceduralSurfaceDefinition::Revolution { .. }
                 | ProceduralSurfaceDefinition::Sum { .. }

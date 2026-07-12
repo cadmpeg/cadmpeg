@@ -1736,6 +1736,54 @@ fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, name);
+    t_ident(&mut surface, "plane");
+    t_pos(&mut surface, [1.0, -2.0, 3.0]);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    t_vec(&mut surface, [1.0, 0.0, 0.0]);
+    surface.push(0x0b);
+    surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&generated_pcurve_block());
+    t_dbl(&mut surface, 0.35);
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.0075);
+    match name {
+        "ortho_spl_sur" | "orthosur" => surface.push(0x0a),
+        "edge_tpr_spl_sur" => t_vec(&mut surface, [1.0, 2.0, 3.0]),
+        "shadow_tpr_spl_sur" | "shadowtapersur" | "swept_tpr_spl_sur" | "swepttapersur" => {
+            t_vec(&mut surface, [1.0, 2.0, 3.0]);
+            t_dbl(&mut surface, 0.6);
+            t_dbl(&mut surface, 0.8);
+        }
+        "ruled_tpr_spl_sur" | "ruledtapersur" => {
+            t_vec(&mut surface, [1.0, 2.0, 3.0]);
+            t_dbl(&mut surface, 0.6);
+            t_dbl(&mut surface, 0.8);
+            t_dbl(&mut surface, 1.25);
+        }
+        "taper_spl_sur" => {}
+        _ => unreachable!(),
+    }
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn synthetic_rational_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_cyl_spl_sur_smbh();
     let old = generated_surface_block();
@@ -7185,6 +7233,81 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         ProceduralSurfaceDefinition::Compound { ref parameters, ref components }
             if parameters == &[-0.5, 1.5] && components.len() == 2
     ));
+}
+
+#[test]
+fn generated_taper_surface_family_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, TaperSurfaceKind};
+
+    let cases = [
+        ("taper_spl_sur", 0),
+        ("ortho_spl_sur", 1),
+        ("orthosur", 1),
+        ("edge_tpr_spl_sur", 2),
+        ("shadow_tpr_spl_sur", 3),
+        ("shadowtapersur", 3),
+        ("ruled_tpr_spl_sur", 4),
+        ("ruledtapersur", 4),
+        ("swept_tpr_spl_sur", 5),
+        ("swepttapersur", 5),
+    ];
+    for (name, expected_kind) in cases {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_taper_spl_sur_smbh(name))),
+                &DecodeOptions::default(),
+            )
+            .expect("taper surface decode");
+        let ProceduralSurfaceDefinition::Taper {
+            support,
+            reference,
+            pcurve,
+            parameter,
+            taper,
+        } = &result.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected taper surface")
+        };
+        assert_eq!(*parameter, 0.35);
+        assert!(pcurve.is_some());
+        assert!(result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| surface.id == *support));
+        assert!(result
+            .ir
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.id == *reference));
+        let actual_kind = match taper {
+            TaperSurfaceKind::Standard => 0,
+            TaperSurfaceKind::Orthogonal { sense: true } => 1,
+            TaperSurfaceKind::Edge { .. } => 2,
+            TaperSurfaceKind::Shadow { sine, cosine, .. } if (*sine, *cosine) == (0.6, 0.8) => 3,
+            TaperSurfaceKind::Ruled { factor, .. } if *factor == 1.25 => 4,
+            TaperSurfaceKind::Swept { sine, cosine, .. } if (*sine, *cosine) == (0.6, 0.8) => 5,
+            _ => panic!("unexpected taper tail"),
+        };
+        assert_eq!(actual_kind, expected_kind);
+
+        let mut source_less = result.ir;
+        source_less.source = None;
+        source_less.unknowns.clear();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less taper encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("source-less taper round trip");
+        assert!(matches!(
+            round_trip.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::Taper { .. }
+        ));
+    }
 }
 
 #[test]

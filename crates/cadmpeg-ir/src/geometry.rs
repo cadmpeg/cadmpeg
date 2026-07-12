@@ -298,6 +298,20 @@ pub enum ProceduralSurfaceDefinition {
         /// Ordered component surfaces.
         components: Vec<SurfaceId>,
     },
+    /// Taper of a support surface around a reference curve.
+    Taper {
+        /// Base surface being tapered.
+        support: SurfaceId,
+        /// Reference curve on the support.
+        reference: CurveId,
+        /// UV curve on the support, absent for `nullbs`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pcurve: Option<PcurveGeometry>,
+        /// Native taper parameter or draft magnitude.
+        parameter: f64,
+        /// Subtype-specific taper tail.
+        taper: TaperSurfaceKind,
+    },
     /// Translation of a directrix along a direction.
     Extrusion {
         /// Curve swept along `direction` to form the surface.
@@ -397,6 +411,53 @@ pub enum BlendCrossSection {
     Conic,
     /// Free-form polynomial cross-section.
     Polynomial,
+}
+
+/// Subtype-specific tail of a native taper spline surface.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TaperSurfaceKind {
+    /// Standard taper without a subtype-specific tail.
+    Standard,
+    /// Orthogonal taper with a native sense flag.
+    Orthogonal {
+        /// Native orientation sense.
+        sense: bool,
+    },
+    /// Edge taper with a model-space draft vector.
+    Edge {
+        /// Native draft vector.
+        draft: Vector3,
+    },
+    /// Shadow taper with a pre-factored draft angle.
+    Shadow {
+        /// Native draft vector.
+        draft: Vector3,
+        /// Stored draft-angle sine.
+        sine: f64,
+        /// Stored draft-angle cosine.
+        cosine: f64,
+    },
+    /// Ruled taper with a pre-factored angle and factor.
+    Ruled {
+        /// Native draft vector.
+        draft: Vector3,
+        /// Stored draft-angle sine.
+        sine: f64,
+        /// Stored draft-angle cosine.
+        cosine: f64,
+        /// Native ruled-taper factor.
+        factor: f64,
+    },
+    /// Swept taper with a pre-factored draft angle.
+    Swept {
+        /// Native draft vector.
+        draft: Vector3,
+        /// Stored draft-angle sine.
+        sine: f64,
+        /// Stored draft-angle cosine.
+        cosine: f64,
+    },
 }
 
 /// Radius law for a procedural blend.

@@ -696,6 +696,19 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Ordered embedded component surfaces.
         components: Vec<SurfaceGeometry>,
     },
+    /// Native taper family with shared carriers and subtype tail.
+    Taper {
+        /// Embedded base surface.
+        support: SurfaceGeometry,
+        /// Embedded reference curve.
+        reference: NurbsCurve,
+        /// Embedded UV curve, absent for `nullbs`.
+        pcurve: Option<NurbsPcurve>,
+        /// Native taper parameter.
+        parameter: f64,
+        /// Subtype-specific tail.
+        taper: cadmpeg_ir::geometry::TaperSurfaceKind,
+    },
     /// Ruled interpolation between two ordered profile curves.
     Ruled {
         /// First embedded profile.
@@ -756,6 +769,96 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Blend cross-section family.
         cross_section: BlendCrossSection,
     },
+}
+
+fn decode_taper_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    use cadmpeg_ir::geometry::TaperSurfaceKind;
+    let names: &[(&[u8], u8)] = &[
+        (b"taper_spl_sur", 0),
+        (b"ortho_spl_sur", 1),
+        (b"orthosur", 1),
+        (b"edge_tpr_spl_sur", 2),
+        (b"shadow_tpr_spl_sur", 3),
+        (b"shadowtapersur", 3),
+        (b"ruled_tpr_spl_sur", 4),
+        (b"ruledtapersur", 4),
+        (b"swept_tpr_spl_sur", 5),
+        (b"swepttapersur", 5),
+    ];
+    let (start, name_len, kind) = names.iter().find_map(|(name, kind)| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == *name
+            })
+            .map(|start| (start, name.len(), *kind))
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name_len + 3;
+    let support = decode_embedded_surface(span, &mut position, int_width)?;
+    let reference = decode_curve_block(span, position, int_width)?;
+    position = reference.end;
+    let saved = position;
+    let pcurve = if take_native_ident(span, &mut position).as_deref() == Some("nullbs") {
+        None
+    } else {
+        position = saved;
+        let (pcurve, end) = decode_pcurve_block_with_end(span, position, int_width)?;
+        position = end;
+        Some(pcurve)
+    };
+    let parameter = take_f64(span, &mut position)?;
+    let cache = marker_positions(span)
+        .into_iter()
+        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .next_back()?;
+    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
+        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
+        .flatten();
+    position = cache.end + 9;
+    let take_draft = |position: &mut usize| {
+        let draft = take_native_vec3(span, position, 0x14)?;
+        Some(Vector3::new(draft[0], draft[1], draft[2]))
+    };
+    let taper = match kind {
+        0 => TaperSurfaceKind::Standard,
+        1 => TaperSurfaceKind::Orthogonal {
+            sense: take_bool(span, &mut position)?,
+        },
+        2 => TaperSurfaceKind::Edge {
+            draft: take_draft(&mut position)?,
+        },
+        3 => TaperSurfaceKind::Shadow {
+            draft: take_draft(&mut position)?,
+            sine: take_f64(span, &mut position)?,
+            cosine: take_f64(span, &mut position)?,
+        },
+        4 => TaperSurfaceKind::Ruled {
+            draft: take_draft(&mut position)?,
+            sine: take_f64(span, &mut position)?,
+            cosine: take_f64(span, &mut position)?,
+            factor: take_f64(span, &mut position)?,
+        },
+        5 => TaperSurfaceKind::Swept {
+            draft: take_draft(&mut position)?,
+            sine: take_f64(span, &mut position)?,
+            cosine: take_f64(span, &mut position)?,
+        },
+        _ => return None,
+    };
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Taper {
+            support,
+            reference: reference.curve,
+            pcurve,
+            parameter,
+            taper,
+        },
+        cache_fit_tolerance,
+    })
 }
 
 fn decode_comp_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
@@ -1173,6 +1276,7 @@ fn decode_procedural_resolving_refs(
 ) -> Option<DecodedProceduralSurface> {
     if let Some(decoded) = decode_exact_spl_sur(bytes, int_width)
         .or_else(|| decode_comp_spl_sur(bytes, int_width))
+        .or_else(|| decode_taper_spl_sur(bytes, int_width))
         .or_else(|| decode_ruled_spl_sur(bytes, int_width))
         .or_else(|| decode_sum_spl_sur(bytes, int_width))
         .or_else(|| decode_rot_spl_sur(bytes, int_width))

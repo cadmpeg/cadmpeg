@@ -312,6 +312,16 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralSurfaceDefinition::Taper {
+                support, reference, ..
+            } => {
+                if !ids.surfaces.contains(&support.0) {
+                    ref_error(findings, &procedural.id.0, "surface", &support.0);
+                }
+                if !ids.curves.contains(&reference.0) {
+                    ref_error(findings, &procedural.id.0, "curve", &reference.0);
+                }
+            }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 if !ids.curves.contains(&directrix.0) {
