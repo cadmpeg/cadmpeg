@@ -799,6 +799,18 @@ pub(crate) struct EmbeddedRollingBallThirdSide {
     pub(crate) flag: bool,
 }
 
+#[allow(dead_code)] // Populated and mapped by the enclosing variable-blend decoder.
+pub(crate) struct EmbeddedVariableBlendSide {
+    pub(crate) label: String,
+    pub(crate) surface: SurfaceGeometry,
+    pub(crate) curve: NurbsCurve,
+    pub(crate) pcurve: Option<NurbsPcurve>,
+    pub(crate) location: Point3,
+    pub(crate) secondary_pcurve: Option<NurbsPcurve>,
+    pub(crate) scalar: f64,
+    pub(crate) tertiary_pcurve: Option<NurbsPcurve>,
+}
+
 pub(crate) enum EmbeddedRollingBallRadiusSelector {
     None,
     Value(f64),
@@ -1712,6 +1724,37 @@ fn decode_rolling_ball_third_side(
         extension,
         tertiary_pcurve,
         flag,
+    })
+}
+
+#[allow(dead_code)] // Consumed by the enclosing variable-blend decoder.
+fn decode_variable_blend_side(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<EmbeddedVariableBlendSide> {
+    let label = take_native_string(bytes, position)?;
+    let surface = decode_embedded_surface(bytes, position, int_width)?;
+    let curve = decode_curve_block(bytes, *position, int_width)?;
+    *position = curve.end;
+    let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+    let location = take_native_vec3(bytes, position, 0x13)?;
+    let secondary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+    let scalar = take_f64(bytes, position)?;
+    let tertiary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+    Some(EmbeddedVariableBlendSide {
+        label,
+        surface,
+        curve: curve.curve,
+        pcurve,
+        location: Point3::new(
+            location[0] * LEN_TO_MM,
+            location[1] * LEN_TO_MM,
+            location[2] * LEN_TO_MM,
+        ),
+        secondary_pcurve,
+        scalar,
+        tertiary_pcurve,
     })
 }
 
