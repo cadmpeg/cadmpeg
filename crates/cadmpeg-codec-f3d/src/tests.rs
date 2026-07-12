@@ -2124,6 +2124,71 @@ fn synthetic_variable_blend_smbh(name: &str) -> Vec<u8> {
     bytes
 }
 
+fn append_vertex_boundary_common(bytes: &mut Vec<u8>, kind: &str, x: f64) {
+    push_u8_string(bytes, kind);
+    bytes.push(0x0a);
+    t_pos(bytes, [x, 0.0, 0.0]);
+    bytes.push(0x0b);
+    bytes.push(0x0a);
+    t_dbl(bytes, x + 0.25);
+}
+
+fn synthetic_vertex_blend_smbh(name: &str) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, name);
+    t_long(&mut surface, 4);
+
+    append_vertex_boundary_common(&mut surface, "circle", 1.0);
+    surface.extend_from_slice(&generated_curve_block());
+    surface.push(0x15);
+    surface.extend_from_slice(&1i64.to_le_bytes());
+    t_pos(&mut surface, [2.0, 3.0, 4.0]);
+    t_dbl(&mut surface, 0.1);
+    t_dbl(&mut surface, 0.9);
+    surface.push(0x0b);
+
+    append_vertex_boundary_common(&mut surface, "deg", 2.0);
+    t_pos(&mut surface, [5.0, 6.0, 7.0]);
+    t_vec(&mut surface, [1.0, 0.0, 0.0]);
+    t_vec(&mut surface, [0.0, 1.0, 0.0]);
+
+    append_vertex_boundary_common(&mut surface, "pcurve", 3.0);
+    t_ident(&mut surface, "plane");
+    t_pos(&mut surface, [0.0, 0.0, 0.0]);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    t_vec(&mut surface, [1.0, 0.0, 0.0]);
+    surface.push(0x0b);
+    surface.extend_from_slice(&generated_pcurve_block());
+    surface.push(0x0a);
+    t_dbl(&mut surface, 0.002);
+
+    append_vertex_boundary_common(&mut surface, "plane", 4.0);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    t_dbl(&mut surface, -0.5);
+    t_dbl(&mut surface, 1.5);
+    surface.extend_from_slice(&generated_curve_block());
+
+    t_long(&mut surface, 17);
+    t_dbl(&mut surface, 0.003);
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.004);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn synthetic_partial_rb_blend_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_rb_blend_spl_sur_smbh();
     let marker = b"\x0e\x06sphere";
@@ -7874,6 +7939,57 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             panic!("expected round-trip variable blend")
         };
         assert_eq!(actual.as_ref(), expected.as_ref());
+    }
+}
+
+#[test]
+fn generated_vertex_blends_decode_all_boundary_variants() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VertexBlendBoundaryGeometry};
+
+    for name in ["VBL_SURF", "vertexblendsur"] {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_vertex_blend_smbh(name))),
+                &DecodeOptions::default(),
+            )
+            .expect("vertex-blend decode");
+        let ProceduralSurfaceDefinition::VertexBlend { construction } =
+            &result.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected vertex blend")
+        };
+        assert_eq!(construction.boundaries.len(), 4);
+        assert_eq!(construction.grid_size, 17);
+        assert_eq!(construction.fit_tolerance, 0.03);
+        let VertexBlendBoundaryGeometry::Circle {
+            form,
+            twists,
+            parameters,
+            sense,
+            ..
+        } = &construction.boundaries[0].geometry
+        else {
+            panic!("expected circle boundary")
+        };
+        assert_eq!(*form, 1);
+        assert_eq!(twists, &[cadmpeg_ir::math::Point3::new(20.0, 30.0, 40.0)]);
+        assert_eq!(*parameters, [0.1, 0.9]);
+        assert_eq!(*sense, 0);
+        assert!(matches!(
+            construction.boundaries[1].geometry,
+            VertexBlendBoundaryGeometry::Degenerate { .. }
+        ));
+        assert!(matches!(
+            construction.boundaries[2].geometry,
+            VertexBlendBoundaryGeometry::Pcurve {
+                pcurve: Some(_),
+                ..
+            }
+        ));
+        assert!(matches!(
+            construction.boundaries[3].geometry,
+            VertexBlendBoundaryGeometry::Plane { .. }
+        ));
     }
 }
 

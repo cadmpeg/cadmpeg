@@ -23,7 +23,8 @@ use cadmpeg_ir::geometry::{
     BlendSupport, Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
     ProceduralSurface, ProceduralSurfaceDefinition, RollingBallConstruction,
     RollingBallRadiusSelector, RollingBallSide, RollingBallThirdSide, Surface, SurfaceGeometry,
-    VariableBlendConstruction, VariableBlendSide,
+    VariableBlendConstruction, VariableBlendSide, VertexBlendBoundary, VertexBlendBoundaryGeometry,
+    VertexBlendConstruction,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -1290,6 +1291,97 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     post_pcurve: construction
                                         .post_pcurve
                                         .map(embedded_pcurve_geometry),
+                                }),
+                            }
+                        }
+                        nurbs::DecodedProceduralSurfaceDefinition::VertexBlend(construction) => {
+                            let mut boundaries = Vec::with_capacity(construction.boundaries.len());
+                            for (boundary_index, boundary) in
+                                construction.boundaries.into_iter().enumerate()
+                            {
+                                let prefix = format!(
+                                    "f3d:brep:procedural_surface#{i}:vertex_boundary{boundary_index}"
+                                );
+                                let geometry = match boundary.geometry {
+                                    nurbs::EmbeddedVertexBlendBoundaryGeometry::Circle {
+                                        curve,
+                                        form,
+                                        twists,
+                                        parameters,
+                                        sense,
+                                    } => {
+                                        let id = CurveId(format!("{prefix}:curve"));
+                                        out.curves.push(Curve {
+                                            id: id.clone(),
+                                            geometry: CurveGeometry::Nurbs(curve),
+                                            source_object: None,
+                                        });
+                                        VertexBlendBoundaryGeometry::Circle {
+                                            curve: id,
+                                            form,
+                                            twists,
+                                            parameters,
+                                            sense,
+                                        }
+                                    }
+                                    nurbs::EmbeddedVertexBlendBoundaryGeometry::Degenerate {
+                                        location,
+                                        normals,
+                                    } => VertexBlendBoundaryGeometry::Degenerate {
+                                        location,
+                                        normals,
+                                    },
+                                    nurbs::EmbeddedVertexBlendBoundaryGeometry::Pcurve {
+                                        surface,
+                                        pcurve,
+                                        sense,
+                                        fit_tolerance,
+                                    } => {
+                                        let id = SurfaceId(format!("{prefix}:surface"));
+                                        out.surfaces.push(Surface {
+                                            id: id.clone(),
+                                            geometry: surface,
+                                            source_object: None,
+                                        });
+                                        VertexBlendBoundaryGeometry::Pcurve {
+                                            surface: id,
+                                            pcurve: pcurve.map(embedded_pcurve_geometry),
+                                            sense,
+                                            fit_tolerance,
+                                        }
+                                    }
+                                    nurbs::EmbeddedVertexBlendBoundaryGeometry::Plane {
+                                        normal,
+                                        parameters,
+                                        curve,
+                                    } => {
+                                        let id = CurveId(format!("{prefix}:curve"));
+                                        out.curves.push(Curve {
+                                            id: id.clone(),
+                                            geometry: CurveGeometry::Nurbs(curve),
+                                            source_object: None,
+                                        });
+                                        VertexBlendBoundaryGeometry::Plane {
+                                            normal,
+                                            parameters,
+                                            curve: id,
+                                        }
+                                    }
+                                };
+                                boundaries.push(VertexBlendBoundary {
+                                    boundary_type: boundary.boundary_type,
+                                    magic: boundary.magic,
+                                    u_smoothing: boundary.u_smoothing,
+                                    v_smoothing: boundary.v_smoothing,
+                                    fullness: boundary.fullness,
+                                    geometry,
+                                });
+                            }
+                            ProceduralSurfaceDefinition::VertexBlend {
+                                construction: Box::new(VertexBlendConstruction {
+                                    boundaries,
+                                    grid_size: construction.grid_size,
+                                    fit_tolerance: construction.fit_tolerance,
                                 }),
                             }
                         }

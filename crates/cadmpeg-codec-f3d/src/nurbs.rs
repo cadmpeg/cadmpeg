@@ -751,6 +751,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     },
     /// Variable-radius blend with a complete embedded construction graph.
     VariableBlend(Box<EmbeddedVariableBlend>),
+    /// Vertex-blend patch with complete embedded boundary graphs.
+    VertexBlend(Box<EmbeddedVertexBlend>),
 }
 
 pub(crate) struct EmbeddedRollingBallSide {
@@ -809,6 +811,47 @@ pub struct EmbeddedVariableBlend {
     pub(crate) post_range: [f64; 2],
     pub(crate) post_curve: NurbsCurve,
     pub(crate) post_pcurve: Option<NurbsPcurve>,
+}
+
+pub(crate) enum EmbeddedVertexBlendBoundaryGeometry {
+    Circle {
+        curve: NurbsCurve,
+        form: i64,
+        twists: Vec<Point3>,
+        parameters: [f64; 2],
+        sense: i64,
+    },
+    Degenerate {
+        location: Point3,
+        normals: [Vector3; 2],
+    },
+    Pcurve {
+        surface: SurfaceGeometry,
+        pcurve: Option<NurbsPcurve>,
+        sense: i64,
+        fit_tolerance: f64,
+    },
+    Plane {
+        normal: Vector3,
+        parameters: [f64; 2],
+        curve: NurbsCurve,
+    },
+}
+
+pub(crate) struct EmbeddedVertexBlendBoundary {
+    pub(crate) boundary_type: i64,
+    pub(crate) magic: Point3,
+    pub(crate) u_smoothing: i64,
+    pub(crate) v_smoothing: i64,
+    pub(crate) fullness: f64,
+    pub(crate) geometry: EmbeddedVertexBlendBoundaryGeometry,
+}
+
+/// Embedded native vertex blend before stable IR ids are assigned.
+pub struct EmbeddedVertexBlend {
+    pub(crate) boundaries: Vec<EmbeddedVertexBlendBoundary>,
+    pub(crate) grid_size: i64,
+    pub(crate) fit_tolerance: f64,
 }
 
 pub(crate) enum EmbeddedRollingBallRadiusSelector {
@@ -2118,6 +2161,146 @@ fn decode_var_blend_spl_sur(
     })
 }
 
+fn decode_vertex_blend_boundary(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<EmbeddedVertexBlendBoundary> {
+    let kind = take_native_string(bytes, position)?;
+    let boundary_type = i64::from(take_bool(bytes, position)?);
+    let magic = take_native_vec3(bytes, position, 0x13)?;
+    let u_smoothing = i64::from(take_bool(bytes, position)?);
+    let v_smoothing = i64::from(take_bool(bytes, position)?);
+    let fullness = take_f64(bytes, position)?;
+    let geometry = match kind.as_str() {
+        "circle" => {
+            let curve = decode_curve_block(bytes, *position, int_width)?;
+            *position = curve.end;
+            let form = take_tagged_int(bytes, position, 0x15, int_width)?;
+            let twist_count = match form {
+                0 => 0,
+                1 => 1,
+                3 => 2,
+                _ => return None,
+            };
+            let mut twists = Vec::with_capacity(twist_count);
+            for _ in 0..twist_count {
+                let twist = take_native_vec3(bytes, position, 0x13)?;
+                twists.push(Point3::new(
+                    twist[0] * LEN_TO_MM,
+                    twist[1] * LEN_TO_MM,
+                    twist[2] * LEN_TO_MM,
+                ));
+            }
+            let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
+            let sense = i64::from(take_bool(bytes, position)?);
+            EmbeddedVertexBlendBoundaryGeometry::Circle {
+                curve: curve.curve,
+                form,
+                twists,
+                parameters,
+                sense,
+            }
+        }
+        "deg" => {
+            let location = take_native_vec3(bytes, position, 0x13)?;
+            let first = take_native_vec3(bytes, position, 0x14)?;
+            let second = take_native_vec3(bytes, position, 0x14)?;
+            EmbeddedVertexBlendBoundaryGeometry::Degenerate {
+                location: Point3::new(
+                    location[0] * LEN_TO_MM,
+                    location[1] * LEN_TO_MM,
+                    location[2] * LEN_TO_MM,
+                ),
+                normals: [
+                    Vector3::new(first[0], first[1], first[2]),
+                    Vector3::new(second[0], second[1], second[2]),
+                ],
+            }
+        }
+        "pcurve" => {
+            let surface = decode_embedded_surface(bytes, position, int_width)?;
+            let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+            let sense = i64::from(take_bool(bytes, position)?);
+            let fit_tolerance = take_f64(bytes, position)?;
+            EmbeddedVertexBlendBoundaryGeometry::Pcurve {
+                surface,
+                pcurve,
+                sense,
+                fit_tolerance,
+            }
+        }
+        "plane" => {
+            let normal = take_native_vec3(bytes, position, 0x14)?;
+            let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
+            let curve = decode_curve_block(bytes, *position, int_width)?;
+            *position = curve.end;
+            EmbeddedVertexBlendBoundaryGeometry::Plane {
+                normal: Vector3::new(normal[0], normal[1], normal[2]),
+                parameters,
+                curve: curve.curve,
+            }
+        }
+        _ => return None,
+    };
+    Some(EmbeddedVertexBlendBoundary {
+        boundary_type,
+        magic: Point3::new(
+            magic[0] * LEN_TO_MM,
+            magic[1] * LEN_TO_MM,
+            magic[2] * LEN_TO_MM,
+        ),
+        u_smoothing,
+        v_smoothing,
+        fullness,
+        geometry,
+    })
+}
+
+fn decode_vertex_blend_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+) -> Option<DecodedProceduralSurface> {
+    let names: [&[u8]; 2] = [b"VBL_SURF", b"vertexblendsur"];
+    let (start, name_len) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len()))
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name_len + 3;
+    let count = usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
+    if count > 100_000 {
+        return None;
+    }
+    let mut boundaries = Vec::with_capacity(count);
+    for _ in 0..count {
+        boundaries.push(decode_vertex_blend_boundary(
+            span,
+            &mut position,
+            int_width,
+        )?);
+    }
+    let grid_size = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let fit_tolerance = take_f64(span, &mut position)? * LEN_TO_MM;
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::VertexBlend(Box::new(
+            EmbeddedVertexBlend {
+                boundaries,
+                grid_size,
+                fit_tolerance,
+            },
+        )),
+        cache_fit_tolerance: None,
+    })
+}
+
 fn decode_full_rb_blend_spl_sur(
     record_bytes: &[u8],
     int_width: usize,
@@ -2354,6 +2537,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_off_spl_sur(bytes, int_width))
         .or_else(|| decode_cyl_spl_sur_at(bytes, int_width))
         .or_else(|| decode_var_blend_spl_sur(bytes, int_width))
+        .or_else(|| decode_vertex_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_full_rb_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_rb_blend_spl_sur_fallback(bytes, int_width))
     {
