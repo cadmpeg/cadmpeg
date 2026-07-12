@@ -2601,7 +2601,9 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         }
                         nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
                             directrix,
+                            parameter_interval,
                             direction,
+                            native_position,
                         } => {
                             let directrix_id =
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:directrix"));
@@ -2612,7 +2614,9 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             });
                             ProceduralSurfaceDefinition::Extrusion {
                                 directrix: directrix_id,
+                                parameter_interval: Some(parameter_interval),
                                 direction,
+                                native_position: Some(native_position),
                             }
                         }
                         nurbs::DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {

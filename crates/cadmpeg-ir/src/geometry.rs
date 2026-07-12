@@ -366,8 +366,14 @@ pub enum ProceduralSurfaceDefinition {
     Extrusion {
         /// Curve swept along `direction` to form the surface.
         directrix: CurveId,
+        /// Stored directrix parameter interval, when carried by the source.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter_interval: Option<[f64; 2]>,
         /// Length-bearing sweep direction, in document length units.
         direction: Vector3,
+        /// Native model-space position following the sweep direction, when carried.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native_position: Option<Point3>,
     },
     /// Revolution of a directrix about an axis.
     Revolution {

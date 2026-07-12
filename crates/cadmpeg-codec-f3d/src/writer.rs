@@ -3863,13 +3863,21 @@ fn native_procedural_surface(
         }
         ProceduralSurfaceDefinition::Extrusion {
             directrix,
+            parameter_interval,
             direction,
+            native_position,
         } => encode_native_extrusion(
             bytes,
             target,
             procedural,
             directrix,
+            parameter_interval.ok_or_else(|| {
+                CodecError::Malformed("source-less F3D extrusion lacks its native interval".into())
+            })?,
             *direction,
+            native_position.ok_or_else(|| {
+                CodecError::Malformed("source-less F3D extrusion lacks its native position".into())
+            })?,
             solved_cache,
         )?,
         ProceduralSurfaceDefinition::Blend {
@@ -5107,12 +5115,15 @@ fn encode_native_loft(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn encode_native_extrusion(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     directrix: &cadmpeg_ir::ids::CurveId,
+    parameter_interval: [f64; 2],
     direction: Vector3,
+    native_position: cadmpeg_ir::math::Point3,
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
     let directrix = target
@@ -5131,24 +5142,40 @@ fn encode_native_extrusion(
             "source-less cyl_spl_sur requires a NURBS directrix cache".into(),
         ));
     };
-    if [direction.x, direction.y, direction.z]
-        .into_iter()
-        .any(|component| !component.is_finite())
+    if [
+        parameter_interval[0],
+        parameter_interval[1],
+        direction.x,
+        direction.y,
+        direction.z,
+        native_position.x,
+        native_position.y,
+        native_position.z,
+    ]
+    .into_iter()
+    .any(|component| !component.is_finite())
     {
         return Err(CodecError::Malformed(
-            "source-less extrusion direction must be finite".into(),
+            "source-less extrusion fields must be finite".into(),
         ));
     }
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "cyl_spl_sur")?;
-    native_f64(bytes, directrix_cache.knots.first().copied().unwrap_or(0.0));
-    native_f64(bytes, directrix_cache.knots.last().copied().unwrap_or(0.0));
+    native_f64(bytes, parameter_interval[0]);
+    native_f64(bytes, parameter_interval[1]);
     native_vector(
         bytes,
         [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
     );
-    native_point(bytes, [0.0, 0.0, 0.0]);
+    native_point(
+        bytes,
+        [
+            native_position.x / 10.0,
+            native_position.y / 10.0,
+            native_position.z / 10.0,
+        ],
+    );
     native_nurbs_curve(bytes, directrix_cache)?;
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
@@ -10112,13 +10139,24 @@ fn validate_procedural_surface_edits(
             (
                 ProceduralSurfaceDefinition::Extrusion {
                     directrix: before_directrix,
+                    parameter_interval: before_parameter_interval,
                     direction: before_direction,
+                    native_position: before_native_position,
                 },
                 ProceduralSurfaceDefinition::Extrusion {
                     directrix: after_directrix,
+                    parameter_interval: after_parameter_interval,
                     direction: after_direction,
+                    native_position: after_native_position,
                 },
             ) if before_directrix == after_directrix => {
+                if before_parameter_interval != after_parameter_interval
+                    || before_native_position != after_native_position
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "F3D retained extrusion edit changes non-writable interval or native position: {id}"
+                    )));
+                }
                 if !finite_vector(*after_direction) || after_direction.norm() == 0.0 {
                     return Err(CodecError::Malformed(format!(
                         "F3D extrusion direction must be finite and nonzero: {id}"

@@ -274,6 +274,28 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for procedural in &ir.model.procedural_surfaces {
+        if let ProceduralSurfaceDefinition::Extrusion {
+            parameter_interval,
+            direction,
+            native_position,
+            ..
+        } = &procedural.definition
+        {
+            if parameter_interval.is_some_and(|range| !range.iter().all(|value| value.is_finite()))
+                || ![direction.x, direction.y, direction.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                || native_position.is_some_and(|point| {
+                    ![point.x, point.y, point.z].into_iter().all(f64::is_finite)
+                })
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "extrusion interval, direction, or native position is non-finite",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Exact {
             parameter_ranges, ..
         } = &procedural.definition

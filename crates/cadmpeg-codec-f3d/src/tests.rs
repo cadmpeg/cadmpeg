@@ -1738,7 +1738,7 @@ fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
     t_dbl(&mut surface, 0.25);
     t_dbl(&mut surface, 0.75);
     t_vec(&mut surface, [0.0, 0.0, 2.0]);
-    t_pos(&mut surface, [0.0, 0.0, 0.0]);
+    t_pos(&mut surface, [4.0, 5.0, 6.0]);
     surface.extend_from_slice(&generated_curve_block());
     surface.extend_from_slice(&generated_surface_block());
     t_dbl(&mut surface, 0.002);
@@ -4644,6 +4644,8 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
         directrix,
         direction,
+        parameter_interval,
+        native_position,
     } = &actual.definition
     else {
         panic!("expected extrusion definition")
@@ -4655,6 +4657,11 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .iter()
         .any(|curve| curve.id == *directrix));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
+    assert_eq!(*parameter_interval, Some([0.25, 0.75]));
+    assert_eq!(
+        *native_position,
+        Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
+    );
 }
 
 #[test]
@@ -10326,11 +10333,18 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
     let ProceduralSurfaceDefinition::Extrusion {
         direction,
         directrix,
+        parameter_interval,
+        native_position,
     } = &procedural.definition
     else {
         panic!("expected extrusion")
     };
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
+    assert_eq!(*parameter_interval, Some([0.25, 0.75]));
+    assert_eq!(
+        *native_position,
+        Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
+    );
     let directrix = result
         .ir
         .model

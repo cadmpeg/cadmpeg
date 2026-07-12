@@ -749,8 +749,12 @@ pub enum DecodedProceduralSurfaceDefinition {
     Extrusion {
         /// Embedded directrix cache.
         directrix: NurbsCurve,
+        /// Stored directrix parameter interval.
+        parameter_interval: [f64; 2],
         /// Length-bearing sweep direction.
         direction: Vector3,
+        /// Native model-space position following the direction.
+        native_position: Point3,
     },
     /// Rolling-ball blend with embedded support and spine caches.
     Blend {
@@ -3313,24 +3317,13 @@ fn decode_cyl_spl_sur_at(
     let span = subtype_span(record_bytes, start, int_width)?;
     let directrix = decode_curve_cache_at(span, int_width)?;
 
-    let mut doubles = Vec::new();
-    let mut direction = None;
-    let mut pos = name.len() + 3;
-    while pos < span.len() {
-        match span[pos] {
-            0x06 if direction.is_none() => doubles.push(read_f64(span, pos + 1)?),
-            0x14 if direction.is_none() => {
-                direction = Some(Vector3::new(
-                    read_f64(span, pos + 1)? * LEN_TO_MM,
-                    read_f64(span, pos + 9)? * LEN_TO_MM,
-                    read_f64(span, pos + 17)? * LEN_TO_MM,
-                ));
-            }
-            _ => {}
-        }
-        pos = next_token(span, pos, int_width)?;
-    }
-    let _u_range = [*doubles.first()?, *doubles.get(1)?];
+    let mut position = name.len() + 3;
+    let parameter_interval = [
+        take_f64(span, &mut position)?,
+        take_f64(span, &mut position)?,
+    ];
+    let direction = take_native_vec3(span, &mut position, 0x14)?;
+    let native_position = take_native_vec3(span, &mut position, 0x13)?;
     let decoded_cache = marker_positions(span)
         .into_iter()
         .filter_map(|at| decode_surface_block(span, at, int_width))
@@ -3346,7 +3339,17 @@ fn decode_cyl_spl_sur_at(
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Extrusion {
             directrix,
-            direction: direction?,
+            parameter_interval,
+            direction: Vector3::new(
+                direction[0] * LEN_TO_MM,
+                direction[1] * LEN_TO_MM,
+                direction[2] * LEN_TO_MM,
+            ),
+            native_position: Point3::new(
+                native_position[0] * LEN_TO_MM,
+                native_position[1] * LEN_TO_MM,
+                native_position[2] * LEN_TO_MM,
+            ),
         },
         cache_fit_tolerance,
     })

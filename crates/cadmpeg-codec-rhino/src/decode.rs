@@ -1559,7 +1559,9 @@ impl<'a> DecodeContext<'a> {
                 surface: surface_id.clone(),
                 definition: ProceduralSurfaceDefinition::Extrusion {
                     directrix: directrices[index].clone(),
+                    parameter_interval: None,
                     direction: extrusion.direction,
+                    native_position: None,
                 },
                 cache_fit_tolerance: None,
             });
