@@ -101,6 +101,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Vec::new();
     };
+    if namespace.version != native::SLDPRT_NATIVE_VERSION {
+        let version = namespace.version;
+        return vec![Finding {
+            check: Check::Version,
+            severity: Severity::Error,
+            message: format!("unsupported SolidWorks native namespace version {version}"),
+            entity: None,
+        }];
+    }
     let Ok(native) = native::SldprtNative::load(namespace) else {
         return vec![Finding {
             check: Check::NativeLinks,

@@ -19,7 +19,15 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
     let native = ir
         .native
         .namespace("sldprt")
-        .map(SldprtNative::load)
+        .map(|namespace| {
+            if namespace.version != crate::native::SLDPRT_NATIVE_VERSION {
+                let version = namespace.version;
+                return Err(CodecError::Malformed(format!(
+                    "unsupported SLDPRT native namespace version {version}"
+                )));
+            }
+            SldprtNative::load(namespace).map_err(Into::into)
+        })
         .transpose()?;
     let retained_partition = retained_partition(ir);
     let mut normalized = ir.clone();

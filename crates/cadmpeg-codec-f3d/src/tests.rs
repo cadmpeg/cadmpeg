@@ -174,6 +174,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let typed = crate::native::F3dNative::load(original).unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
+    assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
     assert_eq!(round_trip.version, crate::native::F3D_NATIVE_VERSION);
     let expected = [
         "act_entities",

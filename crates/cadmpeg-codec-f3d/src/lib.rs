@@ -105,6 +105,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Vec::new();
     };
+    if namespace.version != native::F3D_NATIVE_VERSION {
+        let version = namespace.version;
+        return vec![Finding {
+            check: Check::Version,
+            severity: Severity::Error,
+            message: format!("unsupported Fusion native namespace version {version}"),
+            entity: None,
+        }];
+    }
     let Ok(native) = native::F3dNative::load(namespace) else {
         return vec![Finding {
             check: Check::NativeLinks,

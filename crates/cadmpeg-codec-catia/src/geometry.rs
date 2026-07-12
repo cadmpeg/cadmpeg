@@ -1051,7 +1051,7 @@ fn axis_from_xy(ax: f32, ay: f32, signed: f32) -> Vector3 {
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
-    f32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]])
+    cadmpeg_ir::le::f32_at(bytes, at).unwrap_or(f32::NAN)
 }
 
 fn face_ref(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
