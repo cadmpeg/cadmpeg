@@ -925,10 +925,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 LossCategory::Metadata,
                 Severity::Info,
-                format!(
-                    "{} uninterpreted passthrough record(s) were not represented in STEP",
-                    unknown_count
-                ),
+                format!("{unknown_count} uninterpreted passthrough record(s) were not represented in STEP"),
             );
         }
         if self.unstyled_colors > 0 {

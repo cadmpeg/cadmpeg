@@ -445,9 +445,11 @@ fn build_geometry_ir(
     ir.model.pcurves = brep.pcurves;
     ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.procedural_curves = brep.procedural_curves;
-    let mut native = F3dNative::default();
-    native.sketch_curve_links = brep.sketch_curve_links;
-    native.persistent_design_links = brep.persistent_design_links;
+    let native = F3dNative {
+        sketch_curve_links: brep.sketch_curve_links,
+        persistent_design_links: brep.persistent_design_links,
+        ..F3dNative::default()
+    };
     ir.model.attributes = brep.attributes;
     ir.set_native_unknowns("f3d", &brep.unknowns)?;
     Ok((ir, native))

@@ -125,7 +125,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         sections.push((section, resolved_feature_payload(lane)?));
     }
     for (section, payload) in opaque_blocks(ir, &active_partition_section, retain_native_brep) {
-        sections.push((section.to_string(), payload.to_vec()));
+        sections.push((section.clone(), payload.clone()));
     }
 
     let type_ids = section_type_ids(ir, &sections)?;

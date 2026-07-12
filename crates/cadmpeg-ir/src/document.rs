@@ -130,10 +130,10 @@ impl CadIr {
         &self,
         format: &str,
     ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
-        self.native
-            .namespace(format)
-            .map(|namespace| namespace.arena_as("unknowns"))
-            .unwrap_or_else(|| Ok(Vec::new()))
+        self.native.namespace(format).map_or_else(
+            || Ok(Vec::new()),
+            |namespace| namespace.arena_as("unknowns"),
+        )
     }
 
     /// Deserialize every reserved native `unknowns` arena.
