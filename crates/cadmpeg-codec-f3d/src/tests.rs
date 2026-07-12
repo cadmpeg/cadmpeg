@@ -8505,6 +8505,10 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
     assert_eq!(graph.records.len(), 3);
     assert_eq!(graph.records[0].kind, "v");
     assert!(graph.unparsed_lines.is_empty());
+    assert_eq!(
+        native.values_graph.as_ref().unwrap().records[0].kind,
+        "100verts"
+    );
 
     let mut source_less = decoded.ir;
     source_less.source = None;
@@ -8552,6 +8556,10 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
     assert_eq!(
         construction.program_graph.as_ref().unwrap().records.len(),
         1
+    );
+    assert_eq!(
+        construction.values_graph.as_ref().unwrap().records[0].kind,
+        "100verts"
     );
 
     let mut source_less = decoded.ir;

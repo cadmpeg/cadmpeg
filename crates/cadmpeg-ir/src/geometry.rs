@@ -487,6 +487,9 @@ pub struct TSplineSurfaceConstruction {
     /// Parsed semantic index of the inline program, absent for references.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub program_graph: Option<TSplineProgram>,
+    /// Parsed semantic index of the companion values program.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub values_graph: Option<TSplineProgram>,
     /// Native trailing integer.
     pub trailing_value: i64,
     /// Six ordered solved-surface discontinuity arrays.

@@ -923,6 +923,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         && !values.is_empty()
                         && construction.program_graph.as_ref()
                             == Some(&crate::geometry::TSplineProgram::parse(program))
+                        && construction.values_graph.as_ref()
+                            == Some(&crate::geometry::TSplineProgram::parse(values))
                 }
                 crate::geometry::TSplineSubtransform::Reference { index, resolved } => {
                     let resolved_program =
@@ -936,6 +938,13 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         && resolved_program.is_some_and(|program| {
                             construction.program_graph.as_ref()
                                 == Some(&crate::geometry::TSplineProgram::parse(program))
+                        })
+                        && resolved.as_deref().is_some_and(|resolved| match resolved {
+                            crate::geometry::TSplineSubtransform::Inline { values, .. } => {
+                                construction.values_graph.as_ref()
+                                    == Some(&crate::geometry::TSplineProgram::parse(values))
+                            }
+                            crate::geometry::TSplineSubtransform::Reference { .. } => false,
                         })
                 }
             };

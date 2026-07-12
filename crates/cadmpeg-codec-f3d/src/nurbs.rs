@@ -2831,6 +2831,12 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
         }
         TSplineSubtransform::Reference { .. } => None,
     };
+    let values_graph = match &subtransform {
+        TSplineSubtransform::Inline { values, .. } => {
+            Some(cadmpeg_ir::geometry::TSplineProgram::parse(values))
+        }
+        TSplineSubtransform::Reference { .. } => None,
+    };
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::TSpline(Box::new(
             TSplineSurfaceConstruction {
@@ -2838,6 +2844,7 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
                 type_code,
                 subtransform,
                 program_graph,
+                values_graph,
                 trailing_value,
                 discontinuities,
                 discontinuity_flag,
@@ -3843,6 +3850,12 @@ fn decode_procedural_resolving_refs(
                 };
                 construction.program_graph =
                     Some(cadmpeg_ir::geometry::TSplineProgram::parse(program));
+                let values = match &inline {
+                    cadmpeg_ir::geometry::TSplineSubtransform::Inline { values, .. } => values,
+                    cadmpeg_ir::geometry::TSplineSubtransform::Reference { .. } => return None,
+                };
+                construction.values_graph =
+                    Some(cadmpeg_ir::geometry::TSplineProgram::parse(values));
                 *resolved = Some(Box::new(inline));
             }
         }
