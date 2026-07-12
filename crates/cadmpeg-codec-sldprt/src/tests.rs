@@ -1372,6 +1372,83 @@ fn encoder_writes_source_less_ir() {
 }
 
 #[test]
+fn encoder_writes_source_less_line_sketches() {
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.model.bodies[0].name = None;
+    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    ir.model
+        .edges
+        .iter_mut()
+        .for_each(|edge| edge.param_range = None);
+    let sketch_id = SketchId("synthetic:test:sketch#profile".into());
+    let points = [
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+        Point2::new(0.0, 10.0),
+    ];
+    let entity_ids = (0..3)
+        .map(|index| SketchEntityId(format!("synthetic:test:sketch-entity#line-{index}")))
+        .collect::<Vec<_>>();
+    for index in 0..3 {
+        ir.model.sketch_entities.push(SketchEntity {
+            id: entity_ids[index].clone(),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: points[index],
+                end: points[(index + 1) % 3],
+            },
+        });
+    }
+    ir.model.sketches.push(Sketch {
+        id: sketch_id,
+        name: Some("Profile".into()),
+        configuration: None,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        profiles: vec![entity_ids
+            .into_iter()
+            .map(|entity| SketchEntityUse {
+                entity,
+                reversed: false,
+            })
+            .collect()],
+        native_ref: None,
+    });
+
+    let mut encoded = Vec::new();
+    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    let scan = container::scan_bytes(&encoded);
+    assert!(scan.blocks.iter().any(|block| {
+        block
+            .section
+            .as_deref()
+            .is_some_and(|section| section == "Contents/Config-0-ResolvedFeatures")
+    }));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.sketches.len(), 1);
+    assert_eq!(decoded.ir.model.sketches[0].profiles[0].len(), 3);
+    assert_eq!(decoded.ir.model.sketch_entities.len(), 3);
+    assert!(decoded
+        .ir
+        .model
+        .sketch_entities
+        .iter()
+        .all(|entity| matches!(entity.geometry, SketchGeometry::Line { .. })));
+}
+
+#[test]
 fn encoder_writes_source_less_native_features() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use std::collections::BTreeMap;

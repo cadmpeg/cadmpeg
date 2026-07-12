@@ -44,7 +44,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
     let ir = &normalized;
-    crate::resolved_features::prepare_sketches_for_write(ir, native.as_mut())?;
+    crate::resolved_features::prepare_sketches_for_write(ir, &mut native)?;
     crate::history::prepare_features_for_write(ir, &mut native)?;
     crate::history::prepare_parameters_for_write(ir, &mut native)?;
     crate::history::prepare_configurations_for_write(ir, &mut native)?;
@@ -875,7 +875,11 @@ fn material_payload(name: &str, color: Color) -> Vec<u8> {
     out
 }
 
-fn brep_body(ir: &CadIr, length_scale: f64, schema_32001: bool) -> Result<Vec<u8>, CodecError> {
+pub(crate) fn brep_body(
+    ir: &CadIr,
+    length_scale: f64,
+    schema_32001: bool,
+) -> Result<Vec<u8>, CodecError> {
     let mut next = 2u16;
     let surfaces = ir
         .model
@@ -1682,7 +1686,7 @@ fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, values: &[f64]) {
         bef64(out, *value);
     }
 }
-fn parasolid_stream(body: &[u8], schema: &str) -> Vec<u8> {
+pub(crate) fn parasolid_stream(body: &[u8], schema: &str) -> Vec<u8> {
     let description = b"partition body";
     let schema = schema.as_bytes();
     let mut out = b"PS\0\0".to_vec();

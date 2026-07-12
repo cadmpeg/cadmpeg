@@ -3,12 +3,18 @@
 
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
+    VertexId,
+};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
 };
-use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::Exactness;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -416,7 +422,7 @@ fn hash_debug<T: std::fmt::Debug + ?Sized>(value: &T) -> String {
 /// Reject unsupported neutral sketch edits before native lane replay.
 pub fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
-    native: Option<&mut crate::native::SldprtNative>,
+    native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), cadmpeg_ir::codec::CodecError> {
     let baseline_neutral = ir
         .source
@@ -427,7 +433,7 @@ pub fn prepare_sketches_for_write(
         .as_ref()
         .and_then(|source| source.attributes.get("sldprt_native_sketch_sha256"));
     let current_neutral = sketch_hash(ir);
-    let current_native = native.as_deref().map(lane_hash);
+    let current_native = native.as_ref().map(lane_hash);
     if baseline_neutral.is_none() && baseline_native.is_none() {
         if ir.model.sketches.is_empty()
             && ir.model.sketch_entities.is_empty()
@@ -435,9 +441,12 @@ pub fn prepare_sketches_for_write(
         {
             return Ok(());
         }
-        return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
-            "source-less SLDPRT sketch serialization is not implemented".into(),
-        ));
+        let generated = source_less_lanes(ir)?;
+        native
+            .get_or_insert_with(crate::native::SldprtNative::default)
+            .feature_input_lanes
+            .extend(generated);
+        return Ok(());
     }
     let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &current_neutral);
     if !neutral_changed {
@@ -455,12 +464,244 @@ pub fn prepare_sketches_for_write(
     }
     patch_line_profiles(
         ir,
-        native.ok_or_else(|| {
+        native.as_mut().ok_or_else(|| {
             cadmpeg_ir::codec::CodecError::NotImplemented(
                 "SLDPRT sketch write-back requires retained feature-input lanes".into(),
             )
         })?,
     )
+}
+
+fn source_less_lanes(
+    ir: &cadmpeg_ir::CadIr,
+) -> Result<Vec<FeatureInputLane>, cadmpeg_ir::codec::CodecError> {
+    let mut lanes = Vec::<FeatureInputLane>::new();
+    for sketch in &ir.model.sketches {
+        let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());
+        let section = format!("Contents/Config-{configuration}-ResolvedFeatures");
+        let lane = if let Some(lane) = lanes
+            .iter_mut()
+            .find(|lane| lane.configuration.as_deref() == Some(configuration.as_str()))
+        {
+            lane
+        } else {
+            lanes.push(FeatureInputLane {
+                id: section,
+                configuration: Some(configuration.clone()),
+                native_payload: Vec::new(),
+                sketch_entities: Vec::new(),
+            });
+            lanes.last_mut().expect("lane was inserted")
+        };
+        let sketch_ir = sketch_brep(ir, sketch)?;
+        let body = crate::writer::brep_body(&sketch_ir, 0.001, false)?;
+        lane.native_payload
+            .extend(crate::writer::parasolid_stream(&body, "SCH_SW_33103_11000"));
+    }
+    Ok(lanes)
+}
+
+fn sketch_brep(
+    source: &cadmpeg_ir::CadIr,
+    sketch: &Sketch,
+) -> Result<cadmpeg_ir::CadIr, cadmpeg_ir::codec::CodecError> {
+    let mut ir = cadmpeg_ir::CadIr::empty(source.units.clone());
+    let prefix = format!("generated:sldprt:sketch:{}", sketch.id.0);
+    let body_id = BodyId(format!("{prefix}:body"));
+    let region_id = RegionId(format!("{prefix}:region"));
+    let shell_id = ShellId(format!("{prefix}:shell"));
+    let face_id = FaceId(format!("{prefix}:face"));
+    let surface_id = SurfaceId(format!("{prefix}:surface"));
+    let v_axis = cross(sketch.normal, sketch.u_axis);
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: sketch.origin,
+            normal: sketch.normal,
+            u_axis: sketch.u_axis,
+        },
+        source_object: None,
+    });
+    let entities = source
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id)
+        .map(|entity| (entity.id.clone(), entity))
+        .collect::<HashMap<_, _>>();
+    let mut face_loops = Vec::new();
+    let mut vertex_by_position = HashMap::<(u64, u64), VertexId>::new();
+    for (profile_index, profile) in sketch.profiles.iter().enumerate() {
+        if profile.is_empty() {
+            continue;
+        }
+        let loop_id = LoopId(format!("{prefix}:loop:{profile_index}"));
+        face_loops.push(loop_id.clone());
+        let mut coedge_ids = Vec::new();
+        for (use_index, entity_use) in profile.iter().enumerate() {
+            let entity = entities.get(&entity_use.entity).ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "sketch {} references missing entity {}",
+                    sketch.id.0, entity_use.entity.0
+                ))
+            })?;
+            let SketchGeometry::Line { start, end } = entity.geometry else {
+                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                    "source-less SLDPRT sketch {} contains non-line entity {}",
+                    sketch.id.0, entity.id.0
+                )));
+            };
+            let start_vertex = sketch_vertex(
+                &mut ir,
+                &mut vertex_by_position,
+                &prefix,
+                start,
+                sketch,
+                v_axis,
+            );
+            let end_vertex = sketch_vertex(
+                &mut ir,
+                &mut vertex_by_position,
+                &prefix,
+                end,
+                sketch,
+                v_axis,
+            );
+            let start_3d = lift_point(start, sketch.origin, sketch.u_axis, v_axis);
+            let end_3d = lift_point(end, sketch.origin, sketch.u_axis, v_axis);
+            let delta = Vector3::new(
+                end_3d.x - start_3d.x,
+                end_3d.y - start_3d.y,
+                end_3d.z - start_3d.z,
+            );
+            let length = (dot(delta, delta)).sqrt();
+            if length == 0.0 {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "sketch entity {} has zero length",
+                    entity.id.0
+                )));
+            }
+            let curve_id = CurveId(format!("{prefix}:curve:{profile_index}:{use_index}"));
+            let edge_id = EdgeId(format!("{prefix}:edge:{profile_index}:{use_index}"));
+            let coedge_id = CoedgeId(format!("{prefix}:coedge:{profile_index}:{use_index}"));
+            ir.model.curves.push(Curve {
+                id: curve_id.clone(),
+                geometry: CurveGeometry::Line {
+                    origin: start_3d,
+                    direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+                },
+                source_object: None,
+            });
+            ir.model.edges.push(Edge {
+                id: edge_id.clone(),
+                curve: Some(curve_id),
+                start: start_vertex,
+                end: end_vertex,
+                param_range: Some([0.0, length]),
+                tolerance: None,
+            });
+            coedge_ids.push(coedge_id.clone());
+            ir.model.coedges.push(Coedge {
+                id: coedge_id.clone(),
+                owner_loop: loop_id.clone(),
+                edge: edge_id,
+                next: coedge_id.clone(),
+                previous: coedge_id.clone(),
+                radial_next: coedge_id,
+                sense: if entity_use.reversed {
+                    Sense::Reversed
+                } else {
+                    Sense::Forward
+                },
+                pcurve: None,
+            });
+        }
+        let count = coedge_ids.len();
+        for (index, coedge) in ir
+            .model
+            .coedges
+            .iter_mut()
+            .rev()
+            .take(count)
+            .rev()
+            .enumerate()
+        {
+            coedge.next = coedge_ids[(index + 1) % count].clone();
+            coedge.previous = coedge_ids[(index + count - 1) % count].clone();
+        }
+        ir.model.loops.push(Loop {
+            id: loop_id,
+            face: face_id.clone(),
+            coedges: coedge_ids,
+        });
+    }
+    if face_loops.is_empty() {
+        return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT sketch {} has no profiles",
+            sketch.id.0
+        )));
+    }
+    ir.model.faces.push(Face {
+        id: face_id.clone(),
+        shell: shell_id.clone(),
+        surface: surface_id,
+        sense: Sense::Forward,
+        loops: face_loops,
+        name: sketch.name.clone(),
+        color: None,
+        tolerance: None,
+    });
+    ir.model.shells.push(Shell {
+        id: shell_id.clone(),
+        region: region_id.clone(),
+        faces: vec![face_id],
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    });
+    ir.model.regions.push(Region {
+        id: region_id.clone(),
+        body: body_id.clone(),
+        shells: vec![shell_id],
+    });
+    ir.model.bodies.push(Body {
+        id: body_id,
+        kind: BodyKind::Sheet,
+        regions: vec![region_id],
+        transform: None,
+        name: sketch.name.clone(),
+        color: None,
+        visible: None,
+    });
+    ir.model.finalize();
+    Ok(ir)
+}
+
+fn sketch_vertex(
+    ir: &mut cadmpeg_ir::CadIr,
+    vertices: &mut HashMap<(u64, u64), VertexId>,
+    prefix: &str,
+    position: Point2,
+    sketch: &Sketch,
+    v_axis: Vector3,
+) -> VertexId {
+    let key = (position.u.to_bits(), position.v.to_bits());
+    if let Some(id) = vertices.get(&key) {
+        return id.clone();
+    }
+    let ordinal = vertices.len();
+    let point_id = PointId(format!("{prefix}:point:{ordinal}"));
+    let vertex_id = VertexId(format!("{prefix}:vertex:{ordinal}"));
+    ir.model.points.push(Point {
+        id: point_id.clone(),
+        position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+    });
+    ir.model.vertices.push(Vertex {
+        id: vertex_id.clone(),
+        point: point_id,
+        tolerance: None,
+    });
+    vertices.insert(key, vertex_id.clone());
+    vertex_id
 }
 
 fn patch_line_profiles(
