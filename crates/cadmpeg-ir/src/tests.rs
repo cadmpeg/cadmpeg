@@ -1066,3 +1066,110 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
         "OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020"
     );
 }
+
+#[test]
+fn rational_quadratic_arc_evaluates_on_the_circle() {
+    // Quarter circle of radius 5 as a rational quadratic Bezier.
+    let weight = 0.5_f64.sqrt();
+    let point = crate::eval::nurbs_curve_point(
+        2,
+        &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        &[
+            Point3::new(5.0, 0.0, 0.0),
+            Point3::new(5.0, 5.0, 0.0),
+            Point3::new(0.0, 5.0, 0.0),
+        ],
+        Some(&[1.0, weight, 1.0]),
+        0.5,
+    )
+    .unwrap();
+    let radius = (point.x * point.x + point.y * point.y).sqrt();
+    assert!((radius - 5.0).abs() < 1e-12, "mid-span radius {radius}");
+}
+
+#[test]
+fn edge_endpoint_mismatch_is_flagged() {
+    let mut ir = unit_cube();
+    let report = validate(&ir, Vec::new());
+    assert!(
+        !report
+            .findings
+            .iter()
+            .any(|f| f.check == Check::GeometricConsistency),
+        "worked cube must be geometrically consistent, got: {:?}",
+        report.findings
+    );
+
+    // Displace one corner: the point no longer lies on its edges' curves at
+    // the stored parameter values.
+    ir.model.points[0].position.z += 1.0;
+    let report = validate(&ir, Vec::new());
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|f| f.check == Check::GeometricConsistency
+                && f.severity == Severity::Error
+                && f.entity.as_deref().is_some_and(|e| e.contains("edge"))),
+        "displaced vertex must fail edge endpoint consistency, got: {:?}",
+        report.findings
+    );
+}
+
+#[test]
+fn pcurve_surface_mismatch_is_flagged() {
+    // The bottom face's plane is `origin (0,0,0), normal (0,0,-1)`, whose
+    // derived u/v frame maps `(u, v) -> (u, -v, 0)`. Edge #0 runs from
+    // `(0,0,0)` to `(10,0,0)`, so its parameter image is the line
+    // `(0,0) -> (10,0)`.
+    let good = |u_end: f64, v_end: f64| {
+        let mut ir = unit_cube();
+        ir.model.pcurves.push(crate::geometry::Pcurve {
+            id: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
+            geometry: crate::geometry::PcurveGeometry::Nurbs {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![
+                    crate::math::Point2::new(0.0, 0.0),
+                    crate::math::Point2::new(u_end, v_end),
+                ],
+                weights: None,
+                periodic: false,
+            },
+            wrapper_reversed: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        });
+        let coedge = ir
+            .model
+            .coedges
+            .iter_mut()
+            .find(|coedge| {
+                coedge.id.0.contains("bottom") && coedge.edge.0 == "synthetic:cube:edge#0"
+            })
+            .expect("bottom face uses edge #0");
+        coedge.pcurve = Some(crate::ids::PcurveId("synthetic:cube:pcurve#0".into()));
+        validate(&ir, Vec::new())
+    };
+
+    let consistent = good(10.0, 0.0);
+    assert!(
+        !consistent
+            .findings
+            .iter()
+            .any(|f| f.check == Check::GeometricConsistency),
+        "matching pcurve must validate, got: {:?}",
+        consistent.findings
+    );
+
+    let inconsistent = good(10.0, 5.0);
+    assert!(
+        inconsistent
+            .findings
+            .iter()
+            .any(|f| f.check == Check::GeometricConsistency
+                && f.entity.as_deref().is_some_and(|e| e.contains("coedge"))),
+        "off-surface-image pcurve must be flagged, got: {:?}",
+        inconsistent.findings
+    );
+}

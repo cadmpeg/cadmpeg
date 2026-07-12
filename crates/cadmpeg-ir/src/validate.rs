@@ -3,8 +3,10 @@
 //!
 //! Validation checks schema version, identity and arena order, references,
 //! topology rings, carrier reachability, annotations, native links, parameter
-//! domains, payload integrity, tessellation, and numeric bounds. It does not
-//! evaluate geometric coincidence, surface membership, or solid closure.
+//! domains, payload integrity, tessellation, numeric bounds, and geometric
+//! consistency (edge-curve endpoints and pcurve surface images against vertex
+//! positions). It does not evaluate interior surface membership or solid
+//! closure.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -25,6 +27,7 @@ use sha2::{Digest, Sha256};
 
 mod annotations_native;
 mod carriers_parameterization;
+mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
 mod subd;
@@ -35,6 +38,7 @@ use annotations_native::{
     check_native_links,
 };
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
+use geometry_consistency::{check_edge_endpoint_consistency, check_pcurve_surface_consistency};
 use geometry_payloads::{check_bounds, check_tessellations, check_unknown_payloads};
 use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
@@ -67,6 +71,8 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_annotations(ir, &all_ids, &mut findings);
     check_native_links(ir, &all_ids, &mut findings);
     check_parameter_domains(ir, &mut findings);
+    check_edge_endpoint_consistency(ir, &mut findings);
+    check_pcurve_surface_consistency(ir, &mut findings);
     check_bounds(ir, &mut findings);
     check_tessellations(ir, &mut findings);
     check_subds(ir, &mut findings);

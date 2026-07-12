@@ -19,9 +19,10 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::design::{PersistentDesignLink, SketchCurveLink};
+use cadmpeg_ir::eval;
 use cadmpeg_ir::geometry::{
-    BlendSupport, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
-    ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    BlendSupport, Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     AttributeId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId,
@@ -340,118 +341,6 @@ fn deterministic_ref_direction(axis: Vector3) -> Vector3 {
 /// that surface's parameter-space image.
 const PCURVE_ENDPOINT_TOLERANCE_MM: f64 = 0.01;
 
-/// Knot span index of `t` for a clamped B-spline basis.
-fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<usize> {
-    if knots.len() < count + degree + 1 || count <= degree {
-        return None;
-    }
-    if t >= knots[count] {
-        return Some(count - 1);
-    }
-    if t <= knots[degree] {
-        return Some(degree);
-    }
-    let mut lo = degree;
-    let mut hi = count;
-    while lo < hi {
-        let mid = usize::midpoint(lo, hi);
-        if t < knots[mid] {
-            hi = mid;
-        } else if t >= knots[mid + 1] {
-            lo = mid + 1;
-        } else {
-            return Some(mid);
-        }
-    }
-    Some(lo)
-}
-
-/// Non-zero basis function values at `t` for the given span (Cox–de Boor).
-fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
-    let mut values = vec![1.0];
-    let mut left = vec![0.0; degree + 1];
-    let mut right = vec![0.0; degree + 1];
-    for j in 1..=degree {
-        left[j] = t - knots[span + 1 - j];
-        right[j] = knots[span + j] - t;
-        let mut saved = 0.0;
-        let mut next = vec![0.0; j + 1];
-        for (r, &value) in values.iter().enumerate().take(j) {
-            let denominator = right[r + 1] + left[j - r];
-            let factor = if denominator == 0.0 {
-                0.0
-            } else {
-                value / denominator
-            };
-            next[r] = saved + right[r + 1] * factor;
-            saved = left[j - r] * factor;
-        }
-        next[j] = saved;
-        values = next;
-    }
-    values
-}
-
-/// Evaluate a 2D pcurve at parameter `t`.
-fn pcurve_uv_at(pcurve: &nurbs::NurbsPcurve, t: f64) -> Option<[f64; 2]> {
-    let degree = pcurve.degree as usize;
-    let count = pcurve.control_points.len();
-    let span = bspline_span(&pcurve.knots, degree, count, t)?;
-    let basis = bspline_basis(&pcurve.knots, degree, span, t);
-    let mut u = 0.0;
-    let mut v = 0.0;
-    let mut weight_sum = 0.0;
-    for (i, value) in basis.iter().enumerate() {
-        let index = span - degree + i;
-        let weight = pcurve
-            .weights
-            .as_ref()
-            .and_then(|weights| weights.get(index).copied())
-            .unwrap_or(1.0);
-        let pole = pcurve.control_points.get(index)?;
-        u += value * weight * pole.u;
-        v += value * weight * pole.v;
-        weight_sum += value * weight;
-    }
-    (weight_sum != 0.0).then(|| [u / weight_sum, v / weight_sum])
-}
-
-/// Evaluate a NURBS surface at `(u, v)`.
-fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Option<Point3> {
-    let u_degree = surface.u_degree as usize;
-    let v_degree = surface.v_degree as usize;
-    let u_count = surface.u_count as usize;
-    let v_count = surface.v_count as usize;
-    if surface.control_points.len() != u_count * v_count {
-        return None;
-    }
-    let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
-    let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
-    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at);
-    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at);
-    let mut x = 0.0;
-    let mut y = 0.0;
-    let mut z = 0.0;
-    let mut weight_sum = 0.0;
-    for (i, u_value) in u_basis.iter().enumerate() {
-        for (j, v_value) in v_basis.iter().enumerate() {
-            let index = (u_span - u_degree + i) * v_count + (v_span - v_degree + j);
-            let weight = surface
-                .weights
-                .as_ref()
-                .and_then(|weights| weights.get(index).copied())
-                .unwrap_or(1.0);
-            let factor = u_value * v_value * weight;
-            let pole = surface.control_points.get(index)?;
-            x += factor * pole.x;
-            y += factor * pole.y;
-            z += factor * pole.z;
-            weight_sum += factor;
-        }
-    }
-    (weight_sum != 0.0).then(|| Point3::new(x / weight_sum, y / weight_sum, z / weight_sum))
-}
-
 /// The millimeter-space position of an edge-record vertex reference.
 fn vertex_position(by_index: &HashMap<i64, &Record>, vertex: i64) -> Option<Point3> {
     let vertex_record = by_index.get(&vertex).filter(|r| r.head == "vertex")?;
@@ -494,15 +383,21 @@ fn select_face_pcurve(
         let (Some(&t0), Some(&t1)) = (candidate.knots.first(), candidate.knots.last()) else {
             continue;
         };
-        let Some([u0, v0]) = pcurve_uv_at(&candidate, t0) else {
-            continue;
+        let uv_at = |t: f64| {
+            eval::nurbs_pcurve_uv(
+                candidate.degree,
+                &candidate.knots,
+                &candidate.control_points,
+                candidate.weights.as_deref(),
+                t,
+            )
         };
-        let Some([u1, v1]) = pcurve_uv_at(&candidate, t1) else {
+        let (Some(uv0), Some(uv1)) = (uv_at(t0), uv_at(t1)) else {
             continue;
         };
         let (Some(p0), Some(p1)) = (
-            nurbs_surface_point(surface, u0, v0),
-            nurbs_surface_point(surface, u1, v1),
+            eval::nurbs_surface_point(surface, uv0.u, uv0.v),
+            eval::nurbs_surface_point(surface, uv1.u, uv1.v),
         ) else {
             continue;
         };

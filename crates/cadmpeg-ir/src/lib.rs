@@ -34,6 +34,7 @@ pub mod codec;
 pub mod design;
 pub mod diff;
 pub mod document;
+pub mod eval;
 pub mod examples;
 pub mod features;
 pub mod geometry;

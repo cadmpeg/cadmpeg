@@ -149,6 +149,10 @@ pub enum Check {
     Units,
     /// A geometric quantity is out of sane range (e.g. negative radius).
     Bounds,
+    /// Evaluated carrier geometry disagrees with the topology it supports:
+    /// an edge's curve endpoints or a pcurve's surface image miss the edge's
+    /// vertex positions.
+    GeometricConsistency,
     /// Arena counts / cross-references are internally inconsistent.
     Counts,
 }
@@ -172,6 +176,7 @@ impl fmt::Display for Check {
             Self::Tessellation => "tessellation",
             Self::Units => "units",
             Self::Bounds => "bounds",
+            Self::GeometricConsistency => "geometric_consistency",
             Self::Counts => "counts",
         })
     }
