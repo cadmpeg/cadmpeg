@@ -695,6 +695,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     Net(Box<EmbeddedNetSurface>),
     /// Native sweep surface graph with embedded carriers.
     Sweep(Box<EmbeddedSweepSurface>),
+    /// Native T-spline wrapper and subtransform program.
+    TSpline(Box<cadmpeg_ir::geometry::TSplineSurfaceConstruction>),
     /// Native G2 blend construction with embedded carriers.
     G2Blend(Box<EmbeddedG2Blend>),
     /// Ruled interpolation between two ordered profile curves.
@@ -2757,6 +2759,86 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     })
 }
 
+fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    use cadmpeg_ir::geometry::{TSplineSubtransform, TSplineSurfaceConstruction};
+
+    let name = b"t_spl_sur";
+    let start = record_bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name.len() + 3;
+    let cache = decode_surface_block(span, position, int_width)?;
+    position = cache.end;
+    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let discontinuities = [
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+    ];
+    let discontinuity_flag = take_bool(span, &mut position)?;
+    let parameter_ranges = [
+        [
+            take_f64(span, &mut position)? * LEN_TO_MM,
+            take_f64(span, &mut position)? * LEN_TO_MM,
+        ],
+        [
+            take_f64(span, &mut position)? * LEN_TO_MM,
+            take_f64(span, &mut position)? * LEN_TO_MM,
+        ],
+    ];
+    let type_code = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    if span.get(position) != Some(&0x0f) {
+        return None;
+    }
+    position += 1;
+    let source_kind = take_native_ident(span, &mut position)?;
+    let subtransform = match source_kind.as_str() {
+        "t_spl_subtrans_object" => {
+            let program = take_native_string(span, &mut position)?;
+            let separator = if span.get(position) == Some(&0x08) {
+                None
+            } else {
+                Some(take_bool(span, &mut position)?)
+            };
+            let values = take_native_string(span, &mut position)?;
+            TSplineSubtransform::Inline {
+                program,
+                separator,
+                values,
+            }
+        }
+        "ref" => TSplineSubtransform::Reference {
+            index: take_tagged_int(span, &mut position, 0x04, int_width)?,
+        },
+        _ => return None,
+    };
+    if span.get(position) != Some(&0x10) {
+        return None;
+    }
+    position += 1;
+    let trailing_value = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::TSpline(Box::new(
+            TSplineSurfaceConstruction {
+                parameter_ranges,
+                type_code,
+                subtransform,
+                trailing_value,
+                discontinuities,
+                discontinuity_flag,
+            },
+        )),
+        cache_fit_tolerance,
+    })
+}
+
 /// Decode an inline `cyl_spl_sur` translational-extrusion definition.
 pub fn decode_cyl_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurface> {
     INT_WIDTHS
@@ -3657,7 +3739,8 @@ fn decode_procedural_resolving_refs(
     seen: &mut Vec<usize>,
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
-    if let Some(decoded) = decode_exact_spl_sur(bytes, int_width)
+    if let Some(decoded) = decode_t_spl_sur(bytes, int_width)
+        .or_else(|| decode_exact_spl_sur(bytes, int_width))
         .or_else(|| decode_comp_spl_sur(bytes, int_width))
         .or_else(|| decode_taper_spl_sur(bytes, int_width))
         .or_else(|| decode_loft_spl_sur(bytes, int_width))

@@ -908,6 +908,27 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::TSpline { construction } = &procedural.definition {
+            let ranges_valid = construction
+                .parameter_ranges
+                .iter()
+                .flatten()
+                .chain(construction.discontinuities.iter().flatten())
+                .all(|value| value.is_finite());
+            let source_valid = match &construction.subtransform {
+                crate::geometry::TSplineSubtransform::Inline {
+                    program, values, ..
+                } => !program.is_empty() && !values.is_empty(),
+                crate::geometry::TSplineSubtransform::Reference { index } => *index >= 0,
+            };
+            if !ranges_valid || !source_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "T-spline surface construction payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::G2Blend { construction } = &procedural.definition {
             let direction_finite = |direction: &Vector3| {
                 direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()

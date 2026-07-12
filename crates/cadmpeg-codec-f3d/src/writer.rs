@@ -3206,6 +3206,48 @@ fn native_procedural_surface(
         return Ok(false);
     };
     match &procedural.definition {
+        ProceduralSurfaceDefinition::TSpline { construction } => {
+            use cadmpeg_ir::geometry::TSplineSubtransform;
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "t_spl_sur")?;
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            for values in &construction.discontinuities {
+                native_compound_loft_float_array(bytes, values)?;
+            }
+            bytes.push(native_bool(construction.discontinuity_flag));
+            for range in &construction.parameter_ranges {
+                for value in range {
+                    native_f64(bytes, *value / 10.0);
+                }
+            }
+            native_i64(bytes, construction.type_code);
+            bytes.push(0x0f);
+            match &construction.subtransform {
+                TSplineSubtransform::Inline {
+                    program,
+                    separator,
+                    values,
+                } => {
+                    native_ident(bytes, "t_spl_subtrans_object")?;
+                    native_u16_string(bytes, program)?;
+                    if let Some(separator) = separator {
+                        bytes.push(native_bool(*separator));
+                    }
+                    native_u16_string(bytes, values)?;
+                }
+                TSplineSubtransform::Reference { .. } => {
+                    return Err(CodecError::NotImplemented(
+                        "source-less referenced t_spl_subtrans_object requires shared subtype-table emission"
+                            .into(),
+                    ));
+                }
+            }
+            bytes.push(0x10);
+            native_i64(bytes, construction.trailing_value);
+            bytes.push(0x10);
+        }
         ProceduralSurfaceDefinition::Exact {
             parameter_ranges,
             extension,
@@ -6301,6 +6343,15 @@ fn native_nurbs_knots(bytes: &mut Vec<u8>, knots: &[f64]) -> Result<(), CodecErr
 
 fn native_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     native_text(bytes, 0x07, value)
+}
+
+fn native_u16_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+    let length = u16::try_from(value.len())
+        .map_err(|_| CodecError::NotImplemented("F3D native text exceeds u16".into()))?;
+    bytes.push(0x08);
+    bytes.extend_from_slice(&length.to_le_bytes());
+    bytes.extend_from_slice(value.as_bytes());
+    Ok(())
 }
 
 fn native_text(bytes: &mut Vec<u8>, tag: u8, value: &str) -> Result<(), CodecError> {

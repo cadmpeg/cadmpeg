@@ -105,6 +105,11 @@ fn t_ident(b: &mut Vec<u8>, s: &str) {
     b.push(s.len() as u8);
     b.extend_from_slice(s.as_bytes());
 }
+fn t_u16_string(b: &mut Vec<u8>, value: &str) {
+    b.push(0x08);
+    b.extend_from_slice(&u16::try_from(value.len()).unwrap().to_le_bytes());
+    b.extend_from_slice(value.as_bytes());
+}
 
 fn renamed_generated_subtype(mut bytes: Vec<u8>, old: &str, new: &str) -> Vec<u8> {
     let old = old.as_bytes();
@@ -2062,6 +2067,46 @@ fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
         append_generated_float_array(&mut surface, values);
     }
     surface.push(0x0a);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
+fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "t_spl_sur");
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.004);
+    for values in [&[0.25][..], &[][..], &[][..], &[][..], &[][..], &[][..]] {
+        append_generated_float_array(&mut surface, values);
+    }
+    surface.push(0x0a);
+    for value in [-2.0, 3.0, -4.0, 5.0] {
+        t_dbl(&mut surface, value);
+    }
+    t_long(&mut surface, 7);
+    surface.push(0x0f);
+    t_ident(&mut surface, "t_spl_subtrans_object");
+    t_u16_string(
+        &mut surface,
+        "degree 3\nunits mm\nv 1 0 0 0\nv 2 1 0 0\ne 1 1 2\n",
+    );
+    surface.push(0x0b);
+    t_u16_string(&mut surface, "100verts 1 2\n");
+    surface.push(0x10);
+    t_long(&mut surface, 9);
     surface.push(0x10);
     t_end(&mut surface);
     bytes.splice(old.offset..old.offset + old.len, surface);
@@ -8360,6 +8405,56 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
             ..
         }
     ));
+}
+
+#[test]
+fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, TSplineSubtransform, TSplineSurfaceConstruction,
+    };
+
+    fn construction(definition: &ProceduralSurfaceDefinition) -> &TSplineSurfaceConstruction {
+        let ProceduralSurfaceDefinition::TSpline { construction } = definition else {
+            panic!("expected T-spline surface")
+        };
+        construction
+    }
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_t_spl_sur_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("T-spline surface decode");
+    let native = construction(&decoded.ir.model.procedural_surfaces[0].definition).clone();
+    assert_eq!(native.parameter_ranges, [[-20.0, 30.0], [-40.0, 50.0]]);
+    assert_eq!((native.type_code, native.trailing_value), (7, 9));
+    let TSplineSubtransform::Inline {
+        program,
+        separator,
+        values,
+    } = &native.subtransform
+    else {
+        panic!("expected inline T-spline subtransform")
+    };
+    assert!(program.contains("v 1 0 0 0"));
+    assert_eq!(*separator, Some(false));
+    assert_eq!(values, "100verts 1 2\n");
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less T-spline encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less T-spline round trip");
+    assert_eq!(
+        construction(&round_trip.ir.model.procedural_surfaces[0].definition),
+        &native
+    );
 }
 
 #[test]

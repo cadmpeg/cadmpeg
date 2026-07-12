@@ -358,7 +358,8 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralSurfaceDefinition::Unknown { .. } => {}
+            ProceduralSurfaceDefinition::TSpline { .. }
+            | ProceduralSurfaceDefinition::Unknown { .. } => {}
         }
     }
     for procedural in &ir.model.procedural_curves {

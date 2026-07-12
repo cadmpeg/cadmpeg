@@ -403,6 +403,11 @@ pub enum ProceduralSurfaceDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native: Option<Box<SweepSurfaceConstruction>>,
     },
+    /// T-spline face with its shared subtransform program.
+    TSpline {
+        /// Complete native T-spline wrapper construction.
+        construction: Box<TSplineSurfaceConstruction>,
+    },
     /// Offset from a support surface.
     Offset {
         /// Surface this surface is offset from.
@@ -445,6 +450,43 @@ pub enum ProceduralSurfaceDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
     },
+}
+
+/// Native T-spline subtransform storage form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TSplineSubtransform {
+    /// Inline line-oriented T-spline program and companion values.
+    Inline {
+        /// Line-oriented topology and geometry program.
+        program: String,
+        /// Optional native separator boolean.
+        separator: Option<bool>,
+        /// Companion values program.
+        values: String,
+    },
+    /// Reference to an earlier subtype-table entry.
+    Reference {
+        /// Native subtype-table index.
+        index: i64,
+    },
+}
+
+/// Complete native `t_spl_sur` wrapper.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TSplineSurfaceConstruction {
+    /// Ordered U and V native parameter intervals.
+    pub parameter_ranges: [[f64; 2]; 2],
+    /// Native T-spline type integer.
+    pub type_code: i64,
+    /// Inline or referenced shared subtransform object.
+    pub subtransform: TSplineSubtransform,
+    /// Native trailing integer.
+    pub trailing_value: i64,
+    /// Six ordered solved-surface discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
+    pub discontinuity_flag: bool,
 }
 
 /// One oriented support of a procedural blend.

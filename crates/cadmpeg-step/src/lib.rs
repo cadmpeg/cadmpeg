@@ -1006,6 +1006,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Revolution { .. }
                 | ProceduralSurfaceDefinition::Sum { .. }
                 | ProceduralSurfaceDefinition::Sweep { .. }
+                | ProceduralSurfaceDefinition::TSpline { .. }
                 | ProceduralSurfaceDefinition::Offset { .. }
                 | ProceduralSurfaceDefinition::Ruled { .. }
                 | ProceduralSurfaceDefinition::Blend { .. }
