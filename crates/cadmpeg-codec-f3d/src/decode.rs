@@ -57,7 +57,7 @@ pub fn decode(
             }
             let annotation_records = std::mem::take(&mut brep.annotation_records);
             let mut ir = build_geometry_ir(&scan, &active, brep);
-            if let Some(history) = decode_asm_history(reader, &active)? {
+            if let Some(history) = decode_asm_history(&scan, &active)? {
                 ir.native
                     .f3d
                     .get_or_insert_with(F3dNative::default)
@@ -192,7 +192,7 @@ pub fn decode(
     // No decodable SAB stream: use container metadata.
     let mut ir = build_metadata_ir(&scan);
     if let Some(active) = container::select_active_brep(&scan) {
-        if let Some(history) = decode_asm_history(reader, active)? {
+        if let Some(history) = decode_asm_history(&scan, active)? {
             ir.native
                 .f3d
                 .get_or_insert_with(F3dNative::default)
@@ -455,12 +455,12 @@ fn trailing_offset(id: &str) -> u64 {
 }
 
 fn decode_asm_history(
-    reader: &mut dyn ReadSeek,
+    scan: &ContainerScan,
     active: &BrepFacts,
 ) -> Result<Option<cadmpeg_ir::history::AsmHistory>, CodecError> {
     let width = active.header.as_ref().map_or(8, |h| usize::from(h.width));
-    let bytes = container::decompress_entry(reader, &active.name)?;
-    Ok(crate::history::decode(&bytes, &active.name, width))
+    let bytes = scan.entry_bytes(&active.name)?;
+    Ok(crate::history::decode(bytes, &active.name, width))
 }
 
 fn extend_related_design_records(
@@ -506,7 +506,7 @@ fn extend_related_design_records(
 /// is not a decodable `BinaryFile4`/`BinaryFile8` SAB, or frames but yields no
 /// geometry (leaving the caller to fall back to the container-metadata IR).
 fn try_decode_brep(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     active: &BrepFacts,
 ) -> Result<Option<(Brep, DecodeReport)>, CodecError> {
@@ -515,18 +515,18 @@ fn try_decode_brep(
         return Ok(None);
     }
 
-    let bytes = container::decompress_entry(reader, &active.name)?;
-    let Some(start) = asm_header::record_stream_start(&bytes) else {
+    let bytes = scan.entry_bytes(&active.name)?;
+    let Some(start) = asm_header::record_stream_start(bytes) else {
         return Ok(None);
     };
     let limit = active.delta_state_offset.unwrap_or(bytes.len());
 
-    let records = match sab::frame(&bytes, start, limit, usize::from(width)) {
+    let records = match sab::frame(bytes, start, limit, usize::from(width)) {
         Ok(r) if !r.is_empty() => r,
         _ => return Ok(None),
     };
 
-    let decoded = brep::decode(&records, &bytes, &active.name);
+    let decoded = brep::decode(&records, bytes, &active.name);
     if decoded.surfaces.is_empty() && decoded.points.is_empty() && decoded.faces.is_empty() {
         return Ok(None);
     }

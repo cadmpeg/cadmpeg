@@ -17,7 +17,7 @@ use cadmpeg_ir::design::DesignMaterialAssignment;
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
 use cadmpeg_ir::topology::Color;
 
-use crate::container::{self, role, ContainerScan};
+use crate::container::{role, ContainerScan};
 
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
@@ -344,14 +344,14 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
         .iter()
         .filter(|entry| entry.role == role::PROTEIN)
     {
-        let payload = container::decompress_entry(reader, &entry.name)?;
-        let Some(instance) = instance_properties(&payload) else {
+        let payload = scan.entry_bytes(&entry.name)?;
+        let Some(instance) = instance_properties(payload) else {
             continue;
         };
         let Some(logical) = dechunk(&instance) else {
             continue;
         };
-        let catalog = definition_catalog(&payload);
+        let catalog = definition_catalog(payload);
         let mut appearances = decode_logical_records(&logical, &entry.name);
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
@@ -440,7 +440,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
 }
 
 pub(crate) fn decode_design_assignments(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignMaterialAssignment>, CodecError> {
     let mut out = Vec::new();
@@ -449,9 +449,9 @@ pub(crate) fn decode_design_assignments(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
-        let body_map = decode_body_map(&bytes);
-        let strings = lp_utf16_strings(&bytes);
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let body_map = decode_body_map(bytes);
+        let strings = lp_utf16_strings(bytes);
         for (index, (_, value)) in strings.iter().enumerate() {
             if !value.starts_with("PrismMaterial") || value.contains("_physmat_aspects") {
                 continue;
@@ -529,7 +529,7 @@ pub(crate) struct BodyAppearanceOverride {
 /// body-map record
 /// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
 pub(crate) fn decode_body_appearance_overrides(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
     let mut out = Vec::new();
@@ -538,9 +538,9 @@ pub(crate) fn decode_body_appearance_overrides(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
-        let body_map = decode_body_map(&bytes);
-        for (entity_suffix, visual_guid) in browser_body_appearances(&bytes) {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let body_map = decode_body_map(bytes);
+        for (entity_suffix, visual_guid) in browser_body_appearances(bytes) {
             if let Some((&asm_body_key, _)) = body_map
                 .iter()
                 .find(|(_, (suffix, _))| *suffix == entity_suffix)
@@ -575,7 +575,7 @@ pub struct FaceAppearanceAssignment {
 /// face GUID and the bound visual GUID
 /// ([spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)).
 pub(crate) fn decode_face_appearance_assignments(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
     let mut out = Vec::new();
@@ -584,8 +584,8 @@ pub(crate) fn decode_face_appearance_assignments(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
-        out.extend(face_appearance_assignments(&bytes));
+        let bytes = scan.entry_bytes(&entry.name)?;
+        out.extend(face_appearance_assignments(bytes));
     }
     Ok(out)
 }
@@ -815,7 +815,7 @@ fn bind_bodies<S: std::hash::BuildHasher>(
 }
 
 fn decode_design_object_types(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<std::collections::HashMap<u64, String>, CodecError> {
     let mut out = std::collections::HashMap::new();
@@ -824,10 +824,10 @@ fn decode_design_object_types(
         .iter()
         .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
     {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 8 <= bytes.len() {
-            let Some((object_type, after_type)) = lp_ascii(&bytes, position) else {
+            let Some((object_type, after_type)) = lp_ascii(bytes, position) else {
                 position += 1;
                 continue;
             };
@@ -862,17 +862,17 @@ fn decode_design_object_types(
 }
 
 fn decode_act_channels(
-    reader: &mut dyn ReadSeek,
+    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<std::collections::HashMap<u64, BTreeMap<String, String>>, CodecError> {
     let mut out = std::collections::HashMap::new();
     for entry in scan.entries.iter().filter(|entry| {
         entry.role == role::BULKSTREAM && entry.name.contains("FusionACTSegmentType")
     }) {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
+        let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 4 <= bytes.len() {
-            let Some((tag, after_tag)) = lp_ascii(&bytes, position) else {
+            let Some((tag, after_tag)) = lp_ascii(bytes, position) else {
                 position += 1;
                 continue;
             };
@@ -900,11 +900,11 @@ fn decode_act_channels(
             let mut channels = BTreeMap::new();
             let mut valid = true;
             for _ in 0..count {
-                let Some((name, after_name)) = lp_ascii(&bytes, cursor) else {
+                let Some((name, after_name)) = lp_ascii(bytes, cursor) else {
                     valid = false;
                     break;
                 };
-                let Some((guid, after_guid)) = lp_utf16(&bytes, after_name) else {
+                let Some((guid, after_guid)) = lp_utf16(bytes, after_name) else {
                     valid = false;
                     break;
                 };
@@ -916,7 +916,7 @@ fn decode_act_channels(
                 cursor = after_guid;
             }
             if valid {
-                if let Some((entity, end)) = lp_utf16(&bytes, cursor) {
+                if let Some((entity, end)) = lp_utf16(bytes, cursor) {
                     if let Some(suffix) = entity_suffix(&entity) {
                         out.insert(suffix, channels);
                     }

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::design::{ActEntity, ActGuid, ActRootComponent};
 
-use crate::container::{self, role, ContainerScan};
+use crate::container::{role, ContainerScan};
 
 pub struct DecodedAct {
     pub entities: Vec<ActEntity>,
@@ -14,17 +14,17 @@ pub struct DecodedAct {
     pub root_components: Vec<ActRootComponent>,
 }
 
-pub fn decode(reader: &mut dyn ReadSeek, scan: &ContainerScan) -> Result<DecodedAct, CodecError> {
+pub fn decode(_reader: &mut dyn ReadSeek, scan: &ContainerScan) -> Result<DecodedAct, CodecError> {
     let mut entities = Vec::new();
     let mut guids = Vec::new();
     let mut root_components = Vec::new();
     for entry in scan.entries.iter().filter(|entry| {
         entry.role == role::BULKSTREAM && entry.name.contains("FusionACTSegmentType")
     }) {
-        let bytes = container::decompress_entry(reader, &entry.name)?;
-        let (table, stream_guids) = decode_table(&bytes);
-        let groups = decode_channel_groups(&bytes);
-        root_components.extend(decode_root_components(&bytes, &entry.name));
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let (table, stream_guids) = decode_table(bytes);
+        let groups = decode_channel_groups(bytes);
+        root_components.extend(decode_root_components(bytes, &entry.name));
         let mut by_key: BTreeMap<(u32, String), ActEntity> = BTreeMap::new();
         for item in table {
             by_key.insert(
