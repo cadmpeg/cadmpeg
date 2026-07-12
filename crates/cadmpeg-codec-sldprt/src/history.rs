@@ -1801,19 +1801,20 @@ pub fn sync_neutral_features(
                 edges: EdgeSelection::Native(selection),
                 radius,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained fillet record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("Fillet") || selection.trim().is_empty() {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Fillet"))
+                    || selection.trim().is_empty()
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported fillet semantics",
                         feature.id
                     )));
                 }
-                let mut parameters = record.parameters.clone();
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
                 parameters.retain(|name, _| {
                     name != "Radius"
                         && !indexed_name(name, "Radius")
@@ -1848,32 +1849,48 @@ pub fn sync_neutral_features(
                         }
                     }
                 }
-                let mut properties = record.properties.clone();
-                write_native_selection(&mut properties, "Edges", selection, &record.id);
-                (record.kind.clone(), parameters, properties)
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
+                write_native_selection(
+                    &mut properties,
+                    "Edges",
+                    selection,
+                    existing.as_deref().map_or("", |record| record.id.as_str()),
+                );
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Fillet".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
             }
             FeatureDefinition::Chamfer {
                 edges: EdgeSelection::Native(selection),
                 spec,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained chamfer record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("Chamfer") || selection.trim().is_empty() {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Chamfer"))
+                    || selection.trim().is_empty()
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported chamfer semantics",
                         feature.id
                     )));
                 }
-                let mut parameters = record.parameters.clone();
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
                 match spec {
                     ChamferSpec::Distance { distance } => {
-                        if parameters.contains_key("Distance1")
-                            || parameters.contains_key("Distance2")
-                            || parameters.contains_key("Angle")
+                        if existing.is_some()
+                            && (parameters.contains_key("Distance1")
+                                || parameters.contains_key("Distance2")
+                                || parameters.contains_key("Angle"))
                         {
                             return Err(CodecError::NotImplemented(format!(
                                 "SLDPRT feature {} changes chamfer form",
@@ -1883,9 +1900,10 @@ pub fn sync_neutral_features(
                         parameters.insert("Distance".into(), format_length_mm(distance.0));
                     }
                     ChamferSpec::TwoDistances { first, second } => {
-                        if !parameters.contains_key("Distance1")
-                            || !parameters.contains_key("Distance2")
-                            || parameters.contains_key("Angle")
+                        if existing.is_some()
+                            && (!parameters.contains_key("Distance1")
+                                || !parameters.contains_key("Distance2")
+                                || parameters.contains_key("Angle"))
                         {
                             return Err(CodecError::NotImplemented(format!(
                                 "SLDPRT feature {} changes chamfer form",
@@ -1896,10 +1914,11 @@ pub fn sync_neutral_features(
                         parameters.insert("Distance2".into(), format_length_mm(second.0));
                     }
                     ChamferSpec::DistanceAngle { distance, angle } => {
-                        if !parameters.contains_key("Distance")
-                            || !parameters.contains_key("Angle")
-                            || parameters.contains_key("Distance1")
-                            || parameters.contains_key("Distance2")
+                        if existing.is_some()
+                            && (!parameters.contains_key("Distance")
+                                || !parameters.contains_key("Angle")
+                                || parameters.contains_key("Distance1")
+                                || parameters.contains_key("Distance2"))
                         {
                             return Err(CodecError::NotImplemented(format!(
                                 "SLDPRT feature {} changes chamfer form",
@@ -1910,33 +1929,62 @@ pub fn sync_neutral_features(
                         parameters.insert("Angle".into(), format_angle_rad(angle.0));
                     }
                 }
-                let mut properties = record.properties.clone();
-                write_native_selection(&mut properties, "Edges", selection, &record.id);
-                (record.kind.clone(), parameters, properties)
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
+                write_native_selection(
+                    &mut properties,
+                    "Edges",
+                    selection,
+                    existing.as_deref().map_or("", |record| record.id.as_str()),
+                );
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Chamfer".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
             }
             FeatureDefinition::Shell {
                 removed_faces: FaceSelection::Native(selection),
                 thickness,
                 outward,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained shell record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("Shell") || selection.trim().is_empty() {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Shell"))
+                    || selection.trim().is_empty()
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported shell semantics",
                         feature.id
                     )));
                 }
-                let mut parameters = record.parameters.clone();
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
                 parameters.insert("Thickness".into(), format_length_mm(thickness.0));
-                let mut properties = record.properties.clone();
-                write_native_selection(&mut properties, "RemovedFaces", selection, &record.id);
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
+                write_native_selection(
+                    &mut properties,
+                    "RemovedFaces",
+                    selection,
+                    existing.as_deref().map_or("", |record| record.id.as_str()),
+                );
                 properties.insert("Outward".into(), outward.to_string());
-                (record.kind.clone(), parameters, properties)
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Shell".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
             }
             FeatureDefinition::Draft {
                 faces: FaceSelection::Native(faces),
@@ -1945,13 +1993,9 @@ pub fn sync_neutral_features(
                 angle,
                 outward,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained draft record",
-                        feature.id
-                    )));
-                };
-                if !record.kind.eq_ignore_ascii_case("Draft")
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Draft"))
                     || faces.trim().is_empty()
                     || neutral_plane.trim().is_empty()
                 {
@@ -1967,14 +2011,27 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let mut parameters = record.parameters.clone();
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
                 parameters.insert("Angle".into(), format_angle_rad(angle.0));
-                let mut properties = record.properties.clone();
-                write_native_selection(&mut properties, "Faces", faces, &record.id);
-                write_native_selection(&mut properties, "NeutralPlane", neutral_plane, &record.id);
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
+                let fallback = existing.as_deref().map_or("", |record| record.id.as_str());
+                write_native_selection(&mut properties, "Faces", faces, fallback);
+                write_native_selection(&mut properties, "NeutralPlane", neutral_plane, fallback);
                 properties.insert("Direction".into(), format_vector3(*pull_direction));
                 properties.insert("Outward".into(), outward.to_string());
-                (record.kind.clone(), parameters, properties)
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Draft".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
             }
             FeatureDefinition::Combine {
                 target: BodySelection::Native(target),

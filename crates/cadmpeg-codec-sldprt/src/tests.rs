@@ -1704,7 +1704,11 @@ fn encoder_writes_source_less_curved_sketches() {
 
 #[test]
 fn encoder_writes_source_less_native_features() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{
+        Angle, ChamferSpec, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
+        Length, RadiusSpec,
+    };
+    use cadmpeg_ir::math::Vector3;
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -1728,6 +1732,45 @@ fn encoder_writes_source_less_native_features() {
         },
         native_ref: None,
     });
+    let definitions = [
+        FeatureDefinition::Fillet {
+            edges: EdgeSelection::Native("edge-a,edge-b".into()),
+            radius: RadiusSpec::Constant {
+                radius: Length(3.0),
+            },
+        },
+        FeatureDefinition::Chamfer {
+            edges: EdgeSelection::Native("edge-c".into()),
+            spec: ChamferSpec::TwoDistances {
+                first: Length(1.0),
+                second: Length(2.0),
+            },
+        },
+        FeatureDefinition::Shell {
+            removed_faces: FaceSelection::Native("face-a".into()),
+            thickness: Length(1.5),
+            outward: true,
+        },
+        FeatureDefinition::Draft {
+            faces: FaceSelection::Native("face-b".into()),
+            neutral_plane: FaceSelection::Native("face-c".into()),
+            pull_direction: Vector3::new(0.0, 0.0, 1.0),
+            angle: Angle(0.2),
+            outward: false,
+        },
+    ];
+    for (index, definition) in definitions.into_iter().enumerate() {
+        ir.model.features.push(Feature {
+            id: FeatureId(format!("synthetic:test:feature#direct-{index}")),
+            ordinal: index as u64 + 1,
+            name: Some(format!("Direct {index}")),
+            suppressed: false,
+            parent: None,
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        });
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec.encode(&ir, &mut encoded).unwrap();
@@ -1755,6 +1798,30 @@ fn encoder_writes_source_less_native_features() {
         sldprt_native(&decoded.ir).feature_histories[0].features[0].xml_tag,
         "Extrusion"
     );
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::Fillet { .. })));
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::Chamfer { .. })));
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::Shell { .. })));
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::Draft { .. })));
 }
 
 #[test]
