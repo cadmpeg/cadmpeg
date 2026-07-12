@@ -228,10 +228,9 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             let axis = *c.vectors.first()?;
             let axis = unit(axis);
             let major = c.vectors.get(1).copied();
-            // Doubles are (ratio, sine, cosine, u_scale). `ratio` (minor/major
-            // of an elliptical cone) is not modeled by the IR's circular cone
-            // carrier; all corpus cones are circular (ratio 1). `sine` selects
-            // cylinder vs cone. The base radius is the major-axis vector's
+            // Doubles are (ratio, sine, cosine, u_scale). `ratio` is the
+            // minor/major radius ratio. `sine` selects cylinder vs cone. The
+            // base radius is the major-axis vector's
             // magnitude; the trailing `u_scale` double is the u-parameter
             // scale, which usually coincides with the radius but diverges on
             // offset-derived surfaces. The signed slope `sine / cosine` is the

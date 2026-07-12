@@ -562,6 +562,27 @@ fn signed_analytic_radius_normalization_is_reported() {
 }
 
 #[test]
+fn elliptical_cone_reduction_is_reported() {
+    let mut ir = unit_cube();
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Cone {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 2.0,
+        ratio: 0.4,
+        half_angle: 0.5,
+    };
+
+    let mut buf = Vec::new();
+    let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
+
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.message.contains("elliptical cone surface(s)")
+    }));
+}
+
+#[test]
 fn procedural_construction_reduction_is_reported() {
     let mut ir = unit_cube();
     ir.model
