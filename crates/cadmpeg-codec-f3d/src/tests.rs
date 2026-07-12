@@ -5388,8 +5388,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 277,
+        owner_reference_offset: 0,
         auxiliary_references: vec![900],
+        auxiliary_reference_offsets: Vec::new(),
         members: vec![100, 600],
+        member_offsets: Vec::new(),
         state: 0x11,
         constraint_kinds: vec![
             SketchConstraintKind::Coincident,
@@ -5397,6 +5400,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         ],
         unknown_constraint_bits: 0,
         return_members: vec![600, 100],
+        return_member_offsets: Vec::new(),
         raw_bytes: Vec::new(),
     }];
 
@@ -5705,11 +5709,22 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let mut edited = decoded.ir;
-    update_f3d_native(&mut edited, |native| {
+    let expected_references = update_f3d_native(&mut edited, |native| {
         let relation = &mut native.sketch_relations[0];
         relation.state = 0x40;
         relation.constraint_kinds = vec![crate::records::SketchConstraintKind::Horizontal];
         relation.unknown_constraint_bits = 0;
+        relation.members.reverse();
+        for reference in &mut relation.auxiliary_references {
+            *reference = reference.saturating_add(1);
+        }
+        relation.return_members.reverse();
+        (
+            relation.members.clone(),
+            relation.auxiliary_references.clone(),
+            relation.owner_reference,
+            relation.return_members.clone(),
+        )
     });
 
     let mut regenerated = Vec::new();
@@ -5727,6 +5742,10 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
         [crate::records::SketchConstraintKind::Horizontal]
     );
     assert_eq!(relation.unknown_constraint_bits, 0);
+    assert_eq!(relation.members, expected_references.0);
+    assert_eq!(relation.auxiliary_references, expected_references.1);
+    assert_eq!(relation.owner_reference, expected_references.2);
+    assert_eq!(relation.return_members, expected_references.3);
 }
 
 #[test]

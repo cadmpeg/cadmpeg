@@ -288,8 +288,17 @@ pub struct SketchRelation {
     /// Nullable or role-specific references stored before the owner reference.
     #[serde(default)]
     pub auxiliary_references: Vec<u32>,
+    /// Payload offsets parallel to `auxiliary_references`, relative to the record.
+    #[serde(default)]
+    pub auxiliary_reference_offsets: Vec<u32>,
     /// Record indices of the entities related by this relation.
     pub members: Vec<u32>,
+    /// Payload offsets parallel to `members`, relative to the record.
+    #[serde(default)]
+    pub member_offsets: Vec<u32>,
+    /// Payload offset of `owner_reference`, relative to the record.
+    #[serde(default)]
+    pub owner_reference_offset: u32,
     /// Source sketch-constraint bitmask.
     pub state: u32,
     /// Constraint kinds selected by `state`.
@@ -300,6 +309,9 @@ pub struct SketchRelation {
     /// Record indices of entities returned or affected by this relation, distinct
     /// from `members`.
     pub return_members: Vec<u32>,
+    /// Payload offsets parallel to `return_members`, relative to the record.
+    #[serde(default)]
+    pub return_member_offsets: Vec<u32>,
     /// Complete 101-byte source record for native replay/write.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]

@@ -498,11 +498,15 @@ pub fn decode_sketch_relations(
             };
             let Some((
                 members,
+                member_offsets,
                 auxiliary_references,
+                auxiliary_reference_offsets,
                 owner_reference,
+                owner_reference_offset,
                 state,
                 state_offset,
                 return_members,
+                return_member_offsets,
             )) = parse_sketch_relation(payload, &owners)
             else {
                 continue;
@@ -515,12 +519,25 @@ pub fn decode_sketch_relations(
                 byte_offset: record.byte_offset,
                 state_offset: state_offset as u32,
                 owner_reference,
+                owner_reference_offset: owner_reference_offset as u32,
                 auxiliary_references,
+                auxiliary_reference_offsets: auxiliary_reference_offsets
+                    .into_iter()
+                    .map(|offset| offset as u32)
+                    .collect(),
                 members,
+                member_offsets: member_offsets
+                    .into_iter()
+                    .map(|offset| offset as u32)
+                    .collect(),
                 state,
                 constraint_kinds,
                 unknown_constraint_bits,
                 return_members,
+                return_member_offsets: return_member_offsets
+                    .into_iter()
+                    .map(|offset| offset as u32)
+                    .collect(),
                 raw_bytes: payload.to_vec(),
             });
         }
@@ -912,7 +929,18 @@ fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     })
 }
 
-type ParsedSketchRelation = (Vec<u32>, Vec<u32>, u32, u32, usize, Vec<u32>);
+type ParsedSketchRelation = (
+    Vec<u32>,
+    Vec<usize>,
+    Vec<u32>,
+    Vec<usize>,
+    u32,
+    usize,
+    u32,
+    usize,
+    Vec<u32>,
+    Vec<usize>,
+);
 
 fn parse_sketch_relation(
     payload: &[u8],
@@ -927,18 +955,22 @@ fn parse_sketch_relation(
     }
     let mut cursor = 24;
     let mut members = Vec::with_capacity(member_count);
+    let mut member_offsets = Vec::with_capacity(member_count);
     for _ in 0..member_count {
         let (value, end) = marked_u32(payload, cursor)?;
         members.push(value);
+        member_offsets.push(cursor + 1);
         cursor = next_reference_marker(payload, end)?;
     }
     let mut auxiliary_references = Vec::new();
-    let (owner_reference, end) = loop {
+    let mut auxiliary_reference_offsets = Vec::new();
+    let (owner_reference, owner_reference_offset, end) = loop {
         let (reference, end) = marked_u32(payload, cursor)?;
         if owners.contains(&reference) {
-            break (reference, end);
+            break (reference, cursor + 1, end);
         }
         auxiliary_references.push(reference);
+        auxiliary_reference_offsets.push(cursor + 1);
         cursor = next_reference_marker(payload, end)?;
     };
     cursor = next_nonzero(payload, end)?;
@@ -955,10 +987,12 @@ fn parse_sketch_relation(
     }
     cursor += 4;
     let mut return_members = Vec::with_capacity(return_count);
+    let mut return_member_offsets = Vec::with_capacity(return_count);
     for ordinal in 0..return_count {
         cursor = next_reference_marker(payload, cursor)?;
         let (value, end) = marked_u32(payload, cursor)?;
         return_members.push(value);
+        return_member_offsets.push(cursor + 1);
         cursor = end;
         if ordinal + 1 < return_count {
             cursor = next_reference_marker(payload, cursor)?;
@@ -966,11 +1000,15 @@ fn parse_sketch_relation(
     }
     Some((
         members,
+        member_offsets,
         auxiliary_references,
+        auxiliary_reference_offsets,
         owner_reference,
+        owner_reference_offset,
         state,
         state_offset,
         return_members,
+        return_member_offsets,
     ))
 }
 

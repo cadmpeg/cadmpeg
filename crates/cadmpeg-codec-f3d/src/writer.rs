@@ -9441,7 +9441,7 @@ fn patch_sketch_nurbs(
     Ok(())
 }
 
-type SketchRelationEdit = (u64, u32, u32);
+type SketchRelationEdit = Vec<(u64, u32)>;
 
 fn validate_sketch_relation_edits(
     baseline: &CadIr,
@@ -9474,18 +9474,29 @@ fn validate_sketch_relation_edits(
     for relation in target {
         let before = by_id[relation.id.as_str()];
         let mut normalized = relation.clone();
+        normalized.owner_reference = before.owner_reference;
+        normalized
+            .auxiliary_references
+            .clone_from(&before.auxiliary_references);
+        normalized.members.clone_from(&before.members);
         normalized.state = before.state;
         normalized
             .constraint_kinds
             .clone_from(&before.constraint_kinds);
         normalized.unknown_constraint_bits = before.unknown_constraint_bits;
+        normalized.return_members.clone_from(&before.return_members);
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
-                "F3D sketch-relation edit changes fields other than its constraint mask: {}",
+                "F3D sketch-relation edit changes fields outside its writable references and constraint mask: {}",
                 relation.id
             )));
         }
-        if relation.state == before.state {
+        if relation.state == before.state
+            && relation.owner_reference == before.owner_reference
+            && relation.auxiliary_references == before.auxiliary_references
+            && relation.members == before.members
+            && relation.return_members == before.return_members
+        {
             continue;
         }
         let (kinds, unknown) = crate::design::decode_constraint_kinds(relation.state);
@@ -9503,11 +9514,41 @@ fn validate_sketch_relation_edits(
             .ok_or_else(|| {
                 CodecError::Malformed(format!("invalid sketch-relation id {}", relation.id))
             })?;
-        edits.entry(stream).or_default().push((
-            relation.byte_offset,
-            relation.state_offset,
-            relation.state,
-        ));
+        let mut values = Vec::new();
+        collect_sketch_reference_edits(
+            relation,
+            &before.members,
+            &relation.members,
+            &relation.member_offsets,
+            &mut values,
+        )?;
+        collect_sketch_reference_edits(
+            relation,
+            &before.auxiliary_references,
+            &relation.auxiliary_references,
+            &relation.auxiliary_reference_offsets,
+            &mut values,
+        )?;
+        if relation.owner_reference != before.owner_reference {
+            values.push((
+                relation.byte_offset + u64::from(relation.owner_reference_offset),
+                relation.owner_reference,
+            ));
+        }
+        collect_sketch_reference_edits(
+            relation,
+            &before.return_members,
+            &relation.return_members,
+            &relation.return_member_offsets,
+            &mut values,
+        )?;
+        if relation.state != before.state {
+            values.push((
+                relation.byte_offset + u64::from(relation.state_offset),
+                relation.state,
+            ));
+        }
+        edits.entry(stream).or_default().push(values);
     }
     Ok(edits)
 }
@@ -9516,18 +9557,40 @@ fn patch_sketch_relations(
     bytes: &mut [u8],
     edits: &[SketchRelationEdit],
 ) -> Result<(), CodecError> {
-    for (record_offset, state_offset, state) in edits {
-        let start = usize::try_from(*record_offset)
-            .ok()
-            .and_then(|record| record.checked_add(*state_offset as usize))
-            .ok_or_else(|| {
-                CodecError::Malformed("sketch-relation offset exceeds address space".into())
-            })?;
-        let payload = bytes.get_mut(start..start + 4).ok_or_else(|| {
-            CodecError::Malformed("sketch-relation mask is outside BulkStream".into())
-        })?;
-        payload.copy_from_slice(&state.to_le_bytes());
+    for edit in edits {
+        for (offset, value) in edit {
+            patch_bytes_at(
+                bytes,
+                *offset,
+                &value.to_le_bytes(),
+                "sketch-relation value",
+            )?;
+        }
     }
+    Ok(())
+}
+
+fn collect_sketch_reference_edits(
+    relation: &crate::records::SketchRelation,
+    before: &[u32],
+    after: &[u32],
+    offsets: &[u32],
+    edits: &mut Vec<(u64, u32)>,
+) -> Result<(), CodecError> {
+    if before.len() != after.len() || after.len() != offsets.len() {
+        return Err(CodecError::NotImplemented(format!(
+            "F3D sketch relation {} must retain reference cardinality and offsets",
+            relation.id
+        )));
+    }
+    edits.extend(
+        before
+            .iter()
+            .zip(after)
+            .zip(offsets)
+            .filter(|((before, after), _)| before != after)
+            .map(|((_, after), offset)| (relation.byte_offset + u64::from(*offset), *after)),
+    );
     Ok(())
 }
 
