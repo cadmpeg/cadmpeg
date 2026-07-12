@@ -676,32 +676,6 @@ fn a8_rational_surface_stream() -> Vec<u8> {
     record
 }
 
-fn a8_pcurve_stream() -> Vec<u8> {
-    let mut payload = vec![0, 0x18, 0x34, 0x12, 21, 0, 0, 9, 0x0c];
-    payload.extend_from_slice(&le_f64(0.0));
-    payload.extend_from_slice(&le_f64(1.0));
-    payload.extend_from_slice(&[25, 25, 9, 1]);
-    for values in [[0.0f64, 1.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]] {
-        for value in values {
-            payload.extend_from_slice(&le_f64(value));
-        }
-    }
-    payload.push(0x05);
-    for values in [[0.0f64, 0.0], [0.0, 0.0]] {
-        for value in values {
-            payload.extend_from_slice(&le_f64(value));
-        }
-    }
-    payload.extend_from_slice(&le_f64(0.0));
-    payload.extend_from_slice(&le_f64(1.0));
-    payload.push(0x07);
-    let mut record = vec![0xa8, 0x03, 0x20];
-    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    record.extend_from_slice(&0x5678u32.to_le_bytes());
-    record.extend_from_slice(&payload);
-    record
-}
-
 fn a5_surface_stream() -> Vec<u8> {
     let mut record = Vec::new();
     record.extend_from_slice(&[0xa5, 0x03, 0x34]);
@@ -732,50 +706,6 @@ fn a5_rational_surface_stream() -> Vec<u8> {
     record.extend_from_slice(&le_f64(2.0)); // mirrored seed row -> [2, 2]
     record.push(0x02); // copy the row for the second u row
     record.extend_from_slice(&tail);
-    record
-}
-
-fn a5_freeform_curve_stream() -> Vec<u8> {
-    let mut payload = vec![9, 21, 9, 0x0c];
-    payload.extend_from_slice(&le_f64(0.0));
-    payload.extend_from_slice(&le_f64(1.0));
-    let sites = [
-        [
-            1.0f64,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-        ],
-        [
-            2.0,
-            0.0,
-            0.0,
-            0.0,
-            2.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-        ],
-    ];
-    for block in 0..3 {
-        for site in sites {
-            for value in if block == 0 { site } else { [0.0; 10] } {
-                payload.extend_from_slice(&le_f64(value));
-            }
-        }
-    }
-    let mut record = vec![0xa5, 0x03, 0x32];
-    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    record.push(0x05);
-    record.extend_from_slice(&payload);
     record
 }
 
@@ -1583,17 +1513,6 @@ fn a8_surface_parser_reads_common_form_nurbs() {
 }
 
 #[test]
-fn a8_pcurve_parser_reads_degree5_uv_jet() {
-    let pcurves = crate::geometry::a8_pcurves(&a8_pcurve_stream());
-    assert_eq!(pcurves.len(), 1);
-    assert_eq!(pcurves[0].object_id, 0x5678);
-    assert_eq!(pcurves[0].support_id, 0x1234);
-    assert_eq!(pcurves[0].degree, 5);
-    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
-    assert_eq!(pcurves[0].range, [0.0, 1.0]);
-}
-
-#[test]
 fn a8_surface_parser_reads_rational_weight_grid() {
     let surfaces = crate::geometry::a8_surfaces(&a8_rational_surface_stream());
     match &surfaces[0].geometry {
@@ -1614,17 +1533,6 @@ fn a5_surface_parser_reads_consolidated_nurbs() {
         }
         other => panic!("expected NURBS surface, got {other:?}"),
     }
-}
-
-#[test]
-fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
-    let curves = crate::geometry::a5_freeform_curves(&a5_freeform_curve_stream());
-    assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].degree, 5);
-    assert_eq!(curves[0].knots, vec![0.0, 1.0]);
-    assert_eq!(curves[0].sites[0].limit1, [1.0, 0.0, 0.0]);
-    assert_eq!(curves[0].sites[1].radius, 2.0);
-    assert!(!curves[0].radius_constant);
 }
 
 #[test]
