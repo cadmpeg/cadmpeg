@@ -10462,6 +10462,28 @@ fn validate_procedural_curve_edits(
                 Some(after.definition.clone())
             }
             (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
+                    context: before_context,
+                    third: before_third,
+                    ..
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
+                    context: after_context,
+                    third: after_third,
+                    ..
+                },
+            ) if before_context.sides == after_context.sides
+                && before_context
+                    .discontinuities
+                    .iter()
+                    .map(Vec::len)
+                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                && before_third == after_third
+                && before.definition != after.definition =>
+            {
+                Some(after.definition.clone())
+            }
+            (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
                     components: before_components,
                     ..
@@ -10756,6 +10778,9 @@ fn patch_framed_geometry(
                     cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. } => {
                         patch_intersection_definition(bytes, record, definition)?;
                     }
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
+                        ..
+                    } => patch_three_surface_intersection_definition(bytes, record, definition)?,
                     _ => unreachable!("procedural edit validation limits writable definitions"),
                 }
             }
@@ -12098,6 +12123,95 @@ fn patch_intersection_definition(
         bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
     }
     bytes[flag_offset] = native_bool(*discontinuity_flag);
+    Ok(())
+}
+
+fn patch_three_surface_intersection_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> Result<(), CodecError> {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
+        context,
+        selector,
+        ..
+    } = definition
+    else {
+        return Err(CodecError::Malformed(
+            "three-surface intersection patch received another definition".into(),
+        ));
+    };
+    if context
+        .parameter_range
+        .into_iter()
+        .chain(context.discontinuities.iter().flatten().copied())
+        .any(|value| !value.is_finite())
+    {
+        return Err(CodecError::Malformed(
+            "three-surface intersection context values must be finite".into(),
+        ));
+    }
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed(
+            "three-surface intersection record extent overflows address space".into(),
+        )
+    })?;
+    let record_bytes = bytes.get(record.offset..end).ok_or_else(|| {
+        CodecError::Malformed("three-surface intersection record is truncated".into())
+    })?;
+    if !record_bytes
+        .windows(b"sss_int_cur".len())
+        .any(|window| window == b"sss_int_cur")
+    {
+        return Err(CodecError::Malformed("record is not an sss_int_cur".into()));
+    }
+    let mut selector_relative = None;
+    for name in ["plane", "cone", "sphere", "torus", "spline", "null_surface"] {
+        let mut marker = vec![0x0d, u8::try_from(name.len()).unwrap_or(u8::MAX)];
+        marker.extend_from_slice(name.as_bytes());
+        for (position, window) in record_bytes.windows(marker.len()).enumerate() {
+            if position >= 9 && window == marker && record_bytes[position - 9] == 0x04 {
+                selector_relative = Some(position - 9);
+                break;
+            }
+        }
+        if selector_relative.is_some() {
+            break;
+        }
+    }
+    let selector_relative = selector_relative.ok_or_else(|| {
+        CodecError::Malformed("three-surface intersection selector is missing".into())
+    })?;
+    let selector_offset = record.offset + selector_relative;
+    let context_count = 2usize
+        .checked_add(context.discontinuities.iter().map(Vec::len).sum::<usize>())
+        .ok_or_else(|| {
+            CodecError::Malformed("three-surface intersection context is too large".into())
+        })?;
+    let context_offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?
+        .into_iter()
+        .filter(|offset| *offset < selector_offset)
+        .collect::<Vec<_>>();
+    let context_offsets = context_offsets
+        .get(context_offsets.len().saturating_sub(context_count)..)
+        .ok_or_else(|| {
+            CodecError::Malformed("three-surface intersection context is incomplete".into())
+        })?;
+    if context_offsets.len() != context_count {
+        return Err(CodecError::Malformed(
+            "three-surface intersection context is incomplete".into(),
+        ));
+    }
+    for (offset, value) in context_offsets.iter().zip(
+        context
+            .parameter_range
+            .into_iter()
+            .chain(context.discontinuities.iter().flatten().copied()),
+    ) {
+        bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes[selector_offset + 1..selector_offset + 9].copy_from_slice(&selector.to_le_bytes());
     Ok(())
 }
 

@@ -12116,6 +12116,31 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         SurfaceGeometry::Sphere { radius: -12.5, .. }
     ));
 
+    let mut edited = result.ir.clone();
+    let ProceduralCurveDefinition::ThreeSurfaceIntersection {
+        context, selector, ..
+    } = &mut edited.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    context.parameter_range = [-1.0, 2.0];
+    *selector = -4;
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("three-surface intersection regeneration");
+    let regenerated = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated three-surface intersection decode");
+    assert!(matches!(
+        regenerated.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::ThreeSurfaceIntersection {
+            ref context,
+            selector: -4,
+            ..
+        } if context.parameter_range == [-1.0, 2.0]
+    ));
+
     let mut source_less = result.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
