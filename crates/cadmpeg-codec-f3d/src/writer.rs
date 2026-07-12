@@ -1006,9 +1006,11 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             }
         }
         SurfaceGeometry::Unknown { .. } => {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D generation does not support this surface carrier".into(),
-            ));
+            if !native_cacheless_procedural_surface(&mut records, target, &model.surfaces[0])? {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D generation does not support this surface carrier".into(),
+                ));
+            }
         }
     }
     records.push(0x11);
@@ -2240,9 +2242,12 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 records.extend_from_slice(&[0x0b; 5]);
             }
             SurfaceGeometry::Unknown { .. } => {
-                return Err(CodecError::NotImplemented(
-                    "source-less multi-face F3D does not support this surface carrier".into(),
-                ));
+                if !native_cacheless_procedural_surface(&mut records, target, surface)? {
+                    return Err(CodecError::NotImplemented(format!(
+                        "source-less multi-face F3D does not support surface carrier {}",
+                        surface.id
+                    )));
+                }
             }
         }
         records.push(0x11);
@@ -3369,7 +3374,7 @@ fn native_procedural_surface(
                 target,
                 procedural,
                 construction,
-                solved_cache,
+                Some(solved_cache),
             )?;
         }
         ProceduralSurfaceDefinition::G2Blend { construction } => {
@@ -4059,7 +4064,7 @@ fn encode_native_scaled_compound_loft(
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     construction: &cadmpeg_ir::geometry::ScaledCompoundLoftConstruction,
-    solved_cache: &NurbsSurface,
+    solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::geometry::{
         CompoundLoftDirection, ScaledCompoundLoftBranch, ScaledCompoundLoftShape,
@@ -4079,16 +4084,26 @@ fn encode_native_scaled_compound_loft(
     native_enum(bytes, construction.singularity);
     match &construction.shape {
         ScaledCompoundLoftShape::Full => {
+            let solved_cache = solved_cache.ok_or_else(|| {
+                CodecError::Malformed(
+                    "scaled compound-loft full shape requires a solved NURBS cache".into(),
+                )
+            })?;
             native_nurbs_surface(bytes, solved_cache)?;
             native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
         }
         ScaledCompoundLoftShape::None {
-            parameter_ranges: _,
-            parameters: _,
+            parameter_ranges,
+            parameters,
         } => {
-            return Err(CodecError::NotImplemented(
-                "source-less scaled compound-loft none shape has no defined face carrier".into(),
-            ));
+            for range in parameter_ranges {
+                for value in range {
+                    native_f64(bytes, *value);
+                }
+            }
+            for values in parameters {
+                native_compound_loft_float_array(bytes, values)?;
+            }
         }
     }
     for values in &construction.discontinuities {
@@ -4167,6 +4182,33 @@ fn encode_native_scaled_compound_loft(
     native_nurbs_curve(bytes, native_loft_curve(target, &construction.tail_curve)?)?;
     bytes.push(0x10);
     Ok(())
+}
+
+fn native_cacheless_procedural_surface(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    surface: &Surface,
+) -> Result<bool, CodecError> {
+    let Some(procedural) = target
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == surface.id)
+    else {
+        return Ok(false);
+    };
+    let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } = &procedural.definition
+    else {
+        return Ok(false);
+    };
+    if !matches!(
+        construction.shape,
+        cadmpeg_ir::geometry::ScaledCompoundLoftShape::None { .. }
+    ) {
+        return Ok(false);
+    }
+    encode_native_scaled_compound_loft(bytes, target, procedural, construction, None)?;
+    Ok(true)
 }
 
 #[allow(clippy::too_many_arguments)]

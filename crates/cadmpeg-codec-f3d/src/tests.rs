@@ -2027,7 +2027,7 @@ fn append_generated_float_array(bytes: &mut Vec<u8>, values: &[f64]) {
     }
 }
 
-fn synthetic_scaled_compound_loft_smbh() -> Vec<u8> {
+fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -2043,8 +2043,16 @@ fn synthetic_scaled_compound_loft_smbh() -> Vec<u8> {
     t_ident(&mut surface, "scaled_cloft_spl_sur");
     surface.push(0x15);
     surface.extend_from_slice(&11i64.to_le_bytes());
-    surface.extend_from_slice(&generated_surface_block());
-    t_dbl(&mut surface, 0.004);
+    if full {
+        surface.extend_from_slice(&generated_surface_block());
+        t_dbl(&mut surface, 0.004);
+    } else {
+        for value in [-1.0, 2.0, -3.0, 4.0] {
+            t_dbl(&mut surface, value);
+        }
+        append_generated_float_array(&mut surface, &[0.25]);
+        append_generated_float_array(&mut surface, &[0.5, 0.75]);
+    }
     for values in [&[0.25][..], &[][..], &[][..], &[][..], &[][..], &[][..]] {
         append_generated_float_array(&mut surface, values);
     }
@@ -7998,7 +8006,7 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
 
     let decoded = F3dCodec
         .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_scaled_compound_loft_smbh())),
+            &mut Cursor::new(f3d_with_smbh(&synthetic_scaled_compound_loft_smbh(true))),
             &DecodeOptions::default(),
         )
         .expect("scaled compound-loft decode");
@@ -8054,7 +8062,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
 
     let decoded = F3dCodec
         .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_scaled_compound_loft_smbh())),
+            &mut Cursor::new(f3d_with_smbh(&synthetic_scaled_compound_loft_smbh(true))),
             &DecodeOptions::default(),
         )
         .expect("scaled compound-loft decode");
@@ -8144,29 +8152,51 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
 }
 
 #[test]
-fn generated_scaled_compound_loft_refuses_none_shape_without_face_carrier() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, ScaledCompoundLoftShape};
+fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, ScaledCompoundLoftShape, SurfaceGeometry,
+    };
 
-    let mut source_less = F3dCodec
+    let decoded = F3dCodec
         .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_scaled_compound_loft_smbh())),
+            &mut Cursor::new(f3d_with_smbh(&synthetic_scaled_compound_loft_smbh(false))),
             &DecodeOptions::default(),
         )
-        .expect("scaled compound-loft decode")
-        .ir;
-    source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+        .expect("scaled compound-loft none-shape decode");
     let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
-        &mut source_less.model.procedural_surfaces[0].definition
+        &decoded.ir.model.procedural_surfaces[0].definition
     else {
         panic!("expected scaled compound loft")
     };
-    construction.shape = ScaledCompoundLoftShape::None {
-        parameter_ranges: [[-1.0, 2.0], [-3.0, 4.0]],
-        parameters: [vec![0.25], vec![0.5, 0.75]],
-    };
-    let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
-    assert!(error.to_string().contains("has no defined face carrier"));
+    assert!(matches!(
+        construction.shape,
+        ScaledCompoundLoftShape::None {
+            parameter_ranges: [[-1.0, 2.0], [-3.0, 4.0]],
+            ..
+        }
+    ));
+    let owner = decoded.ir.model.procedural_surfaces[0].surface.clone();
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less
+        .model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == owner)
+        .expect("procedural owner")
+        .geometry = SurfaceGeometry::Unknown { record: None };
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less scaled compound-loft none-shape encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less scaled compound-loft none-shape round trip");
+    assert!(matches!(
+        round_trip.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
+    ));
 }
 
 #[test]

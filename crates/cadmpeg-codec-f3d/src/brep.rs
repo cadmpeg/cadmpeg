@@ -601,6 +601,13 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             continue;
         };
         kept_faces.insert(r.index as i64);
+        if let Some(procedural) = nurbs::decode_procedural_surface_resolving_refs(
+            record_slice(surf_rec, bytes),
+            bytes,
+            &subtype_tables,
+        ) {
+            procedural_surface_defs.insert(surf_ref, procedural);
+        }
         // A non-analytic surface may still carry a decodable B-spline face cache.
         if let std::collections::hash_map::Entry::Vacant(e) = surface_geo.entry(surf_ref) {
             if let Some(ns) = nurbs::decode_surface_cache_resolving_refs(
@@ -610,14 +617,19 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             ) {
                 e.insert((SurfaceGeometry::Nurbs(ns), false));
                 out.stats.nurbs_surfaces += 1;
-                if let Some(procedural) = nurbs::decode_procedural_surface_resolving_refs(
-                    record_slice(surf_rec, bytes),
-                    bytes,
-                    &subtype_tables,
-                ) {
-                    procedural_surface_defs.insert(surf_ref, procedural);
-                }
             }
+        }
+        if !surface_geo.contains_key(&surf_ref) && procedural_surface_defs.contains_key(&surf_ref) {
+            surface_geo.insert(
+                surf_ref,
+                (
+                    SurfaceGeometry::Unknown {
+                        record: Some(UnknownId(unknown_record_id(surf_rec))),
+                    },
+                    false,
+                ),
+            );
+            undecoded_carriers.insert(surf_ref);
         }
         if surface_geo.contains_key(&surf_ref) {
             kept_surfaces.insert(surf_ref);
