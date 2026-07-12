@@ -775,6 +775,8 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Complete native construction graph when the full layout decoded.
         native: Option<Box<EmbeddedRollingBall>>,
     },
+    /// Variable-radius blend with a complete embedded construction graph.
+    VariableBlend(Box<EmbeddedVariableBlend>),
 }
 
 pub(crate) struct EmbeddedRollingBallSide {
@@ -799,7 +801,6 @@ pub(crate) struct EmbeddedRollingBallThirdSide {
     pub(crate) flag: bool,
 }
 
-#[allow(dead_code)] // Populated and mapped by the enclosing variable-blend decoder.
 pub(crate) struct EmbeddedVariableBlendSide {
     pub(crate) label: String,
     pub(crate) surface: SurfaceGeometry,
@@ -809,6 +810,31 @@ pub(crate) struct EmbeddedVariableBlendSide {
     pub(crate) secondary_pcurve: Option<NurbsPcurve>,
     pub(crate) scalar: f64,
     pub(crate) tertiary_pcurve: Option<NurbsPcurve>,
+}
+
+/// Embedded native variable blend before stable IR ids are assigned.
+pub struct EmbeddedVariableBlend {
+    pub(crate) sides: Box<[EmbeddedVariableBlendSide; 2]>,
+    pub(crate) primary_curve: NurbsCurve,
+    pub(crate) offsets: [f64; 2],
+    pub(crate) radius_kind: i64,
+    pub(crate) first_value: cadmpeg_ir::geometry::VariableBlendValue,
+    pub(crate) second_value: Option<cadmpeg_ir::geometry::VariableBlendValue>,
+    pub(crate) chamfer: Option<Box<cadmpeg_ir::geometry::VariableBlendChamfer>>,
+    pub(crate) single_radius_tail: Option<cadmpeg_ir::geometry::VariableBlendSingleRadiusTail>,
+    pub(crate) u_range: [f64; 2],
+    pub(crate) v_range: [f64; 2],
+    pub(crate) shape_prefix: i64,
+    pub(crate) shape_parameter: f64,
+    pub(crate) shape_length: f64,
+    pub(crate) shape_tail: i64,
+    pub(crate) shape_extensions: [i64; 3],
+    pub(crate) secondary_curve: NurbsCurve,
+    pub(crate) convexity: i64,
+    pub(crate) render_blend: i64,
+    pub(crate) post_range: [f64; 2],
+    pub(crate) post_curve: NurbsCurve,
+    pub(crate) post_pcurve: Option<NurbsPcurve>,
 }
 
 pub(crate) enum EmbeddedRollingBallRadiusSelector {
@@ -1727,7 +1753,6 @@ fn decode_rolling_ball_third_side(
     })
 }
 
-#[allow(dead_code)] // Consumed by the enclosing variable-blend decoder.
 fn decode_variable_blend_side(
     bytes: &[u8],
     position: &mut usize,
@@ -1758,7 +1783,6 @@ fn decode_variable_blend_side(
     })
 }
 
-#[allow(dead_code)] // Consumed by the enclosing variable-blend decoder in the next slice.
 fn take_blend_value_name(bytes: &[u8], position: &mut usize) -> Option<String> {
     let saved = *position;
     if let Some(value) = take_native_string(bytes, position) {
@@ -1768,7 +1792,6 @@ fn take_blend_value_name(bytes: &[u8], position: &mut usize) -> Option<String> {
     take_native_ident(bytes, position)
 }
 
-#[allow(dead_code)] // Consumed by the enclosing variable-blend decoder in the next slice.
 fn decode_variable_blend_value(
     bytes: &[u8],
     position: &mut usize,
@@ -1980,6 +2003,145 @@ mod variable_blend_value_tests {
             VariableBlendValuePayload::TwoEnds { .. }
         ));
     }
+}
+
+fn decode_var_blend_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+) -> Option<DecodedProceduralSurface> {
+    use cadmpeg_ir::geometry::{
+        LoftBridgeToken, VariableBlendChamfer, VariableBlendSingleRadiusTail,
+    };
+    let names: [&[u8]; 2] = [b"var_blend_spl_sur", b"srf_srf_v_bl_spl_sur"];
+    let (start, name_len) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len()))
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name_len + 3;
+    let sides = Box::new([
+        decode_variable_blend_side(span, &mut position, int_width)?,
+        decode_variable_blend_side(span, &mut position, int_width)?,
+    ]);
+    let primary = decode_curve_block(span, position, int_width)?;
+    position = primary.end;
+    let offsets = [
+        take_f64(span, &mut position)? * LEN_TO_MM,
+        take_f64(span, &mut position)? * LEN_TO_MM,
+    ];
+    let radius_kind = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    if !matches!(radius_kind, 0 | 1) {
+        return None;
+    }
+    let first_value = decode_variable_blend_value(span, &mut position, int_width, true, 0)?;
+    let second_value = if radius_kind == 1 {
+        Some(decode_variable_blend_value(
+            span,
+            &mut position,
+            int_width,
+            true,
+            0,
+        )?)
+    } else {
+        None
+    };
+    let chamfer = if radius_kind == 1
+        && span.get(position) == Some(&0x15)
+        && read_int(span, position + 1, int_width) == Some(3)
+    {
+        Some(Box::new(VariableBlendChamfer {
+            variable_chamfer: take_tagged_int(span, &mut position, 0x15, int_width)?,
+            chamfer_type: take_tagged_int(span, &mut position, 0x15, int_width)?,
+            value: decode_variable_blend_value(span, &mut position, int_width, true, 0)?,
+        }))
+    } else {
+        None
+    };
+    let single_radius_tail = if radius_kind == 0
+        && span.get(position) == Some(&0x04)
+        && matches!(read_int(span, position + 1, int_width), Some(1 | 7))
+    {
+        Some(VariableBlendSingleRadiusTail {
+            selector: LoftBridgeToken::Integer(take_tagged_int(
+                span,
+                &mut position,
+                0x04,
+                int_width,
+            )?),
+            parameters: [
+                take_f64(span, &mut position)?,
+                take_f64(span, &mut position)?,
+            ],
+        })
+    } else {
+        None
+    };
+    let u_range = [
+        take_range_value(span, &mut position)?,
+        take_range_value(span, &mut position)?,
+    ];
+    let v_range = [
+        take_range_value(span, &mut position)?,
+        take_range_value(span, &mut position)?,
+    ];
+    let shape_prefix = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let shape_parameter = take_f64(span, &mut position)?;
+    let shape_length = take_f64(span, &mut position)? * LEN_TO_MM;
+    let shape_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let cache = decode_surface_block(span, position, int_width)?;
+    position = cache.end;
+    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let shape_extensions = [
+        take_tagged_int(span, &mut position, 0x04, int_width)?,
+        take_tagged_int(span, &mut position, 0x04, int_width)?,
+        take_tagged_int(span, &mut position, 0x04, int_width)?,
+    ];
+    let secondary = decode_curve_block(span, position, int_width)?;
+    position = secondary.end;
+    let convexity = i64::from(take_bool(span, &mut position)?);
+    let render_blend = i64::from(take_bool(span, &mut position)?);
+    let post_range = [
+        take_range_value(span, &mut position)?,
+        take_range_value(span, &mut position)?,
+    ];
+    let post = decode_curve_block(span, position, int_width)?;
+    position = post.end;
+    let post_pcurve = decode_nullable_embedded_pcurve(span, &mut position, int_width)?;
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(
+            EmbeddedVariableBlend {
+                sides,
+                primary_curve: primary.curve,
+                offsets,
+                radius_kind,
+                first_value,
+                second_value,
+                chamfer,
+                single_radius_tail,
+                u_range,
+                v_range,
+                shape_prefix,
+                shape_parameter,
+                shape_length,
+                shape_tail,
+                shape_extensions,
+                secondary_curve: secondary.curve,
+                convexity,
+                render_blend,
+                post_range,
+                post_curve: post.curve,
+                post_pcurve,
+            },
+        )),
+        cache_fit_tolerance,
+    })
 }
 
 fn decode_full_rb_blend_spl_sur(
@@ -2217,6 +2379,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_rot_spl_sur(bytes, int_width))
         .or_else(|| decode_off_spl_sur(bytes, int_width))
         .or_else(|| decode_cyl_spl_sur_at(bytes, int_width))
+        .or_else(|| decode_var_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_full_rb_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_rb_blend_spl_sur_fallback(bytes, int_width))
     {

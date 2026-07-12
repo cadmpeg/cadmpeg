@@ -23,6 +23,7 @@ use cadmpeg_ir::geometry::{
     BlendSupport, Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
     ProceduralSurface, ProceduralSurfaceDefinition, RollingBallConstruction,
     RollingBallRadiusSelector, RollingBallSide, RollingBallThirdSide, Surface, SurfaceGeometry,
+    VariableBlendConstruction, VariableBlendSide,
 };
 use cadmpeg_ir::ids::{
     AttributeId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId,
@@ -1210,6 +1211,85 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             ProceduralSurfaceDefinition::Extrusion {
                                 directrix: directrix_id,
                                 direction,
+                            }
+                        }
+                        nurbs::DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
+                            let mut sides = Vec::with_capacity(2);
+                            for (side_index, side) in construction.sides.into_iter().enumerate() {
+                                let prefix = format!(
+                                    "f3d:brep:procedural_surface#{i}:variable_side{side_index}"
+                                );
+                                let surface = SurfaceId(format!("{prefix}:surface"));
+                                out.surfaces.push(Surface {
+                                    id: surface.clone(),
+                                    geometry: side.surface,
+                                    source_object: None,
+                                });
+                                let curve = CurveId(format!("{prefix}:curve"));
+                                out.curves.push(Curve {
+                                    id: curve.clone(),
+                                    geometry: CurveGeometry::Nurbs(side.curve),
+                                    source_object: None,
+                                });
+                                sides.push(VariableBlendSide {
+                                    label: side.label,
+                                    surface,
+                                    curve,
+                                    pcurve: side.pcurve.map(embedded_pcurve_geometry),
+                                    location: side.location,
+                                    secondary_pcurve: side
+                                        .secondary_pcurve
+                                        .map(embedded_pcurve_geometry),
+                                    scalar: side.scalar,
+                                    tertiary_pcurve: side
+                                        .tertiary_pcurve
+                                        .map(embedded_pcurve_geometry),
+                                });
+                            }
+                            let [first, second]: [VariableBlendSide; 2] = sides
+                                .try_into()
+                                .expect("invariant: variable blend has two sides");
+                            let mut add_curve = |suffix: &str, geometry: NurbsCurve| {
+                                let id = CurveId(format!(
+                                    "f3d:brep:procedural_surface#{i}:variable_{suffix}"
+                                ));
+                                out.curves.push(Curve {
+                                    id: id.clone(),
+                                    geometry: CurveGeometry::Nurbs(geometry),
+                                    source_object: None,
+                                });
+                                id
+                            };
+                            let primary_curve = add_curve("primary", construction.primary_curve);
+                            let secondary_curve =
+                                add_curve("secondary", construction.secondary_curve);
+                            let post_curve = add_curve("post", construction.post_curve);
+                            ProceduralSurfaceDefinition::VariableBlend {
+                                construction: Box::new(VariableBlendConstruction {
+                                    sides: Box::new([first, second]),
+                                    primary_curve,
+                                    offsets: construction.offsets,
+                                    radius_kind: construction.radius_kind,
+                                    first_value: construction.first_value,
+                                    second_value: construction.second_value,
+                                    chamfer: construction.chamfer,
+                                    single_radius_tail: construction.single_radius_tail,
+                                    u_range: construction.u_range,
+                                    v_range: construction.v_range,
+                                    shape_prefix: construction.shape_prefix,
+                                    shape_parameter: construction.shape_parameter,
+                                    shape_length: construction.shape_length,
+                                    shape_tail: construction.shape_tail,
+                                    shape_extensions: construction.shape_extensions,
+                                    secondary_curve,
+                                    convexity: construction.convexity,
+                                    render_blend: construction.render_blend,
+                                    post_range: construction.post_range,
+                                    post_curve,
+                                    post_pcurve: construction
+                                        .post_pcurve
+                                        .map(embedded_pcurve_geometry),
+                                }),
                             }
                         }
                         nurbs::DecodedProceduralSurfaceDefinition::Blend {

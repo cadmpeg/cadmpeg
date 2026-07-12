@@ -2055,6 +2055,75 @@ fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
     bytes
 }
 
+fn append_generated_variable_blend_side(bytes: &mut Vec<u8>, label: &str, x: f64) {
+    push_u8_string(bytes, label);
+    t_ident(bytes, "plane");
+    t_pos(bytes, [x, 0.0, 0.0]);
+    t_vec(bytes, [0.0, 0.0, 1.0]);
+    t_vec(bytes, [1.0, 0.0, 0.0]);
+    bytes.push(0x0b);
+    bytes.extend_from_slice(&generated_curve_block());
+    t_ident(bytes, "nullbs");
+    t_pos(bytes, [x, 2.0, 3.0]);
+    t_ident(bytes, "nullbs");
+    t_dbl(bytes, x + 0.5);
+    t_ident(bytes, "nullbs");
+}
+
+fn synthetic_variable_blend_smbh(name: &str) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, name);
+    append_generated_variable_blend_side(&mut surface, "left", 1.0);
+    append_generated_variable_blend_side(&mut surface, "right", 4.0);
+    surface.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut surface, -0.2);
+    t_dbl(&mut surface, 0.4);
+    surface.push(0x15);
+    surface.extend_from_slice(&0i64.to_le_bytes());
+    push_u8_string(&mut surface, "two_ends");
+    surface.push(0x0a);
+    t_long(&mut surface, 7);
+    surface.push(0x15);
+    surface.extend_from_slice(&3i64.to_le_bytes());
+    for value in [0.25, 0.75, 1.5, 2.5] {
+        t_dbl(&mut surface, value);
+    }
+    for value in [-1.0, 2.0, -3.0, 4.0] {
+        t_dbl(&mut surface, value);
+    }
+    t_long(&mut surface, 11);
+    t_dbl(&mut surface, 0.125);
+    t_dbl(&mut surface, 0.6);
+    t_long(&mut surface, 12);
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.004);
+    for value in [21, 22, 23] {
+        t_long(&mut surface, value);
+    }
+    surface.extend_from_slice(&generated_curve_block());
+    surface.push(0x0a);
+    surface.push(0x0b);
+    t_dbl(&mut surface, 0.0);
+    t_dbl(&mut surface, 1.0);
+    surface.extend_from_slice(&generated_curve_block());
+    t_ident(&mut surface, "nullbs");
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn synthetic_partial_rb_blend_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_rb_blend_spl_sur_smbh();
     let marker = b"\x0e\x06sphere";
@@ -7743,6 +7812,49 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             panic!("expected complete round-trip rolling-ball graph")
         };
         assert_eq!(actual.as_ref(), expected.as_ref());
+    }
+}
+
+#[test]
+fn generated_variable_blends_decode_complete_single_radius_graphs() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendValuePayload};
+
+    for name in ["var_blend_spl_sur", "srf_srf_v_bl_spl_sur"] {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh(name))),
+                &DecodeOptions::default(),
+            )
+            .expect("variable-blend decode");
+        let ProceduralSurfaceDefinition::VariableBlend { construction } =
+            &result.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected variable blend")
+        };
+        assert_eq!(construction.sides[0].label, "left");
+        assert_eq!(construction.sides[1].label, "right");
+        assert_eq!(
+            construction.sides[0].location,
+            cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
+        );
+        assert_eq!(construction.offsets, [-2.0, 4.0]);
+        assert_eq!(construction.radius_kind, 0);
+        let VariableBlendValuePayload::TwoEnds { parameters, radii } =
+            &construction.first_value.payload
+        else {
+            panic!("expected two-ends radius law")
+        };
+        assert_eq!(*parameters, [0.25, 0.75]);
+        assert_eq!(*radii, [15.0, 25.0]);
+        assert_eq!(construction.u_range, [-1.0, 2.0]);
+        assert_eq!(construction.v_range, [-3.0, 4.0]);
+        assert_eq!(construction.shape_prefix, 11);
+        assert_eq!(construction.shape_length, 6.0);
+        assert_eq!(construction.shape_extensions, [21, 22, 23]);
+        assert_eq!(construction.convexity, 1);
+        assert_eq!(construction.render_blend, 0);
+        assert_eq!(construction.post_range, [0.0, 1.0]);
+        assert!(construction.post_pcurve.is_none());
     }
 }
 
