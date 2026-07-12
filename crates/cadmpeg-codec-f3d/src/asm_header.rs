@@ -5,13 +5,13 @@
 //! [`record_stream_start`] locates the first SAB record, and
 //! [`first_delta_state_offset`] marks the end of the active solved-model slice.
 //!
-//! `BinaryFile8` layout: `0..16` magic `ASM BinaryFile8<`, `16..24` zero,
-//! `24..32` big-endian u64 per-file version word, `32..40` big-endian `3`,
-//! `40..48` big-endian `7`. The three `0x07`-tagged UTF-8 strings
-//! (`product_family`, `product_version_string`, `save_date`) begin at byte 47:
-//! the schema word's low byte (`0x07`) is reused as the first string's tag.
+//! `BinaryFile8` layout: `0..15` magic `ASM BinaryFile8`, `15..19`
+//! little-endian u32 ASM release word, `19..31` zero, `31..39` little-endian
+//! u64 entity count, `39..47` little-endian u64 flags. Bit 0 marks a history
+//! partition. The three `0x07`-tagged UTF-8 strings (`product_family`,
+//! `product_version_string`, `save_date`) begin at byte 47.
 //!
-//! `BinaryFile4` layout: `0..15` magic `ASM BinaryFile4` (no `<`), then four
+//! `BinaryFile4` layout: `0..15` magic `ASM BinaryFile4`, then four
 //! little-endian u32 words: `15..19` ASM release, `19..23` record count,
 //! `23..27` entity count, `27..31` flags. Bit 0 marks a history partition. The
 //! string region begins at byte 31.
@@ -24,25 +24,18 @@
 pub struct AsmHeader {
     /// Integer width the stream declares (`4` or `8`), from `ASM BinaryFileN`.
     pub width: u8,
-    /// Per-file version/save word (big-endian u64 at offset 24). `BinaryFile8`
-    /// only.
-    pub version_word: Option<u64>,
-    /// ASM binary format version (big-endian u64 at offset 32, constant `3`).
-    /// `BinaryFile8` only.
-    pub format_version: Option<u64>,
-    /// ASM binary schema version (big-endian u64 at offset 40, constant `7`).
-    /// `BinaryFile8` only.
-    pub schema_version: Option<u64>,
-    /// ASM release word (little-endian u32 at offset 15, e.g. `22700` for ASM
-    /// 227). `BinaryFile4` only.
+    /// ASM release word (little-endian u32 at offset 15 in both widths, e.g.
+    /// `22700` for ASM 227, `23100` for ASM 231).
     pub release: Option<u32>,
     /// Record-count word (little-endian u32 at offset 19; `0` when unwritten).
-    /// `BinaryFile4` only.
+    /// `BinaryFile4` only; the corresponding `BinaryFile8` region is zero.
     pub record_count: Option<u32>,
-    /// Entity-count word (little-endian u32 at offset 23). `BinaryFile4` only.
+    /// Entity-count word: little-endian u32 at offset 23 (`BinaryFile4`) or
+    /// little-endian u64 at offset 31 (`BinaryFile8`).
     pub entity_count: Option<u32>,
-    /// Flags word (little-endian u32 at offset 27); bit 0 is set when the
-    /// stream carries a history partition. `BinaryFile4` only.
+    /// Flags word: little-endian u32 at offset 27 (`BinaryFile4`) or
+    /// little-endian u64 at offset 39 (`BinaryFile8`); bit 0 is set when the
+    /// stream carries a history partition.
     pub flags: Option<u32>,
     /// `product_family`, e.g. `Autodesk Neutron`.
     pub product_family: Option<String>,
@@ -62,28 +55,20 @@ pub struct AsmHeader {
 const MAGIC_PREFIX: &[u8] = b"ASM BinaryFile";
 
 /// Byte offset at which the three `0x07`-tagged product strings begin in a
-/// `BinaryFile8` header. The three big-endian header words sit at offsets 24,
-/// 32, and 40; the word at 40 is the constant schema version `7`, so its low
-/// byte at offset 47 is `0x07`; that byte also serves as the first string's
-/// `TAG_UTF8_U8` tag. The string region therefore begins at 47, one byte before
-/// the nominal end of the word block.
+/// `BinaryFile8` header: directly after the release word at 15, the zero
+/// region at 19..31, and the little-endian u64 entity-count and flags words at
+/// 31 and 39.
 const BF8_STRING_REGION_START: usize = 47;
 
 /// Byte offset at which the string region begins in a `BinaryFile4` header:
 /// directly after the 15-byte magic and four little-endian u32 words.
 const BF4_STRING_REGION_START: usize = 31;
 
-/// Returns `true` if `bytes` begins with an ASM `BinaryFile` magic. The
-/// `BinaryFile8` magic is 16 bytes ending in `<`; the `BinaryFile4` magic is
-/// the 15-byte prefix alone (byte 15 is the release word's low byte).
+/// Returns `true` if `bytes` begins with an ASM `BinaryFile` magic: the
+/// 15-byte prefix `ASM BinaryFile4` or `ASM BinaryFile8`. Byte 15 is the
+/// release word's low byte in both widths, not part of the magic.
 pub fn has_asm_magic(bytes: &[u8]) -> bool {
-    bytes.len() >= 16
-        && bytes.starts_with(MAGIC_PREFIX)
-        && match bytes[14] {
-            b'8' => bytes[15] == b'<',
-            b'4' => true,
-            _ => false,
-        }
+    bytes.len() >= 16 && bytes.starts_with(MAGIC_PREFIX) && matches!(bytes[14], b'4' | b'8')
 }
 
 /// Byte offset of the string region for the stream's declared width, or `None`
@@ -106,9 +91,6 @@ pub fn parse(bytes: &[u8]) -> Option<AsmHeader> {
     let width = bytes[14] - b'0';
     let mut header = AsmHeader {
         width,
-        version_word: None,
-        format_version: None,
-        schema_version: None,
         release: None,
         record_count: None,
         entity_count: None,
@@ -123,9 +105,9 @@ pub fn parse(bytes: &[u8]) -> Option<AsmHeader> {
 
     match width {
         8 => {
-            header.version_word = read_be_u64(bytes, 24);
-            header.format_version = read_be_u64(bytes, 32);
-            header.schema_version = read_be_u64(bytes, 40);
+            header.release = read_le_u32(bytes, 15);
+            header.entity_count = read_le_u64(bytes, 31).and_then(|v| u32::try_from(v).ok());
+            header.flags = read_le_u64(bytes, 39).and_then(|v| u32::try_from(v).ok());
         }
         4 => {
             header.release = read_le_u32(bytes, 15);
@@ -212,9 +194,9 @@ pub fn first_delta_state_offset(bytes: &[u8]) -> Option<usize> {
         .position(|w| w == DELTA_STATE)
 }
 
-fn read_be_u64(bytes: &[u8], at: usize) -> Option<u64> {
+fn read_le_u64(bytes: &[u8], at: usize) -> Option<u64> {
     bytes.get(at..at + 8).map(|s| {
-        u64::from_be_bytes(
+        u64::from_le_bytes(
             s.try_into()
                 .expect("invariant: bytes.get(at..at+8) is an 8-byte slice"),
         )

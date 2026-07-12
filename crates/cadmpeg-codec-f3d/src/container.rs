@@ -174,9 +174,6 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
             attributes.insert("asm_magic".to_string(), asm_magic_label(&buf));
             if let Some(h) = &header {
                 attributes.insert("asm_width".to_string(), h.width.to_string());
-                if let Some(v) = h.version_word {
-                    attributes.insert("asm_version_word".to_string(), v.to_string());
-                }
                 if let Some(v) = h.release {
                     attributes.insert("asm_release".to_string(), v.to_string());
                 }
@@ -319,10 +316,9 @@ fn hex_sha256(bytes: &[u8]) -> String {
 
 fn asm_magic_label(bytes: &[u8]) -> String {
     if asm_header::has_asm_magic(bytes) {
-        // `BinaryFile8` magic is 16 bytes ending in `<`; `BinaryFile4` magic is
-        // the 15-byte prefix alone (byte 15 is release-word data).
-        let end = if bytes[14] == b'8' { 16 } else { 15 };
-        String::from_utf8_lossy(&bytes[..end]).to_string()
+        // Both magics are the 15-byte prefix plus the width digit; byte 15 is
+        // release-word data.
+        String::from_utf8_lossy(&bytes[..15]).to_string()
     } else {
         "absent".to_string()
     }
