@@ -793,6 +793,10 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     assert!(value["decode_report"].is_null());
     assert!(value["validation_report"].is_object());
     assert_eq!(value["export"]["format"], "step");
+    assert!(value["export"]["entity_counts"].is_object());
+    assert!(value["export"]["total_entities"].is_number());
+    assert!(value["export"]["losses"].is_array());
+    assert!(value["export"]["notes"].is_array());
 
     let empty = geometryless_creo(dir.path(), "empty.prt");
     let refusal_report = dir.path().join("refusal-report.json");
@@ -814,6 +818,38 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     assert!(value["decode_report"].is_object());
     assert!(value["validation_report"].is_object());
     assert!(value["export"].is_null());
+}
+
+#[test]
+fn f3d_export_report_identifies_regenerated_output() {
+    let dir = tempdir().unwrap();
+    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let output = dir.path().join("cube.f3d");
+    let report = dir.path().join("f3d-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cube.to_str().unwrap(),
+            "-f",
+            "f3d",
+            "-o",
+            output.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["export"]["format"], "f3d");
+    assert!(value["export"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note
+            .as_str()
+            .is_some_and(|note| note.contains("regenerated"))));
 }
 
 #[test]

@@ -61,6 +61,7 @@ dependencies = [
  "cadmpeg-ir",
  "schemars",
  "serde",
+ "serde_json",
  "sha2",
  "thiserror",
  "zip 8.6.0",
@@ -94,6 +95,7 @@ dependencies = [
  "roxmltree",
  "schemars",
  "serde",
+ "serde_json",
  "sha2",
  "thiserror",
 ]
