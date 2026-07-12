@@ -2882,14 +2882,13 @@ fn classify_body_kinds(out: &mut Brep) {
             continue;
         }
         let counts = edge_use_counts.get(&body.id);
-        body.kind =
-            if counts.is_some_and(|counts| {
-                !counts.is_empty() && counts.values().all(|count| *count == 2)
-            }) {
-                cadmpeg_ir::topology::BodyKind::Solid
-            } else {
-                cadmpeg_ir::topology::BodyKind::Sheet
-            };
+        body.kind = if counts
+            .is_some_and(|counts| !counts.is_empty() && counts.values().all(|count| *count == 2))
+        {
+            cadmpeg_ir::topology::BodyKind::Solid
+        } else {
+            cadmpeg_ir::topology::BodyKind::Sheet
+        };
     }
 }
 
