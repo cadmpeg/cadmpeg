@@ -282,6 +282,17 @@ pub enum FeatureDefinition {
         /// Motion applied to the selected faces.
         motion: FaceMotion,
     },
+    /// Dome grown from selected planar faces.
+    Dome {
+        /// Faces that bound the dome base.
+        faces: FaceSelection,
+        /// Dome height measured normal to the base.
+        height: Length,
+        /// Whether the profile is elliptical rather than spherical.
+        elliptical: bool,
+        /// Whether growth opposes the selected-face normal.
+        reverse: bool,
+    },
     /// Drilled or machined hole.
     Hole {
         /// Face the hole is placed on, when known.

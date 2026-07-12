@@ -374,6 +374,8 @@ fn project_definition(
         project_delete_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("MoveFace") {
         project_move_face(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature.kind.eq_ignore_ascii_case("Dome") {
+        project_dome(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Hole") {
         project_hole(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Revolve") {
@@ -777,6 +779,20 @@ fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::MoveFace {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
         motion,
+    })
+}
+
+fn project_dome(feature: &Feature) -> Option<FeatureDefinition> {
+    Some(FeatureDefinition::Dome {
+        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
+        height: Length(
+            feature
+                .parameters
+                .get("Height")
+                .and_then(|value| parse_length_mm(value))?,
+        ),
+        elliptical: parse_bool(feature.properties.get("Elliptical")?)?,
+        reverse: parse_bool(feature.properties.get("Reverse")?)?,
     })
 }
 
@@ -1632,6 +1648,38 @@ pub fn sync_neutral_features(
                         parameters.insert("Angle".into(), format_angle_rad(angle.0));
                     }
                 }
+                (record.kind.clone(), parameters, properties)
+            }
+            FeatureDefinition::Dome {
+                faces: FaceSelection::Native(faces),
+                height,
+                elliptical,
+                reverse,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained dome record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("Dome") || faces.trim().is_empty() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported dome semantics",
+                        feature.id
+                    )));
+                }
+                if !height.0.is_finite() {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has a non-finite dome height",
+                        feature.id
+                    )));
+                }
+                let mut parameters = record.parameters.clone();
+                parameters.insert("Height".into(), format_length_mm(height.0));
+                let mut properties = record.properties.clone();
+                properties.insert("Faces".into(), faces.clone());
+                properties.insert("Elliptical".into(), elliptical.to_string());
+                properties.insert("Reverse".into(), reverse.to_string());
                 (record.kind.clone(), parameters, properties)
             }
             FeatureDefinition::Hole {

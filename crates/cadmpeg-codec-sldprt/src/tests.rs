@@ -3608,6 +3608,66 @@ fn semantic_writer_round_trips_all_move_face_forms() {
 }
 
 #[test]
+fn semantic_writer_round_trips_typed_dome() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Dome Name="Crown" Type="Dome" id="24" Faces="face:9" Elliptical="false" Reverse="false"><Dimension Name="Height">0.25in</Dimension></Dome></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Dome {
+            faces: FaceSelection::Native(faces),
+            height: Length(value),
+            elliptical: false,
+            reverse: false,
+        } if faces == "face:9" && (*value - 6.35).abs() < 1e-12
+    ));
+
+    let FeatureDefinition::Dome {
+        faces,
+        height,
+        elliptical,
+        reverse,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed dome");
+    };
+    *faces = FaceSelection::Native("face:10,face:11".into());
+    *height = Length(8.0);
+    *elliptical = true;
+    *reverse = true;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.properties["Faces"], "face:10,face:11");
+    assert_eq!(feature.properties["Elliptical"], "true");
+    assert_eq!(feature.properties["Reverse"], "true");
+    assert_eq!(feature.parameters["Height"], "8mm");
+    assert!(matches!(
+        &regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Dome {
+            faces: FaceSelection::Native(faces),
+            height: Length(8.0),
+            elliptical: true,
+            reverse: true,
+        } if faces == "face:10,face:11"
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition, HoleKind, Length};
 
