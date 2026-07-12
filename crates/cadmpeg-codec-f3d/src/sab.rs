@@ -11,6 +11,8 @@
 //! [`crate::brep`]. Framing every token preserves byte synchronization and
 //! record extents without requiring semantic decoding of each payload.
 
+use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_i, vec3_at as read_vec3};
+
 /// A decoded SAB token. Only the payload this codec consumes is retained with a
 /// typed value; all tokens are still framed so record boundaries stay exact.
 #[derive(Debug, Clone, PartialEq)]
@@ -116,41 +118,6 @@ enum Lexed {
     SubIdent(String),
     /// `0x11` record terminator.
     Terminator,
-}
-
-fn read_i(bytes: &[u8], at: usize, width: usize) -> Option<i64> {
-    let slice = bytes.get(at..at + width)?;
-    let v = match width {
-        8 => i64::from_le_bytes(
-            slice
-                .try_into()
-                .expect("invariant: bytes.get(at..at+width) with width=8 is an 8-byte slice"),
-        ),
-        4 => i32::from_le_bytes(
-            slice
-                .try_into()
-                .expect("invariant: bytes.get(at..at+width) with width=4 is a 4-byte slice"),
-        ) as i64,
-        _ => return None,
-    };
-    Some(v)
-}
-
-fn read_f64(bytes: &[u8], at: usize) -> Option<f64> {
-    let slice = bytes.get(at..at + 8)?;
-    Some(f64::from_le_bytes(
-        slice
-            .try_into()
-            .expect("invariant: bytes.get(at..at+8) is an 8-byte slice"),
-    ))
-}
-
-fn read_vec3(bytes: &[u8], at: usize) -> Option<[f64; 3]> {
-    Some([
-        read_f64(bytes, at)?,
-        read_f64(bytes, at + 8)?,
-        read_f64(bytes, at + 16)?,
-    ])
 }
 
 fn read_string(bytes: &[u8], start: usize, len: usize) -> Option<String> {

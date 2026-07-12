@@ -26,6 +26,7 @@
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
 };
+use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_int};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::sab::Record;
@@ -45,33 +46,6 @@ const NURBS_MARKER: &[u8] = b"\x0d\x05nurbs";
 const INT_WIDTHS: [usize; 2] = [8, 4];
 
 /// Read an `int_width`-byte little-endian signed integer.
-fn read_int(b: &[u8], p: usize, int_width: usize) -> Option<i64> {
-    if int_width == 4 {
-        b.get(p..p + 4).map(|s| {
-            i64::from(i32::from_le_bytes(
-                s.try_into()
-                    .expect("invariant: b.get(p..p+4) is a 4-byte slice"),
-            ))
-        })
-    } else {
-        b.get(p..p + 8).map(|s| {
-            i64::from_le_bytes(
-                s.try_into()
-                    .expect("invariant: b.get(p..p+8) is an 8-byte slice"),
-            )
-        })
-    }
-}
-
-fn read_f64(b: &[u8], p: usize) -> Option<f64> {
-    b.get(p..p + 8).map(|s| {
-        f64::from_le_bytes(
-            s.try_into()
-                .expect("invariant: b.get(p..p+8) is an 8-byte slice"),
-        )
-    })
-}
-
 /// Consume a `tag`-prefixed integer of `int_width` bytes at `*pos`, advancing
 /// past it.
 fn take_tagged_int(b: &[u8], pos: &mut usize, tag: u8, int_width: usize) -> Option<i64> {
