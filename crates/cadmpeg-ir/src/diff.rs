@@ -223,7 +223,7 @@ macro_rules! define_diff_arenas {
 }
 crate::document::arena_registry!(define_diff_arenas);
 
-fn native_diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
+fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
     let namespaces = left
         .native
         .0
@@ -265,7 +265,7 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
     let tolerance_change =
         (left.tolerances != right.tolerances).then_some((left.tolerances, right.tolerances));
     let mut per_arena = diff_arenas(left, right);
-    per_arena.extend(native_diff_arenas(left, right));
+    per_arena.extend(diff_native_namespaces(left, right));
     IrDiff {
         unit_change,
         tolerance_change,

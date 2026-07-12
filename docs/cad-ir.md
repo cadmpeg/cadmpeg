@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"2"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"3"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -16,11 +16,10 @@ CadIr
 │   ├── procedural constructions and neutral features
 │   └── tessellation, appearance, and attributes
 ├── annotations
-├── native
-└── unknowns
+└── native
 ```
 
-`model` is format-neutral. `annotations` supplies document-wide source location and exactness information. `native` contains independently versioned source-format namespaces. `unknowns` preserves recognized records that have no typed representation.
+`model` is format-neutral. `annotations` supplies document-wide source location and exactness information. `native` is a map keyed by format ID. Each value contains an integer `version` and an `arenas` map. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores records with `offset`, `byte_len`, `sha256`, optional base64 `data`, and `links`.
 
 The neutral model arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `features`, `tessellations`, `appearances`, `appearance_bindings`, and `attributes`. Every arena is a required flat JSON array. References are string IDs, never array indices. `subds` contains subdivision-surface control cages and is a free carrier arena; it is not owned by B-rep topology.
 
@@ -36,7 +35,7 @@ Entity IDs have the grammar:
 
 `format` identifies the producing codec or `synthetic`. `scope` identifies the containing source object or stream. `kind` names the entity class. `key` is the source persistent key when one exists and otherwise a positional ordinal.
 
-IDs are globally unique across neutral arenas, unknown records, and all nested native records. A codec produces identical IDs for identical input bytes when run at the same codec version. Renumbering caused only by unrelated arena insertion is invalid when the source supplies persistent identity. Each ID-bearing arena is sorted lexicographically by ID. Features also carry an `ordinal`; ordinal is construction order, while array order remains ID order.
+IDs are globally unique across neutral and native arenas. A codec produces identical IDs for identical input bytes when run at the same codec version. Renumbering caused only by unrelated arena insertion is invalid when the source supplies persistent identity. Each ID-bearing arena is sorted lexicographically by ID. Features also carry an `ordinal`; ordinal is construction order, while array order remains ID order.
 
 ## Units, tolerances, and terms
 
@@ -214,7 +213,7 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "2"`. The `model.subds` arena is required in version 2 JSON, including when it is empty. Version 2 requires the fields and invariants defined by this specification; removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version.
+Readers accept exactly `ir_version: "3"`. The `model.subds` arena is required in version 3 JSON, including when it is empty. Version 3 requires the fields and invariants defined by this specification; removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version.
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 
@@ -236,7 +235,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "2",
+  "ir_version": "3",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {
@@ -341,8 +340,7 @@ The generated document begins with this complete hierarchy and representative ra
       "body0": { "entity": "inferred" }
     }
   },
-  "native": {},
-  "unknowns": []
+  "native": {}
 }
 ```
 

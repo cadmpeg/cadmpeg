@@ -1173,11 +1173,11 @@ fn generate_ir_seeds() {
         .to_canonical_json()
         .unwrap();
     let canonical = [
-        ("minimal_v2.json", minimal.as_bytes()),
-        ("unit_cube_v2.json", cube.as_bytes()),
-        ("directed_subd_sum_v2.json", directed_subd_sum.as_bytes()),
+        ("minimal_v3.json", minimal.as_bytes()),
+        ("unit_cube_v3.json", cube.as_bytes()),
+        ("directed_subd_sum_v3.json", directed_subd_sum.as_bytes()),
     ];
-    let valid_v0 = minimal.replacen(r#""ir_version": "2""#, r#""ir_version": "0""#, 1);
+    let valid_v0 = minimal.replacen(r#""ir_version": "3""#, r#""ir_version": "0""#, 1);
 
     let from_json = Path::new("seeds/ir_from_json");
     replace_seed_directory(from_json);

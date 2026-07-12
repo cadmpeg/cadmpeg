@@ -162,6 +162,85 @@ fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeMut<'_> {
     F3dNativeMut { ir, native }
 }
 
+#[test]
+fn native_arenas_have_pinned_shape_and_typed_round_trip() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh_and_protein(&synthetic_geometry_smbh())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let original = decoded.ir.native.namespace("f3d").unwrap();
+    let typed = crate::native::F3dNative::load(original).unwrap();
+    let mut round_trip = cadmpeg_ir::NativeNamespace::default();
+    typed.store(&mut round_trip).unwrap();
+    assert_eq!(round_trip.version, crate::native::F3D_NATIVE_VERSION);
+    let expected = [
+        "act_entities",
+        "act_guids",
+        "act_root_components",
+        "asm_bulletin_boards",
+        "asm_delta_states",
+        "asm_entity_changes",
+        "asm_histories",
+        "asm_history_records",
+        "construction_recipes",
+        "design_body_members",
+        "design_entity_headers",
+        "design_material_assignments",
+        "design_objects",
+        "design_record_headers",
+        "lost_edge_references",
+        "persistent_design_links",
+        "persistent_references",
+        "sketch_curve_identities",
+        "sketch_curve_links",
+        "sketch_points",
+        "sketch_relations",
+    ];
+    assert_eq!(
+        round_trip
+            .arenas
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        expected
+    );
+    for records in round_trip.arenas.values() {
+        for record in records {
+            let json = serde_json::to_value(record).unwrap();
+            assert_eq!(json["id"], record.id);
+            assert!(json.as_object().unwrap().len() > 1);
+        }
+    }
+}
+
+#[test]
+fn diff_reports_design_material_assignment_changes() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh_and_protein(&synthetic_geometry_smbh())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut edited = decoded.ir.clone();
+    edited
+        .native
+        .namespace_mut("f3d")
+        .arenas
+        .get_mut("design_material_assignments")
+        .unwrap()[0]
+        .fields
+        .insert("entity_suffix".into(), serde_json::json!(123456));
+    let report = cadmpeg_ir::diff(&decoded.ir, &edited);
+    let arena = report
+        .per_arena
+        .iter()
+        .find(|arena| arena.kind == "native.f3d.design_material_assignments")
+        .unwrap();
+    assert_eq!(arena.modified.len(), 1);
+}
+
 fn update_f3d_native<R>(
     ir: &mut cadmpeg_ir::document::CadIr,
     update: impl FnOnce(&mut crate::native::F3dNative) -> R,

@@ -21,6 +21,7 @@ flate2.workspace = true
 crc32fast.workspace = true
 roxmltree.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 schemars.workspace = true
 
 [lints]

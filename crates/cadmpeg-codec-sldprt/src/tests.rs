@@ -30,6 +30,42 @@ fn update_sldprt_native<R>(
     result
 }
 
+#[test]
+fn native_arenas_have_pinned_shape_and_typed_round_trip() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let original = decoded.ir.native.namespace("sldprt").unwrap();
+    let typed = crate::native::SldprtNative::load(original).unwrap();
+    let mut round_trip = cadmpeg_ir::NativeNamespace::default();
+    typed.store(&mut round_trip).unwrap();
+    assert_eq!(round_trip.version, crate::native::SLDPRT_NATIVE_VERSION);
+    assert_eq!(
+        round_trip
+            .arenas
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        [
+            "configurations",
+            "feature_histories",
+            "feature_input_lanes",
+            "features",
+            "sketch_input_entities",
+        ]
+    );
+    for records in round_trip.arenas.values() {
+        for record in records {
+            let json = serde_json::to_value(record).unwrap();
+            assert_eq!(json["id"], record.id);
+            assert!(json.as_object().unwrap().len() > 1);
+        }
+    }
+}
+
 /// Nibble-swap a section name into its stored form (the swap is its own inverse,
 /// so the decoder recovers the original).
 fn swap_name(name: &str) -> Vec<u8> {
