@@ -1216,13 +1216,8 @@ fn decode_embedded_deformable(bytes: &[u8], int_width: usize) -> Option<Embedded
 
 fn decode_embedded_spring(bytes: &[u8], int_width: usize) -> Option<EmbeddedSpring> {
     let name = b"spring_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
-    let mut position = marker + name.len() + 3;
+    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let mut position = marker + name_len + 3;
     let mut surfaces = [None, None];
     let mut surface_parameter_ranges = [None, None];
     for side in 0..2 {
@@ -1292,13 +1287,8 @@ fn decode_embedded_spring(bytes: &[u8], int_width: usize) -> Option<EmbeddedSpri
 
 fn decode_embedded_surface_offset(bytes: &[u8], int_width: usize) -> Option<EmbeddedSurfaceOffset> {
     let name = b"off_surf_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
-    let mut position = marker + name.len() + 3;
+    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let mut position = marker + name_len + 3;
     let surfaces = [
         decode_embedded_surface(bytes, &mut position, int_width)?,
         decode_embedded_surface(bytes, &mut position, int_width)?,
@@ -1353,6 +1343,7 @@ fn decode_embedded_silhouette(bytes: &[u8], int_width: usize) -> Option<Embedded
     let names = [
         (b"silh_int_cur".as_slice(), SilhouetteKind::Standard),
         (b"para_silh_int_cur".as_slice(), SilhouetteKind::Parametric),
+        (b"parasil".as_slice(), SilhouetteKind::Parametric),
         (
             b"taper_silh_int_cur".as_slice(),
             SilhouetteKind::Taper { draft_factor: 0.0 },
@@ -1418,12 +1409,19 @@ fn decode_embedded_surface_curve(
     use cadmpeg_ir::geometry::SurfaceCurveFamily;
     let names = [
         (b"blend_int_cur".as_slice(), SurfaceCurveFamily::Blend),
+        (b"bldcur".as_slice(), SurfaceCurveFamily::Blend),
         (
             b"surf_int_cur".as_slice(),
             SurfaceCurveFamily::SurfaceConstrained,
         ),
+        (
+            b"surfcur".as_slice(),
+            SurfaceCurveFamily::SurfaceConstrained,
+        ),
         (b"par_int_cur".as_slice(), SurfaceCurveFamily::Parametric),
+        (b"parcur".as_slice(), SurfaceCurveFamily::Parametric),
         (b"skin_int_cur".as_slice(), SurfaceCurveFamily::Skin),
+        (b"d5c2_cur".as_slice(), SurfaceCurveFamily::Skin),
     ];
     let (marker, name, family) = names.into_iter().find_map(|(name, family)| {
         bytes
@@ -1506,13 +1504,8 @@ fn decode_embedded_three_surface_intersection(
 
 fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<EmbeddedProjection> {
     let name = b"proj_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
-    let mut position = marker + name.len() + 3;
+    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let mut position = marker + name_len + 3;
     let surfaces = [
         decode_embedded_surface(bytes, &mut position, int_width)?,
         decode_embedded_surface(bytes, &mut position, int_width)?,
@@ -1557,7 +1550,7 @@ fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<Embedded
 }
 
 fn decode_embedded_intersection(bytes: &[u8], int_width: usize) -> Option<EmbeddedIntersection> {
-    let names: [&[u8]; 2] = [b"int_int_cur", b"surf_surf_int_cur"];
+    let names: [&[u8]; 3] = [b"int_int_cur", b"surf_surf_int_cur", b"surfintcur"];
     let (marker, name) = names.into_iter().find_map(|name| {
         bytes
             .windows(name.len() + 3)
@@ -1601,13 +1594,8 @@ fn decode_embedded_two_sided_offset(
     int_width: usize,
 ) -> Option<EmbeddedTwoSidedOffset> {
     let name = b"off_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
-    let mut position = marker + name.len() + 3;
+    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let mut position = marker + name_len + 3;
     let first_surface = decode_embedded_surface(bytes, &mut position, int_width)?;
     let second_surface = decode_embedded_surface(bytes, &mut position, int_width)?;
     let surfaces = [first_surface, second_surface];
@@ -1772,13 +1760,8 @@ fn decode_two_sided_offset(
     };
 
     let name = b"off_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
-    let mut position = marker + name.len() + 3;
+    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let mut position = marker + name_len + 3;
     for expected in ["null_surface", "null_surface", "nullbs", "nullbs"] {
         if take_native_ident(bytes, &mut position)?.as_str() != expected {
             return None;
@@ -1885,13 +1868,8 @@ fn take_float_array(bytes: &[u8], position: &mut usize, int_width: usize) -> Opt
 
 fn decode_subset_definition(bytes: &[u8], int_width: usize) -> Option<SubsetDefinition> {
     let name = b"subset_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
-    let start = marker + name.len() + 3;
+    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let start = marker + name_len + 3;
     let source_marker = marker_positions(&bytes[start..]).into_iter().next()? + start;
     let source = decode_curve_block(bytes, source_marker, int_width)?;
     let mut position = source.end;
@@ -1907,13 +1885,8 @@ fn decode_vector_offset_definition(
     int_width: usize,
 ) -> Option<VectorOffsetDefinition> {
     let name = b"offset_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
-    let start = marker + name.len() + 3;
+    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let start = marker + name_len + 3;
     let source_marker = marker_positions(&bytes[start..]).into_iter().next()? + start;
     let source = decode_curve_block(bytes, source_marker, int_width)?;
     let mut position = source.end;
@@ -2051,10 +2024,64 @@ fn first_construction_subtype(bytes: &[u8]) -> Option<String> {
         let len = usize::from(*bytes.get(pos + 2)?);
         let name = bytes.get(pos + 3..pos + 3 + len)?;
         if name != b"ref" {
-            return Some(String::from_utf8_lossy(name).into_owned());
+            return Some(canonical_intcurve_kind(name).into());
         }
     }
     None
+}
+
+fn canonical_intcurve_kind(name: &[u8]) -> &str {
+    match name {
+        b"bldcur" => "blend_int_cur",
+        b"blndsprngcur" => "spring_int_cur",
+        b"exactcur" => "exact_int_cur",
+        b"lawintcur" => "law_int_cur",
+        b"offintcur" => "off_int_cur",
+        b"offsetintcur" => "offset_int_cur",
+        b"offsurfintcur" => "off_surf_int_cur",
+        b"parasil" => "para_silh_int_cur",
+        b"parcur" => "par_int_cur",
+        b"projcur" => "proj_int_cur",
+        b"surfcur" => "surf_int_cur",
+        b"surfintcur" => "int_int_cur",
+        b"d5c2_cur" => "skin_int_cur",
+        b"subsetintcur" => "subset_int_cur",
+        _ => std::str::from_utf8(name).unwrap_or("intcurve"),
+    }
+}
+
+fn find_intcurve_subtype(bytes: &[u8], modern: &[u8]) -> Option<(usize, usize)> {
+    let legacy: &[u8] = match modern {
+        b"blend_int_cur" => b"bldcur",
+        b"spring_int_cur" => b"blndsprngcur",
+        b"exact_int_cur" => b"exactcur",
+        b"law_int_cur" => b"lawintcur",
+        b"off_int_cur" => b"offintcur",
+        b"offset_int_cur" => b"offsetintcur",
+        b"off_surf_int_cur" => b"offsurfintcur",
+        b"para_silh_int_cur" => b"parasil",
+        b"par_int_cur" => b"parcur",
+        b"proj_int_cur" => b"projcur",
+        b"surf_int_cur" => b"surfcur",
+        b"int_int_cur" => b"surfintcur",
+        b"skin_int_cur" => b"d5c2_cur",
+        b"subset_int_cur" => b"subsetintcur",
+        _ => b"",
+    };
+    [modern, legacy]
+        .into_iter()
+        .filter(|name| !name.is_empty())
+        .find_map(|name| {
+            bytes
+                .windows(name.len() + 3)
+                .position(|window| {
+                    window[0] == 0x0f
+                        && matches!(window[1], 0x0d | 0x0e)
+                        && usize::from(window[2]) == name.len()
+                        && &window[3..] == name
+                })
+                .map(|marker| (marker, name.len()))
+        })
 }
 
 fn decode_cache_resolving_refs<T>(

@@ -670,6 +670,19 @@ fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
     bytes
 }
 
+fn with_legacy_subtype(mut bytes: Vec<u8>, modern: &str, legacy: &str) -> Vec<u8> {
+    let position = bytes
+        .windows(modern.len())
+        .position(|window| window == modern.as_bytes())
+        .expect("generated modern subtype");
+    bytes[position - 1] = legacy.len() as u8;
+    bytes.splice(
+        position..position + modern.len(),
+        legacy.as_bytes().iter().copied(),
+    );
+    bytes
+}
+
 fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -7591,6 +7604,106 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
         round_trip.ir.model.procedural_curves[0].cache_fit_tolerance,
         Some(0.004)
     );
+}
+
+#[test]
+fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let cases = [
+        with_legacy_subtype(
+            synthetic_geometry_with_exact_curve_smbh(),
+            "exact_int_cur",
+            "exactcur",
+        ),
+        with_legacy_subtype(
+            synthetic_geometry_with_vector_offset_curve_smbh(),
+            "offset_int_cur",
+            "offsetintcur",
+        ),
+        with_legacy_subtype(
+            synthetic_geometry_with_subset_curve_smbh(),
+            "subset_int_cur",
+            "subsetintcur",
+        ),
+        with_legacy_subtype(
+            synthetic_geometry_with_analytic_offset_supports_smbh(),
+            "off_int_cur",
+            "offintcur",
+        ),
+        with_legacy_subtype(
+            synthetic_geometry_with_surface_offset_smbh(),
+            "off_surf_int_cur",
+            "offsurfintcur",
+        ),
+        with_legacy_subtype(
+            synthetic_geometry_with_projection_smbh(),
+            "proj_int_cur",
+            "projcur",
+        ),
+        with_legacy_subtype(
+            synthetic_geometry_with_surface_intersection_smbh(),
+            "int_int_cur",
+            "surfintcur",
+        ),
+        with_legacy_subtype(
+            synthetic_geometry_with_spring_smbh(),
+            "spring_int_cur",
+            "blndsprngcur",
+        ),
+        with_legacy_subtype(
+            synthetic_geometry_with_surface_curve_smbh("blend_int_cur"),
+            "blend_int_cur",
+            "bldcur",
+        ),
+        with_legacy_subtype(
+            synthetic_geometry_with_surface_curve_smbh("surf_int_cur"),
+            "surf_int_cur",
+            "surfcur",
+        ),
+        with_legacy_subtype(
+            synthetic_geometry_with_surface_curve_smbh("par_int_cur"),
+            "par_int_cur",
+            "parcur",
+        ),
+        with_legacy_subtype(
+            synthetic_geometry_with_surface_curve_smbh("skin_int_cur"),
+            "skin_int_cur",
+            "d5c2_cur",
+        ),
+        with_legacy_subtype(
+            synthetic_geometry_with_silhouette_smbh("para_silh_int_cur", None),
+            "para_silh_int_cur",
+            "parasil",
+        ),
+    ];
+
+    for bytes in cases {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&bytes)),
+                &DecodeOptions::default(),
+            )
+            .expect("legacy intcurve alias decode");
+        assert!(!matches!(
+            result.ir.model.procedural_curves[0].definition,
+            ProceduralCurveDefinition::Unknown { .. }
+        ));
+        let mut source_less = result.ir;
+        source_less.source = None;
+        source_less.unknowns.clear();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("canonical source-less intcurve encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("canonical intcurve round trip");
+        assert!(!matches!(
+            round_trip.ir.model.procedural_curves[0].definition,
+            ProceduralCurveDefinition::Unknown { .. }
+        ));
+    }
 }
 
 #[test]
