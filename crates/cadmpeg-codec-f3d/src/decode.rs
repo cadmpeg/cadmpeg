@@ -123,7 +123,6 @@ pub fn decode(
                 }
             }
             native.store(ir.native.namespace_mut("f3d"))?;
-            ir.native.f3d = Some(native.clone());
             populate_annotations(
                 &mut ir,
                 &scan,
@@ -173,7 +172,6 @@ pub fn decode(
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
     native.store(ir.native.namespace_mut("f3d"))?;
-    ir.native.f3d = Some(native.clone());
     populate_annotations(&mut ir, &scan, &native, None);
     preserve_source_image(&scan, &mut ir)?;
     let report = build_container_report(&scan, false);

@@ -2345,7 +2345,8 @@ fn decode_extracts_parametric_history() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    let history = &result.ir.native.sldprt.as_ref().unwrap().feature_histories[0];
+    let native = sldprt_native(&result.ir);
+    let history = &native.feature_histories[0];
     assert_eq!(history.part_name.as_deref(), Some("Bracket"));
     assert_eq!(history.configurations[0].material.as_deref(), Some("Steel"));
     assert_eq!(history.features[0].kind, "BossExtrude");
@@ -2363,9 +2364,11 @@ fn semantic_writer_preserves_parametric_history() {
         )
         .unwrap();
     decoded.ir.model.points[0].position.z += 1.0;
-    decoded.ir.native.sldprt.as_mut().unwrap().feature_histories[0].features[0]
-        .parameters
-        .insert("Depth".into(), "15mm".into());
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_histories[0].features[0]
+            .parameters
+            .insert("Depth".into(), "15mm".into());
+    });
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -2375,13 +2378,8 @@ fn semantic_writer_preserves_parametric_history() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    let history = &regenerated
-        .ir
-        .native
-        .sldprt
-        .as_ref()
-        .unwrap()
-        .feature_histories[0];
+    let native = sldprt_native(&regenerated.ir);
+    let history = &native.feature_histories[0];
     assert_eq!(history.part_name.as_deref(), Some("Bracket"));
     assert_eq!(history.configurations[0].name, "Default");
     assert_eq!(history.configurations[0].material.as_deref(), Some("Steel"));
@@ -2399,24 +2397,9 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(
-        decoded
-            .ir
-            .native
-            .sldprt
-            .as_ref()
-            .unwrap()
-            .feature_input_lanes
-            .len(),
-        1
-    );
-    let lane = &decoded
-        .ir
-        .native
-        .sldprt
-        .as_ref()
-        .unwrap()
-        .feature_input_lanes[0];
+    let native = sldprt_native(&decoded.ir);
+    assert_eq!(native.feature_input_lanes.len(), 1);
+    let lane = &native.feature_input_lanes[0];
     assert_eq!(lane.configuration.as_deref(), Some("0"));
     let by_ordinal = |ordinal| {
         lane.sketch_entities
@@ -2429,18 +2412,14 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     assert_eq!(by_ordinal(2).kind, SketchInputKind::Arc);
     assert_eq!(by_ordinal(3).kind, SketchInputKind::ConstrainedPoint);
     assert_eq!(by_ordinal(4).kind, SketchInputKind::Native(9));
-    decoded
-        .ir
-        .native
-        .sldprt
-        .as_mut()
-        .unwrap()
-        .feature_input_lanes[0]
-        .sketch_entities
-        .iter_mut()
-        .find(|entity| entity.ordinal == 1)
-        .unwrap()
-        .kind = SketchInputKind::Native(5);
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_input_lanes[0]
+            .sketch_entities
+            .iter_mut()
+            .find(|entity| entity.ordinal == 1)
+            .unwrap()
+            .kind = SketchInputKind::Native(5);
+    });
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -2458,13 +2437,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        regenerated
-            .ir
-            .native
-            .sldprt
-            .as_ref()
-            .unwrap()
-            .feature_input_lanes[0]
+        sldprt_native(&regenerated.ir).feature_input_lanes[0]
             .sketch_entities
             .iter()
             .find(|entity| entity.ordinal == 1)
@@ -2628,9 +2601,11 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .unwrap();
     decoded.ir.model.points[0].position.z += 2.0;
     decoded.ir.model.tessellations[0].vertices[0].z = 125.0;
-    decoded.ir.native.sldprt.as_mut().unwrap().feature_histories[0].features[0]
-        .parameters
-        .insert("Depth".into(), "20mm".into());
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_histories[0].features[0]
+            .parameters
+            .insert("Depth".into(), "20mm".into());
+    });
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -2652,15 +2627,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .any(|binding| matches!(binding.target, AppearanceTarget::Face(_))));
     assert_eq!(regenerated.ir.model.tessellations[0].vertices[0].z, 125.0);
     assert_eq!(
-        regenerated
-            .ir
-            .native
-            .sldprt
-            .as_ref()
-            .unwrap()
-            .feature_histories[0]
-            .features[0]
-            .parameters["Depth"],
+        sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters["Depth"],
         "20mm"
     );
     assert!(regenerated
@@ -3035,9 +3002,11 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .unwrap();
     let brep_hash = crate::decode::brep_semantic_hash(&decoded.ir);
     let semantic_hash = crate::decode::semantic_hash(&decoded.ir);
-    decoded.ir.native.sldprt.as_mut().unwrap().feature_histories[0].features[0]
-        .parameters
-        .insert("Depth".into(), "30mm".into());
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_histories[0].features[0]
+            .parameters
+            .insert("Depth".into(), "30mm".into());
+    });
     decoded.ir.annotations.exactness.clear();
     assert_eq!(crate::decode::brep_semantic_hash(&decoded.ir), brep_hash);
     assert_ne!(crate::decode::semantic_hash(&decoded.ir), semantic_hash);
@@ -3083,15 +3052,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         SurfaceGeometry::Unknown { .. }
     ));
     assert_eq!(
-        regenerated
-            .ir
-            .native
-            .sldprt
-            .as_ref()
-            .unwrap()
-            .feature_histories[0]
-            .features[0]
-            .parameters["Depth"],
+        sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters["Depth"],
         "30mm"
     );
 }

@@ -226,9 +226,9 @@ crate::document::arena_registry!(define_diff_arenas);
 fn native_diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
     let namespaces = left
         .native
-        .namespaces
+        .0
         .keys()
-        .chain(right.native.namespaces.keys())
+        .chain(right.native.0.keys())
         .collect::<std::collections::BTreeSet<_>>();
     namespaces
         .into_iter()

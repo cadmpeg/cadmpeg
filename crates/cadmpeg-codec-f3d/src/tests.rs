@@ -126,6 +126,52 @@ fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> cadmpeg_ir::native::f3d::F3dN
     .unwrap()
 }
 
+struct F3dNativeMut<'a> {
+    ir: &'a mut cadmpeg_ir::document::CadIr,
+    native: cadmpeg_ir::native::f3d::F3dNative,
+}
+
+impl std::ops::Deref for F3dNativeMut<'_> {
+    type Target = cadmpeg_ir::native::f3d::F3dNative;
+
+    fn deref(&self) -> &Self::Target {
+        &self.native
+    }
+}
+
+impl std::ops::DerefMut for F3dNativeMut<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.native
+    }
+}
+
+impl Drop for F3dNativeMut<'_> {
+    fn drop(&mut self) {
+        self.native
+            .store(self.ir.native.namespace_mut("f3d"))
+            .unwrap();
+    }
+}
+
+fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeMut<'_> {
+    let native = ir
+        .native
+        .namespace("f3d")
+        .map(cadmpeg_ir::native::f3d::F3dNative::load)
+        .transpose()
+        .unwrap()
+        .unwrap_or_default();
+    F3dNativeMut { ir, native }
+}
+
+fn update_f3d_native<R>(
+    ir: &mut cadmpeg_ir::document::CadIr,
+    update: impl FnOnce(&mut cadmpeg_ir::native::f3d::F3dNative) -> R,
+) -> R {
+    let mut native = f3d_native_mut(ir);
+    update(&mut native)
+}
+
 /// Assemble the active slice: header prefix + records + `delta_state` boundary.
 /// `RecordTable` indices are the order below, starting at 0 (`asmheader`).
 fn synthetic_geometry_smbh() -> Vec<u8> {
@@ -3752,10 +3798,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     let face_id = source_less.model.faces[0].id.clone();
     let edge_id = source_less.model.edges[0].id.clone();
     let coedge_id = source_less.model.coedges[0].id.clone();
-    let native = source_less
-        .native
-        .f3d
-        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
+    let mut native = f3d_native_mut(&mut source_less);
     native.persistent_design_links = vec![
         PersistentDesignLink {
             id: "generated:persistent-design-link#0".into(),
@@ -3795,6 +3838,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         closure: 3,
     }];
 
+    drop(native);
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -3921,10 +3965,7 @@ fn generated_source_less_writes_design_object_metastream() {
     use cadmpeg_ir::design::{DesignObject, DesignObjectKind};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    let native = source_less
-        .native
-        .f3d
-        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
+    let mut native = f3d_native_mut(&mut source_less);
     native.design_objects = vec![
         DesignObject {
             id: "generated:design-object#0".into(),
@@ -3954,6 +3995,7 @@ fn generated_source_less_writes_design_object_metastream() {
         },
     ];
 
+    drop(native);
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -3983,10 +4025,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     };
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    let native = source_less
-        .native
-        .f3d
-        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
+    let mut native = f3d_native_mut(&mut source_less);
     native.construction_recipes = [
         ConstructionRecipeKind::Body,
         ConstructionRecipeKind::Face,
@@ -4040,6 +4079,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         record_index_offset: 0,
     }];
 
+    drop(native);
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -4078,10 +4118,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     };
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    let native = source_less
-        .native
-        .f3d
-        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
+    let mut native = f3d_native_mut(&mut source_less);
     native.design_objects = vec![DesignObject {
         id: "generated:design-object#0".into(),
         byte_offset: 0,
@@ -4138,6 +4175,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         },
     ];
 
+    drop(native);
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -4167,10 +4205,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    let native = source_less
-        .native
-        .f3d
-        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
+    let mut native = f3d_native_mut(&mut source_less);
     native.design_objects = vec![DesignObject {
         id: "generated:sketch-object#0".into(),
         byte_offset: 0,
@@ -4291,6 +4326,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .iter()
         .map(|curve| curve.geometry.clone().unwrap())
         .collect::<Vec<_>>();
+    drop(native);
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -4330,10 +4366,7 @@ fn generated_source_less_writes_act_table_channels_and_root_component() {
     let physical_guid = "cccccccc-1111-2222-3333-dddddddddddd";
     let standalone_guid = "eeeeeeee-1111-2222-3333-ffffffffffff";
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    let native = source_less
-        .native
-        .f3d
-        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
+    let mut native = f3d_native_mut(&mut source_less);
     native.act_entities = vec![ActEntity {
         id: "generated:act-entity#0".into(),
         record_index: 7,
@@ -4379,6 +4412,7 @@ fn generated_source_less_writes_act_table_channels_and_root_component() {
         display_name_offset: 0,
     }];
 
+    drop(native);
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -4451,10 +4485,7 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         object_type: Some("Body".into()),
         channels: BTreeMap::new(),
     }];
-    let native = source_less
-        .native
-        .f3d
-        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
+    let mut native = f3d_native_mut(&mut source_less);
     native.design_objects = vec![DesignObject {
         id: "generated:body-object#0".into(),
         byte_offset: 0,
@@ -4483,6 +4514,7 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         visual_preset_offset: None,
     }];
 
+    drop(native);
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -4528,15 +4560,12 @@ fn generated_f3d_rewrites_native_sketch_point_coordinates() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let mut edited = decoded.ir;
-    let point = &mut edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .sketch_points[0];
-    point.coordinates.u += 12.5;
-    point.coordinates.v -= 7.5;
-    let expected = point.coordinates;
+    let expected = update_f3d_native(&mut edited, |native| {
+        let point = &mut native.sketch_points[0];
+        point.coordinates.u += 12.5;
+        point.coordinates.v -= 7.5;
+        point.coordinates
+    });
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -4546,14 +4575,7 @@ fn generated_f3d_rewrites_native_sketch_point_coordinates() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     assert_eq!(
-        round_trip
-            .ir
-            .native
-            .f3d
-            .as_ref()
-            .expect("F3D native namespace")
-            .sketch_points[0]
-            .coordinates,
+        f3d_native(&round_trip.ir).sketch_points[0].coordinates,
         expected
     );
 }
@@ -4565,27 +4587,24 @@ fn generated_f3d_rewrites_native_sketch_arc_geometry() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let mut edited = decoded.ir;
-    let curve = &mut edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .sketch_curve_identities[0];
-    let Some(cadmpeg_ir::design::SketchCurveGeometry::Arc {
-        center,
-        radius,
-        start_angle,
-        end_angle,
-        ..
-    }) = &mut curve.geometry
-    else {
-        panic!("generated sketch curve must be an arc")
-    };
-    center.x += 20.0;
-    *radius = 35.0;
-    *start_angle = 0.25;
-    *end_angle = 2.75;
-    let expected = curve.geometry.clone();
+    let expected = update_f3d_native(&mut edited, |native| {
+        let curve = &mut native.sketch_curve_identities[0];
+        let Some(cadmpeg_ir::design::SketchCurveGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+            ..
+        }) = &mut curve.geometry
+        else {
+            panic!("generated sketch curve must be an arc")
+        };
+        center.x += 20.0;
+        *radius = 35.0;
+        *start_angle = 0.25;
+        *end_angle = 2.75;
+        curve.geometry.clone()
+    });
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -4595,14 +4614,7 @@ fn generated_f3d_rewrites_native_sketch_arc_geometry() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     assert_eq!(
-        round_trip
-            .ir
-            .native
-            .f3d
-            .as_ref()
-            .expect("F3D native namespace")
-            .sketch_curve_identities[0]
-            .geometry,
+        f3d_native(&round_trip.ir).sketch_curve_identities[0].geometry,
         expected
     );
 }
@@ -4614,15 +4626,12 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let mut edited = decoded.ir;
-    let relation = &mut edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .sketch_relations[0];
-    relation.state = 0x40;
-    relation.constraint_kinds = vec![cadmpeg_ir::design::SketchConstraintKind::Horizontal];
-    relation.unknown_constraint_bits = 0;
+    update_f3d_native(&mut edited, |native| {
+        let relation = &mut native.sketch_relations[0];
+        relation.state = 0x40;
+        relation.constraint_kinds = vec![cadmpeg_ir::design::SketchConstraintKind::Horizontal];
+        relation.unknown_constraint_bits = 0;
+    });
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -4631,13 +4640,8 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
-    let relation = &round_trip
-        .ir
-        .native
-        .f3d
-        .as_ref()
-        .expect("F3D native namespace")
-        .sketch_relations[0];
+    let native = f3d_native(&round_trip.ir);
+    let relation = &native.sketch_relations[0];
     assert_eq!(relation.state, 0x40);
     assert_eq!(
         relation.constraint_kinds,
@@ -4653,24 +4657,21 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let mut edited = decoded.ir;
-    let curve = &mut edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .sketch_curve_identities[1];
-    let Some(cadmpeg_ir::design::SketchCurveGeometry::Nurbs {
-        fit_tolerance,
-        control_points,
-        ..
-    }) = &mut curve.geometry
-    else {
-        panic!("generated sketch curve must be NURBS")
-    };
-    *fit_tolerance = 0.125;
-    control_points[1].x += 15.0;
-    control_points[1].y -= 5.0;
-    let expected = curve.geometry.clone();
+    let expected = update_f3d_native(&mut edited, |native| {
+        let curve = &mut native.sketch_curve_identities[1];
+        let Some(cadmpeg_ir::design::SketchCurveGeometry::Nurbs {
+            fit_tolerance,
+            control_points,
+            ..
+        }) = &mut curve.geometry
+        else {
+            panic!("generated sketch curve must be NURBS")
+        };
+        *fit_tolerance = 0.125;
+        control_points[1].x += 15.0;
+        control_points[1].y -= 5.0;
+        curve.geometry.clone()
+    });
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -4680,14 +4681,7 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     assert_eq!(
-        round_trip
-            .ir
-            .native
-            .f3d
-            .as_ref()
-            .expect("F3D native namespace")
-            .sketch_curve_identities[1]
-            .geometry,
+        f3d_native(&round_trip.ir).sketch_curve_identities[1].geometry,
         expected
     );
 }
@@ -4726,11 +4720,8 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated Design decode");
     let mut edited = decoded.ir;
-    let reference = edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
+    let mut native = f3d_native(&edited);
+    let reference = native
         .persistent_references
         .iter_mut()
         .find(|reference| reference.value == 439)
@@ -4738,22 +4729,13 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert!(reference.byte_offset > 0);
     assert!(reference.value_offset > 0);
     reference.value = 9_001;
-    let recipe = &mut edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .construction_recipes[0];
+    let recipe = &mut native.construction_recipes[0];
     assert!(recipe.byte_offset > 0);
     assert!(recipe.record_index_offset.is_some());
     assert!(recipe.design_id_offset.is_some());
     recipe.record_index = 777;
     recipe.design_id = Some("333".into());
-    let member = edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
+    let member = native
         .design_body_members
         .iter_mut()
         .find(|member| member.entity_suffix == 985)
@@ -4761,11 +4743,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert!(member.byte_offset > 0);
     member.entity_suffix = 12_345;
     member.flags = 7;
-    let header = edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
+    let header = native
         .design_entity_headers
         .iter_mut()
         .find(|header| header.object_kind == Some(cadmpeg_ir::design::DesignObjectKind::Sketch))
@@ -4775,11 +4753,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(header.reference_offsets.len(), 2);
     header.record_reference = Some(585);
     header.reference_indices.swap(0, 1);
-    let object = edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
+    let object = native
         .design_objects
         .iter_mut()
         .find(|object| object.kind == cadmpeg_ir::design::DesignObjectKind::Body)
@@ -4790,35 +4764,21 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     object.self_guid = "91111111-2222-3333-4444-555555555555".into();
     object.parent_guid = Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef".into());
     object.revision = 9;
-    let act_guid = edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
+    let act_guid = native
         .act_guids
         .iter_mut()
         .find(|guid| guid.guid == "eeeeeeee-1111-2222-3333-ffffffffffff")
         .expect("generated standalone ACT GUID");
     assert!(act_guid.guid_offset > act_guid.byte_offset);
     act_guid.guid = "ffffffff-1111-2222-3333-444444444444".into();
-    let act_root = &mut edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .act_root_components[0];
+    let act_root = &mut native.act_root_components[0];
     act_root.record_index = 70;
     act_root.instance_root_record = 71;
     act_root.components_root_record = 72;
     act_root.registry_flag = 0;
     act_root.entity_id = "0_4".into();
     act_root.display_name = "(Renamed)".into();
-    let act_entity = &mut edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .act_entities[0];
+    let act_entity = &mut native.act_entities[0];
     assert!(act_entity.table_entity_id_offset.is_some());
     assert!(act_entity.channel_entity_id_offset.is_some());
     act_entity.channels.insert(
@@ -4832,21 +4792,11 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         "Appearance".into(),
         "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
     );
-    let lost_edge = &mut edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .lost_edge_references[0];
+    let lost_edge = &mut native.lost_edge_references[0];
     assert!(lost_edge.class_tag_offset > lost_edge.byte_offset);
     lost_edge.class_tag = "420".into();
     lost_edge.record_index = 4_700;
-    let assignment = &mut edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .design_material_assignments[0];
+    let assignment = &mut native.design_material_assignments[0];
     assert!(assignment.entity_id_offset > 0);
     assignment.entity_id = "0_986".into();
     assignment.entity_suffix = 986;
@@ -4865,23 +4815,12 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     edited.model.appearances[0]
         .properties
         .insert("refraction_index".into(), 1.8);
-    edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .act_entities[0]
-        .entity_id = "0_986".into();
+    native.act_entities[0].entity_id = "0_986".into();
     assert_eq!(
-        edited.native.f3d.as_ref().unwrap().act_entities[0].entity_id,
-        edited
-            .native
-            .f3d
-            .as_ref()
-            .unwrap()
-            .design_material_assignments[0]
-            .entity_id
+        native.act_entities[0].entity_id,
+        native.design_material_assignments[0].entity_id
     );
+    native.store(edited.native.namespace_mut("f3d")).unwrap();
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -4999,17 +4938,12 @@ fn generated_f3d_rejects_act_binding_divergence() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated ACT decode");
     let mut edited = decoded.ir;
-    edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .act_entities[0]
-        .channels
-        .insert(
+    update_f3d_native(&mut edited, |native| {
+        native.act_entities[0].channels.insert(
             "Appearance".into(),
             "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
         );
+    });
 
     let error = F3dCodec
         .write_preserved(&edited, &mut Vec::new())
@@ -5027,13 +4961,9 @@ fn generated_f3d_rejects_material_assignment_divergence() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated material decode");
     let mut edited = decoded.ir;
-    edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .design_material_assignments[0]
-        .physical_token = Some("PrismMaterial-019".into());
+    update_f3d_native(&mut edited, |native| {
+        native.design_material_assignments[0].physical_token = Some("PrismMaterial-019".into());
+    });
 
     let error = F3dCodec
         .write_preserved(&edited, &mut Vec::new())
@@ -6192,33 +6122,30 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated history decode");
     let mut edited = decoded.ir;
-    let history = &mut edited
-        .native
-        .f3d
-        .as_mut()
-        .expect("F3D native namespace")
-        .asm_histories[0];
-    assert!(history.byte_offset > 0);
-    assert!(history.states[0].byte_offset > 0);
-    history.stream_size = Some(8);
-    history.high_water_mark = Some(120);
-    history.states[0].state_id = 8;
-    history.states[0].version_flag = 4;
-    history.states[0].state_flag = 6;
-    history.states[0].previous_ref = Some(12);
-    history.states[0].next_ref = Some(14);
-    history.states[0].node_index = 16;
-    history.states[0].partner_ref = Some(18);
-    history.states[0].owner_ref = 20;
-    let board = &mut history.states[0].bulletin_boards[0];
-    assert!(board.byte_offset > 0);
-    board.owner_ref = 22;
-    board.number = 24;
-    assert!(board.changes[0].byte_offset > 0);
-    board.changes[0].kind = cadmpeg_ir::history::AsmEntityChangeKind::Delete;
-    board.changes[0].old_ref = Some(26);
-    board.changes[0].new_ref = None;
-    board.changes[1].new_ref = Some(28);
+    update_f3d_native(&mut edited, |native| {
+        let history = &mut native.asm_histories[0];
+        assert!(history.byte_offset > 0);
+        assert!(history.states[0].byte_offset > 0);
+        history.stream_size = Some(8);
+        history.high_water_mark = Some(120);
+        history.states[0].state_id = 8;
+        history.states[0].version_flag = 4;
+        history.states[0].state_flag = 6;
+        history.states[0].previous_ref = Some(12);
+        history.states[0].next_ref = Some(14);
+        history.states[0].node_index = 16;
+        history.states[0].partner_ref = Some(18);
+        history.states[0].owner_ref = 20;
+        let board = &mut history.states[0].bulletin_boards[0];
+        assert!(board.byte_offset > 0);
+        board.owner_ref = 22;
+        board.number = 24;
+        assert!(board.changes[0].byte_offset > 0);
+        board.changes[0].kind = cadmpeg_ir::history::AsmEntityChangeKind::Delete;
+        board.changes[0].old_ref = Some(26);
+        board.changes[0].new_ref = None;
+        board.changes[1].new_ref = Some(28);
+    });
 
     let mut regenerated = Vec::new();
     F3dCodec

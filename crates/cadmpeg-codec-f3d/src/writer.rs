@@ -38,11 +38,6 @@ fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
 pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-    let mut canonical_target = target.clone();
-    if let Some(native) = canonical_target.native.f3d.take() {
-        native.store(canonical_target.native.namespace_mut("f3d"))?;
-    }
-    let target = &canonical_target;
     let _ = f3d_native(target)?;
     if !target.model.subds.is_empty() {
         return Err(CodecError::NotImplemented(
@@ -5626,11 +5621,6 @@ pub fn write_semantic(
     source_image: &[u8],
     writer: &mut dyn Write,
 ) -> Result<(), CodecError> {
-    let mut canonical_target = target.clone();
-    if let Some(native) = canonical_target.native.f3d.take() {
-        native.store(canonical_target.native.namespace_mut("f3d"))?;
-    }
-    let target = &canonical_target;
     let _ = f3d_native(target)?;
     let baseline = F3dCodec.decode(&mut Cursor::new(source_image), &DecodeOptions::default())?;
     let baseline_point_ids = baseline
@@ -5865,7 +5855,6 @@ pub fn write_semantic(
             .asm_histories
             .clone_from(&target_native.asm_histories);
         supported.store(supported_target.native.namespace_mut("f3d"))?;
-        supported_target.native.f3d = None;
     }
     if decode::semantic_hash(&supported_target) != decode::semantic_hash(target) {
         return Err(CodecError::NotImplemented(

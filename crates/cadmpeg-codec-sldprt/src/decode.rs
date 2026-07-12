@@ -200,7 +200,6 @@ fn build_geometry_ir(
         feature_input_lanes: lanes,
     };
     native.store(ir.native.namespace_mut("sldprt"))?;
-    ir.native.sldprt = Some(native);
     ir.model.attributes = attributes;
 
     ir.model.bodies = brep.bodies;
@@ -648,7 +647,6 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         feature_input_lanes: lanes,
     };
     native.store(ir.native.namespace_mut("sldprt"))?;
-    ir.native.sldprt = Some(native);
     ir.model.attributes = model_attributes;
     let mut attributes = BTreeMap::new();
     attributes.insert(

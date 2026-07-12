@@ -141,7 +141,7 @@ impl CadIr {
         &self,
     ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
         self.native
-            .namespaces
+            .0
             .values()
             .filter(|namespace| namespace.arenas.contains_key("unknowns"))
             .try_fold(Vec::new(), |mut records, namespace| {

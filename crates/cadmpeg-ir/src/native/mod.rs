@@ -94,45 +94,23 @@ impl NativeNamespace {
 
 /// Native records grouped by source-format namespace id.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct Native {
-    /// Generic namespaces keyed by format id.
-    #[serde(flatten)]
-    pub namespaces: BTreeMap<String, NativeNamespace>,
-    #[serde(skip)]
-    #[schemars(skip)]
-    pub f3d: Option<f3d::F3dNative>,
-    /// Transitional typed SolidWorks view used by the codec while arenas are assembled.
-    #[serde(skip)]
-    #[schemars(skip)]
-    pub sldprt: Option<sldprt::SldprtNative>,
-}
+#[serde(transparent)]
+pub struct Native(pub BTreeMap<String, NativeNamespace>);
 
 impl Native {
     /// Return a source-format namespace.
     pub fn namespace(&self, format: &str) -> Option<&NativeNamespace> {
-        self.namespaces.get(format)
+        self.0.get(format)
     }
 
     /// Return or create a source-format namespace.
     pub fn namespace_mut(&mut self, format: impl Into<String>) -> &mut NativeNamespace {
-        self.namespaces.entry(format.into()).or_default()
+        self.0.entry(format.into()).or_default()
     }
 
     /// Sort every arena into canonical identity order.
     pub(crate) fn finalize(&mut self) {
-        if let Some(typed) = &mut self.f3d {
-            typed.finalize();
-            typed
-                .store(self.namespaces.entry("f3d".into()).or_default())
-                .expect("typed native records serialize");
-        }
-        if let Some(typed) = &mut self.sldprt {
-            typed.finalize();
-            typed
-                .store(self.namespaces.entry("sldprt".into()).or_default())
-                .expect("typed native records serialize");
-        }
-        for namespace in self.namespaces.values_mut() {
+        for namespace in self.0.values_mut() {
             for records in namespace.arenas.values_mut() {
                 records.sort_by(|left, right| left.id.cmp(&right.id));
             }
@@ -141,7 +119,7 @@ impl Native {
 
     /// Return one count for each non-empty native arena.
     pub fn loss_counts(&self) -> Vec<LossCount> {
-        self.namespaces
+        self.0
             .iter()
             .flat_map(|(format, namespace)| {
                 namespace

@@ -118,7 +118,7 @@ pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) 
 
 pub(super) fn collect_native_ids(ir: &CadIr) -> Vec<(String, &str)> {
     ir.native
-        .namespaces
+        .0
         .iter()
         .flat_map(|(format, namespace)| {
             namespace.arenas.iter().flat_map(move |(arena, records)| {

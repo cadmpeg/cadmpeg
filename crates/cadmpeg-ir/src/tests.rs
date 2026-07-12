@@ -10,11 +10,10 @@ use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
-use crate::history::{AsmHistoryRecord, Configuration, FeatureHistory, FeatureInputLane};
+use crate::history::{AsmHistoryRecord, FeatureInputLane};
 use crate::ids::{CoedgeId, CurveId, EdgeId, ProceduralSurfaceId, SubdId, UnknownId};
 use crate::math::{Point3, Vector3};
-use crate::native::f3d::F3dNative;
-use crate::native::sldprt::SldprtNative;
+use crate::native::NativeRecord;
 use crate::provenance::{Exactness, SourceObjectAssociation};
 use crate::report::{Check, LossCategory, LossNote, Severity};
 use crate::subd::{
@@ -201,31 +200,20 @@ fn arena_registry_drives_counts_and_diff_dispatch() {
 fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let left = unit_cube();
     let mut right = left.clone();
-    right.native.f3d = Some(F3dNative {
-        act_guids: vec![crate::design::ActGuid {
+    right.native.namespace_mut("f3d").arenas.insert(
+        "act_guids".into(),
+        vec![NativeRecord {
             id: "f3d:test:act-guid#0".into(),
-            byte_offset: 0,
-            guid_offset: 4,
-            ordinal: 0,
-            guid: "00000000-0000-0000-0000-000000000000".into(),
+            fields: serde_json::Map::new(),
         }],
-        ..F3dNative::default()
-    });
-    right.native.sldprt = Some(SldprtNative {
-        feature_histories: vec![FeatureHistory {
-            id: "sldprt:test:feature-history#0".into(),
-            part_name: None,
-            configurations: vec![Configuration {
-                id: "sldprt:test:configuration#0".into(),
-                parent: "sldprt:test:feature-history#0".into(),
-                name: "Default".into(),
-                material: None,
-                properties: std::collections::BTreeMap::new(),
-            }],
-            features: Vec::new(),
+    );
+    right.native.namespace_mut("sldprt").arenas.insert(
+        "configurations".into(),
+        vec![NativeRecord {
+            id: "sldprt:test:configuration#0".into(),
+            fields: serde_json::Map::new(),
         }],
-        ..SldprtNative::default()
-    });
+    );
     right.native.finalize();
 
     let result = diff(&left, &right);
@@ -252,8 +240,13 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
     assert_eq!(report.entity_counts["native.sldprt.configurations"], 1);
     assert!(report.is_ok(), "{:?}", report.findings);
 
-    right.native.sldprt.as_mut().unwrap().feature_histories[0].configurations[0].id =
-        "f3d:test:act-guid#0".into();
+    right
+        .native
+        .namespace_mut("sldprt")
+        .arenas
+        .get_mut("configurations")
+        .unwrap()[0]
+        .id = "f3d:test:act-guid#0".into();
     right.native.finalize();
     assert!(validate(&right, Vec::new())
         .findings
@@ -912,17 +905,13 @@ fn annotation_keys_streams_and_field_paths_are_checked() {
 #[test]
 fn native_topology_link_must_resolve() {
     let mut ir = unit_cube();
-    ir.native.f3d = Some(F3dNative {
-        sketch_curve_links: vec![crate::design::SketchCurveLink {
+    ir.native.namespace_mut("f3d").arenas.insert(
+        "sketch_curve_links".into(),
+        vec![NativeRecord {
             id: "native:link#0".into(),
-            coedge: CoedgeId("missing".into()),
-            sketch_curve_id: 0,
-            signed_reference: None,
-            role: 0,
-            closure: 0,
+            fields: serde_json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
         }],
-        ..F3dNative::default()
-    });
+    );
     ir.native.finalize();
     assert!(validate(&ir, Vec::new())
         .findings

@@ -282,7 +282,7 @@ fn entity_json(ir: &CadIr, id: &str) -> Option<serde_json::Value> {
         return Some(value);
     }
     ir.native
-        .namespaces
+        .0
         .values()
         .flat_map(|namespace| namespace.arenas.values())
         .flatten()
@@ -416,7 +416,7 @@ pub(super) fn check_native_links(
             }
         }
     }
-    for namespace in ir.native.namespaces.values() {
+    for namespace in ir.native.0.values() {
         for records in namespace.arenas.values() {
             for record in records {
                 let Some(serde_json::Value::Array(links)) = record.fields.get("links") else {
