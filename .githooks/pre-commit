@@ -1,16 +1,24 @@
 #!/bin/sh
-# Mirrors the CI gate in .github/workflows/ci.yml.
+# Mirrors the CI gate in .github/workflows/ci.yml (fmt, clippy, tests).
 # Skip with: git commit --no-verify
 set -e
+
+# Only run the Rust gate when the commit stages files that can change its
+# outcome: Rust sources, the manifests or lockfile, the Cargo config (aliases
+# and build flags), or the toolchain pin. A docs-, CI-, or config-only commit
+# cannot affect fmt/clippy/tests, so compiling the whole workspace for it is
+# pure latency. `--no-verify` still forces a skip.
+if ! git diff --cached --name-only \
+    | grep -qE '\.rs$|(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain\.toml$|(^|/)\.cargo/'; then
+  echo "pre-commit: no Rust/Cargo files staged; skipping the Rust gate"
+  exit 0
+fi
 
 echo "pre-commit: cargo fmt --all --check"
 cargo fmt --all --check
 
 echo "pre-commit: cargo clippy --workspace -- -D warnings -W missing-docs"
 cargo clippy --workspace -- -D warnings -W missing-docs
-
-echo "pre-commit: cargo build --workspace"
-cargo build --workspace
 
 echo "pre-commit: cargo test-fast"
 cargo test-fast

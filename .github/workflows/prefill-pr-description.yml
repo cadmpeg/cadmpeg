@@ -1,0 +1,74 @@
+name: Prefill PR description
+
+# When a PR opens, seed the template's Summary with the branch's commit
+# subjects, so a description assembled in the web UI is not left empty. The
+# repo squash-merges with the PR description as the commit body, so this also
+# gives the eventual squash commit a sensible starting message.
+#
+# It fills only when the author has not written a Summary yet (the template
+# placeholder is still present), so it never clobbers real prose. It edits the
+# body, which fires an `edited` event and re-runs the DCO workflow — intended.
+on:
+  pull_request:
+    types: [opened]
+
+# `gh pr edit` needs write; nothing else is touched.
+permissions:
+  pull-requests: write
+
+jobs:
+  prefill:
+    name: Prefill PR description
+    runs-on: ubuntu-latest
+    # A PR from a fork gets a read-only token, so the edit would 403. Restrict
+    # to same-repo branches, where the token can write.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Seed the Summary from the branch's commit subjects
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # This job runs no checkout, so gh cannot infer the repo from a local
+          # git remote (without it, gh aborts with "not a git repository").
+          # GH_REPO names the repo explicitly so no working copy is needed.
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # The PR description is contributor-authored free text. It only ever
+          # reaches the shell as an environment value, never interpolated into
+          # the script body.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+
+          # The template seeds Summary with this exact placeholder comment. Its
+          # presence means the author has not written a summary; its absence
+          # means they have, so leave their text untouched.
+          placeholder='<!-- What this changes and why. -->'
+          if [[ "$PR_BODY" != *"$placeholder"* ]]; then
+            echo "::notice::Summary already written (placeholder gone); leaving the description untouched."
+            exit 0
+          fi
+
+          # Commit subjects, oldest first, merge commits excluded. Deliberately
+          # subjects only, never bodies: a commit's Signed-off-by trailer lives
+          # in its body, and DCO must stay a deliberate human act — this
+          # automation must never manufacture a sign-off.
+          gh pr view "$PR_NUMBER" --json commits \
+            --jq '.commits[] | select((.messageHeadline | startswith("Merge ")) | not) | "- " + .messageHeadline' \
+            > commits.txt
+          if [[ ! -s commits.txt ]]; then
+            echo "::notice::No non-merge commits in the PR; nothing to prefill."
+            exit 0
+          fi
+
+          # Swap the placeholder line for the commit list, preserving the rest
+          # of the template (Checklist, Provenance) verbatim. Build the body in
+          # files so contributor-authored text is never parsed by the shell.
+          printf '%s' "$PR_BODY" > body.orig
+          awk -v ph="$placeholder" '
+            index($0, ph) { while ((getline line < "commits.txt") > 0) print line; next }
+            { print }
+          ' body.orig > body.new
+
+          gh pr edit "$PR_NUMBER" --body-file body.new
+          echo "::notice::Prefilled the Summary with $(wc -l < commits.txt) commit subject(s)."
