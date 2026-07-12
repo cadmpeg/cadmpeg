@@ -12,6 +12,7 @@
 //! before returning a carrier.
 
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsSurface, SurfaceGeometry};
+use cadmpeg_ir::le::{f64_at, u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// The standard-nested plane parameter record.  Its three-byte tag is the
@@ -1410,8 +1411,7 @@ fn u24_le(bytes: &[u8], at: usize) -> u32 {
 }
 
 fn f64_le(bytes: &[u8], at: usize) -> Option<f64> {
-    let raw: [u8; 8] = bytes.get(at..at + 8)?.try_into().ok()?;
-    let value = f64::from_le_bytes(raw);
+    let value = f64_at(bytes, at)?;
     value.is_finite().then_some(value)
 }
 
@@ -1503,14 +1503,6 @@ fn expand_knots(distinct: &[f64], multiplicities: &[u32]) -> Option<Vec<f64>> {
         knots.extend(std::iter::repeat_n(knot, multiplicity as usize));
     }
     Some(knots)
-}
-
-fn u32_le(bytes: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
-}
-
-fn u16_le(bytes: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(bytes.get(at..at + 2)?.try_into().ok()?))
 }
 
 fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {

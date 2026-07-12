@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
+use cadmpeg_ir::le::{f32_at, f64_at};
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
 /// surfaces bound through the in-stream `object_id` map ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)),
@@ -260,11 +261,13 @@ fn vertex_points(bytes: &[u8]) -> Vec<[f64; 3]> {
             position += 1;
             continue;
         }
-        let point = [
-            f32::from_le_bytes(bytes[position + 3..position + 7].try_into().expect("x")) as f64,
-            f32::from_le_bytes(bytes[position + 7..position + 11].try_into().expect("y")) as f64,
-            f32::from_le_bytes(bytes[position + 11..position + 15].try_into().expect("z")) as f64,
-        ];
+        let Some(point) = f32_at(bytes, position + 3)
+            .zip(f32_at(bytes, position + 7))
+            .zip(f32_at(bytes, position + 11))
+            .map(|((x, y), z)| [f64::from(x), f64::from(y), f64::from(z)])
+        else {
+            break;
+        };
         if point
             .iter()
             .all(|value| value.is_finite() && value.abs() < 1e7)
@@ -538,7 +541,7 @@ fn rotate_about_axis(point: [f64; 3], origin: [f64; 3], axis: [f64; 3], angle: f
 }
 
 fn scalar(bytes: &[u8], offset: usize) -> Option<f64> {
-    let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+    let value = f64_at(bytes, offset)?;
     value.is_finite().then_some(value)
 }
 

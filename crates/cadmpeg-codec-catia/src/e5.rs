@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_ir::le::{take_f64, take_u32 as read_u32, u32_at};
+
 /// Resolved graph of an E5 `0D 03` record stream: bodies, faces, edges, and
 /// the geometry records they reference. Produced by [`parse_topology`], which
 /// walks every class-tagged record, resolves cross-record references, and
@@ -573,17 +575,10 @@ fn parse_jet_pcurve(payload: &[u8], mut position: usize, surface: u32) -> Option
 fn read_f64s(bytes: &[u8], position: &mut usize, count: usize) -> Option<Vec<f64>> {
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
-        let value = f64::from_le_bytes(bytes.get(*position..*position + 8)?.try_into().ok()?);
-        *position += 8;
+        let value = take_f64(bytes, position)?;
         values.push(value);
     }
     Some(values)
-}
-
-fn read_u32(bytes: &[u8], position: &mut usize) -> Option<u32> {
-    let value = u32::from_le_bytes(bytes.get(*position..*position + 4)?.try_into().ok()?);
-    *position += 4;
-    Some(value)
 }
 
 fn solve_absolute_orientation(faces: &mut [E5Face]) {
@@ -748,7 +743,7 @@ fn records(bytes: &[u8]) -> Vec<Record<'_>> {
         }
         records.push(Record {
             class: bytes[start + 3],
-            id: u32::from_le_bytes(bytes[start + 9..start + 13].try_into().expect("record id")),
+            id: u32_at(bytes, start + 9).expect("record header bounds were checked"),
             payload: &bytes[start + 13..end],
         });
         position = end;
