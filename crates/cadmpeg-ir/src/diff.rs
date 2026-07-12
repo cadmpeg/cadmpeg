@@ -24,7 +24,7 @@ pub struct ModifiedEntity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct ArenaDiff {
     /// Arena name, matching the field name in [`crate::CadIr`] (e.g. `"faces"`).
-    pub kind: &'static str,
+    pub kind: String,
     /// Diff keys of entities present only in the right-hand document.
     pub added: Vec<String>,
     /// Diff keys of entities present only in the left-hand document.
@@ -97,7 +97,7 @@ fn differing_fields<T: Serialize>(left: &T, right: &T) -> Vec<String> {
 }
 
 fn map_arena<T, F>(
-    kind: &'static str,
+    kind: impl Into<String>,
     left: &BTreeMap<String, T>,
     right: &BTreeMap<String, T>,
     fields: F,
@@ -127,7 +127,7 @@ where
         })
         .collect();
     ArenaDiff {
-        kind,
+        kind: kind.into(),
         added,
         removed,
         modified,
@@ -174,7 +174,7 @@ fn annotation_diff(left: &CadIr, right: &CadIr) -> AnnotationDiff {
     }
 }
 
-fn arena<T, F>(kind: &'static str, left: &[T], right: &[T], id: F) -> ArenaDiff
+fn arena<T, F>(kind: impl Into<String>, left: &[T], right: &[T], id: F) -> ArenaDiff
 where
     T: PartialEq + Serialize,
     F: Fn(&T) -> String,
@@ -202,7 +202,7 @@ where
         })
         .collect();
     ArenaDiff {
-        kind,
+        kind: kind.into(),
         added,
         removed,
         modified,
@@ -223,208 +223,39 @@ macro_rules! define_diff_arenas {
 }
 crate::document::arena_registry!(define_diff_arenas);
 
-fn optional_arena<T, F>(
-    kind: &'static str,
-    left: Option<&[T]>,
-    right: Option<&[T]>,
-    id: F,
-) -> ArenaDiff
-where
-    T: PartialEq + Serialize,
-    F: Fn(&T) -> String,
-{
-    arena(
-        kind,
-        left.unwrap_or_default(),
-        right.unwrap_or_default(),
-        id,
-    )
-}
-
 fn native_diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
-    let mut diffs = Vec::new();
-    macro_rules! push_f3d {
-        ($field:ident) => {
-            diffs.push(optional_arena(
-                concat!("native.f3d.", stringify!($field)),
-                left.native
-                    .f3d
-                    .as_ref()
-                    .map(|native| native.$field.as_slice()),
-                right
-                    .native
-                    .f3d
-                    .as_ref()
-                    .map(|native| native.$field.as_slice()),
-                |record| record.id.clone(),
-            ));
-        };
-    }
-    push_f3d!(act_entities);
-    push_f3d!(act_guids);
-    push_f3d!(act_root_components);
-    push_f3d!(design_objects);
-    push_f3d!(design_entity_headers);
-    push_f3d!(design_record_headers);
-    push_f3d!(design_body_members);
-    push_f3d!(construction_recipes);
-    push_f3d!(persistent_design_links);
-    push_f3d!(persistent_references);
-    push_f3d!(sketch_curve_links);
-    push_f3d!(sketch_relations);
-    push_f3d!(sketch_points);
-    push_f3d!(sketch_curve_identities);
-    push_f3d!(lost_edge_references);
-    push_f3d!(asm_histories);
-    diffs.push(optional_arena(
-        "native.sldprt.feature_histories",
-        left.native
-            .sldprt
-            .as_ref()
-            .map(|native| native.feature_histories.as_slice()),
-        right
-            .native
-            .sldprt
-            .as_ref()
-            .map(|native| native.feature_histories.as_slice()),
-        |record| record.id.clone(),
-    ));
-    diffs.push(optional_arena(
-        "native.sldprt.feature_input_lanes",
-        left.native
-            .sldprt
-            .as_ref()
-            .map(|native| native.feature_input_lanes.as_slice()),
-        right
-            .native
-            .sldprt
-            .as_ref()
-            .map(|native| native.feature_input_lanes.as_slice()),
-        |record| record.id.clone(),
-    ));
-    let left_states = left
+    let namespaces = left
         .native
-        .f3d
-        .iter()
-        .flat_map(|native| &native.asm_histories)
-        .flat_map(|history| &history.states)
-        .collect::<Vec<_>>();
-    let right_states = right
-        .native
-        .f3d
-        .iter()
-        .flat_map(|native| &native.asm_histories)
-        .flat_map(|history| &history.states)
-        .collect::<Vec<_>>();
-    diffs.push(arena(
-        "native.f3d.asm_delta_states",
-        &left_states,
-        &right_states,
-        |record| record.id.clone(),
-    ));
-    let left_boards = left_states
-        .iter()
-        .flat_map(|state| &state.bulletin_boards)
-        .collect::<Vec<_>>();
-    let right_boards = right_states
-        .iter()
-        .flat_map(|state| &state.bulletin_boards)
-        .collect::<Vec<_>>();
-    diffs.push(arena(
-        "native.f3d.asm_bulletin_boards",
-        &left_boards,
-        &right_boards,
-        |record| record.id.clone(),
-    ));
-    let left_changes = left_boards
-        .iter()
-        .flat_map(|board| &board.changes)
-        .collect::<Vec<_>>();
-    let right_changes = right_boards
-        .iter()
-        .flat_map(|board| &board.changes)
-        .collect::<Vec<_>>();
-    diffs.push(arena(
-        "native.f3d.asm_entity_changes",
-        &left_changes,
-        &right_changes,
-        |record| record.id.clone(),
-    ));
-    let left_records = left_states
-        .iter()
-        .flat_map(|state| &state.records)
-        .collect::<Vec<_>>();
-    let right_records = right_states
-        .iter()
-        .flat_map(|state| &state.records)
-        .collect::<Vec<_>>();
-    diffs.push(arena(
-        "native.f3d.asm_history_records",
-        &left_records,
-        &right_records,
-        |record| record.id.clone(),
-    ));
-    let left_configurations = left
-        .native
-        .sldprt
-        .iter()
-        .flat_map(|native| &native.feature_histories)
-        .flat_map(|history| &history.configurations)
-        .collect::<Vec<_>>();
-    let right_configurations = right
-        .native
-        .sldprt
-        .iter()
-        .flat_map(|native| &native.feature_histories)
-        .flat_map(|history| &history.configurations)
-        .collect::<Vec<_>>();
-    diffs.push(arena(
-        "native.sldprt.configurations",
-        &left_configurations,
-        &right_configurations,
-        |record| record.id.clone(),
-    ));
-    let left_features = left
-        .native
-        .sldprt
-        .iter()
-        .flat_map(|native| &native.feature_histories)
-        .flat_map(|history| &history.features)
-        .collect::<Vec<_>>();
-    let right_features = right
-        .native
-        .sldprt
-        .iter()
-        .flat_map(|native| &native.feature_histories)
-        .flat_map(|history| &history.features)
-        .collect::<Vec<_>>();
-    diffs.push(arena(
-        "native.sldprt.features",
-        &left_features,
-        &right_features,
-        |record| record.id.clone(),
-    ));
-    let left_sketch_entities = left
-        .native
-        .sldprt
-        .iter()
-        .flat_map(|native| &native.feature_input_lanes)
-        .flat_map(|lane| &lane.sketch_entities)
-        .collect::<Vec<_>>();
-    let right_sketch_entities = right
-        .native
-        .sldprt
-        .iter()
-        .flat_map(|native| &native.feature_input_lanes)
-        .flat_map(|lane| &lane.sketch_entities)
-        .collect::<Vec<_>>();
-    diffs.push(arena(
-        "native.sldprt.sketch_input_entities",
-        &left_sketch_entities,
-        &right_sketch_entities,
-        |record| record.id.clone(),
-    ));
-    diffs
+        .namespaces
+        .keys()
+        .chain(right.native.namespaces.keys())
+        .collect::<std::collections::BTreeSet<_>>();
+    namespaces
+        .into_iter()
+        .flat_map(|namespace| {
+            let left_ns = left.native.namespace(namespace);
+            let right_ns = right.native.namespace(namespace);
+            let arenas = left_ns
+                .into_iter()
+                .flat_map(|value| value.arenas.keys())
+                .chain(right_ns.into_iter().flat_map(|value| value.arenas.keys()))
+                .collect::<std::collections::BTreeSet<_>>();
+            arenas.into_iter().map(move |name| {
+                arena(
+                    format!("native.{namespace}.{name}"),
+                    left_ns
+                        .and_then(|value| value.arenas.get(name))
+                        .map(Vec::as_slice)
+                        .unwrap_or_default(),
+                    right_ns
+                        .and_then(|value| value.arenas.get(name))
+                        .map(Vec::as_slice)
+                        .unwrap_or_default(),
+                    |record| record.id.clone(),
+                )
+            })
+        })
+        .collect()
 }
 
 /// Compare units, tolerances, and every entity arena by stable entity ID.

@@ -13,7 +13,8 @@ use crate::geometry::{
 use crate::history::{AsmHistoryRecord, Configuration, FeatureHistory, FeatureInputLane};
 use crate::ids::{CoedgeId, CurveId, EdgeId, ProceduralSurfaceId, SubdId, UnknownId};
 use crate::math::{Point3, Vector3};
-use crate::native::{F3dNative, SldprtNative};
+use crate::native::f3d::F3dNative;
+use crate::native::sldprt::SldprtNative;
 use crate::provenance::{Exactness, SourceObjectAssociation};
 use crate::report::{Check, LossCategory, LossNote, Severity};
 use crate::subd::{
@@ -216,6 +217,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         }],
         ..SldprtNative::default()
     });
+    right.native.finalize();
 
     let result = diff(&left, &right);
     assert_eq!(
@@ -243,10 +245,11 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
 
     right.native.sldprt.as_mut().unwrap().feature_histories[0].configurations[0].id =
         "f3d:test:act-guid#0".into();
+    right.native.finalize();
     assert!(validate(&right, Vec::new())
         .findings
         .iter()
-        .any(|finding| finding.message == "native record id is empty or duplicated"));
+        .any(|finding| finding.message == "entity id is not globally unique"));
 }
 
 #[test]
@@ -911,6 +914,7 @@ fn native_topology_link_must_resolve() {
         }],
         ..F3dNative::default()
     });
+    ir.native.finalize();
     assert!(validate(&ir, Vec::new())
         .findings
         .iter()

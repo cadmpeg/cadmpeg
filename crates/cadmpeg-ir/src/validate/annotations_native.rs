@@ -5,6 +5,7 @@
 use super::*;
 use crate::subd::SubdSurface;
 
+#[cfg(any())]
 pub(super) fn check_native_ids(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut ids = HashSet::new();
     let mut check = |id: &str| {
@@ -64,6 +65,7 @@ pub(super) fn check_native_ids(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
+#[cfg(any())]
 pub(super) fn check_design_records(ir: &CadIr, findings: &mut Vec<Finding>) {
     let Some(ir) = ir.native.f3d.as_ref() else {
         return;
@@ -201,6 +203,7 @@ pub(super) fn check_design_records(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
+#[cfg(any())]
 pub(super) fn check_feature_input_lanes(ir: &CadIr, findings: &mut Vec<Finding>) {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
 
@@ -252,6 +255,7 @@ macro_rules! define_model_entity_json {
 }
 crate::document::arena_registry!(define_model_entity_json);
 
+#[cfg(any())]
 macro_rules! define_f3d_entity_json {
     ($( $field:ident: $ty:ty; )*) => {
         fn f3d_entity_json(
@@ -267,6 +271,7 @@ macro_rules! define_f3d_entity_json {
         }
     };
 }
+#[cfg(any())]
 crate::native::f3d::f3d_arenas!(define_f3d_entity_json);
 
 /// Serialize the single entity `id` names. Covers the same id universe as the
@@ -279,49 +284,13 @@ fn entity_json(ir: &CadIr, id: &str) -> Option<serde_json::Value> {
     if let Some(record) = ir.unknowns.iter().find(|record| record.id.0 == id) {
         return serde_json::to_value(record).ok();
     }
-    if let Some(native) = &ir.native.f3d {
-        if let Some(value) = f3d_entity_json(native, id) {
-            return Some(value);
-        }
-        for state in native.asm_histories.iter().flat_map(|h| &h.states) {
-            if state.id == id {
-                return serde_json::to_value(state).ok();
-            }
-            for board in &state.bulletin_boards {
-                if board.id == id {
-                    return serde_json::to_value(board).ok();
-                }
-                if let Some(change) = board.changes.iter().find(|change| change.id == id) {
-                    return serde_json::to_value(change).ok();
-                }
-            }
-            if let Some(record) = state.records.iter().find(|record| record.id == id) {
-                return serde_json::to_value(record).ok();
-            }
-        }
-    }
-    if let Some(native) = &ir.native.sldprt {
-        for history in &native.feature_histories {
-            if history.id == id {
-                return serde_json::to_value(history).ok();
-            }
-            if let Some(entry) = history.configurations.iter().find(|c| c.id == id) {
-                return serde_json::to_value(entry).ok();
-            }
-            if let Some(entry) = history.features.iter().find(|f| f.id == id) {
-                return serde_json::to_value(entry).ok();
-            }
-        }
-        for lane in &native.feature_input_lanes {
-            if lane.id == id {
-                return serde_json::to_value(lane).ok();
-            }
-            if let Some(entry) = lane.sketch_entities.iter().find(|e| e.id == id) {
-                return serde_json::to_value(entry).ok();
-            }
-        }
-    }
-    None
+    ir.native
+        .namespaces
+        .values()
+        .flat_map(|namespace| namespace.arenas.values())
+        .flatten()
+        .find(|record| record.id == id)
+        .and_then(|record| serde_json::to_value(record).ok())
 }
 
 pub(super) fn check_annotations(
@@ -420,9 +389,7 @@ pub(super) fn check_native_links(
     all_ids: &HashSet<String>,
     findings: &mut Vec<Finding>,
 ) {
-    let mut native_ids = Vec::new();
-    collect_native_ids(ir, &mut native_ids);
-    let native_ids = native_ids
+    let native_ids = collect_native_ids(ir)
         .into_iter()
         .map(|(_, id)| id)
         .collect::<HashSet<_>>();

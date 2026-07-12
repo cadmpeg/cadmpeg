@@ -33,6 +33,45 @@ impl Default for SldprtNative {
 }
 
 impl SldprtNative {
+    pub(crate) fn store(&self, namespace: &mut super::NativeNamespace) {
+        namespace.version = SLDPRT_NATIVE_VERSION;
+        namespace
+            .set_arena("feature_histories", &self.feature_histories)
+            .expect("typed native records serialize");
+        namespace
+            .set_arena(
+                "configurations",
+                &self
+                    .feature_histories
+                    .iter()
+                    .flat_map(|history| history.configurations.clone())
+                    .collect::<Vec<_>>(),
+            )
+            .expect("typed native records serialize");
+        namespace
+            .set_arena(
+                "features",
+                &self
+                    .feature_histories
+                    .iter()
+                    .flat_map(|history| history.features.clone())
+                    .collect::<Vec<_>>(),
+            )
+            .expect("typed native records serialize");
+        namespace
+            .set_arena("feature_input_lanes", &self.feature_input_lanes)
+            .expect("typed native records serialize");
+        namespace
+            .set_arena(
+                "sketch_input_entities",
+                &self
+                    .feature_input_lanes
+                    .iter()
+                    .flat_map(|lane| lane.sketch_entities.clone())
+                    .collect::<Vec<_>>(),
+            )
+            .expect("typed native records serialize");
+    }
     /// Sort every native arena by its normative record identity.
     pub(crate) fn finalize(&mut self) {
         self.feature_histories

@@ -38,11 +38,14 @@ macro_rules! f3d_arenas {
         }
     };
 }
-pub(crate) use f3d_arenas;
 
 macro_rules! sort_f3d_arenas {
     ($($field:ident: $ty:ty;)*) => {
         impl F3dNative {
+            pub(crate) fn store(&self, namespace: &mut super::NativeNamespace) {
+                namespace.version = F3D_NATIVE_VERSION;
+                $(namespace.set_arena(stringify!($field), &self.$field).expect("typed native records serialize");)*
+            }
             /// Sort every native arena by its normative record identity.
             pub(crate) fn finalize(&mut self) {
                 $(self.$field.sort_by(|left, right| left.id.cmp(&right.id));)*

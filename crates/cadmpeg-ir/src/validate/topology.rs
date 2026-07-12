@@ -251,9 +251,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
     }
     for link in ir
         .native
-        .f3d
-        .iter()
-        .flat_map(|native| &native.persistent_design_links)
+        .namespace("f3d")
+        .map(|native| {
+            native
+                .arena_as::<crate::design::PersistentDesignLink>("persistent_design_links")
+                .unwrap_or_default()
+        })
+        .unwrap_or_default()
     {
         use crate::attributes::AttributeTarget;
         let owner = format!("persistent-design-link:{}", link.design_id);
@@ -693,9 +697,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
     }
     for link in ir
         .native
-        .f3d
-        .iter()
-        .flat_map(|native| &native.sketch_curve_links)
+        .namespace("f3d")
+        .map(|native| {
+            native
+                .arena_as::<crate::design::SketchCurveLink>("sketch_curve_links")
+                .unwrap_or_default()
+        })
+        .unwrap_or_default()
     {
         if !ids.coedges.contains(&link.coedge.0) {
             native_ref_error(findings, &link.id, "coedge", &link.coedge.0);

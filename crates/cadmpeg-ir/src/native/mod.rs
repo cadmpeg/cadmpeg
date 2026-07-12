@@ -1,68 +1,156 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-format namespaces retained outside the format-neutral model.
 
-pub(crate) mod f3d;
-mod sldprt;
+pub mod f3d;
+pub mod sldprt;
+
+use std::collections::BTreeMap;
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-
-pub use f3d::{F3dNative, F3D_NATIVE_VERSION};
-pub use sldprt::{SldprtNative, SLDPRT_NATIVE_VERSION};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 /// One non-empty native arena reported as an exporter loss.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct LossCount {
     /// Source-format namespace this arena belongs to.
     pub format: String,
-    /// Arena field name within that namespace.
+    /// Arena name within that namespace.
     pub kind: String,
     /// Number of records in the arena.
     pub count: usize,
 }
 
-/// Native records grouped by independently versioned source-format namespace.
+/// Conversion failure between codec-owned typed records and generic records.
+#[derive(Debug, thiserror::Error)]
+pub enum NativeConvertError {
+    /// A serialized typed record has no string `id` field.
+    #[error("native record is missing a string id")]
+    MissingId,
+    /// A typed record did not serialize as a JSON object.
+    #[error("native record did not serialize as an object")]
+    NonObject,
+    /// JSON conversion failed.
+    #[error("native record conversion failed: {0}")]
+    Serde(#[from] serde_json::Error),
+}
+
+/// One source-native record with a stable identity and codec-owned fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct NativeRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Codec-owned record fields.
+    #[serde(flatten)]
+    pub fields: Map<String, Value>,
+}
+
+/// Independently versioned source-format arena collection.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct NativeNamespace {
+    /// Codec-owned namespace schema version.
+    pub version: u32,
+    /// Record arenas keyed by stable arena name.
+    #[serde(default)]
+    pub arenas: BTreeMap<String, Vec<NativeRecord>>,
+}
+
+impl NativeNamespace {
+    /// Replace an arena by serializing codec-owned typed records.
+    pub fn set_arena<T: Serialize>(
+        &mut self,
+        name: impl Into<String>,
+        records: &[T],
+    ) -> Result<(), NativeConvertError> {
+        let mut converted = Vec::with_capacity(records.len());
+        for record in records {
+            let Value::Object(mut fields) = serde_json::to_value(record)? else {
+                return Err(NativeConvertError::NonObject);
+            };
+            let Some(Value::String(id)) = fields.remove("id") else {
+                return Err(NativeConvertError::MissingId);
+            };
+            converted.push(NativeRecord { id, fields });
+        }
+        converted.sort_by(|left, right| left.id.cmp(&right.id));
+        self.arenas.insert(name.into(), converted);
+        Ok(())
+    }
+
+    /// Deserialize an arena into codec-owned typed records.
+    pub fn arena_as<T: DeserializeOwned>(&self, name: &str) -> Result<Vec<T>, NativeConvertError> {
+        self.arenas
+            .get(name)
+            .into_iter()
+            .flatten()
+            .map(|record| {
+                let mut fields = record.fields.clone();
+                fields.insert("id".into(), Value::String(record.id.clone()));
+                Ok(serde_json::from_value(Value::Object(fields))?)
+            })
+            .collect()
+    }
+}
+
+/// Native records grouped by source-format namespace id.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Native {
-    /// Fusion `.f3d` native arenas.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub f3d: Option<F3dNative>,
-    /// `SolidWorks` `.sldprt` native arenas.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sldprt: Option<SldprtNative>,
+    /// Generic namespaces keyed by format id.
+    #[serde(flatten)]
+    pub namespaces: BTreeMap<String, NativeNamespace>,
+    /// Transitional typed Fusion view used by the codec while arenas are assembled.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub f3d: Option<f3d::F3dNative>,
+    /// Transitional typed SolidWorks view used by the codec while arenas are assembled.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub sldprt: Option<sldprt::SldprtNative>,
 }
 
 impl Native {
-    /// Sort every present native namespace into canonical identity order.
+    /// Return a source-format namespace.
+    pub fn namespace(&self, format: &str) -> Option<&NativeNamespace> {
+        self.namespaces.get(format)
+    }
+
+    /// Return or create a source-format namespace.
+    pub fn namespace_mut(&mut self, format: impl Into<String>) -> &mut NativeNamespace {
+        self.namespaces.entry(format.into()).or_default()
+    }
+
+    /// Sort every arena into canonical identity order.
     pub(crate) fn finalize(&mut self) {
-        if let Some(native) = &mut self.f3d {
-            native.finalize();
+        if let Some(typed) = &mut self.f3d {
+            typed.finalize();
+            typed.store(self.namespaces.entry("f3d".into()).or_default());
         }
-        if let Some(native) = &mut self.sldprt {
-            native.finalize();
+        if let Some(typed) = &mut self.sldprt {
+            typed.finalize();
+            typed.store(self.namespaces.entry("sldprt".into()).or_default());
+        }
+        for namespace in self.namespaces.values_mut() {
+            for records in namespace.arenas.values_mut() {
+                records.sort_by(|left, right| left.id.cmp(&right.id));
+            }
         }
     }
 
     /// Return one count for each non-empty native arena.
     pub fn loss_counts(&self) -> Vec<LossCount> {
-        let mut counts = Vec::new();
-        if let Some(native) = &self.f3d {
-            counts.extend(loss_counts("f3d", native.loss_counts()));
-        }
-        if let Some(native) = &self.sldprt {
-            counts.extend(loss_counts("sldprt", native.loss_counts()));
-        }
-        counts
+        self.namespaces
+            .iter()
+            .flat_map(|(format, namespace)| {
+                namespace
+                    .arenas
+                    .iter()
+                    .filter(|(_, records)| !records.is_empty())
+                    .map(move |(kind, records)| LossCount {
+                        format: format.clone(),
+                        kind: kind.clone(),
+                        count: records.len(),
+                    })
+            })
+            .collect()
     }
-}
-
-fn loss_counts(
-    format: &'static str,
-    counts: Vec<(&'static str, usize)>,
-) -> impl Iterator<Item = LossCount> {
-    counts.into_iter().map(move |(kind, count)| LossCount {
-        format: format.to_owned(),
-        kind: kind.to_owned(),
-        count,
-    })
 }

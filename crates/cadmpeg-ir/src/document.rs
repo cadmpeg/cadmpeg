@@ -72,7 +72,7 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "2";
+pub const IR_VERSION: &str = "3";
 
 arena_registry!(declare_model);
 

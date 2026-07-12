@@ -196,11 +196,11 @@ fn build_geometry_ir(
     let attributes = crate::metadata::attributes(scan, &mut ir.annotations);
     ir.native
         .sldprt
-        .get_or_insert_with(cadmpeg_ir::SldprtNative::default)
+        .get_or_insert_with(cadmpeg_ir::native::sldprt::SldprtNative::default)
         .feature_histories = histories;
     ir.native
         .sldprt
-        .get_or_insert_with(cadmpeg_ir::SldprtNative::default)
+        .get_or_insert_with(cadmpeg_ir::native::sldprt::SldprtNative::default)
         .feature_input_lanes = lanes;
     ir.model.attributes = attributes;
 
@@ -646,11 +646,11 @@ fn build_metadata_ir(scan: &ContainerScan) -> CadIr {
     let model_attributes = crate::metadata::attributes(scan, &mut ir.annotations);
     ir.native
         .sldprt
-        .get_or_insert_with(cadmpeg_ir::SldprtNative::default)
+        .get_or_insert_with(cadmpeg_ir::native::sldprt::SldprtNative::default)
         .feature_histories = histories;
     ir.native
         .sldprt
-        .get_or_insert_with(cadmpeg_ir::SldprtNative::default)
+        .get_or_insert_with(cadmpeg_ir::native::sldprt::SldprtNative::default)
         .feature_input_lanes = lanes;
     ir.model.attributes = model_attributes;
     let mut attributes = BTreeMap::new();
