@@ -64,7 +64,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                     }
                 })
                 .collect();
-            let features = root
+            let feature_nodes = root
                 .descendants()
                 .filter(|node| {
                     node.is_element()
@@ -73,9 +73,22 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                             "Keywords" | "Configuration" | "Dimension"
                         )
                 })
+                .collect::<Vec<_>>();
+            let feature_ids = feature_nodes
+                .iter()
                 .enumerate()
                 .map(|(ordinal, node)| {
-                    let id = format!("sldprt:history:feature#{}:{ordinal}", block.offset);
+                    (
+                        node.range().start,
+                        format!("sldprt:history:feature#{}:{ordinal}", block.offset),
+                    )
+                })
+                .collect::<HashMap<_, _>>();
+            let features = feature_nodes
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, node)| {
+                    let id = feature_ids[&node.range().start].clone();
                     crate::annotations::note(
                         annotations,
                         id.clone(),
@@ -88,6 +101,10 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                         id,
                         parent: parent.clone(),
                         xml_tag: node.tag_name().name().into(),
+                        tree_parent: node
+                            .ancestors()
+                            .skip(1)
+                            .find_map(|ancestor| feature_ids.get(&ancestor.range().start).cloned()),
                         source_id: node
                             .attribute("id")
                             .filter(|value| !value.is_empty())
@@ -166,6 +183,11 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                         .map(|source| (source, neutral_feature_id(&feature.id)))
                 })
                 .collect::<HashMap<_, _>>();
+            let by_native = history
+                .features
+                .iter()
+                .map(|feature| (feature.id.as_str(), neutral_feature_id(&feature.id)))
+                .collect::<HashMap<_, _>>();
             let native_by_source = history
                 .features
                 .iter()
@@ -185,9 +207,15 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                     name: (!feature.name.is_empty()).then(|| feature.name.clone()),
                     suppressed: feature.suppressed,
                     parent: feature
-                        .parent_source_id
+                        .tree_parent
                         .as_deref()
-                        .and_then(|source| by_source.get(source).cloned()),
+                        .and_then(|parent| by_native.get(parent).cloned())
+                        .or_else(|| {
+                            feature
+                                .parent_source_id
+                                .as_deref()
+                                .and_then(|source| by_source.get(source).cloned())
+                        }),
                     outputs: Vec::new(),
                     definition: project_definition(feature, &by_source, &native_by_source),
                     native_ref: Some(feature.id.clone()),
@@ -1464,6 +1492,29 @@ pub fn sync_neutral_features(
             (feature.id.clone(), source_id)
         })
         .collect::<HashMap<_, _>>();
+    let structural_parent_sources = features
+        .iter()
+        .map(|feature| {
+            let source_id = native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()))
+                .and_then(|candidate| candidate.source_id.clone())
+                .or_else(|| feature.native_ref.is_none().then(|| feature.id.0.clone()));
+            (feature.id.clone(), source_id)
+        })
+        .collect::<HashMap<_, _>>();
+    let record_ids = features
+        .iter()
+        .map(|feature| {
+            let record_id = feature
+                .native_ref
+                .clone()
+                .unwrap_or_else(|| format!("sldprt:generated:feature#{}", feature.id.0));
+            (feature.id.clone(), record_id)
+        })
+        .collect::<HashMap<_, _>>();
     let record_sources = native
         .feature_histories
         .iter()
@@ -2420,24 +2471,27 @@ pub fn sync_neutral_features(
         let parent_source_id = feature
             .parent
             .as_ref()
-            .and_then(|parent| parent_sources.get(parent).cloned());
+            .and_then(|parent| structural_parent_sources.get(parent).cloned().flatten());
+        let tree_parent = feature
+            .parent
+            .as_ref()
+            .and_then(|parent| record_ids.get(parent).cloned());
         if let Some(existing) = existing.as_mut() {
             existing.ordinal = ordinal;
             existing.name = feature.name.clone().unwrap_or_default();
             existing.kind = kind;
             existing.suppressed = feature.suppressed;
             existing.parent_source_id = parent_source_id;
+            existing.tree_parent = tree_parent;
             existing.parameters = parameters;
             existing.properties = properties;
         } else {
             let history = &mut native.feature_histories[0];
             history.features.push(Feature {
-                id: feature
-                    .native_ref
-                    .clone()
-                    .unwrap_or_else(|| format!("sldprt:generated:feature#{}", feature.id.0)),
+                id: record_ids[&feature.id].clone(),
                 parent: history.id.clone(),
                 xml_tag: feature_xml_tag(feature),
+                tree_parent,
                 source_id: Some(feature.id.0.clone()),
                 parent_source_id,
                 ordinal,

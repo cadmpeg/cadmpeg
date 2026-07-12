@@ -38,6 +38,9 @@ pub struct Feature {
     /// XML element name carrying this feature record.
     #[serde(default = "default_feature_xml_tag")]
     pub xml_tag: String,
+    /// Native record id of the containing feature element.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree_parent: Option<String>,
     /// Native identifier of this feature, when the source assigned one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,

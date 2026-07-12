@@ -3108,6 +3108,59 @@ fn decode_extracts_parametric_history() {
 }
 
 #[test]
+fn semantic_writer_preserves_idless_feature_tree_nodes() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Root" Type="Folder" id="1"><Folder Name="Group"><Sketch Name="Profile" Type="Sketch" id="2"/></Folder></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&decoded.ir).feature_histories[0].features;
+    assert_eq!(
+        native[1].tree_parent.as_deref(),
+        Some(native[0].id.as_str())
+    );
+    assert_eq!(
+        native[2].tree_parent.as_deref(),
+        Some(native[1].id.as_str())
+    );
+    assert_eq!(
+        decoded.ir.model.features[1].parent.as_ref(),
+        Some(&decoded.ir.model.features[0].id)
+    );
+    assert_eq!(
+        decoded.ir.model.features[2].parent.as_ref(),
+        Some(&decoded.ir.model.features[1].id)
+    );
+    decoded.ir.model.features[2].name = Some("Edited Profile".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native.len(), 3);
+    assert_eq!(native[0].xml_tag, "Feature");
+    assert_eq!(native[1].xml_tag, "Folder");
+    assert_eq!(native[2].xml_tag, "Sketch");
+    assert_eq!(
+        native[1].tree_parent.as_deref(),
+        Some(native[0].id.as_str())
+    );
+    assert_eq!(
+        native[2].tree_parent.as_deref(),
+        Some(native[1].id.as_str())
+    );
+    assert_eq!(native[2].name, "Edited Profile");
+}
+
+#[test]
 fn semantic_writer_applies_neutral_configuration_edits() {
     let mut decoded = SldprtCodec
         .decode(

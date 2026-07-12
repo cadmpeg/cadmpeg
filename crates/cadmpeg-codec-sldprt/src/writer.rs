@@ -566,7 +566,7 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
     let mut roots = history
         .features
         .iter()
-        .filter(|feature| feature.parent_source_id.is_none())
+        .filter(|feature| feature.tree_parent.is_none() && feature.parent_source_id.is_none())
         .collect::<Vec<_>>();
     roots.sort_by_key(|feature| feature.ordinal);
     for feature in roots {
@@ -597,6 +597,13 @@ fn validate_feature_graph(features: &[crate::records::Feature]) -> Result<(), Co
     {
         return Err(CodecError::Malformed("duplicate feature source id".into()));
     }
+    let by_record = features
+        .iter()
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    if by_record.len() != features.len() {
+        return Err(CodecError::Malformed("duplicate feature record id".into()));
+    }
     for feature in features {
         let mut seen = HashSet::new();
         let mut parent = feature.parent_source_id.as_deref();
@@ -608,6 +615,17 @@ fn validate_feature_graph(features: &[crate::records::Feature]) -> Result<(), Co
                 .get(id)
                 .ok_or_else(|| CodecError::Malformed("feature references missing parent".into()))?;
             parent = node.parent_source_id.as_deref();
+        }
+        let mut seen = HashSet::new();
+        let mut parent = feature.tree_parent.as_deref();
+        while let Some(id) = parent {
+            if !seen.insert(id) {
+                return Err(CodecError::Malformed("feature tree cycle".into()));
+            }
+            let node = by_record.get(id).ok_or_else(|| {
+                CodecError::Malformed("feature references missing tree parent".into())
+            })?;
+            parent = node.tree_parent.as_deref();
         }
     }
     Ok(())
@@ -648,15 +666,18 @@ fn write_feature_xml(
         xml_text(out, value);
         out.push_str("</Dimension>");
     }
-    if let Some(id) = feature.source_id.as_deref() {
-        let mut children = features
-            .iter()
-            .filter(|child| child.parent_source_id.as_deref() == Some(id))
-            .collect::<Vec<_>>();
-        children.sort_by_key(|child| child.ordinal);
-        for child in children {
-            write_feature_xml(out, child, features);
-        }
+    let mut children = features
+        .iter()
+        .filter(|child| {
+            child.tree_parent.as_deref() == Some(feature.id.as_str())
+                || (child.tree_parent.is_none()
+                    && child.parent_source_id.as_deref() == feature.source_id.as_deref()
+                    && feature.source_id.is_some())
+        })
+        .collect::<Vec<_>>();
+    children.sort_by_key(|child| child.ordinal);
+    for child in children {
+        write_feature_xml(out, child, features);
     }
     out.push_str("</");
     out.push_str(&feature.xml_tag);
