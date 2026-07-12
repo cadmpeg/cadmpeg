@@ -772,7 +772,50 @@ pub enum DecodedProceduralSurfaceDefinition {
         radius: BlendRadiusLaw,
         /// Blend cross-section family.
         cross_section: BlendCrossSection,
+        /// Complete native construction graph when the full layout decoded.
+        native: Option<Box<EmbeddedRollingBall>>,
     },
+}
+
+pub(crate) struct EmbeddedRollingBallSide {
+    pub(crate) label: String,
+    pub(crate) surface: Option<SurfaceGeometry>,
+    pub(crate) curve: NurbsCurve,
+    pub(crate) pcurve: Option<NurbsPcurve>,
+    pub(crate) location: Point3,
+    pub(crate) secondary_pcurve: Option<NurbsPcurve>,
+    pub(crate) exact_support: Option<NurbsSurface>,
+}
+
+pub(crate) struct EmbeddedRollingBallThirdSide {
+    pub(crate) label: String,
+    pub(crate) surface: SurfaceGeometry,
+    pub(crate) curve: NurbsCurve,
+    pub(crate) pcurve: Option<NurbsPcurve>,
+    pub(crate) direction: Vector3,
+    pub(crate) secondary_pcurve: Option<NurbsPcurve>,
+    pub(crate) extension: i64,
+    pub(crate) tertiary_pcurve: Option<NurbsPcurve>,
+    pub(crate) flag: bool,
+}
+
+pub(crate) enum EmbeddedRollingBallRadiusSelector {
+    None,
+    Value(f64),
+}
+
+/// Embedded native rolling-ball graph before stable IR ids are assigned.
+pub struct EmbeddedRollingBall {
+    pub(crate) sides: Box<[EmbeddedRollingBallSide; 2]>,
+    pub(crate) slice: NurbsCurve,
+    pub(crate) offsets: [f64; 2],
+    pub(crate) radius_selector: EmbeddedRollingBallRadiusSelector,
+    pub(crate) u_range: [f64; 2],
+    pub(crate) v_range: [f64; 2],
+    pub(crate) parameters: [f64; 3],
+    pub(crate) tail: i64,
+    pub(crate) discontinuities: [Vec<f64>; 3],
+    pub(crate) third: Option<Box<EmbeddedRollingBallThirdSide>>,
 }
 
 pub(crate) struct EmbeddedG2Side {
@@ -1598,7 +1641,188 @@ fn decode_cyl_spl_sur_at(
     })
 }
 
-fn decode_rb_blend_spl_sur(
+fn decode_rolling_ball_side(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<EmbeddedRollingBallSide> {
+    let label = take_native_string(bytes, position)?;
+    let saved = *position;
+    let surface = if take_native_ident(bytes, position).as_deref() == Some("null_surface") {
+        None
+    } else {
+        *position = saved;
+        Some(decode_embedded_surface(bytes, position, int_width)?)
+    };
+    let curve = decode_curve_block(bytes, *position, int_width)?;
+    *position = curve.end;
+    let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+    let location = take_native_vec3(bytes, position, 0x13)?;
+    let secondary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+    let saved = *position;
+    let exact_support = if matches!(
+        take_native_ident(bytes, position).as_deref(),
+        Some("nullbs" | "null_surface")
+    ) {
+        None
+    } else {
+        *position = saved;
+        match decode_embedded_surface(bytes, position, int_width)? {
+            SurfaceGeometry::Nurbs(surface) => Some(surface),
+            _ => return None,
+        }
+    };
+    Some(EmbeddedRollingBallSide {
+        label,
+        surface,
+        curve: curve.curve,
+        pcurve,
+        location: Point3::new(
+            location[0] * LEN_TO_MM,
+            location[1] * LEN_TO_MM,
+            location[2] * LEN_TO_MM,
+        ),
+        secondary_pcurve,
+        exact_support,
+    })
+}
+
+fn decode_rolling_ball_third_side(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<EmbeddedRollingBallThirdSide> {
+    let label = take_native_string(bytes, position)?;
+    let surface = decode_embedded_surface(bytes, position, int_width)?;
+    let curve = decode_curve_block(bytes, *position, int_width)?;
+    *position = curve.end;
+    let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+    let direction = take_native_vec3(bytes, position, 0x14)?;
+    let secondary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+    let extension = take_tagged_int(bytes, position, 0x04, int_width)?;
+    let tertiary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+    let flag = take_bool(bytes, position)?;
+    Some(EmbeddedRollingBallThirdSide {
+        label,
+        surface,
+        curve: curve.curve,
+        pcurve,
+        direction: Vector3::new(direction[0], direction[1], direction[2]),
+        secondary_pcurve,
+        extension,
+        tertiary_pcurve,
+        flag,
+    })
+}
+
+fn decode_full_rb_blend_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+) -> Option<DecodedProceduralSurface> {
+    let names: [(&[u8], bool); 4] = [
+        (b"rb_blend_spl_sur", false),
+        (b"rbblnsur", false),
+        (b"sss_blend_spl_sur", true),
+        (b"sssblndsur", true),
+    ];
+    let (start, name_len, has_third) = names.into_iter().find_map(|(name, has_third)| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len(), has_third))
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name_len + 3;
+    let sides = Box::new([
+        decode_rolling_ball_side(span, &mut position, int_width)?,
+        decode_rolling_ball_side(span, &mut position, int_width)?,
+    ]);
+    let slice = decode_curve_block(span, position, int_width)?;
+    position = slice.end;
+    let offsets = [
+        take_f64(span, &mut position)? * LEN_TO_MM,
+        take_f64(span, &mut position)? * LEN_TO_MM,
+    ];
+    let radius_selector = match span.get(position)? {
+        0x15 => {
+            if take_tagged_int(span, &mut position, 0x15, int_width)? != -1 {
+                return None;
+            }
+            EmbeddedRollingBallRadiusSelector::None
+        }
+        0x06 => EmbeddedRollingBallRadiusSelector::Value(take_f64(span, &mut position)?),
+        _ => return None,
+    };
+    let u_range = [
+        take_f64(span, &mut position)?,
+        take_f64(span, &mut position)?,
+    ];
+    let v_range = [
+        take_f64(span, &mut position)?,
+        take_f64(span, &mut position)?,
+    ];
+    let parameters = [
+        take_f64(span, &mut position)?,
+        take_f64(span, &mut position)?,
+        take_f64(span, &mut position)?,
+    ];
+    let tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let cache = decode_surface_block(span, position, int_width)?;
+    position = cache.end;
+    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let discontinuities = [
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+    ];
+    let third = if has_third {
+        Some(Box::new(decode_rolling_ball_third_side(
+            span,
+            &mut position,
+            int_width,
+        )?))
+    } else {
+        None
+    };
+    let radius = if offsets[0] == offsets[1] {
+        BlendRadiusLaw::Constant {
+            signed_radius: offsets[0],
+        }
+    } else {
+        BlendRadiusLaw::Linear {
+            start: offsets[0],
+            end: offsets[1],
+        }
+    };
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Blend {
+            supports: Box::new([None, None]),
+            spine: Some(slice.curve.clone()),
+            radius,
+            cross_section: BlendCrossSection::Circular,
+            native: Some(Box::new(EmbeddedRollingBall {
+                sides,
+                slice: slice.curve,
+                offsets,
+                radius_selector,
+                u_range,
+                v_range,
+                parameters,
+                tail,
+                discontinuities,
+                third,
+            })),
+        },
+        cache_fit_tolerance,
+    })
+}
+
+fn decode_rb_blend_spl_sur_fallback(
     record_bytes: &[u8],
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
@@ -1684,6 +1908,7 @@ fn decode_rb_blend_spl_sur(
             spine: center_curve,
             radius,
             cross_section: BlendCrossSection::Circular,
+            native: None,
         },
         cache_fit_tolerance,
     })
@@ -1723,7 +1948,8 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_rot_spl_sur(bytes, int_width))
         .or_else(|| decode_off_spl_sur(bytes, int_width))
         .or_else(|| decode_cyl_spl_sur_at(bytes, int_width))
-        .or_else(|| decode_rb_blend_spl_sur(bytes, int_width))
+        .or_else(|| decode_full_rb_blend_spl_sur(bytes, int_width))
+        .or_else(|| decode_rb_blend_spl_sur_fallback(bytes, int_width))
     {
         return Some(decoded);
     }

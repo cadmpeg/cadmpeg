@@ -21,7 +21,8 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::design::{PersistentDesignLink, SketchCurveLink};
 use cadmpeg_ir::geometry::{
     BlendSupport, Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
-    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    ProceduralSurface, ProceduralSurfaceDefinition, RollingBallConstruction,
+    RollingBallRadiusSelector, RollingBallSide, RollingBallThirdSide, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     AttributeId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId,
@@ -39,6 +40,16 @@ use crate::sab::{Record, Token};
 
 /// Millimetres per ASM model-space length unit (centimetres).
 const LEN_TO_MM: f64 = 10.0;
+
+fn embedded_pcurve_geometry(pcurve: nurbs::NurbsPcurve) -> PcurveGeometry {
+    PcurveGeometry::Nurbs {
+        degree: pcurve.degree,
+        knots: pcurve.knots,
+        control_points: pcurve.control_points,
+        weights: pcurve.weights,
+        periodic: pcurve.periodic,
+    }
+}
 
 /// The decoded B-rep graph plus loss accounting.
 #[derive(Default)]
@@ -1206,6 +1217,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             spine,
                             radius,
                             cross_section,
+                            native,
                         } => {
                             let mut resolved_supports = [None, None];
                             for (side, support) in supports.into_iter().enumerate() {
@@ -1234,6 +1246,110 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 });
                                 spine_id
                             });
+                            let native = native.map(|native| {
+                                let mut resolved_sides = Vec::with_capacity(2);
+                                for (side_index, side) in native.sides.into_iter().enumerate() {
+                                    let prefix = format!(
+                                        "f3d:brep:procedural_surface#{i}:native_side{side_index}"
+                                    );
+                                    let surface = side.surface.map(|geometry| {
+                                        let id = SurfaceId(format!("{prefix}:surface"));
+                                        out.surfaces.push(Surface {
+                                            id: id.clone(),
+                                            geometry,
+                                            source_object: None,
+                                        });
+                                        id
+                                    });
+                                    let curve = CurveId(format!("{prefix}:curve"));
+                                    out.curves.push(Curve {
+                                        id: curve.clone(),
+                                        geometry: CurveGeometry::Nurbs(side.curve),
+                                        source_object: None,
+                                    });
+                                    let exact_support = side.exact_support.map(|geometry| {
+                                        let id = SurfaceId(format!("{prefix}:exact_support"));
+                                        out.surfaces.push(Surface {
+                                            id: id.clone(),
+                                            geometry: SurfaceGeometry::Nurbs(geometry),
+                                            source_object: None,
+                                        });
+                                        id
+                                    });
+                                    resolved_sides.push(RollingBallSide {
+                                        label: side.label,
+                                        surface,
+                                        curve,
+                                        pcurve: side.pcurve.map(embedded_pcurve_geometry),
+                                        location: side.location,
+                                        secondary_pcurve: side
+                                            .secondary_pcurve
+                                            .map(embedded_pcurve_geometry),
+                                        exact_support,
+                                    });
+                                }
+                                let [first, second]: [RollingBallSide; 2] = resolved_sides
+                                    .try_into()
+                                    .expect("invariant: native rolling-ball has two sides");
+                                let slice = CurveId(format!(
+                                    "f3d:brep:procedural_surface#{i}:native_slice"
+                                ));
+                                out.curves.push(Curve {
+                                    id: slice.clone(),
+                                    geometry: CurveGeometry::Nurbs(native.slice),
+                                    source_object: None,
+                                });
+                                let third = native.third.map(|side| {
+                                    let prefix =
+                                        format!("f3d:brep:procedural_surface#{i}:native_third");
+                                    let surface = SurfaceId(format!("{prefix}:surface"));
+                                    out.surfaces.push(Surface {
+                                        id: surface.clone(),
+                                        geometry: side.surface,
+                                        source_object: None,
+                                    });
+                                    let curve = CurveId(format!("{prefix}:curve"));
+                                    out.curves.push(Curve {
+                                        id: curve.clone(),
+                                        geometry: CurveGeometry::Nurbs(side.curve),
+                                        source_object: None,
+                                    });
+                                    Box::new(RollingBallThirdSide {
+                                        label: side.label,
+                                        surface,
+                                        curve,
+                                        pcurve: side.pcurve.map(embedded_pcurve_geometry),
+                                        direction: side.direction,
+                                        secondary_pcurve: side
+                                            .secondary_pcurve
+                                            .map(embedded_pcurve_geometry),
+                                        extension: side.extension,
+                                        tertiary_pcurve: side
+                                            .tertiary_pcurve
+                                            .map(embedded_pcurve_geometry),
+                                        flag: side.flag,
+                                    })
+                                });
+                                Box::new(RollingBallConstruction {
+                                    sides: Box::new([first, second]),
+                                    slice,
+                                    offsets: native.offsets,
+                                    radius_selector: match native.radius_selector {
+                                        nurbs::EmbeddedRollingBallRadiusSelector::None => {
+                                            RollingBallRadiusSelector::None
+                                        }
+                                        nurbs::EmbeddedRollingBallRadiusSelector::Value(value) => {
+                                            RollingBallRadiusSelector::Value { value }
+                                        }
+                                    },
+                                    u_range: native.u_range,
+                                    v_range: native.v_range,
+                                    parameters: native.parameters,
+                                    tail: native.tail,
+                                    discontinuities: native.discontinuities,
+                                    third,
+                                })
+                            });
                             if resolved_supports
                                 .iter()
                                 .filter(|support| support.is_some())
@@ -1247,7 +1363,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 spine,
                                 radius,
                                 cross_section,
-                                native: None,
+                                native,
                             }
                         }
                     };

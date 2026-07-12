@@ -372,7 +372,7 @@ Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus
 
 **`comp_spl_sur`**: the solved NURBS surface and fit tolerance occur first, followed by a float array and one component surface per array element. Each float is paired positionally with its component surface. The leading surface block is the face cache; trailing NURBS component surfaces do not replace it during cache selection.
 
-**Rolling-ball aliases**: `rb_blend_spl_sur`, `rbblnsur`, `pipe_spl_sur`, and `pipesur` select the same rolling-ball blend layout. The pipe names denote its surface-surface specialization. Native generation uses `rb_blend_spl_sur`.
+**Rolling-ball aliases**: `rb_blend_spl_sur` and `rbblnsur` select the two-support rolling-ball layout. `sss_blend_spl_sur` and `sssblndsur` select the same prefix followed by a third-side graph. `pipe_spl_sur` and `pipesur` denote the surface-surface specialization. Native generation uses the modern spelling.
 
 **Taper spline surfaces**: `taper_spl_sur`, `ortho_spl_sur`/`orthosur`, `edge_tpr_spl_sur`, `shadow_tpr_spl_sur`/`shadowtapersur`, `ruled_tpr_spl_sur`/`ruledtapersur`, and `swept_tpr_spl_sur`/`swepttapersur` share a support surface, reference curve, nullable BS2 pcurve, taper parameter, solved NURBS surface, and fit tolerance. Standard taper has no tail; orthogonal adds a sense boolean; edge adds a draft vector; shadow and swept each add a draft vector plus stored sine/cosine values; ruled adds the same fields plus a factor. Shadow and swept are distinguished by subtype name, not tail shape. Native generation uses the modern subtype corresponding to the retained variant.
 
@@ -435,18 +435,44 @@ cyl_spl_sur :=
 ```
 rb_blend_spl_sur :=
   0x0f 0x0d "rb_blend_spl_sur"
-  support-name support-kind
-  support-name support-kind
-  curve-cache
-  DOUBLE radius_start
-  DOUBLE radius_end
-  ENUM_VALUE -1
+  rolling-ball-side
+  rolling-ball-side
+  curve slice
+  LENGTH offset_left
+  LENGTH offset_right
+  (ENUM_VALUE -1 | DOUBLE radius_selector)
+  INTERVAL u_range
+  INTERVAL v_range
+  DOUBLE parameter[3]
+  LONG tail
   surface-cache
   DOUBLE cache_fit_tolerance
+  FLOAT_ARRAY discontinuity[3]
+  [rolling-ball-third-side]
   0x10
+
+rolling-ball-side :=
+  TEXT label
+  surface
+  curve
+  nullable-bs2-pcurve
+  POSITION location
+  nullable-bs2-pcurve
+  nullable-spline-surface
+
+rolling-ball-third-side :=
+  TEXT label
+  surface
+  curve
+  nullable-bs2-pcurve
+  VECTOR_3D direction
+  nullable-bs2-pcurve
+  INTEGER extension
+  nullable-bs2-pcurve
+  BOOLEAN flag
 ```
 
-Each `support-name` is the string `blend_support_surface`; `support-kind` is a surface class token. The curve cache is the blend center curve. The signed radii and fit tolerance are lengths. Equal radius values define a constant-radius rolling-ball blend; unequal values define a linear radius law.
+The two offsets and fit tolerance are lengths. `ENUM_VALUE -1` selects the absent-radius branch; a `DOUBLE` carries an explicit selector value. Each side retains its support surface, side curve, primary and secondary pcurves, model-space location, and optional exact spline support. `sss_blend_spl_sur` appends the third-side graph after the three discontinuity arrays. The final surface cache is the solved face surface.
 
 ---
 

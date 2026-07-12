@@ -1985,6 +1985,76 @@ fn synthetic_rb_blend_spl_sur_smbh() -> Vec<u8> {
     bytes
 }
 
+fn append_generated_rolling_ball_side(bytes: &mut Vec<u8>, label: &str, x: f64) {
+    push_u8_string(bytes, label);
+    t_ident(bytes, "plane");
+    t_pos(bytes, [x, 0.0, 0.0]);
+    t_vec(bytes, [0.0, 0.0, 1.0]);
+    t_vec(bytes, [1.0, 0.0, 0.0]);
+    bytes.push(0x0b);
+    bytes.extend_from_slice(&generated_curve_block());
+    bytes.extend_from_slice(&generated_pcurve_block());
+    t_pos(bytes, [x, 2.0, 3.0]);
+    t_ident(bytes, "nullbs");
+    t_ident(bytes, "spline");
+    bytes.extend_from_slice(&generated_surface_block());
+}
+
+fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, name);
+    append_generated_rolling_ball_side(&mut surface, "left", 1.0);
+    append_generated_rolling_ball_side(&mut surface, "right", 4.0);
+    surface.extend_from_slice(&generated_curve_block());
+    for value in [-0.3, -0.6] {
+        t_dbl(&mut surface, value);
+    }
+    surface.push(0x15);
+    surface.extend_from_slice(&(-1i64).to_le_bytes());
+    for value in [-1.0, 2.0, -3.0, 4.0, 0.1, 0.2, 0.3] {
+        t_dbl(&mut surface, value);
+    }
+    t_long(&mut surface, 17);
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.004);
+    for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
+        t_long(&mut surface, i64::try_from(values.len()).unwrap());
+        for value in values {
+            t_dbl(&mut surface, *value);
+        }
+    }
+    if matches!(name, "sss_blend_spl_sur" | "sssblndsur") {
+        push_u8_string(&mut surface, "third");
+        t_ident(&mut surface, "plane");
+        t_pos(&mut surface, [0.0, 0.0, 1.0]);
+        t_vec(&mut surface, [0.0, 1.0, 0.0]);
+        t_vec(&mut surface, [1.0, 0.0, 0.0]);
+        surface.push(0x0b);
+        surface.extend_from_slice(&generated_curve_block());
+        t_ident(&mut surface, "nullbs");
+        t_vec(&mut surface, [0.0, 1.0, 0.0]);
+        surface.extend_from_slice(&generated_pcurve_block());
+        t_long(&mut surface, 23);
+        t_ident(&mut surface, "nullbs");
+        surface.push(0x0b);
+    }
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn synthetic_partial_rb_blend_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_rb_blend_spl_sur_smbh();
     let marker = b"\x0e\x06sphere";
@@ -7598,6 +7668,58 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 matches!(construction.first_shape, G2BlendFirstShape::Full { .. }),
                 full
             );
+        }
+    }
+}
+
+#[test]
+fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, RollingBallRadiusSelector};
+
+    for name in [
+        "rb_blend_spl_sur",
+        "rbblnsur",
+        "sss_blend_spl_sur",
+        "sssblndsur",
+    ] {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_full_rolling_ball_smbh(name))),
+                &DecodeOptions::default(),
+            )
+            .expect("rolling-ball decode");
+        let ProceduralSurfaceDefinition::Blend {
+            native: Some(native),
+            ..
+        } = &result.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected complete rolling-ball graph")
+        };
+        assert_eq!(native.sides[0].label, "left");
+        assert_eq!(native.sides[1].label, "right");
+        assert_eq!(
+            native.sides[0].location,
+            cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
+        );
+        assert!(native.sides.iter().all(|side| side.surface.is_some()));
+        assert!(native.sides.iter().all(|side| side.pcurve.is_some()));
+        assert!(native.sides.iter().all(|side| side.exact_support.is_some()));
+        assert_eq!(native.offsets, [-3.0, -6.0]);
+        assert_eq!(native.radius_selector, RollingBallRadiusSelector::None);
+        assert_eq!(native.u_range, [-1.0, 2.0]);
+        assert_eq!(native.v_range, [-3.0, 4.0]);
+        assert_eq!(native.parameters, [0.1, 0.2, 0.3]);
+        assert_eq!(native.tail, 17);
+        assert_eq!(
+            native.discontinuities,
+            [vec![0.25], vec![], vec![0.5, 0.75]]
+        );
+        assert_eq!(native.third.is_some(), name.starts_with("sss"));
+        if let Some(third) = &native.third {
+            assert_eq!(third.label, "third");
+            assert_eq!(third.extension, 23);
+            assert!(third.secondary_pcurve.is_some());
+            assert!(!third.flag);
         }
     }
 }
