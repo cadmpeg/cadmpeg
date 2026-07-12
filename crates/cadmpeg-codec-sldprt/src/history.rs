@@ -792,8 +792,26 @@ fn project_hole(feature: &Feature) -> Option<FeatureDefinition> {
         Some(_) => return None,
     };
     Some(FeatureDefinition::Hole {
-        face: Some(FaceSelection::Native(feature.id.clone())),
-        position: None,
+        face: feature
+            .properties
+            .get("Face")
+            .cloned()
+            .map(FaceSelection::Native)
+            .or_else(|| Some(FaceSelection::Native(feature.id.clone()))),
+        position: match feature.properties.get("Position") {
+            Some(value) => Some(parse_point3_mm(value)?),
+            None => None,
+        },
+        direction: match feature.properties.get("Direction") {
+            Some(value) => {
+                let direction = parse_vector3(value)?;
+                if !valid_direction(direction) {
+                    return None;
+                }
+                Some(direction)
+            }
+            None => None,
+        },
         kind,
         diameter: Length(diameter),
         extent,
@@ -1927,8 +1945,9 @@ pub fn sync_neutral_features(
                 (record.kind.clone(), parameters, properties)
             }
             FeatureDefinition::Hole {
-                face: Some(FaceSelection::Native(selection)),
-                position: None,
+                face,
+                position,
+                direction,
                 kind,
                 diameter,
                 extent,
@@ -1939,7 +1958,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 };
-                if !record.kind.eq_ignore_ascii_case("Hole") || selection != &record.id {
+                if !record.kind.eq_ignore_ascii_case("Hole") {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported hole semantics",
                         feature.id
@@ -1965,6 +1984,53 @@ pub fn sync_neutral_features(
                     }
                 }
                 let mut properties = record.properties.clone();
+                match face {
+                    Some(FaceSelection::Native(selection)) if !selection.is_empty() => {
+                        properties.insert("Face".into(), selection.clone());
+                    }
+                    Some(FaceSelection::Native(_)) => {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has an empty hole face selection",
+                            feature.id
+                        )));
+                    }
+                    Some(FaceSelection::Faces(_)) => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses a resolved hole face selection",
+                            feature.id
+                        )));
+                    }
+                    None => {
+                        properties.remove("Face");
+                    }
+                }
+                match position {
+                    Some(position)
+                        if position.x.is_finite()
+                            && position.y.is_finite()
+                            && position.z.is_finite() =>
+                    {
+                        properties.insert("Position".into(), format_point3_mm(*position));
+                    }
+                    Some(_) => {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has a non-finite hole position",
+                            feature.id
+                        )));
+                    }
+                    None => {
+                        properties.remove("Position");
+                    }
+                }
+                match direction {
+                    Some(direction) => {
+                        require_direction(*direction, &feature.id, "hole direction")?;
+                        properties.insert("Direction".into(), format_vector3(*direction));
+                    }
+                    None => {
+                        properties.remove("Direction");
+                    }
+                }
                 match extent {
                     Extent::Blind {
                         length: Length(depth),

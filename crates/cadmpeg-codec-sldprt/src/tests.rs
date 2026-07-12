@@ -3969,6 +3969,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Native(selection)),
             position: None,
+            direction: None,
             kind: HoleKind::Simple,
             diameter: Length(6.35),
             extent: Extent::Blind {
@@ -3998,6 +3999,66 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
     let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
     assert_eq!(feature.parameters["Diameter"], "8mm");
     assert_eq!(feature.parameters["Depth"], "16mm");
+}
+
+#[test]
+fn semantic_writer_round_trips_hole_placement() {
+    use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Hole Name="Placed" Type="Hole" id="28" Face="face:12" Position="1mm,2mm,3mm" Direction="0,0,-1" EndCondition="Blind"><Dimension Name="Diameter">6mm</Dimension><Dimension Name="Depth">10mm</Dimension></Hole></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let FeatureDefinition::Hole {
+        face,
+        position,
+        direction,
+        extent,
+        ..
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed hole feature");
+    };
+    assert_eq!(face, &Some(FaceSelection::Native("face:12".into())));
+    assert_eq!(*position, Some(Point3::new(1.0, 2.0, 3.0)));
+    assert_eq!(*direction, Some(Vector3::new(0.0, 0.0, -1.0)));
+
+    *face = Some(FaceSelection::Native("face:13".into()));
+    *position = Some(Point3::new(4.0, 5.0, 6.0));
+    *direction = Some(Vector3::new(0.0, 1.0, 0.0));
+    *extent = Extent::ThroughAll;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.properties["Face"], "face:13");
+    assert_eq!(native.properties["Position"], "4mm,5mm,6mm");
+    assert_eq!(native.properties["Direction"], "0,1,0");
+    assert_eq!(native.properties["EndCondition"], "ThroughAll");
+    assert!(!native.parameters.contains_key("Depth"));
+    assert!(matches!(
+        &regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Hole {
+            face: Some(FaceSelection::Native(face)),
+            position: Some(position),
+            direction: Some(direction),
+            extent: Extent::ThroughAll,
+            ..
+        } if face == "face:13"
+            && position == &Point3::new(4.0, 5.0, 6.0)
+            && direction == &Vector3::new(0.0, 1.0, 0.0)
+    ));
 }
 
 #[test]

@@ -322,6 +322,9 @@ pub enum FeatureDefinition {
         /// Hole placement position, when recorded independently of `face`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         position: Option<Point3>,
+        /// Drilling direction, when recorded independently of the placement face.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
         /// Entry-shape family of the hole.
         kind: HoleKind,
         /// Hole diameter.
