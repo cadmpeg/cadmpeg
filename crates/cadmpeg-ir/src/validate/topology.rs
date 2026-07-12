@@ -322,6 +322,28 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ref_error(findings, &procedural.id.0, "curve", &reference.0);
                 }
             }
+            ProceduralSurfaceDefinition::Loft { sections, .. } => {
+                for entry in sections.iter().flat_map(|section| &section.entries) {
+                    for curve in std::iter::once(&entry.path.curve)
+                        .chain(entry.path.auxiliaries.iter())
+                        .chain(entry.profile.iter().map(|member| &member.curve))
+                    {
+                        if !ids.curves.contains(&curve.0) {
+                            ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                        }
+                    }
+                    for member in &entry.profile {
+                        if !ids.surfaces.contains(&member.data.surface.0) {
+                            ref_error(
+                                findings,
+                                &procedural.id.0,
+                                "surface",
+                                &member.data.surface.0,
+                            );
+                        }
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 if !ids.curves.contains(&directrix.0) {

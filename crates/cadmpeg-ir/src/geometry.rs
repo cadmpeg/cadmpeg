@@ -312,6 +312,21 @@ pub enum ProceduralSurfaceDefinition {
         /// Subtype-specific taper tail.
         taper: TaperSurfaceKind,
     },
+    /// Native loft defined by two section graphs and closure contracts.
+    Loft {
+        /// Two ordered loft sections.
+        sections: [LoftSection; 2],
+        /// Two ordered native parameter intervals.
+        parameter_ranges: [[f64; 2]; 2],
+        /// Two ordered native closure enums.
+        closures: [i64; 2],
+        /// Two ordered native singularity enums.
+        singularities: [i64; 2],
+        /// Native loft mode integer.
+        mode: i64,
+        /// Variable native tokens between the mode and solved cache.
+        bridge: Vec<LoftBridgeToken>,
+    },
     /// Translation of a directrix along a direction.
     Extrusion {
         /// Curve swept along `direction` to form the surface.
@@ -458,6 +473,103 @@ pub enum TaperSurfaceKind {
         /// Stored draft-angle cosine.
         cosine: f64,
     },
+}
+
+/// One scalar row in native loft subdata.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftSubdataRow {
+    /// Leading ordered scalar pair.
+    pub parameters: [f64; 2],
+    /// Ordered per-column scalar pairs; empty for subdata type 211.
+    pub columns: Vec<[f64; 2]>,
+}
+
+/// Native loft constraint table.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftSubdata {
+    /// Native table type discriminator.
+    pub type_code: i64,
+    /// Serialized row count.
+    pub row_count: i64,
+    /// Serialized per-row column count.
+    pub column_count: i64,
+    /// Ordered decoded rows.
+    pub rows: Vec<LoftSubdataRow>,
+}
+
+/// Surface-side constraint attached to one loft profile curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftProfileData {
+    /// Constraint support surface.
+    pub surface: SurfaceId,
+    /// UV curve on the support, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve: Option<PcurveGeometry>,
+    /// First native constraint flag.
+    pub first_flag: bool,
+    /// ASM extension integer following the first flag.
+    pub asm_extension: i64,
+    /// Native constraint table.
+    pub subdata: LoftSubdata,
+    /// Optional direction selected by the second native flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<Vector3>,
+}
+
+/// One curve member of a loft profile.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftProfileMember {
+    /// Native member type discriminator.
+    pub type_code: i64,
+    /// Profile curve.
+    pub curve: CurveId,
+    /// Surface-side constraint data.
+    pub data: LoftProfileData,
+}
+
+/// Native path data attached to one loft section entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftPath {
+    /// Primary path curve.
+    pub curve: CurveId,
+    /// Ordered auxiliary BS3 curves.
+    pub auxiliaries: Vec<CurveId>,
+    /// Native path tail integer.
+    pub flag: i64,
+}
+
+/// One parameterized entry in a native loft section.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftSectionEntry {
+    /// Native section parameter.
+    pub parameter: f64,
+    /// Ordered profile members.
+    pub profile: Vec<LoftProfileMember>,
+    /// Native path data.
+    pub path: LoftPath,
+}
+
+/// Ordered native loft section.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoftSection {
+    /// Ordered entries in the section.
+    pub entries: Vec<LoftSectionEntry>,
+}
+
+/// Token retained from the variable bridge preceding a loft solved cache.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum LoftBridgeToken {
+    /// Native boolean token.
+    Boolean(bool),
+    /// Native integer token.
+    Integer(i64),
+    /// Native double token.
+    Double(f64),
+    /// Native string token.
+    Text(String),
+    /// Native enum token.
+    Enum(i64),
 }
 
 /// Radius law for a procedural blend.

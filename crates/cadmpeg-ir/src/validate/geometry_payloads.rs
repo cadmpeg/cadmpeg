@@ -293,6 +293,52 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::Loft {
+            sections,
+            parameter_ranges,
+            bridge,
+            ..
+        } = &procedural.definition
+        {
+            let ranges_valid = parameter_ranges
+                .iter()
+                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
+            let sections_valid =
+                sections
+                    .iter()
+                    .flat_map(|section| &section.entries)
+                    .all(|entry| {
+                        entry.parameter.is_finite()
+                            && entry.profile.iter().all(|member| {
+                                let table = &member.data.subdata;
+                                let expected_rows = if table.type_code == 211 {
+                                    1
+                                } else {
+                                    usize::try_from(table.row_count).unwrap_or(usize::MAX)
+                                };
+                                table.rows.len() == expected_rows
+                                    && table.rows.iter().all(|row| {
+                                        row.parameters.iter().all(|value| value.is_finite())
+                                            && row
+                                                .columns
+                                                .iter()
+                                                .flatten()
+                                                .all(|value| value.is_finite())
+                                    })
+                            })
+                    });
+            let bridge_valid = bridge.iter().all(|token| match token {
+                crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
+                _ => true,
+            });
+            if !ranges_valid || !sections_valid || !bridge_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "loft construction payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Offset {
             distance,
             extension_flags,
