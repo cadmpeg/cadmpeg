@@ -1025,7 +1025,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         }
         for extent in extents {
             if let Extent::ToFace {
-                face: FaceSelection::Faces(faces),
+                face: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
             } = extent
             {
                 check_ids(
@@ -1038,7 +1038,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for selection in edge_selections {
-            if let EdgeSelection::Edges(edges) = selection {
+            if let EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } = selection {
                 check_ids(
                     findings,
                     &feature.id.0,
@@ -1049,7 +1049,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for selection in face_selections {
-            if let FaceSelection::Faces(faces) = selection {
+            if let FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } = selection {
                 check_ids(
                     findings,
                     &feature.id.0,
@@ -1060,7 +1060,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for selection in body_selections {
-            if let BodySelection::Bodies(bodies) = selection {
+            if let BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } =
+                selection
+            {
                 check_ids(
                     findings,
                     &feature.id.0,

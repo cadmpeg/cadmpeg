@@ -1652,6 +1652,10 @@ fn edge_selections_round_trip_through_json() {
 
     let selections = vec![
         EdgeSelection::Edges(vec![EdgeId("synthetic:test:edge#0".into())]),
+        EdgeSelection::Resolved {
+            edges: vec![EdgeId("synthetic:test:edge#0".into())],
+            native: "edge:10".into(),
+        },
         EdgeSelection::Native("sldprt:history:feature#10:0".into()),
     ];
     let json = serde_json::to_string(&selections).unwrap();
@@ -1668,6 +1672,10 @@ fn face_selections_round_trip_through_json() {
 
     let selections = vec![
         FaceSelection::Faces(vec![FaceId("synthetic:test:face#0".into())]),
+        FaceSelection::Resolved {
+            faces: vec![FaceId("synthetic:test:face#0".into())],
+            native: "face:14".into(),
+        },
         FaceSelection::Native("sldprt:history:feature#14:0".into()),
     ];
     let json = serde_json::to_string(&selections).unwrap();
@@ -1684,6 +1692,10 @@ fn body_selections_round_trip_through_json() {
 
     let selections = vec![
         BodySelection::Bodies(vec![BodyId("synthetic:test:body#0".into())]),
+        BodySelection::Resolved {
+            bodies: vec![BodyId("synthetic:test:body#0".into())],
+            native: "body:17".into(),
+        },
         BodySelection::Native("body:17,body:18".into()),
     ];
     let json = serde_json::to_string(&selections).unwrap();

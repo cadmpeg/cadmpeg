@@ -358,6 +358,13 @@ pub enum FeatureDefinition {
 pub enum EdgeSelection {
     /// Resolved topological edges.
     Edges(Vec<EdgeId>),
+    /// Resolved edges paired with the format-native selection required for rewrite.
+    Resolved {
+        /// Resolved topological edges.
+        edges: Vec<EdgeId>,
+        /// Format-native selection reference.
+        native: String,
+    },
     /// Format-native selection reference.
     Native(String),
 }
@@ -368,6 +375,13 @@ pub enum EdgeSelection {
 pub enum FaceSelection {
     /// Resolved topological faces; empty for no selected faces.
     Faces(Vec<FaceId>),
+    /// Resolved faces paired with the format-native selection required for rewrite.
+    Resolved {
+        /// Resolved topological faces.
+        faces: Vec<FaceId>,
+        /// Format-native selection reference.
+        native: String,
+    },
     /// Format-native selection reference.
     Native(String),
 }
@@ -378,6 +392,13 @@ pub enum FaceSelection {
 pub enum BodySelection {
     /// Resolved topological bodies.
     Bodies(Vec<BodyId>),
+    /// Resolved bodies paired with the format-native selection required for rewrite.
+    Resolved {
+        /// Resolved topological bodies.
+        bodies: Vec<BodyId>,
+        /// Format-native selection expression.
+        native: String,
+    },
     /// Format-native selection expression.
     Native(String),
 }

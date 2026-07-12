@@ -1740,7 +1740,10 @@ fn encoder_writes_source_less_native_features() {
     });
     let definitions = vec![
         FeatureDefinition::Fillet {
-            edges: EdgeSelection::Native("edge-a,edge-b".into()),
+            edges: EdgeSelection::Resolved {
+                edges: vec![ir.model.edges[0].id.clone()],
+                native: "edge-a,edge-b".into(),
+            },
             radius: RadiusSpec::Constant {
                 radius: Length(3.0),
             },
@@ -1753,7 +1756,10 @@ fn encoder_writes_source_less_native_features() {
             },
         },
         FeatureDefinition::Shell {
-            removed_faces: FaceSelection::Native("face-a".into()),
+            removed_faces: FaceSelection::Resolved {
+                faces: vec![ir.model.faces[0].id.clone()],
+                native: "face-a".into(),
+            },
             thickness: Length(1.5),
             outward: true,
         },
@@ -1765,7 +1771,10 @@ fn encoder_writes_source_less_native_features() {
             outward: false,
         },
         FeatureDefinition::Combine {
-            target: BodySelection::Native("body-a".into()),
+            target: BodySelection::Resolved {
+                bodies: vec![ir.model.bodies[0].id.clone()],
+                native: "body-a".into(),
+            },
             tools: BodySelection::Native("body-b,body-c".into()),
             op: BooleanOp::Join,
         },

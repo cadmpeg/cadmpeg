@@ -1752,7 +1752,11 @@ pub fn sync_neutral_features(
                         properties.insert("EndCondition".into(), "ThroughAll".into());
                     }
                     Extent::ToFace {
-                        face: FaceSelection::Native(selection),
+                        face:
+                            FaceSelection::Native(selection)
+                            | FaceSelection::Resolved {
+                                native: selection, ..
+                            },
                     } if !selection.is_empty() => {
                         properties.insert("EndCondition".into(), "ToFace".into());
                         properties.insert("Face".into(), selection.clone());
@@ -1798,7 +1802,11 @@ pub fn sync_neutral_features(
                 (kind, parameters, properties)
             }
             FeatureDefinition::Fillet {
-                edges: EdgeSelection::Native(selection),
+                edges:
+                    EdgeSelection::Native(selection)
+                    | EdgeSelection::Resolved {
+                        native: selection, ..
+                    },
                 radius,
             } => {
                 if existing
@@ -1868,7 +1876,11 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Chamfer {
-                edges: EdgeSelection::Native(selection),
+                edges:
+                    EdgeSelection::Native(selection)
+                    | EdgeSelection::Resolved {
+                        native: selection, ..
+                    },
                 spec,
             } => {
                 if existing
@@ -1948,7 +1960,11 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Shell {
-                removed_faces: FaceSelection::Native(selection),
+                removed_faces:
+                    FaceSelection::Native(selection)
+                    | FaceSelection::Resolved {
+                        native: selection, ..
+                    },
                 thickness,
                 outward,
             } => {
@@ -1987,8 +2003,13 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Draft {
-                faces: FaceSelection::Native(faces),
-                neutral_plane: FaceSelection::Native(neutral_plane),
+                faces: FaceSelection::Native(faces) | FaceSelection::Resolved { native: faces, .. },
+                neutral_plane:
+                    FaceSelection::Native(neutral_plane)
+                    | FaceSelection::Resolved {
+                        native: neutral_plane,
+                        ..
+                    },
                 pull_direction,
                 angle,
                 outward,
@@ -2034,8 +2055,9 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Combine {
-                target: BodySelection::Native(target),
-                tools: BodySelection::Native(tools),
+                target:
+                    BodySelection::Native(target) | BodySelection::Resolved { native: target, .. },
+                tools: BodySelection::Native(tools) | BodySelection::Resolved { native: tools, .. },
                 op,
             } => {
                 if existing
@@ -2073,7 +2095,7 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::DeleteFace {
-                faces: FaceSelection::Native(faces),
+                faces: FaceSelection::Native(faces) | FaceSelection::Resolved { native: faces, .. },
                 heal,
             } => {
                 if existing
@@ -2104,7 +2126,7 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::MoveFace {
-                faces: FaceSelection::Native(faces),
+                faces: FaceSelection::Native(faces) | FaceSelection::Resolved { native: faces, .. },
                 motion,
             } => {
                 if existing
@@ -2172,7 +2194,7 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Dome {
-                faces: FaceSelection::Native(faces),
+                faces: FaceSelection::Native(faces) | FaceSelection::Resolved { native: faces, .. },
                 height,
                 elliptical,
                 reverse,
@@ -2257,10 +2279,15 @@ pub fn sync_neutral_features(
                     .map(|record| record.properties.clone())
                     .unwrap_or_default();
                 match face {
-                    Some(FaceSelection::Native(selection)) if !selection.is_empty() => {
+                    Some(
+                        FaceSelection::Native(selection)
+                        | FaceSelection::Resolved {
+                            native: selection, ..
+                        },
+                    ) if !selection.is_empty() => {
                         properties.insert("Face".into(), selection.clone());
                     }
-                    Some(FaceSelection::Native(_)) => {
+                    Some(FaceSelection::Native(_) | FaceSelection::Resolved { .. }) => {
                         return Err(CodecError::Malformed(format!(
                             "SLDPRT feature {} has an empty hole face selection",
                             feature.id
