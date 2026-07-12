@@ -189,9 +189,6 @@ pub struct FaceTopology {
 /// matched edge rows ([spec ?5.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#53-trim-records-indexed-triangle-mesh-packets)?[?5.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#54-physical-edge-identity-and-portvertex-collapse)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Boundary {
-    /// The mesh-boundary handle cycle recovered from triangle-edge
-    /// incidence cancellation, rotated to start at its minimum handle.
-    pub mesh_handles: Vec<u32>,
     /// The physical edge uses covering this cycle, in cycle order.
     pub coedges: Vec<CoedgeUse>,
 }
@@ -719,10 +716,7 @@ fn cover_cycle_by_interiors(
             end_vertex: end_node,
         });
     }
-    Some(Boundary {
-        mesh_handles: cycle.to_vec(),
-        coedges,
-    })
+    Some(Boundary { coedges })
 }
 
 #[derive(Debug)]

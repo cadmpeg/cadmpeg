@@ -5,6 +5,7 @@
 
 use crate::annotations::{ExactnessNote, Provenance};
 use crate::design::SketchRelation;
+use crate::document::Model;
 use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -176,10 +177,10 @@ fn arena_registry_drives_counts_and_diff_dispatch() {
         .collect::<Vec<_>>();
 
     assert_eq!(
-        &diff_kinds[..CadIr::arena_names().len()],
-        CadIr::arena_names()
+        &diff_kinds[..Model::arena_names().len()],
+        Model::arena_names()
     );
-    for name in CadIr::arena_names() {
+    for name in Model::arena_names() {
         assert!(
             report.entity_counts.contains_key(*name),
             "entity counts omitted registered arena {name}"

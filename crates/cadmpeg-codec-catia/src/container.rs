@@ -74,8 +74,6 @@ pub struct InnerDir {
     pub inner: usize,
     /// File offset of the `CATIA_V5 CB0001` directory.
     pub dir_offset: usize,
-    /// Directory region length (`B`).
-    pub dir_length: u32,
     /// Catalogued streams.
     pub descriptors: Vec<Descriptor>,
 }
@@ -212,7 +210,6 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
     Some(InnerDir {
         inner,
         dir_offset,
-        dir_length: b,
         descriptors,
     })
 }
