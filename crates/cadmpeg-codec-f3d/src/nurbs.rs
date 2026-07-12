@@ -1400,6 +1400,21 @@ pub(crate) enum EmbeddedDeformableSurfaceData {
         flags: [bool; 3],
         parameter_triples: Vec<[f64; 3]>,
     },
+    Full {
+        leading_vectors: [Vector3; 4],
+        leading_parameter: f64,
+        leading_flags: [bool; 3],
+        selector: i64,
+        surface: SurfaceGeometry,
+        native_id: i64,
+        flag: bool,
+        first_parameter: f64,
+        version_value: Option<i64>,
+        second_parameter: f64,
+        curve: NurbsCurve,
+        frames: Box<[cadmpeg_ir::geometry::DeformableVectorFrame; 2]>,
+        trailing_value: i64,
+    },
 }
 
 #[allow(clippy::option_option)] // Outer None is parse failure; inner None is an absent scale slot.
@@ -2929,6 +2944,26 @@ fn decode_deformable_surface_frame(
     })
 }
 
+fn decode_deformable_vector_frame(
+    bytes: &[u8],
+    position: &mut usize,
+) -> Option<cadmpeg_ir::geometry::DeformableVectorFrame> {
+    let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
+    for vector in &mut vectors {
+        let value = take_native_vec3(bytes, position, 0x14)?;
+        *vector = Vector3::new(value[0], value[1], value[2]);
+    }
+    Some(cadmpeg_ir::geometry::DeformableVectorFrame {
+        vectors,
+        parameter: take_f64(bytes, position)?,
+        flags: [
+            take_bool(bytes, position)?,
+            take_bool(bytes, position)?,
+            take_bool(bytes, position)?,
+        ],
+    })
+}
+
 fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::DeformableSurfaceData;
     let names: [&[u8]; 2] = [b"defm_spl_sur", b"defmsur"];
@@ -3014,6 +3049,49 @@ fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
                 frame_parameter,
                 flags,
                 parameter_triples,
+            }
+        }
+        6 => {
+            let mut leading_vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
+            for vector in &mut leading_vectors {
+                let value = take_native_vec3(span, &mut position, 0x14)?;
+                *vector = Vector3::new(value[0], value[1], value[2]);
+            }
+            let leading_parameter = take_f64(span, &mut position)?;
+            let leading_flags = [
+                take_bool(span, &mut position)?,
+                take_bool(span, &mut position)?,
+                take_bool(span, &mut position)?,
+            ];
+            let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let surface = decode_embedded_surface(span, &mut position, int_width)?;
+            let native_id = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let flag = take_bool(span, &mut position)?;
+            let first_parameter = take_f64(span, &mut position)?;
+            let version_value = (span.get(position) == Some(&0x04))
+                .then(|| take_tagged_int(span, &mut position, 0x04, int_width))
+                .flatten();
+            let second_parameter = take_f64(span, &mut position)?;
+            let curve = decode_curve_block(span, position, int_width)?;
+            position = curve.end;
+            let frames = Box::new([
+                decode_deformable_vector_frame(span, &mut position)?,
+                decode_deformable_vector_frame(span, &mut position)?,
+            ]);
+            EmbeddedDeformableSurfaceData::Full {
+                leading_vectors,
+                leading_parameter,
+                leading_flags,
+                selector,
+                surface,
+                native_id,
+                flag,
+                first_parameter,
+                version_value,
+                second_parameter,
+                curve: curve.curve,
+                frames,
+                trailing_value: take_tagged_int(span, &mut position, 0x04, int_width)?,
             }
         }
         8 => {

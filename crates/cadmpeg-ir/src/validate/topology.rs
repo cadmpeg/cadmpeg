@@ -750,7 +750,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
                 if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
                     surface, curve, ..
-                } = &construction.data
+                }
+                | crate::geometry::DeformableSurfaceData::Full { surface, curve, .. } =
+                    &construction.data
                 {
                     if !ids.surfaces.contains(&surface.0) {
                         ref_error(findings, &procedural.id.0, "surface", &surface.0);

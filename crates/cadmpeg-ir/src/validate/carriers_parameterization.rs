@@ -365,7 +365,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 surfaces.insert(&construction.support.0);
                 if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
                     surface, curve, ..
-                } = &construction.data
+                }
+                | crate::geometry::DeformableSurfaceData::Full { surface, curve, .. } =
+                    &construction.data
                 {
                     surfaces.insert(&surface.0);
                     curves.insert(&curve.0);

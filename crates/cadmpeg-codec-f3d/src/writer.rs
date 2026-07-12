@@ -3247,6 +3247,58 @@ fn native_procedural_surface(
                     }
                 };
             match &construction.data {
+                DeformableSurfaceData::Full {
+                    leading_vectors,
+                    leading_parameter,
+                    leading_flags,
+                    selector,
+                    surface,
+                    native_id,
+                    flag,
+                    first_parameter,
+                    version_value,
+                    second_parameter,
+                    curve,
+                    frames,
+                    trailing_value,
+                } => {
+                    native_i64(bytes, 6);
+                    for vector in leading_vectors {
+                        native_vector(bytes, [vector.x, vector.y, vector.z]);
+                    }
+                    native_f64(bytes, *leading_parameter);
+                    for flag in leading_flags {
+                        bytes.push(native_bool(*flag));
+                    }
+                    native_i64(bytes, *selector);
+                    let secondary = target
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|candidate| candidate.id == *surface)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("deformable secondary surface is missing".into())
+                        })?;
+                    native_embedded_surface(bytes, &secondary.geometry)?;
+                    native_i64(bytes, *native_id);
+                    bytes.push(native_bool(*flag));
+                    native_f64(bytes, *first_parameter);
+                    if let Some(value) = version_value {
+                        native_i64(bytes, *value);
+                    }
+                    native_f64(bytes, *second_parameter);
+                    native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+                    for frame in frames.iter() {
+                        for vector in frame.vectors {
+                            native_vector(bytes, [vector.x, vector.y, vector.z]);
+                        }
+                        native_f64(bytes, frame.parameter);
+                        for flag in frame.flags {
+                            bytes.push(native_bool(flag));
+                        }
+                    }
+                    native_i64(bytes, *trailing_value);
+                }
                 DeformableSurfaceData::SurfaceCurve {
                     surface,
                     native_id,

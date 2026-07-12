@@ -466,6 +466,35 @@ pub enum ProceduralSurfaceDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DeformableSurfaceData {
+    /// Mode-6 full embedded deformation payload.
+    Full {
+        /// Four leading deformation vectors.
+        leading_vectors: [Vector3; 4],
+        /// Leading deformation scalar.
+        leading_parameter: f64,
+        /// Three leading flags.
+        leading_flags: [bool; 3],
+        /// Native selector before the secondary support.
+        selector: i64,
+        /// Secondary embedded support surface.
+        surface: SurfaceId,
+        /// Native long after the support.
+        native_id: i64,
+        /// Native support-side flag.
+        flag: bool,
+        /// First scalar after the flag.
+        first_parameter: f64,
+        /// Version-gated ASM long when present.
+        version_value: Option<i64>,
+        /// Second scalar after the optional long.
+        second_parameter: f64,
+        /// Embedded deformation curve.
+        curve: CurveId,
+        /// Two ordered full vector frames.
+        frames: Box<[DeformableVectorFrame; 2]>,
+        /// Native trailing long.
+        trailing_value: i64,
+    },
     /// Mode-5 surface-and-curve deformation payload.
     SurfaceCurve {
         /// Secondary embedded support surface.
@@ -514,6 +543,17 @@ pub enum DeformableSurfaceData {
         /// Native trailing selector.
         selector: i64,
     },
+}
+
+/// Four-vector frame used by full deformable surfaces.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DeformableVectorFrame {
+    /// Four ordered vectors.
+    pub vectors: [Vector3; 4],
+    /// Frame scalar.
+    pub parameter: f64,
+    /// Three ordered flags.
+    pub flags: [bool; 3],
 }
 
 /// Shared frame payload of deformable-surface modes 1 and 3.
