@@ -852,6 +852,77 @@ pub enum VariableBlendValuePayload {
     },
 }
 
+/// Optional single-radius tail selected by the native radius-kind branch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableBlendSingleRadiusTail {
+    /// Native symbolic or numeric selector.
+    pub selector: LoftBridgeToken,
+    /// Two ordered scalars following the selector.
+    pub parameters: [f64; 2],
+}
+
+/// Optional rounded-chamfer branch following two radius laws.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableBlendChamfer {
+    /// Native variable-chamfer enum.
+    pub variable_chamfer: i64,
+    /// Native chamfer-type enum.
+    pub chamfer_type: i64,
+    /// Chamfer blend-value payload.
+    pub value: VariableBlendValue,
+}
+
+/// Complete native variable-radius blend construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableBlendConstruction {
+    /// Two ordered support-side graphs.
+    pub sides: Box<[VariableBlendSide; 2]>,
+    /// Primary blend curve.
+    pub primary_curve: CurveId,
+    /// Two signed support offsets in document length units.
+    pub offsets: [f64; 2],
+    /// Native radius-kind enum.
+    pub radius_kind: i64,
+    /// First radius-control payload.
+    pub first_value: VariableBlendValue,
+    /// Second radius-control payload for a two-radii construction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_value: Option<VariableBlendValue>,
+    /// Optional rounded-chamfer payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chamfer: Option<Box<VariableBlendChamfer>>,
+    /// Optional single-radius selector tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub single_radius_tail: Option<VariableBlendSingleRadiusTail>,
+    /// Native U interval.
+    pub u_range: [f64; 2],
+    /// Native V interval.
+    pub v_range: [f64; 2],
+    /// Native integer before the solved shape.
+    pub shape_prefix: i64,
+    /// Native scalar before the solved shape.
+    pub shape_parameter: f64,
+    /// Native length before the solved shape, in document units.
+    pub shape_length: f64,
+    /// Native integer immediately before the solved shape.
+    pub shape_tail: i64,
+    /// Three ASM integers following the solved shape.
+    pub shape_extensions: [i64; 3],
+    /// Secondary curve following the solved shape.
+    pub secondary_curve: CurveId,
+    /// Native convexity enum.
+    pub convexity: i64,
+    /// Native render-blend enum.
+    pub render_blend: i64,
+    /// Native post-shape interval.
+    pub post_range: [f64; 2],
+    /// Native post-shape BS3 curve.
+    pub post_curve: CurveId,
+    /// Native post-shape BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_pcurve: Option<PcurveGeometry>,
+}
+
 /// Radius law for a procedural blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
