@@ -275,6 +275,13 @@ pub enum FeatureDefinition {
         /// Whether adjacent faces extend to heal the resulting boundary.
         heal: bool,
     },
+    /// Direct motion of selected faces.
+    MoveFace {
+        /// Faces modified by the operation.
+        faces: FaceSelection,
+        /// Motion applied to the selected faces.
+        motion: FaceMotion,
+    },
     /// Drilled or machined hole.
     Hole {
         /// Face the hole is placed on, when known.
@@ -335,6 +342,33 @@ pub enum BodySelection {
     Bodies(Vec<BodyId>),
     /// Format-native selection expression.
     Native(String),
+}
+
+/// Direct face-motion law.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FaceMotion {
+    /// Offset along each face normal.
+    Offset {
+        /// Signed offset distance.
+        distance: Length,
+    },
+    /// Translation along one direction.
+    Translate {
+        /// Translation direction.
+        direction: Vector3,
+        /// Signed translation distance.
+        distance: Length,
+    },
+    /// Rotation about an axis.
+    Rotate {
+        /// Point on the rotation axis.
+        axis_origin: Point3,
+        /// Rotation-axis direction.
+        axis_dir: Vector3,
+        /// Signed rotation angle.
+        angle: Angle,
+    },
 }
 
 /// Termination of a linear or angular feature.

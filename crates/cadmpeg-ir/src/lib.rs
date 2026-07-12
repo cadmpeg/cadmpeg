@@ -65,7 +65,7 @@ pub use codec::{
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{
-    BodySelection, ConfigurationId, DesignConfiguration, DesignParameter, Feature,
+    BodySelection, ConfigurationId, DesignConfiguration, DesignParameter, FaceMotion, Feature,
     FeatureDefinition, FeatureId, ParameterId, ParameterValue,
 };
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};

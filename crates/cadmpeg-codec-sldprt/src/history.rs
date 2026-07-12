@@ -7,9 +7,9 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, BodySelection, BooleanOp, ChamferSpec, ConfigurationId, DesignConfiguration,
-    DesignParameter, EdgeSelection, Extent, FaceSelection, FeatureDefinition, FeatureId, HoleKind,
-    Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec,
-    VariableRadius,
+    DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection, FeatureDefinition,
+    FeatureId, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef,
+    RadiusSpec, VariableRadius,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::Exactness;
@@ -372,6 +372,8 @@ fn project_definition(
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("DeleteFace") {
         project_delete_face(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature.kind.eq_ignore_ascii_case("MoveFace") {
+        project_move_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Hole") {
         project_hole(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Revolve") {
@@ -733,6 +735,48 @@ fn project_delete_face(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::DeleteFace {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
         heal: parse_bool(feature.properties.get("Heal")?)?,
+    })
+}
+
+fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
+    let motion = match feature
+        .properties
+        .get("Mode")?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "offset" => FaceMotion::Offset {
+            distance: Length(
+                feature
+                    .parameters
+                    .get("Distance")
+                    .and_then(|value| parse_length_mm(value))?,
+            ),
+        },
+        "translate" => FaceMotion::Translate {
+            direction: parse_vector3(feature.properties.get("Direction")?)?,
+            distance: Length(
+                feature
+                    .parameters
+                    .get("Distance")
+                    .and_then(|value| parse_length_mm(value))?,
+            ),
+        },
+        "rotate" => FaceMotion::Rotate {
+            axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
+            axis_dir: parse_vector3(feature.properties.get("AxisDirection")?)?,
+            angle: Angle(
+                feature
+                    .parameters
+                    .get("Angle")
+                    .and_then(|value| parse_angle_rad(value))?,
+            ),
+        },
+        _ => return None,
+    };
+    Some(FeatureDefinition::MoveFace {
+        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
+        motion,
     })
 }
 
@@ -1531,6 +1575,64 @@ pub fn sync_neutral_features(
                 properties.insert("Faces".into(), faces.clone());
                 properties.insert("Heal".into(), heal.to_string());
                 (record.kind.clone(), record.parameters.clone(), properties)
+            }
+            FeatureDefinition::MoveFace {
+                faces: FaceSelection::Native(faces),
+                motion,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained move-face record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("MoveFace") || faces.trim().is_empty() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported move-face semantics",
+                        feature.id
+                    )));
+                }
+                let mut parameters = record.parameters.clone();
+                let mut properties = record.properties.clone();
+                properties.insert("Faces".into(), faces.clone());
+                parameters.remove("Distance");
+                parameters.remove("Angle");
+                properties.remove("Direction");
+                properties.remove("AxisOrigin");
+                properties.remove("AxisDirection");
+                match motion {
+                    FaceMotion::Offset { distance } => {
+                        properties.insert("Mode".into(), "Offset".into());
+                        parameters.insert("Distance".into(), format_length_mm(distance.0));
+                    }
+                    FaceMotion::Translate {
+                        direction,
+                        distance,
+                    } => {
+                        require_direction(*direction, &feature.id, "face translation")?;
+                        properties.insert("Mode".into(), "Translate".into());
+                        properties.insert("Direction".into(), format_vector3(*direction));
+                        parameters.insert("Distance".into(), format_length_mm(distance.0));
+                    }
+                    FaceMotion::Rotate {
+                        axis_origin,
+                        axis_dir,
+                        angle,
+                    } => {
+                        require_direction(*axis_dir, &feature.id, "face rotation axis")?;
+                        if !angle.0.is_finite() {
+                            return Err(CodecError::Malformed(format!(
+                                "SLDPRT feature {} has a non-finite face rotation angle",
+                                feature.id
+                            )));
+                        }
+                        properties.insert("Mode".into(), "Rotate".into());
+                        properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
+                        properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
+                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    }
+                }
+                (record.kind.clone(), parameters, properties)
             }
             FeatureDefinition::Hole {
                 face: Some(FaceSelection::Native(selection)),

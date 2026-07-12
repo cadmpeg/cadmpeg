@@ -3511,6 +3511,103 @@ fn semantic_writer_round_trips_typed_delete_face() {
 }
 
 #[test]
+fn semantic_writer_round_trips_all_move_face_forms() {
+    use cadmpeg_ir::features::{Angle, FaceMotion, FaceSelection, FeatureDefinition, Length};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><MoveFace Name="Offset" Type="MoveFace" id="21" Faces="face:1" Mode="Offset"><Dimension Name="Distance">2mm</Dimension></MoveFace><MoveFace Name="Translate" Type="MoveFace" id="22" Faces="face:2" Mode="Translate" Direction="1,0,0"><Dimension Name="Distance">3mm</Dimension></MoveFace><MoveFace Name="Rotate" Type="MoveFace" id="23" Faces="face:3" Mode="Rotate" AxisOrigin="1mm,2mm,3mm" AxisDirection="0,0,1"><Dimension Name="Angle">15deg</Dimension></MoveFace></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::MoveFace {
+            motion: FaceMotion::Offset {
+                distance: Length(2.0)
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::MoveFace {
+            motion: FaceMotion::Translate {
+                direction: Vector3 {
+                    x: 1.0,
+                    y: 0.0,
+                    z: 0.0
+                },
+                distance: Length(3.0),
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[2].definition,
+        FeatureDefinition::MoveFace {
+            motion: FaceMotion::Rotate {
+                axis_origin: Point3 { x: 1.0, y: 2.0, z: 3.0 },
+                axis_dir: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+                angle: Angle(value),
+            },
+            ..
+        } if (value - 15f64.to_radians()).abs() < 1e-12
+    ));
+
+    let FeatureDefinition::MoveFace { faces, motion } =
+        &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed move face");
+    };
+    *faces = FaceSelection::Native("face:8".into());
+    *motion = FaceMotion::Translate {
+        direction: Vector3::new(0.0, 1.0, 0.0),
+        distance: Length(4.0),
+    };
+    let FeatureDefinition::MoveFace { motion, .. } = &mut decoded.ir.model.features[1].definition
+    else {
+        panic!("typed move face");
+    };
+    *motion = FaceMotion::Rotate {
+        axis_origin: Point3::new(0.0, 0.0, 0.0),
+        axis_dir: Vector3::new(1.0, 0.0, 0.0),
+        angle: Angle(0.5),
+    };
+    let FeatureDefinition::MoveFace { motion, .. } = &mut decoded.ir.model.features[2].definition
+    else {
+        panic!("typed move face");
+    };
+    *motion = FaceMotion::Offset {
+        distance: Length(-1.0),
+    };
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native[0].properties["Mode"], "Translate");
+    assert_eq!(native[0].properties["Faces"], "face:8");
+    assert_eq!(native[0].properties["Direction"], "0,1,0");
+    assert_eq!(native[0].parameters["Distance"], "4mm");
+    assert_eq!(native[1].properties["Mode"], "Rotate");
+    assert_eq!(native[1].properties["AxisOrigin"], "0mm,0mm,0mm");
+    assert_eq!(native[1].properties["AxisDirection"], "1,0,0");
+    assert_eq!(native[1].parameters["Angle"], "0.5rad");
+    assert_eq!(native[2].properties["Mode"], "Offset");
+    assert_eq!(native[2].parameters["Distance"], "-1mm");
+    assert!(!native[2].parameters.contains_key("Angle"));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition, HoleKind, Length};
 

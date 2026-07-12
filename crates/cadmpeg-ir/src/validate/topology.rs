@@ -950,6 +950,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::DeleteFace { faces, .. } => {
                 face_selections.push(faces);
             }
+            FeatureDefinition::MoveFace { faces, .. } => {
+                face_selections.push(faces);
+            }
             FeatureDefinition::Combine { target, tools, .. } => {
                 body_selections.push(target);
                 body_selections.push(tools);
