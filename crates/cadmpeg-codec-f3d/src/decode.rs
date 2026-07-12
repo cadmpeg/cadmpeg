@@ -686,8 +686,9 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
-                "{} coedge(s) carry an explicit UV pcurve reference whose carrier could not be \
-                 decoded; those coedges were emitted without a pcurve.",
+                "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
+                 carrier on the face surface's parameterization; those coedges were emitted \
+                 without a pcurve.",
                 s.undecoded_pcurve_refs
             ),
             provenance: None,

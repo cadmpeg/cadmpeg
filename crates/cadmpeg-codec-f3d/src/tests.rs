@@ -8668,18 +8668,24 @@ fn nurbs_pcurve_block_decodes_without_length_scaling() {
 }
 
 #[test]
-fn ref_pcurve_uses_second_intcurve_cache() {
+fn ref_pcurve_collects_intcurve_uv_candidates() {
     let mut intcurve = generated_curve_block();
     intcurve.extend_from_slice(&generated_pcurve_block());
 
-    let pcurve = crate::nurbs::decode_intcurve_pcurve_cache(&intcurve)
-        .expect("second cache is the UV pcurve");
+    let candidates = crate::nurbs::decode_pcurve_cache_candidates_resolving_refs(
+        &intcurve,
+        &intcurve,
+        &crate::nurbs::SubtypeTables::from_stream(&intcurve),
+    );
+    let pcurve = candidates
+        .first()
+        .expect("intcurve UV cache is a candidate");
     assert_eq!(pcurve.control_points[0].u, 0.25);
     assert_eq!(pcurve.control_points[1].v, 1.5);
 }
 
 #[test]
-fn ref_pcurve_resolves_intcurve_subtype_cache() {
+fn ref_pcurve_resolves_intcurve_subtype_candidates() {
     let mut target = b"\x0f\x0d\x0bint_int_cur".to_vec();
     target.extend_from_slice(&generated_curve_block());
     target.extend_from_slice(&generated_pcurve_block());
@@ -8690,12 +8696,14 @@ fn ref_pcurve_resolves_intcurve_subtype_cache() {
     let mut active = target;
     active.extend_from_slice(&source);
 
-    let pcurve = crate::nurbs::decode_intcurve_pcurve_cache_resolving_refs(
+    let candidates = crate::nurbs::decode_pcurve_cache_candidates_resolving_refs(
         &source,
         &active,
         &crate::nurbs::SubtypeTables::from_stream(&active),
-    )
-    .expect("intcurve subtype carries UV cache");
+    );
+    let pcurve = candidates
+        .first()
+        .expect("intcurve subtype carries a UV candidate");
     assert_eq!(pcurve.control_points[1].v, 1.5);
 }
 

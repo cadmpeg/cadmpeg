@@ -2296,48 +2296,71 @@ pub fn decode_pcurve_cache_resolving_refs(
     })
 }
 
-/// Decode the UV cache carried by a ref-form pcurve's `intcurve` entity. The
-/// first curve-shaped `nubs` block is the 3D edge carrier; the subsequent
-/// well-formed 2D block is the pcurve.
-pub fn decode_intcurve_pcurve_cache(record_bytes: &[u8]) -> Option<NurbsPcurve> {
-    INT_WIDTHS
-        .into_iter()
-        .find_map(|int_width| decode_intcurve_pcurve_cache_at(record_bytes, int_width))
-}
-
-fn decode_intcurve_pcurve_cache_at(record_bytes: &[u8], int_width: usize) -> Option<NurbsPcurve> {
-    let mut saw_curve = false;
-    for position in marker_positions(record_bytes) {
-        if !saw_curve && decode_curve_block(record_bytes, position, int_width).is_some() {
-            saw_curve = true;
-            continue;
-        }
-        if saw_curve {
-            if let Some(pcurve) = decode_pcurve_block(record_bytes, position, int_width) {
-                return Some(pcurve);
-            }
-        }
-    }
-    None
-}
-
-/// Decode an intcurve-carried UV cache, following its construction subtype
-/// reference when the caches live in the subtype table rather than inline.
-pub fn decode_intcurve_pcurve_cache_resolving_refs(
+/// Decode every candidate 2D `nubs`/`nurbs` block reachable from a pcurve
+/// carrier record: the record's own blocks plus, through nested `ref N`
+/// subtype references, the blocks of the definitions it links. A ref-form
+/// pcurve delegates its UV carrier to an `intcurve` entity whose record can
+/// hold several 2D blocks (side pcurves and construction machinery); the
+/// caller selects among the candidates by checking their endpoints against
+/// the face surface and edge vertices.
+pub fn decode_pcurve_cache_candidates_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
     tables: &SubtypeTables,
-) -> Option<NurbsPcurve> {
-    INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_cache_resolving_refs(
+) -> Vec<NurbsPcurve> {
+    for int_width in INT_WIDTHS {
+        let mut out = Vec::new();
+        collect_pcurve_candidates(
             record_bytes,
             active_bytes,
             tables,
             &mut Vec::new(),
-            decode_intcurve_pcurve_cache_at,
             int_width,
-        )
-    })
+            &mut out,
+        );
+        if !out.is_empty() {
+            return out;
+        }
+    }
+    Vec::new()
+}
+
+fn collect_pcurve_candidates(
+    bytes: &[u8],
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+    seen: &mut Vec<usize>,
+    int_width: usize,
+    out: &mut Vec<NurbsPcurve>,
+) {
+    // A 3D curve block's bytes can also parse as a 2D block; such ambiguous
+    // reads rank after every unambiguous 2D block so an unverified caller
+    // taking the first candidate never picks a misread 3D carrier.
+    let mut ambiguous = Vec::new();
+    for position in marker_positions(bytes) {
+        if let Some(pcurve) = decode_pcurve_block(bytes, position, int_width) {
+            if decode_curve_block(bytes, position, int_width).is_some() {
+                ambiguous.push(pcurve);
+            } else {
+                out.push(pcurve);
+            }
+        }
+    }
+    out.append(&mut ambiguous);
+    let table = tables.for_width(int_width);
+    for index in subtype_refs(bytes, int_width) {
+        if seen.contains(&index) {
+            continue;
+        }
+        seen.push(index);
+        let Some(&target) = table.get(index) else {
+            continue;
+        };
+        let Some(span) = subtype_span(active_bytes, target, int_width) else {
+            continue;
+        };
+        collect_pcurve_candidates(span, active_bytes, tables, seen, int_width, out);
+    }
 }
 
 #[cfg(test)]
