@@ -1851,6 +1851,70 @@ fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
     bytes
 }
 
+fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
+    push_u8_string(bytes, label);
+    t_ident(bytes, "plane");
+    t_pos(bytes, [1.0, -2.0, 3.0]);
+    t_vec(bytes, [0.0, 0.0, 1.0]);
+    t_vec(bytes, [1.0, 0.0, 0.0]);
+    bytes.push(0x0b);
+    bytes.extend_from_slice(&generated_curve_block());
+    bytes.extend_from_slice(&generated_pcurve_block());
+    t_vec(bytes, [0.0, 1.0, 0.0]);
+    bytes.extend_from_slice(&generated_pcurve_block());
+}
+
+fn synthetic_g2_blend_spl_sur_smbh(name: &str, full: bool) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, name);
+    append_generated_g2_side(&mut surface, "first");
+    surface.push(0x15);
+    surface.extend_from_slice(&(if full { 11i64 } else { 12i64 }).to_le_bytes());
+    if full {
+        surface.extend_from_slice(&generated_surface_block());
+        t_dbl(&mut surface, 0.002);
+    } else {
+        for value in 1..=9 {
+            t_dbl(&mut surface, f64::from(value));
+        }
+        t_dbl(&mut surface, 0.003);
+        t_long(&mut surface, 44);
+        surface.extend_from_slice(&generated_pcurve_block());
+    }
+    append_generated_g2_side(&mut surface, "second");
+    surface.extend_from_slice(&generated_surface_block());
+    surface.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut surface, -0.5);
+    t_dbl(&mut surface, 1.5);
+    t_long(&mut surface, 8);
+    for value in [-1.0, 2.0, -3.0, 4.0, 0.1, 0.2, 0.3, 0.4] {
+        t_dbl(&mut surface, value);
+    }
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.0095);
+    t_long(&mut surface, 1);
+    t_dbl(&mut surface, 0.25);
+    t_long(&mut surface, 0);
+    t_long(&mut surface, 2);
+    t_dbl(&mut surface, 0.5);
+    t_dbl(&mut surface, 0.75);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn synthetic_rational_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_cyl_spl_sur_smbh();
     let old = generated_surface_block();
@@ -7462,6 +7526,55 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
         );
         assert!(sections[1].entries[0].profile[0].data.direction.is_none());
+    }
+}
+
+#[test]
+fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
+    use cadmpeg_ir::geometry::{G2BlendFirstShape, LoftBridgeToken, ProceduralSurfaceDefinition};
+
+    for name in ["g2_blend_spl_sur", "g2blnsur"] {
+        for full in [true, false] {
+            let result = F3dCodec
+                .decode(
+                    &mut Cursor::new(f3d_with_smbh(&synthetic_g2_blend_spl_sur_smbh(name, full))),
+                    &DecodeOptions::default(),
+                )
+                .expect("G2 blend decode");
+            let ProceduralSurfaceDefinition::G2Blend { construction } =
+                &result.ir.model.procedural_surfaces[0].definition
+            else {
+                panic!("expected G2 blend")
+            };
+            assert_eq!(construction.first.label, "first");
+            assert_eq!(construction.second.label, "second");
+            assert_eq!(construction.singularity, if full { 11 } else { 12 });
+            assert_eq!(construction.center_parameters, [-0.5, 1.5]);
+            assert_eq!(construction.parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
+            assert_eq!(construction.trailing_parameters, [0.1, 0.2, 0.3, 0.4]);
+            assert_eq!(
+                construction.discontinuities,
+                [vec![0.25], vec![], vec![0.5, 0.75]]
+            );
+            match &construction.first_shape {
+                G2BlendFirstShape::Full { surface, tolerance } if full => {
+                    assert!(surface.is_some());
+                    assert_eq!(*tolerance, Some(0.02));
+                }
+                G2BlendFirstShape::None {
+                    coefficients,
+                    tolerance,
+                    extension,
+                    pcurve,
+                } if !full => {
+                    assert_eq!(*coefficients, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+                    assert_eq!(*tolerance, 0.03);
+                    assert_eq!(*extension, Some(LoftBridgeToken::Integer(44)));
+                    assert!(pcurve.is_some());
+                }
+                _ => panic!("wrong G2 singularity payload"),
+            }
+        }
     }
 }
 

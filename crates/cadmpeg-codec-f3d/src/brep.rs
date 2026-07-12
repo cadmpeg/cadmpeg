@@ -990,6 +990,111 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 bridge: embedded.bridge,
                             }
                         }
+                        nurbs::DecodedProceduralSurfaceDefinition::G2Blend(embedded) => {
+                            let embedded = *embedded;
+                            let mut add_side = |name: &str, side: nurbs::EmbeddedG2Side| {
+                                let surface = SurfaceId(format!(
+                                    "f3d:brep:procedural_surface#{i}:g2:{name}:surface"
+                                ));
+                                out.surfaces.push(Surface {
+                                    id: surface.clone(),
+                                    geometry: side.surface,
+                                    source_object: None,
+                                });
+                                let curve = CurveId(format!(
+                                    "f3d:brep:procedural_surface#{i}:g2:{name}:curve"
+                                ));
+                                out.curves.push(Curve {
+                                    id: curve.clone(),
+                                    geometry: CurveGeometry::Nurbs(side.curve),
+                                    source_object: None,
+                                });
+                                let pcurves = side.pcurves.map(|pcurve| {
+                                    pcurve.map(|pcurve| PcurveGeometry::Nurbs {
+                                        degree: pcurve.degree,
+                                        knots: pcurve.knots,
+                                        control_points: pcurve.control_points,
+                                        weights: pcurve.weights,
+                                        periodic: pcurve.periodic,
+                                    })
+                                });
+                                cadmpeg_ir::geometry::G2BlendSide {
+                                    label: side.label,
+                                    surface,
+                                    curve,
+                                    pcurves,
+                                    direction: side.direction,
+                                }
+                            };
+                            let first = add_side("first", embedded.first);
+                            let second = add_side("second", embedded.second);
+                            let first_shape = match embedded.first_shape {
+                                nurbs::EmbeddedG2FirstShape::Full { surface, tolerance } => {
+                                    let surface = surface.map(|geometry| {
+                                        let id = SurfaceId(format!(
+                                            "f3d:brep:procedural_surface#{i}:g2:first_exact"
+                                        ));
+                                        out.surfaces.push(Surface {
+                                            id: id.clone(),
+                                            geometry: SurfaceGeometry::Nurbs(geometry),
+                                            source_object: None,
+                                        });
+                                        id
+                                    });
+                                    cadmpeg_ir::geometry::G2BlendFirstShape::Full {
+                                        surface,
+                                        tolerance,
+                                    }
+                                }
+                                nurbs::EmbeddedG2FirstShape::None {
+                                    coefficients,
+                                    tolerance,
+                                    extension,
+                                    pcurve,
+                                } => cadmpeg_ir::geometry::G2BlendFirstShape::None {
+                                    coefficients,
+                                    tolerance,
+                                    extension,
+                                    pcurve: pcurve.map(|pcurve| PcurveGeometry::Nurbs {
+                                        degree: pcurve.degree,
+                                        knots: pcurve.knots,
+                                        control_points: pcurve.control_points,
+                                        weights: pcurve.weights,
+                                        periodic: pcurve.periodic,
+                                    }),
+                                },
+                            };
+                            let second_exact_surface = SurfaceId(format!(
+                                "f3d:brep:procedural_surface#{i}:g2:second_exact"
+                            ));
+                            out.surfaces.push(Surface {
+                                id: second_exact_surface.clone(),
+                                geometry: SurfaceGeometry::Nurbs(embedded.second_exact_surface),
+                                source_object: None,
+                            });
+                            let center_curve =
+                                CurveId(format!("f3d:brep:procedural_surface#{i}:g2:center"));
+                            out.curves.push(Curve {
+                                id: center_curve.clone(),
+                                geometry: CurveGeometry::Nurbs(embedded.center_curve),
+                                source_object: None,
+                            });
+                            ProceduralSurfaceDefinition::G2Blend {
+                                construction: Box::new(cadmpeg_ir::geometry::G2BlendConstruction {
+                                    first,
+                                    singularity: embedded.singularity,
+                                    first_shape,
+                                    second,
+                                    second_exact_surface,
+                                    center_curve,
+                                    center_parameters: embedded.center_parameters,
+                                    center_flag: embedded.center_flag,
+                                    parameter_ranges: embedded.parameter_ranges,
+                                    trailing_parameters: embedded.trailing_parameters,
+                                    discontinuities: embedded.discontinuities,
+                                }),
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::Ruled { first, second } => {
                             let first_id =
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:profile0"));

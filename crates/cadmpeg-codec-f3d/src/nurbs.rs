@@ -711,6 +711,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     },
     /// Native loft construction graph with embedded carriers.
     Loft(EmbeddedLoft),
+    /// Native G2 blend construction with embedded carriers.
+    G2Blend(Box<EmbeddedG2Blend>),
     /// Ruled interpolation between two ordered profile curves.
     Ruled {
         /// First embedded profile.
@@ -771,6 +773,200 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Blend cross-section family.
         cross_section: BlendCrossSection,
     },
+}
+
+pub(crate) struct EmbeddedG2Side {
+    pub(crate) label: String,
+    pub(crate) surface: SurfaceGeometry,
+    pub(crate) curve: NurbsCurve,
+    pub(crate) pcurves: [Option<NurbsPcurve>; 2],
+    pub(crate) direction: Vector3,
+}
+
+pub(crate) enum EmbeddedG2FirstShape {
+    Full {
+        surface: Option<NurbsSurface>,
+        tolerance: Option<f64>,
+    },
+    None {
+        coefficients: [f64; 9],
+        tolerance: f64,
+        extension: Option<cadmpeg_ir::geometry::LoftBridgeToken>,
+        pcurve: Option<NurbsPcurve>,
+    },
+}
+
+/// Embedded native G2 blend graph before stable IR ids are assigned.
+pub struct EmbeddedG2Blend {
+    pub(crate) first: EmbeddedG2Side,
+    pub(crate) singularity: i64,
+    pub(crate) first_shape: EmbeddedG2FirstShape,
+    pub(crate) second: EmbeddedG2Side,
+    pub(crate) second_exact_surface: NurbsSurface,
+    pub(crate) center_curve: NurbsCurve,
+    pub(crate) center_parameters: [f64; 2],
+    pub(crate) center_flag: i64,
+    pub(crate) parameter_ranges: [[f64; 2]; 2],
+    pub(crate) trailing_parameters: [f64; 4],
+    pub(crate) discontinuities: [Vec<f64>; 3],
+}
+
+#[allow(clippy::option_option)] // Outer None is parse failure; inner None is native nullbs.
+fn decode_nullable_embedded_pcurve(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<Option<NurbsPcurve>> {
+    let saved = *position;
+    if take_native_ident(bytes, position).as_deref() == Some("nullbs") {
+        return Some(None);
+    }
+    *position = saved;
+    let (pcurve, end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
+    *position = end;
+    Some(Some(pcurve))
+}
+
+fn decode_g2_side(bytes: &[u8], position: &mut usize, int_width: usize) -> Option<EmbeddedG2Side> {
+    let label = take_native_string(bytes, position)?;
+    let surface = decode_embedded_surface(bytes, position, int_width)?;
+    let curve = decode_curve_block(bytes, *position, int_width)?;
+    *position = curve.end;
+    let first = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+    let direction = take_native_vec3(bytes, position, 0x14)?;
+    let second = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+    Some(EmbeddedG2Side {
+        label,
+        surface,
+        curve: curve.curve,
+        pcurves: [first, second],
+        direction: Vector3::new(direction[0], direction[1], direction[2]),
+    })
+}
+
+fn take_bridge_token(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<cadmpeg_ir::geometry::LoftBridgeToken> {
+    use cadmpeg_ir::geometry::LoftBridgeToken;
+    match *bytes.get(*position)? {
+        0x0a | 0x0b => Some(LoftBridgeToken::Boolean(take_bool(bytes, position)?)),
+        0x04 => Some(LoftBridgeToken::Integer(take_tagged_int(
+            bytes, position, 0x04, int_width,
+        )?)),
+        0x06 => Some(LoftBridgeToken::Double(take_f64(bytes, position)?)),
+        0x15 => Some(LoftBridgeToken::Enum(take_tagged_int(
+            bytes, position, 0x15, int_width,
+        )?)),
+        0x07..=0x09 => Some(LoftBridgeToken::Text(take_native_string(bytes, position)?)),
+        _ => None,
+    }
+}
+
+fn decode_g2_blend_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+) -> Option<DecodedProceduralSurface> {
+    let names: [&[u8]; 2] = [b"g2_blend_spl_sur", b"g2blnsur"];
+    let (start, name_len) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len()))
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name_len + 3;
+    let first = decode_g2_side(span, &mut position, int_width)?;
+    let singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let first_shape = if matches!(span.get(position), Some(0x0d | 0x0e)) {
+        let saved = position;
+        if take_native_ident(span, &mut position).as_deref() == Some("nullbs") {
+            EmbeddedG2FirstShape::Full {
+                surface: None,
+                tolerance: None,
+            }
+        } else {
+            position = saved;
+            let surface = decode_surface_block(span, position, int_width)?;
+            position = surface.end;
+            EmbeddedG2FirstShape::Full {
+                surface: Some(surface.surface),
+                tolerance: Some(take_f64(span, &mut position)? * LEN_TO_MM),
+            }
+        }
+    } else {
+        let mut coefficients = [0.0; 9];
+        for coefficient in &mut coefficients {
+            *coefficient = take_f64(span, &mut position)?;
+        }
+        let tolerance = take_f64(span, &mut position)? * LEN_TO_MM;
+        let extension = (!matches!(span.get(position), Some(0x07..=0x09 | 0x0d | 0x0e)))
+            .then(|| take_bridge_token(span, &mut position, int_width))
+            .flatten();
+        let pcurve = decode_nullable_embedded_pcurve(span, &mut position, int_width)?;
+        EmbeddedG2FirstShape::None {
+            coefficients,
+            tolerance,
+            extension,
+            pcurve,
+        }
+    };
+    let second = decode_g2_side(span, &mut position, int_width)?;
+    let second_exact = decode_surface_block(span, position, int_width)?;
+    position = second_exact.end;
+    let center = decode_curve_block(span, position, int_width)?;
+    position = center.end;
+    let center_parameters = [
+        take_f64(span, &mut position)?,
+        take_f64(span, &mut position)?,
+    ];
+    let center_flag = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let parameter_ranges = [
+        [
+            take_f64(span, &mut position)?,
+            take_f64(span, &mut position)?,
+        ],
+        [
+            take_f64(span, &mut position)?,
+            take_f64(span, &mut position)?,
+        ],
+    ];
+    let mut trailing_parameters = [0.0; 4];
+    for parameter in &mut trailing_parameters {
+        *parameter = take_f64(span, &mut position)?;
+    }
+    let cache = decode_surface_block(span, position, int_width)?;
+    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
+        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
+        .flatten();
+    position = cache.end + 9;
+    let discontinuities = [
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+    ];
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::G2Blend(Box::new(EmbeddedG2Blend {
+            first,
+            singularity,
+            first_shape,
+            second,
+            second_exact_surface: second_exact.surface,
+            center_curve: center.curve,
+            center_parameters,
+            center_flag,
+            parameter_ranges,
+            trailing_parameters,
+            discontinuities,
+        })),
+        cache_fit_tolerance,
+    })
 }
 
 pub(crate) struct EmbeddedLoftProfileData {
@@ -1521,6 +1717,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_comp_spl_sur(bytes, int_width))
         .or_else(|| decode_taper_spl_sur(bytes, int_width))
         .or_else(|| decode_loft_spl_sur(bytes, int_width))
+        .or_else(|| decode_g2_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_ruled_spl_sur(bytes, int_width))
         .or_else(|| decode_sum_spl_sur(bytes, int_width))
         .or_else(|| decode_rot_spl_sur(bytes, int_width))
