@@ -7427,6 +7427,41 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .iter()
             .flat_map(|section| &section.entries)
             .all(|entry| entry.path.auxiliaries.len() == 1));
+
+        let mut source_less = result.ir;
+        source_less.source = None;
+        source_less.unknowns.clear();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less loft encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("source-less loft round trip");
+        let ProceduralSurfaceDefinition::Loft {
+            sections,
+            parameter_ranges,
+            closures,
+            singularities,
+            mode,
+            bridge,
+        } = &round_trip.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected round-trip loft surface")
+        };
+        assert_eq!(*parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
+        assert_eq!((*closures, *singularities, *mode), ([1, 2], [3, 4], 2));
+        assert_eq!(bridge.len(), 5);
+        assert!(sections.iter().all(|section| {
+            section.entries.len() == 1
+                && section.entries[0].profile.len() == 1
+                && section.entries[0].path.auxiliaries.len() == 1
+        }));
+        assert_eq!(
+            sections[0].entries[0].profile[0].data.direction,
+            Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
+        );
+        assert!(sections[1].entries[0].profile[0].data.direction.is_none());
     }
 }
 

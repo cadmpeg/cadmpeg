@@ -3291,6 +3291,25 @@ fn native_procedural_surface(
             }
             bytes.push(0x10);
         }
+        ProceduralSurfaceDefinition::Loft {
+            sections,
+            parameter_ranges,
+            closures,
+            singularities,
+            mode,
+            bridge,
+        } => encode_native_loft(
+            bytes,
+            target,
+            procedural,
+            sections,
+            parameter_ranges,
+            closures,
+            singularities,
+            *mode,
+            bridge,
+            solved_cache,
+        )?,
         ProceduralSurfaceDefinition::Ruled { first, second } => {
             let profiles = [first, second]
                 .map(|id| {
@@ -3505,6 +3524,169 @@ fn native_procedural_surface(
         }
     }
     Ok(true)
+}
+
+fn native_loft_curve<'a>(
+    target: &'a CadIr,
+    id: &cadmpeg_ir::ids::CurveId,
+) -> Result<&'a NurbsCurve, CodecError> {
+    let curve = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *id)
+        .ok_or_else(|| CodecError::Malformed(format!("loft references missing curve {id}")))?;
+    let CurveGeometry::Nurbs(curve) = &curve.geometry else {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D loft requires NURBS curve {id}"
+        )));
+    };
+    Ok(curve)
+}
+
+fn native_loft_subdata(
+    bytes: &mut Vec<u8>,
+    subdata: &cadmpeg_ir::geometry::LoftSubdata,
+) -> Result<(), CodecError> {
+    let expected_rows = if subdata.type_code == 211 {
+        1
+    } else {
+        usize::try_from(subdata.row_count)
+            .map_err(|_| CodecError::Malformed("negative loft row count".into()))?
+    };
+    let expected_columns = usize::try_from(subdata.column_count)
+        .map_err(|_| CodecError::Malformed("negative loft column count".into()))?;
+    if subdata.rows.len() != expected_rows
+        || (subdata.type_code != 211
+            && subdata
+                .rows
+                .iter()
+                .any(|row| row.columns.len() != expected_columns))
+    {
+        return Err(CodecError::Malformed(
+            "loft subdata counts do not match their rows".into(),
+        ));
+    }
+    native_i64(bytes, subdata.type_code);
+    native_i64(bytes, subdata.row_count);
+    native_i64(bytes, subdata.column_count);
+    for row in &subdata.rows {
+        for value in row.parameters {
+            native_f64(bytes, value);
+        }
+        for column in &row.columns {
+            native_f64(bytes, column[0]);
+            native_f64(bytes, column[1]);
+        }
+    }
+    Ok(())
+}
+
+fn native_loft_section(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    section: &cadmpeg_ir::geometry::LoftSection,
+) -> Result<(), CodecError> {
+    native_i64(
+        bytes,
+        i64::try_from(section.entries.len())
+            .map_err(|_| CodecError::NotImplemented("loft section count exceeds i64".into()))?,
+    );
+    for entry in &section.entries {
+        native_f64(bytes, entry.parameter);
+        native_i64(
+            bytes,
+            i64::try_from(entry.profile.len())
+                .map_err(|_| CodecError::NotImplemented("loft profile count exceeds i64".into()))?,
+        );
+        for member in &entry.profile {
+            native_i64(bytes, member.type_code);
+            native_nurbs_curve(bytes, native_loft_curve(target, &member.curve)?)?;
+            let surface = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == member.data.surface)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "loft references missing surface {}",
+                        member.data.surface
+                    ))
+                })?;
+            native_embedded_surface(bytes, &surface.geometry)?;
+            if let Some(pcurve) = &member.data.pcurve {
+                native_nurbs_pcurve_block(bytes, pcurve)?;
+            } else {
+                native_ident(bytes, "nullbs")?;
+            }
+            bytes.push(native_bool(member.data.first_flag));
+            native_i64(bytes, member.data.asm_extension);
+            native_loft_subdata(bytes, &member.data.subdata)?;
+            bytes.push(native_bool(member.data.direction.is_some()));
+            if let Some(direction) = member.data.direction {
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+        }
+        native_nurbs_curve(bytes, native_loft_curve(target, &entry.path.curve)?)?;
+        native_i64(
+            bytes,
+            i64::try_from(entry.path.auxiliaries.len()).map_err(|_| {
+                CodecError::NotImplemented("loft auxiliary count exceeds i64".into())
+            })?,
+        );
+        for auxiliary in &entry.path.auxiliaries {
+            native_nurbs_curve(bytes, native_loft_curve(target, auxiliary)?)?;
+        }
+        native_i64(bytes, entry.path.flag);
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn encode_native_loft(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    sections: &[cadmpeg_ir::geometry::LoftSection; 2],
+    parameter_ranges: &[[f64; 2]; 2],
+    closures: &[i64; 2],
+    singularities: &[i64; 2],
+    mode: i64,
+    bridge: &[cadmpeg_ir::geometry::LoftBridgeToken],
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "loft_spl_sur")?;
+    for section in sections {
+        native_loft_section(bytes, target, section)?;
+    }
+    for range in parameter_ranges {
+        native_f64(bytes, range[0]);
+        native_f64(bytes, range[1]);
+    }
+    for closure in closures {
+        native_enum(bytes, *closure);
+    }
+    for singularity in singularities {
+        native_enum(bytes, *singularity);
+    }
+    native_i64(bytes, mode);
+    for token in bridge {
+        match token {
+            cadmpeg_ir::geometry::LoftBridgeToken::Boolean(value) => {
+                bytes.push(native_bool(*value));
+            }
+            cadmpeg_ir::geometry::LoftBridgeToken::Integer(value) => native_i64(bytes, *value),
+            cadmpeg_ir::geometry::LoftBridgeToken::Double(value) => native_f64(bytes, *value),
+            cadmpeg_ir::geometry::LoftBridgeToken::Text(value) => native_string(bytes, value)?,
+            cadmpeg_ir::geometry::LoftBridgeToken::Enum(value) => native_enum(bytes, *value),
+        }
+    }
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    bytes.push(0x10);
+    Ok(())
 }
 
 fn encode_native_extrusion(
