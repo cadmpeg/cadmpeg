@@ -738,6 +738,120 @@ pub struct RollingBallConstruction {
     pub third: Option<Box<RollingBallThirdSide>>,
 }
 
+/// One native support side in a variable-radius blend construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableBlendSide {
+    /// Native side label.
+    pub label: String,
+    /// Primary support surface.
+    pub surface: SurfaceId,
+    /// Side curve.
+    pub curve: CurveId,
+    /// Primary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve: Option<PcurveGeometry>,
+    /// Native model-space side location.
+    pub location: Point3,
+    /// ASM secondary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_pcurve: Option<PcurveGeometry>,
+    /// ASM scalar following the secondary pcurve.
+    pub scalar: f64,
+    /// ASM tertiary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tertiary_pcurve: Option<PcurveGeometry>,
+}
+
+/// One interpolation control point in a variable blend-value law.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableBlendInterpolationPoint {
+    /// Law parameter.
+    pub parameter: f64,
+    /// Radius in document length units.
+    pub radius: f64,
+    /// Two ordered tangent scalars.
+    pub tangents: [f64; 2],
+    /// Model-space control location.
+    pub location: Point3,
+    /// Control normal.
+    pub normal: Vector3,
+}
+
+/// Complete recursive native `getBlendValues` payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VariableBlendValue {
+    /// Native blend-value type name.
+    pub name: String,
+    /// Modern ASM flag present after release 222.
+    pub modern_flag: bool,
+    /// Native sub-discriminator.
+    pub discriminator: i64,
+    /// Native calibrated enum.
+    pub calibrated: i64,
+    /// Type-specific payload.
+    pub payload: VariableBlendValuePayload,
+}
+
+/// Type-specific payload of a variable blend value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum VariableBlendValuePayload {
+    /// Two endpoint parameters and radii.
+    TwoEnds {
+        /// Endpoint parameters.
+        parameters: [f64; 2],
+        /// Endpoint radii in document length units.
+        radii: [f64; 2],
+    },
+    /// Edge-offset branch.
+    EdgeOffset {
+        /// Ordered native scalar payload.
+        scalars: Vec<f64>,
+        /// Ordered length payload in document units.
+        lengths: Vec<f64>,
+    },
+    /// Functional radius law carried by a BS2 pcurve.
+    Functional {
+        /// Leading scalar.
+        parameter: f64,
+        /// Leading length in document units.
+        radius: f64,
+        /// Parametric `(u, radius)` function.
+        function: PcurveGeometry,
+        /// Numeric or symbolic terminal value.
+        terminal: LoftBridgeToken,
+    },
+    /// Constant law followed by a recursive chamfer value.
+    Constant {
+        /// Ordered native scalars.
+        parameters: [f64; 2],
+        /// Radius in document length units.
+        radius: f64,
+        /// Native variable-chamfer enum.
+        variable_chamfer: i64,
+        /// Native chamfer-type enum.
+        chamfer_type: i64,
+        /// Recursively nested blend value.
+        nested: Box<VariableBlendValue>,
+    },
+    /// Interpolated radius law.
+    Interpolated {
+        /// Leading scalar.
+        parameter: f64,
+        /// Leading radius in document length units.
+        radius: f64,
+        /// Parametric support curve.
+        function: PcurveGeometry,
+        /// Native interpolation enum count.
+        enum_count: i64,
+        /// Ordered interpolation controls.
+        points: Vec<VariableBlendInterpolationPoint>,
+        /// Optional two-scalar tail selected by a nonzero flag.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tail: Option<[f64; 2]>,
+    },
+}
+
 /// Radius law for a procedural blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
