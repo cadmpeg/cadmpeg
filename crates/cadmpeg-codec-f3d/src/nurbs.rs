@@ -1203,6 +1203,14 @@ pub struct EmbeddedScaledCompoundLoft {
 
 pub(crate) enum EmbeddedLawExpression {
     Null,
+    Transform {
+        scalars: [f64; 13],
+        enums: [i64; 3],
+    },
+    Edge {
+        curve: NurbsCurve,
+        parameters: [f64; 2],
+    },
     Spline {
         native_id: i64,
         knots: Vec<f64>,
@@ -1769,6 +1777,27 @@ fn decode_law_expression(
 ) -> Option<EmbeddedLawExpression> {
     match take_native_string(bytes, position)?.as_str() {
         "null_law" => Some(EmbeddedLawExpression::Null),
+        "TRANS" => {
+            let mut scalars = [0.0; 13];
+            for scalar in &mut scalars {
+                *scalar = take_f64(bytes, position)?;
+            }
+            let enums = [
+                take_tagged_int(bytes, position, 0x15, int_width)?,
+                take_tagged_int(bytes, position, 0x15, int_width)?,
+                take_tagged_int(bytes, position, 0x15, int_width)?,
+            ];
+            Some(EmbeddedLawExpression::Transform { scalars, enums })
+        }
+        "EDGE" => {
+            let curve = decode_curve_block(bytes, *position, int_width)?;
+            *position = curve.end;
+            let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
+            Some(EmbeddedLawExpression::Edge {
+                curve: curve.curve,
+                parameters,
+            })
+        }
         "SPLINE_LAW" => {
             let native_id = take_tagged_int(bytes, position, 0x04, int_width)?;
             let knots = take_float_array(bytes, position, int_width)?;

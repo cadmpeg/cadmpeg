@@ -1607,9 +1607,34 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     .formula
                                     .variables
                                     .into_iter()
-                                    .map(|variable| match variable {
+                                    .enumerate()
+                                    .map(|(variable_index, variable)| match variable {
                                         nurbs::EmbeddedLawExpression::Null => {
                                             cadmpeg_ir::geometry::LawExpression::Null
+                                        }
+                                        nurbs::EmbeddedLawExpression::Transform {
+                                            scalars,
+                                            enums,
+                                        } => cadmpeg_ir::geometry::LawExpression::Transform {
+                                            scalars,
+                                            enums,
+                                        },
+                                        nurbs::EmbeddedLawExpression::Edge {
+                                            curve,
+                                            parameters,
+                                        } => {
+                                            let id = CurveId(format!(
+                                                "f3d:brep:procedural_surface#{i}:skin:law:{variable_index}:edge"
+                                            ));
+                                            out.curves.push(Curve {
+                                                id: id.clone(),
+                                                geometry: CurveGeometry::Nurbs(curve),
+                                                source_object: None,
+                                            });
+                                            cadmpeg_ir::geometry::LawExpression::Edge {
+                                                curve: id,
+                                                parameters,
+                                            }
                                         }
                                         nurbs::EmbeddedLawExpression::Spline {
                                             native_id,
