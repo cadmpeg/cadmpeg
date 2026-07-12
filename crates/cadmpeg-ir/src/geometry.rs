@@ -1451,6 +1451,35 @@ pub enum SweepSurfaceLayout {
         /// Three trailing guide booleans.
         trailing_flags: [bool; 3],
     },
+    /// Explicit sweep layout controlled by a support surface.
+    ExplicitSurface {
+        /// Native explicit-layout integer.
+        mode: i64,
+        /// Profile parameter interval.
+        profile_range: [f64; 2],
+        /// Optional explicit profile frame.
+        profile_frame: Option<(Point3, Vector3)>,
+        /// Sweep frame origin.
+        origin: Point3,
+        /// Three ordered sweep frame directions.
+        directions: [Vector3; 3],
+        /// Native trajectory boolean.
+        trajectory_flag: bool,
+        /// Path parameter interval in model length units.
+        path_range: [f64; 2],
+        /// Native trajectory scalar.
+        path_parameter: f64,
+        /// Native singularity enum.
+        singularity: i64,
+        /// Support surface controlling the sweep.
+        support_surface: SurfaceId,
+        /// Optional auxiliary curve.
+        auxiliary_curve: Option<CurveId>,
+        /// Native support-side boolean.
+        support_flag: bool,
+        /// Legacy pre-219 trailing boolean when present.
+        legacy_flag: Option<bool>,
+    },
 }
 
 /// Complete native `sweep_spl_sur` construction graph.

@@ -2154,6 +2154,60 @@ fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_explicit_surface_sweep_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "sweep_spl_sur");
+    surface.push(0x15);
+    surface.extend_from_slice(&2i64.to_le_bytes());
+    t_long(&mut surface, 9);
+    surface.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut surface, 0.0);
+    t_dbl(&mut surface, 1.0);
+    surface.push(0x0b);
+    t_pos(&mut surface, [4.0, 5.0, 6.0]);
+    for direction in [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]] {
+        t_vec(&mut surface, direction);
+    }
+    t_long(&mut surface, 3);
+    surface.push(0x0b);
+    surface.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut surface, -2.0);
+    t_dbl(&mut surface, 3.0);
+    t_dbl(&mut surface, 0.25);
+    surface.push(0x15);
+    surface.extend_from_slice(&1i64.to_le_bytes());
+    t_ident(&mut surface, "plane");
+    t_pos(&mut surface, [1.0, 2.0, 3.0]);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    t_vec(&mut surface, [1.0, 0.0, 0.0]);
+    surface.push(0x0b);
+    surface.push(0x0a);
+    surface.extend_from_slice(&generated_curve_block());
+    surface.push(0x0a);
+    surface.push(0x0b);
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.005);
+    for values in [&[0.25][..], &[][..], &[][..], &[][..], &[][..], &[][..]] {
+        append_generated_float_array(&mut surface, values);
+    }
+    surface.push(0x0a);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
     t_long(bytes, 1);
     t_long(bytes, 9);
@@ -8347,6 +8401,58 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
             native: Some(native),
             ..
         } if matches!(native.layout, SweepSurfaceLayout::ExplicitGuide { .. })
+    ));
+}
+
+#[test]
+fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SweepSurfaceLayout};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_explicit_surface_sweep_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("explicit surface sweep decode");
+    let ProceduralSurfaceDefinition::Sweep {
+        native: Some(native),
+        ..
+    } = &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected native sweep")
+    };
+    let SweepSurfaceLayout::ExplicitSurface {
+        mode,
+        singularity,
+        auxiliary_curve,
+        support_flag,
+        legacy_flag,
+        ..
+    } = &native.layout
+    else {
+        panic!("expected explicit surface sweep")
+    };
+    assert_eq!((*mode, *singularity), (9, 1));
+    assert!(auxiliary_curve.is_some());
+    assert!(*support_flag);
+    assert_eq!(*legacy_flag, Some(false));
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less explicit surface sweep encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less explicit surface sweep round trip");
+    assert!(matches!(
+        &round_trip.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::Sweep {
+            native: Some(native),
+            ..
+        } if matches!(native.layout, SweepSurfaceLayout::ExplicitSurface { .. })
     ));
 }
 

@@ -4578,6 +4578,63 @@ fn encode_native_sweep_surface(
                 bytes.push(native_bool(*flag));
             }
         }
+        SweepSurfaceLayout::ExplicitSurface {
+            mode,
+            profile_range,
+            profile_frame,
+            origin,
+            directions,
+            trajectory_flag,
+            path_range,
+            path_parameter,
+            singularity,
+            support_surface,
+            auxiliary_curve,
+            support_flag,
+            legacy_flag,
+        } => {
+            native_i64(bytes, *mode);
+            native_nurbs_curve(bytes, native_loft_curve(target, profile)?)?;
+            for value in profile_range {
+                native_f64(bytes, *value);
+            }
+            bytes.push(native_bool(profile_frame.is_some()));
+            if let Some((point, direction)) = profile_frame {
+                native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            for direction in directions {
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_i64(bytes, 3);
+            bytes.push(native_bool(*trajectory_flag));
+            native_nurbs_curve(bytes, native_loft_curve(target, spine)?)?;
+            for value in path_range {
+                native_f64(bytes, *value / 10.0);
+            }
+            native_f64(bytes, *path_parameter);
+            native_enum(bytes, *singularity);
+            let support = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == *support_surface)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "sweep references missing support surface {support_surface}"
+                    ))
+                })?;
+            native_embedded_surface(bytes, &support.geometry)?;
+            bytes.push(native_bool(auxiliary_curve.is_some()));
+            if let Some(curve) = auxiliary_curve {
+                native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            }
+            bytes.push(native_bool(*support_flag));
+            if let Some(flag) = legacy_flag {
+                bytes.push(native_bool(*flag));
+            }
+        }
     }
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);

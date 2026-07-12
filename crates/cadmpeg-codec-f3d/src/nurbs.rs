@@ -1322,6 +1322,23 @@ pub(crate) enum EmbeddedSweepSurfaceLayout {
         guide_parameters: [f64; 6],
         trailing_flags: [bool; 3],
     },
+    ExplicitSurface {
+        profile: NurbsCurve,
+        mode: i64,
+        profile_range: [f64; 2],
+        profile_frame: Option<(Point3, Vector3)>,
+        origin: Point3,
+        directions: [Vector3; 3],
+        trajectory_flag: bool,
+        path: NurbsCurve,
+        path_range: [f64; 2],
+        path_parameter: f64,
+        singularity: i64,
+        support_surface: SurfaceGeometry,
+        auxiliary_curve: Option<NurbsCurve>,
+        support_flag: bool,
+        legacy_flag: Option<bool>,
+    },
 }
 
 /// Embedded native sweep surface before stable IR ids are assigned.
@@ -2265,6 +2282,38 @@ fn decode_sweep_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
                     guide_modes,
                     guide_parameters,
                     trailing_flags,
+                }
+            }
+            3 => {
+                let singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
+                let support_surface = decode_embedded_surface(span, &mut position, int_width)?;
+                let auxiliary_curve = if take_bool(span, &mut position)? {
+                    let curve = decode_curve_block(span, position, int_width)?;
+                    position = curve.end;
+                    Some(curve.curve)
+                } else {
+                    None
+                };
+                let support_flag = take_bool(span, &mut position)?;
+                let legacy_flag = matches!(span.get(position), Some(0x0a | 0x0b))
+                    .then(|| take_bool(span, &mut position))
+                    .flatten();
+                EmbeddedSweepSurfaceLayout::ExplicitSurface {
+                    profile: profile.curve,
+                    mode,
+                    profile_range,
+                    profile_frame,
+                    origin,
+                    directions,
+                    trajectory_flag,
+                    path: path.curve,
+                    path_range,
+                    path_parameter,
+                    singularity,
+                    support_surface,
+                    auxiliary_curve,
+                    support_flag,
+                    legacy_flag,
                 }
             }
             _ => return None,

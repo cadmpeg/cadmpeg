@@ -2131,6 +2131,62 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         },
                                     )
                                 }
+                                nurbs::EmbeddedSweepSurfaceLayout::ExplicitSurface {
+                                    profile,
+                                    mode,
+                                    profile_range,
+                                    profile_frame,
+                                    origin,
+                                    directions,
+                                    trajectory_flag,
+                                    path,
+                                    path_range,
+                                    path_parameter,
+                                    singularity,
+                                    support_surface,
+                                    auxiliary_curve,
+                                    support_flag,
+                                    legacy_flag,
+                                } => {
+                                    let support_surface_id = SurfaceId(format!(
+                                        "f3d:brep:procedural_surface#{i}:sweep:support"
+                                    ));
+                                    out.surfaces.push(Surface {
+                                        id: support_surface_id.clone(),
+                                        geometry: support_surface,
+                                        source_object: None,
+                                    });
+                                    let auxiliary_curve = auxiliary_curve.map(|geometry| {
+                                        let id = CurveId(format!(
+                                            "f3d:brep:procedural_surface#{i}:sweep:auxiliary"
+                                        ));
+                                        out.curves.push(Curve {
+                                            id: id.clone(),
+                                            geometry: CurveGeometry::Nurbs(geometry),
+                                            source_object: None,
+                                        });
+                                        id
+                                    });
+                                    (
+                                        profile,
+                                        path,
+                                        cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitSurface {
+                                            mode,
+                                            profile_range,
+                                            profile_frame,
+                                            origin,
+                                            directions,
+                                            trajectory_flag,
+                                            path_range,
+                                            path_parameter,
+                                            singularity,
+                                            support_surface: support_surface_id,
+                                            auxiliary_curve,
+                                            support_flag,
+                                            legacy_flag,
+                                        },
+                                    )
+                                }
                             };
                             let profile =
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:sweep:profile"));
