@@ -19,6 +19,7 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::design::{PersistentDesignLink, SketchCurveLink};
+use cadmpeg_ir::eval;
 use cadmpeg_ir::geometry::{
     BlendSupport, Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
     ProceduralSurface, ProceduralSurfaceDefinition, RollingBallConstruction,
@@ -127,8 +128,10 @@ pub struct Stats {
     pub nurbs_curves: usize,
     /// Edges whose 3D curve is a procedural carrier (emitted with no curve).
     pub procedural_curve_edges: usize,
-    /// Coedges that carried an explicit UV pcurve ref whose carrier could not
-    /// be decoded.
+    /// Coedges that carried an explicit UV pcurve ref with no decodable 2D
+    /// carrier on the face surface's parameterization (undecodable bytes, or
+    /// UV values on the exact procedural parameterization rather than the
+    /// solved cache's).
     pub undecoded_pcurve_refs: usize,
     /// Procedural blends for which only one of two support families resolved.
     pub partial_procedural_supports: usize,
@@ -345,6 +348,85 @@ fn deterministic_ref_direction(axis: Vector3) -> Vector3 {
         projected.y / length,
         projected.z / length,
     )
+}
+
+/// Maximum distance, in millimeters, between a pcurve endpoint mapped through
+/// the face surface and the edge's vertex position for the pcurve to count as
+/// that surface's parameter-space image.
+const PCURVE_ENDPOINT_TOLERANCE_MM: f64 = 0.01;
+
+/// The millimeter-space position of an edge-record vertex reference.
+fn vertex_position(by_index: &HashMap<i64, &Record>, vertex: i64) -> Option<Point3> {
+    let vertex_record = by_index.get(&vertex).filter(|r| r.head == "vertex")?;
+    let point_record = by_index.get(&vertex_record.ref_at(5)?)?;
+    collect_carrier(point_record)
+        .positions
+        .first()
+        .map(|p| scale_point(*p))
+}
+
+fn distance(a: Point3, b: Point3) -> f64 {
+    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
+}
+
+/// Select the candidate 2D block that is the face surface's parameter-space
+/// image of the coedge: its endpoints, mapped through the surface, land on the
+/// owning edge's vertex positions. On a non-NURBS surface, or when the edge's
+/// vertex positions cannot be read, the first candidate passes unverified. An
+/// empty result means no candidate is the surface's image of this edge.
+fn select_face_pcurve(
+    candidates: Vec<nurbs::NurbsPcurve>,
+    surface: Option<&SurfaceGeometry>,
+    edge: Option<&Record>,
+    by_index: &HashMap<i64, &Record>,
+) -> Option<nurbs::NurbsPcurve> {
+    let Some(SurfaceGeometry::Nurbs(surface)) = surface else {
+        return candidates.into_iter().next();
+    };
+    let vertex_pair = edge.and_then(|edge| {
+        Some((
+            vertex_position(by_index, edge.ref_at(3)?)?,
+            vertex_position(by_index, edge.ref_at(5)?)?,
+        ))
+    });
+    let Some((start, end)) = vertex_pair else {
+        return candidates.into_iter().next();
+    };
+    let mut best: Option<(f64, nurbs::NurbsPcurve)> = None;
+    for candidate in candidates {
+        let (Some(&t0), Some(&t1)) = (candidate.knots.first(), candidate.knots.last()) else {
+            continue;
+        };
+        let uv_at = |t: f64| {
+            eval::nurbs_pcurve_uv(
+                candidate.degree,
+                &candidate.knots,
+                &candidate.control_points,
+                candidate.weights.as_deref(),
+                t,
+            )
+        };
+        let (Some(uv0), Some(uv1)) = (uv_at(t0), uv_at(t1)) else {
+            continue;
+        };
+        let (Some(p0), Some(p1)) = (
+            eval::nurbs_surface_point(surface, uv0.u, uv0.v),
+            eval::nurbs_surface_point(surface, uv1.u, uv1.v),
+        ) else {
+            continue;
+        };
+        // The candidate's parameter direction is independent of the edge
+        // sense, so accept either endpoint assignment.
+        let forward = distance(p0, start).max(distance(p1, end));
+        let reversed = distance(p0, end).max(distance(p1, start));
+        let mismatch = forward.min(reversed);
+        if mismatch <= PCURVE_ENDPOINT_TOLERANCE_MM
+            && best.as_ref().is_none_or(|(current, _)| mismatch < *current)
+        {
+            best = Some((mismatch, candidate));
+        }
+    }
+    best.map(|(_, candidate)| candidate)
 }
 
 /// Decode an analytic curve carrier.
@@ -577,22 +659,39 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     kept_coedges.insert(ci);
                     if let Some(pc) = ce.ref_at(10) {
                         if let Some(prec) = by_index.get(&pc) {
-                            let decoded = nurbs::decode_pcurve_cache_resolving_refs(
-                                record_slice(prec, bytes),
-                                bytes,
-                                &subtype_tables,
-                            )
-                            .or_else(|| {
-                                prec.ref_at(4)
+                            // An inline pcurve carries its own 2D block; a
+                            // ref-form pcurve delegates to an intcurve entity
+                            // whose record holds several 2D blocks. Decode
+                            // every candidate and keep the one whose endpoints
+                            // land on the edge's vertices through the face
+                            // surface.
+                            let mut candidates =
+                                nurbs::decode_pcurve_cache_candidates_resolving_refs(
+                                    record_slice(prec, bytes),
+                                    bytes,
+                                    &subtype_tables,
+                                );
+                            if candidates.is_empty() {
+                                if let Some(intcurve) = prec
+                                    .ref_at(4)
                                     .and_then(|reference| by_index.get(&reference))
-                                    .and_then(|intcurve| {
-                                        nurbs::decode_intcurve_pcurve_cache_resolving_refs(
+                                {
+                                    candidates =
+                                        nurbs::decode_pcurve_cache_candidates_resolving_refs(
                                             record_slice(intcurve, bytes),
                                             bytes,
                                             &subtype_tables,
-                                        )
-                                    })
-                            });
+                                        );
+                                }
+                            }
+                            let decoded = select_face_pcurve(
+                                candidates,
+                                face.ref_at(7)
+                                    .and_then(|surface| surface_geo.get(&surface))
+                                    .map(|(geometry, _)| geometry),
+                                ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied(),
+                                &by_index,
+                            );
                             if let Some(decoded) = decoded {
                                 pcurve_geo.insert(
                                     pc,

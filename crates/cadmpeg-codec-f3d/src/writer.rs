@@ -3082,11 +3082,13 @@ fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             "source-less F3D tolerances must be finite and positive".into(),
         ));
     }
-    let mut bytes = b"ASM BinaryFile8<".to_vec();
-    bytes.extend_from_slice(&[0; 8]);
-    bytes.extend_from_slice(&7u64.to_be_bytes());
-    bytes.extend_from_slice(&3u64.to_be_bytes());
-    bytes.extend_from_slice(&[0; 7]);
+    let mut bytes = b"ASM BinaryFile8".to_vec();
+    // Release word matching the product string, the zero region, then the
+    // entity-count and flags words (bit 0: history partition present).
+    bytes.extend_from_slice(&23100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 12]);
+    bytes.extend_from_slice(&7u64.to_le_bytes());
+    bytes.extend_from_slice(&3u64.to_le_bytes());
     native_string(&mut bytes, "Autodesk Neutron")?;
     native_string(&mut bytes, "ASM 231.6.3.65535 OSX")?;
     native_string(&mut bytes, "Thu Jan  1 00:00:00 1970")?;

@@ -374,19 +374,56 @@ pub(crate) fn singular_seam_brep_payload(malformed_ring: bool) -> Vec<u8> {
 
 fn brep_payload_with_topology(singular_seam: bool, malformed: bool) -> Vec<u8> {
     let mut payload = vec![0x33];
-    let mut c2 = line_payload([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]);
-    let end = c2.len();
-    c2[end - 4..].copy_from_slice(&2_i32.to_le_bytes());
-    let c2_count = if singular_seam { 4 } else { 1 };
-    payload.extend(brep_children_many(
-        &(0..c2_count)
-            .map(|_| (LINE_CLASS, c2.clone()))
-            .collect::<Vec<_>>(),
-    ));
-    payload.extend(brep_children(
-        LINE_CLASS,
-        line_payload([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]),
-    ));
+    // The triangle's trim curves in plane parameter space, one per side; the
+    // seam fixture reuses one side four times.
+    let triangle = [
+        ([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        ([0.0, 1.0, 0.0], [0.0, 0.0, 0.0]),
+    ];
+    let c2_lines: Vec<([u8; 16], Vec<u8>)> = if singular_seam {
+        // Trim order: singular at u=0, seam side, singular at u=1, seam side.
+        // Singular trims hug their vertex's parameter point; the C2 reader
+        // rejects zero-length lines, so they span less than the coincidence
+        // tolerance instead of collapsing exactly.
+        [
+            ([0.0, 0.0, 0.0], [0.005, 0.0, 0.0]),
+            ([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            ([1.0, 0.0, 0.0], [0.995, 0.0, 0.0]),
+            ([1.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
+        ]
+        .iter()
+        .map(|(from, to)| {
+            let mut c2 = line_payload(*from, *to, [0.0, 1.0]);
+            let end = c2.len();
+            c2[end - 4..].copy_from_slice(&2_i32.to_le_bytes());
+            (LINE_CLASS, c2)
+        })
+        .collect()
+    } else {
+        triangle
+            .iter()
+            .map(|(from, to)| {
+                let mut c2 = line_payload(*from, *to, [0.0, 1.0]);
+                let end = c2.len();
+                c2[end - 4..].copy_from_slice(&2_i32.to_le_bytes());
+                (LINE_CLASS, c2)
+            })
+            .collect()
+    };
+    payload.extend(brep_children_many(&c2_lines));
+    let c3_lines: Vec<([u8; 16], Vec<u8>)> = if singular_seam {
+        vec![(
+            LINE_CLASS,
+            line_payload([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]),
+        )]
+    } else {
+        triangle
+            .iter()
+            .map(|(from, to)| (LINE_CLASS, line_payload(*from, *to, [0.0, 1.0])))
+            .collect()
+    };
+    payload.extend(brep_children_many(&c3_lines));
     payload.extend(brep_children(PLANE_SURFACE_CLASS, plane_surface_payload()));
 
     let vertices = if singular_seam {
@@ -431,8 +468,10 @@ fn brep_payload_with_topology(singular_seam: bool, malformed: bool) -> Vec<u8> {
             record.extend(
                 (if malformed && !singular_seam && index == 0 {
                     7_i32
-                } else {
+                } else if singular_seam {
                     0
+                } else {
+                    index as i32
                 })
                 .to_le_bytes(),
             );
@@ -456,8 +495,8 @@ fn brep_payload_with_topology(singular_seam: bool, malformed: bool) -> Vec<u8> {
     } else {
         vec![
             (0_i32, 0_i32, [0_i32, 1_i32], 0_i32, 1_i32, 0_i32),
-            (0, 1, [1, 2], 0, 1, 0),
-            (0, 2, [2, 0], 0, 1, 0),
+            (1, 1, [1, 2], 0, 1, 0),
+            (2, 2, [2, 0], 0, 1, 0),
         ]
     };
     let trims = trim_records

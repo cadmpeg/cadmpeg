@@ -94,26 +94,26 @@ Each `delta_state` body contains a BulletinBoard chain. A bulletin entry stores 
 
 ## 3. ASM binary header
 
-Streams begin with `ASM BinaryFile8<` (16-byte magic) or `ASM BinaryFile4` (15-byte magic; there is no `<`). The digit selects the width of integer/ref tags (§4): `4` → tag + 4-byte LE signed; `8` → tag + low 32 bits + high 32 bits (consume the full 9-byte field). Fusion writes both widths; ASM-227-era streams are `BinaryFile4` and ASM-231-era streams are `BinaryFile8`.
+Streams begin with the 15-byte magic `ASM BinaryFile8` or `ASM BinaryFile4`; byte 15 is the low byte of the release word, not part of the magic. The digit selects the width of integer/ref tags (§4): `4` → tag + 4-byte LE signed; `8` → tag + low 32 bits + high 32 bits (consume the full 9-byte field). Fusion writes both widths; ASM-227/228/229-era streams are `BinaryFile4` and ASM-230+ streams are `BinaryFile8`.
 
-`BinaryFile8` header layout:
+`BinaryFile8` header layout (little-endian, mirroring `BinaryFile4` with wider words):
 
-| Bytes    | Meaning                                                            |
-| -------- | ------------------------------------------------------------------ |
-| `0..15`  | magic `ASM BinaryFile8<`                                           |
-| `16..23` | zero                                                               |
-| `24..31` | **big-endian** u64 version/save word: per-file-varying (see below) |
-| `32..39` | big-endian u64 = `3` (constant: ASM binary format version)         |
-| `40..47` | big-endian u64 = `7` (ASM binary schema version)                   |
+| Bytes    | Meaning                                                                                |
+| -------- | -------------------------------------------------------------------------------------- |
+| `0..15`  | magic `ASM BinaryFile8`                                                                |
+| `15..19` | little-endian u32 ASM release word (`23000` on ASM 230, `23100` on ASM 231 streams)    |
+| `19..31` | zero                                                                                    |
+| `31..39` | little-endian u64 entity-count word                                                     |
+| `39..47` | little-endian u64 flags; bit 0 is set iff the stream carries a history partition (§4a) |
 
-Byte 47 is both the low byte of the schema-version word and the `0x07` tag of the first string.
+The string region begins at byte 47.
 
 `BinaryFile4` header layout (the classic ACIS save header, little-endian):
 
 | Bytes    | Meaning                                                                                |
 | -------- | -------------------------------------------------------------------------------------- |
 | `0..15`  | magic `ASM BinaryFile4`                                                                |
-| `15..19` | little-endian u32 ASM release word (`22700` on ASM 227 streams)                        |
+| `15..19` | little-endian u32 ASM release word (`22700` on ASM 227, `22900` on ASM 229 streams)    |
 | `19..23` | little-endian u32 record count (`0` when unwritten)                                    |
 | `23..27` | little-endian u32 entity count                                                         |
 | `27..31` | little-endian u32 flags; bit 0 is set iff the stream carries a history partition (§4a) |
@@ -133,8 +133,8 @@ In both widths the remaining header is a sequence rather than a fixed-offset str
 
 Header invariants:
 
-- The `BinaryFile8` words at 24/32/40 are **big-endian**; everything else in either width is little-endian.
-- Word @24 is a header version/save word, not a model-space quantity.
+- Every header word in either width is little-endian.
+- The entity-count and flags words carry stream metadata, not model-space quantities. The flags word's bit 0 marks a history partition on `.smbh` streams in both widths.
 - `scale`, `resabs`, and `resnor` are kernel metadata. `scale` is not a coordinate transform. Fusion `BinaryFile8` streams use `scale = 60.0`, `resabs = 1e-6`, and `resnor = 1e-10`; ASM-227 `BinaryFile4` streams use `scale = 50.0` with the same tolerances; an ASM-229 `BinaryFile4` stream uses `scale = 90.0`.
 
 ---

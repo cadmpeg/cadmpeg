@@ -1,0 +1,195 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Geometric consistency checks: evaluated carrier geometry must land on the
+//! topology it supports.
+#![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
+
+use super::*;
+use crate::eval::{curve_point, pcurve_uv, surface_point};
+use crate::geometry::PcurveGeometry;
+use crate::math::Point3;
+
+/// Maximum distance, in the document's length unit, between an evaluated
+/// carrier point and the vertex position it must coincide with. Exact carriers
+/// agree to rational-weight rounding (well under `1e-3` mm); real mismatches
+/// observed from decoder defects start orders of magnitude above this bound.
+const COINCIDENCE_TOLERANCE: f64 = 0.01;
+
+fn distance(a: Point3, b: Point3) -> f64 {
+    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
+}
+
+/// The per-entity coincidence allowance: the shared bound widened by any
+/// stored edge/vertex tolerances.
+fn allowance(tolerances: &[Option<f64>]) -> f64 {
+    tolerances
+        .iter()
+        .flatten()
+        .copied()
+        .fold(COINCIDENCE_TOLERANCE, f64::max)
+}
+
+fn vertex_positions(ir: &CadIr) -> HashMap<&str, (Point3, Option<f64>)> {
+    let points = ir
+        .model
+        .points
+        .iter()
+        .map(|point| (point.id.0.as_str(), point.position))
+        .collect::<HashMap<_, _>>();
+    ir.model
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            let position = points.get(vertex.point.0.as_str())?;
+            Some((vertex.id.0.as_str(), (*position, vertex.tolerance)))
+        })
+        .collect()
+}
+
+/// An edge's curve evaluated at its parameter range must land on the edge's
+/// start and end vertex positions.
+pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve.id.0.as_str(), &curve.geometry))
+        .collect::<HashMap<_, _>>();
+    let vertices = vertex_positions(ir);
+    for edge in &ir.model.edges {
+        let Some([start_t, end_t]) = edge.param_range else {
+            continue;
+        };
+        let Some(geometry) = edge.curve.as_ref().and_then(|id| curves.get(id.0.as_str())) else {
+            continue;
+        };
+        let (Some((start, start_tol)), Some((end, end_tol))) = (
+            vertices.get(edge.start.0.as_str()),
+            vertices.get(edge.end.0.as_str()),
+        ) else {
+            continue;
+        };
+        let (Some(at_start), Some(at_end)) =
+            (curve_point(geometry, start_t), curve_point(geometry, end_t))
+        else {
+            continue;
+        };
+        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol]);
+        let mismatch = distance(at_start, *start).max(distance(at_end, *end));
+        if !mismatch.is_finite() || mismatch > bound {
+            findings.push(Finding {
+                check: Check::GeometricConsistency,
+                severity: Severity::Error,
+                message: format!(
+                    "edge curve endpoints miss the edge's vertex positions by {mismatch:.6}"
+                ),
+                entity: Some(edge.id.0.clone()),
+            });
+        }
+    }
+}
+
+/// A coedge's pcurve, mapped through its face's surface, must land on the
+/// owning edge's vertex positions at the pcurve's parameter extremes. The
+/// pcurve's parameter direction is independent of the edge sense, so either
+/// endpoint assignment satisfies the check.
+pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| (surface.id.0.as_str(), &surface.geometry))
+        .collect::<HashMap<_, _>>();
+    let pcurves = ir
+        .model
+        .pcurves
+        .iter()
+        .map(|pcurve| (pcurve.id.0.as_str(), pcurve))
+        .collect::<HashMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (edge.id.0.as_str(), edge))
+        .collect::<HashMap<_, _>>();
+    let faces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.0.as_str(), face))
+        .collect::<HashMap<_, _>>();
+    let loops = ir
+        .model
+        .loops
+        .iter()
+        .map(|lp| (lp.id.0.as_str(), lp))
+        .collect::<HashMap<_, _>>();
+    let vertices = vertex_positions(ir);
+
+    for coedge in &ir.model.coedges {
+        let Some(pcurve) = coedge
+            .pcurve
+            .as_ref()
+            .and_then(|id| pcurves.get(id.0.as_str()))
+        else {
+            continue;
+        };
+        let Some(face) = loops
+            .get(coedge.owner_loop.0.as_str())
+            .and_then(|lp| faces.get(lp.face.0.as_str()))
+        else {
+            continue;
+        };
+        let Some(geometry) = surfaces.get(face.surface.0.as_str()) else {
+            continue;
+        };
+        let Some(edge) = edges.get(coedge.edge.0.as_str()) else {
+            continue;
+        };
+        let (Some((start, start_tol)), Some((end, end_tol))) = (
+            vertices.get(edge.start.0.as_str()),
+            vertices.get(edge.end.0.as_str()),
+        ) else {
+            continue;
+        };
+        let Some([t0, t1]) = pcurve_parameter_extremes(&pcurve.geometry) else {
+            continue;
+        };
+        let (Some(uv0), Some(uv1)) = (
+            pcurve_uv(&pcurve.geometry, t0),
+            pcurve_uv(&pcurve.geometry, t1),
+        ) else {
+            continue;
+        };
+        let (Some(p0), Some(p1)) = (
+            surface_point(geometry, uv0.u, uv0.v),
+            surface_point(geometry, uv1.u, uv1.v),
+        ) else {
+            continue;
+        };
+        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol, face.tolerance]);
+        let forward = distance(p0, *start).max(distance(p1, *end));
+        let reversed = distance(p0, *end).max(distance(p1, *start));
+        let mismatch = forward.min(reversed);
+        if !mismatch.is_finite() || mismatch > bound {
+            findings.push(Finding {
+                check: Check::GeometricConsistency,
+                severity: Severity::Error,
+                message: format!(
+                    "pcurve mapped through the face surface misses the edge's vertex positions \
+                     by {mismatch:.6}"
+                ),
+                entity: Some(coedge.id.0.clone()),
+            });
+        }
+    }
+}
+
+/// The parameter extremes over which a pcurve is checked: the stored parameter
+/// range when present, otherwise the NURBS knot extremes. A line pcurve
+/// without a stored range has no intrinsic extent and is skipped.
+fn pcurve_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        PcurveGeometry::Nurbs { knots, .. } => Some([*knots.first()?, *knots.last()?]),
+        PcurveGeometry::Line { .. } => None,
+    }
+}

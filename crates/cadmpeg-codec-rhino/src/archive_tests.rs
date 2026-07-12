@@ -493,7 +493,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     assert_eq!(model.edges.len(), 3);
     assert_eq!(model.vertices.len(), 3);
     assert_eq!(model.pcurves.len(), 3);
-    assert_eq!(model.curves.len(), 1);
+    assert_eq!(model.curves.len(), 3);
     assert_eq!(model.surfaces.len(), 1);
     let body = &model.bodies[0];
     let region = &model.regions[0];
@@ -585,7 +585,7 @@ fn semantic_invalid_brep_keeps_only_free_c3_surface_and_later_point() {
     assert!(model.coedges.is_empty());
     assert!(model.edges.is_empty());
     assert!(model.pcurves.is_empty());
-    assert_eq!(model.curves.len(), 1);
+    assert_eq!(model.curves.len(), 3);
     assert_eq!(model.surfaces.len(), 1);
     assert_eq!(model.points.len(), 1);
     assert!(!result.ir.unknowns[0].links.is_empty());

@@ -18,14 +18,11 @@ use crate::F3dCodec;
 /// followed by a couple of filler records and a `delta_state` history marker.
 fn synthetic_smbh() -> Vec<u8> {
     let mut b = Vec::new();
-    b.extend_from_slice(b"ASM BinaryFile8<"); // 0..16 magic
-    b.extend_from_slice(&[0u8; 8]); // 16..24 zero
-    b.extend_from_slice(&7u64.to_be_bytes()); // 24..32 version word
-    b.extend_from_slice(&3u64.to_be_bytes()); // 32..40 format version
-                                              // Schema word `7` occupies 40..48, but its low byte at offset 47 (0x07) is
-                                              // reused as the first product string's tag: write only the seven high zero
-                                              // bytes here, then let `push_u8_string`'s 0x07 tag land at offset 47.
-    b.extend_from_slice(&[0u8; 7]); // 40..47 schema word high bytes
+    b.extend_from_slice(b"ASM BinaryFile8"); // 0..15 magic
+    b.extend_from_slice(&23100u32.to_le_bytes()); // 15..19 release word
+    b.extend_from_slice(&[0u8; 12]); // 19..31 zero
+    b.extend_from_slice(&7u64.to_le_bytes()); // 31..39 entity-count word
+    b.extend_from_slice(&3u64.to_le_bytes()); // 39..47 flags: history partition
     push_u8_string(&mut b, "Autodesk Neutron"); // 0x07 tag at offset 47
     push_u8_string(&mut b, "ASM 231.6.3.65535 OSX");
     push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026");
@@ -65,14 +62,11 @@ fn push_u8_string(b: &mut Vec<u8>, s: &str) {
 /// `BinaryFile8` header, i.e. the bytes up to the start of the record stream.
 fn smbh_header_prefix() -> Vec<u8> {
     let mut b = Vec::new();
-    b.extend_from_slice(b"ASM BinaryFile8<");
-    b.extend_from_slice(&[0u8; 8]);
-    b.extend_from_slice(&7u64.to_be_bytes());
-    b.extend_from_slice(&3u64.to_be_bytes());
-    // Schema word `7`'s low byte at offset 47 doubles as the first product
-    // string's 0x07 tag; write the seven high zero bytes and let the string tag
-    // supply byte 47 (mirrors the real .smbh wrapper layout).
-    b.extend_from_slice(&[0u8; 7]);
+    b.extend_from_slice(b"ASM BinaryFile8");
+    b.extend_from_slice(&23100u32.to_le_bytes()); // release word
+    b.extend_from_slice(&[0u8; 12]); // zero region
+    b.extend_from_slice(&5u64.to_le_bytes()); // entity-count word
+    b.extend_from_slice(&3u64.to_le_bytes()); // flags: history partition
     push_u8_string(&mut b, "Autodesk Neutron");
     push_u8_string(&mut b, "ASM 231.6.3.65535 OSX");
     push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026");
@@ -432,6 +426,19 @@ fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
     let pcurve_ref_tag = record.iter().rposition(|b| *b == 0x0c).unwrap();
     record[pcurve_ref_tag + 1..pcurve_ref_tag + 9].copy_from_slice(&19i64.to_le_bytes());
+
+    // Move the coedge's edge endpoints onto the pcurve's surface image so the
+    // fixture stays geometrically consistent: the plane maps `(u, v)` to
+    // `(u, v, 0)` mm, and the block runs `(0.25, 0.5) -> (0.75, 1.5)`.
+    for (index, position_cm) in [(16usize, [0.025, 0.05, 0.0]), (17, [0.075, 0.15, 0.0])] {
+        let point = &records[index];
+        let record = &mut bytes[point.offset..point.offset + point.len];
+        let tag = record.iter().position(|b| *b == 0x13).unwrap();
+        for (slot, value) in position_cm.iter().copied().enumerate() {
+            record[tag + 1 + slot * 8..tag + 9 + slot * 8]
+                .copy_from_slice(&f64::to_le_bytes(value));
+        }
+    }
 
     let delta = bytes[..]
         .windows(b"delta_state".len())
@@ -5831,9 +5838,9 @@ fn asm_header_parses_documented_fields() {
     let bytes = synthetic_smbh();
     let h = asm_header::parse(&bytes).expect("magic present");
     assert_eq!(h.width, 8);
-    assert_eq!(h.version_word, Some(7));
-    assert_eq!(h.format_version, Some(3));
-    assert_eq!(h.schema_version, Some(7));
+    assert_eq!(h.release, Some(23100));
+    assert_eq!(h.entity_count, Some(7));
+    assert_eq!(h.flags, Some(3));
     assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
     assert_eq!(h.product_version.as_deref(), Some("ASM 231.6.3.65535 OSX"));
     assert_eq!(h.save_date.as_deref(), Some("Tue Mar 31 16:16:19 2026"));
@@ -6058,9 +6065,6 @@ fn asm_header_parses_binaryfile4_fields() {
     assert_eq!(h.record_count, Some(0));
     assert_eq!(h.entity_count, Some(2));
     assert_eq!(h.flags, Some(5));
-    assert_eq!(h.version_word, None);
-    assert_eq!(h.format_version, None);
-    assert_eq!(h.schema_version, None);
     assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
     assert_eq!(h.product_version.as_deref(), Some("ASM 227.5.0.65535 NT"));
     assert_eq!(h.save_date.as_deref(), Some("Mon Aug  8 02:39:24 2022"));
@@ -6383,12 +6387,12 @@ fn smbh_header_string_region_starts_at_byte_47() {
     // string walk at 48 reads a length byte as a tag and desyncs the whole
     // header, so record_stream_start lands mid-header and framing fails.
     let prefix = smbh_header_prefix();
-    assert_eq!(prefix[47], 0x07, "schema-word low byte / first string tag");
+    assert_eq!(prefix[47], 0x07, "first string tag at offset 47");
     // The header parses all three strings and both tolerances despite the
     // overlap, and the record stream begins immediately after the last double.
     let h = asm_header::parse(&prefix).expect("magic present");
     assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
-    assert_eq!(h.schema_version, Some(7));
+    assert_eq!(h.flags, Some(3));
     assert_eq!(h.angular, Some(1e-10));
     assert_eq!(
         asm_header::record_stream_start(&prefix),
@@ -10132,18 +10136,24 @@ fn nurbs_pcurve_block_decodes_without_length_scaling() {
 }
 
 #[test]
-fn ref_pcurve_uses_second_intcurve_cache() {
+fn ref_pcurve_collects_intcurve_uv_candidates() {
     let mut intcurve = generated_curve_block();
     intcurve.extend_from_slice(&generated_pcurve_block());
 
-    let pcurve = crate::nurbs::decode_intcurve_pcurve_cache(&intcurve)
-        .expect("second cache is the UV pcurve");
+    let candidates = crate::nurbs::decode_pcurve_cache_candidates_resolving_refs(
+        &intcurve,
+        &intcurve,
+        &crate::nurbs::SubtypeTables::from_stream(&intcurve),
+    );
+    let pcurve = candidates
+        .first()
+        .expect("intcurve UV cache is a candidate");
     assert_eq!(pcurve.control_points[0].u, 0.25);
     assert_eq!(pcurve.control_points[1].v, 1.5);
 }
 
 #[test]
-fn ref_pcurve_resolves_intcurve_subtype_cache() {
+fn ref_pcurve_resolves_intcurve_subtype_candidates() {
     let mut target = b"\x0f\x0d\x0bint_int_cur".to_vec();
     target.extend_from_slice(&generated_curve_block());
     target.extend_from_slice(&generated_pcurve_block());
@@ -10154,12 +10164,14 @@ fn ref_pcurve_resolves_intcurve_subtype_cache() {
     let mut active = target;
     active.extend_from_slice(&source);
 
-    let pcurve = crate::nurbs::decode_intcurve_pcurve_cache_resolving_refs(
+    let candidates = crate::nurbs::decode_pcurve_cache_candidates_resolving_refs(
         &source,
         &active,
         &crate::nurbs::SubtypeTables::from_stream(&active),
-    )
-    .expect("intcurve subtype carries UV cache");
+    );
+    let pcurve = candidates
+        .first()
+        .expect("intcurve subtype carries a UV candidate");
     assert_eq!(pcurve.control_points[1].v, 1.5);
 }
 
