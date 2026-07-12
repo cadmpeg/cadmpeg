@@ -142,10 +142,12 @@ dependencies = [
  "cadmpeg-codec-creo",
  "cadmpeg-codec-f3d",
  "cadmpeg-codec-nx",
+ "cadmpeg-codec-rhino",
  "cadmpeg-codec-sldprt",
  "cadmpeg-ir",
  "cadmpeg-step",
  "clap",
+ "crc32fast",
  "predicates",
  "serde_json",
  "tempfile",
@@ -183,6 +185,17 @@ version = "0.1.6"
 dependencies = [
  "cadmpeg-ir",
  "flate2",
+ "sha2",
+]
+
+[[package]]
+name = "cadmpeg-codec-rhino"
+version = "0.1.6"
+dependencies = [
+ "cadmpeg-ir",
+ "crc32fast",
+ "flate2",
+ "serde_json",
  "sha2",
 ]
 

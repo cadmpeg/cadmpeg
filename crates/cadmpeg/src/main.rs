@@ -87,6 +87,9 @@ enum InputFormat {
     Nx,
     /// Creo Parametric `.prt`.
     Creo,
+    /// Rhino `.3dm`.
+    #[value(alias = "3dm")]
+    Rhino,
     /// Canonical CADIR JSON.
     Cadir,
 }
@@ -105,6 +108,7 @@ impl InputFormat {
             Self::Catpart => ForcedInput::Codec("catia"),
             Self::Nx => ForcedInput::Codec("nx"),
             Self::Creo => ForcedInput::Codec("creo"),
+            Self::Rhino => ForcedInput::Codec("rhino"),
             Self::Cadir => ForcedInput::Cadir,
         }
     }

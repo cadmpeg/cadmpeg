@@ -157,6 +157,7 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
         ir.model.surfaces.push(Surface {
             id,
             geometry: surface.geometry.clone(),
+            source_object: None,
         });
     }
     link_payload_carriers(&mut ir, &mut annotations);
@@ -238,6 +239,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         ir.model.curves.push(Curve {
             id,
             geometry: circle.geometry.clone(),
+            source_object: None,
         });
     }
     for (index, surface) in surfaces.iter().enumerate() {
@@ -253,6 +255,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         ir.model.surfaces.push(Surface {
             id,
             geometry: surface.geometry.clone(),
+            source_object: None,
         });
     }
     attach_e5_edges(&mut ir, &mut annotations, &edges, &circle_ids);
@@ -424,6 +427,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
         ir.model.surfaces.push(Surface {
             id,
             geometry: surface.geometry.clone(),
+            source_object: None,
         });
     }
     link_payload_carriers(&mut ir, &mut annotations);
@@ -463,6 +467,7 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
         ir.model.surfaces.push(Surface {
             id,
             geometry: surface.geometry,
+            source_object: None,
         });
     }
 }
@@ -504,7 +509,11 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
                     face_bindings.push((id.clone(), forward, prefix.pos));
                 }
                 surface_annotations.push((id.clone(), prefix.pos, prefix.kind));
-                surfaces.push(Surface { id, geometry: geom });
+                surfaces.push(Surface {
+                    id,
+                    geometry: geom,
+                    source_object: None,
+                });
             }
             None if prefix.kind == 0x32 => plane_faces += 1,
             None => {}
@@ -1020,6 +1029,7 @@ fn build_standard_edge_curve(
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
+        source_object: None,
     });
     Some(id)
 }
@@ -1072,6 +1082,7 @@ fn attach_standard_circles(
                 ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
                 radius: circle.radius,
             },
+            source_object: None,
         });
     }
 }
@@ -1143,6 +1154,7 @@ fn attach_standard_lines(
                     direction.z / denom.sqrt(),
                 ),
             },
+            source_object: None,
         });
     }
 }

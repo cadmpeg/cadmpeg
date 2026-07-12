@@ -94,6 +94,7 @@ fn build_ir(scan: &ContainerScan) -> CadIr {
                     plane.normal[2],
                 )),
             },
+            source_object: None,
         });
     }
     ir.annotations = annotations.build();

@@ -1,0 +1,62 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Archive-wide wire primitives and checked numeric conversions.
+
+use std::fmt;
+
+/// A UUID in canonical textual byte order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) struct Uuid {
+    bytes: [u8; 16],
+}
+
+impl Uuid {
+    /// Creates a UUID from bytes in canonical textual order.
+    pub(crate) const fn from_canonical(bytes: [u8; 16]) -> Self {
+        Self { bytes }
+    }
+
+    /// Parses the mixed-endian UUID wire representation.
+    pub(crate) fn from_wire(bytes: [u8; 16]) -> Self {
+        let mut canonical = [0; 16];
+        for index in 0..4 {
+            canonical[index] = bytes[3 - index];
+        }
+        for index in 0..2 {
+            canonical[4 + index] = bytes[5 - index];
+            canonical[6 + index] = bytes[7 - index];
+        }
+        canonical[8..].copy_from_slice(&bytes[8..]);
+        Self { bytes: canonical }
+    }
+
+    /// Returns the nil UUID.
+    pub(crate) const fn nil() -> Self {
+        Self { bytes: [0; 16] }
+    }
+
+    /// Returns whether this UUID is nil.
+    pub(crate) fn is_nil(self) -> bool {
+        self == Self::nil()
+    }
+}
+
+impl fmt::Display for Uuid {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, byte) in self.bytes.iter().enumerate() {
+            if matches!(index, 4 | 6 | 8 | 10) {
+                formatter.write_str("-")?;
+            }
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+/// Multiplies an archive coordinate by a positive finite unit scale.
+pub(crate) fn scaled_coordinate(value: f64, scale: f64) -> Option<f64> {
+    if !value.is_finite() || !scale.is_finite() || scale <= 0.0 {
+        return None;
+    }
+    let result = value * scale;
+    result.is_finite().then_some(result)
+}

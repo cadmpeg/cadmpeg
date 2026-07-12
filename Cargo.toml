@@ -9,6 +9,7 @@ members = [
   "crates/cadmpeg-codec-catia",
   "crates/cadmpeg-codec-creo",
   "crates/cadmpeg-codec-nx",
+  "crates/cadmpeg-codec-rhino",
   "crates/cadmpeg-step",
 ]
 # cadmpeg-fuzz is intentionally excluded: cargo-fuzz targets link libFuzzer and
@@ -32,6 +33,7 @@ cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.1.6"
 cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.1.6" }
 cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.1.6" }
 cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.1.6" }
+cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.1.6" }
 cadmpeg-step = { path = "crates/cadmpeg-step", version = "0.1.6" }
 
 serde = { version = "1", features = ["derive"] }

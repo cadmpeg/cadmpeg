@@ -25,6 +25,7 @@ cadmpeg-codec-sldprt.workspace = true
 cadmpeg-codec-catia.workspace = true
 cadmpeg-codec-creo.workspace = true
 cadmpeg-codec-nx.workspace = true
+cadmpeg-codec-rhino.workspace = true
 cadmpeg-step.workspace = true
 clap.workspace = true
 anyhow.workspace = true
@@ -33,6 +34,7 @@ tempfile.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
+crc32fast.workspace = true
 predicates.workspace = true
 
 [lints]

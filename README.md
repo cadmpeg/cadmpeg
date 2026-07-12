@@ -4,7 +4,7 @@
 
 cadmpeg aims to do for CAD what FFmpeg does for media: provide one open toolchain for reading, inspecting, converting, and building across formats. It decodes vendor files into a documented intermediate representation (IR), validates them, and exports neutral formats.
 
-cadmpeg is early. The Autodesk Fusion `.f3d` to STEP path is about 70% complete. SolidWorks, CATIA, NX, and Creo are in much earlier stages.
+cadmpeg is early. End-to-end Autodesk Fusion `.f3d` to STEP path is about 70% complete, while codecs for SolidWorks, Rhino, CATIA, NX, and Creo cover different subsets. Long-term goal is one inspectable pipeline for every major CAD format.
 
 [Try it](#quick-start) · [Format support](docs/format-support.md) · [Donate a test file](corpus/README.md) · [Contribute](CONTRIBUTING.md)
 
@@ -65,10 +65,11 @@ wrote part.step (2125 entities)
 
 ## Format support
 
-Native-format support:
+The repository contains six native-format codecs:
 
 - **Autodesk Fusion `.f3d` — [L4](docs/format-support.md#support-ladder):** readable design records; partial B-rep and appearance decode; native replay, patching, and generation.
 - **SolidWorks `.sldprt` — [L3](docs/format-support.md#support-ladder):** connected model read; native write and round-trip paths.
+- **Rhino `.3dm` — [L3](docs/format-support.md#support-ladder) for archive 50/60/70/80:** curves, surfaces, meshes, connected B-rep, SubD, extrusions, and expanded instances; older bands have inspection and metadata support.
 - **Siemens NX `.prt` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology.
 - **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.
 - **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** container mastered; no placed model geometry.
@@ -83,12 +84,12 @@ The pure-Rust STEP AP214 writer exports supported analytic and B-spline B-rep ge
 input file ──▶ container decoder ──▶ format decoder ──▶ IR ──▶ validator ──▶ exporter ──▶ output + reports
 ```
 
-The canonical JSON IR carries a format-neutral model, source annotations, independently versioned native namespaces, and opaque records.
+The IR connects the pipeline. Decoders produce it, validators check it, and exporters consume it. Version 2 serializes a format-neutral model, the required `subds` control-cage arena, free-carrier source associations, sparse source annotations, independently versioned native namespaces, and opaque records as canonical JSON. Arena entries are ordered by ID after finalization, and carrier reachability follows topology links, procedural references, and source associations.
 
-- [CAD IR version 1](docs/cad-ir.md): data model and serialization
-- [Architecture](docs/architecture.md): pipeline, codec interface, and crate map
-- [Format support](docs/format-support.md): capabilities by format
-- [Roadmap](docs/roadmap.md): milestones and contributor work
+- [CAD IR version 2](docs/cad-ir.md) defines byte semantics, canonical units and parameterization, identity, topology, directed SubD control cages, bounded procedural constructions, annotations, native opacity, and versioning.
+- [Architecture](docs/architecture.md) describes the pipeline, codec interface, and crate map.
+- [Format support](docs/format-support.md) records current capability by format.
+- [Roadmap](docs/roadmap.md) defines milestones and contributor entry points.
 
 ## CLI
 
@@ -103,7 +104,7 @@ cadmpeg diff     a.cadir.json b.cadir.json
 
 Output formats are `cadir`, `step`, `f3d`, and `sldprt`; `json` aliases `cadir`. `export` and `convert` infer omitted formats from the output extension. Use `--input-format` to override source detection.
 
-JSON output and command reports use CLI `schema_version: 2`, independent of CAD IR `ir_version: "1"`.
+Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 2`. This command-envelope version is independent of the CAD IR's `ir_version: "2"`.
 
 ## Contributing
 
@@ -139,4 +140,4 @@ AI-assisted contributions are welcome when reviewed and concise. Clean-room rule
 
 Code uses the [Apache License 2.0](LICENSE); documentation and specifications use [CC BY 4.0](LICENSE-docs). Contributions use the corresponding license.
 
-SolidWorks, CATIA, Autodesk Fusion, Creo, NX, Parasolid, and other product names are trademarks of their respective owners. cadmpeg uses them only to identify the file formats its decoders target. cadmpeg is an independent project and is not affiliated with, endorsed by, or sponsored by any CAD vendor. See [LEGAL.md](LEGAL.md).
+SolidWorks, Rhino, CATIA, Autodesk Fusion, Creo, NX, Parasolid, and other product names are trademarks of their respective owners. cadmpeg uses them only to identify the file formats its decoders target. cadmpeg is an independent project and is not affiliated with, endorsed by, or sponsored by any CAD vendor. See [LEGAL.md](LEGAL.md).

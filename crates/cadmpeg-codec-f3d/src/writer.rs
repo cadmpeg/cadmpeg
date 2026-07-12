@@ -29,6 +29,11 @@ use crate::{asm_header, decode, sab, F3dCodec};
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
 pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+    if !target.model.subds.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D generation does not support SubD surfaces".into(),
+        ));
+    }
     let smbh = encode_planar_triangle_smbh(target)?;
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);

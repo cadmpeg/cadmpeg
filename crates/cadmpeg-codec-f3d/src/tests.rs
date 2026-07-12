@@ -1915,6 +1915,32 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
 }
 
 #[test]
+fn generated_source_less_f3d_rejects_subds() {
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    source_less.model.subds.push(cadmpeg_ir::SubdSurface {
+        id: cadmpeg_ir::ids::SubdId("test:f3d:subd#0".into()),
+        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+        vertices: Vec::new(),
+        edges: Vec::new(),
+        faces: Vec::new(),
+        source_object: None,
+    });
+
+    let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+            if message.contains("does not support SubD surfaces")
+    ));
+}
+
+#[test]
 fn generated_source_less_writes_document_tolerance_contract() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
@@ -2106,6 +2132,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
                 origin: start,
                 direction,
             },
+            source_object: None,
         });
         source_less.model.edges[index].curve = Some(id);
         source_less.model.edges[index].param_range = Some([0.0, length]);
@@ -2174,6 +2201,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
     source_less.model.edges[0].param_range = Some([0.25, 1.75]);
@@ -2213,6 +2241,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
     source_less.model.edges[0].param_range = Some([0.5, 2.0]);
@@ -2453,6 +2482,7 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
     source_less.model.edges[0].param_range = Some([-1.0, 2.0]);
@@ -2572,6 +2602,7 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected_curve.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
 
@@ -2768,6 +2799,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected_curve.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
     let pcurve_id = PcurveId("generated:pcurve#0".into());
@@ -2866,6 +2898,7 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected_curve.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
     source_less.model.edges[0].param_range = Some([0.25, 1.5]);
@@ -2921,6 +2954,7 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: ellipse.clone(),
+        source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
 

@@ -78,6 +78,7 @@ fn edgeless_doc() -> CadIr {
             normal: Vector3::new(0.0, 0.0, 1.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         },
+        source_object: None,
     });
     ir.model.coedges.push(Coedge {
         id: CoedgeId("ce0".into()),
@@ -254,6 +255,7 @@ fn cylinder_surface_doc() -> CadIr {
             ref_direction: Vector3::new(1.0, 0.0, 0.0),
             radius: 5.0,
         },
+        source_object: None,
     });
     ir
 }
@@ -306,6 +308,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
         ir.model.surfaces.push(Surface {
             id: SurfaceId("s".into()),
             geometry: geom,
+            source_object: None,
         });
         // Surfaces alone aren't reachable from a shell, so they won't be emitted
         // by the topology walk; emit directly via the geometry module instead.
@@ -441,12 +444,66 @@ fn edge_without_curve_is_reported_and_omitted() {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
         },
+        source_object: None,
     };
     let _ = curve; // silence unused import path
     assert!(report
         .losses
         .iter()
         .any(|l| l.message.contains("edge(s) have no typed 3D curve")));
+}
+
+#[test]
+fn subds_tessellations_and_source_associations_are_reported_as_losses() {
+    let source_object = cadmpeg_ir::SourceObjectAssociation {
+        format: "test".into(),
+        object_id: "object-0".into(),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let mut ir = unit_cube();
+    ir.model.subds.push(cadmpeg_ir::SubdSurface {
+        id: cadmpeg_ir::ids::SubdId("test:step:subd#0".into()),
+        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+        vertices: Vec::new(),
+        edges: Vec::new(),
+        faces: Vec::new(),
+        source_object: Some(source_object.clone()),
+    });
+    ir.model
+        .tessellations
+        .push(cadmpeg_ir::tessellation::Tessellation {
+            id: "test:step:tessellation#0".into(),
+            source_object: Some(source_object),
+            vertices: Vec::new(),
+            triangles: Vec::new(),
+            strip_lengths: Vec::new(),
+            normals: Vec::new(),
+            channels: Vec::new(),
+        });
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default()).unwrap();
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss
+                .message
+                .contains("1 subdivision surface(s) were omitted")
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains("1 tessellation(s) were omitted")
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Metadata
+            && loss
+                .message
+                .contains("2 source-object association(s) were not represented")
+    }));
 }
 
 #[test]

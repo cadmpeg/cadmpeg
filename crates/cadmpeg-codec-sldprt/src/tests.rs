@@ -1532,6 +1532,33 @@ fn semantic_writer_rejects_unrepresented_typed_fields() {
 }
 
 #[test]
+fn semantic_writer_rejects_subds() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.model.subds.push(cadmpeg_ir::SubdSurface {
+        id: cadmpeg_ir::ids::SubdId("test:sldprt:subd#0".into()),
+        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+        vertices: Vec::new(),
+        edges: Vec::new(),
+        faces: Vec::new(),
+        source_object: None,
+    });
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+            if message.contains("does not support SubD surfaces")
+    ));
+}
+
+#[test]
 fn semantic_writer_rejects_unsupported_conic_curves() {
     let axis = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
     let major_direction = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);

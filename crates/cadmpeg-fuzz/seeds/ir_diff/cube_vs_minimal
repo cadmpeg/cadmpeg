@@ -1,5 +1,5 @@
 {
-  "ir_version": "1",
+  "ir_version": "2",
   "units": {
     "length": "millimeter"
   },
@@ -10,495 +10,495 @@
   "model": {
     "bodies": [
       {
-        "id": "body0",
+        "id": "synthetic:cube:body#0",
         "kind": "solid",
         "regions": [
-          "region0"
+          "synthetic:cube:region#0"
         ],
         "name": "unit cube"
       }
     ],
     "regions": [
       {
-        "id": "region0",
-        "body": "body0",
+        "id": "synthetic:cube:region#0",
+        "body": "synthetic:cube:body#0",
         "shells": [
-          "shell0"
+          "synthetic:cube:shell#0"
         ]
       }
     ],
     "shells": [
       {
-        "id": "shell0",
-        "region": "region0",
+        "id": "synthetic:cube:shell#0",
+        "region": "synthetic:cube:region#0",
         "faces": [
-          "f_bottom",
-          "f_top",
-          "f_front",
-          "f_right",
-          "f_back",
-          "f_left"
+          "synthetic:cube:face#bottom",
+          "synthetic:cube:face#top",
+          "synthetic:cube:face#front",
+          "synthetic:cube:face#right",
+          "synthetic:cube:face#back",
+          "synthetic:cube:face#left"
         ]
       }
     ],
     "faces": [
       {
-        "id": "f_back",
-        "shell": "shell0",
-        "surface": "srf_back",
+        "id": "synthetic:cube:face#back",
+        "shell": "synthetic:cube:shell#0",
+        "surface": "synthetic:cube:surface#back",
         "sense": "forward",
         "loops": [
-          "lp_back"
+          "synthetic:cube:loop#back"
         ],
         "name": "back face"
       },
       {
-        "id": "f_bottom",
-        "shell": "shell0",
-        "surface": "srf_bottom",
+        "id": "synthetic:cube:face#bottom",
+        "shell": "synthetic:cube:shell#0",
+        "surface": "synthetic:cube:surface#bottom",
         "sense": "forward",
         "loops": [
-          "lp_bottom"
+          "synthetic:cube:loop#bottom"
         ],
         "name": "bottom face"
       },
       {
-        "id": "f_front",
-        "shell": "shell0",
-        "surface": "srf_front",
+        "id": "synthetic:cube:face#front",
+        "shell": "synthetic:cube:shell#0",
+        "surface": "synthetic:cube:surface#front",
         "sense": "forward",
         "loops": [
-          "lp_front"
+          "synthetic:cube:loop#front"
         ],
         "name": "front face"
       },
       {
-        "id": "f_left",
-        "shell": "shell0",
-        "surface": "srf_left",
+        "id": "synthetic:cube:face#left",
+        "shell": "synthetic:cube:shell#0",
+        "surface": "synthetic:cube:surface#left",
         "sense": "forward",
         "loops": [
-          "lp_left"
+          "synthetic:cube:loop#left"
         ],
         "name": "left face"
       },
       {
-        "id": "f_right",
-        "shell": "shell0",
-        "surface": "srf_right",
+        "id": "synthetic:cube:face#right",
+        "shell": "synthetic:cube:shell#0",
+        "surface": "synthetic:cube:surface#right",
         "sense": "forward",
         "loops": [
-          "lp_right"
+          "synthetic:cube:loop#right"
         ],
         "name": "right face"
       },
       {
-        "id": "f_top",
-        "shell": "shell0",
-        "surface": "srf_top",
+        "id": "synthetic:cube:face#top",
+        "shell": "synthetic:cube:shell#0",
+        "surface": "synthetic:cube:surface#top",
         "sense": "forward",
         "loops": [
-          "lp_top"
+          "synthetic:cube:loop#top"
         ],
         "name": "top face"
       }
     ],
     "loops": [
       {
-        "id": "lp_back",
-        "face": "f_back",
+        "id": "synthetic:cube:loop#back",
+        "face": "synthetic:cube:face#back",
         "coedges": [
-          "ce_back_0",
-          "ce_back_1",
-          "ce_back_2",
-          "ce_back_3"
+          "synthetic:cube:coedge#back:0",
+          "synthetic:cube:coedge#back:1",
+          "synthetic:cube:coedge#back:2",
+          "synthetic:cube:coedge#back:3"
         ]
       },
       {
-        "id": "lp_bottom",
-        "face": "f_bottom",
+        "id": "synthetic:cube:loop#bottom",
+        "face": "synthetic:cube:face#bottom",
         "coedges": [
-          "ce_bottom_0",
-          "ce_bottom_1",
-          "ce_bottom_2",
-          "ce_bottom_3"
+          "synthetic:cube:coedge#bottom:0",
+          "synthetic:cube:coedge#bottom:1",
+          "synthetic:cube:coedge#bottom:2",
+          "synthetic:cube:coedge#bottom:3"
         ]
       },
       {
-        "id": "lp_front",
-        "face": "f_front",
+        "id": "synthetic:cube:loop#front",
+        "face": "synthetic:cube:face#front",
         "coedges": [
-          "ce_front_0",
-          "ce_front_1",
-          "ce_front_2",
-          "ce_front_3"
+          "synthetic:cube:coedge#front:0",
+          "synthetic:cube:coedge#front:1",
+          "synthetic:cube:coedge#front:2",
+          "synthetic:cube:coedge#front:3"
         ]
       },
       {
-        "id": "lp_left",
-        "face": "f_left",
+        "id": "synthetic:cube:loop#left",
+        "face": "synthetic:cube:face#left",
         "coedges": [
-          "ce_left_0",
-          "ce_left_1",
-          "ce_left_2",
-          "ce_left_3"
+          "synthetic:cube:coedge#left:0",
+          "synthetic:cube:coedge#left:1",
+          "synthetic:cube:coedge#left:2",
+          "synthetic:cube:coedge#left:3"
         ]
       },
       {
-        "id": "lp_right",
-        "face": "f_right",
+        "id": "synthetic:cube:loop#right",
+        "face": "synthetic:cube:face#right",
         "coedges": [
-          "ce_right_0",
-          "ce_right_1",
-          "ce_right_2",
-          "ce_right_3"
+          "synthetic:cube:coedge#right:0",
+          "synthetic:cube:coedge#right:1",
+          "synthetic:cube:coedge#right:2",
+          "synthetic:cube:coedge#right:3"
         ]
       },
       {
-        "id": "lp_top",
-        "face": "f_top",
+        "id": "synthetic:cube:loop#top",
+        "face": "synthetic:cube:face#top",
         "coedges": [
-          "ce_top_0",
-          "ce_top_1",
-          "ce_top_2",
-          "ce_top_3"
+          "synthetic:cube:coedge#top:0",
+          "synthetic:cube:coedge#top:1",
+          "synthetic:cube:coedge#top:2",
+          "synthetic:cube:coedge#top:3"
         ]
       }
     ],
     "coedges": [
       {
-        "id": "ce_back_0",
-        "owner_loop": "lp_back",
-        "edge": "e2",
-        "next": "ce_back_1",
-        "previous": "ce_back_3",
-        "radial_next": "ce_bottom_2",
+        "id": "synthetic:cube:coedge#back:0",
+        "owner_loop": "synthetic:cube:loop#back",
+        "edge": "synthetic:cube:edge#2",
+        "next": "synthetic:cube:coedge#back:1",
+        "previous": "synthetic:cube:coedge#back:3",
+        "radial_next": "synthetic:cube:coedge#bottom:2",
         "sense": "reversed"
       },
       {
-        "id": "ce_back_1",
-        "owner_loop": "lp_back",
-        "edge": "e10",
-        "next": "ce_back_2",
-        "previous": "ce_back_0",
-        "radial_next": "ce_right_3",
+        "id": "synthetic:cube:coedge#back:1",
+        "owner_loop": "synthetic:cube:loop#back",
+        "edge": "synthetic:cube:edge#10",
+        "next": "synthetic:cube:coedge#back:2",
+        "previous": "synthetic:cube:coedge#back:0",
+        "radial_next": "synthetic:cube:coedge#right:3",
         "sense": "forward"
       },
       {
-        "id": "ce_back_2",
-        "owner_loop": "lp_back",
-        "edge": "e6",
-        "next": "ce_back_3",
-        "previous": "ce_back_1",
-        "radial_next": "ce_top_1",
+        "id": "synthetic:cube:coedge#back:2",
+        "owner_loop": "synthetic:cube:loop#back",
+        "edge": "synthetic:cube:edge#6",
+        "next": "synthetic:cube:coedge#back:3",
+        "previous": "synthetic:cube:coedge#back:1",
+        "radial_next": "synthetic:cube:coedge#top:1",
         "sense": "forward"
       },
       {
-        "id": "ce_back_3",
-        "owner_loop": "lp_back",
-        "edge": "e11",
-        "next": "ce_back_0",
-        "previous": "ce_back_2",
-        "radial_next": "ce_left_1",
+        "id": "synthetic:cube:coedge#back:3",
+        "owner_loop": "synthetic:cube:loop#back",
+        "edge": "synthetic:cube:edge#11",
+        "next": "synthetic:cube:coedge#back:0",
+        "previous": "synthetic:cube:coedge#back:2",
+        "radial_next": "synthetic:cube:coedge#left:1",
         "sense": "reversed"
       },
       {
-        "id": "ce_bottom_0",
-        "owner_loop": "lp_bottom",
-        "edge": "e0",
-        "next": "ce_bottom_1",
-        "previous": "ce_bottom_3",
-        "radial_next": "ce_front_0",
+        "id": "synthetic:cube:coedge#bottom:0",
+        "owner_loop": "synthetic:cube:loop#bottom",
+        "edge": "synthetic:cube:edge#0",
+        "next": "synthetic:cube:coedge#bottom:1",
+        "previous": "synthetic:cube:coedge#bottom:3",
+        "radial_next": "synthetic:cube:coedge#front:0",
         "sense": "forward"
       },
       {
-        "id": "ce_bottom_1",
-        "owner_loop": "lp_bottom",
-        "edge": "e1",
-        "next": "ce_bottom_2",
-        "previous": "ce_bottom_0",
-        "radial_next": "ce_right_0",
+        "id": "synthetic:cube:coedge#bottom:1",
+        "owner_loop": "synthetic:cube:loop#bottom",
+        "edge": "synthetic:cube:edge#1",
+        "next": "synthetic:cube:coedge#bottom:2",
+        "previous": "synthetic:cube:coedge#bottom:0",
+        "radial_next": "synthetic:cube:coedge#right:0",
         "sense": "forward"
       },
       {
-        "id": "ce_bottom_2",
-        "owner_loop": "lp_bottom",
-        "edge": "e2",
-        "next": "ce_bottom_3",
-        "previous": "ce_bottom_1",
-        "radial_next": "ce_back_0",
+        "id": "synthetic:cube:coedge#bottom:2",
+        "owner_loop": "synthetic:cube:loop#bottom",
+        "edge": "synthetic:cube:edge#2",
+        "next": "synthetic:cube:coedge#bottom:3",
+        "previous": "synthetic:cube:coedge#bottom:1",
+        "radial_next": "synthetic:cube:coedge#back:0",
         "sense": "forward"
       },
       {
-        "id": "ce_bottom_3",
-        "owner_loop": "lp_bottom",
-        "edge": "e3",
-        "next": "ce_bottom_0",
-        "previous": "ce_bottom_2",
-        "radial_next": "ce_left_0",
+        "id": "synthetic:cube:coedge#bottom:3",
+        "owner_loop": "synthetic:cube:loop#bottom",
+        "edge": "synthetic:cube:edge#3",
+        "next": "synthetic:cube:coedge#bottom:0",
+        "previous": "synthetic:cube:coedge#bottom:2",
+        "radial_next": "synthetic:cube:coedge#left:0",
         "sense": "forward"
       },
       {
-        "id": "ce_front_0",
-        "owner_loop": "lp_front",
-        "edge": "e0",
-        "next": "ce_front_1",
-        "previous": "ce_front_3",
-        "radial_next": "ce_bottom_0",
+        "id": "synthetic:cube:coedge#front:0",
+        "owner_loop": "synthetic:cube:loop#front",
+        "edge": "synthetic:cube:edge#0",
+        "next": "synthetic:cube:coedge#front:1",
+        "previous": "synthetic:cube:coedge#front:3",
+        "radial_next": "synthetic:cube:coedge#bottom:0",
         "sense": "reversed"
       },
       {
-        "id": "ce_front_1",
-        "owner_loop": "lp_front",
-        "edge": "e8",
-        "next": "ce_front_2",
-        "previous": "ce_front_0",
-        "radial_next": "ce_left_3",
+        "id": "synthetic:cube:coedge#front:1",
+        "owner_loop": "synthetic:cube:loop#front",
+        "edge": "synthetic:cube:edge#8",
+        "next": "synthetic:cube:coedge#front:2",
+        "previous": "synthetic:cube:coedge#front:0",
+        "radial_next": "synthetic:cube:coedge#left:3",
         "sense": "forward"
       },
       {
-        "id": "ce_front_2",
-        "owner_loop": "lp_front",
-        "edge": "e4",
-        "next": "ce_front_3",
-        "previous": "ce_front_1",
-        "radial_next": "ce_top_3",
+        "id": "synthetic:cube:coedge#front:2",
+        "owner_loop": "synthetic:cube:loop#front",
+        "edge": "synthetic:cube:edge#4",
+        "next": "synthetic:cube:coedge#front:3",
+        "previous": "synthetic:cube:coedge#front:1",
+        "radial_next": "synthetic:cube:coedge#top:3",
         "sense": "forward"
       },
       {
-        "id": "ce_front_3",
-        "owner_loop": "lp_front",
-        "edge": "e9",
-        "next": "ce_front_0",
-        "previous": "ce_front_2",
-        "radial_next": "ce_right_1",
+        "id": "synthetic:cube:coedge#front:3",
+        "owner_loop": "synthetic:cube:loop#front",
+        "edge": "synthetic:cube:edge#9",
+        "next": "synthetic:cube:coedge#front:0",
+        "previous": "synthetic:cube:coedge#front:2",
+        "radial_next": "synthetic:cube:coedge#right:1",
         "sense": "reversed"
       },
       {
-        "id": "ce_left_0",
-        "owner_loop": "lp_left",
-        "edge": "e3",
-        "next": "ce_left_1",
-        "previous": "ce_left_3",
-        "radial_next": "ce_bottom_3",
+        "id": "synthetic:cube:coedge#left:0",
+        "owner_loop": "synthetic:cube:loop#left",
+        "edge": "synthetic:cube:edge#3",
+        "next": "synthetic:cube:coedge#left:1",
+        "previous": "synthetic:cube:coedge#left:3",
+        "radial_next": "synthetic:cube:coedge#bottom:3",
         "sense": "reversed"
       },
       {
-        "id": "ce_left_1",
-        "owner_loop": "lp_left",
-        "edge": "e11",
-        "next": "ce_left_2",
-        "previous": "ce_left_0",
-        "radial_next": "ce_back_3",
+        "id": "synthetic:cube:coedge#left:1",
+        "owner_loop": "synthetic:cube:loop#left",
+        "edge": "synthetic:cube:edge#11",
+        "next": "synthetic:cube:coedge#left:2",
+        "previous": "synthetic:cube:coedge#left:0",
+        "radial_next": "synthetic:cube:coedge#back:3",
         "sense": "forward"
       },
       {
-        "id": "ce_left_2",
-        "owner_loop": "lp_left",
-        "edge": "e7",
-        "next": "ce_left_3",
-        "previous": "ce_left_1",
-        "radial_next": "ce_top_0",
+        "id": "synthetic:cube:coedge#left:2",
+        "owner_loop": "synthetic:cube:loop#left",
+        "edge": "synthetic:cube:edge#7",
+        "next": "synthetic:cube:coedge#left:3",
+        "previous": "synthetic:cube:coedge#left:1",
+        "radial_next": "synthetic:cube:coedge#top:0",
         "sense": "forward"
       },
       {
-        "id": "ce_left_3",
-        "owner_loop": "lp_left",
-        "edge": "e8",
-        "next": "ce_left_0",
-        "previous": "ce_left_2",
-        "radial_next": "ce_front_1",
+        "id": "synthetic:cube:coedge#left:3",
+        "owner_loop": "synthetic:cube:loop#left",
+        "edge": "synthetic:cube:edge#8",
+        "next": "synthetic:cube:coedge#left:0",
+        "previous": "synthetic:cube:coedge#left:2",
+        "radial_next": "synthetic:cube:coedge#front:1",
         "sense": "reversed"
       },
       {
-        "id": "ce_right_0",
-        "owner_loop": "lp_right",
-        "edge": "e1",
-        "next": "ce_right_1",
-        "previous": "ce_right_3",
-        "radial_next": "ce_bottom_1",
+        "id": "synthetic:cube:coedge#right:0",
+        "owner_loop": "synthetic:cube:loop#right",
+        "edge": "synthetic:cube:edge#1",
+        "next": "synthetic:cube:coedge#right:1",
+        "previous": "synthetic:cube:coedge#right:3",
+        "radial_next": "synthetic:cube:coedge#bottom:1",
         "sense": "reversed"
       },
       {
-        "id": "ce_right_1",
-        "owner_loop": "lp_right",
-        "edge": "e9",
-        "next": "ce_right_2",
-        "previous": "ce_right_0",
-        "radial_next": "ce_front_3",
+        "id": "synthetic:cube:coedge#right:1",
+        "owner_loop": "synthetic:cube:loop#right",
+        "edge": "synthetic:cube:edge#9",
+        "next": "synthetic:cube:coedge#right:2",
+        "previous": "synthetic:cube:coedge#right:0",
+        "radial_next": "synthetic:cube:coedge#front:3",
         "sense": "forward"
       },
       {
-        "id": "ce_right_2",
-        "owner_loop": "lp_right",
-        "edge": "e5",
-        "next": "ce_right_3",
-        "previous": "ce_right_1",
-        "radial_next": "ce_top_2",
+        "id": "synthetic:cube:coedge#right:2",
+        "owner_loop": "synthetic:cube:loop#right",
+        "edge": "synthetic:cube:edge#5",
+        "next": "synthetic:cube:coedge#right:3",
+        "previous": "synthetic:cube:coedge#right:1",
+        "radial_next": "synthetic:cube:coedge#top:2",
         "sense": "forward"
       },
       {
-        "id": "ce_right_3",
-        "owner_loop": "lp_right",
-        "edge": "e10",
-        "next": "ce_right_0",
-        "previous": "ce_right_2",
-        "radial_next": "ce_back_1",
+        "id": "synthetic:cube:coedge#right:3",
+        "owner_loop": "synthetic:cube:loop#right",
+        "edge": "synthetic:cube:edge#10",
+        "next": "synthetic:cube:coedge#right:0",
+        "previous": "synthetic:cube:coedge#right:2",
+        "radial_next": "synthetic:cube:coedge#back:1",
         "sense": "reversed"
       },
       {
-        "id": "ce_top_0",
-        "owner_loop": "lp_top",
-        "edge": "e7",
-        "next": "ce_top_1",
-        "previous": "ce_top_3",
-        "radial_next": "ce_left_2",
+        "id": "synthetic:cube:coedge#top:0",
+        "owner_loop": "synthetic:cube:loop#top",
+        "edge": "synthetic:cube:edge#7",
+        "next": "synthetic:cube:coedge#top:1",
+        "previous": "synthetic:cube:coedge#top:3",
+        "radial_next": "synthetic:cube:coedge#left:2",
         "sense": "reversed"
       },
       {
-        "id": "ce_top_1",
-        "owner_loop": "lp_top",
-        "edge": "e6",
-        "next": "ce_top_2",
-        "previous": "ce_top_0",
-        "radial_next": "ce_back_2",
+        "id": "synthetic:cube:coedge#top:1",
+        "owner_loop": "synthetic:cube:loop#top",
+        "edge": "synthetic:cube:edge#6",
+        "next": "synthetic:cube:coedge#top:2",
+        "previous": "synthetic:cube:coedge#top:0",
+        "radial_next": "synthetic:cube:coedge#back:2",
         "sense": "reversed"
       },
       {
-        "id": "ce_top_2",
-        "owner_loop": "lp_top",
-        "edge": "e5",
-        "next": "ce_top_3",
-        "previous": "ce_top_1",
-        "radial_next": "ce_right_2",
+        "id": "synthetic:cube:coedge#top:2",
+        "owner_loop": "synthetic:cube:loop#top",
+        "edge": "synthetic:cube:edge#5",
+        "next": "synthetic:cube:coedge#top:3",
+        "previous": "synthetic:cube:coedge#top:1",
+        "radial_next": "synthetic:cube:coedge#right:2",
         "sense": "reversed"
       },
       {
-        "id": "ce_top_3",
-        "owner_loop": "lp_top",
-        "edge": "e4",
-        "next": "ce_top_0",
-        "previous": "ce_top_2",
-        "radial_next": "ce_front_2",
+        "id": "synthetic:cube:coedge#top:3",
+        "owner_loop": "synthetic:cube:loop#top",
+        "edge": "synthetic:cube:edge#4",
+        "next": "synthetic:cube:coedge#top:0",
+        "previous": "synthetic:cube:coedge#top:2",
+        "radial_next": "synthetic:cube:coedge#front:2",
         "sense": "reversed"
       }
     ],
     "edges": [
       {
-        "id": "e0",
-        "curve": "crv_e0",
-        "start": "v0",
-        "end": "v1",
+        "id": "synthetic:cube:edge#0",
+        "curve": "synthetic:cube:curve#0",
+        "start": "synthetic:cube:vertex#0",
+        "end": "synthetic:cube:vertex#1",
         "param_range": [
           0.0,
           10.0
         ]
       },
       {
-        "id": "e1",
-        "curve": "crv_e1",
-        "start": "v1",
-        "end": "v2",
+        "id": "synthetic:cube:edge#1",
+        "curve": "synthetic:cube:curve#1",
+        "start": "synthetic:cube:vertex#1",
+        "end": "synthetic:cube:vertex#2",
         "param_range": [
           0.0,
           10.0
         ]
       },
       {
-        "id": "e10",
-        "curve": "crv_e10",
-        "start": "v2",
-        "end": "v6",
+        "id": "synthetic:cube:edge#10",
+        "curve": "synthetic:cube:curve#10",
+        "start": "synthetic:cube:vertex#2",
+        "end": "synthetic:cube:vertex#6",
         "param_range": [
           0.0,
           10.0
         ]
       },
       {
-        "id": "e11",
-        "curve": "crv_e11",
-        "start": "v3",
-        "end": "v7",
+        "id": "synthetic:cube:edge#11",
+        "curve": "synthetic:cube:curve#11",
+        "start": "synthetic:cube:vertex#3",
+        "end": "synthetic:cube:vertex#7",
         "param_range": [
           0.0,
           10.0
         ]
       },
       {
-        "id": "e2",
-        "curve": "crv_e2",
-        "start": "v2",
-        "end": "v3",
+        "id": "synthetic:cube:edge#2",
+        "curve": "synthetic:cube:curve#2",
+        "start": "synthetic:cube:vertex#2",
+        "end": "synthetic:cube:vertex#3",
         "param_range": [
           0.0,
           10.0
         ]
       },
       {
-        "id": "e3",
-        "curve": "crv_e3",
-        "start": "v3",
-        "end": "v0",
+        "id": "synthetic:cube:edge#3",
+        "curve": "synthetic:cube:curve#3",
+        "start": "synthetic:cube:vertex#3",
+        "end": "synthetic:cube:vertex#0",
         "param_range": [
           0.0,
           10.0
         ]
       },
       {
-        "id": "e4",
-        "curve": "crv_e4",
-        "start": "v4",
-        "end": "v5",
+        "id": "synthetic:cube:edge#4",
+        "curve": "synthetic:cube:curve#4",
+        "start": "synthetic:cube:vertex#4",
+        "end": "synthetic:cube:vertex#5",
         "param_range": [
           0.0,
           10.0
         ]
       },
       {
-        "id": "e5",
-        "curve": "crv_e5",
-        "start": "v5",
-        "end": "v6",
+        "id": "synthetic:cube:edge#5",
+        "curve": "synthetic:cube:curve#5",
+        "start": "synthetic:cube:vertex#5",
+        "end": "synthetic:cube:vertex#6",
         "param_range": [
           0.0,
           10.0
         ]
       },
       {
-        "id": "e6",
-        "curve": "crv_e6",
-        "start": "v6",
-        "end": "v7",
+        "id": "synthetic:cube:edge#6",
+        "curve": "synthetic:cube:curve#6",
+        "start": "synthetic:cube:vertex#6",
+        "end": "synthetic:cube:vertex#7",
         "param_range": [
           0.0,
           10.0
         ]
       },
       {
-        "id": "e7",
-        "curve": "crv_e7",
-        "start": "v7",
-        "end": "v4",
+        "id": "synthetic:cube:edge#7",
+        "curve": "synthetic:cube:curve#7",
+        "start": "synthetic:cube:vertex#7",
+        "end": "synthetic:cube:vertex#4",
         "param_range": [
           0.0,
           10.0
         ]
       },
       {
-        "id": "e8",
-        "curve": "crv_e8",
-        "start": "v0",
-        "end": "v4",
+        "id": "synthetic:cube:edge#8",
+        "curve": "synthetic:cube:curve#8",
+        "start": "synthetic:cube:vertex#0",
+        "end": "synthetic:cube:vertex#4",
         "param_range": [
           0.0,
           10.0
         ]
       },
       {
-        "id": "e9",
-        "curve": "crv_e9",
-        "start": "v1",
-        "end": "v5",
+        "id": "synthetic:cube:edge#9",
+        "curve": "synthetic:cube:curve#9",
+        "start": "synthetic:cube:vertex#1",
+        "end": "synthetic:cube:vertex#5",
         "param_range": [
           0.0,
           10.0
@@ -507,41 +507,41 @@
     ],
     "vertices": [
       {
-        "id": "v0",
-        "point": "p0"
+        "id": "synthetic:cube:vertex#0",
+        "point": "synthetic:cube:point#0"
       },
       {
-        "id": "v1",
-        "point": "p1"
+        "id": "synthetic:cube:vertex#1",
+        "point": "synthetic:cube:point#1"
       },
       {
-        "id": "v2",
-        "point": "p2"
+        "id": "synthetic:cube:vertex#2",
+        "point": "synthetic:cube:point#2"
       },
       {
-        "id": "v3",
-        "point": "p3"
+        "id": "synthetic:cube:vertex#3",
+        "point": "synthetic:cube:point#3"
       },
       {
-        "id": "v4",
-        "point": "p4"
+        "id": "synthetic:cube:vertex#4",
+        "point": "synthetic:cube:point#4"
       },
       {
-        "id": "v5",
-        "point": "p5"
+        "id": "synthetic:cube:vertex#5",
+        "point": "synthetic:cube:point#5"
       },
       {
-        "id": "v6",
-        "point": "p6"
+        "id": "synthetic:cube:vertex#6",
+        "point": "synthetic:cube:point#6"
       },
       {
-        "id": "v7",
-        "point": "p7"
+        "id": "synthetic:cube:vertex#7",
+        "point": "synthetic:cube:point#7"
       }
     ],
     "points": [
       {
-        "id": "p0",
+        "id": "synthetic:cube:point#0",
         "position": {
           "x": 0.0,
           "y": 0.0,
@@ -549,7 +549,7 @@
         }
       },
       {
-        "id": "p1",
+        "id": "synthetic:cube:point#1",
         "position": {
           "x": 10.0,
           "y": 0.0,
@@ -557,7 +557,7 @@
         }
       },
       {
-        "id": "p2",
+        "id": "synthetic:cube:point#2",
         "position": {
           "x": 10.0,
           "y": 10.0,
@@ -565,7 +565,7 @@
         }
       },
       {
-        "id": "p3",
+        "id": "synthetic:cube:point#3",
         "position": {
           "x": 0.0,
           "y": 10.0,
@@ -573,7 +573,7 @@
         }
       },
       {
-        "id": "p4",
+        "id": "synthetic:cube:point#4",
         "position": {
           "x": 0.0,
           "y": 0.0,
@@ -581,7 +581,7 @@
         }
       },
       {
-        "id": "p5",
+        "id": "synthetic:cube:point#5",
         "position": {
           "x": 10.0,
           "y": 0.0,
@@ -589,7 +589,7 @@
         }
       },
       {
-        "id": "p6",
+        "id": "synthetic:cube:point#6",
         "position": {
           "x": 10.0,
           "y": 10.0,
@@ -597,7 +597,7 @@
         }
       },
       {
-        "id": "p7",
+        "id": "synthetic:cube:point#7",
         "position": {
           "x": 0.0,
           "y": 10.0,
@@ -607,7 +607,7 @@
     ],
     "surfaces": [
       {
-        "id": "srf_back",
+        "id": "synthetic:cube:surface#back",
         "geometry": {
           "kind": "plane",
           "origin": {
@@ -619,11 +619,16 @@
             "x": 0.0,
             "y": 1.0,
             "z": 0.0
+          },
+          "u_axis": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
           }
         }
       },
       {
-        "id": "srf_bottom",
+        "id": "synthetic:cube:surface#bottom",
         "geometry": {
           "kind": "plane",
           "origin": {
@@ -635,11 +640,16 @@
             "x": 0.0,
             "y": 0.0,
             "z": -1.0
+          },
+          "u_axis": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
           }
         }
       },
       {
-        "id": "srf_front",
+        "id": "synthetic:cube:surface#front",
         "geometry": {
           "kind": "plane",
           "origin": {
@@ -651,11 +661,16 @@
             "x": 0.0,
             "y": -1.0,
             "z": 0.0
+          },
+          "u_axis": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
           }
         }
       },
       {
-        "id": "srf_left",
+        "id": "synthetic:cube:surface#left",
         "geometry": {
           "kind": "plane",
           "origin": {
@@ -667,11 +682,16 @@
             "x": -1.0,
             "y": 0.0,
             "z": 0.0
+          },
+          "u_axis": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
           }
         }
       },
       {
-        "id": "srf_right",
+        "id": "synthetic:cube:surface#right",
         "geometry": {
           "kind": "plane",
           "origin": {
@@ -683,11 +703,16 @@
             "x": 1.0,
             "y": 0.0,
             "z": 0.0
+          },
+          "u_axis": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
           }
         }
       },
       {
-        "id": "srf_top",
+        "id": "synthetic:cube:surface#top",
         "geometry": {
           "kind": "plane",
           "origin": {
@@ -699,13 +724,18 @@
             "x": 0.0,
             "y": 0.0,
             "z": 1.0
+          },
+          "u_axis": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
           }
         }
       }
     ],
     "curves": [
       {
-        "id": "crv_e0",
+        "id": "synthetic:cube:curve#0",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -721,7 +751,7 @@
         }
       },
       {
-        "id": "crv_e1",
+        "id": "synthetic:cube:curve#1",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -737,7 +767,7 @@
         }
       },
       {
-        "id": "crv_e10",
+        "id": "synthetic:cube:curve#10",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -753,7 +783,7 @@
         }
       },
       {
-        "id": "crv_e11",
+        "id": "synthetic:cube:curve#11",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -769,7 +799,7 @@
         }
       },
       {
-        "id": "crv_e2",
+        "id": "synthetic:cube:curve#2",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -785,7 +815,7 @@
         }
       },
       {
-        "id": "crv_e3",
+        "id": "synthetic:cube:curve#3",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -801,7 +831,7 @@
         }
       },
       {
-        "id": "crv_e4",
+        "id": "synthetic:cube:curve#4",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -817,7 +847,7 @@
         }
       },
       {
-        "id": "crv_e5",
+        "id": "synthetic:cube:curve#5",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -833,7 +863,7 @@
         }
       },
       {
-        "id": "crv_e6",
+        "id": "synthetic:cube:curve#6",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -849,7 +879,7 @@
         }
       },
       {
-        "id": "crv_e7",
+        "id": "synthetic:cube:curve#7",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -865,7 +895,7 @@
         }
       },
       {
-        "id": "crv_e8",
+        "id": "synthetic:cube:curve#8",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -881,7 +911,7 @@
         }
       },
       {
-        "id": "crv_e9",
+        "id": "synthetic:cube:curve#9",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -897,6 +927,7 @@
         }
       }
     ],
+    "subds": [],
     "pcurves": [],
     "procedural_surfaces": [],
     "procedural_curves": [],
@@ -911,601 +942,601 @@
       "synthetic:"
     ],
     "provenance": {
-      "body0": {
+      "synthetic:cube:body#0": {
         "stream": 0,
         "offset": 0
       },
-      "ce_back_0": {
+      "synthetic:cube:coedge#back:0": {
         "stream": 0,
         "offset": 0
       },
-      "ce_back_1": {
+      "synthetic:cube:coedge#back:1": {
         "stream": 0,
         "offset": 0
       },
-      "ce_back_2": {
+      "synthetic:cube:coedge#back:2": {
         "stream": 0,
         "offset": 0
       },
-      "ce_back_3": {
+      "synthetic:cube:coedge#back:3": {
         "stream": 0,
         "offset": 0
       },
-      "ce_bottom_0": {
+      "synthetic:cube:coedge#bottom:0": {
         "stream": 0,
         "offset": 0
       },
-      "ce_bottom_1": {
+      "synthetic:cube:coedge#bottom:1": {
         "stream": 0,
         "offset": 0
       },
-      "ce_bottom_2": {
+      "synthetic:cube:coedge#bottom:2": {
         "stream": 0,
         "offset": 0
       },
-      "ce_bottom_3": {
+      "synthetic:cube:coedge#bottom:3": {
         "stream": 0,
         "offset": 0
       },
-      "ce_front_0": {
+      "synthetic:cube:coedge#front:0": {
         "stream": 0,
         "offset": 0
       },
-      "ce_front_1": {
+      "synthetic:cube:coedge#front:1": {
         "stream": 0,
         "offset": 0
       },
-      "ce_front_2": {
+      "synthetic:cube:coedge#front:2": {
         "stream": 0,
         "offset": 0
       },
-      "ce_front_3": {
+      "synthetic:cube:coedge#front:3": {
         "stream": 0,
         "offset": 0
       },
-      "ce_left_0": {
+      "synthetic:cube:coedge#left:0": {
         "stream": 0,
         "offset": 0
       },
-      "ce_left_1": {
+      "synthetic:cube:coedge#left:1": {
         "stream": 0,
         "offset": 0
       },
-      "ce_left_2": {
+      "synthetic:cube:coedge#left:2": {
         "stream": 0,
         "offset": 0
       },
-      "ce_left_3": {
+      "synthetic:cube:coedge#left:3": {
         "stream": 0,
         "offset": 0
       },
-      "ce_right_0": {
+      "synthetic:cube:coedge#right:0": {
         "stream": 0,
         "offset": 0
       },
-      "ce_right_1": {
+      "synthetic:cube:coedge#right:1": {
         "stream": 0,
         "offset": 0
       },
-      "ce_right_2": {
+      "synthetic:cube:coedge#right:2": {
         "stream": 0,
         "offset": 0
       },
-      "ce_right_3": {
+      "synthetic:cube:coedge#right:3": {
         "stream": 0,
         "offset": 0
       },
-      "ce_top_0": {
+      "synthetic:cube:coedge#top:0": {
         "stream": 0,
         "offset": 0
       },
-      "ce_top_1": {
+      "synthetic:cube:coedge#top:1": {
         "stream": 0,
         "offset": 0
       },
-      "ce_top_2": {
+      "synthetic:cube:coedge#top:2": {
         "stream": 0,
         "offset": 0
       },
-      "ce_top_3": {
+      "synthetic:cube:coedge#top:3": {
         "stream": 0,
         "offset": 0
       },
-      "crv_e0": {
+      "synthetic:cube:curve#0": {
         "stream": 0,
         "offset": 0
       },
-      "crv_e1": {
+      "synthetic:cube:curve#1": {
         "stream": 0,
         "offset": 0
       },
-      "crv_e10": {
+      "synthetic:cube:curve#10": {
         "stream": 0,
         "offset": 0
       },
-      "crv_e11": {
+      "synthetic:cube:curve#11": {
         "stream": 0,
         "offset": 0
       },
-      "crv_e2": {
+      "synthetic:cube:curve#2": {
         "stream": 0,
         "offset": 0
       },
-      "crv_e3": {
+      "synthetic:cube:curve#3": {
         "stream": 0,
         "offset": 0
       },
-      "crv_e4": {
+      "synthetic:cube:curve#4": {
         "stream": 0,
         "offset": 0
       },
-      "crv_e5": {
+      "synthetic:cube:curve#5": {
         "stream": 0,
         "offset": 0
       },
-      "crv_e6": {
+      "synthetic:cube:curve#6": {
         "stream": 0,
         "offset": 0
       },
-      "crv_e7": {
+      "synthetic:cube:curve#7": {
         "stream": 0,
         "offset": 0
       },
-      "crv_e8": {
+      "synthetic:cube:curve#8": {
         "stream": 0,
         "offset": 0
       },
-      "crv_e9": {
+      "synthetic:cube:curve#9": {
         "stream": 0,
         "offset": 0
       },
-      "e0": {
+      "synthetic:cube:edge#0": {
         "stream": 0,
         "offset": 0
       },
-      "e1": {
+      "synthetic:cube:edge#1": {
         "stream": 0,
         "offset": 0
       },
-      "e10": {
+      "synthetic:cube:edge#10": {
         "stream": 0,
         "offset": 0
       },
-      "e11": {
+      "synthetic:cube:edge#11": {
         "stream": 0,
         "offset": 0
       },
-      "e2": {
+      "synthetic:cube:edge#2": {
         "stream": 0,
         "offset": 0
       },
-      "e3": {
+      "synthetic:cube:edge#3": {
         "stream": 0,
         "offset": 0
       },
-      "e4": {
+      "synthetic:cube:edge#4": {
         "stream": 0,
         "offset": 0
       },
-      "e5": {
+      "synthetic:cube:edge#5": {
         "stream": 0,
         "offset": 0
       },
-      "e6": {
+      "synthetic:cube:edge#6": {
         "stream": 0,
         "offset": 0
       },
-      "e7": {
+      "synthetic:cube:edge#7": {
         "stream": 0,
         "offset": 0
       },
-      "e8": {
+      "synthetic:cube:edge#8": {
         "stream": 0,
         "offset": 0
       },
-      "e9": {
+      "synthetic:cube:edge#9": {
         "stream": 0,
         "offset": 0
       },
-      "f_back": {
+      "synthetic:cube:face#back": {
         "stream": 0,
         "offset": 0
       },
-      "f_bottom": {
+      "synthetic:cube:face#bottom": {
         "stream": 0,
         "offset": 0
       },
-      "f_front": {
+      "synthetic:cube:face#front": {
         "stream": 0,
         "offset": 0
       },
-      "f_left": {
+      "synthetic:cube:face#left": {
         "stream": 0,
         "offset": 0
       },
-      "f_right": {
+      "synthetic:cube:face#right": {
         "stream": 0,
         "offset": 0
       },
-      "f_top": {
+      "synthetic:cube:face#top": {
         "stream": 0,
         "offset": 0
       },
-      "lp_back": {
+      "synthetic:cube:loop#back": {
         "stream": 0,
         "offset": 0
       },
-      "lp_bottom": {
+      "synthetic:cube:loop#bottom": {
         "stream": 0,
         "offset": 0
       },
-      "lp_front": {
+      "synthetic:cube:loop#front": {
         "stream": 0,
         "offset": 0
       },
-      "lp_left": {
+      "synthetic:cube:loop#left": {
         "stream": 0,
         "offset": 0
       },
-      "lp_right": {
+      "synthetic:cube:loop#right": {
         "stream": 0,
         "offset": 0
       },
-      "lp_top": {
+      "synthetic:cube:loop#top": {
         "stream": 0,
         "offset": 0
       },
-      "p0": {
+      "synthetic:cube:point#0": {
         "stream": 0,
         "offset": 0
       },
-      "p1": {
+      "synthetic:cube:point#1": {
         "stream": 0,
         "offset": 0
       },
-      "p2": {
+      "synthetic:cube:point#2": {
         "stream": 0,
         "offset": 0
       },
-      "p3": {
+      "synthetic:cube:point#3": {
         "stream": 0,
         "offset": 0
       },
-      "p4": {
+      "synthetic:cube:point#4": {
         "stream": 0,
         "offset": 0
       },
-      "p5": {
+      "synthetic:cube:point#5": {
         "stream": 0,
         "offset": 0
       },
-      "p6": {
+      "synthetic:cube:point#6": {
         "stream": 0,
         "offset": 0
       },
-      "p7": {
+      "synthetic:cube:point#7": {
         "stream": 0,
         "offset": 0
       },
-      "region0": {
+      "synthetic:cube:region#0": {
         "stream": 0,
         "offset": 0
       },
-      "shell0": {
+      "synthetic:cube:shell#0": {
         "stream": 0,
         "offset": 0
       },
-      "srf_back": {
+      "synthetic:cube:surface#back": {
         "stream": 0,
         "offset": 0
       },
-      "srf_bottom": {
+      "synthetic:cube:surface#bottom": {
         "stream": 0,
         "offset": 0
       },
-      "srf_front": {
+      "synthetic:cube:surface#front": {
         "stream": 0,
         "offset": 0
       },
-      "srf_left": {
+      "synthetic:cube:surface#left": {
         "stream": 0,
         "offset": 0
       },
-      "srf_right": {
+      "synthetic:cube:surface#right": {
         "stream": 0,
         "offset": 0
       },
-      "srf_top": {
+      "synthetic:cube:surface#top": {
         "stream": 0,
         "offset": 0
       },
-      "v0": {
+      "synthetic:cube:vertex#0": {
         "stream": 0,
         "offset": 0
       },
-      "v1": {
+      "synthetic:cube:vertex#1": {
         "stream": 0,
         "offset": 0
       },
-      "v2": {
+      "synthetic:cube:vertex#2": {
         "stream": 0,
         "offset": 0
       },
-      "v3": {
+      "synthetic:cube:vertex#3": {
         "stream": 0,
         "offset": 0
       },
-      "v4": {
+      "synthetic:cube:vertex#4": {
         "stream": 0,
         "offset": 0
       },
-      "v5": {
+      "synthetic:cube:vertex#5": {
         "stream": 0,
         "offset": 0
       },
-      "v6": {
+      "synthetic:cube:vertex#6": {
         "stream": 0,
         "offset": 0
       },
-      "v7": {
+      "synthetic:cube:vertex#7": {
         "stream": 0,
         "offset": 0
       }
     },
     "exactness": {
-      "body0": {
+      "synthetic:cube:body#0": {
         "entity": "inferred"
       },
-      "ce_back_0": {
+      "synthetic:cube:coedge#back:0": {
         "entity": "inferred"
       },
-      "ce_back_1": {
+      "synthetic:cube:coedge#back:1": {
         "entity": "inferred"
       },
-      "ce_back_2": {
+      "synthetic:cube:coedge#back:2": {
         "entity": "inferred"
       },
-      "ce_back_3": {
+      "synthetic:cube:coedge#back:3": {
         "entity": "inferred"
       },
-      "ce_bottom_0": {
+      "synthetic:cube:coedge#bottom:0": {
         "entity": "inferred"
       },
-      "ce_bottom_1": {
+      "synthetic:cube:coedge#bottom:1": {
         "entity": "inferred"
       },
-      "ce_bottom_2": {
+      "synthetic:cube:coedge#bottom:2": {
         "entity": "inferred"
       },
-      "ce_bottom_3": {
+      "synthetic:cube:coedge#bottom:3": {
         "entity": "inferred"
       },
-      "ce_front_0": {
+      "synthetic:cube:coedge#front:0": {
         "entity": "inferred"
       },
-      "ce_front_1": {
+      "synthetic:cube:coedge#front:1": {
         "entity": "inferred"
       },
-      "ce_front_2": {
+      "synthetic:cube:coedge#front:2": {
         "entity": "inferred"
       },
-      "ce_front_3": {
+      "synthetic:cube:coedge#front:3": {
         "entity": "inferred"
       },
-      "ce_left_0": {
+      "synthetic:cube:coedge#left:0": {
         "entity": "inferred"
       },
-      "ce_left_1": {
+      "synthetic:cube:coedge#left:1": {
         "entity": "inferred"
       },
-      "ce_left_2": {
+      "synthetic:cube:coedge#left:2": {
         "entity": "inferred"
       },
-      "ce_left_3": {
+      "synthetic:cube:coedge#left:3": {
         "entity": "inferred"
       },
-      "ce_right_0": {
+      "synthetic:cube:coedge#right:0": {
         "entity": "inferred"
       },
-      "ce_right_1": {
+      "synthetic:cube:coedge#right:1": {
         "entity": "inferred"
       },
-      "ce_right_2": {
+      "synthetic:cube:coedge#right:2": {
         "entity": "inferred"
       },
-      "ce_right_3": {
+      "synthetic:cube:coedge#right:3": {
         "entity": "inferred"
       },
-      "ce_top_0": {
+      "synthetic:cube:coedge#top:0": {
         "entity": "inferred"
       },
-      "ce_top_1": {
+      "synthetic:cube:coedge#top:1": {
         "entity": "inferred"
       },
-      "ce_top_2": {
+      "synthetic:cube:coedge#top:2": {
         "entity": "inferred"
       },
-      "ce_top_3": {
+      "synthetic:cube:coedge#top:3": {
         "entity": "inferred"
       },
-      "crv_e0": {
+      "synthetic:cube:curve#0": {
         "entity": "inferred"
       },
-      "crv_e1": {
+      "synthetic:cube:curve#1": {
         "entity": "inferred"
       },
-      "crv_e10": {
+      "synthetic:cube:curve#10": {
         "entity": "inferred"
       },
-      "crv_e11": {
+      "synthetic:cube:curve#11": {
         "entity": "inferred"
       },
-      "crv_e2": {
+      "synthetic:cube:curve#2": {
         "entity": "inferred"
       },
-      "crv_e3": {
+      "synthetic:cube:curve#3": {
         "entity": "inferred"
       },
-      "crv_e4": {
+      "synthetic:cube:curve#4": {
         "entity": "inferred"
       },
-      "crv_e5": {
+      "synthetic:cube:curve#5": {
         "entity": "inferred"
       },
-      "crv_e6": {
+      "synthetic:cube:curve#6": {
         "entity": "inferred"
       },
-      "crv_e7": {
+      "synthetic:cube:curve#7": {
         "entity": "inferred"
       },
-      "crv_e8": {
+      "synthetic:cube:curve#8": {
         "entity": "inferred"
       },
-      "crv_e9": {
+      "synthetic:cube:curve#9": {
         "entity": "inferred"
       },
-      "e0": {
+      "synthetic:cube:edge#0": {
         "entity": "inferred"
       },
-      "e1": {
+      "synthetic:cube:edge#1": {
         "entity": "inferred"
       },
-      "e10": {
+      "synthetic:cube:edge#10": {
         "entity": "inferred"
       },
-      "e11": {
+      "synthetic:cube:edge#11": {
         "entity": "inferred"
       },
-      "e2": {
+      "synthetic:cube:edge#2": {
         "entity": "inferred"
       },
-      "e3": {
+      "synthetic:cube:edge#3": {
         "entity": "inferred"
       },
-      "e4": {
+      "synthetic:cube:edge#4": {
         "entity": "inferred"
       },
-      "e5": {
+      "synthetic:cube:edge#5": {
         "entity": "inferred"
       },
-      "e6": {
+      "synthetic:cube:edge#6": {
         "entity": "inferred"
       },
-      "e7": {
+      "synthetic:cube:edge#7": {
         "entity": "inferred"
       },
-      "e8": {
+      "synthetic:cube:edge#8": {
         "entity": "inferred"
       },
-      "e9": {
+      "synthetic:cube:edge#9": {
         "entity": "inferred"
       },
-      "f_back": {
+      "synthetic:cube:face#back": {
         "entity": "inferred"
       },
-      "f_bottom": {
+      "synthetic:cube:face#bottom": {
         "entity": "inferred"
       },
-      "f_front": {
+      "synthetic:cube:face#front": {
         "entity": "inferred"
       },
-      "f_left": {
+      "synthetic:cube:face#left": {
         "entity": "inferred"
       },
-      "f_right": {
+      "synthetic:cube:face#right": {
         "entity": "inferred"
       },
-      "f_top": {
+      "synthetic:cube:face#top": {
         "entity": "inferred"
       },
-      "lp_back": {
+      "synthetic:cube:loop#back": {
         "entity": "inferred"
       },
-      "lp_bottom": {
+      "synthetic:cube:loop#bottom": {
         "entity": "inferred"
       },
-      "lp_front": {
+      "synthetic:cube:loop#front": {
         "entity": "inferred"
       },
-      "lp_left": {
+      "synthetic:cube:loop#left": {
         "entity": "inferred"
       },
-      "lp_right": {
+      "synthetic:cube:loop#right": {
         "entity": "inferred"
       },
-      "lp_top": {
+      "synthetic:cube:loop#top": {
         "entity": "inferred"
       },
-      "p0": {
+      "synthetic:cube:point#0": {
         "entity": "inferred"
       },
-      "p1": {
+      "synthetic:cube:point#1": {
         "entity": "inferred"
       },
-      "p2": {
+      "synthetic:cube:point#2": {
         "entity": "inferred"
       },
-      "p3": {
+      "synthetic:cube:point#3": {
         "entity": "inferred"
       },
-      "p4": {
+      "synthetic:cube:point#4": {
         "entity": "inferred"
       },
-      "p5": {
+      "synthetic:cube:point#5": {
         "entity": "inferred"
       },
-      "p6": {
+      "synthetic:cube:point#6": {
         "entity": "inferred"
       },
-      "p7": {
+      "synthetic:cube:point#7": {
         "entity": "inferred"
       },
-      "region0": {
+      "synthetic:cube:region#0": {
         "entity": "inferred"
       },
-      "shell0": {
+      "synthetic:cube:shell#0": {
         "entity": "inferred"
       },
-      "srf_back": {
+      "synthetic:cube:surface#back": {
         "entity": "inferred"
       },
-      "srf_bottom": {
+      "synthetic:cube:surface#bottom": {
         "entity": "inferred"
       },
-      "srf_front": {
+      "synthetic:cube:surface#front": {
         "entity": "inferred"
       },
-      "srf_left": {
+      "synthetic:cube:surface#left": {
         "entity": "inferred"
       },
-      "srf_right": {
+      "synthetic:cube:surface#right": {
         "entity": "inferred"
       },
-      "srf_top": {
+      "synthetic:cube:surface#top": {
         "entity": "inferred"
       },
-      "v0": {
+      "synthetic:cube:vertex#0": {
         "entity": "inferred"
       },
-      "v1": {
+      "synthetic:cube:vertex#1": {
         "entity": "inferred"
       },
-      "v2": {
+      "synthetic:cube:vertex#2": {
         "entity": "inferred"
       },
-      "v3": {
+      "synthetic:cube:vertex#3": {
         "entity": "inferred"
       },
-      "v4": {
+      "synthetic:cube:vertex#4": {
         "entity": "inferred"
       },
-      "v5": {
+      "synthetic:cube:vertex#5": {
         "entity": "inferred"
       },
-      "v6": {
+      "synthetic:cube:vertex#6": {
         "entity": "inferred"
       },
-      "v7": {
+      "synthetic:cube:vertex#7": {
         "entity": "inferred"
       }
     }
@@ -1513,7 +1544,7 @@
   "native": {},
   "unknowns": []
 } {
-  "ir_version": "1",
+  "ir_version": "2",
   "units": {
     "length": "millimeter"
   },
@@ -1533,6 +1564,7 @@
     "points": [],
     "surfaces": [],
     "curves": [],
+    "subds": [],
     "pcurves": [],
     "procedural_surfaces": [],
     "procedural_curves": [],

@@ -27,6 +27,7 @@ mod annotations_native;
 mod carriers_parameterization;
 mod geometry_payloads;
 mod identity_order;
+mod subd;
 mod topology;
 
 use annotations_native::{
@@ -36,6 +37,7 @@ use annotations_native::{
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use geometry_payloads::{check_bounds, check_tessellations, check_unknown_payloads};
 use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
+use subd::{check_procedural_surfaces, check_source_associations, check_subds};
 use topology::{
     check_coedge_pairing, check_loops, check_references, check_units, check_wire_topology, IdSets,
 };
@@ -67,6 +69,9 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_parameter_domains(ir, &mut findings);
     check_bounds(ir, &mut findings);
     check_tessellations(ir, &mut findings);
+    check_subds(ir, &mut findings);
+    check_procedural_surfaces(ir, &mut findings);
+    check_source_associations(ir, &mut findings);
     check_feature_input_lanes(ir, &mut findings);
     check_design_records(ir, &mut findings);
     check_native_ids(ir, &mut findings);

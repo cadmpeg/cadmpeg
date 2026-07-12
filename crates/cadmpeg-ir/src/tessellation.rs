@@ -5,12 +5,16 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::math::{Point3, Vector3};
+use crate::provenance::SourceObjectAssociation;
 
 /// One indexed triangle mesh decoded from a source display or facet stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Tessellation {
     /// Stable source-derived identifier.
     pub id: String,
+    /// Native source-object identity and effective display metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_object: Option<SourceObjectAssociation>,
     /// Vertex positions in document units.
     pub vertices: Vec<Point3>,
     /// Zero-based vertex indices, with source winding preserved.

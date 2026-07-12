@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::annotations::Annotations;
 use crate::appearance::{Appearance, AppearanceBinding};
@@ -12,6 +12,7 @@ use crate::attributes::SourceAttribute;
 use crate::features::Feature;
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
+use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{Tolerances, Units};
@@ -31,6 +32,7 @@ macro_rules! arena_registry {
             points: Point, "Point arena.", [] => |e| e.id.0.clone();
             surfaces: Surface, "Surface arena.", [] => |e| e.id.0.clone();
             curves: Curve, "Curve arena.", [] => |e| e.id.0.clone();
+            subds: SubdSurface, "Subdivision surface arena.", [] => |e| e.id.0.clone();
             pcurves: Pcurve, "Pcurve arena.", [] => |e| e.id.0.clone();
             procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [] => |e| e.id.0.clone();
             procedural_curves: ProceduralCurve, "Procedural curve arena.", [] => |e| e.id.0.clone();
@@ -70,9 +72,29 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "1";
+pub const IR_VERSION: &str = "2";
 
 arena_registry!(declare_model);
+
+fn deserialize_ir_version<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let version = String::deserialize(deserializer)?;
+    if version != IR_VERSION {
+        return Err(serde::de::Error::custom(format!(
+            "unsupported ir_version {version:?}; expected {IR_VERSION}"
+        )));
+    }
+    Ok(version)
+}
+
+fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "string",
+        "const": IR_VERSION
+    })
+}
 
 /// A versioned CAD document.
 ///
@@ -82,6 +104,8 @@ arena_registry!(declare_model);
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CadIr {
     /// IR schema version.
+    #[serde(deserialize_with = "deserialize_ir_version")]
+    #[schemars(schema_with = "ir_version_schema")]
     pub ir_version: String,
     /// Source-container metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]

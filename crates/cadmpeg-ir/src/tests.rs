@@ -6,17 +6,24 @@
 use crate::annotations::{ExactnessNote, Provenance};
 use crate::design::SketchRelation;
 use crate::examples::unit_cube;
-use crate::geometry::{Curve, CurveGeometry, SurfaceGeometry};
+use crate::geometry::{
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
+};
 use crate::history::{AsmHistoryRecord, Configuration, FeatureHistory, FeatureInputLane};
-use crate::ids::{CoedgeId, CurveId, EdgeId, UnknownId};
+use crate::ids::{CoedgeId, CurveId, EdgeId, ProceduralSurfaceId, SubdId, UnknownId};
 use crate::math::{Point3, Vector3};
 use crate::native::{F3dNative, SldprtNative};
-use crate::provenance::Exactness;
-use crate::report::Check;
+use crate::provenance::{Exactness, SourceObjectAssociation};
+use crate::report::{Check, LossCategory, LossNote, Severity};
+use crate::subd::{
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
+    SubdVertexTag,
+};
 use crate::tessellation::TessellationChannel;
+use crate::topology::Color;
 use crate::unknown::UnknownRecord;
 use crate::validate::validate;
-use crate::{diff, CadIr};
+use crate::{diff, CadIr, LossProvenance};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 
@@ -439,6 +446,7 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
             major_direction: Vector3::new(1.0, 0.0, 0.0),
             focal_distance: 0.0,
         },
+        source_object: None,
     });
     ir.model.curves.push(Curve {
         id: CurveId("synthetic:test:curve#bad-hyperbola".into()),
@@ -449,6 +457,7 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
             major_radius: -1.0,
             minor_radius: 1.0,
         },
+        source_object: None,
     });
 
     let report = validate(&ir, Vec::new());
@@ -470,7 +479,7 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
 #[test]
 fn wrong_document_version_is_flagged() {
     let mut ir = unit_cube();
-    ir.ir_version = "2".into();
+    ir.ir_version = "1".into();
     assert!(validate(&ir, Vec::new())
         .findings
         .iter()
@@ -495,10 +504,235 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
                 object.remove("ir_version");
             }
         }
-        let error = CadIr::from_json(&serde_json::to_string(&value).unwrap()).unwrap_err();
+        let json = serde_json::to_string(&value).unwrap();
+        let error = CadIr::from_json(&json).unwrap_err();
         assert!(!error.is_syntax());
         assert!(error.to_string().contains("unsupported ir_version"));
+        assert!(serde_json::from_str::<CadIr>(&json).is_err());
     }
+}
+
+#[test]
+fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
+    let ir = unit_cube();
+    let json = ir.to_canonical_json().unwrap();
+    let parsed = serde_json::from_str::<CadIr>(&json).unwrap();
+    assert_eq!(parsed, ir);
+    assert_eq!(parsed.to_canonical_json().unwrap(), json);
+}
+
+#[test]
+fn schema_constrains_version_and_requires_subd_arena() {
+    let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
+    assert_eq!(
+        schema.pointer("/properties/ir_version/const"),
+        Some(&serde_json::json!(crate::IR_VERSION))
+    );
+    assert!(schema
+        .pointer("/properties/model/$ref")
+        .and_then(serde_json::Value::as_str)
+        .is_some());
+
+    let model_schema = schema.pointer("/$defs/Model").unwrap();
+    assert!(model_schema
+        .pointer("/required")
+        .and_then(serde_json::Value::as_array)
+        .unwrap()
+        .contains(&serde_json::json!("subds")));
+
+    let mut value = serde_json::to_value(unit_cube()).unwrap();
+    value
+        .pointer_mut("/model")
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .remove("subds");
+    assert!(serde_json::from_value::<CadIr>(value).is_err());
+}
+
+#[test]
+fn subd_round_trip_and_directed_ring_validation() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:subd:surface#0".into()),
+        scheme: SubdScheme::CatmullClark,
+        vertices: vec![
+            SubdVertex {
+                point: Point3::new(0.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+            },
+            SubdVertex {
+                point: Point3::new(1.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+            },
+            SubdVertex {
+                point: Point3::new(0.0, 1.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+            },
+        ],
+        edges: vec![
+            SubdEdge {
+                vertices: [0, 1],
+                sharpness: [0.0, 0.25],
+                tag: SubdEdgeTag::Smooth,
+                sector_coefficients: [1.0, 1.0],
+            },
+            SubdEdge {
+                vertices: [1, 2],
+                sharpness: [0.25, 0.0],
+                tag: SubdEdgeTag::SmoothX,
+                sector_coefficients: [1.0, 1.0],
+            },
+            SubdEdge {
+                vertices: [2, 0],
+                sharpness: [0.0, 0.0],
+                tag: SubdEdgeTag::Smooth,
+                sector_coefficients: [1.0, 1.0],
+            },
+        ],
+        faces: vec![SubdFace {
+            edges: vec![
+                SubdEdgeUse {
+                    edge: 0,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 1,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 2,
+                    reversed: false,
+                },
+            ],
+        }],
+        source_object: None,
+    });
+    assert!(validate(&ir, Vec::new()).is_ok());
+    let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
+    assert_eq!(parsed, ir);
+    assert_eq!(
+        serde_json::to_value(SubdEdgeTag::SmoothX).unwrap(),
+        serde_json::json!("smooth_x")
+    );
+    ir.model.subds[0].faces[0].edges[1].reversed = true;
+    assert!(!validate(&ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn subd_rejects_short_rings_and_negative_sharpness() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:subd:surface#short".into()),
+        scheme: SubdScheme::CatmullClark,
+        vertices: vec![
+            SubdVertex {
+                point: Point3::new(0.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+            },
+            SubdVertex {
+                point: Point3::new(1.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+            },
+        ],
+        edges: vec![SubdEdge {
+            vertices: [0, 1],
+            sharpness: [-0.1, 0.0],
+            tag: SubdEdgeTag::Smooth,
+            sector_coefficients: [0.0, 0.0],
+        }],
+        faces: vec![SubdFace {
+            edges: vec![
+                SubdEdgeUse {
+                    edge: 0,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 0,
+                    reversed: true,
+                },
+            ],
+        }],
+        source_object: None,
+    });
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("fewer than three")));
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("edge 0 is invalid")));
+}
+
+#[test]
+fn revolution_rejects_equal_intervals() {
+    let mut ir = unit_cube();
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("synthetic:test:procedural-surface#equal".into()),
+        surface: ir.model.surfaces[0].id.clone(),
+        definition: ProceduralSurfaceDefinition::Revolution {
+            directrix: ir.model.curves[0].id.clone(),
+            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_direction: Vector3::new(0.0, 0.0, 1.0),
+            angular_interval: [1.0, 1.0],
+            parameter_interval: [0.0, 1.0],
+            transposed: false,
+        },
+        cache_fit_tolerance: None,
+    });
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("revolution interval")));
+}
+
+#[test]
+fn source_association_is_a_free_carrier_root() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: CurveId("synthetic:source:curve#0".into()),
+        geometry: CurveGeometry::Unknown { record: None },
+        source_object: Some(SourceObjectAssociation {
+            format: "rhino".into(),
+            object_id: "00000000-0000-0000-0000-000000000000".into(),
+            name: Some("curve".into()),
+            color: None,
+            visible: Some(true),
+            layer: Some("layer-0".into()),
+            instance_path: Vec::new(),
+        }),
+    });
+    let report = validate(&ir, Vec::new());
+    assert!(report.is_ok(), "{:?}", report.findings);
+    let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
+    assert_eq!(parsed, ir);
+}
+
+#[test]
+fn source_association_rejects_out_of_range_color() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: CurveId("synthetic:source:curve#color".into()),
+        geometry: CurveGeometry::Unknown { record: None },
+        source_object: Some(SourceObjectAssociation {
+            format: "rhino".into(),
+            object_id: "object".into(),
+            name: None,
+            color: Some(Color {
+                r: 1.1,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        }),
+    });
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("outside [0, 1]")));
 }
 
 #[test]
@@ -806,4 +1040,29 @@ fn schema_generation_produces_definitions() {
         .and_then(serde_json::Value::as_object)
         .expect("schema has a $defs object");
     assert!(!defs.is_empty());
+}
+
+#[test]
+fn loss_provenance_root_alias_constructs_and_serializes() {
+    let note = LossNote {
+        category: LossCategory::Geometry,
+        severity: Severity::Warning,
+        message: "geometry was retained as metadata".into(),
+        provenance: Some(LossProvenance {
+            format: "rhino".into(),
+            stream: String::new(),
+            offset: 42,
+            tag: Some(
+                "OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020".into(),
+            ),
+        }),
+    };
+    let json = serde_json::to_value(&note).unwrap();
+    assert_eq!(json["provenance"]["format"], "rhino");
+    assert_eq!(json["provenance"]["stream"], "");
+    assert_eq!(json["provenance"]["offset"], 42);
+    assert_eq!(
+        json["provenance"]["tag"],
+        "OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020"
+    );
 }

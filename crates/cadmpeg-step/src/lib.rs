@@ -50,7 +50,9 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::{Coedge, Edge, Point, Sense, Vertex};
 use cadmpeg_ir::CadIr;
@@ -882,6 +884,65 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        if !self.ir.model.subds.is_empty() {
+            self.loss(
+                LossCategory::Geometry,
+                Severity::Warning,
+                format!(
+                    "{} subdivision surface(s) were omitted because this STEP writer \
+                     does not encode SubD control cages",
+                    self.ir.model.subds.len()
+                ),
+            );
+        }
+        if !self.ir.model.tessellations.is_empty() {
+            self.loss(
+                LossCategory::Geometry,
+                Severity::Warning,
+                format!(
+                    "{} tessellation(s) were omitted because this STEP writer emits \
+                     exact B-rep geometry only",
+                    self.ir.model.tessellations.len()
+                ),
+            );
+        }
+        let source_object_count = self
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.source_object.is_some())
+            .count()
+            + self
+                .ir
+                .model
+                .curves
+                .iter()
+                .filter(|curve| curve.source_object.is_some())
+                .count()
+            + self
+                .ir
+                .model
+                .subds
+                .iter()
+                .filter(|subd| subd.source_object.is_some())
+                .count()
+            + self
+                .ir
+                .model
+                .tessellations
+                .iter()
+                .filter(|tessellation| tessellation.source_object.is_some())
+                .count();
+        if source_object_count > 0 {
+            self.loss(
+                LossCategory::Metadata,
+                Severity::Info,
+                format!(
+                    "{source_object_count} source-object association(s) were not represented in STEP"
+                ),
+            );
+        }
         if !self.ir.unknowns.is_empty() {
             self.loss(
                 LossCategory::Metadata,
@@ -924,15 +985,29 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.ir.model.procedural_surfaces.is_empty()
-            || !self.ir.model.procedural_curves.is_empty()
-        {
+        let procedural_surface_count = self
+            .ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .filter(|procedural| match &procedural.definition {
+                ProceduralSurfaceDefinition::Extrusion { .. }
+                | ProceduralSurfaceDefinition::Revolution { .. }
+                | ProceduralSurfaceDefinition::Sum { .. }
+                | ProceduralSurfaceDefinition::Sweep { .. }
+                | ProceduralSurfaceDefinition::Offset { .. }
+                | ProceduralSurfaceDefinition::Ruled { .. }
+                | ProceduralSurfaceDefinition::Blend { .. }
+                | ProceduralSurfaceDefinition::Unknown { .. } => true,
+            })
+            .count();
+        if procedural_surface_count > 0 || !self.ir.model.procedural_curves.is_empty() {
             self.loss(
                 LossCategory::Geometry,
                 Severity::Info,
                 format!(
                     "{} procedural surface definition(s) and {} procedural curve definition(s) were reduced to their solved STEP carriers",
-                    self.ir.model.procedural_surfaces.len(),
+                    procedural_surface_count,
                     self.ir.model.procedural_curves.len()
                 ),
             );

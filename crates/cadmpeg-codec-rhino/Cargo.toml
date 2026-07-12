@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-codec-rhino"
+description = "Read Rhino 3DM files."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/cadmpeg-codec-rhino"
+keywords = ["cad", "rhino", "3dm", "geometry"]
+categories = ["encoding", "parser-implementations", "graphics"]
+
+[features]
+default = []
+fuzzing = []
+
+[dependencies]
+cadmpeg-ir.workspace = true
+flate2.workspace = true
+crc32fast.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

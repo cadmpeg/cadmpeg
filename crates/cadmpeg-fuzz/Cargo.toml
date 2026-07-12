@@ -20,6 +20,7 @@ cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt" }
 cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia" }
 cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo" }
 cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx" }
+cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino", features = ["fuzzing"] }
 cadmpeg-ir = { path = "../cadmpeg-ir" }
 cadmpeg-step = { path = "../cadmpeg-step" }
 zip = { version = "2", default-features = false, features = ["deflate"] }
@@ -346,6 +347,60 @@ path = "src/bin/generate_submodule_seeds.rs"
 [[bin]]
 name = "generate_synthetic_fixtures"
 path = "src/bin/generate_synthetic_fixtures.rs"
+
+[[bin]]
+name = "generate_rhino_seeds"
+path = "src/bin/generate_rhino_seeds.rs"
+
+# Rhino parser targets
+[[bin]]
+name = "rhino_container"
+path = "fuzz_targets/rhino_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rhino_chunks"
+path = "fuzz_targets/rhino_chunks.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rhino_object_record"
+path = "fuzz_targets/rhino_object_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rhino_nurbs"
+path = "fuzz_targets/rhino_nurbs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rhino_mesh_buffer"
+path = "fuzz_targets/rhino_mesh_buffer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rhino_brep"
+path = "fuzz_targets/rhino_brep.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rhino_subd"
+path = "fuzz_targets/rhino_subd.rs"
+test = false
+doc = false
+bench = false
 
 [profile.release]
 debug = 1

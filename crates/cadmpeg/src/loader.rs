@@ -71,7 +71,7 @@ pub fn load_ir(
 
     if forced.is_none() && prefix.iter().find(|byte| !byte.is_ascii_whitespace()) != Some(&b'{') {
         return Err(anyhow!(
-            "unrecognized format for {}; supported: f3d, sldprt, CATPart, NX/Creo prt, .cadir.json; use --input-format to override detection",
+            "unrecognized format for {}; supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, .cadir.json; use --input-format to override detection",
             path.display()
         ));
     }

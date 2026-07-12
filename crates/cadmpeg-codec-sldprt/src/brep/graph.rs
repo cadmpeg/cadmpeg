@@ -313,6 +313,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                         annotations.exactness(id_curve(curve_attr), Exactness::Unknown);
                         out.curves.push(Curve {
                             id: CurveId(id_curve(curve_attr)),
+                            source_object: None,
                             geometry: CurveGeometry::Unknown { record: None },
                         });
                     }
@@ -468,6 +469,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                 }
                 out.surfaces.push(Surface {
                     id: SurfaceId(id_surf(f.bridge_attr)),
+                    source_object: None,
                     geometry,
                 });
             }
@@ -479,6 +481,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                 annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
                 out.surfaces.push(Surface {
                     id: SurfaceId(id_surf(f.bridge_attr)),
+                    source_object: None,
                     geometry: SurfaceGeometry::Unknown { record: None },
                 });
             }
@@ -1385,6 +1388,7 @@ fn synthesize_cylinder_seams(
         }
         out.curves.push(Curve {
             id: curve_id.clone(),
+            source_object: None,
             geometry: CurveGeometry::Line {
                 origin: pa,
                 direction,
@@ -1550,6 +1554,7 @@ fn emit_curve(out: &mut Brep, carrier: &Carrier) {
     if let CarrierGeometry::Curve(geo) = &carrier.geometry {
         out.curves.push(Curve {
             id: CurveId(id_curve(carrier.attr)),
+            source_object: None,
             geometry: geo.clone(),
         });
     }

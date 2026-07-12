@@ -3,6 +3,7 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
+use crate::subd::SubdSurface;
 
 pub(super) fn check_native_ids(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut ids = HashSet::new();
