@@ -2079,7 +2079,7 @@ fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
     bytes
 }
 
-fn synthetic_skin_spl_sur_smbh(structural_laws: bool) -> Vec<u8> {
+fn synthetic_skin_spl_sur_smbh(structural_laws: bool, expanded: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -2100,15 +2100,38 @@ fn synthetic_skin_spl_sur_smbh(structural_laws: bool) -> Vec<u8> {
     t_long(&mut surface, 4);
     t_dbl(&mut surface, 0.25);
     t_long(&mut surface, 1);
-    surface.extend_from_slice(&generated_curve_block());
-    t_long(&mut surface, 211);
-    t_long(&mut surface, 4);
-    t_long(&mut surface, 0);
-    t_dbl(&mut surface, -0.5);
-    t_dbl(&mut surface, 1.5);
-    t_long(&mut surface, -1);
-    surface.extend_from_slice(&generated_curve_block());
-    t_long(&mut surface, 7);
+    if expanded {
+        t_long(&mut surface, 9);
+        surface.extend_from_slice(&generated_curve_block());
+        t_ident(&mut surface, "plane");
+        t_pos(&mut surface, [1.0, -2.0, 3.0]);
+        t_vec(&mut surface, [0.0, 0.0, 1.0]);
+        t_vec(&mut surface, [1.0, 0.0, 0.0]);
+        surface.push(0x0b);
+        surface.extend_from_slice(&generated_pcurve_block());
+        surface.push(0x0b);
+        t_long(&mut surface, -1);
+        t_long(&mut surface, 211);
+        t_long(&mut surface, 4);
+        t_long(&mut surface, 0);
+        t_dbl(&mut surface, -0.5);
+        t_dbl(&mut surface, 1.5);
+        surface.push(0x0a);
+        t_vec(&mut surface, [0.0, 1.0, 0.0]);
+        surface.extend_from_slice(&generated_curve_block());
+        t_long(&mut surface, -1);
+        t_long(&mut surface, 7);
+    } else {
+        surface.extend_from_slice(&generated_curve_block());
+        t_long(&mut surface, 211);
+        t_long(&mut surface, 4);
+        t_long(&mut surface, 0);
+        t_dbl(&mut surface, -0.5);
+        t_dbl(&mut surface, 1.5);
+        t_long(&mut surface, -1);
+        surface.extend_from_slice(&generated_curve_block());
+        t_long(&mut surface, 7);
+    }
     t_vec(&mut surface, [0.0, 0.0, 1.0]);
     t_dbl(&mut surface, 0.75);
     if structural_laws {
@@ -8282,7 +8305,7 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
 
     let decoded = F3dCodec
         .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(false))),
+            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(false, false))),
             &DecodeOptions::default(),
         )
         .expect("skin surface decode");
@@ -8343,7 +8366,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
 
     let decoded = F3dCodec
         .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(true))),
+            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(true, false))),
             &DecodeOptions::default(),
         )
         .expect("skin structural-law decode");
@@ -8383,6 +8406,53 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
         panic!("expected round-trip skin surface")
     };
     assert_eq!(construction.formula.variables.len(), 3);
+}
+
+#[test]
+fn generated_skin_surface_round_trips_expanded_profiles() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SkinSurfaceLayout};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(false, true))),
+            &DecodeOptions::default(),
+        )
+        .expect("expanded skin decode");
+    let ProceduralSurfaceDefinition::Skin { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected skin surface")
+    };
+    let SkinSurfaceLayout::Profiles { profiles, tail, .. } = &construction.layout else {
+        panic!("expected expanded skin profiles")
+    };
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles[0].type_code, 9);
+    assert_eq!(profiles[0].data.asm_extension, -1);
+    assert!(profiles[0].data.pcurve.is_some());
+    assert!(profiles[0].data.direction.is_some());
+    assert_eq!(*tail, [-1, 7]);
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less expanded skin encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less expanded skin round trip");
+    let ProceduralSurfaceDefinition::Skin { construction } =
+        &round_trip.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected round-trip skin surface")
+    };
+    assert!(matches!(
+        &construction.layout,
+        SkinSurfaceLayout::Profiles { profiles, .. }
+            if profiles.len() == 1 && profiles[0].data.direction.is_some()
+    ));
 }
 
 #[test]
