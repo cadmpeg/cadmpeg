@@ -50,53 +50,6 @@ pub(crate) struct UnitDetail {
     pub(crate) custom_name: String,
 }
 
-/// Legacy V5 linked-file checksum.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LegacyChecksum {
-    /// Linked file byte count.
-    pub(crate) byte_count: u64,
-    /// Linked file modification time.
-    pub(crate) modified_time: u64,
-    /// Eight serialized CRC words.
-    pub(crate) crc: [u32; 8],
-    /// Exact serialized checksum range.
-    pub(crate) source_range: Range<usize>,
-}
-
-/// Linked-file content hash.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ContentHash {
-    /// Linked file byte count.
-    pub(crate) byte_count: u64,
-    /// Time when the hash was calculated.
-    pub(crate) hash_time: u64,
-    /// Linked file content modification time.
-    pub(crate) content_time: u64,
-    /// SHA-1 of the normalized file name.
-    pub(crate) name_hash: [u8; 20],
-    /// SHA-1 of the file content.
-    pub(crate) content_digest: [u8; 20],
-    /// Exact serialized content-hash chunk range.
-    pub(crate) source_range: Range<usize>,
-}
-
-/// External file metadata retained for linked definitions.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FileReference {
-    /// Absolute or archive-resolved path.
-    pub(crate) full_path: String,
-    /// Archive-relative path.
-    pub(crate) relative_path: String,
-    /// Linked file content hash.
-    pub(crate) content_hash: ContentHash,
-    /// Raw path-status value.
-    pub(crate) path_status: u32,
-    /// Embedded file identifier, when serialized.
-    pub(crate) embedded_file_id: Option<Uuid>,
-    /// Complete file-reference chunk.
-    pub(crate) source_range: Range<usize>,
-}
-
 /// Complete parsed instance-definition table record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct InstanceDefinition {
@@ -122,16 +75,16 @@ pub(crate) struct InstanceDefinition {
     pub(crate) units: UnitDetail,
     /// V5 linked full path.
     pub(crate) legacy_linked_path: String,
-    /// V5 linked-file checksum.
-    pub(crate) legacy_checksum: Option<LegacyChecksum>,
+    /// Exact serialized V5 linked-file checksum range.
+    pub(crate) legacy_checksum_range: Option<Range<usize>>,
     /// Legacy relative-path selector.
     pub(crate) legacy_relative_path: bool,
     /// Nested linked-definition depth.
     pub(crate) linked_depth: i32,
     /// Linked-component appearance selector.
     pub(crate) linked_appearance: u32,
-    /// Structured linked file reference.
-    pub(crate) file_reference: Option<FileReference>,
+    /// Complete structured linked-file-reference chunk.
+    pub(crate) file_reference_range: Option<Range<usize>>,
     /// Referenced-component settings retained as a complete bounded chunk.
     pub(crate) reference_settings_range: Option<Range<usize>>,
 }
@@ -345,14 +298,14 @@ fn file_reference<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
-) -> Result<FileReference, FramingError> {
+) -> Result<Range<usize>, FramingError> {
     let (chunk, mut payload, version) =
         anonymous_versioned(data, reader, archive, "file reference", warnings)?;
     if version.0 != 1 || !(0..=1).contains(&version.1) {
         return Err(structural(&payload, "unsupported file-reference version"));
     }
-    let full_path = utf16(&mut payload)?;
-    let relative_path = utf16(&mut payload)?;
+    let _ = utf16(&mut payload)?;
+    let _ = utf16(&mut payload)?;
     let hash = chunk_at(data, payload.position(), payload.end(), archive, false)?;
     if hash.typecode != ANONYMOUS || hash.short {
         return Err(structural(&payload, "missing content-hash chunk"));
@@ -365,47 +318,22 @@ fn file_reference<'a>(
             "unsupported content-hash version",
         ));
     }
-    let byte_count = hash_payload.u64()?;
-    let hash_time = hash_payload.u64()?;
-    let content_time = hash_payload.u64()?;
-    let name_hash = hash_payload.take(20)?.try_into().expect("length checked");
-    let content_digest = hash_payload.take(20)?.try_into().expect("length checked");
+    hash_payload.skip(24)?;
+    hash_payload.skip(40)?;
     finish(&hash_payload, "content hash")?;
     payload.skip(hash.next_offset - payload.position())?;
-    let path_status = payload.u32()?;
-    let embedded_file_id = (version.1 >= 1).then(|| uuid(&mut payload)).transpose()?;
+    let _ = payload.u32()?;
+    if version.1 >= 1 {
+        let _ = uuid(&mut payload)?;
+    }
     finish(&payload, "file reference")?;
-    Ok(FileReference {
-        full_path,
-        relative_path,
-        content_hash: ContentHash {
-            byte_count,
-            hash_time,
-            content_time,
-            name_hash,
-            content_digest,
-            source_range: hash.range(),
-        },
-        path_status,
-        embedded_file_id,
-        source_range: chunk.range(),
-    })
+    Ok(chunk.range())
 }
 
-fn legacy_checksum(reader: &mut BoundedReader<'_>) -> Result<LegacyChecksum, FramingError> {
+fn legacy_checksum(reader: &mut BoundedReader<'_>) -> Result<Range<usize>, FramingError> {
     let start = reader.position();
-    let byte_count = reader.u64()?;
-    let modified_time = reader.u64()?;
-    let mut crc = [0; 8];
-    for value in &mut crc {
-        *value = reader.u32()?;
-    }
-    Ok(LegacyChecksum {
-        byte_count,
-        modified_time,
-        crc,
-        source_range: start..reader.position(),
-    })
+    reader.skip(48)?;
+    Ok(start..reader.position())
 }
 
 fn skip_object_array(
@@ -483,7 +411,7 @@ fn parse_v5(
     {
         kind = DefinitionKind::Static;
     }
-    let legacy_checksum = Some(legacy_checksum(&mut reader)?);
+    let legacy_checksum_range = Some(legacy_checksum(&mut reader)?);
     let unit =
         i32::try_from(reader.u32()?).map_err(|_| structural(&reader, "unit value overflow"))?;
     let meters_per_unit = reader.f64()?;
@@ -505,7 +433,7 @@ fn parse_v5(
     if matches!(kind, DefinitionKind::Linked) && !matches!(linked_appearance, 1 | 2) {
         linked_appearance = if archive.value() < 50 { 1 } else { 2 };
     }
-    let file_reference = if version.1 >= 7 && reader.bool()? {
+    let file_reference_range = if version.1 >= 7 && reader.bool()? {
         Some(file_reference(data, &mut reader, archive, warnings)?)
     } else {
         None
@@ -527,11 +455,11 @@ fn parse_v5(
         kind,
         units,
         legacy_linked_path,
-        legacy_checksum,
+        legacy_checksum_range,
         legacy_relative_path,
         linked_depth,
         linked_appearance,
-        file_reference,
+        file_reference_range,
         reference_settings_range: None,
     })
 }
@@ -591,11 +519,11 @@ fn parse_v6(
         kind,
         units,
         legacy_linked_path: String::new(),
-        legacy_checksum: None,
+        legacy_checksum_range: None,
         legacy_relative_path: false,
         linked_depth,
         linked_appearance,
-        file_reference: linked_file,
+        file_reference_range: linked_file,
         reference_settings_range,
     })
 }
