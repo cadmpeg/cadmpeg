@@ -7,7 +7,6 @@
 ## Checklist
 
 - [ ] All commits are signed off (`git commit -s`) — see [CONTRIBUTING.md](../CONTRIBUTING.md).
-- [ ] The CI gate passes locally: `cargo fmt --all --check && cargo clippy --workspace -- -D warnings -W missing-docs && cargo test-fast && cargo test --workspace --doc`.
 
 ## Provenance declaration (decoder or format-spec changes only)
 
