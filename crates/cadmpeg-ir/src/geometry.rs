@@ -1395,6 +1395,31 @@ pub enum SweepSurfaceLayout {
         /// Three ordered parametric laws.
         formulas: Box<[LawFormula; 3]>,
     },
+    /// Explicit sweep layout whose trajectory is controlled by a formula.
+    ExplicitFormula {
+        /// Native explicit-layout integer.
+        mode: i64,
+        /// Profile parameter interval.
+        profile_range: [f64; 2],
+        /// Optional explicit profile frame.
+        profile_frame: Option<(Point3, Vector3)>,
+        /// Sweep frame origin.
+        origin: Point3,
+        /// Three ordered sweep frame directions.
+        directions: [Vector3; 3],
+        /// Native trajectory boolean.
+        trajectory_flag: bool,
+        /// Path parameter interval in model length units.
+        path_range: [f64; 2],
+        /// Native trajectory scalar.
+        path_parameter: f64,
+        /// Native formula-side boolean.
+        formula_flag: bool,
+        /// Parametric trajectory formula.
+        formula: LawFormula,
+        /// Native trailing boolean.
+        trailing_flag: bool,
+    },
 }
 
 /// Complete native `sweep_spl_sur` construction graph.

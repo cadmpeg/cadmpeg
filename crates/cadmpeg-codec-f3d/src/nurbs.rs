@@ -1289,6 +1289,21 @@ pub(crate) enum EmbeddedSweepSurfaceLayout {
         parameters: [f64; 4],
         formulas: Box<[EmbeddedLawFormula; 3]>,
     },
+    ExplicitFormula {
+        profile: NurbsCurve,
+        mode: i64,
+        profile_range: [f64; 2],
+        profile_frame: Option<(Point3, Vector3)>,
+        origin: Point3,
+        directions: [Vector3; 3],
+        trajectory_flag: bool,
+        path: NurbsCurve,
+        path_range: [f64; 2],
+        path_parameter: f64,
+        formula_flag: bool,
+        formula: EmbeddedLawFormula,
+        trailing_flag: bool,
+    },
 }
 
 /// Embedded native sweep surface before stable IR ids are assigned.
@@ -2094,29 +2109,104 @@ fn decode_sweep_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     let primary_kind = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    if !matches!(span.get(position), Some(0x0d | 0x0e)) {
-        return None;
-    }
-    let profile = decode_curve_block(span, position, int_width)?;
-    position = profile.end;
-    let spine = decode_curve_block(span, position, int_width)?;
-    position = spine.end;
-    let secondary_kind = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    let mut directions = [Vector3::new(0.0, 0.0, 0.0); 5];
-    for direction in &mut directions {
-        let value = take_native_vec3(span, &mut position, 0x14)?;
-        *direction = Vector3::new(value[0], value[1], value[2]);
-    }
-    let origin = take_native_vec3(span, &mut position, 0x13)?;
-    let mut parameters = [0.0; 4];
-    for parameter in &mut parameters {
-        *parameter = take_f64(span, &mut position)?;
-    }
-    let formulas = (0..3)
-        .map(|_| decode_law_formula(span, &mut position, int_width))
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
+    let layout = if matches!(span.get(position), Some(0x0d | 0x0e)) {
+        let profile = decode_curve_block(span, position, int_width)?;
+        position = profile.end;
+        let spine = decode_curve_block(span, position, int_width)?;
+        position = spine.end;
+        let secondary_kind = take_tagged_int(span, &mut position, 0x15, int_width)?;
+        let mut directions = [Vector3::new(0.0, 0.0, 0.0); 5];
+        for direction in &mut directions {
+            let value = take_native_vec3(span, &mut position, 0x14)?;
+            *direction = Vector3::new(value[0], value[1], value[2]);
+        }
+        let origin = take_native_vec3(span, &mut position, 0x13)?;
+        let mut parameters = [0.0; 4];
+        for parameter in &mut parameters {
+            *parameter = take_f64(span, &mut position)?;
+        }
+        let formulas = (0..3)
+            .map(|_| decode_law_formula(span, &mut position, int_width))
+            .collect::<Option<Vec<_>>>()?
+            .try_into()
+            .ok()?;
+        EmbeddedSweepSurfaceLayout::ProfileFirst {
+            profile: profile.curve,
+            spine: spine.curve,
+            secondary_kind,
+            directions,
+            origin: Point3::new(
+                origin[0] * LEN_TO_MM,
+                origin[1] * LEN_TO_MM,
+                origin[2] * LEN_TO_MM,
+            ),
+            parameters,
+            formulas: Box::new(formulas),
+        }
+    } else {
+        let mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        let profile = decode_curve_block(span, position, int_width)?;
+        position = profile.end;
+        let profile_range = [
+            take_f64(span, &mut position)?,
+            take_f64(span, &mut position)?,
+        ];
+        let profile_frame = if take_bool(span, &mut position)? {
+            let point = take_native_vec3(span, &mut position, 0x13)?;
+            let vector = take_native_vec3(span, &mut position, 0x14)?;
+            Some((
+                Point3::new(
+                    point[0] * LEN_TO_MM,
+                    point[1] * LEN_TO_MM,
+                    point[2] * LEN_TO_MM,
+                ),
+                Vector3::new(vector[0], vector[1], vector[2]),
+            ))
+        } else {
+            None
+        };
+        let point = take_native_vec3(span, &mut position, 0x13)?;
+        let origin = Point3::new(
+            point[0] * LEN_TO_MM,
+            point[1] * LEN_TO_MM,
+            point[2] * LEN_TO_MM,
+        );
+        let mut directions = [Vector3::new(0.0, 0.0, 0.0); 3];
+        for direction in &mut directions {
+            let value = take_native_vec3(span, &mut position, 0x14)?;
+            *direction = Vector3::new(value[0], value[1], value[2]);
+        }
+        let branch = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        let trajectory_flag = take_bool(span, &mut position)?;
+        let path = decode_curve_block(span, position, int_width)?;
+        position = path.end;
+        let path_range = [
+            take_f64(span, &mut position)? * LEN_TO_MM,
+            take_f64(span, &mut position)? * LEN_TO_MM,
+        ];
+        let path_parameter = take_f64(span, &mut position)?;
+        if branch != 1 {
+            return None;
+        }
+        let formula_flag = take_bool(span, &mut position)?;
+        let formula = decode_law_formula(span, &mut position, int_width)?;
+        let trailing_flag = take_bool(span, &mut position)?;
+        EmbeddedSweepSurfaceLayout::ExplicitFormula {
+            profile: profile.curve,
+            mode,
+            profile_range,
+            profile_frame,
+            origin,
+            directions,
+            trajectory_flag,
+            path: path.curve,
+            path_range,
+            path_parameter,
+            formula_flag,
+            formula,
+            trailing_flag,
+        }
+    };
     let cache = decode_surface_block(span, position, int_width)?;
     position = cache.end;
     let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
@@ -2132,19 +2222,7 @@ fn decode_sweep_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
             primary_kind,
-            layout: EmbeddedSweepSurfaceLayout::ProfileFirst {
-                profile: profile.curve,
-                spine: spine.curve,
-                secondary_kind,
-                directions,
-                origin: Point3::new(
-                    origin[0] * LEN_TO_MM,
-                    origin[1] * LEN_TO_MM,
-                    origin[2] * LEN_TO_MM,
-                ),
-                parameters,
-                formulas: Box::new(formulas),
-            },
+            layout,
             discontinuities,
             discontinuity_flag,
         })),

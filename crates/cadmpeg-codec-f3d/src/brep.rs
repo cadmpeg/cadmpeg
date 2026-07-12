@@ -1989,15 +1989,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 }
                             }
                             let embedded = *embedded;
-                            let (
-                                profile_geometry,
-                                spine_geometry,
-                                secondary_kind,
-                                directions,
-                                origin,
-                                parameters,
-                                embedded_formulas,
-                            ) = match embedded.layout {
+                            let (profile_geometry, spine_geometry, layout) = match embedded.layout {
                                 nurbs::EmbeddedSweepSurfaceLayout::ProfileFirst {
                                     profile,
                                     spine,
@@ -2006,15 +1998,92 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     origin,
                                     parameters,
                                     formulas,
-                                } => (
+                                } => {
+                                    let formulas = formulas
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(|(formula_index, formula)| {
+                                            cadmpeg_ir::geometry::LawFormula {
+                                                name: formula.name,
+                                                variables: formula
+                                                    .variables
+                                                    .into_iter()
+                                                    .enumerate()
+                                                    .map(|(index, variable)| {
+                                                        map_sweep_law(
+                                                            &mut out,
+                                                            i,
+                                                            &format!("{formula_index}:{index}"),
+                                                            variable,
+                                                        )
+                                                    })
+                                                    .collect(),
+                                            }
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .try_into()
+                                        .expect("three sweep formulas");
+                                    (
+                                        profile,
+                                        spine,
+                                        cadmpeg_ir::geometry::SweepSurfaceLayout::ProfileFirst {
+                                            secondary_kind,
+                                            directions,
+                                            origin,
+                                            parameters,
+                                            formulas: Box::new(formulas),
+                                        },
+                                    )
+                                }
+                                nurbs::EmbeddedSweepSurfaceLayout::ExplicitFormula {
                                     profile,
-                                    spine,
-                                    secondary_kind,
-                                    directions,
+                                    mode,
+                                    profile_range,
+                                    profile_frame,
                                     origin,
-                                    parameters,
-                                    formulas,
-                                ),
+                                    directions,
+                                    trajectory_flag,
+                                    path,
+                                    path_range,
+                                    path_parameter,
+                                    formula_flag,
+                                    formula,
+                                    trailing_flag,
+                                } => {
+                                    let formula = cadmpeg_ir::geometry::LawFormula {
+                                        name: formula.name,
+                                        variables: formula
+                                            .variables
+                                            .into_iter()
+                                            .enumerate()
+                                            .map(|(index, variable)| {
+                                                map_sweep_law(
+                                                    &mut out,
+                                                    i,
+                                                    &format!("explicit:{index}"),
+                                                    variable,
+                                                )
+                                            })
+                                            .collect(),
+                                    };
+                                    (
+                                        profile,
+                                        path,
+                                        cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitFormula {
+                                            mode,
+                                            profile_range,
+                                            profile_frame,
+                                            origin,
+                                            directions,
+                                            trajectory_flag,
+                                            path_range,
+                                            path_parameter,
+                                            formula_flag,
+                                            formula,
+                                            trailing_flag,
+                                        },
+                                    )
+                                }
                             };
                             let profile =
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:sweep:profile"));
@@ -2030,44 +2099,13 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 geometry: CurveGeometry::Nurbs(spine_geometry),
                                 source_object: None,
                             });
-                            let formulas = embedded_formulas
-                                .into_iter()
-                                .enumerate()
-                                .map(
-                                    |(formula_index, formula)| cadmpeg_ir::geometry::LawFormula {
-                                        name: formula.name,
-                                        variables: formula
-                                            .variables
-                                            .into_iter()
-                                            .enumerate()
-                                            .map(|(index, variable)| {
-                                                map_sweep_law(
-                                                    &mut out,
-                                                    i,
-                                                    &format!("{formula_index}:{index}"),
-                                                    variable,
-                                                )
-                                            })
-                                            .collect(),
-                                    },
-                                )
-                                .collect::<Vec<_>>()
-                                .try_into()
-                                .expect("three sweep formulas");
                             ProceduralSurfaceDefinition::Sweep {
                                 profile,
                                 spine,
                                 native: Some(Box::new(
                                     cadmpeg_ir::geometry::SweepSurfaceConstruction {
                                         primary_kind: embedded.primary_kind,
-                                        layout:
-                                            cadmpeg_ir::geometry::SweepSurfaceLayout::ProfileFirst {
-                                                secondary_kind,
-                                                directions,
-                                                origin,
-                                                parameters,
-                                                formulas: Box::new(formulas),
-                                            },
+                                        layout,
                                         discontinuities: embedded.discontinuities,
                                         discontinuity_flag: embedded.discontinuity_flag,
                                     },

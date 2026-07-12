@@ -276,9 +276,17 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
                 curves.extend([profile.0.as_str(), spine.0.as_str()]);
                 if let Some(native) = native {
-                    let crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } =
-                        &native.layout;
-                    for formula in formulas.iter() {
+                    let formulas: Vec<_> = match &native.layout {
+                        crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } => {
+                            formulas.iter().collect()
+                        }
+                        crate::geometry::SweepSurfaceLayout::ExplicitFormula {
+                            formula, ..
+                        } => {
+                            vec![formula]
+                        }
+                    };
+                    for formula in formulas {
                         for variable in &formula.variables {
                             collect_law_curves(variable, &mut curves);
                         }

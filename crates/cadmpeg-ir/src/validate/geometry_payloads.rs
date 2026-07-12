@@ -774,14 +774,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             let point_finite = |point: &crate::math::Point3| {
                 point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
             };
-            let crate::geometry::SweepSurfaceLayout::ProfileFirst {
-                directions,
-                origin,
-                parameters,
-                formulas,
-                ..
-            } = &construction.layout;
-            let formulas_valid = formulas.iter().all(|formula| {
+            let formula_valid = |formula: &crate::geometry::LawFormula| {
                 if formula.name == "null_law" {
                     formula.variables.is_empty()
                 } else {
@@ -790,16 +783,50 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         .iter()
                         .all(|variable| law_valid(variable, 0))
                 }
-            });
-            let scalars_valid = directions.iter().all(vector_finite)
-                && point_finite(origin)
-                && parameters.iter().all(|value| value.is_finite())
+            };
+            let layout_valid = match &construction.layout {
+                crate::geometry::SweepSurfaceLayout::ProfileFirst {
+                    directions,
+                    origin,
+                    parameters,
+                    formulas,
+                    ..
+                } => {
+                    directions.iter().all(vector_finite)
+                        && point_finite(origin)
+                        && parameters.iter().all(|value| value.is_finite())
+                        && formulas.iter().all(formula_valid)
+                }
+                crate::geometry::SweepSurfaceLayout::ExplicitFormula {
+                    profile_range,
+                    profile_frame,
+                    origin,
+                    directions,
+                    path_range,
+                    path_parameter,
+                    formula,
+                    ..
+                } => {
+                    profile_range
+                        .iter()
+                        .chain(path_range)
+                        .all(|value| value.is_finite())
+                        && profile_frame.as_ref().is_none_or(|(point, vector)| {
+                            point_finite(point) && vector_finite(vector)
+                        })
+                        && point_finite(origin)
+                        && directions.iter().all(vector_finite)
+                        && path_parameter.is_finite()
+                        && formula_valid(formula)
+                }
+            };
+            let scalars_valid = layout_valid
                 && construction
                     .discontinuities
                     .iter()
                     .flatten()
                     .all(|value| value.is_finite());
-            if !formulas_valid || !scalars_valid {
+            if !scalars_valid {
                 bounds_err(
                     findings,
                     &procedural.id.0,
