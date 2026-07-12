@@ -74,7 +74,11 @@ mod tests {
     fn every_exportable_format_has_an_encoder() {
         let registry = Registry::with_builtins();
         for format in [Format::Cadir, Format::Step, Format::F3d, Format::Sldprt] {
-            assert!(registry.encoder_by_id(format.name()).is_some(), "{}", format.name());
+            assert!(
+                registry.encoder_by_id(format.name()).is_some(),
+                "{}",
+                format.name()
+            );
         }
     }
 }
