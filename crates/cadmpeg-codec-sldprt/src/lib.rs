@@ -110,8 +110,8 @@ impl SldprtCodec {
         if expected.is_none_or(|expected| decode::semantic_hash(ir) != *expected) {
             return writer::write_semantic(ir, writer);
         }
-        let record = ir
-            .unknowns
+        let unknowns = ir.native_unknowns("sldprt")?;
+        let record = unknowns
             .iter()
             .find(|record| record.id.0 == "sldprt:file:source-image#0")
             .ok_or_else(|| {
@@ -165,8 +165,8 @@ impl Encoder for SldprtCodec {
 
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
         let replay = ir
-            .unknowns
-            .iter()
+            .native_unknowns("sldprt")?
+            .into_iter()
             .any(|record| record.id.0 == "sldprt:file:source-image#0");
         self.write_preserved(ir, writer)?;
         let validation = cadmpeg_ir::validate(ir, Vec::new());

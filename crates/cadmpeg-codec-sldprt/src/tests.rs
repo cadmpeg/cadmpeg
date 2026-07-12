@@ -1034,18 +1034,15 @@ fn decode_without_geometry_falls_back_to_metadata() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(!result.report.geometry_transferred);
-    assert_eq!(result.ir.unknowns.len(), 2);
-    assert!(result
-        .ir
-        .unknowns
+    assert_eq!(result.ir.native_unknowns("sldprt").unwrap().len(), 2);
+    let unknowns = result.ir.native_unknowns("sldprt").unwrap();
+    assert!(unknowns
         .iter()
         .any(|record| record.id.0 == "sldprt:file:source-image#0" && record.data.is_some()));
-    assert!(result
-        .ir
-        .unknowns
+    assert!(unknowns
         .iter()
         .any(|record| record.id.0 != "sldprt:file:source-image#0" && record.sha256.len() == 64));
-    let source = result.ir.source.expect("source metadata");
+    let source = result.ir.source.as_ref().expect("source metadata");
     assert_eq!(source.format, "sldprt");
     assert_eq!(
         source
@@ -2282,7 +2279,7 @@ fn decode_reports_display_list_geometry() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    let source = result.ir.source.expect("source metadata");
+    let source = result.ir.source.as_ref().expect("source metadata");
 
     assert_eq!(
         source
@@ -2305,16 +2302,21 @@ fn decode_reports_display_list_geometry() {
     assert_eq!(result.ir.model.tessellations[0].strip_lengths, vec![3]);
     assert_eq!(result.ir.model.tessellations[0].normals.len(), 3);
     assert_eq!(result.ir.model.tessellations[0].channels.len(), 6);
-    assert!(result.ir.unknowns.iter().any(|record| {
-        result
-            .ir
-            .annotations
-            .provenance
-            .get(&record.id.0)
-            .and_then(|note| note.tag.as_deref())
-            == Some("displaylist_tessellation")
-            && record.data.is_some()
-    }));
+    assert!(result
+        .ir
+        .native_unknowns("sldprt")
+        .unwrap()
+        .iter()
+        .any(|record| {
+            result
+                .ir
+                .annotations
+                .provenance
+                .get(&record.id.0)
+                .and_then(|note| note.tag.as_deref())
+                == Some("displaylist_tessellation")
+                && record.data.is_some()
+        }));
 }
 
 #[test]
@@ -2568,16 +2570,21 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated.ir.unknowns.iter().any(|record| {
-        regenerated
-            .ir
-            .annotations
-            .provenance
-            .get(&record.id.0)
-            .and_then(|note| regenerated.ir.annotations.streams.get(note.stream as usize))
-            .is_some_and(|stream| stream == "Contents/CustomData")
-            && record.data.as_deref() == Some(payload.as_slice())
-    }));
+    assert!(regenerated
+        .ir
+        .native_unknowns("sldprt")
+        .unwrap()
+        .iter()
+        .any(|record| {
+            regenerated
+                .ir
+                .annotations
+                .provenance
+                .get(&record.id.0)
+                .and_then(|note| regenerated.ir.annotations.streams.get(note.stream as usize))
+                .is_some_and(|stream| stream == "Contents/CustomData")
+                && record.data.as_deref() == Some(payload.as_slice())
+        }));
 }
 
 #[test]
@@ -2637,20 +2644,24 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
             .parameters["Depth"],
         "20mm"
     );
-    assert!(regenerated.ir.unknowns.iter().any(|record| {
-        regenerated
-            .ir
-            .annotations
-            .provenance
-            .get(&record.id.0)
-            .and_then(|note| regenerated.ir.annotations.streams.get(note.stream as usize))
-            .is_some_and(|stream| stream == "Contents/CustomData")
-            && record.data.as_deref() == Some(b"opaque-state".as_slice())
-    }));
-
-    let written = regenerated
+    assert!(regenerated
         .ir
-        .unknowns
+        .native_unknowns("sldprt")
+        .unwrap()
+        .iter()
+        .any(|record| {
+            regenerated
+                .ir
+                .annotations
+                .provenance
+                .get(&record.id.0)
+                .and_then(|note| regenerated.ir.annotations.streams.get(note.stream as usize))
+                .is_some_and(|stream| stream == "Contents/CustomData")
+                && record.data.as_deref() == Some(b"opaque-state".as_slice())
+        }));
+
+    let regenerated_unknowns = regenerated.ir.native_unknowns("sldprt").unwrap();
+    let written = regenerated_unknowns
         .iter()
         .find(|record| record.id.0 == "sldprt:file:source-image#0")
         .and_then(|record| record.data.as_ref())
@@ -2703,9 +2714,8 @@ fn face_on_untyped_surface_keeps_topology() {
     else {
         panic!("opaque surface has no replay record");
     };
-    let retained = result
-        .ir
-        .unknowns
+    let unknowns = result.ir.native_unknowns("sldprt").unwrap();
+    let retained = unknowns
         .iter()
         .find(|unknown| unknown.id == *record)
         .expect("opaque surface record");
@@ -2749,9 +2759,8 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
     else {
         panic!("opaque curve has no replay record");
     };
-    let retained = decoded
-        .ir
-        .unknowns
+    let unknowns = decoded.ir.native_unknowns("sldprt").unwrap();
+    let retained = unknowns
         .iter()
         .find(|unknown| unknown.id == *record)
         .expect("opaque curve record");
@@ -2821,9 +2830,8 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         SurfaceGeometry::Unknown { .. }
     ));
     assert_eq!(regenerated.ir.model.faces.len(), 1);
-    let written = regenerated
-        .ir
-        .unknowns
+    let unknowns = regenerated.ir.native_unknowns("sldprt").unwrap();
+    let written = unknowns
         .iter()
         .find(|record| record.id.0 == "sldprt:file:source-image#0")
         .and_then(|record| record.data.as_deref())

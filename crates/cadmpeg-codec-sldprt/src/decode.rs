@@ -50,7 +50,7 @@ pub fn decode(
     let scan = container::scan(reader)?;
 
     if options.container_only {
-        let ir = build_metadata_ir(&scan);
+        let ir = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
         return Ok(DecodeResult::new(ir, report));
     }
@@ -63,12 +63,12 @@ pub fn decode(
                 streams[selected].block,
                 &streams[selected].header,
                 decoded,
-            );
+            )?;
             return Ok(DecodeResult::new(ir, report));
         }
     }
 
-    let ir = build_metadata_ir(&scan);
+    let ir = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
     Ok(DecodeResult::new(ir, report))
 }
@@ -178,7 +178,7 @@ fn build_geometry_ir(
     block: &Block,
     header: &StreamHeader,
     mut brep: Brep,
-) -> CadIr {
+) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let materials = crate::appearance::materials(scan);
     if let Some(material) = materials.first() {
@@ -216,7 +216,7 @@ fn build_geometry_ir(
     ir.model.surfaces = brep.surfaces;
     ir.model.curves = brep.curves;
     ir.model.pcurves = brep.pcurves;
-    ir.unknowns = brep.unknowns;
+    let mut unknowns = brep.unknowns;
     for face_color in brep.face_colors {
         let id = AppearanceId(format!(
             "sldprt:appearance:entity53#{}",
@@ -343,7 +343,7 @@ fn build_geometry_ir(
             "displaylist_tessellation",
             Exactness::Unknown,
         );
-        ir.unknowns.push(UnknownRecord {
+        unknowns.push(UnknownRecord {
             id: UnknownId(display_id),
             offset: display.offset as u64,
             byte_len: display.uncomp_sz as u64,
@@ -353,8 +353,7 @@ fn build_geometry_ir(
         });
     }
     for source_block in &scan.blocks {
-        if ir
-            .unknowns
+        if unknowns
             .iter()
             .any(|record| record.id.0 == format!("sldprt:file:block#{}", source_block.offset))
         {
@@ -372,7 +371,7 @@ fn build_geometry_ir(
             source_block.family,
             Exactness::ByteExact,
         );
-        ir.unknowns.push(UnknownRecord {
+        unknowns.push(UnknownRecord {
             id: UnknownId(id),
             offset: 0,
             byte_len: source_block.payload.len() as u64,
@@ -407,17 +406,17 @@ fn build_geometry_ir(
         })
         .collect::<Vec<_>>();
     if !opaque_surfaces.is_empty() || !opaque_curves.is_empty() {
-        let partition = ir
-            .unknowns
+        let partition = unknowns
             .iter_mut()
             .find(|record| record.id == partition_id)
             .expect("active partition block is retained");
         partition.links.extend(opaque_surfaces);
         partition.links.extend(opaque_curves);
     }
-    preserve_source_image(scan, &mut ir);
+    preserve_source_image(scan, &mut ir, &mut unknowns);
+    ir.set_native_unknowns("sldprt", &unknowns)?;
     set_semantic_hash(&mut ir);
-    ir
+    Ok(ir)
 }
 
 fn source_meta(scan: &ContainerScan, block: &Block, header: &StreamHeader) -> SourceMeta {
@@ -639,7 +638,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
 }
 
-fn build_metadata_ir(scan: &ContainerScan) -> CadIr {
+fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let histories = crate::history::histories(scan, &mut ir.annotations);
     let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
@@ -681,26 +680,32 @@ fn build_metadata_ir(scan: &ContainerScan) -> CadIr {
             "parasolid_stream",
             Exactness::Unknown,
         );
-        ir.unknowns.push(UnknownRecord {
-            id: UnknownId(id),
-            offset: block.offset as u64,
-            byte_len: block.uncomp_sz as u64,
-            sha256: sha256_hex(&block.payload),
-            data: Some(block.payload.clone()),
-            links: Vec::new(),
-        });
+        ir.push_native_unknown(
+            "sldprt",
+            UnknownRecord {
+                id: UnknownId(id),
+                offset: block.offset as u64,
+                byte_len: block.uncomp_sz as u64,
+                sha256: sha256_hex(&block.payload),
+                data: Some(block.payload.clone()),
+                links: Vec::new(),
+            },
+        )?;
     }
 
     ir.source = Some(SourceMeta {
         format: "sldprt".to_string(),
         attributes,
     });
-    preserve_source_image(scan, &mut ir);
+    let mut unknowns = ir.native_unknowns("sldprt")?;
+    preserve_source_image(scan, &mut ir, &mut unknowns);
+    ir.set_native_unknowns("sldprt", &unknowns)?;
     set_semantic_hash(&mut ir);
-    ir
+    Ok(ir)
 }
 
 fn set_semantic_hash(ir: &mut CadIr) {
+    ir.finalize();
     let brep_hash = brep_semantic_hash(ir);
     if let Some(source) = &mut ir.source {
         source
@@ -762,25 +767,22 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
 pub(crate) fn semantic_hash(ir: &CadIr) -> String {
     // Normalize with a field-by-field clone so the retained source image (the
     // largest single payload) is filtered out instead of copied and dropped.
-    let normalized = CadIr {
-        ir_version: ir.ir_version.clone(),
-        source: ir.source.as_ref().map(|source| {
-            let mut source = source.clone();
-            source.attributes.remove("semantic_sha256");
-            source
-        }),
-        units: ir.units.clone(),
-        tolerances: ir.tolerances,
-        model: ir.model.clone(),
-        annotations: ir.annotations.clone(),
-        native: ir.native.clone(),
-        unknowns: ir
-            .unknowns
-            .iter()
-            .filter(|record| record.id.0 != "sldprt:file:source-image#0")
-            .cloned()
-            .collect(),
-    };
+    let mut normalized = ir.clone();
+    normalized.finalize();
+    normalized.source = ir.source.as_ref().map(|source| {
+        let mut source = source.clone();
+        source.attributes.remove("semantic_sha256");
+        source
+    });
+    let unknowns = ir
+        .native_unknowns("sldprt")
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|record| record.id.0 != "sldprt:file:source-image#0")
+        .collect::<Vec<_>>();
+    normalized
+        .set_native_unknowns("sldprt", &unknowns)
+        .expect("SLDPRT unknown records serialize");
     sha256_hex(
         normalized
             .to_canonical_json()
@@ -789,7 +791,7 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
     )
 }
 
-fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) {
+fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr, unknowns: &mut Vec<UnknownRecord>) {
     crate::annotations::note(
         &mut ir.annotations,
         "sldprt:file:source-image#0",
@@ -798,7 +800,7 @@ fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) {
         "source_image",
         Exactness::ByteExact,
     );
-    ir.unknowns.push(UnknownRecord {
+    unknowns.push(UnknownRecord {
         id: UnknownId("sldprt:file:source-image#0".into()),
         offset: 0,
         byte_len: scan.source_image.len() as u64,
