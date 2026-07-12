@@ -11533,13 +11533,16 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
 
     let mut edited = result.ir.clone();
     let ProceduralCurveDefinition::TwoSidedOffset {
-        context, offsets, ..
+        context,
+        discontinuity_flag,
+        offsets,
     } = &mut edited.model.procedural_curves[0].definition
     else {
         unreachable!()
     };
     context.parameter_range = [-2.0, 3.0];
     context.discontinuities = [vec![0.2, 0.8], vec![], vec![0.6]];
+    *discontinuity_flag = false;
     *offsets = [-3.0, 5.0];
     let expected_edit = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();

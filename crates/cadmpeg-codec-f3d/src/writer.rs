@@ -11445,7 +11445,9 @@ fn patch_two_sided_offset_definition(
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-        context, offsets, ..
+        context,
+        discontinuity_flag,
+        offsets,
     } = definition
     else {
         return Err(CodecError::Malformed(
@@ -11505,6 +11507,13 @@ fn patch_two_sided_offset_definition(
             patch_compound_double(bytes, record, &mut position, *value)?;
         }
     }
+    let flag_at = record.offset + position;
+    if !matches!(bytes.get(flag_at), Some(0x0a | 0x0b)) {
+        return Err(CodecError::Malformed(
+            "two-sided offset discontinuity flag is malformed".into(),
+        ));
+    }
+    bytes[flag_at] = native_bool(*discontinuity_flag);
     position += 1;
     for offset in offsets {
         patch_compound_double(bytes, record, &mut position, *offset / 10.0)?;
