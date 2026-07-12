@@ -11960,6 +11960,33 @@ fn generated_projection_decodes_and_writes_source_less() {
         }
     );
 
+    let mut edited = result.ir.clone();
+    let ProceduralCurveDefinition::Projection {
+        context,
+        discontinuity_flag,
+        ..
+    } = &mut edited.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    context.parameter_range = [-1.0, 2.0];
+    *discontinuity_flag = false;
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("projection context regeneration");
+    let regenerated = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated projection decode");
+    assert!(matches!(
+        regenerated.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::Projection {
+            ref context,
+            discontinuity_flag: false,
+            ..
+        } if context.parameter_range == [-1.0, 2.0]
+    ));
+
     let mut source_less = result.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
