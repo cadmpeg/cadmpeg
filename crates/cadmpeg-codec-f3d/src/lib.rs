@@ -107,8 +107,8 @@ impl F3dCodec {
             .as_ref()
             .and_then(|source| source.attributes.get("semantic_sha256"))
             .ok_or_else(|| CodecError::NotImplemented("IR has no F3D semantic baseline".into()))?;
-        let record = ir
-            .unknowns
+        let unknowns = ir.native_unknowns("f3d")?;
+        let record = unknowns
             .iter()
             .find(|record| record.id.0 == "f3d:file:source-image#0")
             .ok_or_else(|| {
@@ -174,8 +174,8 @@ impl Encoder for F3dCodec {
 
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
         let replay = ir
-            .unknowns
-            .iter()
+            .native_unknowns("f3d")?
+            .into_iter()
             .any(|record| record.id.0 == "f3d:file:source-image#0");
         if replay {
             self.write_preserved(ir, writer)?;

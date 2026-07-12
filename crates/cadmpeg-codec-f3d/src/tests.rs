@@ -116,10 +116,10 @@ fn t_end(b: &mut Vec<u8>) {
 
 fn assert_f3d_native_parity(ir: &cadmpeg_ir::document::CadIr) {
     let native = ir.native.f3d.as_ref().expect("F3D native namespace");
-    assert_eq!(native.version, cadmpeg_ir::native::F3D_NATIVE_VERSION);
+    assert_eq!(native.version, cadmpeg_ir::native::f3d::F3D_NATIVE_VERSION);
 }
 
-fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> &cadmpeg_ir::native::F3dNative {
+fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> &cadmpeg_ir::native::f3d::F3dNative {
     ir.native.f3d.as_ref().expect("F3D native namespace")
 }
 
@@ -2525,7 +2525,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -2556,7 +2556,7 @@ fn generated_source_less_f3d_rejects_subds() {
         .unwrap();
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId("test:f3d:subd#0".into()),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
@@ -2582,7 +2582,7 @@ fn generated_source_less_writes_document_tolerance_contract() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.tolerances.linear = 2.5e-7;
     source_less.tolerances.angular = 4.0e-11;
 
@@ -2604,7 +2604,7 @@ fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     assert_eq!(
         source_less.model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
@@ -2627,7 +2627,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
 
     let point_id = PointId("generated:point#3".into());
     source_less.model.points.push(cadmpeg_ir::topology::Point {
@@ -2722,7 +2722,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
 
     for index in 0..source_less.model.edges.len() {
         let edge = &source_less.model.edges[index];
@@ -2824,7 +2824,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let curve_id = CurveId("generated:circle#0".into());
     let expected = CurveGeometry::Circle {
         center: cadmpeg_ir::math::Point3::new(4.0, -2.0, 0.0),
@@ -2863,7 +2863,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let curve_id = CurveId("generated:ellipse#0".into());
     let expected = CurveGeometry::Ellipse {
         center: cadmpeg_ir::math::Point3::new(-3.0, 5.0, 0.0),
@@ -2901,7 +2901,7 @@ fn generated_source_less_face_writes_cylinder_surface_carrier() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Cylinder {
         origin: cadmpeg_ir::math::Point3::new(2.0, -4.0, 6.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -2930,7 +2930,7 @@ fn generated_source_less_face_writes_signed_sphere_surface_carrier() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Sphere {
         center: cadmpeg_ir::math::Point3::new(-2.0, 4.0, 8.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -2959,7 +2959,7 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Cone {
         origin: cadmpeg_ir::math::Point3::new(1.0, 3.0, -5.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -2989,7 +2989,7 @@ fn generated_source_less_face_writes_signed_torus_surface_carrier() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Torus {
         center: cadmpeg_ir::math::Point3::new(3.0, -6.0, 9.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -3019,7 +3019,7 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Nurbs(NurbsSurface {
         u_degree: 1,
         v_degree: 1,
@@ -3059,7 +3059,7 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Nurbs(NurbsSurface {
         u_degree: 1,
         v_degree: 1,
@@ -3100,7 +3100,7 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let curve_id = CurveId("generated:nurbs_curve#0".into());
     let expected = CurveGeometry::Nurbs(NurbsCurve {
         degree: 2,
@@ -3140,7 +3140,7 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
         .expect("generated inline pcurve decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.pcurves[0].clone();
 
     let mut encoded = Vec::new();
@@ -3184,7 +3184,7 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
         .expect("generated rational pcurve decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.pcurves[0].clone();
     assert!(matches!(
         &expected.geometry,
@@ -3220,7 +3220,7 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
         .expect("generated shared-edge decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected_surface = SurfaceGeometry::Cylinder {
         origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -3294,7 +3294,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
         .expect("generated planar triangle decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
 
     let loop_id = LoopId("generated:loop#1".into());
     let mut coedge_ids = Vec::new();
@@ -3398,7 +3398,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
         .expect("generated pcurve");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
 
     let expected_surface = SurfaceGeometry::Nurbs(NurbsSurface {
         u_degree: 1,
@@ -3513,7 +3513,7 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
         .expect("generated shared-edge decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected_surface = SurfaceGeometry::Torus {
         center: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -3561,7 +3561,7 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
         .expect("generated shared-edge decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let cone = SurfaceGeometry::Cone {
         origin: Point3::new(1.0, 2.0, 3.0),
         axis: Vector3::new(0.0, 0.0, 1.0),
@@ -3612,7 +3612,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .expect("generated extrusion decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
 
     let mut encoded = Vec::new();
@@ -3650,7 +3650,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         .expect("generated rolling-ball decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
 
     let mut encoded = Vec::new();
@@ -3752,7 +3752,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     let native = source_less
         .native
         .f3d
-        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
     native.persistent_design_links = vec![
         PersistentDesignLink {
             id: "generated:persistent-design-link#0".into(),
@@ -3892,7 +3892,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         .expect("generated history decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = f3d_native(&source_less).asm_histories[0].clone();
 
     let mut encoded = Vec::new();
@@ -3921,7 +3921,7 @@ fn generated_source_less_writes_design_object_metastream() {
     let native = source_less
         .native
         .f3d
-        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
     native.design_objects = vec![
         DesignObject {
             id: "generated:design-object#0".into(),
@@ -3983,7 +3983,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     let native = source_less
         .native
         .f3d
-        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
     native.construction_recipes = [
         ConstructionRecipeKind::Body,
         ConstructionRecipeKind::Face,
@@ -4078,7 +4078,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     let native = source_less
         .native
         .f3d
-        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
     native.design_objects = vec![DesignObject {
         id: "generated:design-object#0".into(),
         byte_offset: 0,
@@ -4167,7 +4167,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     let native = source_less
         .native
         .f3d
-        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
     native.design_objects = vec![DesignObject {
         id: "generated:sketch-object#0".into(),
         byte_offset: 0,
@@ -4330,7 +4330,7 @@ fn generated_source_less_writes_act_table_channels_and_root_component() {
     let native = source_less
         .native
         .f3d
-        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
     native.act_entities = vec![ActEntity {
         id: "generated:act-entity#0".into(),
         record_index: 7,
@@ -4451,7 +4451,7 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
     let native = source_less
         .native
         .f3d
-        .get_or_insert_with(cadmpeg_ir::native::F3dNative::default);
+        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default);
     native.design_objects = vec![DesignObject {
         id: "generated:body-object#0".into(),
         byte_offset: 0,
@@ -6336,15 +6336,10 @@ fn decode_yields_metadata_and_honest_report() {
 
     // But the active BREP is preserved as an unknown passthrough with a hash,
     // and source metadata was captured.
-    assert_eq!(result.ir.unknowns.len(), 2);
-    assert!(result
-        .ir
-        .unknowns
-        .iter()
-        .all(|record| record.sha256.len() == 64));
-    assert!(result
-        .ir
-        .unknowns
+    let unknowns = result.ir.native_unknowns("f3d").unwrap();
+    assert_eq!(unknowns.len(), 2);
+    assert!(unknowns.iter().all(|record| record.sha256.len() == 64));
+    assert!(unknowns
         .iter()
         .any(|record| record.id.0 == "f3d:file:source-image#0"));
     let source = result.ir.source.as_ref().expect("source metadata");
@@ -6360,7 +6355,7 @@ fn decode_yields_metadata_and_honest_report() {
         .ir
         .annotations
         .provenance
-        .contains_key(&result.ir.unknowns[0].id.0));
+        .contains_key(&unknowns[0].id.0));
 }
 
 #[test]
@@ -6598,7 +6593,7 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
 
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = CurveGeometry::Degenerate {
         point: Point3::new(0.0, 0.0, 0.0),
     };
@@ -6633,7 +6628,7 @@ fn generated_source_less_writes_general_face_wire_body() {
         .expect("generated mixed body decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -6723,7 +6718,7 @@ fn generated_source_less_writes_wire_body_topology() {
         .expect("generated wire body decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected_curve = source_less.model.curves[0].geometry.clone();
     let expected_points = source_less
         .model
@@ -6775,7 +6770,7 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
         .expect("generated wire body decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")
@@ -6844,7 +6839,7 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
         .expect("generated wire body decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")
@@ -6889,7 +6884,7 @@ fn generated_source_less_writes_multi_region_wire_body() {
         .expect("generated wire body decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")
@@ -6946,7 +6941,7 @@ fn generated_source_less_writes_multi_shell_wire_region() {
         .expect("generated wire body decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")
@@ -7238,7 +7233,12 @@ fn decode_keeps_face_on_unknown_surface() {
     };
     let link = record.as_ref().expect("unknown surface links to a record");
     assert!(
-        result.ir.unknowns.iter().any(|u| u.id == *link),
+        result
+            .ir
+            .native_unknowns("f3d")
+            .unwrap()
+            .iter()
+            .any(|u| u.id == *link),
         "the linked unknown record is present in the arena"
     );
 
@@ -7329,7 +7329,7 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
 
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -7378,7 +7378,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
 
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -7432,7 +7432,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
 
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -7497,7 +7497,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
 
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -7549,7 +7549,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
 
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -7617,7 +7617,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -7692,7 +7692,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
 
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -7760,7 +7760,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
 
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -7881,7 +7881,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
 
             let mut source_less = result.ir;
             source_less.source = None;
-            source_less.unknowns.clear();
+            source_less.set_native_unknowns("f3d", &[]).unwrap();
             let mut encoded = Vec::new();
             F3dCodec
                 .encode(&source_less, &mut encoded)
@@ -7961,7 +7961,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         let expected = native.clone();
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -8024,7 +8024,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         let expected = construction.clone();
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -8094,7 +8094,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         let expected = construction.clone();
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -8426,7 +8426,7 @@ fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
         ));
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -8823,7 +8823,7 @@ fn decode_retains_generated_helix_construction() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.procedural_curves[0].definition.clone();
     let mut encoded = Vec::new();
     F3dCodec
@@ -8912,7 +8912,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9002,7 +9002,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9047,7 +9047,7 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9150,7 +9150,7 @@ fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
         ));
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -9203,7 +9203,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9276,7 +9276,7 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9325,7 +9325,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut expected = source_less.model.procedural_curves[0].definition.clone();
     let mut encoded = Vec::new();
     F3dCodec
@@ -9411,7 +9411,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected_geometries = supports;
     let mut encoded = Vec::new();
     F3dCodec
@@ -9477,7 +9477,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9538,7 +9538,7 @@ fn generated_projection_decodes_and_writes_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9583,7 +9583,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9636,7 +9636,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9692,7 +9692,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
 
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -9760,7 +9760,7 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
 
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -9806,7 +9806,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9856,7 +9856,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9909,7 +9909,7 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
 
     let mut source_less = result.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9971,7 +9971,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
 
         let mut source_less = result.ir;
         source_less.source = None;
-        source_less.unknowns.clear();
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -10047,7 +10047,7 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
         .expect("generated procedural curve decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.model.procedural_curves[0].definition = ProceduralCurveDefinition::BlendSpine {
         blend_surface: None,
     };
@@ -10070,7 +10070,7 @@ fn generated_source_less_rejects_duplicate_procedural_curve_owners() {
         .expect("generated helix decode");
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less.unknowns.clear();
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut duplicate = source_less.model.procedural_curves[0].clone();
     duplicate.id = "generated:duplicate-helix".into();
     source_less.model.procedural_curves.push(duplicate);
