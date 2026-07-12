@@ -40,4 +40,36 @@ impl SldprtNative {
         self.feature_input_lanes
             .sort_by(|left, right| left.id.cmp(&right.id));
     }
+
+    /// Return counts for every non-empty native arena and nested record family.
+    pub(crate) fn loss_counts(&self) -> Vec<(&'static str, usize)> {
+        let mut counts = Vec::new();
+        let values = [
+            ("feature_histories", self.feature_histories.len()),
+            ("feature_input_lanes", self.feature_input_lanes.len()),
+            (
+                "configurations",
+                self.feature_histories
+                    .iter()
+                    .map(|history| history.configurations.len())
+                    .sum(),
+            ),
+            (
+                "features",
+                self.feature_histories
+                    .iter()
+                    .map(|history| history.features.len())
+                    .sum(),
+            ),
+            (
+                "sketch_input_entities",
+                self.feature_input_lanes
+                    .iter()
+                    .map(|lane| lane.sketch_entities.len())
+                    .sum(),
+            ),
+        ];
+        counts.extend(values.into_iter().filter(|(_, count)| *count != 0));
+        counts
+    }
 }
