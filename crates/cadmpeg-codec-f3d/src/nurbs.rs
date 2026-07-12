@@ -24,7 +24,7 @@
 //! and validates tags, degrees, counts, and block extents.
 
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, NurbsCurve, NurbsSurface, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -1713,6 +1713,230 @@ fn decode_rolling_ball_third_side(
         tertiary_pcurve,
         flag,
     })
+}
+
+#[allow(dead_code)] // Consumed by the enclosing variable-blend decoder in the next slice.
+fn take_blend_value_name(bytes: &[u8], position: &mut usize) -> Option<String> {
+    let saved = *position;
+    if let Some(value) = take_native_string(bytes, position) {
+        return Some(value);
+    }
+    *position = saved;
+    take_native_ident(bytes, position)
+}
+
+#[allow(dead_code)] // Consumed by the enclosing variable-blend decoder in the next slice.
+fn decode_variable_blend_value(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    modern: bool,
+    depth: usize,
+) -> Option<cadmpeg_ir::geometry::VariableBlendValue> {
+    use cadmpeg_ir::geometry::{
+        LoftBridgeToken, VariableBlendInterpolationPoint, VariableBlendValue,
+        VariableBlendValuePayload,
+    };
+    if depth > 32 {
+        return None;
+    }
+    let name = take_blend_value_name(bytes, position)?;
+    let modern_flag = if modern {
+        take_bool(bytes, position)?
+    } else {
+        false
+    };
+    let discriminator = if bytes.get(*position) == Some(&0x04) {
+        take_tagged_int(bytes, position, 0x04, int_width)?
+    } else {
+        1
+    };
+    let calibrated = take_tagged_int(bytes, position, 0x15, int_width)?;
+    let payload = match name.as_str() {
+        "two_ends" => VariableBlendValuePayload::TwoEnds {
+            parameters: [take_f64(bytes, position)?, take_f64(bytes, position)?],
+            radii: [
+                take_f64(bytes, position)? * LEN_TO_MM,
+                take_f64(bytes, position)? * LEN_TO_MM,
+            ],
+        },
+        "edge_offset" if discriminator == 0 => VariableBlendValuePayload::EdgeOffset {
+            scalars: vec![take_f64(bytes, position)?, take_f64(bytes, position)?],
+            lengths: vec![take_f64(bytes, position)? * LEN_TO_MM],
+        },
+        "edge_offset" if discriminator == 1 => VariableBlendValuePayload::EdgeOffset {
+            scalars: vec![take_f64(bytes, position)?],
+            lengths: vec![
+                take_f64(bytes, position)? * LEN_TO_MM,
+                take_f64(bytes, position)? * LEN_TO_MM,
+            ],
+        },
+        "functional" => {
+            let parameter = take_f64(bytes, position)?;
+            let radius = take_f64(bytes, position)? * LEN_TO_MM;
+            let (function, end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
+            *position = end;
+            let terminal = if bytes.get(*position) == Some(&0x06) {
+                LoftBridgeToken::Double(take_f64(bytes, position)?)
+            } else {
+                LoftBridgeToken::Text(take_blend_value_name(bytes, position)?)
+            };
+            VariableBlendValuePayload::Functional {
+                parameter,
+                radius,
+                function: PcurveGeometry::Nurbs {
+                    degree: function.degree,
+                    knots: function.knots,
+                    control_points: function.control_points,
+                    weights: function.weights,
+                    periodic: function.periodic,
+                },
+                terminal,
+            }
+        }
+        "const" => VariableBlendValuePayload::Constant {
+            parameters: [take_f64(bytes, position)?, take_f64(bytes, position)?],
+            radius: take_f64(bytes, position)? * LEN_TO_MM,
+            variable_chamfer: take_tagged_int(bytes, position, 0x15, int_width)?,
+            chamfer_type: take_tagged_int(bytes, position, 0x15, int_width)?,
+            nested: Box::new(decode_variable_blend_value(
+                bytes,
+                position,
+                int_width,
+                modern,
+                depth + 1,
+            )?),
+        },
+        "interp" => {
+            let parameter = take_f64(bytes, position)?;
+            let radius = take_f64(bytes, position)? * LEN_TO_MM;
+            let (function, end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
+            *position = end;
+            let enum_count = take_tagged_int(bytes, position, 0x04, int_width)?;
+            let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+            if count > 100_000 {
+                return None;
+            }
+            let mut points = Vec::with_capacity(count);
+            for _ in 0..count {
+                let parameter = take_f64(bytes, position)?;
+                let radius = take_f64(bytes, position)? * LEN_TO_MM;
+                let tangents = [take_f64(bytes, position)?, take_f64(bytes, position)?];
+                let location = take_native_vec3(bytes, position, 0x13)?;
+                let normal = take_native_vec3(bytes, position, 0x14)?;
+                points.push(VariableBlendInterpolationPoint {
+                    parameter,
+                    radius,
+                    tangents,
+                    location: Point3::new(
+                        location[0] * LEN_TO_MM,
+                        location[1] * LEN_TO_MM,
+                        location[2] * LEN_TO_MM,
+                    ),
+                    normal: Vector3::new(normal[0], normal[1], normal[2]),
+                });
+            }
+            let tail = if take_tagged_int(bytes, position, 0x04, int_width)? != 0 {
+                Some([take_f64(bytes, position)?, take_f64(bytes, position)?])
+            } else {
+                None
+            };
+            VariableBlendValuePayload::Interpolated {
+                parameter,
+                radius,
+                function: PcurveGeometry::Nurbs {
+                    degree: function.degree,
+                    knots: function.knots,
+                    control_points: function.control_points,
+                    weights: function.weights,
+                    periodic: function.periodic,
+                },
+                enum_count,
+                points,
+                tail,
+            }
+        }
+        _ => return None,
+    };
+    Some(VariableBlendValue {
+        name,
+        modern_flag,
+        discriminator,
+        calibrated,
+        payload,
+    })
+}
+
+#[cfg(test)]
+mod variable_blend_value_tests {
+    use super::*;
+    use cadmpeg_ir::geometry::VariableBlendValuePayload;
+
+    fn text(bytes: &mut Vec<u8>, value: &str) {
+        bytes.push(0x07);
+        bytes.push(u8::try_from(value.len()).expect("generated text length"));
+        bytes.extend_from_slice(value.as_bytes());
+    }
+
+    fn integer(bytes: &mut Vec<u8>, tag: u8, value: i64) {
+        bytes.push(tag);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn double(bytes: &mut Vec<u8>, value: f64) {
+        bytes.push(0x06);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn two_ends(bytes: &mut Vec<u8>) {
+        text(bytes, "two_ends");
+        bytes.push(0x0a);
+        integer(bytes, 0x04, 7);
+        integer(bytes, 0x15, 3);
+        for value in [0.25, 0.75, 1.5, 2.5] {
+            double(bytes, value);
+        }
+    }
+
+    #[test]
+    fn decodes_generated_two_ends_and_recursive_const_values() {
+        let mut direct = Vec::new();
+        two_ends(&mut direct);
+        let mut position = 0;
+        let decoded = decode_variable_blend_value(&direct, &mut position, 8, true, 0)
+            .expect("generated two-ends value");
+        assert_eq!(position, direct.len());
+        assert!(decoded.modern_flag);
+        assert_eq!(decoded.discriminator, 7);
+        let VariableBlendValuePayload::TwoEnds { parameters, radii } = decoded.payload else {
+            panic!("expected two-ends payload")
+        };
+        assert_eq!(parameters, [0.25, 0.75]);
+        assert_eq!(radii, [15.0, 25.0]);
+
+        let mut recursive = Vec::new();
+        text(&mut recursive, "const");
+        recursive.push(0x0b);
+        integer(&mut recursive, 0x15, 4);
+        for value in [0.1, 0.9, 3.0] {
+            double(&mut recursive, value);
+        }
+        integer(&mut recursive, 0x15, 3);
+        integer(&mut recursive, 0x15, 2);
+        two_ends(&mut recursive);
+        let mut position = 0;
+        let decoded = decode_variable_blend_value(&recursive, &mut position, 8, true, 0)
+            .expect("generated recursive const value");
+        assert_eq!(position, recursive.len());
+        let VariableBlendValuePayload::Constant { radius, nested, .. } = decoded.payload else {
+            panic!("expected constant payload")
+        };
+        assert_eq!(radius, 30.0);
+        assert!(matches!(
+            nested.payload,
+            VariableBlendValuePayload::TwoEnds { .. }
+        ));
+    }
 }
 
 fn decode_full_rb_blend_spl_sur(
