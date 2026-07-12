@@ -395,6 +395,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             let vector_finite = |vector: &Vector3| {
                 vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
             };
+            let first_absent = construction.scales.iter().position(Option::is_none);
+            let leading_scale_shape_valid = first_absent.is_none_or(|index| {
+                construction.scales[index + 1..].iter().all(Option::is_none)
+                    && construction.fifth_scale.is_none()
+            });
             let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
             scales.extend(construction.fifth_scale.iter().map(Box::as_ref));
             let tail_valid = match &construction.tail {
@@ -404,7 +409,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     parameter_range,
                     ..
                 } => {
-                    scales.extend(scale.iter().map(Box::as_ref));
+                    scales.push(scale.as_ref());
                     vector_finite(direction)
                         && parameter_range.iter().all(|value| value.is_finite())
                         && parameter_range[0] <= parameter_range[1]
@@ -416,7 +421,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     ..
                 } => {
                     scales.extend(first_scale.iter().map(Box::as_ref));
-                    scales.extend(second_scale.iter().map(Box::as_ref));
+                    scales.push(second_scale.as_ref());
                     vector_finite(direction)
                 }
                 crate::geometry::CompoundLoftTail::Zero { direction, .. } => match direction {
@@ -443,11 +448,97 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         && data.direction.as_ref().is_none_or(&vector_finite)
                 })
             });
-            if !tail_valid || !scales_valid {
+            if !leading_scale_shape_valid || !tail_valid || !scales_valid {
                 bounds_err(
                     findings,
                     &procedural.id.0,
                     "compound loft construction payload is invalid",
+                );
+            }
+        }
+        if let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
+            &procedural.definition
+        {
+            let vector_finite = |vector: &Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let first_absent = construction.scales.iter().position(Option::is_none);
+            let leading_scale_shape_valid = first_absent
+                .is_none_or(|index| construction.scales[index + 1..].iter().all(Option::is_none));
+            let shape_valid = match &construction.shape {
+                crate::geometry::ScaledCompoundLoftShape::Full => true,
+                crate::geometry::ScaledCompoundLoftShape::None {
+                    parameter_ranges,
+                    parameters,
+                } => {
+                    parameter_ranges
+                        .iter()
+                        .flatten()
+                        .chain(parameters.iter().flatten())
+                        .all(|value| value.is_finite())
+                        && parameter_ranges.iter().all(|range| range[0] <= range[1])
+                }
+            };
+            let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
+            let branch_valid = match &construction.branch {
+                crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
+                    first_scale,
+                    second_scale,
+                    direction,
+                    ..
+                } => {
+                    scales.extend(first_scale.iter().map(Box::as_ref));
+                    scales.push(second_scale.as_ref());
+                    vector_finite(direction)
+                }
+                crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve { scale, .. } => {
+                    scales.extend(scale.iter().map(Box::as_ref));
+                    true
+                }
+                crate::geometry::ScaledCompoundLoftBranch::Direct {
+                    selector,
+                    direction,
+                    ..
+                } => match direction {
+                    crate::geometry::CompoundLoftDirection::Vector { value } => {
+                        *selector == 0 && vector_finite(value)
+                    }
+                    crate::geometry::CompoundLoftDirection::Curve { .. } => *selector != 0,
+                },
+            };
+            let scales_valid = scales.iter().all(|scale| {
+                scale.members.iter().all(|member| {
+                    let data = &member.data;
+                    let table = &data.subdata;
+                    let expected_rows = if table.type_code == 211 {
+                        1
+                    } else {
+                        usize::try_from(table.row_count).unwrap_or(usize::MAX)
+                    };
+                    table.rows.len() == expected_rows
+                        && table.rows.iter().all(|row| {
+                            row.parameters.iter().all(|value| value.is_finite())
+                                && row.columns.iter().flatten().all(|value| value.is_finite())
+                        })
+                        && data.direction.as_ref().is_none_or(&vector_finite)
+                })
+            });
+            let scalars_valid = construction
+                .discontinuities
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite())
+                && construction.tail_directions.iter().all(vector_finite);
+            if !leading_scale_shape_valid
+                || !shape_valid
+                || !branch_valid
+                || !scales_valid
+                || !scalars_valid
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "scaled compound loft construction payload is invalid",
                 );
             }
         }

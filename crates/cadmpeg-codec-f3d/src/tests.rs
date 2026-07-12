@@ -2020,6 +2020,65 @@ fn synthetic_compound_loft_smbh() -> Vec<u8> {
     bytes
 }
 
+fn append_generated_float_array(bytes: &mut Vec<u8>, values: &[f64]) {
+    t_long(bytes, i64::try_from(values.len()).unwrap());
+    for value in values {
+        t_dbl(bytes, *value);
+    }
+}
+
+fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "scaled_cloft_spl_sur");
+    surface.push(0x15);
+    surface.extend_from_slice(&11i64.to_le_bytes());
+    if full {
+        surface.extend_from_slice(&generated_surface_block());
+        t_dbl(&mut surface, 0.004);
+    } else {
+        for value in [-1.0, 2.0, -3.0, 4.0] {
+            t_dbl(&mut surface, value);
+        }
+        append_generated_float_array(&mut surface, &[0.25]);
+        append_generated_float_array(&mut surface, &[0.5, 0.75]);
+    }
+    for values in [&[0.25][..], &[][..], &[][..], &[][..], &[][..], &[][..]] {
+        append_generated_float_array(&mut surface, values);
+    }
+    surface.push(0x0a);
+    append_generated_compound_loft_scale(&mut surface);
+    surface.push(0x0a);
+    surface.push(0x0b);
+    t_long(&mut surface, 0);
+    surface.push(0x0b);
+    surface.push(0x0a);
+    t_long(&mut surface, 0);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    surface.push(0x0b);
+    surface.push(0x0a);
+    t_long(&mut surface, 2);
+    t_vec(&mut surface, [1.0, 0.0, 0.0]);
+    t_vec(&mut surface, [0.0, 1.0, 0.0]);
+    surface.push(0x15);
+    surface.extend_from_slice(&12i64.to_le_bytes());
+    surface.extend_from_slice(&generated_curve_block());
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
     push_u8_string(bytes, label);
     t_ident(bytes, "plane");
@@ -7818,6 +7877,326 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     assert_eq!(*selector, 0);
     assert!(matches!(direction, CompoundLoftDirection::Vector { .. }));
     assert_eq!(*trailing_flags, [true, false]);
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less compound-loft encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less compound-loft round trip");
+    let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+        &round_trip.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected round-trip compound loft")
+    };
+    assert!(construction.scales[0].is_some());
+    assert!(construction.scales[1..].iter().all(Option::is_none));
+    assert_eq!(construction.flags, [true, false]);
+    assert!(matches!(
+        construction.tail,
+        CompoundLoftTail::Zero {
+            selector: 0,
+            direction: CompoundLoftDirection::Vector { .. },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn generated_compound_loft_writes_every_tail_shape_source_less() {
+    use cadmpeg_ir::geometry::{
+        CompoundLoftDirection, CompoundLoftTail, ProceduralSurfaceDefinition,
+    };
+    use cadmpeg_ir::math::Vector3;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_compound_loft_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("compound-loft decode");
+    let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected compound loft")
+    };
+    let scale = construction.scales[0].clone().expect("generated scale");
+    let curve = scale.path.clone();
+    let tails = [
+        CompoundLoftTail::Six {
+            flags: [true, false],
+            scale: Box::new(scale.clone()),
+            selector: 31,
+            direction: Vector3::new(0.0, 1.0, 0.0),
+            parameter_range: [-0.5, 1.5],
+            curve: curve.clone(),
+        },
+        CompoundLoftTail::Seven {
+            first_flag: true,
+            first_scale: Some(Box::new(scale.clone())),
+            second_flag: false,
+            second_scale: Box::new(scale.clone()),
+            selector: -7,
+            direction: Vector3::new(1.0, 0.0, 0.0),
+            trailing_flags: [false, true],
+        },
+        CompoundLoftTail::Zero {
+            flags: [false, true],
+            selector: 4,
+            direction: CompoundLoftDirection::Curve { curve },
+            trailing_flags: [true, true],
+        },
+    ];
+
+    for (tail_index, expected) in tails.into_iter().enumerate() {
+        let mut source_less = decoded.ir.clone();
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+            &mut source_less.model.procedural_surfaces[0].definition
+        else {
+            unreachable!()
+        };
+        construction.tail = expected.clone();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less compound-loft encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("source-less compound-loft round trip");
+        assert_eq!(
+            round_trip.ir.model.procedural_surfaces.len(),
+            1,
+            "tail {tail_index} did not decode"
+        );
+        let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+            &round_trip.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected round-trip compound loft")
+        };
+        match (&expected, &construction.tail) {
+            (CompoundLoftTail::Six { .. }, CompoundLoftTail::Six { .. }) => {}
+            (CompoundLoftTail::Seven { .. }, CompoundLoftTail::Seven { first_scale, .. }) => {
+                assert!(first_scale.is_some());
+            }
+            (
+                CompoundLoftTail::Zero { .. },
+                CompoundLoftTail::Zero {
+                    selector: 4,
+                    direction: CompoundLoftDirection::Curve { .. },
+                    ..
+                },
+            ) => {}
+            _ => panic!("compound-loft tail shape changed"),
+        }
+    }
+}
+
+#[test]
+fn generated_scaled_compound_loft_decodes_full_direct_branch() {
+    use cadmpeg_ir::geometry::{
+        CompoundLoftDirection, ProceduralSurfaceDefinition, ScaledCompoundLoftBranch,
+        ScaledCompoundLoftShape,
+    };
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_scaled_compound_loft_smbh(true))),
+            &DecodeOptions::default(),
+        )
+        .expect("scaled compound-loft decode");
+    let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected scaled compound loft")
+    };
+    assert!(matches!(construction.shape, ScaledCompoundLoftShape::Full));
+    assert_eq!(construction.singularity, 11);
+    assert_eq!(construction.discontinuities[0], [0.25]);
+    assert!(construction.discontinuities[1..].iter().all(Vec::is_empty));
+    assert!(construction.discontinuity_flag);
+    assert!(construction.scales[0].is_some());
+    assert!(construction.scales[1..].iter().all(Option::is_none));
+    assert_eq!(construction.flags, [true, false]);
+    assert_eq!(construction.selector, 0);
+    assert!(matches!(
+        construction.branch,
+        ScaledCompoundLoftBranch::Direct {
+            flag: true,
+            selector: 0,
+            direction: CompoundLoftDirection::Vector { .. },
+        }
+    ));
+    assert_eq!(construction.trailing_flags, [false, true]);
+    assert_eq!(construction.tail_kind, 2);
+    assert_eq!(construction.tail_singularity, 12);
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less scaled compound-loft encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less scaled compound-loft round trip");
+    assert!(matches!(
+        round_trip.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
+    ));
+}
+
+#[test]
+fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
+    use cadmpeg_ir::geometry::{
+        CompoundLoftDirection, ProceduralSurfaceDefinition, ScaledCompoundLoftBranch,
+        ScaledCompoundLoftShape,
+    };
+    use cadmpeg_ir::math::Vector3;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_scaled_compound_loft_smbh(true))),
+            &DecodeOptions::default(),
+        )
+        .expect("scaled compound-loft decode");
+    let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected scaled compound loft")
+    };
+    let scale = construction.scales[0].clone().expect("generated scale");
+    let curve = scale.path.clone();
+    let cases = [
+        (
+            ScaledCompoundLoftShape::Full,
+            ScaledCompoundLoftBranch::ExtendedVector {
+                first_scale: None,
+                second_scale: Box::new(scale.clone()),
+                selector: 9,
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+        ),
+        (
+            ScaledCompoundLoftShape::Full,
+            ScaledCompoundLoftBranch::ExtendedCurve {
+                scale: None,
+                flag: true,
+                singularity: 13,
+                curve: curve.clone(),
+            },
+        ),
+        (
+            ScaledCompoundLoftShape::Full,
+            ScaledCompoundLoftBranch::Direct {
+                flag: false,
+                selector: 4,
+                direction: CompoundLoftDirection::Curve {
+                    curve: curve.clone(),
+                },
+            },
+        ),
+    ];
+
+    for (case_index, (shape, branch)) in cases.into_iter().enumerate() {
+        let mut source_less = decoded.ir.clone();
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
+            &mut source_less.model.procedural_surfaces[0].definition
+        else {
+            unreachable!()
+        };
+        construction.shape = shape;
+        construction.branch = branch;
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less scaled compound-loft encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("source-less scaled compound-loft round trip");
+        assert_eq!(
+            round_trip.ir.model.procedural_surfaces.len(),
+            1,
+            "scaled compound-loft case {case_index} did not decode"
+        );
+        let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
+            &round_trip.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected round-trip scaled compound loft")
+        };
+        assert!(matches!(
+            (&construction.shape, &construction.branch),
+            (
+                ScaledCompoundLoftShape::Full,
+                ScaledCompoundLoftBranch::ExtendedVector { .. }
+            ) | (
+                ScaledCompoundLoftShape::Full,
+                ScaledCompoundLoftBranch::ExtendedCurve { .. }
+            ) | (
+                ScaledCompoundLoftShape::Full,
+                ScaledCompoundLoftBranch::Direct {
+                    direction: CompoundLoftDirection::Curve { .. },
+                    ..
+                }
+            )
+        ));
+    }
+}
+
+#[test]
+fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, ScaledCompoundLoftShape, SurfaceGeometry,
+    };
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_scaled_compound_loft_smbh(false))),
+            &DecodeOptions::default(),
+        )
+        .expect("scaled compound-loft none-shape decode");
+    let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected scaled compound loft")
+    };
+    assert!(matches!(
+        construction.shape,
+        ScaledCompoundLoftShape::None {
+            parameter_ranges: [[-1.0, 2.0], [-3.0, 4.0]],
+            ..
+        }
+    ));
+    let owner = decoded.ir.model.procedural_surfaces[0].surface.clone();
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less
+        .model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == owner)
+        .expect("procedural owner")
+        .geometry = SurfaceGeometry::Unknown { record: None };
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less scaled compound-loft none-shape encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less scaled compound-loft none-shape round trip");
+    assert!(matches!(
+        round_trip.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
+    ));
 }
 
 #[test]

@@ -332,6 +332,11 @@ pub enum ProceduralSurfaceDefinition {
         /// Complete native compound-loft graph.
         construction: Box<CompoundLoftConstruction>,
     },
+    /// Native scaled compound-loft construction.
+    ScaledCompoundLoft {
+        /// Complete native scaled compound-loft graph.
+        construction: Box<ScaledCompoundLoftConstruction>,
+    },
     /// Native curvature-continuous two-sided blend.
     G2Blend {
         /// Complete native G2 construction graph.
@@ -1061,9 +1066,8 @@ pub enum CompoundLoftTail {
     Six {
         /// Two leading flags.
         flags: [bool; 2],
-        /// Optional scale block.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        scale: Option<Box<CompoundLoftScale>>,
+        /// Required scale block.
+        scale: Box<CompoundLoftScale>,
         /// Native integer following the scale.
         selector: i64,
         /// Stored direction.
@@ -1082,9 +1086,8 @@ pub enum CompoundLoftTail {
         first_scale: Option<Box<CompoundLoftScale>>,
         /// Second flag.
         second_flag: bool,
-        /// Second optional scale block.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        second_scale: Option<Box<CompoundLoftScale>>,
+        /// Required second scale block.
+        second_scale: Box<CompoundLoftScale>,
         /// Native selector integer.
         selector: i64,
         /// Stored direction.
@@ -1117,6 +1120,91 @@ pub struct CompoundLoftConstruction {
     pub flags: [bool; 2],
     /// Kind-specific trailing graph.
     pub tail: CompoundLoftTail,
+}
+
+/// Initial solved-shape branch of a scaled compound loft.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ScaledCompoundLoftShape {
+    /// A solved NURBS cache follows the singularity enum.
+    Full,
+    /// The cache is replaced by two intervals and two scalar arrays.
+    None {
+        /// Two ordered native intervals.
+        parameter_ranges: [[f64; 2]; 2],
+        /// Two ordered native scalar arrays.
+        parameters: [Vec<f64>; 2],
+    },
+}
+
+/// Structurally selected middle branch of a scaled compound loft.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ScaledCompoundLoftBranch {
+    /// Extended branch ending in a direction vector.
+    ExtendedVector {
+        /// Optional first scale block.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        first_scale: Option<Box<CompoundLoftScale>>,
+        /// Required second scale block.
+        second_scale: Box<CompoundLoftScale>,
+        /// Native selector integer.
+        selector: i64,
+        /// Stored direction vector.
+        direction: Vector3,
+    },
+    /// Extended branch ending in a singularity and curve.
+    ExtendedCurve {
+        /// Optional scale block.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale: Option<Box<CompoundLoftScale>>,
+        /// Native branch flag.
+        flag: bool,
+        /// Native singularity enum.
+        singularity: i64,
+        /// Stored BS3 curve.
+        curve: CurveId,
+    },
+    /// Direct vector-or-curve branch.
+    Direct {
+        /// Native branch flag.
+        flag: bool,
+        /// Native direction selector.
+        selector: i64,
+        /// Vector or BS3 curve selected structurally.
+        direction: CompoundLoftDirection,
+    },
+}
+
+/// Complete native scaled compound-loft construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ScaledCompoundLoftConstruction {
+    /// Native leading singularity enum.
+    pub singularity: i64,
+    /// Singularity-selected solved-shape payload.
+    pub shape: ScaledCompoundLoftShape,
+    /// Six ordered discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
+    pub discontinuity_flag: bool,
+    /// Three leading scale slots; absent slots leave the following boolean in place.
+    pub scales: Box<[Option<CompoundLoftScale>; 3]>,
+    /// Two native flags preceding the selector.
+    pub flags: [bool; 2],
+    /// Native integer preceding the middle branch.
+    pub selector: i64,
+    /// Structurally selected middle branch.
+    pub branch: ScaledCompoundLoftBranch,
+    /// Two trailing branch flags.
+    pub trailing_flags: [bool; 2],
+    /// Native trailing kind integer.
+    pub tail_kind: i64,
+    /// Two native trailing vectors.
+    pub tail_directions: [Vector3; 2],
+    /// Native trailing singularity enum.
+    pub tail_singularity: i64,
+    /// Native trailing BS3 curve.
+    pub tail_curve: CurveId,
 }
 
 /// Radius law for a procedural blend.

@@ -629,7 +629,7 @@ fn hidden_body_is_omitted_and_reported() {
 }
 
 #[test]
-fn body_color_becomes_styled_item_presentation() {
+fn body_color_becomes_per_face_styled_item_presentation() {
     let mut ir = unit_cube();
     ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
         r: 0.25,
@@ -637,19 +637,33 @@ fn body_color_becomes_styled_item_presentation() {
         b: 0.75,
         a: 1.0,
     });
+    let face_count = ir.model.faces.len();
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.25,0.5,0.75)"));
-    assert!(s.contains("STYLED_ITEM"));
     assert!(s.contains("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"));
-    // The styled item targets the solid instance.
+    // The body color is pushed down onto every face: one STYLED_ITEM per face,
+    // each targeting an ADVANCED_FACE rather than the solid. OCCT/VTK viewers
+    // (e.g. f3d) read colors only from faces, not MANIFOLD_SOLID_BREP.
+    let styled: Vec<&str> = s.lines().filter(|l| l.contains("STYLED_ITEM")).collect();
+    assert_eq!(styled.len(), face_count);
     let solid = s
         .lines()
         .find(|line| line.contains("MANIFOLD_SOLID_BREP"))
         .and_then(|line| line.split(" =").next())
         .unwrap()
         .to_string();
-    let styled = s.lines().find(|line| line.contains("STYLED_ITEM")).unwrap();
-    assert!(styled.ends_with(&format!(",{solid});")));
+    for item in &styled {
+        let target = item
+            .rsplit_once(',')
+            .map(|(_, tail)| tail.trim_end_matches(");").to_string())
+            .unwrap();
+        assert_ne!(target, solid, "body color must not style the solid");
+        assert!(
+            s.lines()
+                .any(|line| line.starts_with(&format!("{target} = ADVANCED_FACE"))),
+            "styled item must reference a face"
+        );
+    }
 }
 
 #[test]
@@ -696,4 +710,72 @@ fn face_appearance_binding_styles_the_advanced_face() {
         .lines()
         .find(|line| line.starts_with(&format!("{target} = ADVANCED_FACE")));
     assert!(face_line.is_some(), "styled item must reference a face");
+}
+
+/// The soccer-ball case: a body carries a base color and one face overrides it.
+/// Every face must be styled (body color pushed down onto the faces that do not
+/// override it), and the overriding face must carry its own color.
+#[test]
+fn face_override_wins_over_body_color_and_body_fills_the_rest() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let face_count = ir.model.faces.len();
+    // White body base color.
+    ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    });
+    // Black override on a single face, via an appearance binding.
+    let face = ir.model.faces[0].id.clone();
+    ir.model.appearances.push(Appearance {
+        id: AppearanceId("test:appearance#black".to_string()),
+        name: None,
+        asset_guid: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        }),
+        properties: Default::default(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:appearance-binding#face".to_string(),
+        target: AppearanceTarget::Face(face),
+        appearance: AppearanceId("test:appearance#black".to_string()),
+        source_entity_id: None,
+        object_type: None,
+        channels: Default::default(),
+    });
+
+    let s = export(&ir);
+    // Both colors are present, and every face is styled.
+    assert!(s.contains("COLOUR_RGB('',1.,1.,1.)"));
+    assert!(s.contains("COLOUR_RGB('',0.,0.,0.)"));
+    let styled: Vec<&str> = s.lines().filter(|l| l.contains("STYLED_ITEM")).collect();
+    assert_eq!(styled.len(), face_count);
+    // Each color's style chain is emitted once and shared; grouping the styled
+    // items by their style ref must yield exactly two groups sized 1 and
+    // face_count - 1 (the lone override plus every inherited face).
+    let mut per_style: std::collections::BTreeMap<String, usize> = Default::default();
+    for item in &styled {
+        // STYLED_ITEM('color',(#psa),#face)
+        let psa = item
+            .split_once(",(")
+            .and_then(|(_, tail)| tail.split(')').next())
+            .unwrap()
+            .to_string();
+        *per_style.entry(psa).or_default() += 1;
+    }
+    let mut counts: Vec<usize> = per_style.values().copied().collect();
+    counts.sort_unstable();
+    assert_eq!(counts, vec![1, face_count - 1]);
 }

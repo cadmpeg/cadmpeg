@@ -32,9 +32,11 @@
 //! and edges without typed 3D curves are omitted; pcurves, source attributes,
 //! passthrough records, and parametric history are reported rather than
 //! emitted. Display colors on bodies and faces (direct or through appearance
-//! bindings) become `STYLED_ITEM` presentation; other appearance data is
-//! reduced to those base colors. Body transforms remain unapplied, leaving
-//! affected coordinates in body-local space.
+//! bindings) become per-face `STYLED_ITEM` presentation on `ADVANCED_FACE`: a
+//! body color is pushed down onto each of its faces so that viewers reading
+//! only face colors still show it. Other appearance data is reduced to those
+//! base colors. Body transforms remain unapplied, leaving affected coordinates
+//! in body-local space.
 //!
 //! Coordinates are emitted unchanged under a millimetre length-unit context.
 //! Callers must convert non-millimetre geometry before export. Analytic curves
@@ -206,9 +208,6 @@ struct Builder<'a> {
     /// Emitted `ADVANCED_FACE` instances keyed by IR face id, for presentation
     /// styling.
     face_step_refs: HashMap<String, Ref>,
-    /// Emitted solid instances paired with their owning IR body id, for
-    /// presentation styling.
-    body_solid_refs: Vec<(String, Ref)>,
     /// Display colors that could not be attached to an emitted STEP item.
     unstyled_colors: usize,
 }
@@ -247,7 +246,6 @@ impl<'a> Builder<'a> {
             curveless_edges: BTreeSet::new(),
             unknown_surface_faces: BTreeSet::new(),
             face_step_refs: HashMap::new(),
-            body_solid_refs: Vec::new(),
             unstyled_colors: 0,
         }
     }
@@ -301,13 +299,15 @@ impl<'a> Builder<'a> {
         self.note_unrepresented();
     }
 
-    /// Emit `STYLED_ITEM` surface colors for every colored body and face.
+    /// Emit a per-face `STYLED_ITEM` surface color for every colored face.
     ///
-    /// A body or face is colored by its own `color` field or, failing that,
-    /// by an appearance binding whose appearance carries a base color. Each
-    /// distinct color shares one `PRESENTATION_STYLE_ASSIGNMENT`; the styled
-    /// items are gathered into one
-    /// `MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION` in the
+    /// A face's color is its own `color` field or face appearance binding when
+    /// present; otherwise it inherits the color of the body that owns it. Body
+    /// colors are pushed down onto each face rather than styled on the solid,
+    /// because common OCCT/VTK-based viewers read surface colors only from
+    /// `ADVANCED_FACE` and ignore `MANIFOLD_SOLID_BREP`. Each distinct color
+    /// shares one `PRESENTATION_STYLE_ASSIGNMENT`; the styled items are gathered
+    /// into one `MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION` in the
     /// geometric context.
     fn emit_presentation(&mut self, context: Ref) {
         use cadmpeg_ir::appearance::AppearanceTarget;
@@ -350,48 +350,74 @@ impl<'a> Builder<'a> {
             }
         }
 
+        // Map each face to the body that owns it, so a body-level color can be
+        // pushed down onto the body's individual faces.
+        let mut face_body: HashMap<&str, &str> = HashMap::new();
+        for region in &ir.model.regions {
+            let body = region.body.0.as_str();
+            for shell_id in &region.shells {
+                let Some(shell) = ir
+                    .model
+                    .shells
+                    .iter()
+                    .find(|s| s.id.as_str() == shell_id.as_str())
+                else {
+                    continue;
+                };
+                for face in &shell.faces {
+                    face_body.insert(face.0.as_str(), body);
+                }
+            }
+        }
+
+        // Every colored face carries its own face-level STYLED_ITEM. A face's
+        // color is its own override when present, otherwise the color of the
+        // body that owns it. Whole-solid styling is intentionally not emitted:
+        // common OCCT/VTK-based viewers (f3d, CAD Assistant) read STEP surface
+        // colors only from ADVANCED_FACE and ignore MANIFOLD_SOLID_BREP, so a
+        // body color left at the solid level renders as the viewer default.
         let mut style_refs: HashMap<String, Ref> = HashMap::new();
         let mut styled = Vec::new();
-        let mut styled_bodies: BTreeSet<String> = BTreeSet::new();
-        let body_solids = self.body_solid_refs.clone();
-        for (body_id, solid) in &body_solids {
-            let Some(color) = body_colors.get(body_id.as_str()).copied() else {
-                continue;
-            };
-            let style = self.surface_style(color, &mut style_refs);
-            styled.push(
-                self.emitter
-                    .emit("STYLED_ITEM", &format!("'color',({style}),{solid}")),
-            );
-            styled_bodies.insert(body_id.clone());
-        }
         let mut faces: Vec<(String, Ref)> = self
             .face_step_refs
             .iter()
             .map(|(id, r)| (id.clone(), *r))
             .collect();
         faces.sort_by(|a, b| a.0.cmp(&b.0));
-        let mut styled_faces: BTreeSet<String> = BTreeSet::new();
+        // Bodies whose color actually reached at least one face, for loss
+        // accounting.
+        let mut styled_bodies: BTreeSet<&str> = BTreeSet::new();
         for (face_id, face) in &faces {
-            let Some(color) = face_colors.get(face_id.as_str()).copied() else {
+            let own = face_colors.get(face_id.as_str()).copied();
+            let body = face_body.get(face_id.as_str()).copied();
+            let inherited = body.and_then(|b| body_colors.get(b).copied());
+            let Some(color) = own.or(inherited) else {
                 continue;
             };
+            // The body color is only counted as represented when a face without
+            // its own override receives it.
+            if own.is_none() {
+                if let Some(b) = body {
+                    styled_bodies.insert(b);
+                }
+            }
             let style = self.surface_style(color, &mut style_refs);
             styled.push(
                 self.emitter
                     .emit("STYLED_ITEM", &format!("'color',({style}),{face}")),
             );
-            styled_faces.insert(face_id.clone());
         }
-        // Colors with no emitted STEP item to attach to (hidden or skipped
-        // geometry) remain unrepresented.
-        self.unstyled_colors = body_colors
+        // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
+        // a face override whose face was skipped, or a body whose faces were all
+        // skipped (hidden bodies or faces on unknown surfaces).
+        let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
+        self.unstyled_colors = face_colors
             .keys()
-            .filter(|id| !styled_bodies.contains(**id as &str))
+            .filter(|id| !emitted.contains(**id as &str))
             .count()
-            + face_colors
+            + body_colors
                 .keys()
-                .filter(|id| !styled_faces.contains(**id as &str))
+                .filter(|id| !styled_bodies.contains(**id as &str))
                 .count();
         if styled.is_empty() {
             return;
@@ -604,7 +630,6 @@ impl<'a> Builder<'a> {
                     &format!("'',{outer},{}", refs(&void_refs)),
                 )
             };
-            self.body_solid_refs.push((region.body.0.clone(), solid));
             solids.push(solid);
         }
         solids
@@ -971,6 +996,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Taper { .. }
                 | ProceduralSurfaceDefinition::Loft { .. }
                 | ProceduralSurfaceDefinition::CompoundLoft { .. }
+                | ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
                 | ProceduralSurfaceDefinition::G2Blend { .. }
                 | ProceduralSurfaceDefinition::VariableBlend { .. }
                 | ProceduralSurfaceDefinition::VertexBlend { .. }

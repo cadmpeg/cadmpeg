@@ -601,6 +601,13 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             continue;
         };
         kept_faces.insert(r.index as i64);
+        if let Some(procedural) = nurbs::decode_procedural_surface_resolving_refs(
+            record_slice(surf_rec, bytes),
+            bytes,
+            &subtype_tables,
+        ) {
+            procedural_surface_defs.insert(surf_ref, procedural);
+        }
         // A non-analytic surface may still carry a decodable B-spline face cache.
         if let std::collections::hash_map::Entry::Vacant(e) = surface_geo.entry(surf_ref) {
             if let Some(ns) = nurbs::decode_surface_cache_resolving_refs(
@@ -610,14 +617,19 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             ) {
                 e.insert((SurfaceGeometry::Nurbs(ns), false));
                 out.stats.nurbs_surfaces += 1;
-                if let Some(procedural) = nurbs::decode_procedural_surface_resolving_refs(
-                    record_slice(surf_rec, bytes),
-                    bytes,
-                    &subtype_tables,
-                ) {
-                    procedural_surface_defs.insert(surf_ref, procedural);
-                }
             }
+        }
+        if !surface_geo.contains_key(&surf_ref) && procedural_surface_defs.contains_key(&surf_ref) {
+            surface_geo.insert(
+                surf_ref,
+                (
+                    SurfaceGeometry::Unknown {
+                        record: Some(UnknownId(unknown_record_id(surf_rec))),
+                    },
+                    false,
+                ),
+            );
+            undecoded_carriers.insert(surf_ref);
         }
         if surface_geo.contains_key(&surf_ref) {
             kept_surfaces.insert(surf_ref);
@@ -1211,9 +1223,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     });
                                     cadmpeg_ir::geometry::CompoundLoftTail::Six {
                                         flags,
-                                        scale: scale.map(|scale| {
-                                            Box::new(map_scale(&mut out, "tail6", *scale))
-                                        }),
+                                        scale: Box::new(map_scale(&mut out, "tail6", *scale)),
                                         selector,
                                         direction,
                                         parameter_range,
@@ -1234,9 +1244,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         Box::new(map_scale(&mut out, "tail7:first", *scale))
                                     }),
                                     second_flag,
-                                    second_scale: second_scale.map(|scale| {
-                                        Box::new(map_scale(&mut out, "tail7:second", *scale))
-                                    }),
+                                    second_scale: Box::new(map_scale(
+                                        &mut out,
+                                        "tail7:second",
+                                        *second_scale,
+                                    )),
                                     selector,
                                     direction,
                                     trailing_flags,
@@ -1282,6 +1294,210 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         fifth_scale,
                                         flags: embedded.flags,
                                         tail,
+                                    },
+                                ),
+                            }
+                        }
+                        nurbs::DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(embedded) => {
+                            let embedded = *embedded;
+                            let map_scale = |out: &mut Brep,
+                                             name: &str,
+                                             scale: nurbs::EmbeddedCompoundLoftScale| {
+                                let members = scale
+                                    .members
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(member_index, member)| {
+                                        let curve = CurveId(format!(
+                                            "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}:member:{member_index}:curve"
+                                        ));
+                                        out.curves.push(Curve {
+                                            id: curve.clone(),
+                                            geometry: CurveGeometry::Nurbs(member.curve),
+                                            source_object: None,
+                                        });
+                                        let surface = SurfaceId(format!(
+                                            "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}:member:{member_index}:surface"
+                                        ));
+                                        out.surfaces.push(Surface {
+                                            id: surface.clone(),
+                                            geometry: member.data.surface,
+                                            source_object: None,
+                                        });
+                                        cadmpeg_ir::geometry::CompoundLoftScaleMember {
+                                            type_code: member.type_code,
+                                            curve,
+                                            data: cadmpeg_ir::geometry::LoftProfileData {
+                                                surface,
+                                                pcurve: member
+                                                    .data
+                                                    .pcurve
+                                                    .map(embedded_pcurve_geometry),
+                                                first_flag: member.data.first_flag,
+                                                asm_extension: member.data.asm_extension,
+                                                subdata: member.data.subdata,
+                                                direction: member.data.direction,
+                                            },
+                                        }
+                                    })
+                                    .collect();
+                                let path = CurveId(format!(
+                                    "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}:path"
+                                ));
+                                out.curves.push(Curve {
+                                    id: path.clone(),
+                                    geometry: CurveGeometry::Nurbs(scale.path),
+                                    source_object: None,
+                                });
+                                let auxiliaries = scale
+                                    .auxiliaries
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(index, geometry)| {
+                                        let id = CurveId(format!(
+                                            "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}:auxiliary:{index}"
+                                        ));
+                                        out.curves.push(Curve {
+                                            id: id.clone(),
+                                            geometry: CurveGeometry::Nurbs(geometry),
+                                            source_object: None,
+                                        });
+                                        id
+                                    })
+                                    .collect();
+                                cadmpeg_ir::geometry::CompoundLoftScale {
+                                    members,
+                                    path,
+                                    auxiliaries,
+                                    tail: scale.tail,
+                                }
+                            };
+                            let scales = embedded
+                                .scales
+                                .into_iter()
+                                .enumerate()
+                                .map(|(index, scale)| {
+                                    scale.map(|scale| {
+                                        map_scale(&mut out, &format!("scale{index}"), scale)
+                                    })
+                                })
+                                .collect::<Vec<_>>()
+                                .try_into()
+                                .expect("three scaled compound-loft scales");
+                            let map_direction =
+                                |out: &mut Brep, name: &str, direction| match direction {
+                                    nurbs::EmbeddedCompoundLoftDirection::Vector(value) => {
+                                        cadmpeg_ir::geometry::CompoundLoftDirection::Vector {
+                                            value,
+                                        }
+                                    }
+                                    nurbs::EmbeddedCompoundLoftDirection::Curve(curve) => {
+                                        let id = CurveId(format!(
+                                            "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}"
+                                        ));
+                                        out.curves.push(Curve {
+                                            id: id.clone(),
+                                            geometry: CurveGeometry::Nurbs(curve),
+                                            source_object: None,
+                                        });
+                                        cadmpeg_ir::geometry::CompoundLoftDirection::Curve {
+                                            curve: id,
+                                        }
+                                    }
+                                };
+                            let branch = match embedded.branch {
+                                nurbs::EmbeddedScaledCompoundLoftBranch::ExtendedVector {
+                                    first_scale,
+                                    second_scale,
+                                    selector,
+                                    direction,
+                                } => {
+                                    cadmpeg_ir::geometry::ScaledCompoundLoftBranch::ExtendedVector {
+                                        first_scale: first_scale.map(|scale| {
+                                            Box::new(map_scale(&mut out, "branch:first", *scale))
+                                        }),
+                                        second_scale: Box::new(map_scale(
+                                            &mut out,
+                                            "branch:second",
+                                            *second_scale,
+                                        )),
+                                        selector,
+                                        direction,
+                                    }
+                                }
+                                nurbs::EmbeddedScaledCompoundLoftBranch::ExtendedCurve {
+                                    scale,
+                                    flag,
+                                    singularity,
+                                    curve,
+                                } => {
+                                    let id = CurveId(format!(
+                                        "f3d:brep:procedural_surface#{i}:scaled_cloft:branch:curve"
+                                    ));
+                                    out.curves.push(Curve {
+                                        id: id.clone(),
+                                        geometry: CurveGeometry::Nurbs(curve),
+                                        source_object: None,
+                                    });
+                                    cadmpeg_ir::geometry::ScaledCompoundLoftBranch::ExtendedCurve {
+                                        scale: scale.map(|scale| {
+                                            Box::new(map_scale(&mut out, "branch", *scale))
+                                        }),
+                                        flag,
+                                        singularity,
+                                        curve: id,
+                                    }
+                                }
+                                nurbs::EmbeddedScaledCompoundLoftBranch::Direct {
+                                    flag,
+                                    selector,
+                                    direction,
+                                } => cadmpeg_ir::geometry::ScaledCompoundLoftBranch::Direct {
+                                    flag,
+                                    selector,
+                                    direction: map_direction(
+                                        &mut out,
+                                        "branch:direction",
+                                        direction,
+                                    ),
+                                },
+                            };
+                            let tail_curve = CurveId(format!(
+                                "f3d:brep:procedural_surface#{i}:scaled_cloft:tail:curve"
+                            ));
+                            out.curves.push(Curve {
+                                id: tail_curve.clone(),
+                                geometry: CurveGeometry::Nurbs(embedded.tail_curve),
+                                source_object: None,
+                            });
+                            let shape = match embedded.shape {
+                                nurbs::EmbeddedScaledCompoundLoftShape::Full => {
+                                    cadmpeg_ir::geometry::ScaledCompoundLoftShape::Full
+                                }
+                                nurbs::EmbeddedScaledCompoundLoftShape::None {
+                                    parameter_ranges,
+                                    parameters,
+                                } => cadmpeg_ir::geometry::ScaledCompoundLoftShape::None {
+                                    parameter_ranges,
+                                    parameters,
+                                },
+                            };
+                            ProceduralSurfaceDefinition::ScaledCompoundLoft {
+                                construction: Box::new(
+                                    cadmpeg_ir::geometry::ScaledCompoundLoftConstruction {
+                                        singularity: embedded.singularity,
+                                        shape,
+                                        discontinuities: embedded.discontinuities,
+                                        discontinuity_flag: embedded.discontinuity_flag,
+                                        scales: Box::new(scales),
+                                        flags: embedded.flags,
+                                        selector: embedded.selector,
+                                        branch,
+                                        trailing_flags: embedded.trailing_flags,
+                                        tail_kind: embedded.tail_kind,
+                                        tail_directions: embedded.tail_directions,
+                                        tail_singularity: embedded.tail_singularity,
+                                        tail_curve,
                                     },
                                 ),
                             }

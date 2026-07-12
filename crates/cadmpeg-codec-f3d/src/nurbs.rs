@@ -687,6 +687,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     Loft(EmbeddedLoft),
     /// Native compound-loft graph with embedded carriers.
     CompoundLoft(Box<EmbeddedCompoundLoft>),
+    /// Native scaled compound-loft graph with embedded carriers.
+    ScaledCompoundLoft(Box<EmbeddedScaledCompoundLoft>),
     /// Native G2 blend construction with embedded carriers.
     G2Blend(Box<EmbeddedG2Blend>),
     /// Ruled interpolation between two ordered profile curves.
@@ -1121,7 +1123,7 @@ pub(crate) enum EmbeddedCompoundLoftDirection {
 pub(crate) enum EmbeddedCompoundLoftTail {
     Six {
         flags: [bool; 2],
-        scale: Option<Box<EmbeddedCompoundLoftScale>>,
+        scale: Box<EmbeddedCompoundLoftScale>,
         selector: i64,
         direction: Vector3,
         parameter_range: [f64; 2],
@@ -1131,7 +1133,7 @@ pub(crate) enum EmbeddedCompoundLoftTail {
         first_flag: bool,
         first_scale: Option<Box<EmbeddedCompoundLoftScale>>,
         second_flag: bool,
-        second_scale: Option<Box<EmbeddedCompoundLoftScale>>,
+        second_scale: Box<EmbeddedCompoundLoftScale>,
         selector: i64,
         direction: Vector3,
         trailing_flags: [bool; 2],
@@ -1150,6 +1152,51 @@ pub struct EmbeddedCompoundLoft {
     pub(crate) fifth_scale: Option<Box<EmbeddedCompoundLoftScale>>,
     pub(crate) flags: [bool; 2],
     pub(crate) tail: EmbeddedCompoundLoftTail,
+}
+
+pub(crate) enum EmbeddedScaledCompoundLoftShape {
+    Full,
+    None {
+        parameter_ranges: [[f64; 2]; 2],
+        parameters: [Vec<f64>; 2],
+    },
+}
+
+pub(crate) enum EmbeddedScaledCompoundLoftBranch {
+    ExtendedVector {
+        first_scale: Option<Box<EmbeddedCompoundLoftScale>>,
+        second_scale: Box<EmbeddedCompoundLoftScale>,
+        selector: i64,
+        direction: Vector3,
+    },
+    ExtendedCurve {
+        scale: Option<Box<EmbeddedCompoundLoftScale>>,
+        flag: bool,
+        singularity: i64,
+        curve: NurbsCurve,
+    },
+    Direct {
+        flag: bool,
+        selector: i64,
+        direction: EmbeddedCompoundLoftDirection,
+    },
+}
+
+/// Embedded native scaled compound loft before stable IR ids are assigned.
+pub struct EmbeddedScaledCompoundLoft {
+    pub(crate) singularity: i64,
+    pub(crate) shape: EmbeddedScaledCompoundLoftShape,
+    pub(crate) discontinuities: [Vec<f64>; 6],
+    pub(crate) discontinuity_flag: bool,
+    pub(crate) scales: Box<[Option<EmbeddedCompoundLoftScale>; 3]>,
+    pub(crate) flags: [bool; 2],
+    pub(crate) selector: i64,
+    pub(crate) branch: EmbeddedScaledCompoundLoftBranch,
+    pub(crate) trailing_flags: [bool; 2],
+    pub(crate) tail_kind: i64,
+    pub(crate) tail_directions: [Vector3; 2],
+    pub(crate) tail_singularity: i64,
+    pub(crate) tail_curve: NurbsCurve,
 }
 
 #[allow(clippy::option_option)] // Outer None is parse failure; inner None is an absent scale slot.
@@ -1444,7 +1491,7 @@ fn decode_compound_loft_spl_sur(
                 take_bool(span, &mut position)?,
                 take_bool(span, &mut position)?,
             ];
-            let scale = decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new);
+            let scale = Box::new(decode_compound_loft_scale(span, &mut position, int_width)??);
             let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
             let direction = take_native_vec3(span, &mut position, 0x14)?;
             let parameter_range = [
@@ -1467,7 +1514,7 @@ fn decode_compound_loft_spl_sur(
                 decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new);
             let second_flag = take_bool(span, &mut position)?;
             let second_scale =
-                decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new);
+                Box::new(decode_compound_loft_scale(span, &mut position, int_width)??);
             let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
             let direction = take_native_vec3(span, &mut position, 0x14)?;
             let trailing_flags = [
@@ -1518,6 +1565,148 @@ fn decode_compound_loft_spl_sur(
                 fifth_scale,
                 flags,
                 tail,
+            },
+        )),
+        cache_fit_tolerance,
+    })
+}
+
+fn decode_scaled_compound_loft_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+) -> Option<DecodedProceduralSurface> {
+    let name = b"scaled_cloft_spl_sur";
+    let start = record_bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name.len() + 3;
+    let singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let (shape, cache_fit_tolerance) = if matches!(span.get(position), Some(0x0d | 0x0e)) {
+        let cache = decode_surface_block(span, position, int_width)?;
+        position = cache.end;
+        let tolerance = take_f64(span, &mut position)? * LEN_TO_MM;
+        (EmbeddedScaledCompoundLoftShape::Full, Some(tolerance))
+    } else {
+        let parameter_ranges = [
+            [
+                take_range_value(span, &mut position)?,
+                take_range_value(span, &mut position)?,
+            ],
+            [
+                take_range_value(span, &mut position)?,
+                take_range_value(span, &mut position)?,
+            ],
+        ];
+        let parameters = [
+            take_float_array(span, &mut position, int_width)?,
+            take_float_array(span, &mut position, int_width)?,
+        ];
+        (
+            EmbeddedScaledCompoundLoftShape::None {
+                parameter_ranges,
+                parameters,
+            },
+            None,
+        )
+    };
+    let discontinuities = [
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+    ];
+    let discontinuity_flag = take_bool(span, &mut position)?;
+    let scales = Box::new([
+        decode_compound_loft_scale(span, &mut position, int_width)?,
+        decode_compound_loft_scale(span, &mut position, int_width)?,
+        decode_compound_loft_scale(span, &mut position, int_width)?,
+    ]);
+    let flags = [
+        take_bool(span, &mut position)?,
+        take_bool(span, &mut position)?,
+    ];
+    let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let extended = take_bool(span, &mut position)?;
+    let branch = if extended {
+        let first_scale = decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new);
+        if take_bool(span, &mut position)? {
+            let second_scale =
+                Box::new(decode_compound_loft_scale(span, &mut position, int_width)??);
+            let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let direction = take_native_vec3(span, &mut position, 0x14)?;
+            EmbeddedScaledCompoundLoftBranch::ExtendedVector {
+                first_scale,
+                second_scale,
+                selector,
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            }
+        } else {
+            let flag = take_bool(span, &mut position)?;
+            let singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
+            let curve = decode_curve_block(span, position, int_width)?;
+            position = curve.end;
+            EmbeddedScaledCompoundLoftBranch::ExtendedCurve {
+                scale: first_scale,
+                flag,
+                singularity,
+                curve: curve.curve,
+            }
+        }
+    } else {
+        let flag = take_bool(span, &mut position)?;
+        let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        let direction = if selector == 0 {
+            let direction = take_native_vec3(span, &mut position, 0x14)?;
+            EmbeddedCompoundLoftDirection::Vector(Vector3::new(
+                direction[0],
+                direction[1],
+                direction[2],
+            ))
+        } else {
+            let curve = decode_curve_block(span, position, int_width)?;
+            position = curve.end;
+            EmbeddedCompoundLoftDirection::Curve(curve.curve)
+        };
+        EmbeddedScaledCompoundLoftBranch::Direct {
+            flag,
+            selector,
+            direction,
+        }
+    };
+    let trailing_flags = [
+        take_bool(span, &mut position)?,
+        take_bool(span, &mut position)?,
+    ];
+    let tail_kind = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let first = take_native_vec3(span, &mut position, 0x14)?;
+    let second = take_native_vec3(span, &mut position, 0x14)?;
+    let tail_singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let tail_curve = decode_curve_block(span, position, int_width)?;
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(Box::new(
+            EmbeddedScaledCompoundLoft {
+                singularity,
+                shape,
+                discontinuities,
+                discontinuity_flag,
+                scales,
+                flags,
+                selector,
+                branch,
+                trailing_flags,
+                tail_kind,
+                tail_directions: [
+                    Vector3::new(first[0], first[1], first[2]),
+                    Vector3::new(second[0], second[1], second[2]),
+                ],
+                tail_singularity,
+                tail_curve: tail_curve.curve,
             },
         )),
         cache_fit_tolerance,
@@ -2747,6 +2936,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_taper_spl_sur(bytes, int_width))
         .or_else(|| decode_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_compound_loft_spl_sur(bytes, int_width))
+        .or_else(|| decode_scaled_compound_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_g2_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_ruled_spl_sur(bytes, int_width))
         .or_else(|| decode_sum_spl_sur(bytes, int_width))

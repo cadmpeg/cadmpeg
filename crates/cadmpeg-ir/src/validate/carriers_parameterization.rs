@@ -72,7 +72,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 scales.extend(construction.fifth_scale.iter().map(Box::as_ref));
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
-                        scales.extend(scale.iter().map(Box::as_ref));
+                        scales.push(scale.as_ref());
                         curves.insert(&curve.0);
                     }
                     crate::geometry::CompoundLoftTail::Seven {
@@ -81,7 +81,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         ..
                     } => {
                         scales.extend(first_scale.iter().map(Box::as_ref));
-                        scales.extend(second_scale.iter().map(Box::as_ref));
+                        scales.push(second_scale.as_ref());
                     }
                     crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
                         if let crate::geometry::CompoundLoftDirection::Curve { curve } = direction {
@@ -89,6 +89,41 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         }
                     }
                 }
+                for scale in scales {
+                    curves.insert(&scale.path.0);
+                    curves.extend(scale.auxiliaries.iter().map(|curve| curve.0.as_str()));
+                    for member in &scale.members {
+                        curves.insert(&member.curve.0);
+                        surfaces.insert(&member.data.surface.0);
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } => {
+                let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
+                match &construction.branch {
+                    crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
+                        first_scale,
+                        second_scale,
+                        ..
+                    } => {
+                        scales.extend(first_scale.iter().map(Box::as_ref));
+                        scales.push(second_scale.as_ref());
+                    }
+                    crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve {
+                        scale,
+                        curve,
+                        ..
+                    } => {
+                        scales.extend(scale.iter().map(Box::as_ref));
+                        curves.insert(&curve.0);
+                    }
+                    crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
+                        if let crate::geometry::CompoundLoftDirection::Curve { curve } = direction {
+                            curves.insert(&curve.0);
+                        }
+                    }
+                }
+                curves.insert(&construction.tail_curve.0);
                 for scale in scales {
                     curves.insert(&scale.path.0);
                     curves.extend(scale.auxiliaries.iter().map(|curve| curve.0.as_str()));
