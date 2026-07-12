@@ -675,6 +675,13 @@ pub struct DecodedProceduralSurface {
 
 /// Source-native procedural semantics before embedded geometry is assigned IR ids.
 pub enum DecodedProceduralSurfaceDefinition {
+    /// Exact NURBS construction and retained native U/V intervals.
+    Exact {
+        /// Ordered U and V intervals.
+        parameter_ranges: [[f64; 2]; 2],
+        /// Native ASM extension integer.
+        extension: i64,
+    },
     /// Translation of an embedded directrix along a length-bearing direction.
     Extrusion {
         /// Embedded directrix cache.
@@ -693,6 +700,49 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Blend cross-section family.
         cross_section: BlendCrossSection,
     },
+}
+
+fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    let names: [&[u8]; 2] = [b"exact_spl_sur", b"exactsur"];
+    let (start, name) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name))
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let cache = marker_positions(span)
+        .into_iter()
+        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .next_back()?;
+    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
+        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
+        .flatten();
+    let mut position = cache.end + 9;
+    let parameter_ranges = [
+        [
+            take_range_value(span, &mut position)?,
+            take_range_value(span, &mut position)?,
+        ],
+        [
+            take_range_value(span, &mut position)?,
+            take_range_value(span, &mut position)?,
+        ],
+    ];
+    let extension = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let _ = name;
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Exact {
+            parameter_ranges,
+            extension,
+        },
+        cache_fit_tolerance,
+    })
 }
 
 /// Decode an inline `cyl_spl_sur` translational-extrusion definition.
@@ -854,7 +904,8 @@ fn decode_procedural_resolving_refs(
     seen: &mut Vec<usize>,
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
-    if let Some(decoded) = decode_cyl_spl_sur_at(bytes, int_width)
+    if let Some(decoded) = decode_exact_spl_sur(bytes, int_width)
+        .or_else(|| decode_cyl_spl_sur_at(bytes, int_width))
         .or_else(|| decode_rb_blend_spl_sur(bytes, int_width))
     {
         return Some(decoded);

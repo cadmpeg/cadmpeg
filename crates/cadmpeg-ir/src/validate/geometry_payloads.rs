@@ -221,6 +221,23 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             SurfaceGeometry::Unknown { .. } => {}
         }
     }
+    for procedural in &ir.model.procedural_surfaces {
+        if let ProceduralSurfaceDefinition::Exact {
+            parameter_ranges, ..
+        } = &procedural.definition
+        {
+            if parameter_ranges
+                .iter()
+                .any(|range| !range.iter().all(|value| value.is_finite()) || range[0] > range[1])
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "exact spline surface parameter ranges are invalid",
+                );
+            }
+        }
+    }
     for c in &ir.model.curves {
         match &c.geometry {
             CurveGeometry::Line { direction, .. } => {

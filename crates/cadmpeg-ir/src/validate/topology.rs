@@ -304,6 +304,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             );
         }
         match &procedural.definition {
+            ProceduralSurfaceDefinition::Exact { .. } => {}
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 if !ids.curves.contains(&directrix.0) {

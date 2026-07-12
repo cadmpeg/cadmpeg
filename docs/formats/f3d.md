@@ -360,6 +360,8 @@ An embedded freeform support surface is encoded as the `spline` surface discrimi
 
 Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus` discriminator followed by the same position, orientation, radius, angle, and flag payload used by the corresponding top-level carrier. A zero cone sine denotes a cylinder. Signed sphere and torus radii retain their signs.
 
+**`exact_spl_sur` / `exactsur`**: the exact NURBS surface and its fit tolerance, followed by ordered U and V intervals and one ASM extension integer. The NURBS cache is the constructed surface. Native generation uses `exact_spl_sur`.
+
 ### 7.4 Pcurves (2D UV trimming curves)
 
 A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at record-relative **+37**:

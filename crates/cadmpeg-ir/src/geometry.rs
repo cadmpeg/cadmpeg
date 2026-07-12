@@ -284,6 +284,13 @@ pub struct ProceduralSurface {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralSurfaceDefinition {
+    /// Exact native NURBS surface with retained parameter intervals.
+    Exact {
+        /// Ordered native U and V intervals.
+        parameter_ranges: [[f64; 2]; 2],
+        /// Native ASM extension integer following the intervals.
+        extension: i64,
+    },
     /// Translation of a directrix along a direction.
     Extrusion {
         /// Curve swept along `direction` to form the surface.

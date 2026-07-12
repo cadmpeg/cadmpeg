@@ -3151,6 +3151,23 @@ fn native_procedural_surface(
         return Ok(false);
     };
     match &procedural.definition {
+        ProceduralSurfaceDefinition::Exact {
+            parameter_ranges,
+            extension,
+        } => {
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "exact_spl_sur")?;
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            for range in parameter_ranges {
+                for value in range {
+                    native_f64(bytes, *value);
+                }
+            }
+            native_i64(bytes, *extension);
+            bytes.push(0x10);
+        }
         ProceduralSurfaceDefinition::Extrusion {
             directrix,
             direction,
