@@ -691,6 +691,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     ScaledCompoundLoft(Box<EmbeddedScaledCompoundLoft>),
     /// Native skinned surface graph with embedded carriers.
     Skin(Box<EmbeddedSkinSurface>),
+    /// Native curve-network surface graph with embedded carriers.
+    Net(Box<EmbeddedNetSurface>),
     /// Native G2 blend construction with embedded carriers.
     G2Blend(Box<EmbeddedG2Blend>),
     /// Ruled interpolation between two ordered profile curves.
@@ -1260,6 +1262,17 @@ pub struct EmbeddedSkinSurface {
     pub(crate) trailing_parameter: f64,
     pub(crate) formula: EmbeddedLawFormula,
     pub(crate) parameter_curve: NurbsCurve,
+    pub(crate) discontinuities: [Vec<f64>; 6],
+    pub(crate) discontinuity_flag: bool,
+}
+
+/// Embedded native net surface before stable IR ids are assigned.
+pub struct EmbeddedNetSurface {
+    pub(crate) sections: Box<[Vec<EmbeddedLoftSectionEntry>; 2]>,
+    pub(crate) frame_parameters: [f64; 12],
+    pub(crate) flag: i64,
+    pub(crate) directions: [Vector3; 4],
+    pub(crate) formulas: Box<[EmbeddedLawFormula; 4]>,
     pub(crate) discontinuities: [Vec<f64>; 6],
     pub(crate) discontinuity_flag: bool,
 }
@@ -1981,6 +1994,61 @@ fn decode_skin_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
             trailing_parameter,
             formula,
             parameter_curve: parameter_curve.curve,
+            discontinuities,
+            discontinuity_flag,
+        })),
+        cache_fit_tolerance,
+    })
+}
+
+fn decode_net_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    let name = b"net_spl_sur";
+    let start = record_bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name.len() + 3;
+    let sections = Box::new([
+        decode_loft_section(span, &mut position, int_width)?,
+        decode_loft_section(span, &mut position, int_width)?,
+    ]);
+    let mut frame_parameters = [0.0; 12];
+    for parameter in &mut frame_parameters {
+        *parameter = take_f64(span, &mut position)?;
+    }
+    let flag = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let mut directions = [Vector3::new(0.0, 0.0, 0.0); 4];
+    for direction in &mut directions {
+        let value = take_native_vec3(span, &mut position, 0x14)?;
+        *direction = Vector3::new(value[0], value[1], value[2]);
+    }
+    let formulas = (0..4)
+        .map(|_| decode_law_formula(span, &mut position, int_width))
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()?;
+    let cache = decode_surface_block(span, position, int_width)?;
+    position = cache.end;
+    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let discontinuities = [
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+    ];
+    let discontinuity_flag = take_bool(span, &mut position)?;
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Net(Box::new(EmbeddedNetSurface {
+            sections,
+            frame_parameters,
+            flag,
+            directions,
+            formulas: Box::new(formulas),
             discontinuities,
             discontinuity_flag,
         })),
@@ -3213,6 +3281,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_compound_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_scaled_compound_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_skin_spl_sur(bytes, int_width))
+        .or_else(|| decode_net_spl_sur(bytes, int_width))
         .or_else(|| decode_g2_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_ruled_spl_sur(bytes, int_width))
         .or_else(|| decode_sum_spl_sur(bytes, int_width))

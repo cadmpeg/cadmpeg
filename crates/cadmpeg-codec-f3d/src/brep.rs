@@ -1711,6 +1711,209 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 ),
                             }
                         }
+                        nurbs::DecodedProceduralSurfaceDefinition::Net(embedded) => {
+                            fn map_net_law(
+                                out: &mut Brep,
+                                owner: i64,
+                                path: &str,
+                                expression: nurbs::EmbeddedLawExpression,
+                            ) -> cadmpeg_ir::geometry::LawExpression {
+                                match expression {
+                                    nurbs::EmbeddedLawExpression::Null => {
+                                        cadmpeg_ir::geometry::LawExpression::Null
+                                    }
+                                    nurbs::EmbeddedLawExpression::Integer(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Integer { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Double(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Double { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Point(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Point { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Vector(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Vector { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Transform { scalars, enums } => {
+                                        cadmpeg_ir::geometry::LawExpression::Transform {
+                                            scalars,
+                                            enums,
+                                        }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Edge { curve, parameters } => {
+                                        let id = CurveId(format!(
+                                            "f3d:brep:procedural_surface#{owner}:net:law:{path}:edge"
+                                        ));
+                                        out.curves.push(Curve {
+                                            id: id.clone(),
+                                            geometry: CurveGeometry::Nurbs(curve),
+                                            source_object: None,
+                                        });
+                                        cadmpeg_ir::geometry::LawExpression::Edge {
+                                            curve: id,
+                                            parameters,
+                                        }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Spline {
+                                        native_id,
+                                        knots,
+                                        controls,
+                                        point,
+                                    } => cadmpeg_ir::geometry::LawExpression::Spline {
+                                        native_id,
+                                        knots,
+                                        controls,
+                                        point,
+                                    },
+                                    nurbs::EmbeddedLawExpression::Algebraic {
+                                        operator,
+                                        operands,
+                                    } => cadmpeg_ir::geometry::LawExpression::Algebraic {
+                                        operator,
+                                        operands: operands
+                                            .into_iter()
+                                            .enumerate()
+                                            .map(|(index, operand)| {
+                                                map_net_law(
+                                                    out,
+                                                    owner,
+                                                    &format!("{path}:{index}"),
+                                                    operand,
+                                                )
+                                            })
+                                            .collect(),
+                                    },
+                                }
+                            }
+                            let embedded = *embedded;
+                            let sections = embedded
+                                .sections
+                                .into_iter()
+                                .enumerate()
+                                .map(|(section_index, entries)| {
+                                    let entries = entries
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(|(entry_index, entry)| {
+                                            let profile = entry
+                                                .profile
+                                                .into_iter()
+                                                .enumerate()
+                                                .map(|(member_index, member)| {
+                                                    let curve = CurveId(format!(
+                                                        "f3d:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:member:{member_index}:curve"
+                                                    ));
+                                                    out.curves.push(Curve {
+                                                        id: curve.clone(),
+                                                        geometry: CurveGeometry::Nurbs(member.curve),
+                                                        source_object: None,
+                                                    });
+                                                    let surface = SurfaceId(format!(
+                                                        "f3d:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:member:{member_index}:surface"
+                                                    ));
+                                                    out.surfaces.push(Surface {
+                                                        id: surface.clone(),
+                                                        geometry: member.data.surface,
+                                                        source_object: None,
+                                                    });
+                                                    cadmpeg_ir::geometry::LoftProfileMember {
+                                                        type_code: member.type_code,
+                                                        curve,
+                                                        data: cadmpeg_ir::geometry::LoftProfileData {
+                                                            surface,
+                                                            pcurve: member.data.pcurve.map(
+                                                                embedded_pcurve_geometry,
+                                                            ),
+                                                            first_flag: member.data.first_flag,
+                                                            asm_extension: member
+                                                                .data
+                                                                .asm_extension,
+                                                            subdata: member.data.subdata,
+                                                            direction: member.data.direction,
+                                                        },
+                                                    }
+                                                })
+                                                .collect();
+                                            let path = CurveId(format!(
+                                                "f3d:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:path"
+                                            ));
+                                            out.curves.push(Curve {
+                                                id: path.clone(),
+                                                geometry: CurveGeometry::Nurbs(entry.path.curve),
+                                                source_object: None,
+                                            });
+                                            let auxiliaries = entry
+                                                .path
+                                                .auxiliaries
+                                                .into_iter()
+                                                .enumerate()
+                                                .map(|(index, geometry)| {
+                                                    let id = CurveId(format!(
+                                                        "f3d:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:auxiliary:{index}"
+                                                    ));
+                                                    out.curves.push(Curve {
+                                                        id: id.clone(),
+                                                        geometry: CurveGeometry::Nurbs(geometry),
+                                                        source_object: None,
+                                                    });
+                                                    id
+                                                })
+                                                .collect();
+                                            cadmpeg_ir::geometry::LoftSectionEntry {
+                                                parameter: entry.parameter,
+                                                profile,
+                                                path: cadmpeg_ir::geometry::LoftPath {
+                                                    curve: path,
+                                                    auxiliaries,
+                                                    flag: entry.path.flag,
+                                                },
+                                            }
+                                        })
+                                        .collect();
+                                    cadmpeg_ir::geometry::LoftSection { entries }
+                                })
+                                .collect::<Vec<_>>()
+                                .try_into()
+                                .expect("two net sections");
+                            let formulas = embedded
+                                .formulas
+                                .into_iter()
+                                .enumerate()
+                                .map(
+                                    |(formula_index, formula)| cadmpeg_ir::geometry::LawFormula {
+                                        name: formula.name,
+                                        variables: formula
+                                            .variables
+                                            .into_iter()
+                                            .enumerate()
+                                            .map(|(index, variable)| {
+                                                map_net_law(
+                                                    &mut out,
+                                                    i,
+                                                    &format!("{formula_index}:{index}"),
+                                                    variable,
+                                                )
+                                            })
+                                            .collect(),
+                                    },
+                                )
+                                .collect::<Vec<_>>()
+                                .try_into()
+                                .expect("four net formulas");
+                            ProceduralSurfaceDefinition::Net {
+                                construction: Box::new(
+                                    cadmpeg_ir::geometry::NetSurfaceConstruction {
+                                        sections: Box::new(sections),
+                                        frame_parameters: embedded.frame_parameters,
+                                        flag: embedded.flag,
+                                        directions: embedded.directions,
+                                        formulas: Box::new(formulas),
+                                        discontinuities: embedded.discontinuities,
+                                        discontinuity_flag: embedded.discontinuity_flag,
+                                    },
+                                ),
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::G2Blend(embedded) => {
                             let embedded = *embedded;
                             let mut add_side = |name: &str, side: nurbs::EmbeddedG2Side| {

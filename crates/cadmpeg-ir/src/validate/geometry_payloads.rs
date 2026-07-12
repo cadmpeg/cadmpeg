@@ -642,6 +642,91 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::Net { construction } = &procedural.definition {
+            fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
+                if depth > 64 {
+                    return false;
+                }
+                match expression {
+                    crate::geometry::LawExpression::Null
+                    | crate::geometry::LawExpression::Integer { .. } => true,
+                    crate::geometry::LawExpression::Double { value } => value.is_finite(),
+                    crate::geometry::LawExpression::Point { value } => {
+                        value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Vector { value } => {
+                        value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Transform { scalars, .. } => {
+                        scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Edge { parameters, .. } => {
+                        parameters.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Spline {
+                        knots,
+                        controls,
+                        point,
+                        ..
+                    } => {
+                        knots.iter().chain(controls).all(|value| value.is_finite())
+                            && point.x.is_finite()
+                            && point.y.is_finite()
+                            && point.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                        operands.iter().all(|operand| law_valid(operand, depth + 1))
+                    }
+                }
+            }
+            let sections_valid = construction.sections.iter().all(|section| {
+                section.entries.iter().all(|entry| {
+                    entry.parameter.is_finite()
+                        && entry.profile.iter().all(|member| {
+                            let table = &member.data.subdata;
+                            let expected_rows = if table.type_code == 211 {
+                                1
+                            } else {
+                                usize::try_from(table.row_count).unwrap_or(usize::MAX)
+                            };
+                            table.rows.len() == expected_rows
+                                && table.rows.iter().all(|row| {
+                                    row.parameters.iter().all(|value| value.is_finite())
+                                        && row
+                                            .columns
+                                            .iter()
+                                            .flatten()
+                                            .all(|value| value.is_finite())
+                                })
+                        })
+                })
+            });
+            let formulas_valid = construction.formulas.iter().all(|formula| {
+                if formula.name == "null_law" {
+                    formula.variables.is_empty()
+                } else {
+                    formula
+                        .variables
+                        .iter()
+                        .all(|variable| law_valid(variable, 0))
+                }
+            });
+            let scalars_valid = construction
+                .frame_parameters
+                .iter()
+                .chain(construction.discontinuities.iter().flatten())
+                .all(|value| value.is_finite())
+                && construction.directions.iter().all(|direction| {
+                    direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()
+                });
+            if !sections_valid || !formulas_valid || !scalars_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "net surface construction payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::G2Blend { construction } = &procedural.definition {
             let direction_finite = |direction: &Vector3| {
                 direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()

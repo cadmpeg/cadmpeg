@@ -1962,6 +1962,49 @@ fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
     bytes
 }
 
+fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "net_spl_sur");
+    append_generated_loft_section(&mut surface, 0.0, true);
+    append_generated_loft_section(&mut surface, 1.0, false);
+    for value in 0..12 {
+        t_dbl(&mut surface, f64::from(value) / 10.0);
+    }
+    t_long(&mut surface, 17);
+    for direction in [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [-1.0, 0.0, 0.0],
+    ] {
+        t_vec(&mut surface, direction);
+    }
+    for _ in 0..4 {
+        push_u8_string(&mut surface, "null_law");
+    }
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.005);
+    for values in [&[0.25][..], &[][..], &[][..], &[][..], &[][..], &[][..]] {
+        append_generated_float_array(&mut surface, values);
+    }
+    surface.push(0x0a);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
     t_long(bytes, 1);
     t_long(bytes, 9);
@@ -7948,6 +7991,50 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         );
         assert!(sections[1].entries[0].profile[0].data.direction.is_none());
     }
+}
+
+#[test]
+fn generated_net_surface_decodes_and_writes_full_graph() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_net_spl_sur_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("net surface decode");
+    let ProceduralSurfaceDefinition::Net { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected net surface")
+    };
+    assert!(construction
+        .sections
+        .iter()
+        .all(|section| section.entries.len() == 1));
+    assert_eq!(construction.frame_parameters[11], 1.1);
+    assert_eq!(construction.flag, 17);
+    assert_eq!(construction.directions[2].z, 1.0);
+    assert!(construction
+        .formulas
+        .iter()
+        .all(|formula| formula.name == "null_law"));
+    assert_eq!(construction.discontinuities[0], [0.25]);
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less net surface encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less net surface round trip");
+    assert!(matches!(
+        round_trip.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::Net { .. }
+    ));
 }
 
 #[test]

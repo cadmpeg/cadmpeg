@@ -3380,6 +3380,9 @@ fn native_procedural_surface(
         ProceduralSurfaceDefinition::Skin { construction } => {
             encode_native_skin_surface(bytes, target, procedural, construction, solved_cache)?;
         }
+        ProceduralSurfaceDefinition::Net { construction } => {
+            encode_native_net_surface(bytes, target, procedural, construction, solved_cache)?;
+        }
         ProceduralSurfaceDefinition::G2Blend { construction } => {
             encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
         }
@@ -4390,6 +4393,39 @@ fn encode_native_skin_surface(
         bytes,
         native_loft_curve(target, &construction.parameter_curve)?,
     )?;
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for values in &construction.discontinuities {
+        native_compound_loft_float_array(bytes, values)?;
+    }
+    bytes.push(native_bool(construction.discontinuity_flag));
+    bytes.push(0x10);
+    Ok(())
+}
+
+fn encode_native_net_surface(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::NetSurfaceConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "net_spl_sur")?;
+    for section in construction.sections.iter() {
+        native_loft_section(bytes, target, section)?;
+    }
+    for parameter in construction.frame_parameters {
+        native_f64(bytes, parameter);
+    }
+    native_i64(bytes, construction.flag);
+    for direction in construction.directions {
+        native_vector(bytes, [direction.x, direction.y, direction.z]);
+    }
+    for formula in construction.formulas.iter() {
+        native_law_formula(bytes, target, formula)?;
+    }
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
     for values in &construction.discontinuities {

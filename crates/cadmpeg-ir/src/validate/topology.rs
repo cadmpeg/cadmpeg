@@ -456,6 +456,57 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     check_law_curves(variable, ids, procedural, findings);
                 }
             }
+            ProceduralSurfaceDefinition::Net { construction } => {
+                fn check_law_curves(
+                    expression: &crate::geometry::LawExpression,
+                    ids: &IdSets,
+                    procedural: &crate::geometry::ProceduralSurface,
+                    findings: &mut Vec<Finding>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            if !ids.curves.contains(&curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            }
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                check_law_curves(operand, ids, procedural, findings);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for entry in construction
+                    .sections
+                    .iter()
+                    .flat_map(|section| &section.entries)
+                {
+                    for curve in std::iter::once(&entry.path.curve)
+                        .chain(entry.path.auxiliaries.iter())
+                        .chain(entry.profile.iter().map(|member| &member.curve))
+                    {
+                        if !ids.curves.contains(&curve.0) {
+                            ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                        }
+                    }
+                    for member in &entry.profile {
+                        if !ids.surfaces.contains(&member.data.surface.0) {
+                            ref_error(
+                                findings,
+                                &procedural.id.0,
+                                "surface",
+                                &member.data.surface.0,
+                            );
+                        }
+                    }
+                }
+                for formula in construction.formulas.iter() {
+                    for variable in &formula.variables {
+                        check_law_curves(variable, ids, procedural, findings);
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::G2Blend { construction } => {
                 for surface in [&construction.first.surface, &construction.second.surface]
                     .into_iter()

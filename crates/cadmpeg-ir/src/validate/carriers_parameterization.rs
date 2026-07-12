@@ -172,6 +172,41 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     collect_law_curves(variable, &mut curves);
                 }
             }
+            ProceduralSurfaceDefinition::Net { construction } => {
+                fn collect_law_curves<'a>(
+                    expression: &'a crate::geometry::LawExpression,
+                    curves: &mut HashSet<&'a str>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            curves.insert(&curve.0);
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                collect_law_curves(operand, curves);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for entry in construction
+                    .sections
+                    .iter()
+                    .flat_map(|section| &section.entries)
+                {
+                    curves.insert(&entry.path.curve.0);
+                    curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.0.as_str()));
+                    for member in &entry.profile {
+                        curves.insert(&member.curve.0);
+                        surfaces.insert(&member.data.surface.0);
+                    }
+                }
+                for formula in construction.formulas.iter() {
+                    for variable in &formula.variables {
+                        collect_law_curves(variable, &mut curves);
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::G2Blend { construction } => {
                 for side in [&construction.first, &construction.second] {
                     surfaces.insert(&side.surface.0);

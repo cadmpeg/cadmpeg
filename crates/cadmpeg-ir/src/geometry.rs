@@ -342,6 +342,11 @@ pub enum ProceduralSurfaceDefinition {
         /// Complete native skin construction graph.
         construction: Box<SkinSurfaceConstruction>,
     },
+    /// Native curve-network spline surface.
+    Net {
+        /// Complete native net construction graph.
+        construction: Box<NetSurfaceConstruction>,
+    },
     /// Native curvature-continuous two-sided blend.
     G2Blend {
         /// Complete native G2 construction graph.
@@ -1345,6 +1350,25 @@ pub struct SkinSurfaceConstruction {
     pub formula: LawFormula,
     /// Trailing curve after the formula.
     pub parameter_curve: CurveId,
+    /// Six ordered solved-surface discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
+    pub discontinuity_flag: bool,
+}
+
+/// Complete native `net_spl_sur` construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct NetSurfaceConstruction {
+    /// Two ordered loft-section graphs.
+    pub sections: Box<[LoftSection; 2]>,
+    /// Twelve ordered frame scalars.
+    pub frame_parameters: [f64; 12],
+    /// Native frame integer.
+    pub flag: i64,
+    /// Four ordered frame directions.
+    pub directions: [Vector3; 4],
+    /// Four ordered parameter laws.
+    pub formulas: Box<[LawFormula; 4]>,
     /// Six ordered solved-surface discontinuity arrays.
     pub discontinuities: [Vec<f64>; 6],
     /// Native discontinuity tail flag.
