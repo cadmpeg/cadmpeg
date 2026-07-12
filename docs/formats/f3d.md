@@ -370,6 +370,8 @@ Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus
 
 **`off_spl_sur` / `offsur`**: one support surface, signed offset distance, and U/V sense enums followed by the solved NURBS surface and fit tolerance. The modern name additionally carries a conditional one-to-three-boolean ASM tail: a false first flag ends the tail; a true first flag requires a second flag and permits a third. The legacy name has no ASM boolean tail. Native generation retains the form selected by the stored tail.
 
+**`comp_spl_sur`**: the solved NURBS surface and fit tolerance occur first, followed by a float array and one component surface per array element. Each float is paired positionally with its component surface. The leading surface block is the face cache; trailing NURBS component surfaces do not replace it during cache selection.
+
 ### 7.4 Pcurves (2D UV trimming curves)
 
 A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at record-relative **+37**:

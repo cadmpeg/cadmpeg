@@ -237,6 +237,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::Compound {
+            parameters,
+            components,
+        } = &procedural.definition
+        {
+            if parameters.len() != components.len()
+                || parameters.iter().any(|parameter| !parameter.is_finite())
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "compound surface parameters and components are inconsistent",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Offset {
             distance,
             extension_flags,

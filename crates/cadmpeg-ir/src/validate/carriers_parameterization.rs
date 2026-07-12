@@ -48,6 +48,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         surfaces.insert(&procedural.surface.0);
         match &procedural.definition {
             ProceduralSurfaceDefinition::Exact { .. } => {}
+            ProceduralSurfaceDefinition::Compound { components, .. } => {
+                surfaces.extend(components.iter().map(|component| component.0.as_str()));
+            }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 curves.insert(&directrix.0);

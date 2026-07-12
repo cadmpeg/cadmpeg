@@ -1703,6 +1703,39 @@ fn synthetic_off_spl_sur_smbh(name: &str) -> Vec<u8> {
     bytes
 }
 
+fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "comp_spl_sur");
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.0065);
+    t_long(&mut surface, 2);
+    t_dbl(&mut surface, -0.5);
+    t_dbl(&mut surface, 1.5);
+    t_ident(&mut surface, "plane");
+    t_pos(&mut surface, [1.0, -2.0, 3.0]);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    t_vec(&mut surface, [1.0, 0.0, 0.0]);
+    surface.push(0x0b);
+    t_ident(&mut surface, "spline");
+    surface.extend_from_slice(&generated_rational_surface_block());
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn synthetic_rational_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_cyl_spl_sur_smbh();
     let old = generated_surface_block();
@@ -7092,6 +7125,66 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         assert_eq!((*distance, *u_sense, *v_sense), (-12.5, 3, -4));
         assert_eq!(*extension_flags, expected_flags);
     }
+}
+
+#[test]
+fn generated_compound_spline_surface_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_comp_spl_sur_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("compound spline surface decode");
+    let procedural = result.ir.model.procedural_surfaces.first().unwrap();
+    let ProceduralSurfaceDefinition::Compound {
+        parameters,
+        components,
+    } = &procedural.definition
+    else {
+        panic!("expected compound surface construction")
+    };
+    assert_eq!(parameters, &[-0.5, 1.5]);
+    assert_eq!(components.len(), 2);
+    let solved = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == procedural.surface)
+        .expect("compound solved surface");
+    let SurfaceGeometry::Nurbs(solved) = &solved.geometry else {
+        panic!("expected solved NURBS surface")
+    };
+    assert!(solved.weights.is_none());
+    let rational_component = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == components[1])
+        .expect("compound rational component");
+    assert!(matches!(
+        rational_component.geometry,
+        SurfaceGeometry::Nurbs(ref surface) if surface.weights.is_some()
+    ));
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.unknowns.clear();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less compound surface encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less compound surface round trip");
+    assert!(matches!(
+        round_trip.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::Compound { ref parameters, ref components }
+            if parameters == &[-0.5, 1.5] && components.len() == 2
+    ));
 }
 
 #[test]

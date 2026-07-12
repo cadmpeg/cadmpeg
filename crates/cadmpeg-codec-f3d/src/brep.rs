@@ -842,6 +842,30 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             parameter_ranges,
                             extension,
                         },
+                        nurbs::DecodedProceduralSurfaceDefinition::Compound {
+                            parameters,
+                            components,
+                        } => {
+                            let component_ids = components
+                                .into_iter()
+                                .enumerate()
+                                .map(|(component, geometry)| {
+                                    let id = SurfaceId(format!(
+                                        "f3d:brep:procedural_surface#{i}:component{component}"
+                                    ));
+                                    out.surfaces.push(Surface {
+                                        id: id.clone(),
+                                        geometry,
+                                        source_object: None,
+                                    });
+                                    id
+                                })
+                                .collect();
+                            ProceduralSurfaceDefinition::Compound {
+                                parameters,
+                                components: component_ids,
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::Ruled { first, second } => {
                             let first_id =
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:profile0"));

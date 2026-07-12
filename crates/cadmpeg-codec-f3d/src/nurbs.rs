@@ -655,11 +655,18 @@ pub fn decode_surface_cache(record_bytes: &[u8]) -> Option<NurbsSurface> {
 }
 
 fn decode_surface_cache_at(record_bytes: &[u8], int_width: usize) -> Option<NurbsSurface> {
-    marker_positions(record_bytes)
+    let caches = marker_positions(record_bytes)
         .into_iter()
         .filter_map(|pos| decode_surface_block(record_bytes, pos, int_width))
-        .map(|decoded| decoded.surface)
-        .next_back()
+        .map(|decoded| decoded.surface);
+    if record_bytes
+        .windows(b"comp_spl_sur".len())
+        .any(|window| window == b"comp_spl_sur")
+    {
+        caches.into_iter().next()
+    } else {
+        caches.into_iter().next_back()
+    }
 }
 
 /// A decoded native procedural definition and the fit contract of its solved cache.
@@ -681,6 +688,13 @@ pub enum DecodedProceduralSurfaceDefinition {
         parameter_ranges: [[f64; 2]; 2],
         /// Native ASM extension integer.
         extension: i64,
+    },
+    /// Native compound surface with ordered scalar/component pairs.
+    Compound {
+        /// Ordered native parameters.
+        parameters: Vec<f64>,
+        /// Ordered embedded component surfaces.
+        components: Vec<SurfaceGeometry>,
     },
     /// Ruled interpolation between two ordered profile curves.
     Ruled {
@@ -742,6 +756,36 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Blend cross-section family.
         cross_section: BlendCrossSection,
     },
+}
+
+fn decode_comp_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    let name = b"comp_spl_sur";
+    let start = record_bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let cache = marker_positions(span)
+        .into_iter()
+        .find_map(|at| decode_surface_block(span, at, int_width))?;
+    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
+        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
+        .flatten();
+    let mut position = cache.end + 9;
+    let parameters = take_float_array(span, &mut position, int_width)?;
+    let mut components = Vec::with_capacity(parameters.len());
+    for _ in 0..parameters.len() {
+        components.push(decode_embedded_surface(span, &mut position, int_width)?);
+    }
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Compound {
+            parameters,
+            components,
+        },
+        cache_fit_tolerance,
+    })
 }
 
 fn decode_off_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
@@ -1115,6 +1159,7 @@ fn decode_procedural_resolving_refs(
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
     if let Some(decoded) = decode_exact_spl_sur(bytes, int_width)
+        .or_else(|| decode_comp_spl_sur(bytes, int_width))
         .or_else(|| decode_ruled_spl_sur(bytes, int_width))
         .or_else(|| decode_sum_spl_sur(bytes, int_width))
         .or_else(|| decode_rot_spl_sur(bytes, int_width))

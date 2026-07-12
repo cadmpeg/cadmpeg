@@ -291,6 +291,13 @@ pub enum ProceduralSurfaceDefinition {
         /// Native ASM extension integer following the intervals.
         extension: i64,
     },
+    /// Ordered native compound of a solved surface and component surfaces.
+    Compound {
+        /// One native scalar paired with each component surface.
+        parameters: Vec<f64>,
+        /// Ordered component surfaces.
+        components: Vec<SurfaceId>,
+    },
     /// Translation of a directrix along a direction.
     Extrusion {
         /// Curve swept along `direction` to form the surface.

@@ -305,6 +305,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         }
         match &procedural.definition {
             ProceduralSurfaceDefinition::Exact { .. } => {}
+            ProceduralSurfaceDefinition::Compound { components, .. } => {
+                for component in components {
+                    if !ids.surfaces.contains(&component.0) {
+                        ref_error(findings, &procedural.id.0, "surface", &component.0);
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 if !ids.curves.contains(&directrix.0) {

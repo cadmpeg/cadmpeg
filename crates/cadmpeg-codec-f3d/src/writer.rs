@@ -3168,6 +3168,45 @@ fn native_procedural_surface(
             native_i64(bytes, *extension);
             bytes.push(0x10);
         }
+        ProceduralSurfaceDefinition::Compound {
+            parameters,
+            components,
+        } => {
+            if parameters.len() != components.len() {
+                return Err(CodecError::Malformed(
+                    "comp_spl_sur requires one parameter per component surface".into(),
+                ));
+            }
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "comp_spl_sur")?;
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            native_i64(
+                bytes,
+                i64::try_from(parameters.len()).map_err(|_| {
+                    CodecError::NotImplemented("compound surface count exceeds i64".into())
+                })?,
+            );
+            for parameter in parameters {
+                native_f64(bytes, *parameter);
+            }
+            for component in components {
+                let component = target
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *component)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "compound surface {} references missing component {component}",
+                            procedural.id
+                        ))
+                    })?;
+                native_embedded_surface(bytes, &component.geometry)?;
+            }
+            bytes.push(0x10);
+        }
         ProceduralSurfaceDefinition::Ruled { first, second } => {
             let profiles = [first, second]
                 .map(|id| {
