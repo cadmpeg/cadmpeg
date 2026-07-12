@@ -3866,12 +3866,22 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less circle-carrier encode");
-    let round_trip = F3dCodec
+    let mut round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less circle-carrier round trip");
     assert_eq!(round_trip.ir.model.curves[0].geometry, expected);
     assert_eq!(round_trip.ir.model.edges[0].param_range, Some([0.25, 1.75]));
     assert!(round_trip.ir.model.edges[0].curve.is_some());
+    round_trip.ir.model.curves[0].geometry = CurveGeometry::Line {
+        origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+    };
+    let error = F3dCodec
+        .write_preserved(&round_trip.ir, &mut Vec::new())
+        .expect_err("native ellipse record cannot silently retain a line edit");
+    assert!(error
+        .to_string()
+        .contains("does not support edits to curve"));
 }
 
 #[test]
@@ -4056,6 +4066,32 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
             ..
         } if (half_angle - 0.35).abs() < 1.0e-12
     ));
+}
+
+#[test]
+fn generated_f3d_rejects_analytic_surface_family_changes() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let mut edited = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated planar triangle decode")
+        .ir;
+    edited.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
+        center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        radius: 5.0,
+    };
+
+    let error = F3dCodec
+        .write_preserved(&edited, &mut Vec::new())
+        .expect_err("native plane record cannot silently retain a sphere edit");
+    assert!(error
+        .to_string()
+        .contains("does not support edits to surface"));
 }
 
 #[test]

@@ -9826,7 +9826,9 @@ fn validate_curve_edits(
         }
         edited.insert(id.to_owned());
         let valid = match after {
-            CurveGeometry::Line { origin, direction } => {
+            CurveGeometry::Line { origin, direction }
+                if matches!(before, CurveGeometry::Line { .. }) =>
+            {
                 finite_point(*origin)
                     && finite_vector(*direction)
                     && (direction.norm() - 1.0).abs() <= 1e-9
@@ -10025,13 +10027,15 @@ fn validate_surface_edits(
                 origin,
                 normal,
                 u_axis,
-            } => finite_point(*origin) && orthonormal_pair(*normal, *u_axis),
+            } if matches!(before, SurfaceGeometry::Plane { .. }) => {
+                finite_point(*origin) && orthonormal_pair(*normal, *u_axis)
+            }
             SurfaceGeometry::Sphere {
                 center,
                 axis,
                 ref_direction,
                 radius,
-            } => {
+            } if matches!(before, SurfaceGeometry::Sphere { .. }) => {
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
@@ -10043,7 +10047,7 @@ fn validate_surface_edits(
                 ref_direction,
                 major_radius,
                 minor_radius,
-            } => {
+            } if matches!(before, SurfaceGeometry::Torus { .. }) => {
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && major_radius.is_finite()
@@ -10069,9 +10073,8 @@ fn validate_surface_edits(
                 radius,
                 ratio,
                 half_angle,
-            } => {
-                matches!(before, SurfaceGeometry::Cone { .. })
-                    && finite_point(*origin)
+            } if matches!(before, SurfaceGeometry::Cone { .. }) => {
+                finite_point(*origin)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
                     && *radius != 0.0
