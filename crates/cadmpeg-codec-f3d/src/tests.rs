@@ -1784,6 +1784,73 @@ fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
     bytes
 }
 
+fn append_generated_loft_section(bytes: &mut Vec<u8>, parameter: f64, direction: bool) {
+    t_long(bytes, 1);
+    t_dbl(bytes, parameter);
+    t_long(bytes, 1);
+    t_long(bytes, 9);
+    bytes.extend_from_slice(&generated_curve_block());
+    t_ident(bytes, "plane");
+    t_pos(bytes, [1.0, -2.0, 3.0]);
+    t_vec(bytes, [0.0, 0.0, 1.0]);
+    t_vec(bytes, [1.0, 0.0, 0.0]);
+    bytes.push(0x0b);
+    bytes.extend_from_slice(&generated_pcurve_block());
+    bytes.push(0x0b);
+    t_long(bytes, -1);
+    t_long(bytes, 211);
+    t_long(bytes, 4);
+    t_long(bytes, 0);
+    t_dbl(bytes, -0.25);
+    t_dbl(bytes, 0.75);
+    bytes.push(if direction { 0x0a } else { 0x0b });
+    if direction {
+        t_vec(bytes, [0.0, 1.0, 0.0]);
+    }
+    bytes.extend_from_slice(&generated_curve_block());
+    t_long(bytes, 1);
+    bytes.extend_from_slice(&generated_curve_block());
+    t_long(bytes, 6);
+}
+
+fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, name);
+    append_generated_loft_section(&mut surface, 0.0, true);
+    append_generated_loft_section(&mut surface, 1.0, false);
+    for value in [-1.0, 2.0, -3.0, 4.0] {
+        t_dbl(&mut surface, value);
+    }
+    for value in [1i64, 2, 3, 4] {
+        surface.push(0x15);
+        surface.extend_from_slice(&value.to_le_bytes());
+    }
+    t_long(&mut surface, 2);
+    surface.push(0x0a);
+    t_long(&mut surface, 17);
+    t_dbl(&mut surface, 0.125);
+    push_u8_string(&mut surface, "bridge");
+    surface.push(0x15);
+    surface.extend_from_slice(&(-7i64).to_le_bytes());
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.0085);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn synthetic_rational_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_cyl_spl_sur_smbh();
     let old = generated_surface_block();
@@ -7307,6 +7374,59 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             round_trip.ir.model.procedural_surfaces[0].definition,
             ProceduralSurfaceDefinition::Taper { .. }
         ));
+    }
+}
+
+#[test]
+fn generated_loft_surface_decodes_full_nested_graph() {
+    use cadmpeg_ir::geometry::{LoftBridgeToken, ProceduralSurfaceDefinition};
+
+    for name in ["loft_spl_sur", "loftsur"] {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_loft_spl_sur_smbh(name))),
+                &DecodeOptions::default(),
+            )
+            .expect("loft surface decode");
+        let ProceduralSurfaceDefinition::Loft {
+            sections,
+            parameter_ranges,
+            closures,
+            singularities,
+            mode,
+            bridge,
+        } = &result.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected loft surface")
+        };
+        assert_eq!(*parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
+        assert_eq!(*closures, [1, 2]);
+        assert_eq!(*singularities, [3, 4]);
+        assert_eq!(*mode, 2);
+        assert_eq!(
+            bridge,
+            &[
+                LoftBridgeToken::Boolean(true),
+                LoftBridgeToken::Integer(17),
+                LoftBridgeToken::Double(0.125),
+                LoftBridgeToken::Text("bridge".into()),
+                LoftBridgeToken::Enum(-7),
+            ]
+        );
+        assert!(sections.iter().all(|section| section.entries.len() == 1));
+        assert_eq!(
+            sections[0].entries[0].profile[0].data.subdata.type_code,
+            211
+        );
+        assert_eq!(
+            sections[0].entries[0].profile[0].data.direction,
+            Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
+        );
+        assert!(sections[1].entries[0].profile[0].data.direction.is_none());
+        assert!(sections
+            .iter()
+            .flat_map(|section| &section.entries)
+            .all(|entry| entry.path.auxiliaries.len() == 1));
     }
 }
 

@@ -902,6 +902,94 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 taper,
                             }
                         }
+                        nurbs::DecodedProceduralSurfaceDefinition::Loft(embedded) => {
+                            let sections = embedded.sections.into_iter().enumerate().map(
+                                |(section_index, entries)| {
+                                    let entries = entries.into_iter().enumerate().map(
+                                        |(entry_index, entry)| {
+                                            let profile = entry.profile.into_iter().enumerate().map(
+                                                |(member_index, member)| {
+                                                    let curve = CurveId(format!(
+                                                        "f3d:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:profile:{member_index}"
+                                                    ));
+                                                    out.curves.push(Curve {
+                                                        id: curve.clone(),
+                                                        geometry: CurveGeometry::Nurbs(member.curve),
+                                                        source_object: None,
+                                                    });
+                                                    let surface = SurfaceId(format!(
+                                                        "f3d:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:support:{member_index}"
+                                                    ));
+                                                    out.surfaces.push(Surface {
+                                                        id: surface.clone(),
+                                                        geometry: member.data.surface,
+                                                        source_object: None,
+                                                    });
+                                                    let pcurve = member.data.pcurve.map(|pcurve| PcurveGeometry::Nurbs {
+                                                        degree: pcurve.degree,
+                                                        knots: pcurve.knots,
+                                                        control_points: pcurve.control_points,
+                                                        weights: pcurve.weights,
+                                                        periodic: pcurve.periodic,
+                                                    });
+                                                    cadmpeg_ir::geometry::LoftProfileMember {
+                                                        type_code: member.type_code,
+                                                        curve,
+                                                        data: cadmpeg_ir::geometry::LoftProfileData {
+                                                            surface,
+                                                            pcurve,
+                                                            first_flag: member.data.first_flag,
+                                                            asm_extension: member.data.asm_extension,
+                                                            subdata: member.data.subdata,
+                                                            direction: member.data.direction,
+                                                        },
+                                                    }
+                                                },
+                                            ).collect();
+                                            let path_curve = CurveId(format!(
+                                                "f3d:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:path"
+                                            ));
+                                            out.curves.push(Curve {
+                                                id: path_curve.clone(),
+                                                geometry: CurveGeometry::Nurbs(entry.path.curve),
+                                                source_object: None,
+                                            });
+                                            let auxiliaries = entry.path.auxiliaries.into_iter().enumerate().map(
+                                                |(auxiliary_index, geometry)| {
+                                                    let id = CurveId(format!(
+                                                        "f3d:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:auxiliary:{auxiliary_index}"
+                                                    ));
+                                                    out.curves.push(Curve {
+                                                        id: id.clone(),
+                                                        geometry: CurveGeometry::Nurbs(geometry),
+                                                        source_object: None,
+                                                    });
+                                                    id
+                                                },
+                                            ).collect();
+                                            cadmpeg_ir::geometry::LoftSectionEntry {
+                                                parameter: entry.parameter,
+                                                profile,
+                                                path: cadmpeg_ir::geometry::LoftPath {
+                                                    curve: path_curve,
+                                                    auxiliaries,
+                                                    flag: entry.path.flag,
+                                                },
+                                            }
+                                        },
+                                    ).collect();
+                                    cadmpeg_ir::geometry::LoftSection { entries }
+                                },
+                            ).collect::<Vec<_>>().try_into().expect("two loft sections");
+                            ProceduralSurfaceDefinition::Loft {
+                                sections,
+                                parameter_ranges: embedded.parameter_ranges,
+                                closures: embedded.closures,
+                                singularities: embedded.singularities,
+                                mode: embedded.mode,
+                                bridge: embedded.bridge,
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::Ruled { first, second } => {
                             let first_id =
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:profile0"));

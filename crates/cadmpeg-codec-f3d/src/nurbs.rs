@@ -709,6 +709,8 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Subtype-specific tail.
         taper: cadmpeg_ir::geometry::TaperSurfaceKind,
     },
+    /// Native loft construction graph with embedded carriers.
+    Loft(EmbeddedLoft),
     /// Ruled interpolation between two ordered profile curves.
     Ruled {
         /// First embedded profile.
@@ -769,6 +771,247 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Blend cross-section family.
         cross_section: BlendCrossSection,
     },
+}
+
+pub(crate) struct EmbeddedLoftProfileData {
+    pub(crate) surface: SurfaceGeometry,
+    pub(crate) pcurve: Option<NurbsPcurve>,
+    pub(crate) first_flag: bool,
+    pub(crate) asm_extension: i64,
+    pub(crate) subdata: cadmpeg_ir::geometry::LoftSubdata,
+    pub(crate) direction: Option<Vector3>,
+}
+
+pub(crate) struct EmbeddedLoftProfileMember {
+    pub(crate) type_code: i64,
+    pub(crate) curve: NurbsCurve,
+    pub(crate) data: EmbeddedLoftProfileData,
+}
+
+pub(crate) struct EmbeddedLoftPath {
+    pub(crate) curve: NurbsCurve,
+    pub(crate) auxiliaries: Vec<NurbsCurve>,
+    pub(crate) flag: i64,
+}
+
+pub(crate) struct EmbeddedLoftSectionEntry {
+    pub(crate) parameter: f64,
+    pub(crate) profile: Vec<EmbeddedLoftProfileMember>,
+    pub(crate) path: EmbeddedLoftPath,
+}
+
+/// Embedded native loft graph before its carriers receive stable IR ids.
+pub struct EmbeddedLoft {
+    pub(crate) sections: [Vec<EmbeddedLoftSectionEntry>; 2],
+    pub(crate) parameter_ranges: [[f64; 2]; 2],
+    pub(crate) closures: [i64; 2],
+    pub(crate) singularities: [i64; 2],
+    pub(crate) mode: i64,
+    pub(crate) bridge: Vec<cadmpeg_ir::geometry::LoftBridgeToken>,
+}
+
+fn decode_loft_subdata(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
+    use cadmpeg_ir::geometry::{LoftSubdata, LoftSubdataRow};
+    let type_code = take_tagged_int(bytes, position, 0x04, int_width)?;
+    let row_count = take_tagged_int(bytes, position, 0x04, int_width)?;
+    let column_count = take_tagged_int(bytes, position, 0x04, int_width)?;
+    let rows_to_read = if type_code == 211 {
+        1
+    } else {
+        usize::try_from(row_count).ok()?
+    };
+    let columns_to_read = usize::try_from(column_count).ok()?;
+    let mut rows = Vec::with_capacity(rows_to_read);
+    for _ in 0..rows_to_read {
+        let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
+        let mut columns = Vec::new();
+        if type_code != 211 {
+            columns.reserve(columns_to_read);
+            for _ in 0..columns_to_read {
+                columns.push([take_f64(bytes, position)?, take_f64(bytes, position)?]);
+            }
+        }
+        rows.push(LoftSubdataRow {
+            parameters,
+            columns,
+        });
+    }
+    Some(LoftSubdata {
+        type_code,
+        row_count,
+        column_count,
+        rows,
+    })
+}
+
+fn decode_loft_profile_data(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<EmbeddedLoftProfileData> {
+    let surface = decode_embedded_surface(bytes, position, int_width)?;
+    let saved = *position;
+    let pcurve = if take_native_ident(bytes, position).as_deref() == Some("nullbs") {
+        None
+    } else {
+        *position = saved;
+        let (pcurve, end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
+        *position = end;
+        Some(pcurve)
+    };
+    let first_flag = take_bool(bytes, position)?;
+    let asm_extension = take_tagged_int(bytes, position, 0x04, int_width)?;
+    let subdata = decode_loft_subdata(bytes, position, int_width)?;
+    let direction = if take_bool(bytes, position)? {
+        let value = take_native_vec3(bytes, position, 0x14)?;
+        Some(Vector3::new(value[0], value[1], value[2]))
+    } else {
+        None
+    };
+    Some(EmbeddedLoftProfileData {
+        surface,
+        pcurve,
+        first_flag,
+        asm_extension,
+        subdata,
+        direction,
+    })
+}
+
+fn decode_loft_section(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<Vec<EmbeddedLoftSectionEntry>> {
+    let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+    let mut entries = Vec::with_capacity(count);
+    for _ in 0..count {
+        let parameter = take_f64(bytes, position)?;
+        let member_count =
+            usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+        let mut profile = Vec::with_capacity(member_count);
+        for _ in 0..member_count {
+            let type_code = take_tagged_int(bytes, position, 0x04, int_width)?;
+            let curve = decode_curve_block(bytes, *position, int_width)?;
+            *position = curve.end;
+            let data = decode_loft_profile_data(bytes, position, int_width)?;
+            profile.push(EmbeddedLoftProfileMember {
+                type_code,
+                curve: curve.curve,
+                data,
+            });
+        }
+        let curve = decode_curve_block(bytes, *position, int_width)?;
+        *position = curve.end;
+        let auxiliary_count =
+            usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+        let mut auxiliaries = Vec::with_capacity(auxiliary_count);
+        for _ in 0..auxiliary_count {
+            let auxiliary = decode_curve_block(bytes, *position, int_width)?;
+            *position = auxiliary.end;
+            auxiliaries.push(auxiliary.curve);
+        }
+        let flag = take_tagged_int(bytes, position, 0x04, int_width)?;
+        entries.push(EmbeddedLoftSectionEntry {
+            parameter,
+            profile,
+            path: EmbeddedLoftPath {
+                curve: curve.curve,
+                auxiliaries,
+                flag,
+            },
+        });
+    }
+    Some(entries)
+}
+
+fn decode_loft_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    use cadmpeg_ir::geometry::LoftBridgeToken;
+    let names: [&[u8]; 2] = [b"loft_spl_sur", b"loftsur"];
+    let (start, name_len) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len()))
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name_len + 3;
+    let sections = [
+        decode_loft_section(span, &mut position, int_width)?,
+        decode_loft_section(span, &mut position, int_width)?,
+    ];
+    let parameter_ranges = [
+        [
+            take_f64(span, &mut position)?,
+            take_f64(span, &mut position)?,
+        ],
+        [
+            take_f64(span, &mut position)?,
+            take_f64(span, &mut position)?,
+        ],
+    ];
+    let closures = [
+        take_tagged_int(span, &mut position, 0x15, int_width)?,
+        take_tagged_int(span, &mut position, 0x15, int_width)?,
+    ];
+    let singularities = [
+        take_tagged_int(span, &mut position, 0x15, int_width)?,
+        take_tagged_int(span, &mut position, 0x15, int_width)?,
+    ];
+    let mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let (cache_at, cache) = marker_positions(span)
+        .into_iter()
+        .filter_map(|at| decode_surface_block(span, at, int_width).map(|cache| (at, cache)))
+        .next_back()?;
+    let mut bridge = Vec::new();
+    while position < cache_at {
+        match *span.get(position)? {
+            0x0a | 0x0b => bridge.push(LoftBridgeToken::Boolean(take_bool(span, &mut position)?)),
+            0x04 => bridge.push(LoftBridgeToken::Integer(take_tagged_int(
+                span,
+                &mut position,
+                0x04,
+                int_width,
+            )?)),
+            0x06 => bridge.push(LoftBridgeToken::Double(take_f64(span, &mut position)?)),
+            0x15 => bridge.push(LoftBridgeToken::Enum(take_tagged_int(
+                span,
+                &mut position,
+                0x15,
+                int_width,
+            )?)),
+            0x07..=0x09 => {
+                bridge.push(LoftBridgeToken::Text(take_native_string(
+                    span,
+                    &mut position,
+                )?));
+            }
+            _ => return None,
+        }
+    }
+    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
+        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
+        .flatten();
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
+            sections,
+            parameter_ranges,
+            closures,
+            singularities,
+            mode,
+            bridge,
+        }),
+        cache_fit_tolerance,
+    })
 }
 
 fn decode_taper_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
@@ -1277,6 +1520,7 @@ fn decode_procedural_resolving_refs(
     if let Some(decoded) = decode_exact_spl_sur(bytes, int_width)
         .or_else(|| decode_comp_spl_sur(bytes, int_width))
         .or_else(|| decode_taper_spl_sur(bytes, int_width))
+        .or_else(|| decode_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_ruled_spl_sur(bytes, int_width))
         .or_else(|| decode_sum_spl_sur(bytes, int_width))
         .or_else(|| decode_rot_spl_sur(bytes, int_width))

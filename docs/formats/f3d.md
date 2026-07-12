@@ -376,6 +376,8 @@ Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus
 
 **Taper spline surfaces**: `taper_spl_sur`, `ortho_spl_sur`/`orthosur`, `edge_tpr_spl_sur`, `shadow_tpr_spl_sur`/`shadowtapersur`, `ruled_tpr_spl_sur`/`ruledtapersur`, and `swept_tpr_spl_sur`/`swepttapersur` share a support surface, reference curve, nullable BS2 pcurve, taper parameter, solved NURBS surface, and fit tolerance. Standard taper has no tail; orthogonal adds a sense boolean; edge adds a draft vector; shadow and swept each add a draft vector plus stored sine/cosine values; ruled adds the same fields plus a factor. Shadow and swept are distinguished by subtype name, not tail shape. Native generation uses the modern subtype corresponding to the retained variant.
 
+**`loft_spl_sur` / `loftsur`**: two ordered loft sections precede two parameter intervals, two closure enums, two singularity enums, and a mode integer. Each section contains parameterized entries; each entry contains a counted profile and one path. Every profile member carries a type integer, curve, support surface, nullable BS2 pcurve, first flag, ASM integer, constraint subdata, and an optional direction selected by a second flag. Each path carries a curve, counted auxiliary BS3 curves, and a tail integer. Constraint subdata stores its type, row/column counts, leading scalar pairs, and per-column scalar pairs; type 211 stores exactly one leading pair and no column pairs. A variable sequence of boolean, integer, double, text, or enum tokens bridges the mode to the solved NURBS surface and fit tolerance.
+
 ### 7.4 Pcurves (2D UV trimming curves)
 
 A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at record-relative **+37**:
