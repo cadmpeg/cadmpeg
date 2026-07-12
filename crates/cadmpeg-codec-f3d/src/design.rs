@@ -14,7 +14,9 @@ use cadmpeg_ir::design::{
     PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
     SketchPoint, SketchRelation,
 };
-use cadmpeg_ir::le::{f64_at, lp_u32_bytes_at, u32_at, utf16le_at};
+use cadmpeg_ir::le::{
+    f64_at, lp_u32_bytes_at, u32_at, u32_at as read_u32, u64_at as read_u64, utf16le_at,
+};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::container::{role, ContainerScan};
@@ -1393,12 +1395,4 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
     bytes
         .chunks_exact(2)
         .all(|pair| pair[1] == 0 && (pair[0].is_ascii_hexdigit() || pair[0] == b'-'))
-}
-
-fn read_u32(bytes: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
-}
-
-fn read_u64(bytes: &[u8], at: usize) -> Option<u64> {
-    Some(u64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
 }

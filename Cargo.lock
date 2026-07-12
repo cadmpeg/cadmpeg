@@ -216,6 +216,7 @@ name = "cadmpeg-ir"
 version = "0.1.6"
 dependencies = [
  "base64",
+ "flate2",
  "schemars",
  "serde",
  "serde_json",
