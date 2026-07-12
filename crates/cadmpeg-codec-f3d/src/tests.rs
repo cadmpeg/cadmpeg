@@ -4003,6 +4003,54 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
 }
 
 #[test]
+fn generated_f3d_rewrites_cone_ratio() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated planar triangle decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.model.surfaces[0].geometry = SurfaceGeometry::Cone {
+        origin: cadmpeg_ir::math::Point3::new(1.0, 3.0, -5.0),
+        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        radius: 9.0,
+        ratio: 0.6,
+        half_angle: 0.5,
+    };
+
+    let mut initial = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut initial)
+        .expect("source-less cone encode");
+    let mut retained = F3dCodec
+        .decode(&mut Cursor::new(initial), &DecodeOptions::default())
+        .expect("generated cone decode")
+        .ir;
+    let SurfaceGeometry::Cone { ratio, .. } = &mut retained.model.surfaces[0].geometry else {
+        panic!("expected cone")
+    };
+    *ratio = 0.4;
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&retained, &mut regenerated)
+        .expect("cone ratio regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated cone decode");
+    assert!(matches!(
+        round_trip.ir.model.surfaces[0].geometry,
+        SurfaceGeometry::Cone { ratio: 0.4, .. }
+    ));
+}
+
+#[test]
 fn generated_source_less_face_writes_signed_torus_surface_carrier() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
@@ -7949,6 +7997,26 @@ fn analytic_carrier_decode_covers_each_shape() {
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
+
+    let mut elliptical_cylinder = base();
+    elliptical_cylinder.extend([
+        Token::Position([0.0, 0.0, 0.0]),
+        Token::Vector3([0.0, 0.0, 1.0]),
+        Token::Vector3([2.0, 0.0, 0.0]),
+        Token::Double(0.4),
+        Token::Double(0.0),
+        Token::Double(1.0),
+        Token::Double(2.0),
+    ]);
+    assert!(matches!(
+        decode_surface(&rec("cone", elliptical_cylinder)).unwrap().0,
+        SurfaceGeometry::Cone {
+            radius: 20.0,
+            ratio: 0.4,
+            half_angle: 0.0,
+            ..
+        }
+    ));
 
     // cone with nonzero sine keeps the acute half-angle asin(|sine|). A
     // both-negative sine/cosine pair has a positive slope (the radius still

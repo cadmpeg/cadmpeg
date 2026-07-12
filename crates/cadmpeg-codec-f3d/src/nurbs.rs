@@ -5121,7 +5121,7 @@ fn decode_embedded_surface(
             for _ in 0..5 {
                 take_bool(bytes, position)?;
             }
-            if sine.abs() <= f64::EPSILON {
+            if sine.abs() <= f64::EPSILON && ratio == 1.0 {
                 Some(SurfaceGeometry::Cylinder {
                     origin: point,
                     axis: native_axis,

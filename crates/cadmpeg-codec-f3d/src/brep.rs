@@ -244,7 +244,7 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
                 .filter(|radius| *radius > f64::EPSILON)
                 .or_else(|| u_scale.map(|r| r * LEN_TO_MM))?;
             let ref_direction = major.map_or_else(|| deterministic_ref_direction(axis), unit);
-            if sine.abs() <= f64::EPSILON {
+            if sine.abs() <= f64::EPSILON && ratio == 1.0 {
                 Some((
                     SurfaceGeometry::Cylinder {
                         origin: scale_point(origin),

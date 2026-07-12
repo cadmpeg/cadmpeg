@@ -7276,16 +7276,25 @@ pub fn write_semantic(
                 axis,
                 ref_direction,
                 radius,
-            }
-            | SurfaceGeometry::Cone {
+            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
+                (
+                    surface.id.0.clone(),
+                    (origin, axis, ref_direction, radius, 1.0),
+                )
+            }),
+            SurfaceGeometry::Cone {
                 origin,
                 axis,
                 ref_direction,
                 radius,
+                ratio,
                 ..
-            } => edited_surfaces
-                .contains(surface.id.as_str())
-                .then(|| (surface.id.0.clone(), (origin, axis, ref_direction, radius))),
+            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
+                (
+                    surface.id.0.clone(),
+                    (origin, axis, ref_direction, radius, ratio),
+                )
+            }),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -10058,8 +10067,8 @@ fn validate_surface_edits(
                 axis,
                 ref_direction,
                 radius,
+                ratio,
                 half_angle,
-                ..
             } => {
                 let unchanged_angle = matches!(
                     before,
@@ -10073,6 +10082,8 @@ fn validate_surface_edits(
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
                     && *radius != 0.0
+                    && ratio.is_finite()
+                    && *ratio > 0.0
             }
             SurfaceGeometry::Nurbs(after) => {
                 let SurfaceGeometry::Nurbs(before) = before else {
@@ -10466,7 +10477,7 @@ fn patch_geometry(
     planes: &BTreeMap<String, (Point3, Vector3, Vector3)>,
     spheres: &BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
     tori: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
+    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
     body_transforms: &BTreeMap<String, Transform>,
     entity_colors: &BTreeMap<String, Color>,
     edge_ranges: &BTreeMap<String, [f64; 2]>,
@@ -10524,7 +10535,7 @@ fn patch_framed_geometry(
     planes: &BTreeMap<String, (Point3, Vector3, Vector3)>,
     spheres: &BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
     tori: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
+    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
     body_transforms: &BTreeMap<String, Transform>,
     entity_colors: &BTreeMap<String, Color>,
     edge_ranges: &BTreeMap<String, [f64; 2]>,
@@ -10813,7 +10824,7 @@ fn patch_framed_geometry(
                 )?;
             }
         } else if record.head == "cone" {
-            if let Some((origin, axis, ref_direction, radius)) = cones.get(&id) {
+            if let Some((origin, axis, ref_direction, radius, ratio)) = cones.get(&id) {
                 patch_vec3_token(
                     bytes,
                     record,
@@ -10834,6 +10845,7 @@ fn patch_framed_geometry(
                         ref_direction.z * scaled_radius,
                     ],
                 )?;
+                patch_double_token(bytes, record, 0, *ratio)?;
                 patch_double_token(bytes, record, 3, scaled_radius)?;
             }
         }
@@ -12016,6 +12028,7 @@ mod tests {
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 40.0,
+                1.0,
             ),
         )]);
         patch_framed_geometry(
