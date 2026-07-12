@@ -3313,6 +3313,9 @@ fn native_procedural_surface(
         ProceduralSurfaceDefinition::G2Blend { construction } => {
             encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
         }
+        ProceduralSurfaceDefinition::VariableBlend { construction } => {
+            encode_native_variable_blend(bytes, target, procedural, construction, solved_cache)?;
+        }
         ProceduralSurfaceDefinition::Ruled { first, second } => {
             let profiles = [first, second]
                 .map(|id| {
@@ -3914,6 +3917,244 @@ fn native_optional_pcurve(
     } else {
         native_ident(bytes, "nullbs")
     }
+}
+
+fn native_variable_blend_value(
+    bytes: &mut Vec<u8>,
+    value: &cadmpeg_ir::geometry::VariableBlendValue,
+    depth: usize,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::{LoftBridgeToken, VariableBlendValuePayload};
+    if depth > 32 {
+        return Err(CodecError::Malformed(
+            "variable blend-value recursion exceeds 32 levels".into(),
+        ));
+    }
+    native_string(bytes, &value.name)?;
+    bytes.push(native_bool(value.modern_flag));
+    if value.discriminator != 1 {
+        native_i64(bytes, value.discriminator);
+    }
+    native_enum(bytes, value.calibrated);
+    match &value.payload {
+        VariableBlendValuePayload::TwoEnds { parameters, radii } => {
+            for parameter in parameters {
+                native_f64(bytes, *parameter);
+            }
+            for radius in radii {
+                native_f64(bytes, *radius / 10.0);
+            }
+        }
+        VariableBlendValuePayload::EdgeOffset { scalars, lengths } => {
+            let expected = if value.discriminator == 0 {
+                (2, 1)
+            } else {
+                (1, 2)
+            };
+            if (scalars.len(), lengths.len()) != expected {
+                return Err(CodecError::Malformed(
+                    "variable edge-offset payload has inconsistent arity".into(),
+                ));
+            }
+            for scalar in scalars {
+                native_f64(bytes, *scalar);
+            }
+            for length in lengths {
+                native_f64(bytes, *length / 10.0);
+            }
+        }
+        VariableBlendValuePayload::Functional {
+            parameter,
+            radius,
+            function,
+            terminal,
+        } => {
+            native_f64(bytes, *parameter);
+            native_f64(bytes, *radius / 10.0);
+            native_nurbs_pcurve_block(bytes, function)?;
+            match terminal {
+                LoftBridgeToken::Double(value) => native_f64(bytes, *value),
+                LoftBridgeToken::Text(value) => native_string(bytes, value)?,
+                _ => {
+                    return Err(CodecError::NotImplemented(
+                        "functional variable-blend terminal must be double or text".into(),
+                    ));
+                }
+            }
+        }
+        VariableBlendValuePayload::Constant {
+            parameters,
+            radius,
+            variable_chamfer,
+            chamfer_type,
+            nested,
+        } => {
+            for parameter in parameters {
+                native_f64(bytes, *parameter);
+            }
+            native_f64(bytes, *radius / 10.0);
+            native_enum(bytes, *variable_chamfer);
+            native_enum(bytes, *chamfer_type);
+            native_variable_blend_value(bytes, nested, depth + 1)?;
+        }
+        VariableBlendValuePayload::Interpolated {
+            parameter,
+            radius,
+            function,
+            enum_count,
+            points,
+            tail,
+        } => {
+            native_f64(bytes, *parameter);
+            native_f64(bytes, *radius / 10.0);
+            native_nurbs_pcurve_block(bytes, function)?;
+            native_i64(bytes, *enum_count);
+            native_i64(
+                bytes,
+                i64::try_from(points.len()).map_err(|_| {
+                    CodecError::NotImplemented("variable blend point count exceeds i64".into())
+                })?,
+            );
+            for point in points {
+                native_f64(bytes, point.parameter);
+                native_f64(bytes, point.radius / 10.0);
+                for tangent in point.tangents {
+                    native_f64(bytes, tangent);
+                }
+                native_point(
+                    bytes,
+                    [
+                        point.location.x / 10.0,
+                        point.location.y / 10.0,
+                        point.location.z / 10.0,
+                    ],
+                );
+                native_vector(bytes, [point.normal.x, point.normal.y, point.normal.z]);
+            }
+            native_i64(bytes, i64::from(tail.is_some()));
+            if let Some(tail) = tail {
+                native_f64(bytes, tail[0]);
+                native_f64(bytes, tail[1]);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn native_variable_blend_side(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    side: &cadmpeg_ir::geometry::VariableBlendSide,
+) -> Result<(), CodecError> {
+    native_string(bytes, &side.label)?;
+    let surface = target
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == side.surface)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("variable support {} is missing", side.surface))
+        })?;
+    native_embedded_surface(bytes, &surface.geometry)?;
+    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    native_optional_pcurve(bytes, side.pcurve.as_ref())?;
+    native_point(
+        bytes,
+        [
+            side.location.x / 10.0,
+            side.location.y / 10.0,
+            side.location.z / 10.0,
+        ],
+    );
+    native_optional_pcurve(bytes, side.secondary_pcurve.as_ref())?;
+    native_f64(bytes, side.scalar);
+    native_optional_pcurve(bytes, side.tertiary_pcurve.as_ref())?;
+    Ok(())
+}
+
+fn encode_native_variable_blend(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::VariableBlendConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::LoftBridgeToken;
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "var_blend_spl_sur")?;
+    for side in construction.sides.iter() {
+        native_variable_blend_side(bytes, target, side)?;
+    }
+    native_nurbs_curve(
+        bytes,
+        native_loft_curve(target, &construction.primary_curve)?,
+    )?;
+    for offset in construction.offsets {
+        native_f64(bytes, offset / 10.0);
+    }
+    native_enum(bytes, construction.radius_kind);
+    native_variable_blend_value(bytes, &construction.first_value, 0)?;
+    if construction.radius_kind == 1 {
+        let second = construction.second_value.as_ref().ok_or_else(|| {
+            CodecError::Malformed("two-radii variable blend lacks its second value".into())
+        })?;
+        native_variable_blend_value(bytes, second, 0)?;
+        if let Some(chamfer) = &construction.chamfer {
+            native_enum(bytes, chamfer.variable_chamfer);
+            native_enum(bytes, chamfer.chamfer_type);
+            native_variable_blend_value(bytes, &chamfer.value, 0)?;
+        }
+    } else if construction.radius_kind == 0 {
+        if construction.second_value.is_some() || construction.chamfer.is_some() {
+            return Err(CodecError::Malformed(
+                "single-radius variable blend carries two-radii payloads".into(),
+            ));
+        }
+        if let Some(tail) = &construction.single_radius_tail {
+            match &tail.selector {
+                LoftBridgeToken::Integer(value) => native_i64(bytes, *value),
+                _ => {
+                    return Err(CodecError::NotImplemented(
+                        "variable single-radius selector must be an integer".into(),
+                    ));
+                }
+            }
+            for parameter in tail.parameters {
+                native_f64(bytes, parameter);
+            }
+        }
+    } else {
+        return Err(CodecError::Malformed(
+            "variable blend radius kind must be 0 or 1".into(),
+        ));
+    }
+    for range in [construction.u_range, construction.v_range] {
+        native_f64(bytes, range[0]);
+        native_f64(bytes, range[1]);
+    }
+    native_i64(bytes, construction.shape_prefix);
+    native_f64(bytes, construction.shape_parameter);
+    native_f64(bytes, construction.shape_length / 10.0);
+    native_i64(bytes, construction.shape_tail);
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for extension in construction.shape_extensions {
+        native_i64(bytes, extension);
+    }
+    native_nurbs_curve(
+        bytes,
+        native_loft_curve(target, &construction.secondary_curve)?,
+    )?;
+    bytes.push(native_bool(construction.convexity != 0));
+    bytes.push(native_bool(construction.render_blend != 0));
+    for value in construction.post_range {
+        native_f64(bytes, value);
+    }
+    native_nurbs_curve(bytes, native_loft_curve(target, &construction.post_curve)?)?;
+    native_optional_pcurve(bytes, construction.post_pcurve.as_ref())?;
+    bytes.push(0x10);
+    Ok(())
 }
 
 fn native_rolling_ball_side(
