@@ -14,6 +14,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::be::u32_at as u32_be;
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 
 use crate::variant::Variant;
@@ -115,12 +116,6 @@ pub struct ContainerScan {
 /// to Dassault's container and is a conclusive signal on its own.
 pub fn looks_like_catia(prefix: &[u8]) -> bool {
     prefix.starts_with(OUTER_MAGIC)
-}
-
-fn u32_be(bytes: &[u8], at: usize) -> Option<u32> {
-    bytes
-        .get(at..at + 4)
-        .map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]))
 }
 
 /// Count non-overlapping stride-8 runs of the FBB marker and total marker hits.
