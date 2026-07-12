@@ -194,14 +194,13 @@ fn build_geometry_ir(
     let histories = crate::history::histories(scan, &mut ir.annotations);
     let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
     let attributes = crate::metadata::attributes(scan, &mut ir.annotations);
-    ir.native
-        .sldprt
-        .get_or_insert_with(cadmpeg_ir::native::sldprt::SldprtNative::default)
-        .feature_histories = histories;
-    ir.native
-        .sldprt
-        .get_or_insert_with(cadmpeg_ir::native::sldprt::SldprtNative::default)
-        .feature_input_lanes = lanes;
+    let native = cadmpeg_ir::native::sldprt::SldprtNative {
+        version: cadmpeg_ir::native::sldprt::SLDPRT_NATIVE_VERSION,
+        feature_histories: histories,
+        feature_input_lanes: lanes,
+    };
+    native.store(ir.native.namespace_mut("sldprt"))?;
+    ir.native.sldprt = Some(native);
     ir.model.attributes = attributes;
 
     ir.model.bodies = brep.bodies;
@@ -643,14 +642,13 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let histories = crate::history::histories(scan, &mut ir.annotations);
     let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
     let model_attributes = crate::metadata::attributes(scan, &mut ir.annotations);
-    ir.native
-        .sldprt
-        .get_or_insert_with(cadmpeg_ir::native::sldprt::SldprtNative::default)
-        .feature_histories = histories;
-    ir.native
-        .sldprt
-        .get_or_insert_with(cadmpeg_ir::native::sldprt::SldprtNative::default)
-        .feature_input_lanes = lanes;
+    let native = cadmpeg_ir::native::sldprt::SldprtNative {
+        version: cadmpeg_ir::native::sldprt::SLDPRT_NATIVE_VERSION,
+        feature_histories: histories,
+        feature_input_lanes: lanes,
+    };
+    native.store(ir.native.namespace_mut("sldprt"))?;
+    ir.native.sldprt = Some(native);
     ir.model.attributes = model_attributes;
     let mut attributes = BTreeMap::new();
     attributes.insert(

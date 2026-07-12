@@ -8,6 +8,7 @@ use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
+use cadmpeg_ir::native::sldprt::SldprtNative;
 use cadmpeg_ir::topology::{BodyKind, Color, Sense};
 
 use crate::container::MARKER;
@@ -15,6 +16,16 @@ use crate::container::MARKER;
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
 pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+    let mut canonical_ir = ir.clone();
+    if let Some(native) = canonical_ir.native.sldprt.take() {
+        native.store(canonical_ir.native.namespace_mut("sldprt"))?;
+    }
+    let ir = &canonical_ir;
+    let native = ir
+        .native
+        .namespace("sldprt")
+        .map(SldprtNative::load)
+        .transpose()?;
     let retained_partition = retained_partition(ir);
     let mut normalized = ir.clone();
     sort_arenas(&mut normalized);
@@ -94,9 +105,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             tessellation_payload(ir, length_scale)?,
         ));
     }
-    for (index, history) in ir
-        .native
-        .sldprt
+    for (index, history) in native
         .iter()
         .flat_map(|native| &native.feature_histories)
         .enumerate()
@@ -106,12 +115,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             history_payload(history)?,
         ));
     }
-    for lane in ir
-        .native
-        .sldprt
-        .iter()
-        .flat_map(|native| &native.feature_input_lanes)
-    {
+    for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
         let section = ir
             .annotations
             .provenance
