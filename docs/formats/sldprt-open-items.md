@@ -4,7 +4,6 @@
 
 The schema-33103 sheet discriminator is unresolved. `0x1d/flo2` belongs to the face-connectivity web rather than a sheet region. The discriminator must occur in the body-reachable `0x1b → 0x1f → 0x21 → 0x23` region chain.
 
-- The complete disc17 body-to-face reference mapping for disc14 face families is unresolved.
 - The class-root vector following `index_map_offset` and its relation to body, shell, and face-use heads is unresolved.
 
 ## Geometry carriers

@@ -303,8 +303,118 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
         });
     }
     bind_schema_33103_faces(entities, &mut out);
+    if out.is_empty() {
+        out.extend(disc14_bodies(&by_attr));
+    }
     out.sort_by_key(|record| record.attr);
     out
+}
+
+fn disc14_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
+    let regions = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x001a)
+        .collect::<Vec<_>>();
+    if regions.is_empty() {
+        return Vec::new();
+    }
+
+    let mut region_records = Vec::new();
+    let mut body_refs = HashSet::new();
+    for region in regions {
+        let shells = reachable_records(by_attr, region, 0x0016)
+            .into_iter()
+            .filter_map(|shell| {
+                let face_attrs = shell_face_ring(by_attr, shell)?;
+                body_refs.extend(face_attrs.iter().copied());
+                Some(ShellRecord {
+                    attr: shell.attr,
+                    offset: shell.offset,
+                    refs: face_attrs,
+                })
+            })
+            .collect::<Vec<_>>();
+        if !shells.is_empty() {
+            region_records.push(RegionRecord {
+                attr: region.attr,
+                offset: region.offset,
+                shells,
+            });
+        }
+    }
+    if region_records.is_empty() {
+        return Vec::new();
+    }
+    let mut refs = body_refs.into_iter().collect::<Vec<_>>();
+    refs.sort_unstable();
+    vec![BodyRecord {
+        attr: region_records[0].attr,
+        kind: BodyKind::Solid,
+        refs,
+        offset: region_records[0].offset,
+        regions: region_records,
+    }]
+}
+
+fn reachable_records<'a>(
+    by_attr: &HashMap<u16, &'a EntityRecord>,
+    root: &'a EntityRecord,
+    disc: u16,
+) -> Vec<&'a EntityRecord> {
+    let mut seen = HashSet::new();
+    let mut pending = root.refs.clone();
+    let mut found = Vec::new();
+    while let Some(attr) = pending.pop() {
+        if attr <= 1 || !seen.insert(attr) {
+            continue;
+        }
+        let Some(record) = by_attr.get(&attr).copied() else {
+            continue;
+        };
+        if record.disc == disc {
+            found.push(record);
+        } else {
+            pending.extend(record.refs.iter().copied());
+        }
+    }
+    found.sort_by_key(|record| record.offset);
+    found
+}
+
+fn shell_face_ring(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    shell: &EntityRecord,
+) -> Option<Vec<u16>> {
+    let first = shell
+        .refs
+        .iter()
+        .filter_map(|reference| by_attr.get(reference))
+        .find(|record| record.disc == 0x0020)?;
+    let mut current = first.attr;
+    let mut seen = HashSet::new();
+    let mut faces = Vec::new();
+    while seen.insert(current) {
+        let face_use = by_attr.get(&current)?;
+        if face_use.disc != 0x0020 {
+            return None;
+        }
+        let geometry = by_attr.get(face_use.refs.get(2)?)?;
+        if geometry.disc != 0x0018 {
+            return None;
+        }
+        let face = by_attr.get(geometry.refs.get(2)?)?;
+        if face.disc != 0x0014 {
+            return None;
+        }
+        faces.push(face.attr);
+        let next = *face_use.refs.get(3)?;
+        if next == first.attr {
+            break;
+        }
+        current = next;
+    }
+    (!faces.is_empty()).then_some(faces)
 }
 
 fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord]) {
@@ -356,6 +466,9 @@ fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord])
         let Some(cluster) = head.refs.first() else {
             continue;
         };
+        if *cluster <= 1 {
+            continue;
+        }
         let Some(body) = bodies.iter_mut().find(|body| {
             entities
                 .iter()

@@ -1110,7 +1110,7 @@ fn write_body_hierarchy(
             entity51(out, 1, region, 0x001d, &[head, 0, 0, 0, 0, 0]);
             continue;
         }
-        let region = take_attr(next)?;
+        let lump = take_attr(next)?;
         let shell = take_attr(next)?;
         let shell_link = take_attr(next)?;
         let head = write_face_list(
@@ -1120,10 +1120,10 @@ fn write_body_hierarchy(
             if schema_32001 { 0x0015 } else { 0x0013 },
         )?;
         entity51(out, 2, root, 0x0017, &[0, region, 0, 0, 0, 0]);
-        entity51(out, 1, region, 0x001b, &[0, region, 0, 0, 0, 0]);
-        entity51(out, 2, region, 0x001f, &[0, shell, 0, 0, 0, 0]);
+        entity51(out, 1, region, 0x001b, &[lump, 0, 0, 0, 0, 0]);
+        entity51(out, 2, lump, 0x001f, &[shell, 0, 0, 0, 0, 0]);
         entity51(out, 2, shell, 0x0021, &[0, shell_link, 0, 0, 0, 0]);
-        entity51(out, 2, shell_link, 0x0023, &[0, head, 0, 0, 0, 0]);
+        entity51(out, 2, shell_link, 0x0023, &[head, 0, 0, 0, 0, 0]);
     }
     if assigned.len() != ir.model.faces.len() {
         return Err(CodecError::Malformed(

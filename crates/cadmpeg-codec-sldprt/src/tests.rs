@@ -2372,6 +2372,57 @@ fn decode_partitions_interleaved_schema_33103_faces_by_adjacency() {
 }
 
 #[test]
+fn decode_partitions_disc14_faces_by_native_shell_rings() {
+    let mut body = Vec::new();
+    body.extend(entity51(1, 900, 0x001a, &[500, 501, 0, 0, 0, 0]));
+    body.extend(entity51(1, 500, 0x0016, &[600, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 501, 0x0016, &[602, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 600, 0x0020, &[0, 0, 610, 601, 0, 0]));
+    body.extend(entity51(1, 601, 0x0020, &[0, 0, 611, 600, 0, 0]));
+    body.extend(entity51(1, 602, 0x0020, &[0, 0, 612, 603, 0, 0]));
+    body.extend(entity51(1, 603, 0x0020, &[0, 0, 613, 602, 0, 0]));
+    for (geometry, face) in [(610, 700), (611, 701), (612, 800), (613, 801)] {
+        body.extend(entity51(1, geometry, 0x0018, &[0, 0, face, 0, 0, 0]));
+        body.extend(entity51(1, face, 0x0014, &[0, 0, 0, 0, 0, 0]));
+    }
+    body.extend(owned_triangle(0, 700, 0.0));
+    body.extend(owned_triangle(200, 701, 2.0));
+    body.extend(owned_triangle(400, 800, 10.0));
+    body.extend(owned_triangle(600, 801, 12.0));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.regions.len(), 1);
+    assert_eq!(decoded.ir.model.shells.len(), 2);
+    let shell_500 = decoded
+        .ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id.0.ends_with("#500"))
+        .unwrap();
+    let shell_501 = decoded
+        .ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id.0.ends_with("#501"))
+        .unwrap();
+    assert_eq!(shell_500.faces.len(), 2);
+    assert_eq!(shell_501.faces.len(), 2);
+    assert!(shell_500.faces.iter().any(|face| face.0.ends_with("#10")));
+    assert!(shell_500.faces.iter().any(|face| face.0.ends_with("#210")));
+    assert!(shell_501.faces.iter().any(|face| face.0.ends_with("#410")));
+    assert!(shell_501.faces.iter().any(|face| face.0.ends_with("#610")));
+}
+
+#[test]
 fn semantic_writer_preserves_multiple_body_ownership() {
     let mut body = Vec::new();
     body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
@@ -2407,17 +2458,13 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         regenerated.ir.annotations.provenance[&region.id.0]
             .tag
             .as_deref()
-            == Some("synthetic_grouping")
-            && regenerated.ir.annotations.exactness[&region.id.0].entity
-                == cadmpeg_ir::Exactness::Derived
+            == Some("00_51_region")
     }));
     assert!(regenerated.ir.model.shells.iter().all(|shell| {
         regenerated.ir.annotations.provenance[&shell.id.0]
             .tag
             .as_deref()
-            == Some("synthetic_grouping")
-            && regenerated.ir.annotations.exactness[&shell.id.0].entity
-                == cadmpeg_ir::Exactness::Derived
+            == Some("00_51_shell")
     }));
 }
 

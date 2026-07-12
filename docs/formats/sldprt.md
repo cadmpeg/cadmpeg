@@ -204,6 +204,8 @@ In schema 33103, solid ownership follows the same `0x17 -> [0x19] -> 0x1b -> 0x1
 
 Schema-33103 canonical faces are the connected components of the disc15/flo1 adjacency graph. Disc13/flo2 face-list heads bind to bodies by the shared `slot0` cluster key. Each head seeds the component with maximum overlap in its section interval; component assignment is one-to-one. The complete component, not the interval contents, is the body's face set.
 
+Disc14 ownership uses the entity-level shell ring. A `0x1a` region reaches each `0x16` shell. The shell names its first `0x20` face-use; `0x20.slot3` advances around the ring, and `0x20.slot2 -> 0x18.slot2 -> 0x14` resolves the canonical face. The ring closes when the next face-use equals the first.
+
 ---
 
 ## 7. Geometry carriers
