@@ -13,6 +13,7 @@
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::native::F3dNative;
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
@@ -326,18 +327,6 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
             .expect("CadIr serialization")
             .as_bytes(),
     )
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-
-    Sha256::digest(bytes)
-        .iter()
-        .fold(String::new(), |mut output, byte| {
-            use std::fmt::Write as _;
-            let _ = write!(output, "{byte:02x}");
-            output
-        })
 }
 
 fn populate_annotations(

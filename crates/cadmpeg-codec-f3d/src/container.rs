@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Read, SeekFrom};
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
-use sha2::{Digest, Sha256};
+use cadmpeg_ir::hash::sha256_hex;
 use zip::CompressionMethod;
 
 use crate::asm_header;
@@ -169,7 +169,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
 
             let header = asm_header::parse(&buf);
             let delta = asm_header::first_delta_state_offset(&buf);
-            let sha = hex_sha256(&buf);
+            let sha = sha256_hex(&buf);
 
             attributes.insert("asm_magic".to_string(), asm_magic_label(&buf));
             if let Some(h) = &header {
@@ -302,19 +302,6 @@ pub fn select_active_brep(scan: &ContainerScan) -> Option<&BrepFacts> {
         .iter()
         .find(|b| b.is_smbh)
         .or_else(|| scan.breps.first())
-}
-
-fn hex_sha256(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-
-    let mut h = Sha256::new();
-    h.update(bytes);
-    let digest = h.finalize();
-    let mut s = String::with_capacity(digest.len() * 2);
-    for b in digest {
-        let _ = write!(s, "{b:02x}");
-    }
-    s
 }
 
 fn asm_magic_label(bytes: &[u8]) -> String {

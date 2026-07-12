@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write;
-
 use cadmpeg_ir::annotations::ExactnessNote;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -12,6 +9,7 @@ use cadmpeg_ir::geometry::{
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
     SurfaceGeometry,
 };
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
@@ -24,7 +22,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::LossProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
-use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chunks::ArchiveVersion;
 use crate::container::Scan;
@@ -3682,15 +3680,6 @@ fn source_meta(scan: &Scan) -> SourceMeta {
         format: "rhino".to_string(),
         attributes,
     }
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut result = String::with_capacity(64);
-    for byte in digest {
-        write!(&mut result, "{byte:02x}").expect("writing to a String cannot fail");
-    }
-    result
 }
 
 #[cfg(test)]
