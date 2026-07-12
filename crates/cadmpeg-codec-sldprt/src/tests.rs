@@ -1449,6 +1449,142 @@ fn encoder_writes_source_less_line_sketches() {
 }
 
 #[test]
+fn encoder_writes_source_less_curved_sketches() {
+    use cadmpeg_ir::features::{Angle, Length};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.model.bodies[0].name = None;
+    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    ir.model
+        .edges
+        .iter_mut()
+        .for_each(|edge| edge.param_range = None);
+    let sketch_id = SketchId("synthetic:test:sketch#curves".into());
+    let geometries = vec![
+        SketchGeometry::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(2.0),
+        },
+        SketchGeometry::Arc {
+            center: Point2::new(8.0, 0.0),
+            radius: Length(2.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::PI),
+        },
+        SketchGeometry::Arc {
+            center: Point2::new(8.0, 0.0),
+            radius: Length(2.0),
+            start_angle: Angle(std::f64::consts::PI),
+            end_angle: Angle(std::f64::consts::TAU),
+        },
+        SketchGeometry::Ellipse {
+            center: Point2::new(0.0, 8.0),
+            major_angle: Angle(0.4),
+            major_radius: Length(3.0),
+            minor_radius: Length(1.5),
+            start_angle: None,
+            end_angle: None,
+        },
+        SketchGeometry::Nurbs {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point2::new(6.0, 6.0),
+                Point2::new(10.0, 10.0),
+                Point2::new(6.0, 6.0),
+            ],
+            weights: Some(vec![1.0, 0.75, 1.0]),
+            periodic: false,
+        },
+    ];
+    let entity_ids = geometries
+        .into_iter()
+        .enumerate()
+        .map(|(index, geometry)| {
+            let id = SketchEntityId(format!("synthetic:test:sketch-entity#curve-{index}"));
+            ir.model.sketch_entities.push(SketchEntity {
+                id: id.clone(),
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry,
+            });
+            id
+        })
+        .collect::<Vec<_>>();
+    let profile = |indices: &[usize]| {
+        indices
+            .iter()
+            .map(|index| SketchEntityUse {
+                entity: entity_ids[*index].clone(),
+                reversed: false,
+            })
+            .collect()
+    };
+    ir.model.sketches.push(Sketch {
+        id: sketch_id,
+        name: Some("Curves".into()),
+        configuration: Some("Main".into()),
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        profiles: vec![
+            profile(&[0]),
+            profile(&[1, 2]),
+            profile(&[3]),
+            profile(&[4]),
+        ],
+        native_ref: None,
+    });
+
+    let mut encoded = Vec::new();
+    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.sketches.len(), 1);
+    assert_eq!(decoded.ir.model.sketch_entities.len(), 5);
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| matches!(entity.geometry, SketchGeometry::Circle { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
+            .count(),
+        2
+    );
+    assert!(decoded
+        .ir
+        .model
+        .sketch_entities
+        .iter()
+        .any(|entity| matches!(entity.geometry, SketchGeometry::Ellipse { .. })));
+    assert!(decoded
+        .ir
+        .model
+        .sketch_entities
+        .iter()
+        .any(|entity| matches!(entity.geometry, SketchGeometry::Nurbs { .. })));
+}
+
+#[test]
 fn encoder_writes_source_less_native_features() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use std::collections::BTreeMap;

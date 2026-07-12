@@ -3,7 +3,7 @@
 
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
     VertexId,
@@ -545,17 +545,12 @@ fn sketch_brep(
                     sketch.id.0, entity_use.entity.0
                 ))
             })?;
-            let SketchGeometry::Line { start, end } = entity.geometry else {
-                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
-                    "source-less SLDPRT sketch {} contains non-line entity {}",
-                    sketch.id.0, entity.id.0
-                )));
-            };
+            let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
             let start_vertex = sketch_vertex(
                 &mut ir,
                 &mut vertex_by_position,
                 &prefix,
-                start,
+                generated.start,
                 sketch,
                 v_axis,
             );
@@ -563,19 +558,19 @@ fn sketch_brep(
                 &mut ir,
                 &mut vertex_by_position,
                 &prefix,
-                end,
+                generated.end,
                 sketch,
                 v_axis,
             );
-            let start_3d = lift_point(start, sketch.origin, sketch.u_axis, v_axis);
-            let end_3d = lift_point(end, sketch.origin, sketch.u_axis, v_axis);
+            let start_3d = lift_point(generated.start, sketch.origin, sketch.u_axis, v_axis);
+            let end_3d = lift_point(generated.end, sketch.origin, sketch.u_axis, v_axis);
             let delta = Vector3::new(
                 end_3d.x - start_3d.x,
                 end_3d.y - start_3d.y,
                 end_3d.z - start_3d.z,
             );
             let length = (dot(delta, delta)).sqrt();
-            if length == 0.0 {
+            if length == 0.0 && matches!(entity.geometry, SketchGeometry::Line { .. }) {
                 return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
                     "sketch entity {} has zero length",
                     entity.id.0
@@ -586,10 +581,7 @@ fn sketch_brep(
             let coedge_id = CoedgeId(format!("{prefix}:coedge:{profile_index}:{use_index}"));
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: CurveGeometry::Line {
-                    origin: start_3d,
-                    direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
-                },
+                geometry: generated.curve,
                 source_object: None,
             });
             ir.model.edges.push(Edge {
@@ -597,7 +589,7 @@ fn sketch_brep(
                 curve: Some(curve_id),
                 start: start_vertex,
                 end: end_vertex,
-                param_range: Some([0.0, length]),
+                param_range: Some(generated.param_range.unwrap_or([0.0, length])),
                 tolerance: None,
             });
             coedge_ids.push(coedge_id.clone());
@@ -674,6 +666,158 @@ fn sketch_brep(
     });
     ir.model.finalize();
     Ok(ir)
+}
+
+struct GeneratedSketchCurve {
+    curve: CurveGeometry,
+    start: Point2,
+    end: Point2,
+    param_range: Option<[f64; 2]>,
+}
+
+fn generated_sketch_curve(
+    geometry: &SketchGeometry,
+    sketch: &Sketch,
+    v_axis: Vector3,
+) -> Result<GeneratedSketchCurve, cadmpeg_ir::codec::CodecError> {
+    let lift = |point| lift_point(point, sketch.origin, sketch.u_axis, v_axis);
+    let vector = |u: f64, v: f64| {
+        Vector3::new(
+            sketch.u_axis.x * u + v_axis.x * v,
+            sketch.u_axis.y * u + v_axis.y * v,
+            sketch.u_axis.z * u + v_axis.z * v,
+        )
+    };
+    match geometry {
+        SketchGeometry::Line { start, end } => {
+            let origin = lift(*start);
+            let target = lift(*end);
+            let delta = Vector3::new(
+                target.x - origin.x,
+                target.y - origin.y,
+                target.z - origin.z,
+            );
+            let length = dot(delta, delta).sqrt();
+            if length == 0.0 {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(
+                    "source-less SLDPRT sketch contains a zero-length line".into(),
+                ));
+            }
+            Ok(GeneratedSketchCurve {
+                curve: CurveGeometry::Line {
+                    origin,
+                    direction: Vector3::new(
+                        delta.x / length,
+                        delta.y / length,
+                        delta.z / length,
+                    ),
+                },
+                start: *start,
+                end: *end,
+                param_range: Some([0.0, length]),
+            })
+        }
+        SketchGeometry::Circle { center, radius } => {
+            let point = offset_point(*center, Point2::new(radius.0, 0.0));
+            Ok(GeneratedSketchCurve {
+                curve: CurveGeometry::Circle {
+                    center: lift(*center),
+                    axis: sketch.normal,
+                    ref_direction: sketch.u_axis,
+                    radius: radius.0,
+                },
+                start: point,
+                end: point,
+                param_range: Some([0.0, std::f64::consts::TAU]),
+            })
+        }
+        SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => Ok(GeneratedSketchCurve {
+            curve: CurveGeometry::Circle {
+                center: lift(*center),
+                axis: sketch.normal,
+                ref_direction: sketch.u_axis,
+                radius: radius.0,
+            },
+            start: offset_point(*center, polar(radius.0, start_angle.0)),
+            end: offset_point(*center, polar(radius.0, end_angle.0)),
+            param_range: Some([start_angle.0, end_angle.0]),
+        }),
+        SketchGeometry::Ellipse {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            start_angle,
+            end_angle,
+        } => {
+            let point = |parameter: f64| {
+                Point2::new(
+                    center.u + major_angle.0.cos() * major_radius.0 * parameter.cos()
+                        - major_angle.0.sin() * minor_radius.0 * parameter.sin(),
+                    center.v
+                        + major_angle.0.sin() * major_radius.0 * parameter.cos()
+                        + major_angle.0.cos() * minor_radius.0 * parameter.sin(),
+                )
+            };
+            let start = start_angle.as_ref().map_or(0.0, |angle| angle.0);
+            let end = end_angle
+                .as_ref()
+                .map_or(std::f64::consts::TAU, |angle| angle.0);
+            let full = start_angle.is_none() && end_angle.is_none();
+            Ok(GeneratedSketchCurve {
+                curve: CurveGeometry::Ellipse {
+                    center: lift(*center),
+                    axis: sketch.normal,
+                    major_direction: vector(major_angle.0.cos(), major_angle.0.sin()),
+                    major_radius: major_radius.0,
+                    minor_radius: minor_radius.0,
+                },
+                start: point(start),
+                end: if full { point(start) } else { point(end) },
+                param_range: Some([start, end]),
+            })
+        }
+        SketchGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        } => {
+            if *periodic || control_points.len() < 2 {
+                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
+                    "source-less SLDPRT sketch writing requires a non-periodic NURBS with at least two poles".into(),
+                ));
+            }
+            let start = control_points[0];
+            let end = control_points[control_points.len() - 1];
+            Ok(GeneratedSketchCurve {
+                curve: CurveGeometry::Nurbs(NurbsCurve {
+                    degree: *degree,
+                    knots: knots.clone(),
+                    control_points: control_points.iter().copied().map(lift).collect(),
+                    weights: weights.clone(),
+                    periodic: false,
+                }),
+                start,
+                end,
+                param_range: knots
+                    .get(*degree as usize)
+                    .zip(knots.get(knots.len().saturating_sub(*degree as usize + 1)))
+                    .map(|(start, end)| [*start, *end]),
+            })
+        }
+        SketchGeometry::Point { .. } | SketchGeometry::Native { .. } => Err(
+            cadmpeg_ir::codec::CodecError::NotImplemented(
+                "source-less SLDPRT sketch writing does not support point or native-only profile entities".into(),
+            ),
+        ),
+    }
 }
 
 fn sketch_vertex(

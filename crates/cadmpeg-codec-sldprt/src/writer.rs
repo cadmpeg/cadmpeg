@@ -1033,6 +1033,18 @@ pub(crate) fn brep_body(
         });
     }
     for lp in &ir.model.loops {
+        let face = ir
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id == lp.face)
+            .ok_or_else(|| CodecError::Malformed("loop references missing face".into()))?;
+        let position = face
+            .loops
+            .iter()
+            .position(|id| id == &lp.id)
+            .ok_or_else(|| CodecError::Malformed("face does not own referenced loop".into()))?;
+        let next_loop = face.loops.get(position + 1).map_or(0, |id| loops[id]);
         tag(&mut out, 0x0f);
         be16(&mut out, loops[&lp.id]);
         be32(&mut out, 0);
@@ -1043,7 +1055,7 @@ pub(crate) fn brep_body(
                 .first()
                 .ok_or_else(|| CodecError::Malformed("empty loop".into()))?],
             faces[&lp.face],
-            0,
+            next_loop,
         ] {
             be16(&mut out, value);
         }
