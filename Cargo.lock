@@ -209,6 +209,8 @@ dependencies = [
  "crc32fast",
  "flate2",
  "roxmltree",
+ "schemars",
+ "serde",
  "sha2",
  "thiserror",
 ]

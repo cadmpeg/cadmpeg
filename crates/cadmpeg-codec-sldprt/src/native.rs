@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::history::{FeatureHistory, FeatureInputLane};
+use crate::records::{FeatureHistory, FeatureInputLane};
 
 /// Current schema version for the SOLIDWORKS native namespace.
 pub const SLDPRT_NATIVE_VERSION: u32 = 1;
@@ -33,16 +33,18 @@ impl Default for SldprtNative {
 }
 
 impl SldprtNative {
-    pub fn load(namespace: &super::NativeNamespace) -> Result<Self, super::NativeConvertError> {
+    pub fn load(
+        namespace: &cadmpeg_ir::NativeNamespace,
+    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let mut native = Self {
             version: namespace.version,
             feature_histories: namespace.arena_as("feature_histories")?,
             feature_input_lanes: namespace.arena_as("feature_input_lanes")?,
         };
-        let configurations: Vec<crate::history::Configuration> =
+        let configurations: Vec<crate::records::Configuration> =
             namespace.arena_as("configurations")?;
-        let features: Vec<crate::history::Feature> = namespace.arena_as("features")?;
-        let entities: Vec<crate::history::SketchInputEntity> =
+        let features: Vec<crate::records::Feature> = namespace.arena_as("features")?;
+        let entities: Vec<crate::records::SketchInputEntity> =
             namespace.arena_as("sketch_input_entities")?;
         for history in &mut native.feature_histories {
             history.configurations = configurations
@@ -68,8 +70,8 @@ impl SldprtNative {
 
     pub fn store(
         &self,
-        namespace: &mut super::NativeNamespace,
-    ) -> Result<(), super::NativeConvertError> {
+        namespace: &mut cadmpeg_ir::NativeNamespace,
+    ) -> Result<(), cadmpeg_ir::NativeConvertError> {
         namespace.version = SLDPRT_NATIVE_VERSION;
         let histories = self
             .feature_histories
@@ -117,44 +119,5 @@ impl SldprtNative {
                 .collect::<Vec<_>>(),
         )?;
         Ok(())
-    }
-    /// Sort every native arena by its normative record identity.
-    pub(crate) fn finalize(&mut self) {
-        self.feature_histories
-            .sort_by(|left, right| left.id.cmp(&right.id));
-        self.feature_input_lanes
-            .sort_by(|left, right| left.id.cmp(&right.id));
-    }
-
-    /// Return counts for every non-empty native arena and nested record family.
-    pub(crate) fn loss_counts(&self) -> Vec<(&'static str, usize)> {
-        let mut counts = Vec::new();
-        let values = [
-            ("feature_histories", self.feature_histories.len()),
-            ("feature_input_lanes", self.feature_input_lanes.len()),
-            (
-                "configurations",
-                self.feature_histories
-                    .iter()
-                    .map(|history| history.configurations.len())
-                    .sum(),
-            ),
-            (
-                "features",
-                self.feature_histories
-                    .iter()
-                    .map(|history| history.features.len())
-                    .sum(),
-            ),
-            (
-                "sketch_input_entities",
-                self.feature_input_lanes
-                    .iter()
-                    .map(|lane| lane.sketch_entities.len())
-                    .sum(),
-            ),
-        ];
-        counts.extend(values.into_iter().filter(|(_, count)| *count != 0));
-        counts
     }
 }

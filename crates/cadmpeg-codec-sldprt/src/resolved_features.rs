@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed views over `SolidWorks` `ResolvedFeatures` sketch records.
 
+use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::history::{FeatureInputLane, SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::Exactness;
 
 use crate::container::ContainerScan;

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-format namespaces retained outside the format-neutral model.
 
-pub mod sldprt;
-
 use std::collections::BTreeMap;
 
 use schemars::JsonSchema;

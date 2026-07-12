@@ -5,6 +5,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read, Write};
 
+use crate::history_records::{
+    AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
+};
 use crate::native::F3dNative;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, ConstructionRecipeKind, DesignMaterialAssignment,
@@ -16,9 +19,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
     ProceduralCurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::history::{
-    AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};

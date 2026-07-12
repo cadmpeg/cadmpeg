@@ -4,13 +4,13 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, ConstructionRecipe, DesignBodyMember, DesignEntityHeader,
     DesignMaterialAssignment, DesignObject, DesignRecordHeader, LostEdgeReference,
     PersistentDesignLink, PersistentReference, SketchCurveIdentity, SketchCurveLink, SketchPoint,
     SketchRelation,
 };
-use cadmpeg_ir::history::AsmHistory;
 
 /// Current schema version for the Autodesk Fusion native namespace.
 pub const F3D_NATIVE_VERSION: u32 = 1;
@@ -47,10 +47,10 @@ macro_rules! sort_f3d_arenas {
                     version: namespace.version,
                     $($field: namespace.arena_as(stringify!($field))?,)*
                 };
-                let mut states: Vec<cadmpeg_ir::history::AsmDeltaState> = namespace.arena_as("asm_delta_states")?;
-                let mut boards: Vec<cadmpeg_ir::history::AsmBulletinBoard> = namespace.arena_as("asm_bulletin_boards")?;
-                let changes: Vec<cadmpeg_ir::history::AsmEntityChange> = namespace.arena_as("asm_entity_changes")?;
-                let records: Vec<cadmpeg_ir::history::AsmHistoryRecord> = namespace.arena_as("asm_history_records")?;
+                let mut states: Vec<crate::history_records::AsmDeltaState> = namespace.arena_as("asm_delta_states")?;
+                let mut boards: Vec<crate::history_records::AsmBulletinBoard> = namespace.arena_as("asm_bulletin_boards")?;
+                let changes: Vec<crate::history_records::AsmEntityChange> = namespace.arena_as("asm_entity_changes")?;
+                let records: Vec<crate::history_records::AsmHistoryRecord> = namespace.arena_as("asm_history_records")?;
                 for board in &mut boards { board.changes = changes.iter().filter(|change| change.parent == board.id).cloned().collect(); }
                 for state in &mut states {
                     state.bulletin_boards = boards.iter().filter(|board| board.parent == state.id).cloned().collect();
@@ -74,40 +74,6 @@ macro_rules! sort_f3d_arenas {
                 namespace.set_arena("asm_entity_changes", &changes)?;
                 namespace.set_arena("asm_history_records", &records)?;
                 Ok(())
-            }
-            /// Sort every native arena by its normative record identity.
-            pub(crate) fn finalize(&mut self) {
-                $(self.$field.sort_by(|left, right| left.id.cmp(&right.id));)*
-            }
-
-            /// Return counts for every non-empty native arena.
-            pub(crate) fn loss_counts(&self) -> Vec<(&'static str, usize)> {
-                let mut counts = Vec::new();
-                $(
-                    if !self.$field.is_empty() {
-                        counts.push((stringify!($field), self.$field.len()));
-                    }
-                )*
-                let states = self.asm_histories.iter().flat_map(|history| &history.states);
-                let state_count = states.clone().count();
-                let board_count = states.clone().map(|state| state.bulletin_boards.len()).sum();
-                let change_count = states
-                    .clone()
-                    .flat_map(|state| &state.bulletin_boards)
-                    .map(|board| board.changes.len())
-                    .sum();
-                let record_count = states.map(|state| state.records.len()).sum();
-                for (kind, count) in [
-                    ("asm_delta_states", state_count),
-                    ("asm_bulletin_boards", board_count),
-                    ("asm_entity_changes", change_count),
-                    ("asm_history_records", record_count),
-                ] {
-                    if count != 0 {
-                        counts.push((kind, count));
-                    }
-                }
-                counts
             }
         }
     };

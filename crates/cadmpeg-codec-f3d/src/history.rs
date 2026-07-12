@@ -5,7 +5,7 @@
 //! history records while retaining source bytes for records without typed
 //! semantics.
 
-use cadmpeg_ir::history::{
+use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
     AsmHistoryRecord,
 };
@@ -22,7 +22,7 @@ const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
 /// `bytes` carries no `delta_state` record (the stream is a construction
 /// snapshot with no history tail) or a malformed history body. `width` is the
 /// stream's integer/ref width (4 for `BinaryFile4`, 8 for `BinaryFile8`).
-pub fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHistory> {
+pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHistory> {
     let preamble_offset = bytes
         .windows(PREAMBLE.len())
         .position(|window| window == PREAMBLE);

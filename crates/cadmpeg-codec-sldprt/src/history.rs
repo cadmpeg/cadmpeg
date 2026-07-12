@@ -2,8 +2,8 @@
 //! `SolidWorks` Keywords XML feature history.
 
 use crate::container::ContainerScan;
+use crate::records::{Configuration, Feature, FeatureHistory};
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::history::{Configuration, Feature, FeatureHistory};
 use cadmpeg_ir::Exactness;
 use std::collections::BTreeMap;
 

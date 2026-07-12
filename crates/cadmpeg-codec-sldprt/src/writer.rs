@@ -4,11 +4,11 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 
+use crate::native::SldprtNative;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
-use cadmpeg_ir::native::sldprt::SldprtNative;
 use cadmpeg_ir::topology::{BodyKind, Color, Sense};
 
 use crate::container::MARKER;
@@ -396,7 +396,7 @@ fn opaque_blocks(
 }
 
 fn resolved_feature_payload(
-    lane: &cadmpeg_ir::history::FeatureInputLane,
+    lane: &crate::records::FeatureInputLane,
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
     let mut payload = lane.native_payload.clone();
@@ -550,7 +550,7 @@ fn metadata_payloads(
     Ok((objects, units))
 }
 
-fn history_payload(history: &cadmpeg_ir::history::FeatureHistory) -> Result<Vec<u8>, CodecError> {
+fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {
     validate_feature_graph(&history.features)?;
     let mut out = String::from("<Keywords");
     if let Some(name) = &history.part_name {
@@ -581,7 +581,7 @@ fn history_payload(history: &cadmpeg_ir::history::FeatureHistory) -> Result<Vec<
     Ok(out.into_bytes())
 }
 
-fn validate_feature_graph(features: &[cadmpeg_ir::history::Feature]) -> Result<(), CodecError> {
+fn validate_feature_graph(features: &[crate::records::Feature]) -> Result<(), CodecError> {
     let by_id = features
         .iter()
         .filter_map(|feature| feature.source_id.as_ref().map(|id| (id.as_str(), feature)))
@@ -612,8 +612,8 @@ fn validate_feature_graph(features: &[cadmpeg_ir::history::Feature]) -> Result<(
 
 fn write_feature_xml(
     out: &mut String,
-    feature: &cadmpeg_ir::history::Feature,
-    features: &[cadmpeg_ir::history::Feature],
+    feature: &crate::records::Feature,
+    features: &[crate::records::Feature],
 ) {
     out.push_str("<Feature");
     if let Some(id) = &feature.source_id {

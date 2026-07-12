@@ -74,6 +74,7 @@ pub mod container;
 pub mod decode;
 pub mod design;
 pub mod history;
+mod history_records;
 pub mod materials;
 mod native;
 pub mod nurbs;

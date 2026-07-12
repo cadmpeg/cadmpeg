@@ -11,8 +11,8 @@ use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, Encoder};
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
 
-fn sldprt_native(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::native::sldprt::SldprtNative {
-    cadmpeg_ir::native::sldprt::SldprtNative::load(
+fn sldprt_native(ir: &cadmpeg_ir::CadIr) -> crate::native::SldprtNative {
+    crate::native::SldprtNative::load(
         ir.native
             .namespace("sldprt")
             .expect("SLDPRT native namespace"),
@@ -22,7 +22,7 @@ fn sldprt_native(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::native::sldprt::SldprtNa
 
 fn update_sldprt_native<R>(
     ir: &mut cadmpeg_ir::CadIr,
-    update: impl FnOnce(&mut cadmpeg_ir::native::sldprt::SldprtNative) -> R,
+    update: impl FnOnce(&mut crate::native::SldprtNative) -> R,
 ) -> R {
     let mut native = sldprt_native(ir);
     let result = update(&mut native);
@@ -2391,7 +2391,7 @@ fn semantic_writer_preserves_parametric_history() {
 
 #[test]
 fn semantic_writer_patches_resolved_feature_sketch_types() {
-    use cadmpeg_ir::history::SketchInputKind;
+    use crate::records::SketchInputKind;
 
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1, 2, 3, 9]);
     let mut decoded = SldprtCodec

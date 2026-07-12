@@ -9,7 +9,6 @@ use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
-use crate::history::{AsmHistoryRecord, FeatureInputLane};
 use crate::ids::{CoedgeId, CurveId, EdgeId, ProceduralSurfaceId, SubdId, UnknownId};
 use crate::math::{Point3, Vector3};
 use crate::native::NativeRecord;
@@ -984,25 +983,6 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
             links: Vec::new(),
         },
         "data",
-    );
-    assert_base64_round_trip_and_rejection(
-        &FeatureInputLane {
-            id: "sldprt:test:feature-input-lane#0".into(),
-            configuration: None,
-            native_payload: vec![1, 2, 3],
-            sketch_entities: Vec::new(),
-        },
-        "native_payload",
-    );
-    assert_base64_round_trip_and_rejection(
-        &AsmHistoryRecord {
-            id: "f3d:test:asm-history-record#0".into(),
-            parent: "f3d:test:asm-delta-state#0".into(),
-            index: 0,
-            name: "record".into(),
-            raw_bytes: vec![1, 2, 3],
-        },
-        "raw_bytes",
     );
     assert_base64_round_trip_and_rejection(
         &TessellationChannel {

@@ -194,8 +194,8 @@ fn build_geometry_ir(
     let histories = crate::history::histories(scan, &mut ir.annotations);
     let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
     let attributes = crate::metadata::attributes(scan, &mut ir.annotations);
-    let native = cadmpeg_ir::native::sldprt::SldprtNative {
-        version: cadmpeg_ir::native::sldprt::SLDPRT_NATIVE_VERSION,
+    let native = crate::native::SldprtNative {
+        version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories,
         feature_input_lanes: lanes,
     };
@@ -641,8 +641,8 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let histories = crate::history::histories(scan, &mut ir.annotations);
     let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
     let model_attributes = crate::metadata::attributes(scan, &mut ir.annotations);
-    let native = cadmpeg_ir::native::sldprt::SldprtNative {
-        version: cadmpeg_ir::native::sldprt::SLDPRT_NATIVE_VERSION,
+    let native = crate::native::SldprtNative {
+        version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories,
         feature_input_lanes: lanes,
     };

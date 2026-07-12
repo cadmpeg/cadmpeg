@@ -20,6 +20,8 @@ thiserror.workspace = true
 flate2.workspace = true
 crc32fast.workspace = true
 roxmltree.workspace = true
+serde.workspace = true
+schemars.workspace = true
 
 [lints]
 workspace = true

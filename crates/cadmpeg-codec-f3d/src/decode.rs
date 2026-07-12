@@ -355,7 +355,7 @@ fn trailing_offset(id: &str) -> u64 {
 fn decode_asm_history(
     scan: &ContainerScan,
     active: &BrepFacts,
-) -> Result<Option<cadmpeg_ir::history::AsmHistory>, CodecError> {
+) -> Result<Option<crate::history_records::AsmHistory>, CodecError> {
     let width = active.header.as_ref().map_or(8, |h| usize::from(h.width));
     let bytes = scan.entry_bytes(&active.name)?;
     Ok(crate::history::decode(bytes, &active.name, width))
