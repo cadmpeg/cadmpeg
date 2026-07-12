@@ -12197,6 +12197,26 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         assert_eq!(family, &expected_family);
         assert!(context.sides.iter().all(|side| side.surface.is_some()));
 
+        let mut edited = result.ir.clone();
+        let ProceduralCurveDefinition::SurfaceCurve { context, .. } =
+            &mut edited.model.procedural_curves[0].definition
+        else {
+            unreachable!()
+        };
+        context.parameter_range = [-1.0, 2.0];
+        let mut regenerated = Vec::new();
+        F3dCodec
+            .write_preserved(&edited, &mut regenerated)
+            .unwrap_or_else(|error| panic!("{name} context regeneration failed: {error}"));
+        let regenerated = F3dCodec
+            .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("regenerated {name} decode failed: {error}"));
+        assert!(matches!(
+            regenerated.ir.model.procedural_curves[0].definition,
+            ProceduralCurveDefinition::SurfaceCurve { ref context, .. }
+                if context.parameter_range == [-1.0, 2.0]
+        ));
+
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
