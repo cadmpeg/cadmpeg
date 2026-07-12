@@ -45,7 +45,6 @@ pub mod math;
 pub mod native;
 mod provenance;
 pub mod report;
-pub mod reserved;
 pub mod subd;
 pub mod tessellation;
 pub mod topology;

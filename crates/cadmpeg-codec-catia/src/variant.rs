@@ -70,9 +70,4 @@ impl Variant {
             Variant::Unknown => "unrecognized storage layout",
         }
     }
-
-    /// Whether this codec attempts a geometry decode for the variant.
-    pub fn is_decoded(self) -> bool {
-        matches!(self, Variant::StandardNested | Variant::FbbOnly)
-    }
 }

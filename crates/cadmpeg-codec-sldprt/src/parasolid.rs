@@ -20,14 +20,6 @@ const WRAPPED_MAGIC_PREFIX: [u8; 16] = [
     0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,
 ];
 
-/// Extract the first valid Parasolid stream from a decompressed block payload.
-///
-/// Direct `PS\0\0` streams and zlib members in recognized transmit wrappers are
-/// accepted. The returned buffer owns the extracted stream bytes.
-pub fn extract_stream(payload: &[u8]) -> Option<Vec<u8>> {
-    extract_streams(payload).into_iter().next()
-}
-
 /// Extract every valid direct or nested Parasolid stream in one block payload.
 pub fn extract_streams(payload: &[u8]) -> Vec<Vec<u8>> {
     let mut out = Vec::new();
@@ -91,8 +83,6 @@ fn zlib_inflate(data: &[u8]) -> Option<Vec<u8>> {
 /// Parsed framing fields for one Parasolid stream.
 #[derive(Debug, Clone)]
 pub struct StreamHeader {
-    /// Byte offset of the `PS\0\0` signature in the supplied buffer.
-    pub signature_offset: usize,
     /// Human-readable stream description.
     pub description: String,
     /// `SCH_<modeller>_<schema>_<format>` schema token.
@@ -128,7 +118,6 @@ pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
     let schema = String::from_utf8_lossy(payload.get(schema_at..schema_end)?).into_owned();
 
     Some(StreamHeader {
-        signature_offset: sig,
         description,
         schema,
         body_offset: schema_end,

@@ -52,20 +52,6 @@ pub struct SurfacePrefix {
     pub kind: u8,
 }
 
-impl SurfacePrefix {
-    /// Human-readable kind name.
-    pub fn kind_name(&self) -> &'static str {
-        match self.kind {
-            0x32 => "plane",
-            0x33 => "cylinder",
-            0x34 => "cone",
-            0x35 => "sphere",
-            0x38 => "torus",
-            _ => "unknown",
-        }
-    }
-}
-
 /// Read the trailing per-face orientation byte from a complete analytic
 /// `SurfacicReps` record. `true` means the face follows the carrier normal.
 pub fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
