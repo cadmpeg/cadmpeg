@@ -302,8 +302,104 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
             regions,
         });
     }
+    bind_schema_33103_faces(entities, &mut out);
     out.sort_by_key(|record| record.attr);
     out
+}
+
+fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord]) {
+    let faces = entities
+        .iter()
+        .filter(|record| record.disc == 0x0015 && record.flo() == 1)
+        .collect::<Vec<_>>();
+    let face_attrs = faces
+        .iter()
+        .map(|record| record.attr)
+        .collect::<HashSet<_>>();
+    if face_attrs.is_empty() {
+        return;
+    }
+
+    let by_attr = faces
+        .iter()
+        .map(|record| (record.attr, *record))
+        .collect::<HashMap<_, _>>();
+    let mut unseen = face_attrs.clone();
+    let mut components = Vec::new();
+    while let Some(start) = unseen.iter().next().copied() {
+        let mut component = HashSet::new();
+        let mut pending = vec![start];
+        while let Some(attr) = pending.pop() {
+            if !unseen.remove(&attr) {
+                continue;
+            }
+            component.insert(attr);
+            if let Some(face) = by_attr.get(&attr) {
+                pending.extend(
+                    face.refs
+                        .iter()
+                        .copied()
+                        .filter(|reference| face_attrs.contains(reference)),
+                );
+            }
+        }
+        components.push(component);
+    }
+
+    let mut heads = entities
+        .iter()
+        .filter(|record| record.disc == 0x0013 && record.flo() == 2)
+        .collect::<Vec<_>>();
+    heads.sort_by_key(|record| record.offset);
+    let mut assigned = HashSet::new();
+    for (index, head) in heads.iter().enumerate() {
+        let Some(cluster) = head.refs.first() else {
+            continue;
+        };
+        let Some(body) = bodies.iter_mut().find(|body| {
+            entities
+                .iter()
+                .any(|record| record.attr == body.attr && record.refs.first() == Some(cluster))
+        }) else {
+            continue;
+        };
+        let interval_end = heads.get(index + 1).map_or(usize::MAX, |next| next.offset);
+        let Some((component_index, component)) = components
+            .iter()
+            .enumerate()
+            .filter(|(component_index, _)| !assigned.contains(component_index))
+            .max_by_key(|(_, component)| {
+                component
+                    .iter()
+                    .filter_map(|attr| by_attr.get(attr))
+                    .filter(|face| face.offset >= head.offset && face.offset < interval_end)
+                    .count()
+            })
+        else {
+            continue;
+        };
+        let overlap = component
+            .iter()
+            .filter_map(|attr| by_attr.get(attr))
+            .filter(|face| face.offset >= head.offset && face.offset < interval_end)
+            .count();
+        if overlap == 0 {
+            continue;
+        }
+        assigned.insert(component_index);
+        body.refs.extend(component.iter().copied());
+        body.refs.sort_unstable();
+        body.refs.dedup();
+        for shell in body
+            .regions
+            .iter_mut()
+            .flat_map(|region| &mut region.shells)
+        {
+            shell.refs.extend(component.iter().copied());
+            shell.refs.sort_unstable();
+            shell.refs.dedup();
+        }
+    }
 }
 
 fn body_regions<'a>(

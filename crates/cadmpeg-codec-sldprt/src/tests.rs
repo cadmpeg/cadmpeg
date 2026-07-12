@@ -2319,6 +2319,59 @@ fn decode_follows_connector_region_lump_and_shell_chain() {
 }
 
 #[test]
+fn decode_partitions_interleaved_schema_33103_faces_by_adjacency() {
+    let mut body = Vec::new();
+    body.extend(entity51(2, 500, 0x0017, &[90, 510, 0, 0, 0, 0]));
+    body.extend(entity51(2, 501, 0x0017, &[91, 511, 0, 0, 0, 0]));
+    body.extend(entity51(2, 510, 0x0019, &[90, 520, 0, 0, 0, 0]));
+    body.extend(entity51(2, 511, 0x0019, &[91, 521, 0, 0, 0, 0]));
+    for (region, lump, shell_link, shell) in [(520, 530, 540, 550), (521, 531, 541, 551)] {
+        body.extend(entity51(1, region, 0x001b, &[lump, 0, 0, 0, 0, 0]));
+        body.extend(entity51(2, lump, 0x001f, &[shell_link, 0, 0, 0, 0, 0]));
+        body.extend(entity51(2, shell_link, 0x0021, &[shell, 0, 0, 0, 0, 0]));
+        body.extend(entity51(2, shell, 0x0023, &[0, 0, 0, 0, 0, 0]));
+    }
+    body.extend(entity51(2, 600, 0x0013, &[90, 500, 0, 0, 0, 0]));
+    body.extend(entity51(1, 700, 0x0015, &[701, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 601, 0x0013, &[91, 501, 0, 0, 0, 0]));
+    body.extend(entity51(1, 800, 0x0015, &[801, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 701, 0x0015, &[700, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 801, 0x0015, &[800, 0, 0, 0, 0, 0]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    body.extend(owned_triangle(200, 701, 2.0));
+    body.extend(owned_triangle(400, 800, 10.0));
+    body.extend(owned_triangle(600, 801, 12.0));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let shell_550 = decoded
+        .ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id.0.ends_with("#550"))
+        .unwrap();
+    let shell_551 = decoded
+        .ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id.0.ends_with("#551"))
+        .unwrap();
+    assert_eq!(shell_550.faces.len(), 2);
+    assert_eq!(shell_551.faces.len(), 2);
+    assert!(shell_550.faces.iter().any(|face| face.0.ends_with("#10")));
+    assert!(shell_550.faces.iter().any(|face| face.0.ends_with("#210")));
+    assert!(shell_551.faces.iter().any(|face| face.0.ends_with("#410")));
+    assert!(shell_551.faces.iter().any(|face| face.0.ends_with("#610")));
+}
+
+#[test]
 fn semantic_writer_preserves_multiple_body_ownership() {
     let mut body = Vec::new();
     body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
