@@ -28,6 +28,10 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job runs no checkout, so gh cannot infer the repo from a local
+          # git remote (without it, gh aborts with "not a git repository").
+          # GH_REPO names the repo explicitly so no working copy is needed.
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           # The PR description is contributor-authored free text. It only ever
           # reaches the shell as an environment value, never interpolated into
