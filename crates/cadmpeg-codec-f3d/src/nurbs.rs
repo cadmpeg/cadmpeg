@@ -1380,9 +1380,26 @@ pub struct EmbeddedSweepSurface {
 /// Embedded native deformable surface before stable support ids are assigned.
 pub struct EmbeddedDeformableSurface {
     pub(crate) support: SurfaceGeometry,
-    pub(crate) data: cadmpeg_ir::geometry::DeformableSurfaceData,
+    pub(crate) data: EmbeddedDeformableSurfaceData,
     pub(crate) discontinuities: [Vec<f64>; 6],
     pub(crate) discontinuity_flag: bool,
+}
+
+pub(crate) enum EmbeddedDeformableSurfaceData {
+    Resolved(cadmpeg_ir::geometry::DeformableSurfaceData),
+    SurfaceCurve {
+        surface: SurfaceGeometry,
+        native_id: i64,
+        flag: bool,
+        first_parameter: f64,
+        selector: i64,
+        second_parameter: f64,
+        curve: NurbsCurve,
+        vectors: [Vector3; 4],
+        frame_parameter: f64,
+        flags: [bool; 3],
+        parameter_triples: Vec<[f64; 3]>,
+    },
 }
 
 #[allow(clippy::option_option)] // Outer None is parse failure; inner None is an absent scale slot.
@@ -2944,26 +2961,71 @@ fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
                     ])
                 })
                 .collect::<Option<Vec<_>>>()?;
-            DeformableSurfaceData::Plain {
+            EmbeddedDeformableSurfaceData::Resolved(DeformableSurfaceData::Plain {
                 frame,
                 parameter_triples,
-            }
+            })
         }
-        3 => DeformableSurfaceData::Guided {
+        3 => EmbeddedDeformableSurfaceData::Resolved(DeformableSurfaceData::Guided {
             frame: Box::new(decode_deformable_surface_frame(span, &mut position)?),
             selector: take_tagged_int(span, &mut position, 0x04, int_width)?,
             guide_parameter: take_f64(span, &mut position)?,
-        },
+        }),
+        5 => {
+            let surface = decode_embedded_surface(span, &mut position, int_width)?;
+            let native_id = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let flag = take_bool(span, &mut position)?;
+            let first_parameter = take_f64(span, &mut position)?;
+            let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let second_parameter = take_f64(span, &mut position)?;
+            let curve = decode_curve_block(span, position, int_width)?;
+            position = curve.end;
+            let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
+            for vector in &mut vectors {
+                let value = take_native_vec3(span, &mut position, 0x14)?;
+                *vector = Vector3::new(value[0], value[1], value[2]);
+            }
+            let frame_parameter = take_f64(span, &mut position)?;
+            let flags = [
+                take_bool(span, &mut position)?,
+                take_bool(span, &mut position)?,
+                take_bool(span, &mut position)?,
+            ];
+            let count =
+                usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
+            let parameter_triples = (0..count)
+                .map(|_| {
+                    Some([
+                        take_f64(span, &mut position)?,
+                        take_f64(span, &mut position)?,
+                        take_f64(span, &mut position)?,
+                    ])
+                })
+                .collect::<Option<Vec<_>>>()?;
+            EmbeddedDeformableSurfaceData::SurfaceCurve {
+                surface,
+                native_id,
+                flag,
+                first_parameter,
+                selector,
+                second_parameter,
+                curve: curve.curve,
+                vectors,
+                frame_parameter,
+                flags,
+                parameter_triples,
+            }
+        }
         8 => {
             let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
             for vector in &mut vectors {
                 let value = take_native_vec3(span, &mut position, 0x14)?;
                 *vector = Vector3::new(value[0], value[1], value[2]);
             }
-            DeformableSurfaceData::Minimal {
+            EmbeddedDeformableSurfaceData::Resolved(DeformableSurfaceData::Minimal {
                 vectors,
                 selector: take_tagged_int(span, &mut position, 0x04, int_width)?,
-            }
+            })
         }
         _ => return None,
     };

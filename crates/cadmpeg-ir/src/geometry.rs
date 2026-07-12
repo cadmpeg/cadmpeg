@@ -466,6 +466,31 @@ pub enum ProceduralSurfaceDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DeformableSurfaceData {
+    /// Mode-5 surface-and-curve deformation payload.
+    SurfaceCurve {
+        /// Secondary embedded support surface.
+        surface: SurfaceId,
+        /// Native long identifier.
+        native_id: i64,
+        /// Native leading flag.
+        flag: bool,
+        /// First native scalar.
+        first_parameter: f64,
+        /// Native selector integer.
+        selector: i64,
+        /// Second native scalar.
+        second_parameter: f64,
+        /// Embedded deformation curve.
+        curve: CurveId,
+        /// Four ordered deformation vectors.
+        vectors: [Vector3; 4],
+        /// Frame scalar after the vectors.
+        frame_parameter: f64,
+        /// Three frame flags.
+        flags: [bool; 3],
+        /// Counted ordered scalar triples.
+        parameter_triples: Vec<[f64; 3]>,
+    },
     /// Mode-1 deformation frame with counted parameter triples.
     Plain {
         /// Shared full deformation frame.

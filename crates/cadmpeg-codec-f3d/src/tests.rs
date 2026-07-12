@@ -2316,6 +2316,62 @@ fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
     bytes
 }
 
+fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_minimal_deformable_surface_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "defm_spl_sur");
+    for z in [0.0, 1.0] {
+        t_ident(&mut surface, "plane");
+        t_pos(&mut surface, [0.0, 0.0, z]);
+        t_vec(&mut surface, [0.0, 0.0, 1.0]);
+        t_vec(&mut surface, [1.0, 0.0, 0.0]);
+        surface.push(0x0b);
+        if z == 0.0 {
+            t_long(&mut surface, 5);
+        }
+    }
+    t_long(&mut surface, 42);
+    surface.push(0x0a);
+    t_dbl(&mut surface, 0.2);
+    t_long(&mut surface, 3);
+    t_dbl(&mut surface, 0.4);
+    surface.extend_from_slice(&generated_curve_block());
+    for v in [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [-1.0, 0.0, 0.0],
+    ] {
+        t_vec(&mut surface, v);
+    }
+    t_dbl(&mut surface, 0.6);
+    surface.extend_from_slice(&[0x0a, 0x0b, 0x0a]);
+    t_long(&mut surface, 1);
+    for v in [0.1, 0.2, 0.3] {
+        t_dbl(&mut surface, v);
+    }
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.004);
+    for values in [&[0.25][..], &[][..], &[][..], &[][..], &[][..], &[][..]] {
+        append_generated_float_array(&mut surface, values);
+    }
+    surface.push(0x0a);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -8850,7 +8906,9 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
                 assert_eq!(frame.point.z, 60.0);
                 assert_eq!(*guide_parameter, 0.9);
             }
-            DeformableSurfaceData::Minimal { .. } => panic!("wrong mode"),
+            DeformableSurfaceData::Minimal { .. } | DeformableSurfaceData::SurfaceCurve { .. } => {
+                panic!("wrong mode")
+            }
         }
         let mut source_less = decoded.ir;
         source_less.source = None;
@@ -8865,6 +8923,45 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
             ProceduralSurfaceDefinition::Deformable { .. }
         ));
     }
+}
+
+#[test]
+fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::{DeformableSurfaceData, ProceduralSurfaceDefinition};
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_surface_curve_deformable_smbh())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let ProceduralSurfaceDefinition::Deformable { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!()
+    };
+    let DeformableSurfaceData::SurfaceCurve {
+        native_id,
+        selector,
+        parameter_triples,
+        ..
+    } = &construction.data
+    else {
+        panic!()
+    };
+    assert_eq!((*native_id, *selector), (42, 3));
+    assert_eq!(parameter_triples, &[[0.1, 0.2, 0.3]]);
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec.encode(&source_less, &mut encoded).unwrap();
+    let round = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        round.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::Deformable { .. }
+    ));
 }
 
 #[test]

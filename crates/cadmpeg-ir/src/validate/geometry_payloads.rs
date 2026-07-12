@@ -1008,6 +1008,23 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && frame.point.z.is_finite()
             };
             let data_valid = match &construction.data {
+                crate::geometry::DeformableSurfaceData::SurfaceCurve {
+                    first_parameter,
+                    second_parameter,
+                    vectors,
+                    frame_parameter,
+                    parameter_triples,
+                    ..
+                } => {
+                    first_parameter.is_finite()
+                        && second_parameter.is_finite()
+                        && vectors.iter().all(vector_finite)
+                        && frame_parameter.is_finite()
+                        && parameter_triples
+                            .iter()
+                            .flatten()
+                            .all(|value| value.is_finite())
+                }
                 crate::geometry::DeformableSurfaceData::Plain {
                     frame,
                     parameter_triples,

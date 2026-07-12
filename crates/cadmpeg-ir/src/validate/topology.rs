@@ -748,6 +748,17 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         &construction.support.0,
                     );
                 }
+                if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
+                    surface, curve, ..
+                } = &construction.data
+                {
+                    if !ids.surfaces.contains(&surface.0) {
+                        ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                    }
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                }
             }
         }
     }

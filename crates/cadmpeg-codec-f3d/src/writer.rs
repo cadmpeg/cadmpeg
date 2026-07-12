@@ -3247,6 +3247,54 @@ fn native_procedural_surface(
                     }
                 };
             match &construction.data {
+                DeformableSurfaceData::SurfaceCurve {
+                    surface,
+                    native_id,
+                    flag,
+                    first_parameter,
+                    selector,
+                    second_parameter,
+                    curve,
+                    vectors,
+                    frame_parameter,
+                    flags,
+                    parameter_triples,
+                } => {
+                    native_i64(bytes, 5);
+                    let secondary = target
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|candidate| candidate.id == *surface)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("deformable secondary surface is missing".into())
+                        })?;
+                    native_embedded_surface(bytes, &secondary.geometry)?;
+                    native_i64(bytes, *native_id);
+                    bytes.push(native_bool(*flag));
+                    native_f64(bytes, *first_parameter);
+                    native_i64(bytes, *selector);
+                    native_f64(bytes, *second_parameter);
+                    native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+                    for vector in vectors {
+                        native_vector(bytes, [vector.x, vector.y, vector.z]);
+                    }
+                    native_f64(bytes, *frame_parameter);
+                    for flag in flags {
+                        bytes.push(native_bool(*flag));
+                    }
+                    native_i64(
+                        bytes,
+                        i64::try_from(parameter_triples.len()).map_err(|_| {
+                            CodecError::NotImplemented("deformable triple count exceeds i64".into())
+                        })?,
+                    );
+                    for triple in parameter_triples {
+                        for value in triple {
+                            native_f64(bytes, *value);
+                        }
+                    }
+                }
                 DeformableSurfaceData::Plain {
                     frame,
                     parameter_triples,

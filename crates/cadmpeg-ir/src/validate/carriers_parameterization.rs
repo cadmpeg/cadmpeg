@@ -363,6 +363,13 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             | ProceduralSurfaceDefinition::Unknown { .. } => {}
             ProceduralSurfaceDefinition::Deformable { construction } => {
                 surfaces.insert(&construction.support.0);
+                if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
+                    surface, curve, ..
+                } = &construction.data
+                {
+                    surfaces.insert(&surface.0);
+                    curves.insert(&curve.0);
+                }
             }
         }
     }

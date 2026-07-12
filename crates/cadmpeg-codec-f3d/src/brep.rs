@@ -972,11 +972,57 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 geometry: embedded.support,
                                 source_object: None,
                             });
+                            let data = match embedded.data {
+                                nurbs::EmbeddedDeformableSurfaceData::Resolved(data) => data,
+                                nurbs::EmbeddedDeformableSurfaceData::SurfaceCurve {
+                                    surface,
+                                    native_id,
+                                    flag,
+                                    first_parameter,
+                                    selector,
+                                    second_parameter,
+                                    curve,
+                                    vectors,
+                                    frame_parameter,
+                                    flags,
+                                    parameter_triples,
+                                } => {
+                                    let secondary_surface = SurfaceId(format!(
+                                        "f3d:brep:procedural_surface#{i}:deformable:secondary"
+                                    ));
+                                    out.surfaces.push(Surface {
+                                        id: secondary_surface.clone(),
+                                        geometry: surface,
+                                        source_object: None,
+                                    });
+                                    let curve_id = CurveId(format!(
+                                        "f3d:brep:procedural_surface#{i}:deformable:curve"
+                                    ));
+                                    out.curves.push(Curve {
+                                        id: curve_id.clone(),
+                                        geometry: CurveGeometry::Nurbs(curve),
+                                        source_object: None,
+                                    });
+                                    cadmpeg_ir::geometry::DeformableSurfaceData::SurfaceCurve {
+                                        surface: secondary_surface,
+                                        native_id,
+                                        flag,
+                                        first_parameter,
+                                        selector,
+                                        second_parameter,
+                                        curve: curve_id,
+                                        vectors,
+                                        frame_parameter,
+                                        flags,
+                                        parameter_triples,
+                                    }
+                                }
+                            };
                             ProceduralSurfaceDefinition::Deformable {
                                 construction: Box::new(
                                     cadmpeg_ir::geometry::DeformableSurfaceConstruction {
                                         support,
-                                        data: embedded.data,
+                                        data,
                                         discontinuities: embedded.discontinuities,
                                         discontinuity_flag: embedded.discontinuity_flag,
                                     },
