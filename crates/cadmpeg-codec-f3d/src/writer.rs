@@ -6566,19 +6566,15 @@ fn native_embedded_cone(
 }
 
 fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError> {
-    let PcurveGeometry::Nurbs {
+    let range = pcurve.parameter_range.unwrap_or([0.0, 1.0]);
+    let NativePcurveGeometry {
         degree,
         knots,
         control_points,
         weights,
         periodic,
-    } = &pcurve.geometry
-    else {
-        return Err(CodecError::NotImplemented(
-            "source-less F3D analytic pcurves are unsupported".into(),
-        ));
-    };
-    let degree_usize = usize::try_from(*degree)
+    } = native_pcurve_geometry(&pcurve.geometry, range)?;
+    let degree_usize = usize::try_from(degree)
         .map_err(|_| CodecError::NotImplemented("F3D pcurve degree exceeds usize".into()))?;
     if knots.len() != control_points.len() + degree_usize + 1
         || weights
@@ -6598,15 +6594,15 @@ fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError>
     bytes.push(0x0f);
     native_ident(bytes, "exp_par_cur")?;
     native_ident(bytes, if weights.is_some() { "nurbs" } else { "nubs" })?;
-    native_i64(bytes, i64::from(*degree));
-    native_enum(bytes, if *periodic { 2 } else { 0 });
+    native_i64(bytes, i64::from(degree));
+    native_enum(bytes, if periodic { 2 } else { 0 });
     native_i64(
         bytes,
-        i64::try_from(unique_knot_count(knots)).map_err(|_| {
+        i64::try_from(unique_knot_count(&knots)).map_err(|_| {
             CodecError::NotImplemented("F3D pcurve unique-knot count exceeds i64".into())
         })?,
     );
-    native_nurbs_knots(bytes, knots)?;
+    native_nurbs_knots(bytes, &knots)?;
     for (index, point) in control_points.iter().enumerate() {
         native_f64(bytes, point.u);
         native_f64(bytes, point.v);
@@ -6630,23 +6626,70 @@ fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError>
     Ok(())
 }
 
+struct NativePcurveGeometry {
+    degree: u32,
+    knots: Vec<f64>,
+    control_points: Vec<cadmpeg_ir::math::Point2>,
+    weights: Option<Vec<f64>>,
+    periodic: bool,
+}
+
+fn native_pcurve_geometry(
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+) -> Result<NativePcurveGeometry, CodecError> {
+    match geometry {
+        PcurveGeometry::Line { origin, direction } => {
+            if !range.iter().all(|value| value.is_finite()) || range[0] >= range[1] {
+                return Err(CodecError::Malformed(
+                    "source-less F3D line pcurve requires an ordered finite range".into(),
+                ));
+            }
+            Ok(NativePcurveGeometry {
+                degree: 1,
+                knots: vec![range[0], range[0], range[1], range[1]],
+                control_points: vec![
+                    cadmpeg_ir::math::Point2::new(
+                        origin.u + range[0] * direction.u,
+                        origin.v + range[0] * direction.v,
+                    ),
+                    cadmpeg_ir::math::Point2::new(
+                        origin.u + range[1] * direction.u,
+                        origin.v + range[1] * direction.v,
+                    ),
+                ],
+                weights: None,
+                periodic: false,
+            })
+        }
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        } => Ok(NativePcurveGeometry {
+            degree: *degree,
+            knots: knots.clone(),
+            control_points: control_points.clone(),
+            weights: weights.clone(),
+            periodic: *periodic,
+        }),
+    }
+}
+
 fn native_nurbs_pcurve_block(
     bytes: &mut Vec<u8>,
     geometry: &PcurveGeometry,
 ) -> Result<(), CodecError> {
-    let PcurveGeometry::Nurbs {
+    let NativePcurveGeometry {
         degree,
         knots,
         control_points,
         weights,
         periodic,
-    } = geometry
-    else {
-        return Err(CodecError::NotImplemented(
-            "embedded F3D support pcurves require NURBS geometry".into(),
-        ));
-    };
-    let degree_usize = usize::try_from(*degree)
+    } = native_pcurve_geometry(geometry, [0.0, 1.0])?;
+    let degree_usize = usize::try_from(degree)
         .map_err(|_| CodecError::NotImplemented("F3D pcurve degree exceeds usize".into()))?;
     if knots.len() != control_points.len() + degree_usize + 1
         || weights
@@ -6658,15 +6701,15 @@ fn native_nurbs_pcurve_block(
         ));
     }
     native_ident(bytes, if weights.is_some() { "nurbs" } else { "nubs" })?;
-    native_i64(bytes, i64::from(*degree));
-    native_enum(bytes, if *periodic { 2 } else { 0 });
+    native_i64(bytes, i64::from(degree));
+    native_enum(bytes, if periodic { 2 } else { 0 });
     native_i64(
         bytes,
-        i64::try_from(unique_knot_count(knots)).map_err(|_| {
+        i64::try_from(unique_knot_count(&knots)).map_err(|_| {
             CodecError::NotImplemented("F3D pcurve unique-knot count exceeds i64".into())
         })?,
     );
-    native_nurbs_knots(bytes, knots)?;
+    native_nurbs_knots(bytes, &knots)?;
     for (index, point) in control_points.iter().enumerate() {
         native_f64(bytes, point.u);
         native_f64(bytes, point.v);

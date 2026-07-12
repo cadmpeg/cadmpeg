@@ -4296,6 +4296,48 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
 }
 
 #[test]
+fn generated_source_less_face_lowers_line_pcurve_exactly() {
+    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::math::Point2;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated inline pcurve decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let pcurve = &mut source_less.model.pcurves[0];
+    pcurve.geometry = PcurveGeometry::Line {
+        origin: Point2::new(2.0, -1.0),
+        direction: Point2::new(0.5, 2.0),
+    };
+    pcurve.parameter_range = Some([-2.0, 3.0]);
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less line pcurve encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less line pcurve round trip");
+    assert_eq!(
+        round_trip.ir.model.pcurves[0].parameter_range,
+        Some([-2.0, 3.0])
+    );
+    assert_eq!(
+        round_trip.ir.model.pcurves[0].geometry,
+        PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![-2.0, -2.0, 3.0, 3.0],
+            control_points: vec![Point2::new(1.0, -5.0), Point2::new(3.5, 5.0)],
+            weights: None,
+            periodic: false,
+        }
+    );
+}
+
+#[test]
 fn generated_source_less_face_writes_rational_nurbs_pcurve() {
     let source = f3d_with_smbh(&synthetic_geometry_with_rational_pcurve_smbh());
     let decoded = F3dCodec
@@ -11845,6 +11887,10 @@ fn generated_mixed_offset_supports_write_source_less() {
     };
     context.sides[1].surface = None;
     context.sides[1].pcurve = None;
+    context.sides[0].pcurve = Some(cadmpeg_ir::geometry::PcurveGeometry::Line {
+        origin: cadmpeg_ir::math::Point2::new(1.0, 2.0),
+        direction: cadmpeg_ir::math::Point2::new(3.0, -1.0),
+    });
     let first_support = context.sides[0]
         .surface
         .clone()
@@ -11871,6 +11917,19 @@ fn generated_mixed_offset_supports_write_source_less() {
         panic!("expected round-trip two-sided offset construction")
     };
     assert!(context.sides[1].surface.is_none() && context.sides[1].pcurve.is_none());
+    assert_eq!(
+        context.sides[0].pcurve,
+        Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![
+                cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                cadmpeg_ir::math::Point2::new(4.0, 1.0),
+            ],
+            weights: None,
+            periodic: false,
+        })
+    );
     let actual_surface = round_trip
         .ir
         .model
