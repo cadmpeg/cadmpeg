@@ -169,7 +169,7 @@ Absence from `annotations.exactness` means `byte_exact`. A field override takes 
 
 Each feature has an ID, source-history `ordinal`, optional name, suppression state, optional parent, output bodies, a neutral definition, and optional `native_ref`.
 
-Neutral definitions are extrude, revolve, fillet, chamfer, shell, hole, and pattern. `native` is the sole escape hatch for a feature with no neutral definition and carries a source kind plus string parameter map. Length wrappers are millimeters and angle wrappers are radians.
+Neutral definitions are extrude, revolve, fillet, chamfer, shell, hole, and pattern. `native` is the sole escape hatch for a feature with no neutral definition and carries its source kind, parameter map, and non-parameter property map. Length wrappers are millimeters and angle wrappers are radians.
 
 Extents are blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles reference native profile identity or solved faces. Fillets use constant or sampled variable radii. Chamfers use distance, two distances, or distance-angle. Holes are simple, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
 

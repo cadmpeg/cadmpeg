@@ -959,6 +959,7 @@ fn native_definition(feature: &Feature) -> FeatureDefinition {
     FeatureDefinition::Native {
         kind: feature.kind.clone(),
         parameters: feature.parameters.clone(),
+        properties: feature.properties.clone(),
     }
 }
 
@@ -1446,13 +1447,11 @@ pub fn sync_neutral_features(
             .flat_map(|history| &mut history.features)
             .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
         let (kind, parameters, properties) = match &feature.definition {
-            FeatureDefinition::Native { kind, parameters } => (
-                kind.clone(),
-                parameters.clone(),
-                existing
-                    .as_deref()
-                    .map_or_else(BTreeMap::new, |record| record.properties.clone()),
-            ),
+            FeatureDefinition::Native {
+                kind,
+                parameters,
+                properties,
+            } => (kind.clone(), parameters.clone(), properties.clone()),
             FeatureDefinition::DatumPlane {
                 origin,
                 normal,

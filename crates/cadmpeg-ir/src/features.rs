@@ -346,6 +346,9 @@ pub enum FeatureDefinition {
         /// Source parametric input values keyed by parameter name.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         parameters: BTreeMap<String, String>,
+        /// Source operation attributes that are not dimensional parameters.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        properties: BTreeMap<String, String>,
     },
 }
 
