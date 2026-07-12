@@ -406,7 +406,8 @@ pub(super) fn check_native_links(
         }
     }
 
-    for record in &ir.unknowns {
+    let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
+    for record in ir.unknowns.iter().chain(&native_unknowns) {
         for target in &record.links {
             if !all_ids.contains(target) {
                 findings.push(Finding {
@@ -415,6 +416,25 @@ pub(super) fn check_native_links(
                     message: format!("unknown-record link `{target}` does not resolve"),
                     entity: Some(record.id.0.clone()),
                 });
+            }
+        }
+    }
+    for namespace in ir.native.namespaces.values() {
+        for records in namespace.arenas.values() {
+            for record in records {
+                let Some(serde_json::Value::Array(links)) = record.fields.get("links") else {
+                    continue;
+                };
+                for target in links.iter().filter_map(serde_json::Value::as_str) {
+                    if !all_ids.contains(target) {
+                        findings.push(Finding {
+                            check: Check::NativeLinks,
+                            severity: Severity::Error,
+                            message: format!("native-record link `{target}` does not resolve"),
+                            entity: Some(record.id.clone()),
+                        });
+                    }
+                }
             }
         }
     }
