@@ -755,11 +755,11 @@ impl<'a> DecodeContext<'a> {
         let mut owned_surfaces = BTreeSet::new();
         for edge in &self.ir.model.edges[before.edges..] {
             if let Some(curve) = &edge.curve {
-                owned_curves.insert(curve.to_string());
+                owned_curves.insert(curve.clone());
             }
         }
         for face in &self.ir.model.faces[before.faces..] {
-            owned_surfaces.insert(face.surface.to_string());
+            owned_surfaces.insert(face.surface.clone());
         }
         let mut links = Vec::new();
         let mut derived_ids = Vec::new();
@@ -775,14 +775,14 @@ impl<'a> DecodeContext<'a> {
             }
         }
         for curve in &mut self.ir.model.curves[before.curves..] {
-            if !owned_curves.contains(&curve.id.to_string()) {
+            if !owned_curves.contains(&curve.id) {
                 transform_curve(curve, transform)?;
                 links.push(curve.id.to_string());
                 derived_ids.push(curve.id.to_string());
             }
         }
         for surface in &mut self.ir.model.surfaces[before.surfaces..] {
-            if !owned_surfaces.contains(&surface.id.to_string()) {
+            if !owned_surfaces.contains(&surface.id) {
                 transform_surface(surface, transform)?;
                 links.push(surface.id.to_string());
                 derived_ids.push(surface.id.to_string());

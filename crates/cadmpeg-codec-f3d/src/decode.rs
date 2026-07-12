@@ -101,22 +101,19 @@ pub fn decode(
                     .get_or_insert_with(F3dNative::default)
                     .design_entity_headers,
             )?;
-            let (record_headers, entity_headers) = {
+            let sketch_relations = {
                 let native = ir.native.f3d.get_or_insert_with(F3dNative::default);
-                (
-                    native.design_record_headers.clone(),
-                    native.design_entity_headers.clone(),
-                )
+                crate::design::decode_sketch_relations(
+                    reader,
+                    &scan,
+                    &native.design_record_headers,
+                    &native.design_entity_headers,
+                )?
             };
             ir.native
                 .f3d
                 .get_or_insert_with(F3dNative::default)
-                .sketch_relations = crate::design::decode_sketch_relations(
-                reader,
-                &scan,
-                &record_headers,
-                &entity_headers,
-            )?;
+                .sketch_relations = sketch_relations;
             extend_related_design_records(reader, &scan, &mut ir)?;
             ir.native
                 .f3d
@@ -235,18 +232,19 @@ pub fn decode(
             .get_or_insert_with(F3dNative::default)
             .design_entity_headers,
     )?;
-    let (record_headers, entity_headers) = {
+    let sketch_relations = {
         let native = ir.native.f3d.get_or_insert_with(F3dNative::default);
-        (
-            native.design_record_headers.clone(),
-            native.design_entity_headers.clone(),
-        )
+        crate::design::decode_sketch_relations(
+            reader,
+            &scan,
+            &native.design_record_headers,
+            &native.design_entity_headers,
+        )?
     };
     ir.native
         .f3d
         .get_or_insert_with(F3dNative::default)
-        .sketch_relations =
-        crate::design::decode_sketch_relations(reader, &scan, &record_headers, &entity_headers)?;
+        .sketch_relations = sketch_relations;
     extend_related_design_records(reader, &scan, &mut ir)?;
     ir.native
         .f3d

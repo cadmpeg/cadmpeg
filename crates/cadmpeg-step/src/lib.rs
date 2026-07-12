@@ -1039,7 +1039,7 @@ impl<'a> Builder<'a> {
 
     fn finish_report(&self) -> StepReport {
         StepReport {
-            entity_counts: self.emitter.counts().clone(),
+            entity_counts: self.emitter.counts(),
             total_entities: self.emitter.total(),
             losses: self.losses.clone(),
         }
