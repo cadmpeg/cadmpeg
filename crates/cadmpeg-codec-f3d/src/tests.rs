@@ -11696,7 +11696,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
             radius: 12.5,
             half_angle,
             ..
-        } if (half_angle + std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
+        } if (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
     ));
     assert!(matches!(
         supports[1],
@@ -11770,7 +11770,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     assert!(matches!(
         expected_geometries[0],
         SurfaceGeometry::Cone { half_angle, .. }
-            if (half_angle + std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
+            if (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
     ));
     assert!(matches!(
         expected_geometries[1],
