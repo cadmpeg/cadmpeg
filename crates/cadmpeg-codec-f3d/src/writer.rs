@@ -3509,6 +3509,7 @@ fn native_procedural_surface(
             spine,
             radius,
             cross_section,
+            ..
         } => encode_native_rolling_ball(
             bytes,
             target,
@@ -8296,16 +8297,19 @@ fn validate_procedural_surface_edits(
                     spine: before_spine,
                     radius: before_radius,
                     cross_section: before_cross_section,
+                    native: before_native,
                 },
                 ProceduralSurfaceDefinition::Blend {
                     supports: after_supports,
                     spine: after_spine,
                     radius: after_radius,
                     cross_section: after_cross_section,
+                    native: after_native,
                 },
             ) if before_supports == after_supports
                 && before_spine == after_spine
-                && before_cross_section == after_cross_section =>
+                && before_cross_section == after_cross_section
+                && before_native == after_native =>
             {
                 let values = match after_radius {
                     BlendRadiusLaw::Constant { signed_radius } => [*signed_radius; 2],

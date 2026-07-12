@@ -1247,6 +1247,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 spine,
                                 radius,
                                 cross_section,
+                                native: None,
                             }
                         }
                     };

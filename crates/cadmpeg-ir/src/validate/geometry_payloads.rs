@@ -386,6 +386,46 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::Blend {
+            native: Some(construction),
+            ..
+        } = &procedural.definition
+        {
+            let point_finite = |point: &crate::math::Point3| {
+                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+            };
+            let vector_finite = |vector: &Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let ranges_valid = [&construction.u_range, &construction.v_range]
+                .iter()
+                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
+            let selector_valid = match construction.radius_selector {
+                crate::geometry::RollingBallRadiusSelector::None => true,
+                crate::geometry::RollingBallRadiusSelector::Value { value } => value.is_finite(),
+            };
+            let scalars_valid = construction
+                .offsets
+                .iter()
+                .chain(construction.parameters.iter())
+                .chain(construction.discontinuities.iter().flatten())
+                .all(|value| value.is_finite());
+            let sides_valid = construction
+                .sides
+                .iter()
+                .all(|side| point_finite(&side.location));
+            let third_valid = construction
+                .third
+                .as_ref()
+                .is_none_or(|side| vector_finite(&side.direction));
+            if !ranges_valid || !selector_valid || !scalars_valid || !sides_valid || !third_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "rolling-ball blend construction payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Offset {
             distance,
             extension_flags,

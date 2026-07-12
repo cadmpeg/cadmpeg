@@ -7865,6 +7865,7 @@ fn decode_retains_generated_rolling_ball_definition() {
         spine,
         radius,
         cross_section,
+        ..
     } = &procedural.definition
     else {
         panic!("expected rolling-ball blend")

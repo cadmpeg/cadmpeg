@@ -402,6 +402,9 @@ pub enum ProceduralSurfaceDefinition {
         radius: BlendRadiusLaw,
         /// Cross-section family of the blend.
         cross_section: BlendCrossSection,
+        /// Complete byte-backed rolling-ball context when available.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native: Option<Box<RollingBallConstruction>>,
     },
     /// Preserved construction without a neutral interpretation.
     Unknown {
@@ -645,6 +648,94 @@ pub struct G2BlendConstruction {
     pub trailing_parameters: [f64; 4],
     /// Three ordered ASM discontinuity arrays.
     pub discontinuities: [Vec<f64>; 3],
+}
+
+/// One complete native rolling-ball support side.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RollingBallSide {
+    /// Native side label.
+    pub label: String,
+    /// Primary support surface, absent for `null_surface`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<SurfaceId>,
+    /// Side curve.
+    pub curve: CurveId,
+    /// Primary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve: Option<PcurveGeometry>,
+    /// Native model-space side location.
+    pub location: Point3,
+    /// ASM secondary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_pcurve: Option<PcurveGeometry>,
+    /// Inline exact support surface, absent for a null spline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exact_support: Option<SurfaceId>,
+}
+
+/// Third support graph appended by `sss_blend_spl_sur`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RollingBallThirdSide {
+    /// Native side label.
+    pub label: String,
+    /// Third support surface.
+    pub surface: SurfaceId,
+    /// Third side curve.
+    pub curve: CurveId,
+    /// Primary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve: Option<PcurveGeometry>,
+    /// Native side vector.
+    pub direction: Vector3,
+    /// ASM secondary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_pcurve: Option<PcurveGeometry>,
+    /// Native ASM integer following the secondary pcurve.
+    pub extension: i64,
+    /// ASM tertiary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tertiary_pcurve: Option<PcurveGeometry>,
+    /// Final ASM flag.
+    pub flag: bool,
+}
+
+/// Native optional-radius selector in a rolling-ball construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RollingBallRadiusSelector {
+    /// Native `-1` no-radius sentinel.
+    None,
+    /// Explicit native selector scalar.
+    Value {
+        /// Stored scalar value.
+        value: f64,
+    },
+}
+
+/// Complete byte-backed rolling-ball or three-surface blend context.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RollingBallConstruction {
+    /// Two ordered primary support sides.
+    pub sides: Box<[RollingBallSide; 2]>,
+    /// Stored slice or center curve.
+    pub slice: CurveId,
+    /// Two signed support offsets in document length units.
+    pub offsets: [f64; 2],
+    /// Optional-radius selector field.
+    pub radius_selector: RollingBallRadiusSelector,
+    /// Native U interval.
+    pub u_range: [f64; 2],
+    /// Native V interval.
+    pub v_range: [f64; 2],
+    /// Three ordered trailing scalars.
+    pub parameters: [f64; 3],
+    /// Native long following the trailing scalars.
+    pub tail: i64,
+    /// Three ordered ASM discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
+    /// Third side present only for `sss_blend_spl_sur`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub third: Option<Box<RollingBallThirdSide>>,
 }
 
 /// Radius law for a procedural blend.

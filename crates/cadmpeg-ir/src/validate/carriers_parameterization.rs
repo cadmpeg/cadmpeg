@@ -99,13 +99,32 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 curves.extend([first.0.as_str(), second.0.as_str()]);
             }
             ProceduralSurfaceDefinition::Blend {
-                supports, spine, ..
+                supports,
+                spine,
+                native,
+                ..
             } => {
                 for support in supports.iter().flatten() {
                     surfaces.insert(&support.surface.0);
                 }
                 if let Some(spine) = spine {
                     curves.insert(&spine.0);
+                }
+                if let Some(native) = native {
+                    curves.insert(&native.slice.0);
+                    for side in native.sides.iter() {
+                        curves.insert(&side.curve.0);
+                        if let Some(surface) = &side.surface {
+                            surfaces.insert(&surface.0);
+                        }
+                        if let Some(surface) = &side.exact_support {
+                            surfaces.insert(&surface.0);
+                        }
+                    }
+                    if let Some(side) = &native.third {
+                        curves.insert(&side.curve.0);
+                        surfaces.insert(&side.surface.0);
+                    }
                 }
             }
             ProceduralSurfaceDefinition::Unknown { .. } => {}

@@ -405,7 +405,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
             }
             ProceduralSurfaceDefinition::Blend {
-                supports, spine, ..
+                supports,
+                spine,
+                native,
+                ..
             } => {
                 for support in supports.iter().flatten() {
                     if !ids.surfaces.contains(&support.surface.0) {
@@ -415,6 +418,33 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 if let Some(spine) = spine {
                     if !ids.curves.contains(&spine.0) {
                         ref_error(findings, &procedural.id.0, "curve", &spine.0);
+                    }
+                }
+                if let Some(native) = native {
+                    let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
+                        if !ids.curves.contains(&curve.0) {
+                            ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                        }
+                    };
+                    let check_surface =
+                        |surface: &crate::ids::SurfaceId, findings: &mut Vec<Finding>| {
+                            if !ids.surfaces.contains(&surface.0) {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                            }
+                        };
+                    check_curve(&native.slice, findings);
+                    for side in native.sides.iter() {
+                        check_curve(&side.curve, findings);
+                        if let Some(surface) = &side.surface {
+                            check_surface(surface, findings);
+                        }
+                        if let Some(surface) = &side.exact_support {
+                            check_surface(surface, findings);
+                        }
+                    }
+                    if let Some(side) = &native.third {
+                        check_curve(&side.curve, findings);
+                        check_surface(&side.surface, findings);
                     }
                 }
             }
