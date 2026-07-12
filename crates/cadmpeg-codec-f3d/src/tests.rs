@@ -1274,7 +1274,7 @@ fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     t_long(&mut curve, 2);
     t_dbl(&mut curve, 0.5);
     t_dbl(&mut curve, 0.75);
-    curve.push(0x0b);
+    curve.push(0x0a);
     curve.push(0x15);
     curve.extend_from_slice(&4i64.to_le_bytes());
     curve.extend_from_slice(&generated_curve_block());
@@ -12159,12 +12159,14 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
         context,
         surface_parameter_ranges,
         first_pcurve_parameter_range,
+        discontinuity_flag,
         direction,
     } = &result.ir.model.procedural_curves[0].definition
     else {
         panic!("expected spring construction")
     };
     assert_eq!(*direction, 4);
+    assert!(*discontinuity_flag);
     assert!(context
         .sides
         .iter()

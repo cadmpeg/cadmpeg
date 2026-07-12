@@ -4394,6 +4394,7 @@ pub(crate) struct EmbeddedSpring {
     pub(crate) first_pcurve_parameter_range: Option<[f64; 2]>,
     pub(crate) parameter_range: [f64; 2],
     pub(crate) discontinuities: [Vec<f64>; 3],
+    pub(crate) discontinuity_flag: bool,
     pub(crate) direction: i64,
 }
 
@@ -4709,7 +4710,7 @@ fn decode_embedded_spring(bytes: &[u8], int_width: usize) -> Option<EmbeddedSpri
         take_float_array(bytes, &mut position, int_width)?,
         take_float_array(bytes, &mut position, int_width)?,
     ];
-    take_bool(bytes, &mut position)?;
+    let discontinuity_flag = take_bool(bytes, &mut position)?;
     let direction = take_tagged_int(bytes, &mut position, 0x15, int_width)?;
     Some(EmbeddedSpring {
         surfaces,
@@ -4718,6 +4719,7 @@ fn decode_embedded_spring(bytes: &[u8], int_width: usize) -> Option<EmbeddedSpri
         first_pcurve_parameter_range,
         parameter_range,
         discontinuities,
+        discontinuity_flag,
         direction,
     })
 }

@@ -6169,6 +6169,7 @@ fn native_procedural_curve(
         context,
         surface_parameter_ranges,
         first_pcurve_parameter_range,
+        discontinuity_flag,
         direction,
     } = &procedural.definition
     {
@@ -6243,7 +6244,7 @@ fn native_procedural_curve(
                 native_f64(bytes, *value);
             }
         }
-        bytes.push(0x0b);
+        bytes.push(native_bool(*discontinuity_flag));
         native_enum(bytes, *direction);
         native_nurbs_curve(bytes, solved_cache)?;
         native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);

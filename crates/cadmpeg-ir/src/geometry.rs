@@ -2091,6 +2091,8 @@ pub enum ProceduralCurveDefinition {
         /// is the native `nullbs` sentinel.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         first_pcurve_parameter_range: Option<[f64; 2]>,
+        /// Native boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
         /// Native `CURV_DIR` enum value.
         direction: i64,
     },
