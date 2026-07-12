@@ -339,6 +339,53 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::G2Blend { construction } = &procedural.definition {
+            let direction_finite = |direction: &Vector3| {
+                direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()
+            };
+            let first_shape_valid = match &construction.first_shape {
+                crate::geometry::G2BlendFirstShape::Full { surface, tolerance } => {
+                    surface.is_some() == tolerance.is_some()
+                        && tolerance.is_none_or(|value| value.is_finite() && value >= 0.0)
+                }
+                crate::geometry::G2BlendFirstShape::None {
+                    coefficients,
+                    tolerance,
+                    extension,
+                    ..
+                } => {
+                    coefficients.iter().all(|value| value.is_finite())
+                        && tolerance.is_finite()
+                        && *tolerance >= 0.0
+                        && extension.as_ref().is_none_or(|token| match token {
+                            crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
+                            _ => true,
+                        })
+                }
+            };
+            let ranges_valid = construction
+                .parameter_ranges
+                .iter()
+                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
+            let scalars_valid = construction
+                .center_parameters
+                .iter()
+                .chain(construction.trailing_parameters.iter())
+                .chain(construction.discontinuities.iter().flatten())
+                .all(|value| value.is_finite());
+            if !direction_finite(&construction.first.direction)
+                || !direction_finite(&construction.second.direction)
+                || !first_shape_valid
+                || !ranges_valid
+                || !scalars_valid
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "G2 blend construction payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Offset {
             distance,
             extension_flags,

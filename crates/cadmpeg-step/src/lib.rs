@@ -995,6 +995,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Compound { .. }
                 | ProceduralSurfaceDefinition::Taper { .. }
                 | ProceduralSurfaceDefinition::Loft { .. }
+                | ProceduralSurfaceDefinition::G2Blend { .. }
                 | ProceduralSurfaceDefinition::Extrusion { .. }
                 | ProceduralSurfaceDefinition::Revolution { .. }
                 | ProceduralSurfaceDefinition::Sum { .. }

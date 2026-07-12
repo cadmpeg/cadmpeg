@@ -344,6 +344,34 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralSurfaceDefinition::G2Blend { construction } => {
+                for surface in [&construction.first.surface, &construction.second.surface]
+                    .into_iter()
+                    .chain(std::iter::once(&construction.second_exact_surface))
+                {
+                    if !ids.surfaces.contains(&surface.0) {
+                        ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                    }
+                }
+                if let crate::geometry::G2BlendFirstShape::Full {
+                    surface: Some(surface),
+                    ..
+                } = &construction.first_shape
+                {
+                    if !ids.surfaces.contains(&surface.0) {
+                        ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                    }
+                }
+                for curve in [
+                    &construction.first.curve,
+                    &construction.second.curve,
+                    &construction.center_curve,
+                ] {
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 if !ids.curves.contains(&directrix.0) {

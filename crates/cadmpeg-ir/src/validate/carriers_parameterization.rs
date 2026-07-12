@@ -67,6 +67,21 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
+            ProceduralSurfaceDefinition::G2Blend { construction } => {
+                for side in [&construction.first, &construction.second] {
+                    surfaces.insert(&side.surface.0);
+                    curves.insert(&side.curve.0);
+                }
+                surfaces.insert(&construction.second_exact_surface.0);
+                curves.insert(&construction.center_curve.0);
+                if let crate::geometry::G2BlendFirstShape::Full {
+                    surface: Some(surface),
+                    ..
+                } = &construction.first_shape
+                {
+                    surfaces.insert(&surface.0);
+                }
+            }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 curves.insert(&directrix.0);

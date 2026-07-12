@@ -327,6 +327,11 @@ pub enum ProceduralSurfaceDefinition {
         /// Variable native tokens between the mode and solved cache.
         bridge: Vec<LoftBridgeToken>,
     },
+    /// Native curvature-continuous two-sided blend.
+    G2Blend {
+        /// Complete native G2 construction graph.
+        construction: Box<G2BlendConstruction>,
+    },
     /// Translation of a directrix along a direction.
     Extrusion {
         /// Curve swept along `direction` to form the surface.
@@ -570,6 +575,76 @@ pub enum LoftBridgeToken {
     Text(String),
     /// Native enum token.
     Enum(i64),
+}
+
+/// Common carrier fields of one G2 blend side.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct G2BlendSide {
+    /// Native side label.
+    pub label: String,
+    /// Primary support surface.
+    pub surface: SurfaceId,
+    /// Primary side curve.
+    pub curve: CurveId,
+    /// First and second ordered BS2 pcurves; each may be `nullbs`.
+    pub pcurves: [Option<PcurveGeometry>; 2],
+    /// Native side direction.
+    pub direction: Vector3,
+}
+
+/// Singularity-specific payload of the first G2 blend side.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum G2BlendFirstShape {
+    /// Full singularity with an optional BS3 support surface.
+    Full {
+        /// Optional exact BS3 support surface.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        surface: Option<SurfaceId>,
+        /// Fit tolerance present exactly when `surface` is present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tolerance: Option<f64>,
+    },
+    /// Non-singular nine-scalar frame and tertiary pcurve.
+    None {
+        /// Ordered native frame scalars.
+        coefficients: [f64; 9],
+        /// Native fit tolerance.
+        tolerance: f64,
+        /// Optional intervening native token.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extension: Option<LoftBridgeToken>,
+        /// Tertiary BS2 pcurve, absent for `nullbs`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pcurve: Option<PcurveGeometry>,
+    },
+}
+
+/// Full native G2 blend construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct G2BlendConstruction {
+    /// First side common fields.
+    pub first: G2BlendSide,
+    /// Native first-side singularity enum.
+    pub singularity: i64,
+    /// First-side singularity payload.
+    pub first_shape: G2BlendFirstShape,
+    /// Second side common fields.
+    pub second: G2BlendSide,
+    /// Exact second-side spline support.
+    pub second_exact_surface: SurfaceId,
+    /// Center or transition curve.
+    pub center_curve: CurveId,
+    /// Ordered center-curve scalars.
+    pub center_parameters: [f64; 2],
+    /// Native center tail integer.
+    pub center_flag: i64,
+    /// Native U and V intervals.
+    pub parameter_ranges: [[f64; 2]; 2],
+    /// Four ordered trailing scalars.
+    pub trailing_parameters: [f64; 4],
+    /// Three ordered ASM discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
 }
 
 /// Radius law for a procedural blend.
