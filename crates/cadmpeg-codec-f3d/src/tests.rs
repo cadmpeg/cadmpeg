@@ -7818,6 +7818,124 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     assert_eq!(*selector, 0);
     assert!(matches!(direction, CompoundLoftDirection::Vector { .. }));
     assert_eq!(*trailing_flags, [true, false]);
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less compound-loft encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less compound-loft round trip");
+    let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+        &round_trip.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected round-trip compound loft")
+    };
+    assert!(construction.scales[0].is_some());
+    assert!(construction.scales[1..].iter().all(Option::is_none));
+    assert_eq!(construction.flags, [true, false]);
+    assert!(matches!(
+        construction.tail,
+        CompoundLoftTail::Zero {
+            selector: 0,
+            direction: CompoundLoftDirection::Vector { .. },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn generated_compound_loft_writes_every_tail_shape_source_less() {
+    use cadmpeg_ir::geometry::{
+        CompoundLoftDirection, CompoundLoftTail, ProceduralSurfaceDefinition,
+    };
+    use cadmpeg_ir::math::Vector3;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_compound_loft_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("compound-loft decode");
+    let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected compound loft")
+    };
+    let scale = construction.scales[0].clone().expect("generated scale");
+    let curve = scale.path.clone();
+    let tails = [
+        CompoundLoftTail::Six {
+            flags: [true, false],
+            scale: Box::new(scale.clone()),
+            selector: 31,
+            direction: Vector3::new(0.0, 1.0, 0.0),
+            parameter_range: [-0.5, 1.5],
+            curve: curve.clone(),
+        },
+        CompoundLoftTail::Seven {
+            first_flag: true,
+            first_scale: Some(Box::new(scale.clone())),
+            second_flag: false,
+            second_scale: Box::new(scale.clone()),
+            selector: -7,
+            direction: Vector3::new(1.0, 0.0, 0.0),
+            trailing_flags: [false, true],
+        },
+        CompoundLoftTail::Zero {
+            flags: [false, true],
+            selector: 4,
+            direction: CompoundLoftDirection::Curve { curve },
+            trailing_flags: [true, true],
+        },
+    ];
+
+    for (tail_index, expected) in tails.into_iter().enumerate() {
+        let mut source_less = decoded.ir.clone();
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+            &mut source_less.model.procedural_surfaces[0].definition
+        else {
+            unreachable!()
+        };
+        construction.tail = expected.clone();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less compound-loft encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("source-less compound-loft round trip");
+        assert_eq!(
+            round_trip.ir.model.procedural_surfaces.len(),
+            1,
+            "tail {tail_index} did not decode"
+        );
+        let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+            &round_trip.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected round-trip compound loft")
+        };
+        match (&expected, &construction.tail) {
+            (CompoundLoftTail::Six { .. }, CompoundLoftTail::Six { .. }) => {}
+            (CompoundLoftTail::Seven { .. }, CompoundLoftTail::Seven { first_scale, .. }) => {
+                assert!(first_scale.is_some());
+            }
+            (
+                CompoundLoftTail::Zero { .. },
+                CompoundLoftTail::Zero {
+                    selector: 4,
+                    direction: CompoundLoftDirection::Curve { .. },
+                    ..
+                },
+            ) => {}
+            _ => panic!("compound-loft tail shape changed"),
+        }
+    }
 }
 
 #[test]

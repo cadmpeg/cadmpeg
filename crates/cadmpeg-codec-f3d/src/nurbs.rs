@@ -1121,7 +1121,7 @@ pub(crate) enum EmbeddedCompoundLoftDirection {
 pub(crate) enum EmbeddedCompoundLoftTail {
     Six {
         flags: [bool; 2],
-        scale: Option<Box<EmbeddedCompoundLoftScale>>,
+        scale: Box<EmbeddedCompoundLoftScale>,
         selector: i64,
         direction: Vector3,
         parameter_range: [f64; 2],
@@ -1131,7 +1131,7 @@ pub(crate) enum EmbeddedCompoundLoftTail {
         first_flag: bool,
         first_scale: Option<Box<EmbeddedCompoundLoftScale>>,
         second_flag: bool,
-        second_scale: Option<Box<EmbeddedCompoundLoftScale>>,
+        second_scale: Box<EmbeddedCompoundLoftScale>,
         selector: i64,
         direction: Vector3,
         trailing_flags: [bool; 2],
@@ -1444,7 +1444,7 @@ fn decode_compound_loft_spl_sur(
                 take_bool(span, &mut position)?,
                 take_bool(span, &mut position)?,
             ];
-            let scale = decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new);
+            let scale = Box::new(decode_compound_loft_scale(span, &mut position, int_width)??);
             let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
             let direction = take_native_vec3(span, &mut position, 0x14)?;
             let parameter_range = [
@@ -1467,7 +1467,7 @@ fn decode_compound_loft_spl_sur(
                 decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new);
             let second_flag = take_bool(span, &mut position)?;
             let second_scale =
-                decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new);
+                Box::new(decode_compound_loft_scale(span, &mut position, int_width)??);
             let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
             let direction = take_native_vec3(span, &mut position, 0x14)?;
             let trailing_flags = [

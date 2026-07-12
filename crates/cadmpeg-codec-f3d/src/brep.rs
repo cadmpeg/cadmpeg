@@ -1211,9 +1211,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     });
                                     cadmpeg_ir::geometry::CompoundLoftTail::Six {
                                         flags,
-                                        scale: scale.map(|scale| {
-                                            Box::new(map_scale(&mut out, "tail6", *scale))
-                                        }),
+                                        scale: Box::new(map_scale(&mut out, "tail6", *scale)),
                                         selector,
                                         direction,
                                         parameter_range,
@@ -1234,9 +1232,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         Box::new(map_scale(&mut out, "tail7:first", *scale))
                                     }),
                                     second_flag,
-                                    second_scale: second_scale.map(|scale| {
-                                        Box::new(map_scale(&mut out, "tail7:second", *scale))
-                                    }),
+                                    second_scale: Box::new(map_scale(
+                                        &mut out,
+                                        "tail7:second",
+                                        *second_scale,
+                                    )),
                                     selector,
                                     direction,
                                     trailing_flags,

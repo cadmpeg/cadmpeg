@@ -1061,9 +1061,8 @@ pub enum CompoundLoftTail {
     Six {
         /// Two leading flags.
         flags: [bool; 2],
-        /// Optional scale block.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        scale: Option<Box<CompoundLoftScale>>,
+        /// Required scale block.
+        scale: Box<CompoundLoftScale>,
         /// Native integer following the scale.
         selector: i64,
         /// Stored direction.
@@ -1082,9 +1081,8 @@ pub enum CompoundLoftTail {
         first_scale: Option<Box<CompoundLoftScale>>,
         /// Second flag.
         second_flag: bool,
-        /// Second optional scale block.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        second_scale: Option<Box<CompoundLoftScale>>,
+        /// Required second scale block.
+        second_scale: Box<CompoundLoftScale>,
         /// Native selector integer.
         selector: i64,
         /// Stored direction.

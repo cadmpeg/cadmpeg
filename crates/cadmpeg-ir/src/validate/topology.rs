@@ -317,7 +317,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 scales.extend(construction.fifth_scale.iter().map(Box::as_ref));
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
-                        scales.extend(scale.iter().map(Box::as_ref));
+                        scales.push(scale.as_ref());
                         check_curve(curve, findings);
                     }
                     crate::geometry::CompoundLoftTail::Seven {
@@ -326,7 +326,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         ..
                     } => {
                         scales.extend(first_scale.iter().map(Box::as_ref));
-                        scales.extend(second_scale.iter().map(Box::as_ref));
+                        scales.push(second_scale.as_ref());
                     }
                     crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
                         if let crate::geometry::CompoundLoftDirection::Curve { curve } = direction {
