@@ -1373,7 +1373,9 @@ fn encoder_writes_source_less_ir() {
 
 #[test]
 fn encoder_writes_source_less_line_sketches() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{
+        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+    };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
@@ -1425,15 +1427,34 @@ fn encoder_writes_source_less_line_sketches() {
             .collect()],
         native_ref: None,
     });
+    let sketch_feature_id = FeatureId("synthetic:test:feature#profile".into());
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#profile".into()),
+        id: sketch_feature_id.clone(),
         ordinal: 0,
         name: Some("Profile".into()),
         suppressed: false,
         parent: None,
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch_id),
+            sketch: Some(sketch_id.clone()),
+        },
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#extrude".into()),
+        ordinal: 1,
+        name: Some("Boss".into()),
+        suppressed: false,
+        parent: Some(sketch_feature_id),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Extrude {
+            profile: ProfileRef::Sketch(sketch_id),
+            direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            extent: Extent::Blind {
+                length: Length(12.0),
+            },
+            op: BooleanOp::Join,
+            draft: None,
         },
         native_ref: None,
     });
@@ -1462,6 +1483,17 @@ fn encoder_writes_source_less_line_sketches() {
     assert!(decoded.ir.model.features.iter().any(|feature| matches!(
         feature.definition,
         FeatureDefinition::Sketch { sketch: Some(_) }
+    )));
+    assert!(decoded.ir.model.features.iter().any(|feature| matches!(
+        &feature.definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Sketch(_),
+            extent: Extent::Blind {
+                length: Length(12.0)
+            },
+            op: BooleanOp::Join,
+            ..
+        }
     )));
 }
 

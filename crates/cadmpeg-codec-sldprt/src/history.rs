@@ -1705,13 +1705,10 @@ pub fn sync_neutral_features(
                 op,
                 draft,
             } => {
-                let Some(record) = existing.as_deref() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained extrusion record",
-                        feature.id
-                    )));
-                };
-                if extrude_op(&record.kind).is_none() {
+                if existing.as_deref().is_some_and(|record| {
+                    extrude_op(&record.kind).is_none()
+                        && !record.kind.eq_ignore_ascii_case("Extrusion")
+                }) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported extrusion semantics",
                         feature.id
@@ -1724,8 +1721,14 @@ pub fn sync_neutral_features(
                             feature.id
                         ))
                     })?;
-                let mut parameters = record.parameters.clone();
-                let mut properties = record.properties.clone();
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
                 parameters.remove("Depth");
                 parameters.remove("Depth2");
                 parameters.remove("Draft");
@@ -1784,7 +1787,15 @@ pub fn sync_neutral_features(
                 }
                 properties.insert("Operation".into(), format_boolean_op(*op).into());
                 properties.insert("Profile".into(), profile_source);
-                (record.kind.clone(), parameters, properties)
+                let kind = existing.as_deref().map_or_else(
+                    || match op {
+                        BooleanOp::Join => "BossExtrude".into(),
+                        BooleanOp::Cut => "CutExtrude".into(),
+                        BooleanOp::NewBody | BooleanOp::Intersect => "Extrusion".into(),
+                    },
+                    |record| record.kind.clone(),
+                );
+                (kind, parameters, properties)
             }
             FeatureDefinition::Fillet {
                 edges: EdgeSelection::Native(selection),
