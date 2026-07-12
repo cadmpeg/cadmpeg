@@ -214,29 +214,54 @@ pub struct E5Surface {
     pub geometry: SurfaceGeometry,
 }
 
-/// Walk an E5 record stream and decode its inline `0xc9` circle carriers.
-/// Record strides are derived from the little-endian size field at `+5`.
-pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
+#[derive(Clone, Copy)]
+struct E5Record {
+    pos: usize,
+    end: usize,
+    class: u8,
+    size: usize,
+}
+
+fn e5_records(data: &[u8]) -> Vec<E5Record> {
     const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
 
-    let mut out = Vec::new();
-    let mut p = 0usize;
-    while p + 13 <= data.len() {
-        let Some(relative) = data[p..].windows(3).position(|bytes| bytes == MARKER) else {
+    let mut records = Vec::new();
+    let mut position = 0;
+    while position + 13 <= data.len() {
+        let Some(relative) = data[position..]
+            .windows(MARKER.len())
+            .position(|bytes| bytes == MARKER)
+        else {
             break;
         };
-        let pos = p + relative;
-        if pos + 13 > data.len() {
+        let pos = position + relative;
+        let Some(size) = u16_at(data, pos + 5).map(usize::from) else {
             break;
-        }
-        let size = u16::from_le_bytes([data[pos + 5], data[pos + 6]]) as usize;
+        };
         let Some(end) = pos.checked_add(size + 13) else {
             break;
         };
         if end > data.len() {
             break;
         }
-        if data[pos + 3] == 0xc9 && size >= 81 {
+        records.push(E5Record {
+            pos,
+            end,
+            class: data[pos + 3],
+            size,
+        });
+        position = end;
+    }
+    records
+}
+
+/// Walk an E5 record stream and decode its inline `0xc9` circle carriers.
+/// Record strides are derived from the little-endian size field at `+5`.
+pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
+    let mut out = Vec::new();
+    for record in e5_records(data) {
+        let pos = record.pos;
+        if record.class == 0xc9 && record.size >= 81 {
             let origin = f64_point(data, pos + 14);
             let frame_u = f64_vector(data, pos + 38);
             let frame_v = f64_vector(data, pos + 62);
@@ -262,7 +287,6 @@ pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
                 }
             }
         }
-        p = end;
     }
     out
 }
@@ -283,23 +307,11 @@ pub struct E5Edge {
 
 /// Decode E5 `0xff` five-reference edge records.
 pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
-    const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
-
     let mut out = Vec::new();
-    let mut p = 0usize;
-    while let Some(relative) = data[p..].windows(3).position(|bytes| bytes == MARKER) {
-        let pos = p + relative;
-        let Some(size) = u16_le(data, pos + 5).map(usize::from) else {
-            break;
-        };
-        let Some(end) = pos.checked_add(size + 13) else {
-            break;
-        };
-        if end > data.len() {
-            break;
-        }
-        if data.get(pos + 3) == Some(&0xff) && data.get(pos + 13) == Some(&0x85) {
-            let payload = &data[pos + 13..end];
+    for record in e5_records(data) {
+        let pos = record.pos;
+        if record.class == 0xff && data.get(pos + 13) == Some(&0x85) {
+            let payload = &data[pos + 13..record.end];
             if let Some((support_id, next)) = e5_ref(payload, 1) {
                 if let Some((start_vertex_id, next)) = e5_ref(payload, next) {
                     if let Some((end_vertex_id, _)) = e5_ref(payload, next) {
@@ -313,7 +325,6 @@ pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
                 }
             }
         }
-        p = end;
     }
     out
 }
@@ -321,26 +332,10 @@ pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
 /// Decode E5 cylinder (`0xc9`), cone (`0xca`), and torus (`0xcc`) surface
 /// records. The E5 plane class does not serialize a standalone normal.
 pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
-    const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
-
     let mut out = Vec::new();
-    let mut p = 0usize;
-    while p + 13 <= data.len() {
-        let Some(relative) = data[p..].windows(3).position(|bytes| bytes == MARKER) else {
-            break;
-        };
-        let pos = p + relative;
-        if pos + 13 > data.len() {
-            break;
-        }
-        let size = u16::from_le_bytes([data[pos + 5], data[pos + 6]]) as usize;
-        let Some(end) = pos.checked_add(size + 13) else {
-            break;
-        };
-        if end > data.len() {
-            break;
-        }
-        let geometry = match data[pos + 3] {
+    for record in e5_records(data) {
+        let pos = record.pos;
+        let geometry = match record.class {
             0xc9 => e5_cylinder(data, pos),
             0xca => e5_cone(data, pos),
             0xcc => e5_torus(data, pos),
@@ -353,7 +348,6 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
                 geometry,
             });
         }
-        p = end;
     }
     out
 }
