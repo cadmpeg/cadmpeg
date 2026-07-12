@@ -7679,6 +7679,8 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
     for name in [
         "rb_blend_spl_sur",
         "rbblnsur",
+        "pipe_spl_sur",
+        "pipesur",
         "sss_blend_spl_sur",
         "sssblndsur",
     ] {

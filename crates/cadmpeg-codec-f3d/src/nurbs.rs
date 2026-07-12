@@ -1719,9 +1719,11 @@ fn decode_full_rb_blend_spl_sur(
     record_bytes: &[u8],
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
-    let names: [(&[u8], bool); 4] = [
+    let names: [(&[u8], bool); 6] = [
         (b"rb_blend_spl_sur", false),
         (b"rbblnsur", false),
+        (b"pipe_spl_sur", false),
+        (b"pipesur", false),
         (b"sss_blend_spl_sur", true),
         (b"sssblndsur", true),
     ];
