@@ -2686,7 +2686,54 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
         staged.exactness.push((id, Exactness::Derived));
     }
     let _ = writer_version;
+    scale_plane_pcurves(&mut staged, scale);
     Ok(staged)
+}
+
+/// Rhino trim curves live in the surface's native parameter space. A plane's
+/// parameters are lengths, so a unit-scaled document moves the plane's
+/// parameterization to millimeters while the trims stay in native units;
+/// the UV poles of pcurves on plane faces scale to match. NURBS surface
+/// parameters are knot-domain values and do not scale.
+fn scale_plane_pcurves(staged: &mut StagedBrep, scale: f64) {
+    if scale == 1.0 {
+        return;
+    }
+    let plane_surfaces = staged
+        .surfaces
+        .iter()
+        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
+        .map(|surface| surface.id.0.as_str())
+        .collect::<BTreeSet<_>>();
+    let plane_faces = staged
+        .faces
+        .iter()
+        .filter(|face| plane_surfaces.contains(face.surface.0.as_str()))
+        .map(|face| face.id.0.as_str())
+        .collect::<BTreeSet<_>>();
+    let plane_loops = staged
+        .loops
+        .iter()
+        .filter(|value| plane_faces.contains(value.face.0.as_str()))
+        .map(|value| value.id.0.as_str())
+        .collect::<BTreeSet<_>>();
+    let plane_pcurves = staged
+        .coedges
+        .iter()
+        .filter(|coedge| plane_loops.contains(coedge.owner_loop.0.as_str()))
+        .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.clone()))
+        .collect::<BTreeSet<_>>();
+    for pcurve in &mut staged.pcurves {
+        if !plane_pcurves.contains(&pcurve.id.0) {
+            continue;
+        }
+        if let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry {
+            for pole in control_points {
+                pole.u *= scale;
+                pole.v *= scale;
+            }
+        }
+    }
 }
 
 fn edge_param_range(edge: &crate::brep::RawBrepEdge) -> [f64; 2] {
@@ -4163,7 +4210,9 @@ mod tests {
         let PcurveGeometry::Nurbs { control_points, .. } = &staged.pcurves[0].geometry else {
             panic!("line C2 must be a NURBS pcurve");
         };
-        assert_eq!(control_points[1].u, 1.0);
+        // Plane parameters are lengths: the native `u = 1.0` trim endpoint
+        // scales with the document (inches -> millimeters).
+        assert_eq!(control_points[1].u, 25.4);
         assert_eq!(staged.coedges[0].radial_next, staged.coedges[0].id);
         let links = staged.links.clone();
         let mut candidate = CadIr::empty(Units::default());
