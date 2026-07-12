@@ -2101,6 +2101,59 @@ fn synthetic_explicit_formula_sweep_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "sweep_spl_sur");
+    surface.push(0x15);
+    surface.extend_from_slice(&2i64.to_le_bytes());
+    t_long(&mut surface, 8);
+    surface.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut surface, -0.25);
+    t_dbl(&mut surface, 1.25);
+    surface.push(0x0b);
+    t_pos(&mut surface, [4.0, 5.0, 6.0]);
+    for direction in [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]] {
+        t_vec(&mut surface, direction);
+    }
+    t_long(&mut surface, 2);
+    surface.push(0x0a);
+    surface.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut surface, -2.0);
+    t_dbl(&mut surface, 3.0);
+    t_dbl(&mut surface, 0.5);
+    surface.extend_from_slice(&[0x0a, 0x0b]);
+    surface.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut surface, 0.0);
+    t_dbl(&mut surface, 1.0);
+    t_long(&mut surface, 11);
+    t_long(&mut surface, 12);
+    for value in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6] {
+        t_dbl(&mut surface, value);
+    }
+    surface.extend_from_slice(&[0x0a, 0x0b, 0x0a]);
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.005);
+    for values in [&[0.25][..], &[][..], &[][..], &[][..], &[][..], &[][..]] {
+        append_generated_float_array(&mut surface, values);
+    }
+    surface.push(0x0a);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
     t_long(bytes, 1);
     t_long(bytes, 9);
@@ -8239,6 +8292,61 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
             native: Some(native),
             ..
         } if matches!(native.layout, SweepSurfaceLayout::ExplicitFormula { .. })
+    ));
+}
+
+#[test]
+fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SweepSurfaceLayout};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_explicit_guide_sweep_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("explicit guide sweep decode");
+    let ProceduralSurfaceDefinition::Sweep {
+        native: Some(native),
+        ..
+    } = &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected native sweep")
+    };
+    let SweepSurfaceLayout::ExplicitGuide {
+        mode,
+        profile_frame,
+        guide_range,
+        guide_modes,
+        guide_parameters,
+        trailing_flags,
+        ..
+    } = &native.layout
+    else {
+        panic!("expected explicit guide sweep")
+    };
+    assert_eq!(*mode, 8);
+    assert!(profile_frame.is_none());
+    assert_eq!(*guide_range, [0.0, 1.0]);
+    assert_eq!(*guide_modes, [11, 12]);
+    assert_eq!(guide_parameters[5], 0.6);
+    assert_eq!(*trailing_flags, [true, false, true]);
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less explicit guide sweep encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less explicit guide sweep round trip");
+    assert!(matches!(
+        &round_trip.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::Sweep {
+            native: Some(native),
+            ..
+        } if matches!(native.layout, SweepSurfaceLayout::ExplicitGuide { .. })
     ));
 }
 

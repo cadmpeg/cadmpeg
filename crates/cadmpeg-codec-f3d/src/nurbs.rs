@@ -1304,6 +1304,24 @@ pub(crate) enum EmbeddedSweepSurfaceLayout {
         formula: EmbeddedLawFormula,
         trailing_flag: bool,
     },
+    ExplicitGuide {
+        profile: NurbsCurve,
+        mode: i64,
+        profile_range: [f64; 2],
+        profile_frame: Option<(Point3, Vector3)>,
+        origin: Point3,
+        directions: [Vector3; 3],
+        trajectory_flag: bool,
+        path: NurbsCurve,
+        path_range: [f64; 2],
+        path_parameter: f64,
+        guide_flags: [bool; 2],
+        guide_curve: NurbsCurve,
+        guide_range: [f64; 2],
+        guide_modes: [i64; 2],
+        guide_parameters: [f64; 6],
+        trailing_flags: [bool; 3],
+    },
 }
 
 /// Embedded native sweep surface before stable IR ids are assigned.
@@ -2185,26 +2203,71 @@ fn decode_sweep_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
             take_f64(span, &mut position)? * LEN_TO_MM,
         ];
         let path_parameter = take_f64(span, &mut position)?;
-        if branch != 1 {
-            return None;
-        }
-        let formula_flag = take_bool(span, &mut position)?;
-        let formula = decode_law_formula(span, &mut position, int_width)?;
-        let trailing_flag = take_bool(span, &mut position)?;
-        EmbeddedSweepSurfaceLayout::ExplicitFormula {
-            profile: profile.curve,
-            mode,
-            profile_range,
-            profile_frame,
-            origin,
-            directions,
-            trajectory_flag,
-            path: path.curve,
-            path_range,
-            path_parameter,
-            formula_flag,
-            formula,
-            trailing_flag,
+        match branch {
+            1 => {
+                let formula_flag = take_bool(span, &mut position)?;
+                let formula = decode_law_formula(span, &mut position, int_width)?;
+                let trailing_flag = take_bool(span, &mut position)?;
+                EmbeddedSweepSurfaceLayout::ExplicitFormula {
+                    profile: profile.curve,
+                    mode,
+                    profile_range,
+                    profile_frame,
+                    origin,
+                    directions,
+                    trajectory_flag,
+                    path: path.curve,
+                    path_range,
+                    path_parameter,
+                    formula_flag,
+                    formula,
+                    trailing_flag,
+                }
+            }
+            2 => {
+                let guide_flags = [
+                    take_bool(span, &mut position)?,
+                    take_bool(span, &mut position)?,
+                ];
+                let guide_curve = decode_curve_block(span, position, int_width)?;
+                position = guide_curve.end;
+                let guide_range = [
+                    take_f64(span, &mut position)?,
+                    take_f64(span, &mut position)?,
+                ];
+                let guide_modes = [
+                    take_tagged_int(span, &mut position, 0x04, int_width)?,
+                    take_tagged_int(span, &mut position, 0x04, int_width)?,
+                ];
+                let mut guide_parameters = [0.0; 6];
+                for parameter in &mut guide_parameters {
+                    *parameter = take_f64(span, &mut position)?;
+                }
+                let trailing_flags = [
+                    take_bool(span, &mut position)?,
+                    take_bool(span, &mut position)?,
+                    take_bool(span, &mut position)?,
+                ];
+                EmbeddedSweepSurfaceLayout::ExplicitGuide {
+                    profile: profile.curve,
+                    mode,
+                    profile_range,
+                    profile_frame,
+                    origin,
+                    directions,
+                    trajectory_flag,
+                    path: path.curve,
+                    path_range,
+                    path_parameter,
+                    guide_flags,
+                    guide_curve: guide_curve.curve,
+                    guide_range,
+                    guide_modes,
+                    guide_parameters,
+                    trailing_flags,
+                }
+            }
+            _ => return None,
         }
     };
     let cache = decode_surface_block(span, position, int_width)?;

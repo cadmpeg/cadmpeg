@@ -2084,6 +2084,53 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         },
                                     )
                                 }
+                                nurbs::EmbeddedSweepSurfaceLayout::ExplicitGuide {
+                                    profile,
+                                    mode,
+                                    profile_range,
+                                    profile_frame,
+                                    origin,
+                                    directions,
+                                    trajectory_flag,
+                                    path,
+                                    path_range,
+                                    path_parameter,
+                                    guide_flags,
+                                    guide_curve,
+                                    guide_range,
+                                    guide_modes,
+                                    guide_parameters,
+                                    trailing_flags,
+                                } => {
+                                    let guide_curve_id = CurveId(format!(
+                                        "f3d:brep:procedural_surface#{i}:sweep:guide"
+                                    ));
+                                    out.curves.push(Curve {
+                                        id: guide_curve_id.clone(),
+                                        geometry: CurveGeometry::Nurbs(guide_curve),
+                                        source_object: None,
+                                    });
+                                    (
+                                        profile,
+                                        path,
+                                        cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitGuide {
+                                            mode,
+                                            profile_range,
+                                            profile_frame,
+                                            origin,
+                                            directions,
+                                            trajectory_flag,
+                                            path_range,
+                                            path_parameter,
+                                            guide_flags,
+                                            guide_curve: guide_curve_id,
+                                            guide_range,
+                                            guide_modes,
+                                            guide_parameters,
+                                            trailing_flags,
+                                        },
+                                    )
+                                }
                             };
                             let profile =
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:sweep:profile"));

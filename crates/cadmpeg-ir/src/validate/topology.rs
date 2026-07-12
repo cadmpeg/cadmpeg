@@ -620,6 +620,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         } => {
                             vec![formula]
                         }
+                        crate::geometry::SweepSurfaceLayout::ExplicitGuide {
+                            guide_curve, ..
+                        } => {
+                            if !ids.curves.contains(&guide_curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &guide_curve.0);
+                            }
+                            Vec::new()
+                        }
                     };
                     for formula in formulas {
                         for variable in &formula.variables {

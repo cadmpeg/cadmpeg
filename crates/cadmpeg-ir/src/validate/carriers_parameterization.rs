@@ -285,6 +285,12 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         } => {
                             vec![formula]
                         }
+                        crate::geometry::SweepSurfaceLayout::ExplicitGuide {
+                            guide_curve, ..
+                        } => {
+                            curves.insert(&guide_curve.0);
+                            Vec::new()
+                        }
                     };
                     for formula in formulas {
                         for variable in &formula.variables {

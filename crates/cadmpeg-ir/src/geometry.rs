@@ -1420,6 +1420,37 @@ pub enum SweepSurfaceLayout {
         /// Native trailing boolean.
         trailing_flag: bool,
     },
+    /// Explicit sweep layout controlled by an auxiliary guide curve.
+    ExplicitGuide {
+        /// Native explicit-layout integer.
+        mode: i64,
+        /// Profile parameter interval.
+        profile_range: [f64; 2],
+        /// Optional explicit profile frame.
+        profile_frame: Option<(Point3, Vector3)>,
+        /// Sweep frame origin.
+        origin: Point3,
+        /// Three ordered sweep frame directions.
+        directions: [Vector3; 3],
+        /// Native trajectory boolean.
+        trajectory_flag: bool,
+        /// Path parameter interval in model length units.
+        path_range: [f64; 2],
+        /// Native trajectory scalar.
+        path_parameter: f64,
+        /// Two guide-side booleans.
+        guide_flags: [bool; 2],
+        /// Auxiliary guide curve.
+        guide_curve: CurveId,
+        /// Guide parameter interval.
+        guide_range: [f64; 2],
+        /// Two native guide integers.
+        guide_modes: [i64; 2],
+        /// Six ordered guide scalars.
+        guide_parameters: [f64; 6],
+        /// Three trailing guide booleans.
+        trailing_flags: [bool; 3],
+    },
 }
 
 /// Complete native `sweep_spl_sur` construction graph.
