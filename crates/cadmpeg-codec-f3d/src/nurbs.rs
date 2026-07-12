@@ -682,6 +682,22 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Native ASM extension integer.
         extension: i64,
     },
+    /// Ruled interpolation between two ordered profile curves.
+    Ruled {
+        /// First embedded profile.
+        first: NurbsCurve,
+        /// Second embedded profile.
+        second: NurbsCurve,
+    },
+    /// Translational sum of two curves around a stored origin.
+    Sum {
+        /// First embedded curve.
+        first: NurbsCurve,
+        /// Second embedded curve.
+        second: NurbsCurve,
+        /// Native model-space origin.
+        basepoint: Vector3,
+    },
     /// Translation of an embedded directrix along a length-bearing direction.
     Extrusion {
         /// Embedded directrix cache.
@@ -700,6 +716,75 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Blend cross-section family.
         cross_section: BlendCrossSection,
     },
+}
+
+fn decode_sum_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    let names: [&[u8]; 2] = [b"sum_spl_sur", b"sumsur"];
+    let start = names.into_iter().find_map(|name| {
+        record_bytes.windows(name.len() + 3).position(|window| {
+            window[0] == 0x0f
+                && matches!(window[1], 0x0d | 0x0e)
+                && usize::from(window[2]) == name.len()
+                && &window[3..] == name
+        })
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut decoded_curves = marker_positions(span)
+        .into_iter()
+        .filter_map(|at| decode_curve_block(span, at, int_width));
+    let first = decoded_curves.next()?;
+    let second = decoded_curves.next()?;
+    let mut position = second.end;
+    let origin = take_native_vec3(span, &mut position, 0x13)?;
+    let basepoint = Vector3::new(
+        origin[0] * LEN_TO_MM,
+        origin[1] * LEN_TO_MM,
+        origin[2] * LEN_TO_MM,
+    );
+    let cache = marker_positions(span)
+        .into_iter()
+        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .next_back()?;
+    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
+        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
+        .flatten();
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Sum {
+            first: first.curve,
+            second: second.curve,
+            basepoint,
+        },
+        cache_fit_tolerance,
+    })
+}
+
+fn decode_ruled_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    let names: [&[u8]; 2] = [b"rule_sur", b"rulesur"];
+    let start = names.into_iter().find_map(|name| {
+        record_bytes.windows(name.len() + 3).position(|window| {
+            window[0] == 0x0f
+                && matches!(window[1], 0x0d | 0x0e)
+                && usize::from(window[2]) == name.len()
+                && &window[3..] == name
+        })
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut curves = marker_positions(span)
+        .into_iter()
+        .filter_map(|at| decode_curve_block(span, at, int_width).map(|decoded| decoded.curve));
+    let first = curves.next()?;
+    let second = curves.next()?;
+    let cache = marker_positions(span)
+        .into_iter()
+        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .next_back()?;
+    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
+        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
+        .flatten();
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Ruled { first, second },
+        cache_fit_tolerance,
+    })
 }
 
 fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
@@ -905,6 +990,8 @@ fn decode_procedural_resolving_refs(
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
     if let Some(decoded) = decode_exact_spl_sur(bytes, int_width)
+        .or_else(|| decode_ruled_spl_sur(bytes, int_width))
+        .or_else(|| decode_sum_spl_sur(bytes, int_width))
         .or_else(|| decode_cyl_spl_sur_at(bytes, int_width))
         .or_else(|| decode_rb_blend_spl_sur(bytes, int_width))
     {

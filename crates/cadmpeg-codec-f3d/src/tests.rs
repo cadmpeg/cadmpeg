@@ -1590,6 +1590,57 @@ fn synthetic_exact_spl_sur_smbh(name: &str) -> Vec<u8> {
     bytes
 }
 
+fn synthetic_ruled_spl_sur_smbh(name: &str) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, name);
+    surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.0025);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
+fn synthetic_sum_spl_sur_smbh(name: &str) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, name);
+    surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&generated_curve_block());
+    t_pos(&mut surface, [1.0, -2.0, 3.0]);
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.0035);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn synthetic_rational_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_cyl_spl_sur_smbh();
     let old = generated_surface_block();
@@ -6753,6 +6804,113 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
                 extension: 7,
             }
         );
+    }
+}
+
+#[test]
+fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    for name in ["rule_sur", "rulesur"] {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_ruled_spl_sur_smbh(name))),
+                &DecodeOptions::default(),
+            )
+            .expect("ruled spline surface decode");
+        let procedural = result.ir.model.procedural_surfaces.first().unwrap();
+        assert_eq!(procedural.cache_fit_tolerance, Some(0.025));
+        let ProceduralSurfaceDefinition::Ruled { first, second } = &procedural.definition else {
+            panic!("expected ruled surface construction")
+        };
+        assert!(result
+            .ir
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.id == *first));
+        assert!(result
+            .ir
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.id == *second));
+
+        let mut source_less = result.ir;
+        source_less.source = None;
+        source_less.unknowns.clear();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less ruled surface encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("source-less ruled surface round trip");
+        assert!(matches!(
+            round_trip.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::Ruled { .. }
+        ));
+    }
+}
+
+#[test]
+fn generated_sum_spline_surfaces_decode_and_write_source_less() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    for name in ["sum_spl_sur", "sumsur"] {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_sum_spl_sur_smbh(name))),
+                &DecodeOptions::default(),
+            )
+            .expect("sum spline surface decode");
+        let procedural = result.ir.model.procedural_surfaces.first().unwrap();
+        let ProceduralSurfaceDefinition::Sum {
+            first,
+            second,
+            basepoint,
+        } = &procedural.definition
+        else {
+            panic!("expected sum surface construction")
+        };
+        assert_eq!(
+            *basepoint,
+            cadmpeg_ir::math::Vector3::new(10.0, -20.0, 30.0)
+        );
+        assert!(result
+            .ir
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.id == *first));
+        assert!(result
+            .ir
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.id == *second));
+
+        let mut source_less = result.ir;
+        source_less.source = None;
+        source_less.unknowns.clear();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less sum surface encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("source-less sum surface round trip");
+        assert!(matches!(
+            round_trip.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::Sum {
+                basepoint: cadmpeg_ir::math::Vector3 {
+                    x: 10.0,
+                    y: -20.0,
+                    z: 30.0
+                },
+                ..
+            }
+        ));
     }
 }
 

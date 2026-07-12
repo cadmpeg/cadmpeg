@@ -3168,6 +3168,78 @@ fn native_procedural_surface(
             native_i64(bytes, *extension);
             bytes.push(0x10);
         }
+        ProceduralSurfaceDefinition::Ruled { first, second } => {
+            let profiles = [first, second]
+                .map(|id| {
+                    target
+                        .model
+                        .curves
+                        .iter()
+                        .find(|curve| curve.id == *id)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "ruled surface {} references missing profile {id}",
+                                procedural.id
+                            ))
+                        })
+                })
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()?;
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "rule_sur")?;
+            for profile in profiles {
+                let CurveGeometry::Nurbs(profile) = &profile.geometry else {
+                    return Err(CodecError::NotImplemented(
+                        "source-less F3D rule_sur requires NURBS profiles".into(),
+                    ));
+                };
+                native_nurbs_curve(bytes, profile)?;
+            }
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            bytes.push(0x10);
+        }
+        ProceduralSurfaceDefinition::Sum {
+            first,
+            second,
+            basepoint,
+        } => {
+            let curves = [first, second]
+                .map(|id| {
+                    target
+                        .model
+                        .curves
+                        .iter()
+                        .find(|curve| curve.id == *id)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "sum surface {} references missing curve {id}",
+                                procedural.id
+                            ))
+                        })
+                })
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()?;
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "sum_spl_sur")?;
+            for curve in curves {
+                let CurveGeometry::Nurbs(curve) = &curve.geometry else {
+                    return Err(CodecError::NotImplemented(
+                        "source-less F3D sum_spl_sur requires NURBS curves".into(),
+                    ));
+                };
+                native_nurbs_curve(bytes, curve)?;
+            }
+            native_point(
+                bytes,
+                [basepoint.x / 10.0, basepoint.y / 10.0, basepoint.z / 10.0],
+            );
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            bytes.push(0x10);
+        }
         ProceduralSurfaceDefinition::Extrusion {
             directrix,
             direction,

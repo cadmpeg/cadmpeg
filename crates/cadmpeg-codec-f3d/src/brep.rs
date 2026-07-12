@@ -842,6 +842,51 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             parameter_ranges,
                             extension,
                         },
+                        nurbs::DecodedProceduralSurfaceDefinition::Ruled { first, second } => {
+                            let first_id =
+                                CurveId(format!("f3d:brep:procedural_surface#{i}:profile0"));
+                            let second_id =
+                                CurveId(format!("f3d:brep:procedural_surface#{i}:profile1"));
+                            out.curves.push(Curve {
+                                id: first_id.clone(),
+                                geometry: CurveGeometry::Nurbs(first),
+                                source_object: None,
+                            });
+                            out.curves.push(Curve {
+                                id: second_id.clone(),
+                                geometry: CurveGeometry::Nurbs(second),
+                                source_object: None,
+                            });
+                            ProceduralSurfaceDefinition::Ruled {
+                                first: first_id,
+                                second: second_id,
+                            }
+                        }
+                        nurbs::DecodedProceduralSurfaceDefinition::Sum {
+                            first,
+                            second,
+                            basepoint,
+                        } => {
+                            let first_id =
+                                CurveId(format!("f3d:brep:procedural_surface#{i}:curve0"));
+                            let second_id =
+                                CurveId(format!("f3d:brep:procedural_surface#{i}:curve1"));
+                            out.curves.push(Curve {
+                                id: first_id.clone(),
+                                geometry: CurveGeometry::Nurbs(first),
+                                source_object: None,
+                            });
+                            out.curves.push(Curve {
+                                id: second_id.clone(),
+                                geometry: CurveGeometry::Nurbs(second),
+                                source_object: None,
+                            });
+                            ProceduralSurfaceDefinition::Sum {
+                                first: first_id,
+                                second: second_id,
+                                basepoint,
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
                             directrix,
                             direction,
