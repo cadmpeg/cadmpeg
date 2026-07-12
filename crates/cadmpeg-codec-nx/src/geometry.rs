@@ -11,6 +11,7 @@
 //! omit candidates that fail validation. Use [`crate::topology`] to resolve
 //! returned record offsets into topology.
 
+use cadmpeg_ir::be::{f64_at as read_f64, vec3_at as read_vec3};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -329,19 +330,6 @@ fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
 }
 
 // --- Primitives and gates ---
-
-fn read_f64(s: &[u8], at: usize) -> Option<f64> {
-    s.get(at..at + 8)
-        .map(|w| f64::from_be_bytes([w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]]))
-}
-
-fn read_vec3(s: &[u8], at: usize) -> Option<[f64; 3]> {
-    Some([
-        read_f64(s, at)?,
-        read_f64(s, at + 8)?,
-        read_f64(s, at + 16)?,
-    ])
-}
 
 /// Return whether a finite vector has unit length within the decode tolerance.
 fn is_unit(v: [f64; 3]) -> bool {

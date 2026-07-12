@@ -7,6 +7,7 @@
 //! crate's B-rep reconstruction; unsupported framing and record types are absent
 //! from the graph.
 
+use cadmpeg_ir::be;
 use std::collections::BTreeMap;
 
 /// A supported fixed-record node with its XMT identifier and source offset.
@@ -47,9 +48,7 @@ impl Node {
 
     /// Read a big-endian floating-point field at its logical record offset.
     pub fn f64_at(&self, offset: usize) -> Option<f64> {
-        let at = offset + self.shift;
-        let bytes: [u8; 8] = self.bytes.get(at..at + 8)?.try_into().ok()?;
-        Some(f64::from_be_bytes(bytes))
+        be::f64_at(&self.bytes, offset + self.shift)
     }
 }
 

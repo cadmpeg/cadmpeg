@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::be::{u16_at as be_u16, u32_at as be_u32};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
@@ -339,15 +340,4 @@ fn expand_knots(distinct: &[f64], multiplicities: &[u16]) -> Option<Vec<f64>> {
         out.extend(std::iter::repeat_n(value, count as usize));
     }
     Some(out)
-}
-
-fn be_u16(bytes: &[u8], at: usize) -> Option<u16> {
-    bytes
-        .get(at..at + 2)
-        .map(|b| u16::from_be_bytes([b[0], b[1]]))
-}
-fn be_u32(bytes: &[u8], at: usize) -> Option<u32> {
-    bytes
-        .get(at..at + 4)
-        .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
 }
