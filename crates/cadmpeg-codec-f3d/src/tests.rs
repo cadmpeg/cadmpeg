@@ -738,7 +738,10 @@ fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     t_long(&mut curve, 0);
     push_u8_string(&mut curve, "primary_law");
     t_long(&mut curve, 1);
-    t_dbl(&mut curve, 2.5);
+    push_u8_string(&mut curve, "EDGE");
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut curve, -0.5);
+    t_dbl(&mut curve, 1.5);
     t_long(&mut curve, 2);
     push_u8_string(&mut curve, "null_law");
     push_u8_string(&mut curve, "null_law");
@@ -10808,7 +10811,10 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
     assert_eq!(context.parameter_range, [-1.0, 2.0]);
     assert_eq!(*extension, 0);
     assert_eq!(primary.name, "primary_law");
-    assert!(matches!(primary.variables[0], LawExpression::Double { value } if value == 2.5));
+    assert!(matches!(
+        primary.variables[0],
+        LawExpression::Edge { parameters, .. } if parameters == [-0.5, 1.5]
+    ));
     assert_eq!(additional.len(), 2);
 
     let mut source_less = decoded.ir;
@@ -10821,12 +10827,13 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less law intcurve round trip");
-    assert!(round_trip
-        .ir
-        .model
-        .procedural_curves
-        .iter()
-        .any(|curve| { matches!(curve.definition, ProceduralCurveDefinition::Law { .. }) }));
+    assert!(round_trip.ir.model.procedural_curves.iter().any(|curve| {
+        matches!(
+            &curve.definition,
+            ProceduralCurveDefinition::Law { primary, .. }
+                if matches!(primary.variables[0], LawExpression::Edge { .. })
+        )
+    }));
 }
 
 #[test]
