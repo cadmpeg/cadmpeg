@@ -2824,12 +2824,19 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
     }
     position += 1;
     let trailing_value = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let program_graph = match &subtransform {
+        TSplineSubtransform::Inline { program, .. } => {
+            Some(cadmpeg_ir::geometry::TSplineProgram::parse(program))
+        }
+        TSplineSubtransform::Reference { .. } => None,
+    };
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::TSpline(Box::new(
             TSplineSurfaceConstruction {
                 parameter_ranges,
                 type_code,
                 subtransform,
+                program_graph,
                 trailing_value,
                 discontinuities,
                 discontinuity_flag,

@@ -481,12 +481,96 @@ pub struct TSplineSurfaceConstruction {
     pub type_code: i64,
     /// Inline or referenced shared subtransform object.
     pub subtransform: TSplineSubtransform,
+    /// Parsed semantic index of the inline program, absent for references.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program_graph: Option<TSplineProgram>,
     /// Native trailing integer.
     pub trailing_value: i64,
     /// Six ordered solved-surface discontinuity arrays.
     pub discontinuities: [Vec<f64>; 6],
     /// Native discontinuity tail flag.
     pub discontinuity_flag: bool,
+}
+
+/// Parsed line-oriented T-spline subtransform program.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TSplineProgram {
+    /// Ordered recognized header declarations.
+    pub headers: Vec<TSplineProgramLine>,
+    /// Ordered recognized topology, geometry, and constraint records.
+    pub records: Vec<TSplineProgramLine>,
+    /// Non-comment lines outside the defined vocabulary.
+    pub unparsed_lines: Vec<String>,
+}
+
+/// One tokenized T-spline program line.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TSplineProgramLine {
+    /// Leading record or header token.
+    pub kind: String,
+    /// Ordered remaining fields without interpretation loss.
+    pub fields: Vec<String>,
+}
+
+impl TSplineProgram {
+    /// Parse the defined line vocabulary while retaining every other line.
+    #[must_use]
+    pub fn parse(program: &str) -> Self {
+        const HEADERS: &[&str] = &[
+            "degree",
+            "cap_type",
+            "units",
+            "end_conditions",
+            "star_knot_rule",
+            "star_smoothness",
+            "tol",
+            "ver",
+            "behavior_version",
+            "geom_tol",
+            "compat_version",
+        ];
+        const RECORDS: &[&str] = &[
+            "f",
+            "e",
+            "v",
+            "l",
+            "ec",
+            "0m",
+            "0g",
+            "100edges",
+            "100verts",
+            "105sym",
+            "105plane",
+            "105a",
+            "106ek",
+            "50000grip",
+        ];
+        let mut parsed = Self {
+            headers: Vec::new(),
+            records: Vec::new(),
+            unparsed_lines: Vec::new(),
+        };
+        for line in program.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut fields = line.split_whitespace();
+            let Some(kind) = fields.next() else { continue };
+            let parsed_line = TSplineProgramLine {
+                kind: kind.into(),
+                fields: fields.map(String::from).collect(),
+            };
+            if HEADERS.contains(&kind) {
+                parsed.headers.push(parsed_line);
+            } else if RECORDS.contains(&kind) {
+                parsed.records.push(parsed_line);
+            } else {
+                parsed.unparsed_lines.push(line.into());
+            }
+        }
+        parsed
+    }
 }
 
 /// One oriented support of a procedural blend.

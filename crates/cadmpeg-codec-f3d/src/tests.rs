@@ -8440,6 +8440,14 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
     assert!(program.contains("v 1 0 0 0"));
     assert_eq!(*separator, Some(false));
     assert_eq!(values, "100verts 1 2\n");
+    let graph = native
+        .program_graph
+        .as_ref()
+        .expect("parsed T-spline graph");
+    assert_eq!(graph.headers.len(), 2);
+    assert_eq!(graph.records.len(), 3);
+    assert_eq!(graph.records[0].kind, "v");
+    assert!(graph.unparsed_lines.is_empty());
 
     let mut source_less = decoded.ir;
     source_less.source = None;

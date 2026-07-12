@@ -3230,6 +3230,12 @@ fn native_procedural_surface(
                     separator,
                     values,
                 } => {
+                    let parsed = cadmpeg_ir::geometry::TSplineProgram::parse(program);
+                    if construction.program_graph.as_ref() != Some(&parsed) {
+                        return Err(CodecError::Malformed(
+                            "T-spline parsed program graph diverges from its native program".into(),
+                        ));
+                    }
                     native_ident(bytes, "t_spl_subtrans_object")?;
                     native_u16_string(bytes, program)?;
                     if let Some(separator) = separator {
