@@ -427,6 +427,19 @@ fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     let pcurve_ref_tag = record.iter().rposition(|b| *b == 0x0c).unwrap();
     record[pcurve_ref_tag + 1..pcurve_ref_tag + 9].copy_from_slice(&19i64.to_le_bytes());
 
+    // Move the coedge's edge endpoints onto the pcurve's surface image so the
+    // fixture stays geometrically consistent: the plane maps `(u, v)` to
+    // `(u, v, 0)` mm, and the block runs `(0.25, 0.5) -> (0.75, 1.5)`.
+    for (index, position_cm) in [(16usize, [0.025, 0.05, 0.0]), (17, [0.075, 0.15, 0.0])] {
+        let point = &records[index];
+        let record = &mut bytes[point.offset..point.offset + point.len];
+        let tag = record.iter().position(|b| *b == 0x13).unwrap();
+        for (slot, value) in position_cm.iter().copied().enumerate() {
+            record[tag + 1 + slot * 8..tag + 9 + slot * 8]
+                .copy_from_slice(&f64::to_le_bytes(value));
+        }
+    }
+
     let delta = bytes[..]
         .windows(b"delta_state".len())
         .position(|w| w == b"delta_state")

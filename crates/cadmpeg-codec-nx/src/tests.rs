@@ -276,6 +276,12 @@ fn trimmed_topology_partition_stream() -> Vec<u8> {
     put_ref(&mut trim, 19, 9);
     put_f64(&mut trim, 69, 0.25);
     put_f64(&mut trim, 77, 0.75);
+    // The closed edge's single vertex sits at the trim range's midpoint on the
+    // basis line so both trimmed endpoints fall inside the edge's stored
+    // 0.3 mm tolerance; the point record is the topology stream's last
+    // 40 bytes, before the trim record is appended.
+    let point_vec = stream.len() - 40 + 16;
+    put_vec3(&mut stream, point_vec, [0.000_5, 0.0, 0.0]);
     stream.extend(trim);
     stream
 }

@@ -1248,6 +1248,47 @@ fn semantic_writer_preserves_outer_header() {
     assert_eq!(u32::from_be_bytes(encoded[4..8].try_into().unwrap()), 7);
 }
 
+/// Translate every model-space carrier along x so a forced modification stays
+/// geometrically consistent: vertices remain on their edge curves and surfaces.
+fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
+    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    for point in &mut ir.model.points {
+        point.position.x += dx;
+    }
+    for curve in &mut ir.model.curves {
+        match &mut curve.geometry {
+            CurveGeometry::Line { origin, .. } => origin.x += dx,
+            CurveGeometry::Circle { center, .. }
+            | CurveGeometry::Ellipse { center, .. }
+            | CurveGeometry::Hyperbola { center, .. } => center.x += dx,
+            CurveGeometry::Parabola { vertex, .. } => vertex.x += dx,
+            CurveGeometry::Degenerate { point } => point.x += dx,
+            CurveGeometry::Nurbs(nurbs) => {
+                for pole in &mut nurbs.control_points {
+                    pole.x += dx;
+                }
+            }
+            CurveGeometry::Unknown { .. } => {}
+        }
+    }
+    for surface in &mut ir.model.surfaces {
+        match &mut surface.geometry {
+            SurfaceGeometry::Plane { origin, .. }
+            | SurfaceGeometry::Cylinder { origin, .. }
+            | SurfaceGeometry::Cone { origin, .. } => origin.x += dx,
+            SurfaceGeometry::Sphere { center, .. } | SurfaceGeometry::Torus { center, .. } => {
+                center.x += dx;
+            }
+            SurfaceGeometry::Nurbs(nurbs) => {
+                for pole in &mut nurbs.control_points {
+                    pole.x += dx;
+                }
+            }
+            SurfaceGeometry::Unknown { .. } => {}
+        }
+    }
+}
+
 #[test]
 fn semantic_writer_regenerates_modified_analytic_breps() {
     for body in [closed_cylinder_body(), sphere_patch_body()] {
@@ -1256,7 +1297,7 @@ fn semantic_writer_regenerates_modified_analytic_breps() {
         let mut result = SldprtCodec
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap();
-        result.ir.model.points[0].position.x += 1.0;
+        translate_model_x(&mut result.ir, 1.0);
 
         let mut encoded = Vec::new();
         SldprtCodec
