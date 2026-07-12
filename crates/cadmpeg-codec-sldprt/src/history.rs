@@ -348,27 +348,8 @@ fn project_definition(
     if feature.kind.eq_ignore_ascii_case("ReferencePoint") {
         return project_datum_point(feature).unwrap_or_else(|| native_definition(feature));
     }
-    let op = match feature.kind.to_ascii_lowercase().as_str() {
-        "bossextrude" => Some(BooleanOp::Join),
-        "cutextrude" => Some(BooleanOp::Cut),
-        _ => None,
-    };
-    if let (Some(op), Some(depth)) = (
-        op,
-        feature
-            .parameters
-            .get("Depth")
-            .and_then(|value| parse_length_mm(value)),
-    ) {
-        FeatureDefinition::Extrude {
-            profile: ProfileRef::Native(feature.id.clone()),
-            direction: None,
-            extent: Extent::Blind {
-                length: Length(depth),
-            },
-            op,
-            draft: None,
-        }
+    if extrude_op(&feature.kind).is_some() {
+        project_extrude(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Fillet") {
         project_fillet(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Chamfer") {
@@ -400,6 +381,64 @@ fn project_definition(
     } else {
         native_definition(feature)
     }
+}
+
+fn project_extrude(
+    feature: &Feature,
+    native_by_source: &HashMap<&str, &str>,
+) -> Option<FeatureDefinition> {
+    let op = feature
+        .properties
+        .get("Operation")
+        .and_then(|value| parse_boolean_op(value))
+        .or_else(|| extrude_op(&feature.kind))?;
+    let length = |name| {
+        feature
+            .parameters
+            .get(name)
+            .and_then(|value| parse_length_mm(value))
+            .map(Length)
+    };
+    let extent = match feature.properties.get("EndCondition").map(String::as_str) {
+        None | Some("Blind") => Extent::Blind {
+            length: length("Depth")?,
+        },
+        Some("Symmetric") => Extent::Symmetric {
+            length: length("Depth")?,
+        },
+        Some("TwoSided") => Extent::TwoSided {
+            first: length("Depth")?,
+            second: length("Depth2")?,
+        },
+        Some("ThroughAll") => Extent::ThroughAll,
+        Some(_) => return None,
+    };
+    let direction = match feature.properties.get("Direction") {
+        Some(value) => Some(parse_vector3(value)?),
+        None => None,
+    };
+    if direction.is_some_and(|value| !valid_direction(value)) {
+        return None;
+    }
+    let draft = match feature.parameters.get("Draft") {
+        Some(value) => Some(Angle(parse_angle_rad(value)?)),
+        None => None,
+    };
+    let profile = feature.properties.get("Profile").map_or_else(
+        || Some(feature.id.clone()),
+        |source| {
+            native_by_source
+                .get(source.as_str())
+                .map(|id| (*id).to_string())
+        },
+    )?;
+    Some(FeatureDefinition::Extrude {
+        profile: ProfileRef::Native(profile),
+        direction,
+        extent,
+        op,
+        draft,
+    })
 }
 
 fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition> {
@@ -1476,12 +1515,10 @@ pub fn sync_neutral_features(
             }
             FeatureDefinition::Extrude {
                 profile,
-                direction: None,
-                extent: Extent::Blind {
-                    length: Length(depth),
-                },
+                direction,
+                extent,
                 op,
-                draft: None,
+                draft,
             } => {
                 let Some(record) = existing.as_deref() else {
                     return Err(CodecError::NotImplemented(format!(
@@ -1489,17 +1526,65 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 };
-                if profile != &ProfileRef::Native(record.id.clone())
-                    || extrude_op(&record.kind) != Some(*op)
-                {
+                if extrude_op(&record.kind).is_none() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported extrusion semantics",
                         feature.id
                     )));
                 }
+                let profile_source = profile_source(profile, &record_sources, &sketch_sources)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing extrusion profile",
+                            feature.id
+                        ))
+                    })?;
                 let mut parameters = record.parameters.clone();
-                parameters.insert("Depth".into(), format_length_mm(*depth));
-                (record.kind.clone(), parameters, record.properties.clone())
+                let mut properties = record.properties.clone();
+                parameters.remove("Depth");
+                parameters.remove("Depth2");
+                parameters.remove("Draft");
+                properties.remove("Direction");
+                match extent {
+                    Extent::Blind { length } => {
+                        properties.insert("EndCondition".into(), "Blind".into());
+                        parameters.insert("Depth".into(), format_length_mm(length.0));
+                    }
+                    Extent::Symmetric { length } => {
+                        properties.insert("EndCondition".into(), "Symmetric".into());
+                        parameters.insert("Depth".into(), format_length_mm(length.0));
+                    }
+                    Extent::TwoSided { first, second } => {
+                        properties.insert("EndCondition".into(), "TwoSided".into());
+                        parameters.insert("Depth".into(), format_length_mm(first.0));
+                        parameters.insert("Depth2".into(), format_length_mm(second.0));
+                    }
+                    Extent::ThroughAll => {
+                        properties.insert("EndCondition".into(), "ThroughAll".into());
+                    }
+                    Extent::ToFace { .. } | Extent::Angle { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses an unsupported extrusion extent",
+                            feature.id
+                        )));
+                    }
+                }
+                if let Some(direction) = direction {
+                    require_direction(*direction, &feature.id, "extrusion direction")?;
+                    properties.insert("Direction".into(), format_vector3(*direction));
+                }
+                if let Some(draft) = draft {
+                    if !draft.0.is_finite() {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has a non-finite extrusion draft",
+                            feature.id
+                        )));
+                    }
+                    parameters.insert("Draft".into(), format_angle_rad(draft.0));
+                }
+                properties.insert("Operation".into(), format_boolean_op(*op).into());
+                properties.insert("Profile".into(), profile_source);
+                (record.kind.clone(), parameters, properties)
             }
             FeatureDefinition::Fillet {
                 edges: EdgeSelection::Native(selection),

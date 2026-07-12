@@ -3074,6 +3074,115 @@ fn decode_projects_cut_extrude_with_canonical_length() {
 }
 
 #[test]
+fn semantic_writer_round_trips_all_extrusion_forms() {
+    use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FeatureDefinition, Length, ProfileRef};
+    use cadmpeg_ir::math::Vector3;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Profile" Type="Sketch" id="30"/><Extrusion Name="Blind" Type="BossExtrude" id="31" Profile="30" EndCondition="Blind" Operation="Join"><Dimension Name="Depth">2mm</Dimension></Extrusion><Extrusion Name="Symmetric" Type="BossExtrude" id="32" Profile="30" EndCondition="Symmetric" Direction="0,0,1" Operation="NewBody"><Dimension Name="Depth">4mm</Dimension><Dimension Name="Draft">5deg</Dimension></Extrusion><Extrusion Name="Two" Type="CutExtrude" id="33" Profile="30" EndCondition="TwoSided" Operation="Cut"><Dimension Name="Depth">3mm</Dimension><Dimension Name="Depth2">7mm</Dimension></Extrusion><Extrusion Name="Through" Type="CutExtrude" id="34" Profile="30" EndCondition="ThroughAll" Direction="0,1,0" Operation="Cut"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let profile_native = decoded.ir.model.features[0].native_ref.clone().unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[1].definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Native(profile),
+            direction: None,
+            extent: Extent::Blind { length: Length(2.0) },
+            op: BooleanOp::Join,
+            draft: None,
+        } if profile == &profile_native
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[2].definition,
+        FeatureDefinition::Extrude {
+            direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            extent: Extent::Symmetric { length: Length(4.0) },
+            op: BooleanOp::NewBody,
+            draft: Some(Angle(value)),
+            ..
+        } if (value - 5f64.to_radians()).abs() < 1e-12
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[3].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::TwoSided {
+                first: Length(3.0),
+                second: Length(7.0),
+            },
+            op: BooleanOp::Cut,
+            ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[4].definition,
+        FeatureDefinition::Extrude {
+            direction: Some(Vector3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0
+            }),
+            extent: Extent::ThroughAll,
+            ..
+        }
+    ));
+
+    let FeatureDefinition::Extrude {
+        direction,
+        extent,
+        op,
+        draft,
+        ..
+    } = &mut decoded.ir.model.features[1].definition
+    else {
+        panic!("typed extrusion");
+    };
+    *direction = Some(Vector3::new(1.0, 0.0, 0.0));
+    *extent = Extent::TwoSided {
+        first: Length(8.0),
+        second: Length(9.0),
+    };
+    *op = BooleanOp::Intersect;
+    *draft = Some(Angle(0.1));
+    let FeatureDefinition::Extrude {
+        direction,
+        extent,
+        draft,
+        ..
+    } = &mut decoded.ir.model.features[3].definition
+    else {
+        panic!("typed extrusion");
+    };
+    *direction = None;
+    *extent = Extent::ThroughAll;
+    *draft = None;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native[1].properties["EndCondition"], "TwoSided");
+    assert_eq!(native[1].properties["Direction"], "1,0,0");
+    assert_eq!(native[1].properties["Operation"], "Intersect");
+    assert_eq!(native[1].parameters["Depth"], "8mm");
+    assert_eq!(native[1].parameters["Depth2"], "9mm");
+    assert_eq!(native[1].parameters["Draft"], "0.1rad");
+    assert_eq!(native[3].properties["EndCondition"], "ThroughAll");
+    assert!(!native[3].parameters.contains_key("Depth"));
+    assert!(!native[3].parameters.contains_key("Depth2"));
+    assert!(!native[3].properties.contains_key("Direction"));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_fillet_radius() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
