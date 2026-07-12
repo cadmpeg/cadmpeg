@@ -1798,6 +1798,17 @@ pub enum DeformableCurveData {
 pub enum ProceduralCurveDefinition {
     /// An exact native intcurve whose solved NURBS cache is authoritative.
     Exact,
+    /// Curve defined by recursive native law formulas.
+    Law {
+        /// Shared support surfaces, UV curves, interval, and discontinuities.
+        context: IntcurveSupportContext,
+        /// Native ASM extension integer.
+        extension: i64,
+        /// Primary recursive law formula.
+        primary: LawFormula,
+        /// Counted additional recursive law formulas.
+        additional: Vec<LawFormula>,
+    },
     /// Ordered compound of native child curves with construction parameters.
     Compound {
         /// Leading native parameter array.

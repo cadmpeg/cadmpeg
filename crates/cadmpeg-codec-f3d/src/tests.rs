@@ -698,6 +698,56 @@ fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
+    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "intcurve");
+    t_ident(&mut curve, "curve");
+    t_ref(&mut curve, -1);
+    t_long(&mut curve, -1);
+    t_ref(&mut curve, -1);
+    curve.push(0x0f);
+    t_ident(&mut curve, "law_int_cur");
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut curve, 0.0005);
+    for origin in [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]] {
+        t_ident(&mut curve, "plane");
+        t_pos(&mut curve, origin);
+        t_vec(&mut curve, [0.0, 0.0, 1.0]);
+        t_vec(&mut curve, [1.0, 0.0, 0.0]);
+        curve.push(0x0b);
+    }
+    curve.extend_from_slice(&generated_pcurve_block());
+    curve.extend_from_slice(&generated_pcurve_block());
+    t_dbl(&mut curve, -1.0);
+    t_dbl(&mut curve, 2.0);
+    for values in [&[0.25][..], &[][..], &[][..]] {
+        append_generated_float_array(&mut curve, values);
+    }
+    t_long(&mut curve, 0);
+    push_u8_string(&mut curve, "primary_law");
+    t_long(&mut curve, 1);
+    t_dbl(&mut curve, 2.5);
+    t_long(&mut curve, 2);
+    push_u8_string(&mut curve, "null_law");
+    push_u8_string(&mut curve, "null_law");
+    curve.push(0x10);
+    t_end(&mut curve);
+    bytes.splice(delta..delta, curve);
+    bytes
+}
+
 fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -10439,6 +10489,56 @@ fn decode_retains_generated_helix_construction() {
         round_trip.ir.model.procedural_curves[0].cache_fit_tolerance,
         Some(0.005)
     );
+}
+
+#[test]
+fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
+    use cadmpeg_ir::geometry::{LawExpression, ProceduralCurveDefinition};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_law_curve_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("law intcurve decode");
+    let procedural = decoded
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|curve| matches!(curve.definition, ProceduralCurveDefinition::Law { .. }))
+        .expect("law intcurve construction");
+    let ProceduralCurveDefinition::Law {
+        context,
+        extension,
+        primary,
+        additional,
+    } = &procedural.definition
+    else {
+        unreachable!()
+    };
+    assert_eq!(context.parameter_range, [-1.0, 2.0]);
+    assert_eq!(*extension, 0);
+    assert_eq!(primary.name, "primary_law");
+    assert!(matches!(primary.variables[0], LawExpression::Double { value } if value == 2.5));
+    assert_eq!(additional.len(), 2);
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less law intcurve encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less law intcurve round trip");
+    assert!(round_trip
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .any(|curve| { matches!(curve.definition, ProceduralCurveDefinition::Law { .. }) }));
 }
 
 #[test]

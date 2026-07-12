@@ -5570,6 +5570,32 @@ fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
+        context,
+        extension,
+        primary,
+        additional,
+    } = &procedural.definition
+    {
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "law_int_cur")?;
+        native_nurbs_curve(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        native_intcurve_support_context(bytes, target, context)?;
+        native_i64(bytes, *extension);
+        native_law_formula(bytes, target, primary)?;
+        native_i64(
+            bytes,
+            i64::try_from(additional.len())
+                .map_err(|_| CodecError::NotImplemented("law formula count exceeds i64".into()))?,
+        );
+        for formula in additional {
+            native_law_formula(bytes, target, formula)?;
+        }
+        bytes.push(0x10);
+        return Ok(true);
+    }
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable {
         extension,
         bend,

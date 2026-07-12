@@ -782,6 +782,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                         decoded.embedded_spring,
                                                         decoded.embedded_deformable,
                                                         decoded.embedded_projection,
+                                                        decoded.embedded_law,
                                                         decoded.cache_fit_tolerance,
                                                     ),
                                                 );
@@ -887,6 +888,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                             decoded.embedded_spring,
                                                             decoded.embedded_deformable,
                                                             decoded.embedded_projection,
+                                                            decoded.embedded_law,
                                                             decoded.cache_fit_tolerance,
                                                         ),
                                                     );
@@ -3285,6 +3287,147 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             source,
                             tail: embedded.tail,
                         }
+                    } else if let Some(embedded) = procedural.14 {
+                        fn map_law_curve(
+                            out: &mut Brep,
+                            owner: i64,
+                            path: &str,
+                            expression: nurbs::EmbeddedLawExpression,
+                        ) -> cadmpeg_ir::geometry::LawExpression {
+                            match expression {
+                                nurbs::EmbeddedLawExpression::Null => {
+                                    cadmpeg_ir::geometry::LawExpression::Null
+                                }
+                                nurbs::EmbeddedLawExpression::Integer(value) => {
+                                    cadmpeg_ir::geometry::LawExpression::Integer { value }
+                                }
+                                nurbs::EmbeddedLawExpression::Double(value) => {
+                                    cadmpeg_ir::geometry::LawExpression::Double { value }
+                                }
+                                nurbs::EmbeddedLawExpression::Point(value) => {
+                                    cadmpeg_ir::geometry::LawExpression::Point { value }
+                                }
+                                nurbs::EmbeddedLawExpression::Vector(value) => {
+                                    cadmpeg_ir::geometry::LawExpression::Vector { value }
+                                }
+                                nurbs::EmbeddedLawExpression::Transform { scalars, enums } => {
+                                    cadmpeg_ir::geometry::LawExpression::Transform {
+                                        scalars,
+                                        enums,
+                                    }
+                                }
+                                nurbs::EmbeddedLawExpression::Edge { curve, parameters } => {
+                                    let id = CurveId(format!(
+                                        "f3d:brep:procedural_curve#{owner}:law:{path}"
+                                    ));
+                                    out.curves.push(Curve {
+                                        id: id.clone(),
+                                        geometry: CurveGeometry::Nurbs(curve),
+                                        source_object: None,
+                                    });
+                                    cadmpeg_ir::geometry::LawExpression::Edge {
+                                        curve: id,
+                                        parameters,
+                                    }
+                                }
+                                nurbs::EmbeddedLawExpression::Spline {
+                                    native_id,
+                                    knots,
+                                    controls,
+                                    point,
+                                } => cadmpeg_ir::geometry::LawExpression::Spline {
+                                    native_id,
+                                    knots,
+                                    controls,
+                                    point,
+                                },
+                                nurbs::EmbeddedLawExpression::Algebraic { operator, operands } => {
+                                    cadmpeg_ir::geometry::LawExpression::Algebraic {
+                                        operator,
+                                        operands: operands
+                                            .into_iter()
+                                            .enumerate()
+                                            .map(|(index, operand)| {
+                                                map_law_curve(
+                                                    out,
+                                                    owner,
+                                                    &format!("{path}:{index}"),
+                                                    operand,
+                                                )
+                                            })
+                                            .collect(),
+                                    }
+                                }
+                            }
+                        }
+                        let surfaces: [Option<SurfaceId>; 2] = embedded
+                            .context
+                            .surfaces
+                            .into_iter()
+                            .enumerate()
+                            .map(|(side, geometry)| {
+                                let id = SurfaceId(format!(
+                                    "f3d:brep:procedural_curve#{i}:support{side}"
+                                ));
+                                out.surfaces.push(Surface {
+                                    id: id.clone(),
+                                    geometry,
+                                    source_object: None,
+                                });
+                                Some(id)
+                            })
+                            .collect::<Vec<_>>()
+                            .try_into()
+                            .expect("two fixed support sides");
+                        let pcurves = embedded.context.pcurves.map(|pcurve| {
+                            Some(PcurveGeometry::Nurbs {
+                                degree: pcurve.degree,
+                                knots: pcurve.knots,
+                                control_points: pcurve.control_points,
+                                weights: pcurve.weights,
+                                periodic: pcurve.periodic,
+                            })
+                        });
+                        let mut map_formula = |path: &str, formula: nurbs::EmbeddedLawFormula| {
+                            cadmpeg_ir::geometry::LawFormula {
+                                name: formula.name,
+                                variables: formula
+                                    .variables
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(index, expression)| {
+                                        map_law_curve(
+                                            &mut out,
+                                            i,
+                                            &format!("{path}:{index}"),
+                                            expression,
+                                        )
+                                    })
+                                    .collect(),
+                            }
+                        };
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
+                            context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                                sides: std::array::from_fn(|side| {
+                                    cadmpeg_ir::geometry::IntcurveSupportSide {
+                                        surface: surfaces[side].clone(),
+                                        pcurve: pcurves[side].clone(),
+                                    }
+                                }),
+                                parameter_range: embedded.context.parameter_range,
+                                discontinuities: embedded.context.discontinuities,
+                            },
+                            extension: embedded.extension,
+                            primary: map_formula("primary", embedded.primary),
+                            additional: embedded
+                                .additional
+                                .into_iter()
+                                .enumerate()
+                                .map(|(index, formula)| {
+                                    map_formula(&format!("additional:{index}"), formula)
+                                })
+                                .collect(),
+                        }
                     } else if let Some((parameters, component_parameters, components)) =
                         procedural.4
                     {
@@ -3319,7 +3462,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         id: format!("f3d:brep:procedural_curve#{i}").into(),
                         curve: CurveId(id(i)),
                         definition,
-                        cache_fit_tolerance: procedural.14,
+                        cache_fit_tolerance: procedural.15,
                     });
                 }
             }

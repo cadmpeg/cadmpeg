@@ -366,6 +366,39 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         curves.insert(&procedural.curve.0);
         match &procedural.definition {
             ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
+            ProceduralCurveDefinition::Law {
+                context,
+                primary,
+                additional,
+                ..
+            } => {
+                fn collect<'a>(
+                    expression: &'a crate::geometry::LawExpression,
+                    curves: &mut HashSet<&'a str>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            curves.insert(&curve.0);
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                collect(operand, curves);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                }
+                for formula in std::iter::once(primary).chain(additional) {
+                    for variable in &formula.variables {
+                        collect(variable, &mut curves);
+                    }
+                }
+            }
             ProceduralCurveDefinition::Compound { components, .. } => {
                 curves.extend(components.iter().map(|component| component.0.as_str()));
             }

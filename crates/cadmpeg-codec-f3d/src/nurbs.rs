@@ -4017,6 +4017,13 @@ pub(crate) struct EmbeddedSpring {
     pub(crate) direction: i64,
 }
 
+pub(crate) struct EmbeddedLawCurve {
+    pub(crate) context: EmbeddedIntersection,
+    pub(crate) extension: i64,
+    pub(crate) primary: EmbeddedLawFormula,
+    pub(crate) additional: Vec<EmbeddedLawFormula>,
+}
+
 pub(crate) enum EmbeddedDeformableData {
     VectorField {
         vectors: [Vector3; 4],
@@ -4068,6 +4075,8 @@ pub struct DecodedProceduralCurve {
     pub(crate) embedded_deformable: Option<EmbeddedDeformable>,
     /// Embedded support context and source of a `proj_int_cur`.
     pub(crate) embedded_projection: Option<EmbeddedProjection>,
+    /// Embedded support context and recursive formulas of a `law_int_cur`.
+    pub(crate) embedded_law: Option<EmbeddedLawCurve>,
     /// `surface_fit_tolerance` of the cached B-spline block, if present
     /// ([spec §7.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#75-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
     pub cache_fit_tolerance: Option<f64>,
@@ -4145,6 +4154,7 @@ fn decode_procedural_curve_recursive(
             embedded_spring: decode_embedded_spring(bytes, int_width),
             embedded_deformable: decode_embedded_deformable(bytes, int_width),
             embedded_projection: decode_embedded_projection(bytes, int_width),
+            embedded_law: decode_embedded_law_curve(bytes, int_width),
             cache_fit_tolerance,
         });
     }
@@ -4213,6 +4223,51 @@ fn decode_embedded_deformable(bytes: &[u8], int_width: usize) -> Option<Embedded
         extension,
         bend: bend.curve,
         data,
+    })
+}
+
+fn decode_embedded_law_curve(bytes: &[u8], int_width: usize) -> Option<EmbeddedLawCurve> {
+    let (marker, name_len) = find_intcurve_subtype(bytes, b"law_int_cur")?;
+    let mut position = marker + name_len + 3;
+    let solved = decode_curve_block(bytes, position, int_width)?;
+    position = solved.end;
+    take_f64(bytes, &mut position)?;
+    let surfaces = [
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+        decode_embedded_surface(bytes, &mut position, int_width)?,
+    ];
+    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = first_end;
+    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    position = second_end;
+    let parameter_range = [
+        take_range_value(bytes, &mut position)?,
+        take_range_value(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+    ];
+    let extension = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    let primary = decode_law_formula(bytes, &mut position, int_width)?;
+    let count = usize::try_from(take_tagged_int(bytes, &mut position, 0x04, int_width)?).ok()?;
+    if count > 100_000 {
+        return None;
+    }
+    let additional = (0..count)
+        .map(|_| decode_law_formula(bytes, &mut position, int_width))
+        .collect::<Option<Vec<_>>>()?;
+    Some(EmbeddedLawCurve {
+        context: EmbeddedIntersection {
+            surfaces,
+            pcurves: [first_pcurve, second_pcurve],
+            parameter_range,
+            discontinuities,
+        },
+        extension,
+        primary,
+        additional,
     })
 }
 
