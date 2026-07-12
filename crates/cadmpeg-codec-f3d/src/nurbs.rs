@@ -1203,6 +1203,10 @@ pub struct EmbeddedScaledCompoundLoft {
 
 pub(crate) enum EmbeddedLawExpression {
     Null,
+    Integer(i64),
+    Double(f64),
+    Point(Point3),
+    Vector(Vector3),
     Transform {
         scalars: [f64; 13],
         enums: [i64; 3],
@@ -1216,6 +1220,10 @@ pub(crate) enum EmbeddedLawExpression {
         knots: Vec<f64>,
         controls: Vec<f64>,
         point: Point3,
+    },
+    Algebraic {
+        operator: String,
+        operands: Vec<EmbeddedLawExpression>,
     },
 }
 
@@ -1774,8 +1782,36 @@ fn decode_law_expression(
     bytes: &[u8],
     position: &mut usize,
     int_width: usize,
+    depth: usize,
 ) -> Option<EmbeddedLawExpression> {
-    match take_native_string(bytes, position)?.as_str() {
+    if depth > 64 {
+        return None;
+    }
+    match *bytes.get(*position)? {
+        0x04 => {
+            return Some(EmbeddedLawExpression::Integer(take_tagged_int(
+                bytes, position, 0x04, int_width,
+            )?));
+        }
+        0x06 => return Some(EmbeddedLawExpression::Double(take_f64(bytes, position)?)),
+        0x13 => {
+            let value = take_native_vec3(bytes, position, 0x13)?;
+            return Some(EmbeddedLawExpression::Point(Point3::new(
+                value[0] * LEN_TO_MM,
+                value[1] * LEN_TO_MM,
+                value[2] * LEN_TO_MM,
+            )));
+        }
+        0x14 => {
+            let value = take_native_vec3(bytes, position, 0x14)?;
+            return Some(EmbeddedLawExpression::Vector(Vector3::new(
+                value[0], value[1], value[2],
+            )));
+        }
+        _ => {}
+    }
+    let operator = take_native_string(bytes, position)?;
+    match operator.as_str() {
         "null_law" => Some(EmbeddedLawExpression::Null),
         "TRANS" => {
             let mut scalars = [0.0; 13];
@@ -1814,7 +1850,22 @@ fn decode_law_expression(
                 ),
             })
         }
-        _ => None,
+        _ => {
+            let arity = match operator.as_str() {
+                "COS" | "SIN" | "TAN" | "COT" | "SEC" | "CSC" | "COSH" | "SINH" | "TANH"
+                | "COTH" | "SECH" | "CSCH" | "ARCCOS" | "ARCSIN" | "ARCTAN" | "ARCOT"
+                | "ARCSEC" | "ARCCSC" | "ARCCOSH" | "ARCSINH" | "ARCTANH" | "ARCOTH"
+                | "ARCSECH" | "ARCCSCH" | "ABS" | "EXP" | "LN" | "LOG" | "SIGN" | "SIZE"
+                | "TERM" | "SQRT" | "NORM" | "NOT" => 1,
+                "CROSS" | "DOT" | "DCUR" => 2,
+                "VEC" | "DSURF" => 3,
+                _ => return None,
+            };
+            let operands = (0..arity)
+                .map(|_| decode_law_expression(bytes, position, int_width, depth + 1))
+                .collect::<Option<Vec<_>>>()?;
+            Some(EmbeddedLawExpression::Algebraic { operator, operands })
+        }
     }
 }
 
@@ -1835,7 +1886,7 @@ fn decode_law_formula(
         return None;
     }
     let variables = (0..count)
-        .map(|_| decode_law_expression(bytes, position, int_width))
+        .map(|_| decode_law_expression(bytes, position, int_width, 0))
         .collect::<Option<Vec<_>>>()?;
     Some(EmbeddedLawFormula { name, variables })
 }

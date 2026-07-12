@@ -4228,6 +4228,14 @@ fn native_law_expression(
     }
     match expression {
         LawExpression::Null => native_string(bytes, "null_law")?,
+        LawExpression::Integer { value } => native_i64(bytes, *value),
+        LawExpression::Double { value } => native_f64(bytes, *value),
+        LawExpression::Point { value } => {
+            native_point(bytes, [value.x / 10.0, value.y / 10.0, value.z / 10.0]);
+        }
+        LawExpression::Vector { value } => {
+            native_vector(bytes, [value.x, value.y, value.z]);
+        }
         LawExpression::Transform { scalars, enums } => {
             native_string(bytes, "TRANS")?;
             for scalar in scalars {

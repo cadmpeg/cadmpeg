@@ -1227,6 +1227,26 @@ pub struct LawFormula {
 pub enum LawExpression {
     /// Zero-payload `null_law` sentinel.
     Null,
+    /// Tagged integer constant.
+    Integer {
+        /// Stored integer value.
+        value: i64,
+    },
+    /// Tagged double constant.
+    Double {
+        /// Stored scalar value.
+        value: f64,
+    },
+    /// Tagged model-space point constant.
+    Point {
+        /// Stored point value.
+        value: Point3,
+    },
+    /// Tagged direction-vector constant.
+    Vector {
+        /// Stored vector value.
+        value: Vector3,
+    },
     /// Inline transform-law payload.
     Transform {
         /// Thirteen ordered transform scalars.

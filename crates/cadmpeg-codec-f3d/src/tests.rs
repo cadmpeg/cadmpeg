@@ -2079,7 +2079,7 @@ fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
     bytes
 }
 
-fn synthetic_skin_spl_sur_smbh(structural_laws: bool, expanded: bool) -> Vec<u8> {
+fn synthetic_skin_spl_sur_smbh(law_case: u8, expanded: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -2134,7 +2134,7 @@ fn synthetic_skin_spl_sur_smbh(structural_laws: bool, expanded: bool) -> Vec<u8>
     }
     t_vec(&mut surface, [0.0, 0.0, 1.0]);
     t_dbl(&mut surface, 0.75);
-    if structural_laws {
+    if law_case == 1 {
         push_u8_string(&mut surface, "structural-law");
         t_long(&mut surface, 3);
         push_u8_string(&mut surface, "null_law");
@@ -2150,6 +2150,15 @@ fn synthetic_skin_spl_sur_smbh(structural_laws: bool, expanded: bool) -> Vec<u8>
         surface.extend_from_slice(&generated_curve_block());
         t_dbl(&mut surface, -0.25);
         t_dbl(&mut surface, 1.25);
+    } else if law_case == 2 {
+        push_u8_string(&mut surface, "algebraic-law");
+        t_long(&mut surface, 2);
+        push_u8_string(&mut surface, "SIN");
+        push_u8_string(&mut surface, "ABS");
+        t_dbl(&mut surface, -2.5);
+        push_u8_string(&mut surface, "DOT");
+        t_vec(&mut surface, [1.0, 0.0, 0.0]);
+        t_vec(&mut surface, [0.0, 1.0, 0.0]);
     } else {
         push_u8_string(&mut surface, "skin-law");
         t_long(&mut surface, 1);
@@ -8305,7 +8314,7 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
 
     let decoded = F3dCodec
         .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(false, false))),
+            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(0, false))),
             &DecodeOptions::default(),
         )
         .expect("skin surface decode");
@@ -8366,7 +8375,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
 
     let decoded = F3dCodec
         .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(true, false))),
+            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(1, false))),
             &DecodeOptions::default(),
         )
         .expect("skin structural-law decode");
@@ -8414,7 +8423,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
 
     let decoded = F3dCodec
         .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(false, true))),
+            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(0, true))),
             &DecodeOptions::default(),
         )
         .expect("expanded skin decode");
@@ -8453,6 +8462,58 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
         SkinSurfaceLayout::Profiles { profiles, .. }
             if profiles.len() == 1 && profiles[0].data.direction.is_some()
     ));
+}
+
+#[test]
+fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
+    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(2, false))),
+            &DecodeOptions::default(),
+        )
+        .expect("algebraic skin law decode");
+    let ProceduralSurfaceDefinition::Skin { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected skin surface")
+    };
+    assert!(matches!(
+        construction.formula.variables.as_slice(),
+        [
+            LawExpression::Algebraic {
+                operator,
+                operands,
+            },
+            LawExpression::Algebraic {
+                operator: dot,
+                operands: vectors,
+            }
+        ] if operator == "SIN"
+            && matches!(operands.as_slice(), [LawExpression::Algebraic { operator, operands }]
+                if operator == "ABS"
+                    && matches!(operands.as_slice(), [LawExpression::Double { value }] if *value == -2.5))
+            && dot == "DOT"
+            && matches!(vectors.as_slice(), [LawExpression::Vector { .. }, LawExpression::Vector { .. }])
+    ));
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less algebraic skin encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less algebraic skin round trip");
+    let ProceduralSurfaceDefinition::Skin { construction } =
+        &round_trip.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected round-trip skin surface")
+    };
+    assert_eq!(construction.formula.variables.len(), 2);
 }
 
 #[test]

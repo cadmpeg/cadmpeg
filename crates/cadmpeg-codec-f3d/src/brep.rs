@@ -1503,6 +1503,79 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             }
                         }
                         nurbs::DecodedProceduralSurfaceDefinition::Skin(embedded) => {
+                            fn map_law_expression(
+                                out: &mut Brep,
+                                owner: i64,
+                                path: &str,
+                                expression: nurbs::EmbeddedLawExpression,
+                            ) -> cadmpeg_ir::geometry::LawExpression {
+                                match expression {
+                                    nurbs::EmbeddedLawExpression::Null => {
+                                        cadmpeg_ir::geometry::LawExpression::Null
+                                    }
+                                    nurbs::EmbeddedLawExpression::Integer(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Integer { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Double(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Double { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Point(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Point { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Vector(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Vector { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Transform { scalars, enums } => {
+                                        cadmpeg_ir::geometry::LawExpression::Transform {
+                                            scalars,
+                                            enums,
+                                        }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Edge { curve, parameters } => {
+                                        let id = CurveId(format!(
+                                            "f3d:brep:procedural_surface#{owner}:skin:law:{path}:edge"
+                                        ));
+                                        out.curves.push(Curve {
+                                            id: id.clone(),
+                                            geometry: CurveGeometry::Nurbs(curve),
+                                            source_object: None,
+                                        });
+                                        cadmpeg_ir::geometry::LawExpression::Edge {
+                                            curve: id,
+                                            parameters,
+                                        }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Spline {
+                                        native_id,
+                                        knots,
+                                        controls,
+                                        point,
+                                    } => cadmpeg_ir::geometry::LawExpression::Spline {
+                                        native_id,
+                                        knots,
+                                        controls,
+                                        point,
+                                    },
+                                    nurbs::EmbeddedLawExpression::Algebraic {
+                                        operator,
+                                        operands,
+                                    } => cadmpeg_ir::geometry::LawExpression::Algebraic {
+                                        operator,
+                                        operands: operands
+                                            .into_iter()
+                                            .enumerate()
+                                            .map(|(index, operand)| {
+                                                map_law_expression(
+                                                    out,
+                                                    owner,
+                                                    &format!("{path}:{index}"),
+                                                    operand,
+                                                )
+                                            })
+                                            .collect(),
+                                    },
+                                }
+                            }
                             let embedded = *embedded;
                             let layout = match embedded.layout {
                                 nurbs::EmbeddedSkinSurfaceLayout::Compact {
@@ -1608,45 +1681,13 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     .variables
                                     .into_iter()
                                     .enumerate()
-                                    .map(|(variable_index, variable)| match variable {
-                                        nurbs::EmbeddedLawExpression::Null => {
-                                            cadmpeg_ir::geometry::LawExpression::Null
-                                        }
-                                        nurbs::EmbeddedLawExpression::Transform {
-                                            scalars,
-                                            enums,
-                                        } => cadmpeg_ir::geometry::LawExpression::Transform {
-                                            scalars,
-                                            enums,
-                                        },
-                                        nurbs::EmbeddedLawExpression::Edge {
-                                            curve,
-                                            parameters,
-                                        } => {
-                                            let id = CurveId(format!(
-                                                "f3d:brep:procedural_surface#{i}:skin:law:{variable_index}:edge"
-                                            ));
-                                            out.curves.push(Curve {
-                                                id: id.clone(),
-                                                geometry: CurveGeometry::Nurbs(curve),
-                                                source_object: None,
-                                            });
-                                            cadmpeg_ir::geometry::LawExpression::Edge {
-                                                curve: id,
-                                                parameters,
-                                            }
-                                        }
-                                        nurbs::EmbeddedLawExpression::Spline {
-                                            native_id,
-                                            knots,
-                                            controls,
-                                            point,
-                                        } => cadmpeg_ir::geometry::LawExpression::Spline {
-                                            native_id,
-                                            knots,
-                                            controls,
-                                            point,
-                                        },
+                                    .map(|(variable_index, variable)| {
+                                        map_law_expression(
+                                            &mut out,
+                                            i,
+                                            &variable_index.to_string(),
+                                            variable,
+                                        )
                                     })
                                     .collect(),
                             };
