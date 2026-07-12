@@ -863,6 +863,36 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         && directions.iter().all(vector_finite)
                         && path_parameter.is_finite()
                 }
+                crate::geometry::SweepSurfaceLayout::LawDriven {
+                    profile_range,
+                    profile_frame,
+                    origin,
+                    directions,
+                    first_law,
+                    first_range,
+                    law_direction,
+                    path_range,
+                    path_parameter,
+                    second_law,
+                    formula,
+                    ..
+                } => {
+                    profile_range
+                        .iter()
+                        .chain(first_range)
+                        .chain(path_range)
+                        .all(|value| value.is_finite())
+                        && profile_frame.as_ref().is_none_or(|(point, vector)| {
+                            point_finite(point) && vector_finite(vector)
+                        })
+                        && point_finite(origin)
+                        && directions.iter().all(vector_finite)
+                        && vector_finite(law_direction)
+                        && path_parameter.is_finite()
+                        && law_valid(first_law, 0)
+                        && law_valid(second_law, 0)
+                        && formula_valid(formula)
+                }
             };
             let scalars_valid = layout_valid
                 && construction

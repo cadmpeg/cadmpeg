@@ -4635,6 +4635,59 @@ fn encode_native_sweep_surface(
                 bytes.push(native_bool(*flag));
             }
         }
+        SweepSurfaceLayout::LawDriven {
+            mode,
+            profile_range,
+            profile_frame,
+            origin,
+            directions,
+            first_law,
+            first_mode,
+            first_range,
+            law_direction,
+            path_mode,
+            path_flag,
+            path_range,
+            path_parameter,
+            second_law_flag,
+            second_law,
+            formula_mode,
+            formula,
+            trailing_flag,
+        } => {
+            native_i64(bytes, *mode);
+            native_nurbs_curve(bytes, native_loft_curve(target, profile)?)?;
+            for value in profile_range {
+                native_f64(bytes, *value);
+            }
+            bytes.push(native_bool(profile_frame.is_some()));
+            if let Some((point, direction)) = profile_frame {
+                native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            for direction in directions {
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_law_expression(bytes, target, first_law, 0)?;
+            native_i64(bytes, *first_mode);
+            for value in first_range {
+                native_f64(bytes, *value);
+            }
+            native_vector(bytes, [law_direction.x, law_direction.y, law_direction.z]);
+            native_i64(bytes, *path_mode);
+            bytes.push(native_bool(*path_flag));
+            native_nurbs_curve(bytes, native_loft_curve(target, spine)?)?;
+            for value in path_range {
+                native_f64(bytes, *value);
+            }
+            native_f64(bytes, *path_parameter);
+            bytes.push(native_bool(*second_law_flag));
+            native_law_expression(bytes, target, second_law, 0)?;
+            native_i64(bytes, *formula_mode);
+            native_law_formula(bytes, target, formula)?;
+            bytes.push(native_bool(*trailing_flag));
+        }
     }
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);

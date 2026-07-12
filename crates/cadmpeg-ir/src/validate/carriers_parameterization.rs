@@ -302,6 +302,16 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                             }
                             Vec::new()
                         }
+                        crate::geometry::SweepSurfaceLayout::LawDriven {
+                            first_law,
+                            second_law,
+                            formula,
+                            ..
+                        } => {
+                            collect_law_curves(first_law, &mut curves);
+                            collect_law_curves(second_law, &mut curves);
+                            vec![formula]
+                        }
                     };
                     for formula in formulas {
                         for variable in &formula.variables {

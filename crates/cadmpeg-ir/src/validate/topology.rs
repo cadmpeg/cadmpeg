@@ -648,6 +648,16 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                             }
                             Vec::new()
                         }
+                        crate::geometry::SweepSurfaceLayout::LawDriven {
+                            first_law,
+                            second_law,
+                            formula,
+                            ..
+                        } => {
+                            check_law_curves(first_law, ids, procedural, findings);
+                            check_law_curves(second_law, ids, procedural, findings);
+                            vec![formula]
+                        }
                     };
                     for formula in formulas {
                         for variable in &formula.variables {

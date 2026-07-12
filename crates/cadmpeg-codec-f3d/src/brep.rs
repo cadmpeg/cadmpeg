@@ -2187,6 +2187,73 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         },
                                     )
                                 }
+                                nurbs::EmbeddedSweepSurfaceLayout::LawDriven {
+                                    profile,
+                                    mode,
+                                    profile_range,
+                                    profile_frame,
+                                    origin,
+                                    directions,
+                                    first_law,
+                                    first_mode,
+                                    first_range,
+                                    law_direction,
+                                    path_mode,
+                                    path_flag,
+                                    path,
+                                    path_range,
+                                    path_parameter,
+                                    second_law_flag,
+                                    second_law,
+                                    formula_mode,
+                                    formula,
+                                    trailing_flag,
+                                } => {
+                                    let first_law =
+                                        map_sweep_law(&mut out, i, "law:first", first_law);
+                                    let second_law =
+                                        map_sweep_law(&mut out, i, "law:second", second_law);
+                                    let formula = cadmpeg_ir::geometry::LawFormula {
+                                        name: formula.name,
+                                        variables: formula
+                                            .variables
+                                            .into_iter()
+                                            .enumerate()
+                                            .map(|(index, variable)| {
+                                                map_sweep_law(
+                                                    &mut out,
+                                                    i,
+                                                    &format!("law:formula:{index}"),
+                                                    variable,
+                                                )
+                                            })
+                                            .collect(),
+                                    };
+                                    (
+                                        profile,
+                                        path,
+                                        cadmpeg_ir::geometry::SweepSurfaceLayout::LawDriven {
+                                            mode,
+                                            profile_range,
+                                            profile_frame,
+                                            origin,
+                                            directions,
+                                            first_law: Box::new(first_law),
+                                            first_mode,
+                                            first_range,
+                                            law_direction,
+                                            path_mode,
+                                            path_flag,
+                                            path_range,
+                                            path_parameter,
+                                            second_law_flag,
+                                            second_law: Box::new(second_law),
+                                            formula_mode,
+                                            formula,
+                                            trailing_flag,
+                                        },
+                                    )
+                                }
                             };
                             let profile =
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:sweep:profile"));

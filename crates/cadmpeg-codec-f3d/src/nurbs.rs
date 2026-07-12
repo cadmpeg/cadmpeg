@@ -1339,6 +1339,28 @@ pub(crate) enum EmbeddedSweepSurfaceLayout {
         support_flag: bool,
         legacy_flag: Option<bool>,
     },
+    LawDriven {
+        profile: NurbsCurve,
+        mode: i64,
+        profile_range: [f64; 2],
+        profile_frame: Option<(Point3, Vector3)>,
+        origin: Point3,
+        directions: [Vector3; 3],
+        first_law: EmbeddedLawExpression,
+        first_mode: i64,
+        first_range: [f64; 2],
+        law_direction: Vector3,
+        path_mode: i64,
+        path_flag: bool,
+        path: NurbsCurve,
+        path_range: [f64; 2],
+        path_parameter: f64,
+        second_law_flag: bool,
+        second_law: EmbeddedLawExpression,
+        formula_mode: i64,
+        formula: EmbeddedLawFormula,
+        trailing_flag: bool,
+    },
 }
 
 /// Embedded native sweep surface before stable IR ids are assigned.
@@ -2211,112 +2233,159 @@ fn decode_sweep_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
             let value = take_native_vec3(span, &mut position, 0x14)?;
             *direction = Vector3::new(value[0], value[1], value[2]);
         }
-        let branch = take_tagged_int(span, &mut position, 0x04, int_width)?;
-        let trajectory_flag = take_bool(span, &mut position)?;
-        let path = decode_curve_block(span, position, int_width)?;
-        position = path.end;
-        let path_range = [
-            take_f64(span, &mut position)? * LEN_TO_MM,
-            take_f64(span, &mut position)? * LEN_TO_MM,
-        ];
-        let path_parameter = take_f64(span, &mut position)?;
-        match branch {
-            1 => {
-                let formula_flag = take_bool(span, &mut position)?;
-                let formula = decode_law_formula(span, &mut position, int_width)?;
-                let trailing_flag = take_bool(span, &mut position)?;
-                EmbeddedSweepSurfaceLayout::ExplicitFormula {
-                    profile: profile.curve,
-                    mode,
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    trajectory_flag,
-                    path: path.curve,
-                    path_range,
-                    path_parameter,
-                    formula_flag,
-                    formula,
-                    trailing_flag,
+        if span.get(position) == Some(&0x04) {
+            let branch = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let trajectory_flag = take_bool(span, &mut position)?;
+            let path = decode_curve_block(span, position, int_width)?;
+            position = path.end;
+            let path_range = [
+                take_f64(span, &mut position)? * LEN_TO_MM,
+                take_f64(span, &mut position)? * LEN_TO_MM,
+            ];
+            let path_parameter = take_f64(span, &mut position)?;
+            match branch {
+                1 => {
+                    let formula_flag = take_bool(span, &mut position)?;
+                    let formula = decode_law_formula(span, &mut position, int_width)?;
+                    let trailing_flag = take_bool(span, &mut position)?;
+                    EmbeddedSweepSurfaceLayout::ExplicitFormula {
+                        profile: profile.curve,
+                        mode,
+                        profile_range,
+                        profile_frame,
+                        origin,
+                        directions,
+                        trajectory_flag,
+                        path: path.curve,
+                        path_range,
+                        path_parameter,
+                        formula_flag,
+                        formula,
+                        trailing_flag,
+                    }
                 }
+                2 => {
+                    let guide_flags = [
+                        take_bool(span, &mut position)?,
+                        take_bool(span, &mut position)?,
+                    ];
+                    let guide_curve = decode_curve_block(span, position, int_width)?;
+                    position = guide_curve.end;
+                    let guide_range = [
+                        take_f64(span, &mut position)?,
+                        take_f64(span, &mut position)?,
+                    ];
+                    let guide_modes = [
+                        take_tagged_int(span, &mut position, 0x04, int_width)?,
+                        take_tagged_int(span, &mut position, 0x04, int_width)?,
+                    ];
+                    let mut guide_parameters = [0.0; 6];
+                    for parameter in &mut guide_parameters {
+                        *parameter = take_f64(span, &mut position)?;
+                    }
+                    let trailing_flags = [
+                        take_bool(span, &mut position)?,
+                        take_bool(span, &mut position)?,
+                        take_bool(span, &mut position)?,
+                    ];
+                    EmbeddedSweepSurfaceLayout::ExplicitGuide {
+                        profile: profile.curve,
+                        mode,
+                        profile_range,
+                        profile_frame,
+                        origin,
+                        directions,
+                        trajectory_flag,
+                        path: path.curve,
+                        path_range,
+                        path_parameter,
+                        guide_flags,
+                        guide_curve: guide_curve.curve,
+                        guide_range,
+                        guide_modes,
+                        guide_parameters,
+                        trailing_flags,
+                    }
+                }
+                3 => {
+                    let singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
+                    let support_surface = decode_embedded_surface(span, &mut position, int_width)?;
+                    let auxiliary_curve = if take_bool(span, &mut position)? {
+                        let curve = decode_curve_block(span, position, int_width)?;
+                        position = curve.end;
+                        Some(curve.curve)
+                    } else {
+                        None
+                    };
+                    let support_flag = take_bool(span, &mut position)?;
+                    let legacy_flag = matches!(span.get(position), Some(0x0a | 0x0b))
+                        .then(|| take_bool(span, &mut position))
+                        .flatten();
+                    EmbeddedSweepSurfaceLayout::ExplicitSurface {
+                        profile: profile.curve,
+                        mode,
+                        profile_range,
+                        profile_frame,
+                        origin,
+                        directions,
+                        trajectory_flag,
+                        path: path.curve,
+                        path_range,
+                        path_parameter,
+                        singularity,
+                        support_surface,
+                        auxiliary_curve,
+                        support_flag,
+                        legacy_flag,
+                    }
+                }
+                _ => return None,
             }
-            2 => {
-                let guide_flags = [
-                    take_bool(span, &mut position)?,
-                    take_bool(span, &mut position)?,
-                ];
-                let guide_curve = decode_curve_block(span, position, int_width)?;
-                position = guide_curve.end;
-                let guide_range = [
-                    take_f64(span, &mut position)?,
-                    take_f64(span, &mut position)?,
-                ];
-                let guide_modes = [
-                    take_tagged_int(span, &mut position, 0x04, int_width)?,
-                    take_tagged_int(span, &mut position, 0x04, int_width)?,
-                ];
-                let mut guide_parameters = [0.0; 6];
-                for parameter in &mut guide_parameters {
-                    *parameter = take_f64(span, &mut position)?;
-                }
-                let trailing_flags = [
-                    take_bool(span, &mut position)?,
-                    take_bool(span, &mut position)?,
-                    take_bool(span, &mut position)?,
-                ];
-                EmbeddedSweepSurfaceLayout::ExplicitGuide {
-                    profile: profile.curve,
-                    mode,
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    trajectory_flag,
-                    path: path.curve,
-                    path_range,
-                    path_parameter,
-                    guide_flags,
-                    guide_curve: guide_curve.curve,
-                    guide_range,
-                    guide_modes,
-                    guide_parameters,
-                    trailing_flags,
-                }
+        } else {
+            let first_law = decode_law_expression(span, &mut position, int_width, 0)?;
+            let first_mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let first_range = [
+                take_f64(span, &mut position)?,
+                take_f64(span, &mut position)?,
+            ];
+            let vector = take_native_vec3(span, &mut position, 0x14)?;
+            let law_direction = Vector3::new(vector[0], vector[1], vector[2]);
+            let path_mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let path_flag = take_bool(span, &mut position)?;
+            let path = decode_curve_block(span, position, int_width)?;
+            position = path.end;
+            let path_range = [
+                take_f64(span, &mut position)?,
+                take_f64(span, &mut position)?,
+            ];
+            let path_parameter = take_f64(span, &mut position)?;
+            let second_law_flag = take_bool(span, &mut position)?;
+            let second_law = decode_law_expression(span, &mut position, int_width, 0)?;
+            let formula_mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let formula = decode_law_formula(span, &mut position, int_width)?;
+            let trailing_flag = take_bool(span, &mut position)?;
+            EmbeddedSweepSurfaceLayout::LawDriven {
+                profile: profile.curve,
+                mode,
+                profile_range,
+                profile_frame,
+                origin,
+                directions,
+                first_law,
+                first_mode,
+                first_range,
+                law_direction,
+                path_mode,
+                path_flag,
+                path: path.curve,
+                path_range,
+                path_parameter,
+                second_law_flag,
+                second_law,
+                formula_mode,
+                formula,
+                trailing_flag,
             }
-            3 => {
-                let singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
-                let support_surface = decode_embedded_surface(span, &mut position, int_width)?;
-                let auxiliary_curve = if take_bool(span, &mut position)? {
-                    let curve = decode_curve_block(span, position, int_width)?;
-                    position = curve.end;
-                    Some(curve.curve)
-                } else {
-                    None
-                };
-                let support_flag = take_bool(span, &mut position)?;
-                let legacy_flag = matches!(span.get(position), Some(0x0a | 0x0b))
-                    .then(|| take_bool(span, &mut position))
-                    .flatten();
-                EmbeddedSweepSurfaceLayout::ExplicitSurface {
-                    profile: profile.curve,
-                    mode,
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    trajectory_flag,
-                    path: path.curve,
-                    path_range,
-                    path_parameter,
-                    singularity,
-                    support_surface,
-                    auxiliary_curve,
-                    support_flag,
-                    legacy_flag,
-                }
-            }
-            _ => return None,
         }
     };
     let cache = decode_surface_block(span, position, int_width)?;

@@ -1480,6 +1480,45 @@ pub enum SweepSurfaceLayout {
         /// Legacy pre-219 trailing boolean when present.
         legacy_flag: Option<bool>,
     },
+    /// Explicit-prefix sweep layout controlled by recursive laws.
+    LawDriven {
+        /// Native explicit-layout integer.
+        mode: i64,
+        /// Profile parameter interval.
+        profile_range: [f64; 2],
+        /// Optional explicit profile frame.
+        profile_frame: Option<(Point3, Vector3)>,
+        /// Sweep frame origin.
+        origin: Point3,
+        /// Three ordered sweep frame directions.
+        directions: [Vector3; 3],
+        /// Leading recursive sweep law.
+        first_law: Box<LawExpression>,
+        /// Native integer after the leading law.
+        first_mode: i64,
+        /// First law parameter interval.
+        first_range: [f64; 2],
+        /// Native law direction.
+        law_direction: Vector3,
+        /// Native path integer.
+        path_mode: i64,
+        /// Native path boolean.
+        path_flag: bool,
+        /// Path parameter interval.
+        path_range: [f64; 2],
+        /// Native path scalar.
+        path_parameter: f64,
+        /// Native second-law boolean.
+        second_law_flag: bool,
+        /// Trailing recursive sweep law.
+        second_law: Box<LawExpression>,
+        /// Native integer before the formula.
+        formula_mode: i64,
+        /// Parametric trajectory formula.
+        formula: LawFormula,
+        /// Native trailing boolean.
+        trailing_flag: bool,
+    },
 }
 
 /// Complete native `sweep_spl_sur` construction graph.
