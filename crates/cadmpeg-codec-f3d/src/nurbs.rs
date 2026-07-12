@@ -5107,14 +5107,14 @@ fn decode_embedded_surface(
             })
         }
         "cone" => {
-            let axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
+            let native_axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
             let major = take_native_vec3(bytes, position, 0x14)?;
             let ref_direction = normalized(major)?;
             take_f64(bytes, position)?;
             take_bool(bytes, position)?;
             take_bool(bytes, position)?;
             let sine = take_f64(bytes, position)?;
-            take_f64(bytes, position)?;
+            let cosine = take_f64(bytes, position)?;
             let radius = take_f64(bytes, position)? * LEN_TO_MM;
             for _ in 0..5 {
                 take_bool(bytes, position)?;
@@ -5122,11 +5122,16 @@ fn decode_embedded_surface(
             if sine.abs() <= f64::EPSILON {
                 Some(SurfaceGeometry::Cylinder {
                     origin: point,
-                    axis,
+                    axis: native_axis,
                     ref_direction,
                     radius,
                 })
             } else {
+                let axis = if sine * cosine < 0.0 {
+                    Vector3::new(-native_axis.x, -native_axis.y, -native_axis.z)
+                } else {
+                    native_axis
+                };
                 Some(SurfaceGeometry::Cone {
                     origin: point,
                     axis,

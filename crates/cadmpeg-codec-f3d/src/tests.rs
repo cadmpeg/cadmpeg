@@ -11695,8 +11695,10 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
         SurfaceGeometry::Cone {
             radius: 12.5,
             half_angle,
+            axis,
             ..
         } if (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
+            && axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
     ));
     assert!(matches!(
         supports[1],
