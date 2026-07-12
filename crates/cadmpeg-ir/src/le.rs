@@ -40,6 +40,23 @@ readers!(
     (f64_at, take_f64, f64, 8),
 );
 
+/// Reads `count` consecutive little-endian `f64` values at `offset`.
+pub fn f64s_at(bytes: &[u8], offset: usize, count: usize) -> Option<Vec<f64>> {
+    let byte_length = count.checked_mul(8)?;
+    let values = bytes_at(bytes, offset, byte_length)?;
+    values
+        .chunks_exact(8)
+        .map(|value| Some(f64::from_le_bytes(value.try_into().ok()?)))
+        .collect()
+}
+
+/// Takes `count` consecutive little-endian `f64` values.
+pub fn take_f64s(bytes: &[u8], position: &mut usize, count: usize) -> Option<Vec<f64>> {
+    let values = f64s_at(bytes, *position, count)?;
+    *position = position.checked_add(count.checked_mul(8)?)?;
+    Some(values)
+}
+
 /// Reads a signed little-endian integer with a four- or eight-byte width.
 pub fn int_at(bytes: &[u8], offset: usize, width: usize) -> Option<i64> {
     match width {
@@ -101,7 +118,7 @@ pub fn utf16le_at(bytes: &[u8], offset: usize, count: usize) -> Option<(String, 
 
 #[cfg(test)]
 mod tests {
-    use super::{f64_at, lp_u32_bytes_at, take_u32, take_vec3, utf16le_at};
+    use super::{f64_at, f64s_at, lp_u32_bytes_at, take_f64s, take_u32, take_vec3, utf16le_at};
 
     #[test]
     fn failed_take_does_not_advance() {
@@ -118,6 +135,12 @@ mod tests {
         }
         assert_eq!(f64_at(&bytes, 8), Some(2.0));
         assert_eq!(take_vec3(&bytes, &mut 0), Some([1.0, 2.0, 3.0]));
+        assert_eq!(f64s_at(&bytes, 8, 2), Some(vec![2.0, 3.0]));
+        let mut position = 8;
+        assert_eq!(take_f64s(&bytes, &mut position, 2), Some(vec![2.0, 3.0]));
+        assert_eq!(position, 24);
+        assert_eq!(take_f64s(&bytes, &mut position, 1), None);
+        assert_eq!(position, 24);
     }
 
     #[test]

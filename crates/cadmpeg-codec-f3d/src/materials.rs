@@ -15,7 +15,7 @@ use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::design::DesignMaterialAssignment;
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
-use cadmpeg_ir::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, utf16le_at};
+use cadmpeg_ir::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, u64_at, utf16le_at};
 use cadmpeg_ir::topology::Color;
 
 use crate::container::{role, ContainerScan};
@@ -671,7 +671,7 @@ fn browser_body_appearance_at(
     if node_guid.len() != 36 || !is_guid_prefix(&node_guid) || bytes.get(after)? != &0x01 {
         return None;
     }
-    let node_entity = read_u64_at(bytes, after + 1)?;
+    let node_entity = u64_at(bytes, after + 1)?;
     // Optional display name, opacity, and the `01 01` marker.
     let name_end = match lp_utf16_at(bytes, skip_zeros(bytes, after + 9)) {
         Some((_, end)) => end,
@@ -722,7 +722,7 @@ fn preceding_class_299_entity(bytes: &[u8], at: usize) -> Option<u64> {
     let tag_at = window
         .windows(CLASS_299.len())
         .rposition(|candidate| candidate == CLASS_299)?;
-    read_u64_at(bytes, window_start + tag_at + CLASS_299.len())
+    u64_at(bytes, window_start + tag_at + CLASS_299.len())
 }
 
 /// Encode a string as its length-prefixed UTF-16 byte form.
@@ -774,10 +774,6 @@ fn is_guid_prefix(value: &str) -> bool {
                 byte.is_ascii_hexdigit()
             }
         })
-}
-
-fn read_u64_at(bytes: &[u8], at: usize) -> Option<u64> {
-    Some(u64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
 }
 
 fn bind_bodies<S: std::hash::BuildHasher>(

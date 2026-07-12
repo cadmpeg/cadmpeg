@@ -15,7 +15,7 @@ use cadmpeg_ir::design::{
     SketchPoint, SketchRelation,
 };
 use cadmpeg_ir::le::{
-    f64_at, lp_u32_bytes_at, u32_at, u32_at as read_u32, u64_at as read_u64, utf16le_at,
+    f64_at, f64s_at, lp_u32_bytes_at, u32_at, u32_at as read_u32, u64_at as read_u64, utf16le_at,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -825,7 +825,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<SketchCurveGeometry> {
     {
         return None;
     }
-    let knots = read_f64s(payload, base + 114, knot_count)?;
+    let knots = f64s_at(payload, base + 114, knot_count)?;
     let weights_at = base + 114 + knot_count * 8;
     let weight_count = usize::try_from(u32_at(payload, weights_at)?).ok()?;
     if u32_at(payload, weights_at + 4)? as usize != weight_count
@@ -834,7 +834,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<SketchCurveGeometry> {
     {
         return None;
     }
-    let weights = read_f64s(payload, weights_at + 12, weight_count)?;
+    let weights = f64s_at(payload, weights_at + 12, weight_count)?;
     let points_at = weights_at + 12 + weight_count * 8;
     let point_count = usize::try_from(u32_at(payload, points_at)?).ok()?;
     if (weight_count != 0 && point_count != weight_count)
@@ -844,7 +844,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<SketchCurveGeometry> {
     {
         return None;
     }
-    let coordinates = read_f64s(payload, points_at + 12, point_count.checked_mul(3)?)?;
+    let coordinates = f64s_at(payload, points_at + 12, point_count.checked_mul(3)?)?;
     if knots.windows(2).any(|pair| pair[0] > pair[1])
         || weights
             .iter()
@@ -869,12 +869,6 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<SketchCurveGeometry> {
         weights,
         control_points,
     })
-}
-
-fn read_f64s(bytes: &[u8], position: usize, count: usize) -> Option<Vec<f64>> {
-    (0..count)
-        .map(|ordinal| f64_at(bytes, position + ordinal * 8))
-        .collect()
 }
 
 fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {

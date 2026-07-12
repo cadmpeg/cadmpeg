@@ -2,6 +2,7 @@
 //! `DisplayLists` descriptor tables.
 
 use crate::container::{Block, ContainerScan};
+use cadmpeg_ir::le::u32_at as u32_le;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationChannel;
 
@@ -18,12 +19,6 @@ pub struct Mesh {
     pub strip_lengths: Vec<u32>,
     pub normals: Vec<Vector3>,
     pub channels: Vec<TessellationChannel>,
-}
-
-fn u32_le(bytes: &[u8], at: usize) -> Option<u32> {
-    bytes
-        .get(at..at + 4)
-        .map(|v| u32::from_le_bytes([v[0], v[1], v[2], v[3]]))
 }
 
 fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
