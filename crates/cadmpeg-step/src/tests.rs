@@ -591,17 +591,13 @@ fn procedural_construction_reduction_is_reported() {
 #[test]
 fn parametric_history_reduction_is_reported() {
     let mut ir = unit_cube();
-    ir.native
-        .f3d
-        .get_or_insert_with(cadmpeg_ir::native::f3d::F3dNative::default)
-        .asm_histories
-        .push(cadmpeg_ir::history::AsmHistory {
+    ir.native.namespace_mut("f3d").arenas.insert(
+        "asm_histories".into(),
+        vec![cadmpeg_ir::NativeRecord {
             id: "asm-history-0".into(),
-            byte_offset: 0,
-            stream_size: Some(0),
-            high_water_mark: Some(0),
-            states: Vec::new(),
-        });
+            fields: Default::default(),
+        }],
+    );
     ir.finalize();
 
     let mut buf = Vec::new();
