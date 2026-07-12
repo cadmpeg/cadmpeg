@@ -1017,11 +1017,16 @@ fn synthetic_geometry_with_analytic_offset_supports_smbh() -> Vec<u8> {
     t_ref(&mut curve, -1);
     curve.push(0x0f);
     t_ident(&mut curve, "off_int_cur");
-    t_ident(&mut curve, "plane");
+    t_ident(&mut curve, "cone");
     t_pos(&mut curve, [1.0, 2.0, 3.0]);
     t_vec(&mut curve, [0.0, 0.0, 1.0]);
     t_vec(&mut curve, [1.0, 0.0, 0.0]);
-    curve.push(0x0b);
+    t_dbl(&mut curve, 1.0);
+    curve.extend_from_slice(&[0x0b; 2]);
+    t_dbl(&mut curve, -0.5);
+    t_dbl(&mut curve, 3.0_f64.sqrt() / 2.0);
+    t_dbl(&mut curve, 1.25);
+    curve.extend_from_slice(&[0x0b; 5]);
     t_ident(&mut curve, "torus");
     t_pos(&mut curve, [-1.0, 0.5, 2.0]);
     t_vec(&mut curve, [0.0, 1.0, 0.0]);
@@ -11685,7 +11690,14 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
             .geometry
             .clone()
     });
-    assert!(matches!(supports[0], SurfaceGeometry::Plane { .. }));
+    assert!(matches!(
+        supports[0],
+        SurfaceGeometry::Cone {
+            radius: 12.5,
+            half_angle,
+            ..
+        } if (half_angle + std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
+    ));
     assert!(matches!(
         supports[1],
         SurfaceGeometry::Torus {
@@ -11757,7 +11769,8 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     });
     assert!(matches!(
         expected_geometries[0],
-        SurfaceGeometry::Plane { .. }
+        SurfaceGeometry::Cone { half_angle, .. }
+            if (half_angle + std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
     ));
     assert!(matches!(
         expected_geometries[1],

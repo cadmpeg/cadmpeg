@@ -5132,7 +5132,7 @@ fn decode_embedded_surface(
                     axis,
                     ref_direction,
                     radius,
-                    half_angle: sine.abs().asin(),
+                    half_angle: sine.asin(),
                 })
             }
         }
