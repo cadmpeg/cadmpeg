@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::ids::{BodyId, EdgeId, FaceId};
+use crate::ids::{BodyId, CurveId, EdgeId, FaceId};
 use crate::math::{Point3, Vector3};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -32,6 +32,73 @@ impl<S: Into<String>> From<S> for FeatureId {
     fn from(value: S) -> Self {
         Self(value.into())
     }
+}
+
+/// Identifies a neutral design configuration.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(transparent)]
+pub struct ConfigurationId(pub String);
+
+/// A named parametric model variant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignConfiguration {
+    /// Globally unique configuration id.
+    pub id: ConfigurationId,
+    /// Source display name.
+    pub name: String,
+    /// Material override, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<String>,
+    /// Configuration-local named values not otherwise represented.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub properties: BTreeMap<String, String>,
+    /// Bodies present when this configuration is active.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bodies: Vec<BodyId>,
+    /// Identifier of the full-fidelity record in a native namespace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+}
+
+/// Identifies a neutral design parameter.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(transparent)]
+pub struct ParameterId(pub String);
+
+/// A named expression owned by a construction feature.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignParameter {
+    /// Globally unique parameter id.
+    pub id: ParameterId,
+    /// Feature that consumes this parameter.
+    pub owner: FeatureId,
+    /// Source parameter name.
+    pub name: String,
+    /// Literal or expression text used by the source system.
+    pub expression: String,
+    /// Evaluated scalar when the expression is an unambiguous literal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<ParameterValue>,
+}
+
+/// Canonical scalar value of a literal design parameter.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum ParameterValue {
+    /// Length in canonical millimeters.
+    Length(Length),
+    /// Angle in canonical radians.
+    Angle(Angle),
+    /// Dimensionless real scalar.
+    Real(f64),
+    /// Integer scalar.
+    Integer(i64),
+    /// Boolean scalar.
+    Boolean(bool),
 }
 
 /// A length in canonical millimeters.
@@ -74,6 +141,12 @@ pub struct Feature {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "definition", rename_all = "snake_case")]
 pub enum FeatureDefinition {
+    /// Solved sketch node in the construction history.
+    Sketch {
+        /// Neutral sketch geometry owned by this history node, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sketch: Option<crate::sketches::SketchId>,
+    },
     /// Linear extrusion of a profile.
     Extrude {
         /// Profile swept along `direction` (or the profile's own normal, when
@@ -104,25 +177,69 @@ pub enum FeatureDefinition {
         /// Boolean combination with existing bodies.
         op: BooleanOp,
     },
+    /// Sweep of a profile along a path.
+    Sweep {
+        /// Cross-section swept along the path.
+        profile: ProfileRef,
+        /// Trajectory followed by the profile.
+        path: PathRef,
+        /// Boolean combination with existing bodies.
+        op: BooleanOp,
+        /// Total profile twist along the path, when specified.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        twist: Option<Angle>,
+        /// End-to-start profile scale ratio, when specified.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale: Option<f64>,
+    },
+    /// Loft through an ordered sequence of section profiles.
+    Loft {
+        /// Ordered section profiles.
+        profiles: Vec<ProfileRef>,
+        /// Optional ordered guide trajectories.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        guides: Vec<PathRef>,
+        /// Boolean combination with existing bodies.
+        op: BooleanOp,
+        /// Whether the loft closes from the last section to the first.
+        #[serde(default)]
+        closed: bool,
+    },
+    /// Thin rib grown from a profile.
+    Rib {
+        /// Rib centerline or open profile.
+        profile: ProfileRef,
+        /// Rib growth direction.
+        direction: Vector3,
+        /// Finished rib thickness.
+        thickness: Length,
+        /// Whether thickness is split equally around the profile.
+        #[serde(default)]
+        both_sides: bool,
+        /// Draft angle applied to rib walls, when specified.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        draft: Option<Angle>,
+        /// Boolean combination with existing bodies.
+        op: BooleanOp,
+    },
     /// Edge fillet.
     Fillet {
         /// Edges the fillet is applied to.
-        edges: Vec<EdgeId>,
+        edges: EdgeSelection,
         /// Fillet radius assignment along the edges.
         radius: RadiusSpec,
     },
     /// Edge chamfer.
     Chamfer {
         /// Edges the chamfer is applied to.
-        edges: Vec<EdgeId>,
+        edges: EdgeSelection,
         /// Dimensional definition of the chamfer.
         spec: ChamferSpec,
     },
     /// Thin-wall shell operation.
     Shell {
-        /// Faces removed to open the shell; empty for a fully closed shell.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        removed_faces: Vec<FaceId>,
+        /// Faces removed to open the shell.
+        removed_faces: FaceSelection,
         /// Wall thickness left after shelling.
         thickness: Length,
         /// Whether the wall is grown outward from the original boundary,
@@ -133,7 +250,7 @@ pub enum FeatureDefinition {
     Hole {
         /// Face the hole is placed on, when known.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        face: Option<FaceId>,
+        face: Option<FaceSelection>,
         /// Hole placement position, when recorded independently of `face`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         position: Option<Point3>,
@@ -161,14 +278,40 @@ pub enum FeatureDefinition {
     },
 }
 
+/// Edge operands resolved by the decoder or retained in native form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum EdgeSelection {
+    /// Resolved topological edges.
+    Edges(Vec<EdgeId>),
+    /// Format-native selection reference.
+    Native(String),
+}
+
+/// Face operands resolved by the decoder or retained in native form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum FaceSelection {
+    /// Resolved topological faces; empty for no selected faces.
+    Faces(Vec<FaceId>),
+    /// Format-native selection reference.
+    Native(String),
+}
+
 /// Termination of a linear or angular feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Extent {
     /// Fixed depth or angle in one direction.
-    Blind(Length),
+    Blind {
+        /// Fixed travel distance.
+        length: Length,
+    },
     /// Fixed depth or angle split evenly on both sides of the profile.
-    Symmetric(Length),
+    Symmetric {
+        /// Total travel distance split around the profile plane.
+        length: Length,
+    },
     /// Independent depths or angles on each side of the profile.
     TwoSided {
         /// Extent on the first side.
@@ -179,9 +322,15 @@ pub enum Extent {
     /// Extends through all material.
     ThroughAll,
     /// Extends until it reaches a target face.
-    ToFace(FaceId),
+    ToFace {
+        /// Face terminating the operation.
+        face: FaceId,
+    },
     /// Fixed angular extent.
-    Angle(Angle),
+    Angle {
+        /// Angular travel.
+        angle: Angle,
+    },
 }
 
 /// Boolean effect of a solid-producing feature.
@@ -204,8 +353,24 @@ pub enum BooleanOp {
 pub enum ProfileRef {
     /// Opaque reference into a native feature-input record; no neutral geometry given.
     Native(String),
+    /// Solved neutral sketch profile.
+    Sketch(crate::sketches::SketchId),
     /// Profile given directly as a set of solved B-rep faces.
     Faces(Vec<FaceId>),
+}
+
+/// Trajectory consumed by a sweep or path-driven operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum PathRef {
+    /// Opaque reference into a native path record.
+    Native(String),
+    /// Ordered geometry from a neutral sketch.
+    Sketch(crate::sketches::SketchId),
+    /// Path resolved as ordered topological edges.
+    Edges(Vec<EdgeId>),
+    /// Path resolved as ordered geometric curves.
+    Curves(Vec<CurveId>),
 }
 
 /// Radius assignment along filleted edges.

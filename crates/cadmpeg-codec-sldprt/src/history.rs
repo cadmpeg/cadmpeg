@@ -4,8 +4,17 @@
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureHistory};
 use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::features::{
+    Angle, BooleanOp, ChamferSpec, ConfigurationId, DesignConfiguration, DesignParameter,
+    EdgeSelection, Extent, FaceSelection, FeatureDefinition, FeatureId, HoleKind, Length,
+    ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, VariableRadius,
+};
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::Exactness;
-use std::collections::BTreeMap;
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write as _;
 
 pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureHistory> {
     scan.blocks
@@ -138,6 +147,1688 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
             })
         })
         .collect()
+}
+
+/// Project native Keywords records into the neutral feature arena.
+pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::features::Feature> {
+    histories
+        .iter()
+        .flat_map(|history| {
+            let by_source = history
+                .features
+                .iter()
+                .filter_map(|feature| {
+                    feature
+                        .source_id
+                        .as_deref()
+                        .map(|source| (source, neutral_feature_id(&feature.id)))
+                })
+                .collect::<HashMap<_, _>>();
+            let native_by_source = history
+                .features
+                .iter()
+                .filter_map(|feature| {
+                    feature
+                        .source_id
+                        .as_deref()
+                        .map(|source| (source, feature.id.as_str()))
+                })
+                .collect::<HashMap<_, _>>();
+            history
+                .features
+                .iter()
+                .map(move |feature| cadmpeg_ir::features::Feature {
+                    id: neutral_feature_id(&feature.id),
+                    ordinal: u64::from(feature.ordinal),
+                    name: (!feature.name.is_empty()).then(|| feature.name.clone()),
+                    suppressed: feature.suppressed,
+                    parent: feature
+                        .parent_source_id
+                        .as_deref()
+                        .and_then(|source| by_source.get(source).cloned()),
+                    outputs: Vec::new(),
+                    definition: project_definition(feature, &by_source, &native_by_source),
+                    native_ref: Some(feature.id.clone()),
+                })
+        })
+        .collect()
+}
+
+/// Project native configuration records into the neutral configuration arena.
+pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfiguration> {
+    histories
+        .iter()
+        .flat_map(|history| &history.configurations)
+        .map(|configuration| DesignConfiguration {
+            id: ConfigurationId(format!(
+                "sldprt:model:configuration#{}",
+                configuration
+                    .id
+                    .strip_prefix("sldprt:history:configuration#")
+                    .unwrap_or(&configuration.id)
+            )),
+            name: configuration.name.clone(),
+            material: configuration.material.clone(),
+            properties: configuration.properties.clone(),
+            bodies: Vec::new(),
+            native_ref: Some(configuration.id.clone()),
+        })
+        .collect()
+}
+
+/// Project every native feature dimension into the neutral parameter arena.
+pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> {
+    histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .flat_map(|feature| {
+            feature
+                .parameters
+                .iter()
+                .enumerate()
+                .map(move |(ordinal, (name, expression))| {
+                    let key = feature
+                        .id
+                        .strip_prefix("sldprt:history:feature#")
+                        .unwrap_or(&feature.id);
+                    DesignParameter {
+                        id: ParameterId(format!("sldprt:model:parameter#{key}:{ordinal}")),
+                        owner: neutral_feature_id(&feature.id),
+                        name: name.clone(),
+                        expression: expression.clone(),
+                        value: parse_parameter_literal(expression),
+                    }
+                })
+        })
+        .collect()
+}
+
+/// Bind a uniquely identified native sketch history node to solved sketch geometry.
+pub fn bind_unique_sketch_feature(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+) {
+    let feature_indices = features
+        .iter()
+        .enumerate()
+        .filter(|(_, feature)| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let mut bindings = Vec::new();
+    for index in &feature_indices {
+        let Some(name) = features[*index].name.as_deref() else {
+            continue;
+        };
+        if feature_indices
+            .iter()
+            .filter(|other| features[**other].name.as_deref() == Some(name))
+            .count()
+            != 1
+        {
+            continue;
+        }
+        let matches = sketches
+            .iter()
+            .filter(|sketch| sketch.name.as_deref() == Some(name))
+            .collect::<Vec<_>>();
+        let [sketch] = matches.as_slice() else {
+            continue;
+        };
+        if let Some(native_ref) = features[*index].native_ref.clone() {
+            bindings.push((*index, native_ref, sketch.id.clone()));
+        }
+    }
+    if bindings.is_empty() {
+        if let ([index], [sketch]) = (feature_indices.as_slice(), sketches) {
+            if let Some(native_ref) = features[*index].native_ref.clone() {
+                bindings.push((*index, native_ref, sketch.id.clone()));
+            }
+        }
+    }
+    for (index, _, sketch) in &bindings {
+        features[*index].definition = FeatureDefinition::Sketch {
+            sketch: Some(sketch.clone()),
+        };
+    }
+    for feature in features {
+        for (_, native_ref, sketch) in &bindings {
+            bind_definition_sketch(&mut feature.definition, native_ref, sketch);
+        }
+    }
+}
+
+fn bind_definition_sketch(
+    definition: &mut FeatureDefinition,
+    native_ref: &str,
+    sketch: &cadmpeg_ir::sketches::SketchId,
+) {
+    let bind_profile = |profile: &mut ProfileRef| {
+        if matches!(profile, ProfileRef::Native(value) if value == native_ref) {
+            *profile = ProfileRef::Sketch(sketch.clone());
+        }
+    };
+    let bind_path = |path: &mut PathRef| {
+        if matches!(path, PathRef::Native(value) if value == native_ref) {
+            *path = PathRef::Sketch(sketch.clone());
+        }
+    };
+    match definition {
+        FeatureDefinition::Extrude { profile, .. }
+        | FeatureDefinition::Revolve { profile, .. }
+        | FeatureDefinition::Rib { profile, .. } => bind_profile(profile),
+        FeatureDefinition::Sweep { profile, path, .. } => {
+            bind_profile(profile);
+            bind_path(path);
+        }
+        FeatureDefinition::Loft {
+            profiles, guides, ..
+        } => {
+            profiles.iter_mut().for_each(bind_profile);
+            guides.iter_mut().for_each(bind_path);
+        }
+        _ => {}
+    }
+}
+
+fn project_definition(
+    feature: &Feature,
+    by_source: &HashMap<&str, FeatureId>,
+    native_by_source: &HashMap<&str, &str>,
+) -> FeatureDefinition {
+    if feature.kind.eq_ignore_ascii_case("Sketch") {
+        return FeatureDefinition::Sketch { sketch: None };
+    }
+    let op = match feature.kind.to_ascii_lowercase().as_str() {
+        "bossextrude" => Some(BooleanOp::Join),
+        "cutextrude" => Some(BooleanOp::Cut),
+        _ => None,
+    };
+    if let (Some(op), Some(depth)) = (
+        op,
+        feature
+            .parameters
+            .get("Depth")
+            .and_then(|value| parse_length_mm(value)),
+    ) {
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Native(feature.id.clone()),
+            direction: None,
+            extent: Extent::Blind {
+                length: Length(depth),
+            },
+            op,
+            draft: None,
+        }
+    } else if feature.kind.eq_ignore_ascii_case("Fillet") {
+        project_fillet(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature.kind.eq_ignore_ascii_case("Chamfer") {
+        project_chamfer(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature.kind.eq_ignore_ascii_case("Shell") {
+        project_shell(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature.kind.eq_ignore_ascii_case("Hole") {
+        project_hole(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature.kind.eq_ignore_ascii_case("Revolve") {
+        project_revolve(feature).unwrap_or_else(|| native_definition(feature))
+    } else if pattern_form(feature).is_some() {
+        project_pattern(feature, by_source).unwrap_or_else(|| native_definition(feature))
+    } else if feature.kind.eq_ignore_ascii_case("Sweep") {
+        project_sweep(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
+    } else if feature.kind.eq_ignore_ascii_case("Loft") {
+        project_loft(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
+    } else if feature.kind.eq_ignore_ascii_case("Rib") {
+        project_rib(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
+    } else {
+        native_definition(feature)
+    }
+}
+
+fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
+    let radius = if let Some(radius) = feature
+        .parameters
+        .get("Radius")
+        .and_then(|value| parse_length_mm(value))
+    {
+        RadiusSpec::Constant {
+            radius: Length(radius),
+        }
+    } else {
+        let mut points = feature
+            .parameters
+            .iter()
+            .filter_map(|(name, radius)| {
+                let index = name.strip_prefix("Radius")?.parse::<usize>().ok()?;
+                Some((index, radius))
+            })
+            .map(|(index, radius)| {
+                let parameter = feature
+                    .parameters
+                    .get(&format!("Position{index}"))?
+                    .trim()
+                    .parse::<f64>()
+                    .ok()?;
+                let radius = parse_length_mm(radius)?;
+                (parameter.is_finite() && (0.0..=1.0).contains(&parameter)).then_some((
+                    index,
+                    VariableRadius {
+                        parameter,
+                        radius: Length(radius),
+                    },
+                ))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        points.sort_by_key(|(index, _)| *index);
+        if points.len() < 2
+            || points
+                .iter()
+                .enumerate()
+                .any(|(expected, (actual, _))| expected != *actual)
+        {
+            return None;
+        }
+        RadiusSpec::Variable {
+            points: points.into_iter().map(|(_, point)| point).collect(),
+        }
+    };
+    Some(FeatureDefinition::Fillet {
+        edges: EdgeSelection::Native(feature.id.clone()),
+        radius,
+    })
+}
+
+fn project_rib(
+    feature: &Feature,
+    native_by_source: &HashMap<&str, &str>,
+) -> Option<FeatureDefinition> {
+    let profile = *native_by_source.get(feature.properties.get("Profile")?.as_str())?;
+    let draft = match feature.parameters.get("Draft") {
+        Some(value) => Some(Angle(parse_angle_rad(value)?)),
+        None => None,
+    };
+    Some(FeatureDefinition::Rib {
+        profile: ProfileRef::Native(profile.to_string()),
+        direction: parse_vector3(feature.properties.get("Direction")?)?,
+        thickness: Length(
+            feature
+                .parameters
+                .get("Thickness")
+                .and_then(|value| parse_length_mm(value))?,
+        ),
+        both_sides: parse_bool(feature.properties.get("BothSides")?)?,
+        draft,
+        op: parse_boolean_op(feature.properties.get("Operation")?)?,
+    })
+}
+
+fn project_loft(
+    feature: &Feature,
+    native_by_source: &HashMap<&str, &str>,
+) -> Option<FeatureDefinition> {
+    let profiles = resolve_native_refs(feature.properties.get("Profiles")?, native_by_source)?
+        .into_iter()
+        .map(ProfileRef::Native)
+        .collect::<Vec<_>>();
+    if profiles.len() < 2 {
+        return None;
+    }
+    let guides = feature.properties.get("Guides").map_or_else(
+        || Some(Vec::new()),
+        |value| resolve_native_refs(value, native_by_source),
+    )?;
+    Some(FeatureDefinition::Loft {
+        profiles,
+        guides: guides.into_iter().map(PathRef::Native).collect(),
+        op: parse_boolean_op(feature.properties.get("Operation")?)?,
+        closed: parse_bool(feature.properties.get("Closed")?)?,
+    })
+}
+
+fn resolve_native_refs(value: &str, native_by_source: &HashMap<&str, &str>) -> Option<Vec<String>> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|source| !source.is_empty())
+        .map(|source| native_by_source.get(source).map(|id| (*id).to_string()))
+        .collect()
+}
+
+fn project_sweep(
+    feature: &Feature,
+    native_by_source: &HashMap<&str, &str>,
+) -> Option<FeatureDefinition> {
+    let profile = *native_by_source.get(feature.properties.get("Profile")?.as_str())?;
+    let path = *native_by_source.get(feature.properties.get("Path")?.as_str())?;
+    let op = parse_boolean_op(feature.properties.get("Operation")?)?;
+    let twist = match feature.parameters.get("Twist") {
+        Some(value) => Some(Angle(parse_angle_rad(value)?)),
+        None => None,
+    };
+    let scale = match feature.parameters.get("Scale") {
+        Some(value) => Some(
+            value
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|value| *value > 0.0)?,
+        ),
+        None => None,
+    };
+    Some(FeatureDefinition::Sweep {
+        profile: ProfileRef::Native(profile.to_string()),
+        path: PathRef::Native(path.to_string()),
+        op,
+        twist,
+        scale,
+    })
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PatternForm {
+    Linear,
+    Circular,
+    Mirror,
+}
+
+fn pattern_form(feature: &Feature) -> Option<PatternForm> {
+    let form = if feature.kind.eq_ignore_ascii_case("Pattern") {
+        feature.properties.get("PatternType")?.as_str()
+    } else {
+        feature.kind.as_str()
+    };
+    match form.to_ascii_lowercase().as_str() {
+        "linear" | "linearpattern" => Some(PatternForm::Linear),
+        "circular" | "circularpattern" => Some(PatternForm::Circular),
+        "mirror" => Some(PatternForm::Mirror),
+        _ => None,
+    }
+}
+
+fn project_pattern(
+    feature: &Feature,
+    by_source: &HashMap<&str, FeatureId>,
+) -> Option<FeatureDefinition> {
+    let seeds = feature
+        .properties
+        .get("Seeds")?
+        .split(',')
+        .map(str::trim)
+        .map(|source| by_source.get(source).cloned())
+        .collect::<Option<Vec<_>>>()?;
+    if seeds.is_empty() {
+        return None;
+    }
+    let pattern = match pattern_form(feature)? {
+        PatternForm::Linear => PatternKind::Linear {
+            direction: parse_vector3(feature.properties.get("Direction")?)?,
+            spacing: Length(
+                feature
+                    .parameters
+                    .get("Spacing")
+                    .and_then(|value| parse_length_mm(value))?,
+            ),
+            count: parse_count(feature.parameters.get("Count")?)?,
+        },
+        PatternForm::Circular => PatternKind::Circular {
+            axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
+            axis_dir: parse_vector3(feature.properties.get("AxisDirection")?)?,
+            angle: Angle(
+                feature
+                    .parameters
+                    .get("Angle")
+                    .and_then(|value| parse_angle_rad(value))?,
+            ),
+            count: parse_count(feature.parameters.get("Count")?)?,
+        },
+        PatternForm::Mirror => PatternKind::Mirror {
+            plane_origin: parse_point3_mm(feature.properties.get("PlaneOrigin")?)?,
+            plane_normal: parse_vector3(feature.properties.get("PlaneNormal")?)?,
+        },
+    };
+    Some(FeatureDefinition::Pattern { seeds, pattern })
+}
+
+fn parse_count(value: &str) -> Option<u32> {
+    value.trim().parse().ok().filter(|count| *count > 0)
+}
+
+fn project_revolve(feature: &Feature) -> Option<FeatureDefinition> {
+    let angle = feature
+        .parameters
+        .get("Angle")
+        .and_then(|value| parse_angle_rad(value))?;
+    let axis_origin = parse_point3_mm(feature.properties.get("AxisOrigin")?)?;
+    let axis_dir = parse_vector3(feature.properties.get("AxisDirection")?)?;
+    if !(axis_dir.norm().is_finite() && axis_dir.norm() > 0.0) {
+        return None;
+    }
+    let op = parse_boolean_op(feature.properties.get("Operation")?)?;
+    Some(FeatureDefinition::Revolve {
+        profile: ProfileRef::Native(feature.id.clone()),
+        axis_origin,
+        axis_dir,
+        angle: Extent::Angle {
+            angle: Angle(angle),
+        },
+        op,
+    })
+}
+
+fn project_hole(feature: &Feature) -> Option<FeatureDefinition> {
+    let diameter = feature
+        .parameters
+        .get("Diameter")
+        .and_then(|value| parse_length_mm(value))?;
+    let has_counterbore = feature.parameters.contains_key("CounterboreDiameter")
+        || feature.parameters.contains_key("CounterboreDepth");
+    let has_countersink = feature.parameters.contains_key("CountersinkDiameter")
+        || feature.parameters.contains_key("CountersinkAngle");
+    if has_counterbore && has_countersink {
+        return None;
+    }
+    let kind = if has_counterbore {
+        HoleKind::Counterbore {
+            diameter: Length(
+                feature
+                    .parameters
+                    .get("CounterboreDiameter")
+                    .and_then(|value| parse_length_mm(value))?,
+            ),
+            depth: Length(
+                feature
+                    .parameters
+                    .get("CounterboreDepth")
+                    .and_then(|value| parse_length_mm(value))?,
+            ),
+        }
+    } else if has_countersink {
+        HoleKind::Countersink {
+            diameter: Length(
+                feature
+                    .parameters
+                    .get("CountersinkDiameter")
+                    .and_then(|value| parse_length_mm(value))?,
+            ),
+            angle: Angle(
+                feature
+                    .parameters
+                    .get("CountersinkAngle")
+                    .and_then(|value| parse_angle_rad(value))?,
+            ),
+        }
+    } else {
+        HoleKind::Simple
+    };
+    let extent = match feature.properties.get("EndCondition").map(String::as_str) {
+        None | Some("Blind") => Extent::Blind {
+            length: Length(
+                feature
+                    .parameters
+                    .get("Depth")
+                    .and_then(|value| parse_length_mm(value))?,
+            ),
+        },
+        Some("ThroughAll") => Extent::ThroughAll,
+        Some(_) => return None,
+    };
+    Some(FeatureDefinition::Hole {
+        face: Some(FaceSelection::Native(feature.id.clone())),
+        position: None,
+        kind,
+        diameter: Length(diameter),
+        extent,
+    })
+}
+
+fn project_shell(feature: &Feature) -> Option<FeatureDefinition> {
+    let thickness = feature
+        .parameters
+        .get("Thickness")
+        .and_then(|value| parse_length_mm(value))?;
+    let outward = parse_bool(feature.properties.get("Outward")?)?;
+    Some(FeatureDefinition::Shell {
+        removed_faces: FaceSelection::Native(feature.id.clone()),
+        thickness: Length(thickness),
+        outward,
+    })
+}
+
+fn project_chamfer(feature: &Feature) -> Option<FeatureDefinition> {
+    let length = |name| {
+        feature
+            .parameters
+            .get(name)
+            .and_then(|value| parse_length_mm(value))
+            .map(Length)
+    };
+    let spec = if let (Some(distance), Some(angle)) = (
+        length("Distance"),
+        feature
+            .parameters
+            .get("Angle")
+            .and_then(|value| parse_angle_rad(value))
+            .map(Angle),
+    ) {
+        ChamferSpec::DistanceAngle { distance, angle }
+    } else if let (Some(first), Some(second)) = (length("Distance1"), length("Distance2")) {
+        ChamferSpec::TwoDistances { first, second }
+    } else {
+        ChamferSpec::Distance {
+            distance: length("Distance")?,
+        }
+    };
+    Some(FeatureDefinition::Chamfer {
+        edges: EdgeSelection::Native(feature.id.clone()),
+        spec,
+    })
+}
+
+fn native_definition(feature: &Feature) -> FeatureDefinition {
+    FeatureDefinition::Native {
+        kind: feature.kind.clone(),
+        parameters: feature.parameters.clone(),
+    }
+}
+
+fn parse_length_mm(value: &str) -> Option<f64> {
+    let value = value.trim();
+    for (suffix, scale) in [("mm", 1.0), ("cm", 10.0), ("in", 25.4), ("m", 1000.0)] {
+        if let Some(number) = value.strip_suffix(suffix) {
+            return number.trim().parse::<f64>().ok().map(|value| value * scale);
+        }
+    }
+    None
+}
+
+fn format_length_mm(value: f64) -> String {
+    format!("{value}mm")
+}
+
+fn parse_angle_rad(value: &str) -> Option<f64> {
+    let value = value.trim();
+    if let Some(number) = value.strip_suffix("deg") {
+        return number.trim().parse::<f64>().ok().map(f64::to_radians);
+    }
+    value
+        .strip_suffix("rad")
+        .and_then(|number| number.trim().parse::<f64>().ok())
+}
+
+fn format_angle_rad(value: f64) -> String {
+    format!("{value}rad")
+}
+
+fn parse_point3_mm(value: &str) -> Option<Point3> {
+    let values = value
+        .split(',')
+        .map(|component| parse_length_mm(component.trim()))
+        .collect::<Option<Vec<_>>>()?;
+    (values.len() == 3).then(|| Point3::new(values[0], values[1], values[2]))
+}
+
+fn parse_vector3(value: &str) -> Option<Vector3> {
+    let values = value
+        .split(',')
+        .map(|component| component.trim().parse::<f64>().ok())
+        .collect::<Option<Vec<_>>>()?;
+    (values.len() == 3).then(|| Vector3::new(values[0], values[1], values[2]))
+}
+
+fn format_point3_mm(value: Point3) -> String {
+    format!("{}mm,{}mm,{}mm", value.x, value.y, value.z)
+}
+
+fn format_vector3(value: Vector3) -> String {
+    format!("{},{},{}", value.x, value.y, value.z)
+}
+
+fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
+    match value.to_ascii_lowercase().as_str() {
+        "join" => Some(BooleanOp::Join),
+        "cut" => Some(BooleanOp::Cut),
+        "intersect" => Some(BooleanOp::Intersect),
+        "newbody" | "new_body" => Some(BooleanOp::NewBody),
+        _ => None,
+    }
+}
+
+fn format_boolean_op(value: BooleanOp) -> &'static str {
+    match value {
+        BooleanOp::Join => "Join",
+        BooleanOp::Cut => "Cut",
+        BooleanOp::Intersect => "Intersect",
+        BooleanOp::NewBody => "NewBody",
+    }
+}
+
+fn parse_bool(value: &str) -> Option<bool> {
+    match value {
+        "1" | "true" | "True" => Some(true),
+        "0" | "false" | "False" => Some(false),
+        _ => None,
+    }
+}
+
+fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
+    if let Some(value) = parse_bool(expression.trim()) {
+        return Some(ParameterValue::Boolean(value));
+    }
+    if let Some(value) = parse_length_mm(expression) {
+        return Some(ParameterValue::Length(Length(value)));
+    }
+    if let Some(value) = parse_angle_rad(expression) {
+        return Some(ParameterValue::Angle(Angle(value)));
+    }
+    if let Ok(value) = expression.trim().parse::<i64>() {
+        return Some(ParameterValue::Integer(value));
+    }
+    expression
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .map(ParameterValue::Real)
+}
+
+fn neutral_feature_id(native_id: &str) -> FeatureId {
+    let key = native_id
+        .strip_prefix("sldprt:history:feature#")
+        .unwrap_or(native_id);
+    FeatureId(format!("sldprt:model:feature#{key}"))
+}
+
+/// Stable hash of the neutral feature projection.
+pub fn feature_hash(features: &[cadmpeg_ir::features::Feature]) -> String {
+    let mut features = features.to_vec();
+    features.sort_by(|left, right| left.id.cmp(&right.id));
+    hash_debug(&features)
+}
+
+/// Stable hash of the native feature histories.
+pub fn history_hash(histories: &[FeatureHistory]) -> String {
+    hash_debug(histories)
+}
+
+/// Stable hash of neutral configurations.
+pub fn configuration_hash(configurations: &[DesignConfiguration]) -> String {
+    let mut configurations = configurations.to_vec();
+    configurations.sort_by(|left, right| left.id.cmp(&right.id));
+    hash_debug(&configurations)
+}
+
+/// Stable hash of native configuration records.
+pub fn native_configuration_hash(histories: &[FeatureHistory]) -> String {
+    let mut configurations = histories
+        .iter()
+        .flat_map(|history| history.configurations.clone())
+        .collect::<Vec<_>>();
+    configurations.sort_by(|left, right| left.id.cmp(&right.id));
+    hash_debug(&configurations)
+}
+
+/// Stable hash of neutral feature parameters.
+pub fn parameter_hash(parameters: &[DesignParameter]) -> String {
+    let mut parameters = parameters.to_vec();
+    parameters.sort_by(|left, right| left.id.cmp(&right.id));
+    hash_debug(&parameters)
+}
+
+/// Stable hash of native feature parameter maps.
+pub fn native_parameter_hash(histories: &[FeatureHistory]) -> String {
+    let mut parameters = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.clone(), feature.parameters.clone()))
+        .collect::<Vec<_>>();
+    parameters.sort_by(|left, right| left.0.cmp(&right.0));
+    hash_debug(&parameters)
+}
+
+fn hash_debug<T: std::fmt::Debug + ?Sized>(value: &T) -> String {
+    let bytes = format!("{value:?}");
+    let mut out = String::with_capacity(64);
+    for byte in Sha256::digest(bytes.as_bytes()) {
+        write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    out
+}
+
+/// Resolve neutral/native feature edit authority and update the write history.
+pub fn prepare_features_for_write(
+    ir: &cadmpeg_ir::CadIr,
+    native: &mut Option<crate::native::SldprtNative>,
+) -> Result<(), CodecError> {
+    let neutral_hash = feature_hash(&ir.model.features);
+    let native_hash = native
+        .as_ref()
+        .map(|value| history_hash(&value.feature_histories));
+    let baseline_neutral = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("sldprt_neutral_feature_sha256"));
+    let baseline_native = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("sldprt_native_history_sha256"));
+    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &neutral_hash);
+    let native_changed = match (&native_hash, baseline_native) {
+        (Some(current), Some(baseline)) => current != baseline,
+        (Some(_), None) => true,
+        (None, Some(_)) => true,
+        (None, None) => false,
+    };
+    if baseline_neutral.is_none() && baseline_native.is_none() {
+        return sync_neutral_features(&ir.model.features, native);
+    }
+    match (neutral_changed, native_changed) {
+        (false, _) => Ok(()),
+        (true, true) => {
+            let projected = native
+                .as_ref()
+                .map(|value| project_features(&value.feature_histories))
+                .unwrap_or_default();
+            if feature_hash(&projected) == neutral_hash {
+                Ok(())
+            } else {
+                Err(CodecError::Malformed(
+                    "conflicting neutral and native SLDPRT feature edits".into(),
+                ))
+            }
+        }
+        (true, false) => sync_neutral_features(&ir.model.features, native),
+    }
+}
+
+/// Resolve neutral/native configuration edit authority before writing.
+pub fn prepare_configurations_for_write(
+    ir: &cadmpeg_ir::CadIr,
+    native: &mut Option<crate::native::SldprtNative>,
+) -> Result<(), CodecError> {
+    let neutral_hash = configuration_hash(&ir.model.configurations);
+    let native_hash = native
+        .as_ref()
+        .map(|value| native_configuration_hash(&value.feature_histories));
+    let baseline_neutral = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("sldprt_neutral_configuration_sha256"));
+    let baseline_native = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("sldprt_native_configuration_sha256"));
+    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &neutral_hash);
+    let native_changed = match (&native_hash, baseline_native) {
+        (Some(current), Some(baseline)) => current != baseline,
+        (Some(_), None) | (None, Some(_)) => true,
+        (None, None) => false,
+    };
+    if baseline_neutral.is_none() && baseline_native.is_none() {
+        sync_neutral_configurations(&ir.model.configurations, native);
+        return Ok(());
+    }
+    match (neutral_changed, native_changed) {
+        (false, _) => Ok(()),
+        (true, true) => {
+            let projected = native
+                .as_ref()
+                .map(|value| project_configurations(&value.feature_histories))
+                .unwrap_or_default();
+            if configuration_hash(&projected) == neutral_hash {
+                Ok(())
+            } else {
+                Err(CodecError::Malformed(
+                    "conflicting neutral and native SLDPRT configuration edits".into(),
+                ))
+            }
+        }
+        (true, false) => {
+            sync_neutral_configurations(&ir.model.configurations, native);
+            Ok(())
+        }
+    }
+}
+
+/// Resolve neutral/native parameter edit authority before writing.
+pub fn prepare_parameters_for_write(
+    ir: &cadmpeg_ir::CadIr,
+    native: &mut Option<crate::native::SldprtNative>,
+) -> Result<(), CodecError> {
+    let neutral_hash = parameter_hash(&ir.model.parameters);
+    let native_hash = native
+        .as_ref()
+        .map(|value| native_parameter_hash(&value.feature_histories));
+    let baseline_neutral = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("sldprt_neutral_parameter_sha256"));
+    let baseline_native = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("sldprt_native_parameter_sha256"));
+    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &neutral_hash);
+    let native_changed = match (&native_hash, baseline_native) {
+        (Some(current), Some(baseline)) => current != baseline,
+        (Some(_), None) | (None, Some(_)) => true,
+        (None, None) => false,
+    };
+    if baseline_neutral.is_none() && baseline_native.is_none() {
+        if ir.model.parameters.is_empty() {
+            return Ok(());
+        }
+        return sync_neutral_parameters(ir, native);
+    }
+    match (neutral_changed, native_changed) {
+        (false, _) => Ok(()),
+        (true, true) => {
+            let projected = native
+                .as_ref()
+                .map(|value| project_parameters(&value.feature_histories))
+                .unwrap_or_default();
+            if parameter_hash(&projected) == neutral_hash {
+                Ok(())
+            } else {
+                Err(CodecError::Malformed(
+                    "conflicting neutral and native SLDPRT parameter edits".into(),
+                ))
+            }
+        }
+        (true, false) => sync_neutral_parameters(ir, native),
+    }
+}
+
+fn sync_neutral_parameters(
+    ir: &cadmpeg_ir::CadIr,
+    native: &mut Option<crate::native::SldprtNative>,
+) -> Result<(), CodecError> {
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (&feature.id, feature))
+        .collect::<HashMap<_, _>>();
+    let mut desired = HashMap::<FeatureId, BTreeMap<String, String>>::new();
+    for parameter in &ir.model.parameters {
+        if parameter.value != parse_parameter_literal(&parameter.expression) {
+            return Err(CodecError::Malformed(format!(
+                "SLDPRT parameter {} has a value inconsistent with its expression",
+                parameter.id.0
+            )));
+        }
+        if !features.contains_key(&parameter.owner) {
+            return Err(CodecError::Malformed(format!(
+                "SLDPRT parameter {} references a missing feature",
+                parameter.id.0
+            )));
+        }
+        if desired
+            .entry(parameter.owner.clone())
+            .or_default()
+            .insert(parameter.name.clone(), parameter.expression.clone())
+            .is_some()
+        {
+            return Err(CodecError::Malformed(format!(
+                "duplicate SLDPRT parameter {} on feature {}",
+                parameter.name, parameter.owner
+            )));
+        }
+    }
+    let Some(native) = native.as_mut() else {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT parameters require feature records".into(),
+        ));
+    };
+    for (feature_id, feature) in features {
+        let record = native
+            .feature_histories
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+            .find(|record| {
+                feature.native_ref.as_deref() == Some(record.id.as_str())
+                    || record.source_id.as_deref() == Some(feature_id.0.as_str())
+            })
+            .ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT parameters for feature {feature_id} require a retained feature record"
+                ))
+            })?;
+        record.parameters = desired.remove(feature_id).unwrap_or_default();
+    }
+    Ok(())
+}
+
+fn sync_neutral_configurations(
+    configurations: &[DesignConfiguration],
+    native: &mut Option<crate::native::SldprtNative>,
+) {
+    if configurations.is_empty() {
+        return;
+    }
+    if native.is_none() {
+        *native = Some(crate::native::SldprtNative::default());
+    }
+    let native = native.as_mut().expect("initialized above");
+    if native.feature_histories.is_empty() {
+        native.feature_histories.push(FeatureHistory {
+            id: "sldprt:generated:feature-history#0".into(),
+            part_name: None,
+            configurations: Vec::new(),
+            features: Vec::new(),
+        });
+    }
+    for configuration in configurations {
+        let existing = native
+            .feature_histories
+            .iter_mut()
+            .flat_map(|history| &mut history.configurations)
+            .find(|candidate| configuration.native_ref.as_deref() == Some(candidate.id.as_str()));
+        if let Some(existing) = existing {
+            existing.name.clone_from(&configuration.name);
+            existing.material.clone_from(&configuration.material);
+            existing.properties.clone_from(&configuration.properties);
+        } else {
+            let parent = native.feature_histories[0].id.clone();
+            native.feature_histories[0]
+                .configurations
+                .push(Configuration {
+                    id: configuration.native_ref.clone().unwrap_or_else(|| {
+                        format!("sldprt:generated:configuration#{}", configuration.id.0)
+                    }),
+                    parent,
+                    name: configuration.name.clone(),
+                    material: configuration.material.clone(),
+                    properties: configuration.properties.clone(),
+                });
+        }
+    }
+}
+
+/// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
+pub fn sync_neutral_features(
+    features: &[cadmpeg_ir::features::Feature],
+    native: &mut Option<crate::native::SldprtNative>,
+) -> Result<(), CodecError> {
+    if features.is_empty() {
+        return Ok(());
+    }
+    if native.is_none() {
+        *native = Some(crate::native::SldprtNative {
+            version: crate::native::SLDPRT_NATIVE_VERSION,
+            feature_histories: vec![FeatureHistory {
+                id: "sldprt:generated:feature-history#0".into(),
+                part_name: None,
+                configurations: Vec::new(),
+                features: Vec::new(),
+            }],
+            feature_input_lanes: Vec::new(),
+        });
+    }
+    let native = native.as_mut().expect("initialized above");
+    if native.feature_histories.is_empty() {
+        native.feature_histories.push(FeatureHistory {
+            id: "sldprt:generated:feature-history#0".into(),
+            part_name: None,
+            configurations: Vec::new(),
+            features: Vec::new(),
+        });
+    }
+
+    let parent_sources = features
+        .iter()
+        .map(|feature| {
+            let source_id = native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()))
+                .and_then(|candidate| candidate.source_id.clone())
+                .unwrap_or_else(|| feature.id.0.clone());
+            (feature.id.clone(), source_id)
+        })
+        .collect::<HashMap<_, _>>();
+    let record_sources = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| {
+            feature
+                .source_id
+                .as_ref()
+                .map(|source| (feature.id.clone(), source.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    let sketch_sources = features
+        .iter()
+        .filter_map(|feature| match &feature.definition {
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+            } => parent_sources
+                .get(&feature.id)
+                .map(|source| (sketch.clone(), source.clone())),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+
+    for feature in features {
+        let mut existing = native
+            .feature_histories
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+            .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
+        let (kind, parameters, properties) = match &feature.definition {
+            FeatureDefinition::Native { kind, parameters } => (
+                kind.clone(),
+                parameters.clone(),
+                existing
+                    .as_deref()
+                    .map_or_else(BTreeMap::new, |record| record.properties.clone()),
+            ),
+            FeatureDefinition::Sketch { .. } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT sketch feature {} requires a retained native record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("Sketch") {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                (
+                    record.kind.clone(),
+                    record.parameters.clone(),
+                    record.properties.clone(),
+                )
+            }
+            FeatureDefinition::Extrude {
+                profile,
+                direction: None,
+                extent: Extent::Blind {
+                    length: Length(depth),
+                },
+                op,
+                draft: None,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained extrusion record",
+                        feature.id
+                    )));
+                };
+                if profile != &ProfileRef::Native(record.id.clone())
+                    || extrude_op(&record.kind) != Some(*op)
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported extrusion semantics",
+                        feature.id
+                    )));
+                }
+                let mut parameters = record.parameters.clone();
+                parameters.insert("Depth".into(), format_length_mm(*depth));
+                (record.kind.clone(), parameters, record.properties.clone())
+            }
+            FeatureDefinition::Fillet {
+                edges: EdgeSelection::Native(selection),
+                radius,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained fillet record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("Fillet") || selection != &record.id {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported fillet semantics",
+                        feature.id
+                    )));
+                }
+                let mut parameters = record.parameters.clone();
+                parameters.retain(|name, _| {
+                    name != "Radius"
+                        && !indexed_name(name, "Radius")
+                        && !indexed_name(name, "Position")
+                });
+                match radius {
+                    RadiusSpec::Constant {
+                        radius: Length(radius),
+                    } => {
+                        parameters.insert("Radius".into(), format_length_mm(*radius));
+                    }
+                    RadiusSpec::Variable { points } => {
+                        if points.len() < 2
+                            || points.iter().any(|point| {
+                                !point.parameter.is_finite()
+                                    || !(0.0..=1.0).contains(&point.parameter)
+                            })
+                            || points
+                                .windows(2)
+                                .any(|pair| pair[0].parameter >= pair[1].parameter)
+                        {
+                            return Err(CodecError::Malformed(format!(
+                                "SLDPRT feature {} has an invalid variable-radius law",
+                                feature.id
+                            )));
+                        }
+                        for (index, point) in points.iter().enumerate() {
+                            parameters
+                                .insert(format!("Position{index}"), point.parameter.to_string());
+                            parameters
+                                .insert(format!("Radius{index}"), format_length_mm(point.radius.0));
+                        }
+                    }
+                }
+                (record.kind.clone(), parameters, record.properties.clone())
+            }
+            FeatureDefinition::Chamfer {
+                edges: EdgeSelection::Native(selection),
+                spec,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained chamfer record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("Chamfer") || selection != &record.id {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported chamfer semantics",
+                        feature.id
+                    )));
+                }
+                let mut parameters = record.parameters.clone();
+                match spec {
+                    ChamferSpec::Distance { distance } => {
+                        if parameters.contains_key("Distance1")
+                            || parameters.contains_key("Distance2")
+                            || parameters.contains_key("Angle")
+                        {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} changes chamfer form",
+                                feature.id
+                            )));
+                        }
+                        parameters.insert("Distance".into(), format_length_mm(distance.0));
+                    }
+                    ChamferSpec::TwoDistances { first, second } => {
+                        if !parameters.contains_key("Distance1")
+                            || !parameters.contains_key("Distance2")
+                            || parameters.contains_key("Angle")
+                        {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} changes chamfer form",
+                                feature.id
+                            )));
+                        }
+                        parameters.insert("Distance1".into(), format_length_mm(first.0));
+                        parameters.insert("Distance2".into(), format_length_mm(second.0));
+                    }
+                    ChamferSpec::DistanceAngle { distance, angle } => {
+                        if !parameters.contains_key("Distance")
+                            || !parameters.contains_key("Angle")
+                            || parameters.contains_key("Distance1")
+                            || parameters.contains_key("Distance2")
+                        {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} changes chamfer form",
+                                feature.id
+                            )));
+                        }
+                        parameters.insert("Distance".into(), format_length_mm(distance.0));
+                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    }
+                }
+                (record.kind.clone(), parameters, record.properties.clone())
+            }
+            FeatureDefinition::Shell {
+                removed_faces: FaceSelection::Native(selection),
+                thickness,
+                outward,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained shell record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("Shell") || selection != &record.id {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported shell semantics",
+                        feature.id
+                    )));
+                }
+                let mut parameters = record.parameters.clone();
+                parameters.insert("Thickness".into(), format_length_mm(thickness.0));
+                let mut properties = record.properties.clone();
+                properties.insert("Outward".into(), outward.to_string());
+                (record.kind.clone(), parameters, properties)
+            }
+            FeatureDefinition::Hole {
+                face: Some(FaceSelection::Native(selection)),
+                position: None,
+                kind,
+                diameter,
+                extent,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained hole record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("Hole") || selection != &record.id {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported hole semantics",
+                        feature.id
+                    )));
+                }
+                let mut parameters = record.parameters.clone();
+                parameters.insert("Diameter".into(), format_length_mm(diameter.0));
+                parameters.remove("CounterboreDiameter");
+                parameters.remove("CounterboreDepth");
+                parameters.remove("CountersinkDiameter");
+                parameters.remove("CountersinkAngle");
+                match kind {
+                    HoleKind::Simple => {}
+                    HoleKind::Counterbore { diameter, depth } => {
+                        parameters
+                            .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
+                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
+                    }
+                    HoleKind::Countersink { diameter, angle } => {
+                        parameters
+                            .insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
+                        parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
+                    }
+                }
+                let mut properties = record.properties.clone();
+                match extent {
+                    Extent::Blind {
+                        length: Length(depth),
+                    } => {
+                        parameters.insert("Depth".into(), format_length_mm(*depth));
+                        properties.insert("EndCondition".into(), "Blind".into());
+                    }
+                    Extent::ThroughAll => {
+                        parameters.remove("Depth");
+                        properties.insert("EndCondition".into(), "ThroughAll".into());
+                    }
+                    _ => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} changes unsupported hole termination",
+                            feature.id
+                        )))
+                    }
+                }
+                (record.kind.clone(), parameters, properties)
+            }
+            FeatureDefinition::Revolve {
+                profile,
+                axis_origin,
+                axis_dir,
+                angle: Extent::Angle {
+                    angle: Angle(angle),
+                },
+                op,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained revolution record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("Revolve")
+                    || profile != &ProfileRef::Native(record.id.clone())
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported revolution semantics",
+                        feature.id
+                    )));
+                }
+                if !(axis_dir.norm().is_finite() && axis_dir.norm() > 0.0) {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has a degenerate revolution axis",
+                        feature.id
+                    )));
+                }
+                let mut parameters = record.parameters.clone();
+                parameters.insert("Angle".into(), format_angle_rad(*angle));
+                let mut properties = record.properties.clone();
+                properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
+                properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
+                properties.insert("Operation".into(), format_boolean_op(*op).into());
+                (record.kind.clone(), parameters, properties)
+            }
+            FeatureDefinition::Sweep {
+                profile,
+                path,
+                op,
+                twist,
+                scale,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained sweep record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("Sweep") {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let profile_source = profile_source(profile, &record_sources, &sketch_sources)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing sweep profile",
+                            feature.id
+                        ))
+                    })?;
+                let path_source =
+                    path_source(path, &record_sources, &sketch_sources).ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing sweep path",
+                            feature.id
+                        ))
+                    })?;
+                let mut parameters = record.parameters.clone();
+                match twist {
+                    Some(twist) => {
+                        parameters.insert("Twist".into(), format_angle_rad(twist.0));
+                    }
+                    None => {
+                        parameters.remove("Twist");
+                    }
+                }
+                match scale {
+                    Some(scale) if scale.is_finite() && *scale > 0.0 => {
+                        parameters.insert("Scale".into(), scale.to_string());
+                    }
+                    Some(_) => {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has an invalid sweep scale",
+                            feature.id
+                        )))
+                    }
+                    None => {
+                        parameters.remove("Scale");
+                    }
+                }
+                let mut properties = record.properties.clone();
+                properties.insert("Profile".into(), profile_source.clone());
+                properties.insert("Path".into(), path_source.clone());
+                properties.insert("Operation".into(), format_boolean_op(*op).into());
+                (record.kind.clone(), parameters, properties)
+            }
+            FeatureDefinition::Loft {
+                profiles,
+                guides,
+                op,
+                closed,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained loft record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("Loft") || profiles.len() < 2 {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported loft semantics",
+                        feature.id
+                    )));
+                }
+                let profile_sources = profiles
+                    .iter()
+                    .map(|profile| profile_source(profile, &record_sources, &sketch_sources))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing loft profile",
+                            feature.id
+                        ))
+                    })?;
+                let guide_sources = guides
+                    .iter()
+                    .map(|path| path_source(path, &record_sources, &sketch_sources))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing loft guide",
+                            feature.id
+                        ))
+                    })?;
+                let mut properties = record.properties.clone();
+                properties.insert("Profiles".into(), profile_sources.join(","));
+                if guide_sources.is_empty() {
+                    properties.remove("Guides");
+                } else {
+                    properties.insert("Guides".into(), guide_sources.join(","));
+                }
+                properties.insert("Operation".into(), format_boolean_op(*op).into());
+                properties.insert("Closed".into(), closed.to_string());
+                (record.kind.clone(), record.parameters.clone(), properties)
+            }
+            FeatureDefinition::Rib {
+                profile,
+                direction,
+                thickness,
+                both_sides,
+                draft,
+                op,
+            } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained rib record",
+                        feature.id
+                    )));
+                };
+                if !record.kind.eq_ignore_ascii_case("Rib") {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                require_direction(*direction, &feature.id, "rib direction")?;
+                let profile_source = profile_source(profile, &record_sources, &sketch_sources)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing rib profile",
+                            feature.id
+                        ))
+                    })?;
+                let mut parameters = record.parameters.clone();
+                parameters.insert("Thickness".into(), format_length_mm(thickness.0));
+                match draft {
+                    Some(draft) => {
+                        parameters.insert("Draft".into(), format_angle_rad(draft.0));
+                    }
+                    None => {
+                        parameters.remove("Draft");
+                    }
+                }
+                let mut properties = record.properties.clone();
+                properties.insert("Profile".into(), profile_source.clone());
+                properties.insert("Direction".into(), format_vector3(*direction));
+                properties.insert("BothSides".into(), both_sides.to_string());
+                properties.insert("Operation".into(), format_boolean_op(*op).into());
+                (record.kind.clone(), parameters, properties)
+            }
+            FeatureDefinition::Pattern { seeds, pattern } => {
+                let Some(record) = existing.as_deref() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained pattern record",
+                        feature.id
+                    )));
+                };
+                let expected_form = match pattern {
+                    PatternKind::Linear { .. } => PatternForm::Linear,
+                    PatternKind::Circular { .. } => PatternForm::Circular,
+                    PatternKind::Mirror { .. } => PatternForm::Mirror,
+                };
+                if pattern_form(record) != Some(expected_form) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes pattern form",
+                        feature.id
+                    )));
+                }
+                let seed_sources = seeds
+                    .iter()
+                    .map(|seed| parent_sources.get(seed).cloned())
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing pattern seed",
+                            feature.id
+                        ))
+                    })?;
+                if seed_sources.is_empty() {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no pattern seeds",
+                        feature.id
+                    )));
+                }
+                let mut parameters = record.parameters.clone();
+                let mut properties = record.properties.clone();
+                properties.insert("Seeds".into(), seed_sources.join(","));
+                match pattern {
+                    PatternKind::Linear {
+                        direction,
+                        spacing,
+                        count,
+                    } => {
+                        require_direction(*direction, &feature.id, "pattern")?;
+                        require_count(*count, &feature.id)?;
+                        properties.insert("Direction".into(), format_vector3(*direction));
+                        parameters.insert("Spacing".into(), format_length_mm(spacing.0));
+                        parameters.insert("Count".into(), count.to_string());
+                    }
+                    PatternKind::Circular {
+                        axis_origin,
+                        axis_dir,
+                        angle,
+                        count,
+                    } => {
+                        require_direction(*axis_dir, &feature.id, "pattern axis")?;
+                        require_count(*count, &feature.id)?;
+                        properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
+                        properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
+                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                        parameters.insert("Count".into(), count.to_string());
+                    }
+                    PatternKind::Mirror {
+                        plane_origin,
+                        plane_normal,
+                    } => {
+                        require_direction(*plane_normal, &feature.id, "mirror plane normal")?;
+                        properties.insert("PlaneOrigin".into(), format_point3_mm(*plane_origin));
+                        properties.insert("PlaneNormal".into(), format_vector3(*plane_normal));
+                    }
+                }
+                (record.kind.clone(), parameters, properties)
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} requires native operation serialization",
+                    feature.id
+                )))
+            }
+        };
+        let ordinal = u32::try_from(feature.ordinal)
+            .map_err(|_| CodecError::Malformed("feature ordinal exceeds u32".into()))?;
+        let parent_source_id = feature
+            .parent
+            .as_ref()
+            .and_then(|parent| parent_sources.get(parent).cloned());
+        if let Some(existing) = existing.as_mut() {
+            existing.ordinal = ordinal;
+            existing.name = feature.name.clone().unwrap_or_default();
+            existing.kind = kind;
+            existing.suppressed = feature.suppressed;
+            existing.parent_source_id = parent_source_id;
+            existing.parameters = parameters;
+            existing.properties = properties;
+        } else {
+            let history = &mut native.feature_histories[0];
+            history.features.push(Feature {
+                id: feature
+                    .native_ref
+                    .clone()
+                    .unwrap_or_else(|| format!("sldprt:generated:feature#{}", feature.id.0)),
+                parent: history.id.clone(),
+                source_id: Some(feature.id.0.clone()),
+                parent_source_id,
+                ordinal,
+                name: feature.name.clone().unwrap_or_default(),
+                kind,
+                suppressed: feature.suppressed,
+                parameters,
+                properties,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn profile_source(
+    profile: &ProfileRef,
+    native: &HashMap<String, String>,
+    sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
+) -> Option<String> {
+    match profile {
+        ProfileRef::Native(id) => native.get(id).cloned(),
+        ProfileRef::Sketch(id) => sketches.get(id).cloned(),
+        ProfileRef::Faces(_) => None,
+    }
+}
+
+fn path_source(
+    path: &PathRef,
+    native: &HashMap<String, String>,
+    sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
+) -> Option<String> {
+    match path {
+        PathRef::Native(id) => native.get(id).cloned(),
+        PathRef::Sketch(id) => sketches.get(id).cloned(),
+        PathRef::Edges(_) | PathRef::Curves(_) => None,
+    }
+}
+
+fn extrude_op(kind: &str) -> Option<BooleanOp> {
+    match kind.to_ascii_lowercase().as_str() {
+        "bossextrude" => Some(BooleanOp::Join),
+        "cutextrude" => Some(BooleanOp::Cut),
+        _ => None,
+    }
+}
+
+fn require_direction(
+    direction: Vector3,
+    feature: &FeatureId,
+    role: &str,
+) -> Result<(), CodecError> {
+    if direction.norm().is_finite() && direction.norm() > 0.0 {
+        Ok(())
+    } else {
+        Err(CodecError::Malformed(format!(
+            "SLDPRT feature {feature} has a degenerate {role}"
+        )))
+    }
+}
+
+fn require_count(count: u32, feature: &FeatureId) -> Result<(), CodecError> {
+    if count > 0 {
+        Ok(())
+    } else {
+        Err(CodecError::Malformed(format!(
+            "SLDPRT feature {feature} has a zero pattern count"
+        )))
+    }
+}
+
+fn indexed_name(name: &str, prefix: &str) -> bool {
+    name.strip_prefix(prefix).is_some_and(|suffix| {
+        !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 fn xml_text(bytes: &[u8]) -> Option<String> {

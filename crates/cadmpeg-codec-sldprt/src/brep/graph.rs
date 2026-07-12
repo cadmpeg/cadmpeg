@@ -65,6 +65,124 @@ pub struct Brep {
     pub stats: Stats,
 }
 
+impl Brep {
+    /// Qualify every document-arena identity and internal reference by one site key.
+    pub(crate) fn qualify_ids(&mut self, site: &str) {
+        let qualify = |value: &str| {
+            value.split_once('#').map_or_else(
+                || value.to_owned(),
+                |(namespace, key)| format!("{namespace}#{key}@{site}"),
+            )
+        };
+        for body in &mut self.bodies {
+            body.id.0 = qualify(&body.id.0);
+            body.regions.iter_mut().for_each(|id| id.0 = qualify(&id.0));
+        }
+        for region in &mut self.regions {
+            region.id.0 = qualify(&region.id.0);
+            region.body.0 = qualify(&region.body.0);
+            region
+                .shells
+                .iter_mut()
+                .for_each(|id| id.0 = qualify(&id.0));
+        }
+        for shell in &mut self.shells {
+            shell.id.0 = qualify(&shell.id.0);
+            shell.region.0 = qualify(&shell.region.0);
+            shell.faces.iter_mut().for_each(|id| id.0 = qualify(&id.0));
+            shell
+                .wire_edges
+                .iter_mut()
+                .for_each(|id| id.0 = qualify(&id.0));
+            shell
+                .free_vertices
+                .iter_mut()
+                .for_each(|id| id.0 = qualify(&id.0));
+        }
+        for face in &mut self.faces {
+            face.id.0 = qualify(&face.id.0);
+            face.shell.0 = qualify(&face.shell.0);
+            face.surface.0 = qualify(&face.surface.0);
+            face.loops.iter_mut().for_each(|id| id.0 = qualify(&id.0));
+        }
+        for loop_ in &mut self.loops {
+            loop_.id.0 = qualify(&loop_.id.0);
+            loop_.face.0 = qualify(&loop_.face.0);
+            loop_
+                .coedges
+                .iter_mut()
+                .for_each(|id| id.0 = qualify(&id.0));
+        }
+        for coedge in &mut self.coedges {
+            coedge.id.0 = qualify(&coedge.id.0);
+            coedge.owner_loop.0 = qualify(&coedge.owner_loop.0);
+            coedge.edge.0 = qualify(&coedge.edge.0);
+            coedge.next.0 = qualify(&coedge.next.0);
+            coedge.previous.0 = qualify(&coedge.previous.0);
+            coedge.radial_next.0 = qualify(&coedge.radial_next.0);
+            if let Some(pcurve) = &mut coedge.pcurve {
+                pcurve.0 = qualify(&pcurve.0);
+            }
+        }
+        for edge in &mut self.edges {
+            edge.id.0 = qualify(&edge.id.0);
+            if let Some(curve) = &mut edge.curve {
+                curve.0 = qualify(&curve.0);
+            }
+            edge.start.0 = qualify(&edge.start.0);
+            edge.end.0 = qualify(&edge.end.0);
+        }
+        for vertex in &mut self.vertices {
+            vertex.id.0 = qualify(&vertex.id.0);
+            vertex.point.0 = qualify(&vertex.point.0);
+        }
+        self.points
+            .iter_mut()
+            .for_each(|point| point.id.0 = qualify(&point.id.0));
+        for surface in &mut self.surfaces {
+            surface.id.0 = qualify(&surface.id.0);
+            if let SurfaceGeometry::Unknown {
+                record: Some(record),
+            } = &mut surface.geometry
+            {
+                record.0 = qualify(&record.0);
+            }
+        }
+        for curve in &mut self.curves {
+            curve.id.0 = qualify(&curve.id.0);
+            if let CurveGeometry::Unknown {
+                record: Some(record),
+            } = &mut curve.geometry
+            {
+                record.0 = qualify(&record.0);
+            }
+        }
+        self.pcurves
+            .iter_mut()
+            .for_each(|pcurve| pcurve.id.0 = qualify(&pcurve.id.0));
+        for record in &mut self.unknowns {
+            record.id.0 = qualify(&record.id.0);
+            record
+                .links
+                .iter_mut()
+                .for_each(|link| *link = qualify(link));
+        }
+        for color in &mut self.face_colors {
+            if let Some(target) = &mut color.target {
+                *target = qualify(target);
+            }
+        }
+        self.annotations.provenance = std::mem::take(&mut self.annotations.provenance)
+            .into_iter()
+            .map(|(id, value)| (qualify(&id), value))
+            .collect();
+        self.annotations.exactness = std::mem::take(&mut self.annotations.exactness)
+            .into_iter()
+            .map(|(id, value)| (qualify(&id), value))
+            .collect();
+    }
+}
+
 /// Transfer limitations found while building a [`Brep`].
 #[derive(Default)]
 pub struct Stats {
@@ -171,17 +289,54 @@ pub fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
 /// Input order determines override order for topology records with the same
 /// attribute id. `stream` names the combined provenance source.
 pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
-    let mut combined = Vec::new();
+    let mut carriers = HashMap::new();
+    let mut tables = topology::Tables::default();
+    let mut facts = entity::Facts::default();
+    let mut initialized = false;
     for (payload, header) in bodies {
-        combined.extend_from_slice(&payload[header.body_offset.min(payload.len())..]);
+        let body = &payload[header.body_offset.min(payload.len())..];
+        let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
+        let scanned_tables = topology::scan(body);
+        let mut scanned_facts = entity::scan(body);
+        if !initialized || !is_deltas {
+            for (attr, carrier) in scan_carriers(body) {
+                carriers.entry(attr).or_insert(carrier);
+            }
+            if initialized {
+                tables.merge_deltas(scanned_tables);
+                if facts.bodies.is_empty() {
+                    facts.bodies = scanned_facts.bodies;
+                }
+                facts.face_colors.append(&mut scanned_facts.face_colors);
+            } else {
+                tables = scanned_tables;
+                facts = scanned_facts;
+                initialized = true;
+            }
+        } else {
+            for (attr, carrier) in scan_carriers(body) {
+                carriers.entry(attr).or_insert(carrier);
+            }
+            tables.merge_deltas(scanned_tables);
+            facts.face_colors.append(&mut scanned_facts.face_colors);
+        }
     }
-    decode_body(&combined, stream)
+    decode_graph(&carriers, &tables, facts, stream)
 }
 
 fn decode_body(body: &[u8], stream: &str) -> Brep {
     let carriers = scan_carriers(body);
     let t = topology::scan(body);
     let entity_facts = entity::scan(body);
+    decode_graph(&carriers, &t, entity_facts, stream)
+}
+
+fn decode_graph(
+    carriers: &HashMap<u16, Carrier>,
+    t: &topology::Tables,
+    entity_facts: entity::Facts,
+    stream: &str,
+) -> Brep {
     let body_records = entity_facts.bodies;
 
     let mut out = Brep {
@@ -196,7 +351,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
     }
 
     // Walk every face-use bridge to collect its ordered loop/coedge structure.
-    let mut faces: Vec<WalkedFace> = t.bridges.values().map(|b| walk_face(b, &t)).collect();
+    let mut faces: Vec<WalkedFace> = t.bridges.values().map(|b| walk_face(b, t)).collect();
     faces.sort_by_key(|f| f.bridge_attr);
     let mut face_owners = HashSet::new();
     faces.retain(|face| {
@@ -431,11 +586,20 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
 
     // Surfaces + faces.
     let mut bridge_group = HashMap::new();
+    let mut bridge_shell = HashMap::new();
     for (group, body_record) in body_records.iter().enumerate() {
         for face in &faces {
             let owner = t.bridges.get(&face.bridge_attr).and_then(|r| r.owner);
             if owner.is_some_and(|owner| body_record.refs.contains(&owner)) {
                 bridge_group.insert(face.bridge_attr, group);
+                if let Some(shell) = body_record
+                    .regions
+                    .iter()
+                    .flat_map(|region| &region.shells)
+                    .find(|shell| owner.is_some_and(|owner| shell.refs.contains(&owner)))
+                {
+                    bridge_shell.insert(face.bridge_attr, shell.attr);
+                }
             }
         }
     }
@@ -491,21 +655,14 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             .tag("00_0e");
         out.faces.push(Face {
             id: FaceId(id_face(f.bridge_attr)),
-            shell: ShellId(
-                bridge_group
+            shell: ShellId(format!(
+                "sldprt:brep:shell#{}",
+                bridge_shell
                     .get(&f.bridge_attr)
-                    .and_then(|group| body_records.get(*group))
-                    .and_then(|record| record.shell)
-                    .map_or_else(
-                        || {
-                            format!(
-                                "sldprt:brep:shell#{}",
-                                bridge_group.get(&f.bridge_attr).copied().unwrap_or(0)
-                            )
-                        },
-                        |(attr, _)| format!("sldprt:brep:shell#{attr}"),
-                    ),
-            ),
+                    .copied()
+                    .or_else(|| bridge_group.get(&f.bridge_attr).copied().map(|v| v as u16))
+                    .unwrap_or(0)
+            )),
             surface: SurfaceId(id_surf(f.bridge_attr)),
             sense: sense_of(f.marker),
             loops,
@@ -553,20 +710,6 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             || "sldprt:brep:body#0".to_string(),
             |r| format!("sldprt:brep:body#{}", r.attr),
         );
-        let region_id = body_record.and_then(|record| record.region).map_or_else(
-            || format!("sldprt:brep:region#{group}"),
-            |(attr, _)| format!("sldprt:brep:region#{attr}"),
-        );
-        let shell_id = body_record.and_then(|record| record.shell).map_or_else(
-            || format!("sldprt:brep:shell#{group}"),
-            |(attr, _)| format!("sldprt:brep:shell#{attr}"),
-        );
-        let faces = out
-            .faces
-            .iter()
-            .filter(|face| face.shell.0 == shell_id)
-            .map(|face| face.id.clone())
-            .collect();
         let mut annotate_group = |id: &str, source: Option<(usize, &str)>| {
             let (offset, tag, exactness) = source.map_or(
                 (0, "synthetic_grouping", Exactness::Derived),
@@ -576,37 +719,68 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             annotations.exactness(id, exactness);
         };
         annotate_group(
-            &shell_id,
-            body_record
-                .and_then(|record| record.shell)
-                .map(|(_, offset)| (offset, "00_51_shell")),
-        );
-        annotate_group(
-            &region_id,
-            body_record
-                .and_then(|record| record.region)
-                .map(|(_, offset)| (offset, "00_51_region")),
-        );
-        annotate_group(
             &body_id,
             body_record.map(|record| (record.offset, "00_51_body")),
         );
-        out.shells.push(Shell {
-            id: ShellId(shell_id.clone()),
-            region: RegionId(region_id.clone()),
-            faces,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
-        out.regions.push(Region {
-            id: RegionId(region_id.clone()),
-            body: BodyId(body_id.clone()),
-            shells: vec![ShellId(shell_id)],
-        });
+        let native_regions = body_record.map_or(&[][..], |record| record.regions.as_slice());
+        let mut body_regions = Vec::new();
+        if native_regions.is_empty() {
+            let region_id = format!("sldprt:brep:region#{group}");
+            let shell_id = format!("sldprt:brep:shell#{group}");
+            annotate_group(&shell_id, None);
+            annotate_group(&region_id, None);
+            out.shells.push(Shell {
+                id: ShellId(shell_id.clone()),
+                region: RegionId(region_id.clone()),
+                faces: out
+                    .faces
+                    .iter()
+                    .filter(|face| face.shell.0 == shell_id)
+                    .map(|face| face.id.clone())
+                    .collect(),
+                wire_edges: Vec::new(),
+                free_vertices: Vec::new(),
+            });
+            out.regions.push(Region {
+                id: RegionId(region_id.clone()),
+                body: BodyId(body_id.clone()),
+                shells: vec![ShellId(shell_id)],
+            });
+            body_regions.push(RegionId(region_id));
+        } else {
+            for region in native_regions {
+                let region_id = format!("sldprt:brep:region#{}", region.attr);
+                annotate_group(&region_id, Some((region.offset, "00_51_region")));
+                let mut region_shells = Vec::new();
+                for shell in &region.shells {
+                    let shell_id = format!("sldprt:brep:shell#{}", shell.attr);
+                    annotate_group(&shell_id, Some((shell.offset, "00_51_shell")));
+                    out.shells.push(Shell {
+                        id: ShellId(shell_id.clone()),
+                        region: RegionId(region_id.clone()),
+                        faces: out
+                            .faces
+                            .iter()
+                            .filter(|face| face.shell.0 == shell_id)
+                            .map(|face| face.id.clone())
+                            .collect(),
+                        wire_edges: Vec::new(),
+                        free_vertices: Vec::new(),
+                    });
+                    region_shells.push(ShellId(shell_id));
+                }
+                out.regions.push(Region {
+                    id: RegionId(region_id.clone()),
+                    body: BodyId(body_id.clone()),
+                    shells: region_shells,
+                });
+                body_regions.push(RegionId(region_id));
+            }
+        }
         out.bodies.push(Body {
             id: BodyId(body_id),
             kind: body_record.map_or(BodyKind::Solid, |record| record.kind),
-            regions: vec![RegionId(region_id)],
+            regions: body_regions,
             transform: None,
             name: None,
             color: None,

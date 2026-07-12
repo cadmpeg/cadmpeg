@@ -16,7 +16,7 @@ use crate::container::MARKER;
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
 pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-    let native = ir
+    let mut native = ir
         .native
         .namespace("sldprt")
         .map(|namespace| {
@@ -44,6 +44,10 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
     let ir = &normalized;
+    crate::resolved_features::prepare_sketches_for_write(ir, native.as_mut())?;
+    crate::history::prepare_features_for_write(ir, &mut native)?;
+    crate::history::prepare_parameters_for_write(ir, &mut native)?;
+    crate::history::prepare_configurations_for_write(ir, &mut native)?;
     let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
     if !validation.is_ok() {
         let detail = validation

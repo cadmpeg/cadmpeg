@@ -13,8 +13,21 @@ pub struct BodyRecord {
     pub kind: BodyKind,
     pub refs: Vec<u16>,
     pub offset: usize,
-    pub region: Option<(u16, usize)>,
-    pub shell: Option<(u16, usize)>,
+    pub regions: Vec<RegionRecord>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RegionRecord {
+    pub attr: u16,
+    pub offset: usize,
+    pub shells: Vec<ShellRecord>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ShellRecord {
+    pub attr: u16,
+    pub offset: usize,
+    pub refs: Vec<u16>,
 }
 
 #[derive(Debug, Clone)]
@@ -241,6 +254,22 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
         }
         let mut refs = refs.into_iter().collect::<Vec<_>>();
         refs.sort_unstable();
+        let regions = linked_all(&by_attr, root, 0x001b)
+            .into_iter()
+            .flat_map(|region_link| linked_all(&by_attr, region_link, 0x001f))
+            .map(|region| RegionRecord {
+                attr: region.attr,
+                offset: region.offset,
+                shells: linked_all(&by_attr, region, 0x0021)
+                    .into_iter()
+                    .map(|shell| ShellRecord {
+                        attr: shell.attr,
+                        offset: shell.offset,
+                        refs: reachable_refs(&by_attr, shell),
+                    })
+                    .collect(),
+            })
+            .collect();
         out.push(BodyRecord {
             attr: root.attr,
             kind: if sheet {
@@ -250,26 +279,39 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
             },
             refs,
             offset: root.offset,
-            region: linked(&by_attr, root, 0x001b)
-                .and_then(|(attr, _)| linked(&by_attr, by_attr[&attr], 0x001f)),
-            shell: linked(&by_attr, root, 0x001b)
-                .and_then(|(attr, _)| linked(&by_attr, by_attr[&attr], 0x001f))
-                .and_then(|(attr, _)| linked(&by_attr, by_attr[&attr], 0x0021)),
+            regions,
         });
     }
     out.sort_by_key(|record| record.attr);
     out
 }
 
-fn linked(
-    by_attr: &HashMap<u16, &EntityRecord>,
-    record: &EntityRecord,
+fn linked_all<'a>(
+    by_attr: &HashMap<u16, &'a EntityRecord>,
+    record: &'a EntityRecord,
     disc: u16,
-) -> Option<(u16, usize)> {
+) -> Vec<&'a EntityRecord> {
     record
         .refs
         .iter()
         .filter_map(|reference| by_attr.get(reference))
-        .find(|target| target.disc == disc)
-        .map(|target| (target.attr, target.offset))
+        .copied()
+        .filter(|target| target.disc == disc)
+        .collect()
+}
+
+fn reachable_refs(by_attr: &HashMap<u16, &EntityRecord>, root: &EntityRecord) -> Vec<u16> {
+    let mut refs = HashSet::new();
+    let mut pending = root.refs.clone();
+    while let Some(reference) = pending.pop() {
+        if reference <= 1 || !refs.insert(reference) {
+            continue;
+        }
+        if let Some(record) = by_attr.get(&reference) {
+            pending.extend(record.refs.iter().copied());
+        }
+    }
+    let mut refs = refs.into_iter().collect::<Vec<_>>();
+    refs.sort_unstable();
+    refs
 }

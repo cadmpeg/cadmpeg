@@ -49,6 +49,7 @@ pub mod native;
 mod provenance;
 pub mod read;
 pub mod report;
+pub mod sketches;
 pub mod subd;
 pub mod tessellation;
 pub mod topology;
@@ -63,13 +64,20 @@ pub use codec::{
 };
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
-pub use features::{Feature, FeatureDefinition, FeatureId};
+pub use features::{
+    ConfigurationId, DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId,
+    ParameterId, ParameterValue,
+};
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 /// Source location attached to a [`LossNote`].
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
     Check, DecodeReport, ExportReport, Finding, LossCategory, LossNote, Severity, ValidationReport,
+};
+pub use sketches::{
+    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
 };
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,

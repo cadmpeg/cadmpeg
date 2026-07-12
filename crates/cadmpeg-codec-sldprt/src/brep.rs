@@ -30,6 +30,7 @@ pub(crate) const LEN_TO_MM: f64 = 1000.0;
 
 pub use self::graph::{decode, decode_bodies, Brep, Stats};
 pub(crate) use self::spline::{patch_nurbs_curve, patch_nurbs_surface};
+pub(crate) use self::topology::patch_point;
 
 mod graph;
 
@@ -275,4 +276,44 @@ pub(crate) fn scan_carriers(body: &[u8]) -> HashMap<u16, Carrier> {
         out.insert(attr, carrier);
     }
     out
+}
+
+/// Return the typed curve carried by one stream-local attribute.
+pub(crate) fn curve_by_attr(body: &[u8], attr: u16) -> Option<CurveGeometry> {
+    match scan_carriers(body).remove(&attr)?.geometry {
+        CarrierGeometry::Curve(curve) => Some(curve),
+        CarrierGeometry::Surface(_) => None,
+    }
+}
+
+/// Replace the scalar run of one compact analytic carrier.
+pub(crate) fn patch_compact_values(body: &mut [u8], attr: u16, values: &[f64]) -> bool {
+    let Some(carrier) = scan_carriers(body).remove(&attr) else {
+        return false;
+    };
+    let Some(start) = carrier.end.checked_sub(values.len() * 8) else {
+        return false;
+    };
+    let Some(bytes) = body.get_mut(start..carrier.end) else {
+        return false;
+    };
+    for (slot, value) in bytes.chunks_exact_mut(8).zip(values) {
+        slot.copy_from_slice(&value.to_be_bytes());
+    }
+    true
+}
+
+/// Patch one stream-local NURBS curve without changing its storage shape.
+pub(crate) fn patch_nurbs_by_attr(
+    body: &mut [u8],
+    attr: u16,
+    new: &cadmpeg_ir::geometry::NurbsCurve,
+) -> bool {
+    let Some(carrier) = scan_carriers(body).remove(&attr) else {
+        return false;
+    };
+    let CarrierGeometry::Curve(CurveGeometry::Nurbs(old)) = carrier.geometry else {
+        return false;
+    };
+    patch_nurbs_curve(body, carrier.offset, &old, new, 0.001).is_some()
 }

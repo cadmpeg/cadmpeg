@@ -195,6 +195,468 @@ fn arena_registry_drives_counts_and_diff_dispatch() {
 }
 
 #[test]
+fn current_json_without_configurations_defaults_to_empty() {
+    let ir = unit_cube();
+    let mut value = serde_json::to_value(&ir).unwrap();
+    value
+        .get_mut("model")
+        .and_then(serde_json::Value::as_object_mut)
+        .unwrap()
+        .remove("configurations");
+
+    let decoded: CadIr = serde_json::from_value(value).unwrap();
+    assert!(decoded.model.configurations.is_empty());
+}
+
+#[test]
+fn current_json_without_parameters_defaults_to_empty() {
+    let ir = unit_cube();
+    let mut value = serde_json::to_value(&ir).unwrap();
+    value
+        .get_mut("model")
+        .and_then(serde_json::Value::as_object_mut)
+        .unwrap()
+        .remove("parameters");
+
+    let decoded: CadIr = serde_json::from_value(value).unwrap();
+    assert!(decoded.model.parameters.is_empty());
+}
+
+#[test]
+fn current_json_without_sketch_arenas_defaults_to_empty() {
+    let ir = unit_cube();
+    let mut value = serde_json::to_value(&ir).unwrap();
+    let model = value
+        .get_mut("model")
+        .and_then(serde_json::Value::as_object_mut)
+        .unwrap();
+    model.remove("sketches");
+    model.remove("sketch_entities");
+    model.remove("sketch_constraints");
+
+    let decoded: CadIr = serde_json::from_value(value).unwrap();
+    assert!(decoded.model.sketches.is_empty());
+    assert!(decoded.model.sketch_entities.is_empty());
+    assert!(decoded.model.sketch_constraints.is_empty());
+}
+
+#[test]
+fn malformed_sketch_geometry_and_constraints_are_rejected() {
+    use crate::features::Length;
+    use crate::math::{Point2, Point3, Vector3};
+    use crate::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    };
+
+    let mut ir = unit_cube();
+    let sketch_id = SketchId("synthetic:test:sketch#0".into());
+    let circle_id = SketchEntityId("synthetic:test:sketch-entity#0".into());
+    let nurbs_id = SketchEntityId("synthetic:test:sketch-entity#1".into());
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 1.0),
+        profiles: vec![vec![SketchEntityUse {
+            entity: circle_id.clone(),
+            reversed: false,
+        }]],
+        native_ref: None,
+    });
+    ir.model.sketch_entities.extend([
+        SketchEntity {
+            id: circle_id.clone(),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(-1.0),
+            },
+        },
+        SketchEntity {
+            id: nurbs_id,
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Nurbs {
+                degree: 3,
+                knots: vec![0.0, 1.0],
+                control_points: vec![Point2::new(0.0, 0.0)],
+                weights: Some(vec![0.0]),
+                periodic: false,
+            },
+        },
+    ]);
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: SketchConstraintId("synthetic:test:sketch-constraint#0".into()),
+        sketch: sketch_id,
+        definition: SketchConstraintDefinition::Coincident {
+            entities: vec![circle_id],
+        },
+    });
+    ir.finalize();
+
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::GeometricConsistency
+            && finding.entity.as_deref() == Some("synthetic:test:sketch#0")
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::Bounds
+            && finding.entity.as_deref() == Some("synthetic:test:sketch-entity#0")
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ParameterDomain
+            && finding.entity.as_deref() == Some("synthetic:test:sketch-entity#1")
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::Counts
+            && finding.entity.as_deref() == Some("synthetic:test:sketch-constraint#0")
+    }));
+}
+
+#[test]
+fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
+    use crate::features::ParameterId;
+    use crate::math::{Point2, Point3, Vector3};
+    use crate::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+    };
+
+    let entity = SketchEntityId("synthetic:test:entity#0".into());
+    let parameter = ParameterId("synthetic:test:parameter#0".into());
+    let definitions = vec![
+        SketchConstraintDefinition::CoincidentLoci {
+            loci: vec![
+                SketchLocus::Start(entity.clone()),
+                SketchLocus::Center(entity.clone()),
+            ],
+        },
+        SketchConstraintDefinition::Midpoint {
+            point: SketchLocus::End(entity.clone()),
+            entity: entity.clone(),
+        },
+        SketchConstraintDefinition::Concentric {
+            first: entity.clone(),
+            second: entity.clone(),
+        },
+        SketchConstraintDefinition::Collinear {
+            first: entity.clone(),
+            second: entity.clone(),
+        },
+        SketchConstraintDefinition::Symmetric {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
+            axis: entity.clone(),
+        },
+        SketchConstraintDefinition::Radius {
+            entity: entity.clone(),
+            parameter: parameter.clone(),
+        },
+        SketchConstraintDefinition::Diameter {
+            entity: entity.clone(),
+            parameter: parameter.clone(),
+        },
+        SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
+            parameter: parameter.clone(),
+        },
+        SketchConstraintDefinition::HorizontalDistance {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
+            parameter: parameter.clone(),
+        },
+        SketchConstraintDefinition::VerticalDistance {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
+            parameter,
+        },
+    ];
+    let json = serde_json::to_string(&definitions).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Vec<SketchConstraintDefinition>>(&json).unwrap(),
+        definitions
+    );
+
+    let mut ir = unit_cube();
+    let sketch = SketchId("synthetic:test:sketch#locus".into());
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    ir.model.sketch_entities.push(SketchEntity {
+        id: entity.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        },
+    });
+    let constraint_id = SketchConstraintId("synthetic:test:constraint#locus".into());
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: constraint_id.clone(),
+        sketch,
+        definition: SketchConstraintDefinition::CoincidentLoci {
+            loci: vec![
+                SketchLocus::Center(entity.clone()),
+                SketchLocus::Start(entity),
+            ],
+        },
+    });
+    ir.finalize();
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(constraint_id.0.as_str())
+            && finding.check == Check::GeometricConsistency
+    }));
+}
+
+#[test]
+fn sketch_profiles_and_constraints_enforce_local_connectivity() {
+    use crate::math::{Point2, Point3, Vector3};
+    use crate::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    };
+
+    let mut ir = unit_cube();
+    let first_sketch = SketchId("synthetic:test:sketch#first".into());
+    let second_sketch = SketchId("synthetic:test:sketch#second".into());
+    let first = SketchEntityId("synthetic:test:entity#first".into());
+    let disconnected = SketchEntityId("synthetic:test:entity#disconnected".into());
+    let foreign = SketchEntityId("synthetic:test:entity#foreign".into());
+    let plane = |id: SketchId, profiles| Sketch {
+        id,
+        name: None,
+        configuration: None,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        profiles,
+        native_ref: None,
+    };
+    ir.model.sketches.extend([
+        plane(
+            first_sketch.clone(),
+            vec![vec![
+                SketchEntityUse {
+                    entity: first.clone(),
+                    reversed: false,
+                },
+                SketchEntityUse {
+                    entity: disconnected.clone(),
+                    reversed: false,
+                },
+            ]],
+        ),
+        plane(second_sketch.clone(), Vec::new()),
+    ]);
+    let line = |id, sketch, start, end| SketchEntity {
+        id,
+        sketch,
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line { start, end },
+    };
+    ir.model.sketch_entities.extend([
+        line(
+            first.clone(),
+            first_sketch.clone(),
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        ),
+        line(
+            disconnected,
+            first_sketch.clone(),
+            Point2::new(2.0, 0.0),
+            Point2::new(3.0, 0.0),
+        ),
+        line(
+            foreign.clone(),
+            second_sketch,
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        ),
+    ]);
+    let constraint = SketchConstraintId("synthetic:test:constraint#foreign".into());
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: constraint.clone(),
+        sketch: first_sketch.clone(),
+        definition: SketchConstraintDefinition::Parallel {
+            first,
+            second: foreign,
+        },
+    });
+    ir.finalize();
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(first_sketch.0.as_str())
+            && finding.message.contains("disconnected consecutive")
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(constraint.0.as_str())
+            && finding.message.contains("different sketch")
+    }));
+}
+
+#[test]
+fn neutral_features_resolve_sketch_profile_and_path_operands() {
+    use crate::features::{
+        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, PathRef, ProfileRef,
+    };
+    use crate::sketches::SketchId;
+
+    let sketch = SketchId("synthetic:test:sketch#missing".into());
+    let definitions = [
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Sketch(sketch.clone()),
+            direction: None,
+            extent: Extent::Blind {
+                length: Length(10.0),
+            },
+            op: BooleanOp::NewBody,
+            draft: None,
+        },
+        FeatureDefinition::Sweep {
+            profile: ProfileRef::Sketch(sketch.clone()),
+            path: PathRef::Sketch(sketch.clone()),
+            op: BooleanOp::NewBody,
+            twist: None,
+            scale: None,
+        },
+    ];
+    let json = serde_json::to_string(&definitions).unwrap();
+    assert_eq!(
+        serde_json::from_str::<[FeatureDefinition; 2]>(&json).unwrap(),
+        definitions
+    );
+
+    let mut ir = unit_cube();
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#sketch-ref".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: false,
+        parent: None,
+        outputs: Vec::new(),
+        definition: definitions[1].clone(),
+        native_ref: None,
+    });
+    ir.finalize();
+    let report = validate(&ir, Vec::new());
+    assert_eq!(
+        report
+            .findings
+            .iter()
+            .filter(|finding| finding.message.contains("missing sketch"))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn feature_history_rejects_dangling_and_forward_dependencies() {
+    use crate::features::{BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, ProfileRef};
+    use crate::ids::{BodyId, FaceId};
+
+    let mut ir = unit_cube();
+    let feature_id = FeatureId("synthetic:test:feature#invalid".into());
+    ir.model.features.push(Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: false,
+        parent: Some(feature_id.clone()),
+        outputs: vec![BodyId("synthetic:test:body#missing".into())],
+        definition: FeatureDefinition::Extrude {
+            profile: ProfileRef::Faces(vec![FaceId("synthetic:test:face#profile-missing".into())]),
+            direction: None,
+            extent: Extent::ToFace {
+                face: FaceId("synthetic:test:face#termination-missing".into()),
+            },
+            op: BooleanOp::NewBody,
+            draft: None,
+        },
+        native_ref: None,
+    });
+    ir.finalize();
+    let report = validate(&ir, Vec::new());
+    for fragment in [
+        "does not precede",
+        "missing output body",
+        "missing profile face",
+        "missing termination face",
+    ] {
+        assert!(
+            report.findings.iter().any(|finding| {
+                finding.entity.as_deref() == Some(feature_id.0.as_str())
+                    && finding.message.contains(fragment)
+            }),
+            "missing finding containing {fragment:?}"
+        );
+    }
+}
+
+#[test]
+fn configuration_body_membership_round_trips_and_validates() {
+    use crate::features::{ConfigurationId, DesignConfiguration};
+    use crate::ids::BodyId;
+    use std::collections::BTreeMap;
+
+    let mut ir = unit_cube();
+    let configuration_id = ConfigurationId("synthetic:test:configuration#0".into());
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.configurations.push(DesignConfiguration {
+        id: configuration_id.clone(),
+        name: "Default".into(),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: vec![body.clone()],
+        native_ref: None,
+    });
+    ir.finalize();
+    assert!(validate(&ir, Vec::new()).is_ok());
+    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
+    assert_eq!(round_trip.model.configurations[0].bodies, vec![body]);
+
+    ir.model.configurations[0].bodies = vec![
+        BodyId("synthetic:test:body#missing".into()),
+        BodyId("synthetic:test:body#missing".into()),
+    ];
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message.contains("missing configuration body")
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message.contains("repeats body")
+    }));
+}
+
+#[test]
 fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let left = unit_cube();
     let mut right = left.clone();
@@ -1140,5 +1602,66 @@ fn pcurve_surface_mismatch_is_flagged() {
                 && f.entity.as_deref().is_some_and(|e| e.contains("coedge"))),
         "off-surface-image pcurve must be flagged, got: {:?}",
         inconsistent.findings
+    );
+}
+
+#[test]
+fn feature_extents_round_trip_through_json() {
+    use crate::features::{Angle, Extent, Length};
+    use crate::ids::FaceId;
+
+    let extents = vec![
+        Extent::Blind {
+            length: Length(12.5),
+        },
+        Extent::Symmetric {
+            length: Length(25.0),
+        },
+        Extent::TwoSided {
+            first: Length(10.0),
+            second: Length(20.0),
+        },
+        Extent::ThroughAll,
+        Extent::ToFace {
+            face: FaceId("synthetic:test:face#0".into()),
+        },
+        Extent::Angle {
+            angle: Angle(std::f64::consts::PI),
+        },
+    ];
+
+    let json = serde_json::to_string(&extents).unwrap();
+    assert_eq!(serde_json::from_str::<Vec<Extent>>(&json).unwrap(), extents);
+}
+
+#[test]
+fn edge_selections_round_trip_through_json() {
+    use crate::features::EdgeSelection;
+    use crate::ids::EdgeId;
+
+    let selections = vec![
+        EdgeSelection::Edges(vec![EdgeId("synthetic:test:edge#0".into())]),
+        EdgeSelection::Native("sldprt:history:feature#10:0".into()),
+    ];
+    let json = serde_json::to_string(&selections).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Vec<EdgeSelection>>(&json).unwrap(),
+        selections
+    );
+}
+
+#[test]
+fn face_selections_round_trip_through_json() {
+    use crate::features::FaceSelection;
+    use crate::ids::FaceId;
+
+    let selections = vec![
+        FaceSelection::Faces(vec![FaceId("synthetic:test:face#0".into())]),
+        FaceSelection::Native("sldprt:history:feature#14:0".into()),
+    ];
+    let json = serde_json::to_string(&selections).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Vec<FaceSelection>>(&json).unwrap(),
+        selections
     );
 }

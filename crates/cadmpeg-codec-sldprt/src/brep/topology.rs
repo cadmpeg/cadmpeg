@@ -277,6 +277,51 @@ pub struct Tables {
     pub points: HashMap<u16, Record>,
 }
 
+impl Tables {
+    /// Merge a deltas table without replacing partition topology membership.
+    pub fn merge_deltas(&mut self, mut deltas: Self) {
+        if self.bridges.is_empty() {
+            self.bridges = deltas.bridges;
+        }
+        merge_missing(&mut self.loops, deltas.loops);
+        merge_missing(&mut self.edge_uses, deltas.edge_uses);
+        merge_missing(&mut self.coedges, deltas.coedges);
+        merge_missing(&mut self.vertex_uses, deltas.vertex_uses);
+        self.points.extend(deltas.points.drain());
+    }
+}
+
+fn merge_missing(target: &mut HashMap<u16, Record>, source: HashMap<u16, Record>) {
+    for (attr, record) in source {
+        target.entry(attr).or_insert(record);
+    }
+}
+
+/// Replace one world-point record while preserving its framing.
+pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
+    let Some(record) = scan(buf).points.remove(&attr) else {
+        return false;
+    };
+    let Some(p) = body_start(buf, record.offset, 0x1d) else {
+        return false;
+    };
+    let mut xyz_at = p + 14;
+    let mut cursor = p + 6;
+    while buf.get(cursor + 2) == Some(&1) && cursor < p + 54 {
+        cursor += 3;
+    }
+    if cursor != p + 6 {
+        xyz_at = cursor;
+    }
+    let Some(bytes) = buf.get_mut(xyz_at..xyz_at + 24) else {
+        return false;
+    };
+    for (slot, value) in bytes.chunks_exact_mut(8).zip(xyz_m) {
+        slot.copy_from_slice(&value.to_be_bytes());
+    }
+    true
+}
+
 /// Scan the stream body for every typed topology record. Successful records do
 /// not advance the scan past their extent because valid records can overlap an
 /// enclosing payload. Family-specific framing gates reject payload coincidences.

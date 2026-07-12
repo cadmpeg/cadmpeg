@@ -3,6 +3,7 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
+use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
 /// Presence sets for every arena, keyed by the string id.
 pub(super) struct IdSets {
@@ -702,6 +703,398 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             ProceduralCurveDefinition::Unknown { record: None } => {}
         }
+    }
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.0.as_str())
+        .collect::<HashSet<_>>();
+    for parameter in &ir.model.parameters {
+        if !features.contains(parameter.owner.0.as_str()) {
+            ref_error(findings, &parameter.id.0, "feature", &parameter.owner.0);
+        }
+    }
+    let sketches = ir
+        .model
+        .sketches
+        .iter()
+        .map(|sketch| sketch.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let sketch_entities = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| entity.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let sketch_entity_owners = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| (entity.id.0.as_str(), entity.sketch.0.as_str()))
+        .collect::<HashMap<_, _>>();
+    let parameters = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.0.as_str())
+        .collect::<HashSet<_>>();
+    for sketch in &ir.model.sketches {
+        for entity_use in sketch.profiles.iter().flatten() {
+            if !sketch_entities.contains(entity_use.entity.0.as_str()) {
+                ref_error(
+                    findings,
+                    &sketch.id.0,
+                    "sketch entity",
+                    &entity_use.entity.0,
+                );
+            }
+        }
+    }
+    for entity in &ir.model.sketch_entities {
+        if !sketches.contains(entity.sketch.0.as_str()) {
+            ref_error(findings, &entity.id.0, "sketch", &entity.sketch.0);
+        }
+    }
+    for constraint in &ir.model.sketch_constraints {
+        if !sketches.contains(constraint.sketch.0.as_str()) {
+            ref_error(findings, &constraint.id.0, "sketch", &constraint.sketch.0);
+        }
+        let (entities, parameter) = match &constraint.definition {
+            Definition::Coincident { entities }
+            | Definition::Distance {
+                entities,
+                parameter: _,
+            }
+            | Definition::Native { entities, .. } => (entities.clone(), None),
+            Definition::Horizontal { entity }
+            | Definition::Vertical { entity }
+            | Definition::Fixed { entity } => (vec![entity.clone()], None),
+            Definition::Parallel { first, second }
+            | Definition::Perpendicular { first, second }
+            | Definition::Tangent { first, second }
+            | Definition::Equal { first, second }
+            | Definition::Concentric { first, second }
+            | Definition::Collinear { first, second } => {
+                (vec![first.clone(), second.clone()], None)
+            }
+            Definition::CoincidentLoci { loci } => {
+                (loci.iter().map(locus_entity).cloned().collect(), None)
+            }
+            Definition::Midpoint { point, entity } => {
+                (vec![locus_entity(point).clone(), entity.clone()], None)
+            }
+            Definition::Symmetric {
+                first,
+                second,
+                axis,
+            } => (
+                vec![
+                    locus_entity(first).clone(),
+                    locus_entity(second).clone(),
+                    axis.clone(),
+                ],
+                None,
+            ),
+            Definition::DistanceLoci {
+                first,
+                second,
+                parameter,
+            }
+            | Definition::HorizontalDistance {
+                first,
+                second,
+                parameter,
+            }
+            | Definition::VerticalDistance {
+                first,
+                second,
+                parameter,
+            } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                Some(parameter.0.as_str()),
+            ),
+            Definition::Angle {
+                first,
+                second,
+                parameter,
+            } => (
+                vec![first.clone(), second.clone()],
+                Some(parameter.0.as_str()),
+            ),
+            Definition::Radius { entity, parameter }
+            | Definition::Diameter { entity, parameter } => {
+                (vec![entity.clone()], Some(parameter.0.as_str()))
+            }
+        };
+        let parameter = parameter.or(match &constraint.definition {
+            Definition::Distance { parameter, .. } => Some(parameter.0.as_str()),
+            _ => None,
+        });
+        for entity in entities {
+            if !sketch_entities.contains(entity.0.as_str()) {
+                ref_error(findings, &constraint.id.0, "sketch entity", &entity.0);
+            } else if sketch_entity_owners.get(entity.0.as_str()).copied()
+                != Some(constraint.sketch.0.as_str())
+            {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!("sketch entity `{}` belongs to a different sketch", entity.0),
+                    entity: Some(constraint.id.0.clone()),
+                });
+            }
+        }
+        if let Some(parameter) = parameter {
+            if !parameters.contains(parameter) {
+                ref_error(findings, &constraint.id.0, "parameter", parameter);
+            }
+        }
+    }
+    check_feature_sketch_references(ir, &sketches, findings);
+    check_feature_references(ir, ids, findings);
+}
+
+fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
+    use crate::features::{
+        EdgeSelection, Extent, FaceSelection, FeatureDefinition, PathRef, ProfileRef,
+    };
+
+    for configuration in &ir.model.configurations {
+        let mut seen = HashSet::new();
+        for body in &configuration.bodies {
+            if !ids.bodies.contains(&body.0) {
+                ref_error(findings, &configuration.id.0, "configuration body", &body.0);
+            }
+            if !seen.insert(body) {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: format!("configuration repeats body `{}`", body.0),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
+        }
+    }
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.id.0.as_str(), feature.ordinal))
+        .collect::<HashMap<_, _>>();
+    for feature in &ir.model.features {
+        if let Some(parent) = &feature.parent {
+            match features.get(parent.0.as_str()) {
+                None => ref_error(findings, &feature.id.0, "parent feature", &parent.0),
+                Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!("parent feature `{}` does not precede its child", parent.0),
+                    entity: Some(feature.id.0.clone()),
+                }),
+                Some(_) => {}
+            }
+        }
+        for body in &feature.outputs {
+            if !ids.bodies.contains(&body.0) {
+                ref_error(findings, &feature.id.0, "output body", &body.0);
+            }
+        }
+
+        let mut profiles = Vec::new();
+        let mut paths = Vec::new();
+        let mut extents = Vec::new();
+        let mut edge_selections = Vec::new();
+        let mut face_selections = Vec::new();
+        match &feature.definition {
+            FeatureDefinition::Extrude {
+                profile, extent, ..
+            } => {
+                profiles.push(profile);
+                extents.push(extent);
+            }
+            FeatureDefinition::Revolve { profile, angle, .. } => {
+                profiles.push(profile);
+                extents.push(angle);
+            }
+            FeatureDefinition::Sweep { profile, path, .. } => {
+                profiles.push(profile);
+                paths.push(path);
+            }
+            FeatureDefinition::Loft {
+                profiles: values,
+                guides,
+                ..
+            } => {
+                profiles.extend(values);
+                paths.extend(guides);
+            }
+            FeatureDefinition::Rib { profile, .. } => {
+                profiles.push(profile);
+            }
+            FeatureDefinition::Fillet { edges, .. } | FeatureDefinition::Chamfer { edges, .. } => {
+                edge_selections.push(edges);
+            }
+            FeatureDefinition::Shell { removed_faces, .. } => {
+                face_selections.push(removed_faces);
+            }
+            FeatureDefinition::Hole { face, extent, .. } => {
+                face_selections.extend(face);
+                extents.push(extent);
+            }
+            FeatureDefinition::Pattern { seeds, .. } => {
+                for seed in seeds {
+                    match features.get(seed.0.as_str()) {
+                        None => ref_error(findings, &feature.id.0, "seed feature", &seed.0),
+                        Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "seed feature `{}` does not precede its pattern",
+                                seed.0
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        }),
+                        Some(_) => {}
+                    }
+                }
+            }
+            FeatureDefinition::Sketch { sketch } => {
+                if let Some(sketch) = sketch {
+                    if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
+                        ref_error(findings, &feature.id.0, "owned sketch", &sketch.0);
+                    }
+                }
+            }
+            FeatureDefinition::Native { .. } => {}
+        }
+        for profile in profiles {
+            if let ProfileRef::Faces(faces) = profile {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "profile face",
+                    faces.iter().map(|id| id.0.as_str()),
+                    &ids.faces,
+                );
+            }
+        }
+        for path in paths {
+            match path {
+                PathRef::Edges(edges) => check_ids(
+                    findings,
+                    &feature.id.0,
+                    "path edge",
+                    edges.iter().map(|id| id.0.as_str()),
+                    &ids.edges,
+                ),
+                PathRef::Curves(curves) => check_ids(
+                    findings,
+                    &feature.id.0,
+                    "path curve",
+                    curves.iter().map(|id| id.0.as_str()),
+                    &ids.curves,
+                ),
+                PathRef::Native(_) | PathRef::Sketch(_) => {}
+            }
+        }
+        for extent in extents {
+            if let Extent::ToFace { face } = extent {
+                if !ids.faces.contains(&face.0) {
+                    ref_error(findings, &feature.id.0, "termination face", &face.0);
+                }
+            }
+        }
+        for selection in edge_selections {
+            if let EdgeSelection::Edges(edges) = selection {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "selected edge",
+                    edges.iter().map(|id| id.0.as_str()),
+                    &ids.edges,
+                );
+            }
+        }
+        for selection in face_selections {
+            if let FaceSelection::Faces(faces) = selection {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "selected face",
+                    faces.iter().map(|id| id.0.as_str()),
+                    &ids.faces,
+                );
+            }
+        }
+    }
+}
+
+fn check_ids<'a>(
+    findings: &mut Vec<Finding>,
+    owner: &str,
+    kind: &str,
+    values: impl Iterator<Item = &'a str>,
+    valid: &HashSet<String>,
+) {
+    for value in values {
+        if !valid.contains(value) {
+            ref_error(findings, owner, kind, value);
+        }
+    }
+}
+
+fn check_feature_sketch_references(
+    ir: &CadIr,
+    sketches: &HashSet<&str>,
+    findings: &mut Vec<Finding>,
+) {
+    use crate::features::{FeatureDefinition, PathRef, ProfileRef};
+
+    for feature in &ir.model.features {
+        let mut profiles = Vec::new();
+        let mut paths = Vec::new();
+        match &feature.definition {
+            FeatureDefinition::Extrude { profile, .. }
+            | FeatureDefinition::Revolve { profile, .. }
+            | FeatureDefinition::Rib { profile, .. } => profiles.push(profile),
+            FeatureDefinition::Sweep { profile, path, .. } => {
+                profiles.push(profile);
+                paths.push(path);
+            }
+            FeatureDefinition::Loft {
+                profiles: sections,
+                guides,
+                ..
+            } => {
+                profiles.extend(sections);
+                paths.extend(guides);
+            }
+            _ => {}
+        }
+        for profile in profiles {
+            if let ProfileRef::Sketch(sketch) = profile {
+                if !sketches.contains(sketch.0.as_str()) {
+                    ref_error(findings, &feature.id.0, "sketch profile", &sketch.0);
+                }
+            }
+        }
+        for path in paths {
+            if let PathRef::Sketch(sketch) = path {
+                if !sketches.contains(sketch.0.as_str()) {
+                    ref_error(findings, &feature.id.0, "sketch path", &sketch.0);
+                }
+            }
+        }
+    }
+}
+
+fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
+    match locus {
+        SketchLocus::Entity(entity)
+        | SketchLocus::Start(entity)
+        | SketchLocus::End(entity)
+        | SketchLocus::Center(entity) => entity,
     }
 }
 

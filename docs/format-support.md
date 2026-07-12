@@ -36,7 +36,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | Codec                                      | Score          | Extras above score                                                                                    |
 | ------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
 | Autodesk Fusion `.f3d`                     | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
-| SolidWorks `.sldprt`                       | **L3 tested**  | feature metadata and input lanes, tessellation, native replay + bounded generation                    |
+| SolidWorks `.sldprt`                       | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
 | Rhino `.3dm` (archive 50/60/70/80)         | **L3 tested**  | SubD control cages, display meshes, native extrusion and instance constructions                       |
 | CATIA V5 `.CATPart` (standard-nested band) | **L2 claimed** | conditionally connected B-rep                                                                         |
 | Siemens NX `.prt`                          | **L2 claimed** | conditional connected B-rep, external-dependency inspection                                           |
@@ -62,7 +62,7 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 ## At a glance
 
 - **Autodesk Fusion `.f3d` (L4 tested):** design records, partial B-rep and appearance reads, byte-exact replay, native patching, and source-less generation.
-- **SolidWorks `.sldprt` (L3 tested):** connected model reads, feature metadata, native writes, and round trips.
+- **SolidWorks `.sldprt` (L4 tested):** connected model reads, typed design records, native writes, and round trips.
 - **Rhino `.3dm` (L3 tested for archive 50/60/70/80):** curves, surfaces, meshes, connected B-rep, SubD, extrusions, and expanded instances. V3/V4 score L1; V1/V2 and archive 5 score L0. Read only.
 - **CATIA V5 `.CATPart` (L2 claimed for the standard-nested band):** exact carriers and conditionally connected topology. Other layout bands score L1. Read only.
 - **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.
@@ -99,15 +99,15 @@ See [`formats/rhino_3dm.md`](formats/rhino_3dm.md) and [`formats/rhino_3dm-open-
 
 **Role:** reference format for full semantic support
 
-**Ladder: L3 tested.** Feature records contain metadata and input lanes. L4 requires operation semantics.
+**Ladder: L4 tested.** Unknown geometry carriers and topology cases block L5. Incomplete sketch constraints and feature families block L6.
 
 ### Read profile
 
 - **Container and versions: Partial.** The codec validates CRC-framed blocks, enumerates cache cells and the tail directory, extracts active Parasolid partitions, and preserves the source image. Coverage across historical schemas remains incomplete.
 - **Geometry: Partial.** Analytic and NURBS surfaces and curves transfer into typed carriers. Offset, swept, blend, intersection, and other unsupported families remain opaque or produce unknown carriers.
-- **Topology: Partial.** The codec builds body, lump, shell, face, loop, coedge, edge, and vertex ownership for supported layouts. Periodic seams, orientation, and several pcurves are derived. Older body layouts, schema-specific sheet classification, deltas tombstones, and some multi-shell cases remain open.
+- **Topology: Partial.** The codec builds body, region, shell, face, loop, coedge, edge, and vertex ownership for supported layouts, including multiple regions and shells per body. Partition face membership excludes superseded deltas geometry; deltas update referenced points and complete missing subordinate records. Periodic seams, orientation, and several pcurves are derived. Older body layouts and schema-specific sheet classification remain open.
 - **Tessellation: Partial.** Display-list geometry transfers into tessellation arenas and can be regenerated. Stable face-to-triangle ownership remains open.
-- **Design intent: Partial.** Configuration names, feature-history metadata, and typed feature-input lanes transfer. Replayable SolidWorks feature trees and alternate-configuration solids remain open.
+- **Design intent: Partial.** Configurations transfer as neutral records with material and property overrides and retain their configuration-specific solids. Every Keywords dimension transfers as a neutral parameter with expression text and a canonical scalar for literal values. Planar profile B-reps nested in feature-input lanes transfer as placed sketches with solved lines, circles, arcs, ellipses, and rational or non-rational NURBS, plus oriented profile loops. Boss and cut extrusions, explicit-axis revolutions, profile sweeps, lofts, and ribs, linear and circular patterns, mirrors, constant and variable-radius fillets, dimensional chamfers, shells with explicit thickness and direction, and simple, counterbore, and countersink holes with blind or through-all termination project to neutral operations and write edits through retained native records. Sketch constraints and other operation families remain open.
 - **Product structure: None.** `.sldprt` support covers parts only.
 - **Presentation and metadata: Partial.** Base colors, appearance bindings, previews, SolidWorks XML metadata, units, and selected attributes transfer. Full appearance precedence and all embedded metadata stores remain open.
 

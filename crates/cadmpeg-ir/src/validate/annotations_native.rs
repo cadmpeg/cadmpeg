@@ -3,6 +3,8 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
+use crate::features::{DesignConfiguration, DesignParameter};
+use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
 use crate::subd::SubdSurface;
 
 macro_rules! define_model_entity_json {
@@ -144,6 +146,30 @@ pub(super) fn check_native_links(
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
                     entity: Some(feature.id.0.clone()),
+                });
+            }
+        }
+    }
+    for configuration in &ir.model.configurations {
+        if let Some(target) = &configuration.native_ref {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("native_ref `{target}` does not resolve"),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
+        }
+    }
+    for sketch in &ir.model.sketches {
+        if let Some(target) = &sketch.native_ref {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("native_ref `{target}` does not resolve"),
+                    entity: Some(sketch.id.0.clone()),
                 });
             }
         }
