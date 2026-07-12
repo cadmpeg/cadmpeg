@@ -16,6 +16,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+use cadmpeg_ir::be::u32_at as be_u32;
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -550,12 +551,6 @@ fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<S
         }
         break;
     }
-}
-
-fn be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
-    Some(u32::from_be_bytes(
-        bytes.get(offset..offset + 4)?.try_into().ok()?,
-    ))
 }
 
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {

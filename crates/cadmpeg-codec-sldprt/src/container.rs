@@ -201,12 +201,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
 /// Truncated input produces a scan containing every structure that could be
 /// validated; missing outer-header bytes yield version zero.
 pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
-    let version = u32::from_be_bytes([
-        *bytes.get(4).unwrap_or(&0),
-        *bytes.get(5).unwrap_or(&0),
-        *bytes.get(6).unwrap_or(&0),
-        *bytes.get(7).unwrap_or(&0),
-    ]);
+    let version = cadmpeg_ir::be::u32_at(bytes, 4).unwrap_or(0);
 
     let mut blocks = Vec::new();
     let mut directory = Vec::new();

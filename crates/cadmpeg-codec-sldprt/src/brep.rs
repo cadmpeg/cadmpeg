@@ -17,6 +17,7 @@
 
 use std::collections::HashMap;
 
+use cadmpeg_ir::be::{f64_at as f64_be, f64s_at as f64_run, u16_at as u16_be, u32_at as u32_be};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -31,35 +32,6 @@ pub use self::graph::{decode, decode_bodies, Brep, Stats};
 pub(crate) use self::spline::{patch_nurbs_curve, patch_nurbs_surface};
 
 mod graph;
-
-// ---- low-level readers -------------------------------------------------------
-
-pub(crate) fn u16_be(bytes: &[u8], at: usize) -> Option<u16> {
-    bytes
-        .get(at..at + 2)
-        .map(|s| u16::from_be_bytes([s[0], s[1]]))
-}
-
-pub(crate) fn u32_be(bytes: &[u8], at: usize) -> Option<u32> {
-    bytes
-        .get(at..at + 4)
-        .map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]))
-}
-
-pub(crate) fn f64_be(bytes: &[u8], at: usize) -> Option<f64> {
-    bytes
-        .get(at..at + 8)
-        .map(|s| f64::from_be_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
-}
-
-/// Read `n` consecutive big-endian f64s starting at `at`.
-pub(crate) fn f64_run(bytes: &[u8], at: usize, n: usize) -> Option<Vec<f64>> {
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        out.push(f64_be(bytes, at + i * 8)?);
-    }
-    Some(out)
-}
 
 fn scale_point(v: &[f64]) -> Point3 {
     Point3::new(v[0] * LEN_TO_MM, v[1] * LEN_TO_MM, v[2] * LEN_TO_MM)
