@@ -1851,6 +1851,64 @@ fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
     bytes
 }
 
+fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
+    t_long(bytes, 1);
+    t_long(bytes, 9);
+    bytes.extend_from_slice(&generated_curve_block());
+    t_ident(bytes, "plane");
+    t_pos(bytes, [1.0, -2.0, 3.0]);
+    t_vec(bytes, [0.0, 0.0, 1.0]);
+    t_vec(bytes, [1.0, 0.0, 0.0]);
+    bytes.push(0x0b);
+    bytes.extend_from_slice(&generated_pcurve_block());
+    bytes.push(0x0b);
+    t_long(bytes, -1);
+    t_long(bytes, 211);
+    t_long(bytes, 4);
+    t_long(bytes, 0);
+    t_dbl(bytes, -0.25);
+    t_dbl(bytes, 0.75);
+    bytes.push(0x0a);
+    t_vec(bytes, [0.0, 1.0, 0.0]);
+    bytes.extend_from_slice(&generated_curve_block());
+    t_long(bytes, 1);
+    bytes.extend_from_slice(&generated_curve_block());
+    t_long(bytes, 2);
+    t_long(bytes, 3);
+}
+
+fn synthetic_compound_loft_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "cl_loft_spl_sur");
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.004);
+    append_generated_compound_loft_scale(&mut surface);
+    surface.push(0x0a);
+    surface.push(0x0b);
+    t_long(&mut surface, 0);
+    surface.push(0x0b);
+    surface.push(0x0a);
+    t_long(&mut surface, 0);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    surface.push(0x0a);
+    surface.push(0x0b);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
     push_u8_string(bytes, label);
     t_ident(bytes, "plane");
@@ -7731,6 +7789,44 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         );
         assert!(sections[1].entries[0].profile[0].data.direction.is_none());
     }
+}
+
+#[test]
+fn generated_compound_loft_decodes_scale_and_zero_tail() {
+    use cadmpeg_ir::geometry::{
+        CompoundLoftDirection, CompoundLoftTail, ProceduralSurfaceDefinition,
+    };
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_compound_loft_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("compound-loft decode");
+    let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+        &result.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected compound loft")
+    };
+    let scale = construction.scales[0].as_ref().expect("first scale");
+    assert!(construction.scales[1..].iter().all(Option::is_none));
+    assert_eq!(scale.members.len(), 1);
+    assert_eq!(scale.auxiliaries.len(), 1);
+    assert_eq!(scale.tail, [2, 3]);
+    assert_eq!(construction.flags, [true, false]);
+    let CompoundLoftTail::Zero {
+        flags,
+        selector,
+        direction,
+        trailing_flags,
+    } = &construction.tail
+    else {
+        panic!("expected zero tail")
+    };
+    assert_eq!(*flags, [false, true]);
+    assert_eq!(*selector, 0);
+    assert!(matches!(direction, CompoundLoftDirection::Vector { .. }));
+    assert_eq!(*trailing_flags, [true, false]);
 }
 
 #[test]

@@ -685,6 +685,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     },
     /// Native loft construction graph with embedded carriers.
     Loft(EmbeddedLoft),
+    /// Native compound-loft graph with embedded carriers.
+    CompoundLoft(Box<EmbeddedCompoundLoft>),
     /// Native G2 blend construction with embedded carriers.
     G2Blend(Box<EmbeddedG2Blend>),
     /// Ruled interpolation between two ordered profile curves.
@@ -1104,6 +1106,102 @@ pub struct EmbeddedLoft {
     pub(crate) bridge: Vec<cadmpeg_ir::geometry::LoftBridgeToken>,
 }
 
+pub(crate) struct EmbeddedCompoundLoftScale {
+    pub(crate) members: Vec<EmbeddedLoftProfileMember>,
+    pub(crate) path: NurbsCurve,
+    pub(crate) auxiliaries: Vec<NurbsCurve>,
+    pub(crate) tail: [i64; 2],
+}
+
+pub(crate) enum EmbeddedCompoundLoftDirection {
+    Vector(Vector3),
+    Curve(NurbsCurve),
+}
+
+pub(crate) enum EmbeddedCompoundLoftTail {
+    Six {
+        flags: [bool; 2],
+        scale: Option<Box<EmbeddedCompoundLoftScale>>,
+        selector: i64,
+        direction: Vector3,
+        parameter_range: [f64; 2],
+        curve: NurbsCurve,
+    },
+    Seven {
+        first_flag: bool,
+        first_scale: Option<Box<EmbeddedCompoundLoftScale>>,
+        second_flag: bool,
+        second_scale: Option<Box<EmbeddedCompoundLoftScale>>,
+        selector: i64,
+        direction: Vector3,
+        trailing_flags: [bool; 2],
+    },
+    Zero {
+        flags: [bool; 2],
+        selector: i64,
+        direction: EmbeddedCompoundLoftDirection,
+        trailing_flags: [bool; 2],
+    },
+}
+
+/// Embedded native compound loft before stable IR ids are assigned.
+pub struct EmbeddedCompoundLoft {
+    pub(crate) scales: Box<[Option<EmbeddedCompoundLoftScale>; 4]>,
+    pub(crate) fifth_scale: Option<Box<EmbeddedCompoundLoftScale>>,
+    pub(crate) flags: [bool; 2],
+    pub(crate) tail: EmbeddedCompoundLoftTail,
+}
+
+#[allow(clippy::option_option)] // Outer None is parse failure; inner None is an absent scale slot.
+fn decode_compound_loft_scale(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<Option<EmbeddedCompoundLoftScale>> {
+    if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
+        return Some(None);
+    }
+    let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+    if count > 100_000 {
+        return None;
+    }
+    let mut members = Vec::with_capacity(count);
+    for _ in 0..count {
+        let type_code = take_tagged_int(bytes, position, 0x04, int_width)?;
+        let curve = decode_curve_block(bytes, *position, int_width)?;
+        *position = curve.end;
+        let data = decode_loft_profile_data(bytes, position, int_width)?;
+        members.push(EmbeddedLoftProfileMember {
+            type_code,
+            curve: curve.curve,
+            data,
+        });
+    }
+    let path = decode_curve_block(bytes, *position, int_width)?;
+    *position = path.end;
+    let auxiliary_count =
+        usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+    if auxiliary_count > 100_000 {
+        return None;
+    }
+    let mut auxiliaries = Vec::with_capacity(auxiliary_count);
+    for _ in 0..auxiliary_count {
+        let curve = decode_curve_block(bytes, *position, int_width)?;
+        *position = curve.end;
+        auxiliaries.push(curve.curve);
+    }
+    let tail = [
+        take_tagged_int(bytes, position, 0x04, int_width)?,
+        take_tagged_int(bytes, position, 0x04, int_width)?,
+    ];
+    Some(Some(EmbeddedCompoundLoftScale {
+        members,
+        path: path.curve,
+        auxiliaries,
+        tail,
+    }))
+}
+
 fn decode_loft_subdata(
     bytes: &[u8],
     position: &mut usize,
@@ -1304,6 +1402,124 @@ fn decode_loft_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
             mode,
             bridge,
         }),
+        cache_fit_tolerance,
+    })
+}
+
+fn decode_compound_loft_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+) -> Option<DecodedProceduralSurface> {
+    let name = b"cl_loft_spl_sur";
+    let start = record_bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name.len() + 3;
+    let cache = decode_surface_block(span, position, int_width)?;
+    position = cache.end;
+    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let scales = Box::new([
+        decode_compound_loft_scale(span, &mut position, int_width)?,
+        decode_compound_loft_scale(span, &mut position, int_width)?,
+        decode_compound_loft_scale(span, &mut position, int_width)?,
+        decode_compound_loft_scale(span, &mut position, int_width)?,
+    ]);
+    let fifth_scale = if span.get(position) == Some(&0x04) {
+        decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new)
+    } else {
+        None
+    };
+    let flags = [
+        take_bool(span, &mut position)?,
+        take_bool(span, &mut position)?,
+    ];
+    let kind = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let tail = match kind {
+        6 => {
+            let tail_flags = [
+                take_bool(span, &mut position)?,
+                take_bool(span, &mut position)?,
+            ];
+            let scale = decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new);
+            let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let direction = take_native_vec3(span, &mut position, 0x14)?;
+            let parameter_range = [
+                take_range_value(span, &mut position)?,
+                take_range_value(span, &mut position)?,
+            ];
+            let curve = decode_curve_block(span, position, int_width)?;
+            EmbeddedCompoundLoftTail::Six {
+                flags: tail_flags,
+                scale,
+                selector,
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+                parameter_range,
+                curve: curve.curve,
+            }
+        }
+        7 => {
+            let first_flag = take_bool(span, &mut position)?;
+            let first_scale =
+                decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new);
+            let second_flag = take_bool(span, &mut position)?;
+            let second_scale =
+                decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new);
+            let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let direction = take_native_vec3(span, &mut position, 0x14)?;
+            let trailing_flags = [
+                take_bool(span, &mut position)?,
+                take_bool(span, &mut position)?,
+            ];
+            EmbeddedCompoundLoftTail::Seven {
+                first_flag,
+                first_scale,
+                second_flag,
+                second_scale,
+                selector,
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+                trailing_flags,
+            }
+        }
+        0 => {
+            let tail_flags = [
+                take_bool(span, &mut position)?,
+                take_bool(span, &mut position)?,
+            ];
+            let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let direction = if selector == 0 {
+                let value = take_native_vec3(span, &mut position, 0x14)?;
+                EmbeddedCompoundLoftDirection::Vector(Vector3::new(value[0], value[1], value[2]))
+            } else {
+                let curve = decode_curve_block(span, position, int_width)?;
+                position = curve.end;
+                EmbeddedCompoundLoftDirection::Curve(curve.curve)
+            };
+            let trailing_flags = [
+                take_bool(span, &mut position)?,
+                take_bool(span, &mut position)?,
+            ];
+            EmbeddedCompoundLoftTail::Zero {
+                flags: tail_flags,
+                selector,
+                direction,
+                trailing_flags,
+            }
+        }
+        _ => return None,
+    };
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::CompoundLoft(Box::new(
+            EmbeddedCompoundLoft {
+                scales,
+                fifth_scale,
+                flags,
+                tail,
+            },
+        )),
         cache_fit_tolerance,
     })
 }
@@ -2530,6 +2746,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_comp_spl_sur(bytes, int_width))
         .or_else(|| decode_taper_spl_sur(bytes, int_width))
         .or_else(|| decode_loft_spl_sur(bytes, int_width))
+        .or_else(|| decode_compound_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_g2_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_ruled_spl_sur(bytes, int_width))
         .or_else(|| decode_sum_spl_sur(bytes, int_width))
