@@ -10437,7 +10437,21 @@ fn validate_procedural_curve_edits(
                     .map(Vec::len)
                     .eq(after_context.discontinuities.iter().map(Vec::len))
                 && before_source == after_source
-                && before_tail == after_tail
+                && match (before_tail, after_tail) {
+                    (
+                        cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
+                        cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
+                    ) => true,
+                    (
+                        cadmpeg_ir::geometry::ProjectionTail::Ranged {
+                            role: before_role, ..
+                        },
+                        cadmpeg_ir::geometry::ProjectionTail::Ranged {
+                            role: after_role, ..
+                        },
+                    ) => before_role == after_role,
+                    _ => false,
+                }
                 && before.definition != after.definition =>
             {
                 Some(after.definition.clone())
@@ -12009,6 +12023,7 @@ fn patch_projection_definition(
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
         context,
         discontinuity_flag,
+        tail,
         ..
     } = definition
     else {
@@ -12049,6 +12064,9 @@ fn patch_projection_definition(
         .collect::<Vec<_>>();
     cache_markers.sort_unstable();
     cache_markers.dedup();
+    let solved = *cache_markers
+        .last()
+        .ok_or_else(|| CodecError::Malformed("projection solved cache is missing".into()))?;
     let source = *cache_markers
         .get(cache_markers.len().saturating_sub(2))
         .ok_or_else(|| CodecError::Malformed("projection source cache is missing".into()))?;
@@ -12077,6 +12095,59 @@ fn patch_projection_definition(
         return Err(CodecError::Malformed(
             "projection context is incomplete".into(),
         ));
+    }
+    match tail {
+        cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag } => {
+            let tail_offset = solved.checked_sub(2).ok_or_else(|| {
+                CodecError::Malformed("projection early-close tail is missing".into())
+            })?;
+            if !matches!(record_bytes.get(tail_offset), Some(0x0a | 0x0b))
+                || record_bytes.get(tail_offset + 1) != Some(&0x10)
+            {
+                return Err(CodecError::Malformed(
+                    "projection early-close tail is malformed".into(),
+                ));
+            }
+            bytes[record.offset + tail_offset] = native_bool(*flag);
+        }
+        cadmpeg_ir::geometry::ProjectionTail::Ranged {
+            flag,
+            parameter_range,
+            role,
+        } => {
+            if !parameter_range.iter().copied().all(f64::is_finite) {
+                return Err(CodecError::Malformed(
+                    "projection tail range must be finite".into(),
+                ));
+            }
+            let role_length = u8::try_from(role.len()).map_err(|_| {
+                CodecError::NotImplemented("projection role exceeds short-string width".into())
+            })?;
+            let mut role_marker = vec![0x07, role_length];
+            role_marker.extend_from_slice(role.as_bytes());
+            let role_offset = record_bytes[..solved]
+                .windows(role_marker.len())
+                .rposition(|window| window == role_marker)
+                .ok_or_else(|| CodecError::Malformed("projection role is missing".into()))?;
+            let tail_flag = role_offset.checked_sub(19).ok_or_else(|| {
+                CodecError::Malformed("projection ranged tail is incomplete".into())
+            })?;
+            if !matches!(record_bytes.get(tail_flag), Some(0x0a | 0x0b)) {
+                return Err(CodecError::Malformed(
+                    "projection ranged flag is malformed".into(),
+                ));
+            }
+            bytes[record.offset + tail_flag] = native_bool(*flag);
+            for (index, value) in parameter_range.iter().copied().enumerate() {
+                let tag = record.offset + tail_flag + 1 + index * 9;
+                if bytes.get(tag) != Some(&0x06) {
+                    return Err(CodecError::Malformed(
+                        "projection ranged interval is malformed".into(),
+                    ));
+                }
+                bytes[tag + 1..tag + 9].copy_from_slice(&value.to_le_bytes());
+            }
+        }
     }
     for (offset, value) in context_offsets.iter().zip(
         context

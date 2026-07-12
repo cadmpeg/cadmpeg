@@ -11989,6 +11989,7 @@ fn generated_projection_decodes_and_writes_source_less() {
     let ProceduralCurveDefinition::Projection {
         context,
         discontinuity_flag,
+        tail,
         ..
     } = &mut edited.model.procedural_curves[0].definition
     else {
@@ -11996,6 +11997,16 @@ fn generated_projection_decodes_and_writes_source_less() {
     };
     context.parameter_range = [-1.0, 2.0];
     *discontinuity_flag = false;
+    let ProjectionTail::Ranged {
+        flag,
+        parameter_range,
+        ..
+    } = tail
+    else {
+        unreachable!()
+    };
+    *flag = false;
+    *parameter_range = [-4.0, 5.0];
     let mut regenerated = Vec::new();
     F3dCodec
         .write_preserved(&edited, &mut regenerated)
@@ -12008,6 +12019,11 @@ fn generated_projection_decodes_and_writes_source_less() {
         ProceduralCurveDefinition::Projection {
             ref context,
             discontinuity_flag: false,
+            tail: ProjectionTail::Ranged {
+                flag: false,
+                parameter_range: [-4.0, 5.0],
+                ..
+            },
             ..
         } if context.parameter_range == [-1.0, 2.0]
     ));
@@ -12058,6 +12074,30 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
         ProceduralCurveDefinition::Projection {
             discontinuity_flag: true,
             tail: ProjectionTail::EarlyClose { flag: true },
+            ..
+        }
+    ));
+
+    let mut edited = result.ir.clone();
+    let ProceduralCurveDefinition::Projection {
+        tail: ProjectionTail::EarlyClose { flag },
+        ..
+    } = &mut edited.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    *flag = false;
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("early-close projection regeneration");
+    let regenerated = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated early-close projection decode");
+    assert!(matches!(
+        regenerated.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::Projection {
+            tail: ProjectionTail::EarlyClose { flag: false },
             ..
         }
     ));
