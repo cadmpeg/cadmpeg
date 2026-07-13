@@ -213,7 +213,9 @@ When the rank-2 guard holds, derive the normal as:
 normal = normalize(cross(slots[0..2], slots[6..8]))
 ```
 
-The guard requires orthogonal, equal-scale nonzero support directions. `outline f9 02 03` stores two XYZ corners. When exactly one coordinate is held constant across both corners, its axis is the positive basis normal and its value is the model-space plane offset. Zero or multiple held coordinates do not establish a plane equation from the outline.
+The guard requires orthogonal, equal-scale nonzero support directions. `outline f9 02 03` stores two XYZ corners. In these positional scalar lanes, `73` and `bb` each begin a seven-byte scalar token. Repeated identical tokens denote equal stored values; tokens with different prefixes denote distinct values. Token equality remains defined when the scalar magnitude is not decoded.
+
+When exactly one coordinate is held constant across both corners, its axis is the positive basis normal and its value is the model-space plane offset. The other two coordinate pairs need only be known to be distinct; their magnitudes are not required. Zero or multiple held coordinates do not establish a plane equation from the outline.
 
 For an axis-aligned plane, the held-coordinate outline defines the placed plane
 equation. An axis-aligned `local_sys` support frame without that outline does not

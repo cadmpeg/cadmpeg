@@ -273,6 +273,9 @@ pub struct PlaneEnvelopeRecord {
     pub body: Vec<u8>,
     /// Plane-specific envelope layout.
     pub envelope: PlaneEnvelope,
+    /// Per-coordinate equality of the two stored model-space corners. `None`
+    /// means equality cannot be decided from the scalar token pair.
+    pub corner_coordinate_equal: [Option<bool>; 3],
     /// Byte offset of the plane row in the original stream.
     pub row_offset: usize,
     /// Byte offset of the envelope body in the original stream.
@@ -304,34 +307,24 @@ pub fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
             PlaneEnvelope::Standard { corners_3d, .. }
             | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
         };
-        let Some(first) = corners[0]
-            .map(|value| value)
-            .into_iter()
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
-        let Some(second) = corners[1]
-            .map(|value| value)
-            .into_iter()
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
-        let scale = first
-            .iter()
-            .chain(&second)
-            .map(|value| value.abs())
-            .fold(1.0, f64::max);
         let held = (0..3)
-            .filter(|axis| (first[*axis] - second[*axis]).abs() <= 1e-9 * scale)
+            .filter(|axis| record.corner_coordinate_equal[*axis] == Some(true))
             .collect::<Vec<_>>();
-        if held.len() != 1 {
+        if held.len() != 1
+            || record
+                .corner_coordinate_equal
+                .iter()
+                .enumerate()
+                .any(|(axis, equal)| axis != held[0] && *equal != Some(false))
+        {
             continue;
         }
         let axis = held[0];
+        let Some(coordinate) = corners[0][axis] else {
+            continue;
+        };
         let mut origin = [0.0; 3];
-        origin[axis] = first[axis];
+        origin[axis] = coordinate;
         let mut normal = [0.0; 3];
         normal[axis] = 1.0;
         let u_axis = if axis == 0 {
@@ -703,6 +696,39 @@ fn scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<O
     slots
 }
 
+fn scalar_slots_with_tokens(
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+) -> Vec<(Option<f64>, Vec<u8>)> {
+    let mut slots = Vec::with_capacity(count);
+    let mut cursor = 0;
+    while cursor < body.len() && slots.len() < count {
+        if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) {
+            slots.push((Some(value), body[cursor..next].to_vec()));
+            cursor = next;
+        } else if matches!(body.get(cursor), Some(0x73 | 0xbb)) && cursor + 7 <= body.len() {
+            slots.push((None, body[cursor..cursor + 7].to_vec()));
+            cursor += 7;
+        } else {
+            cursor += 1;
+        }
+    }
+    slots.resize_with(count, || (None, Vec::new()));
+    slots
+}
+
+fn slot_equality(first: &(Option<f64>, Vec<u8>), second: &(Option<f64>, Vec<u8>)) -> Option<bool> {
+    match (first.0, second.0) {
+        (Some(first), Some(second)) => {
+            let scale = first.abs().max(second.abs()).max(1.0);
+            Some((first - second).abs() <= 1e-9 * scale)
+        }
+        (None, None) if !first.1.is_empty() && !second.1.is_empty() => Some(first.1 == second.1),
+        _ => None,
+    }
+}
+
 fn row_scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<Option<f64>> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
@@ -863,29 +889,46 @@ pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
             continue;
         };
         let body = payload[*body_start..body_end].to_vec();
-        let envelope = if body.first() == Some(&0x0e) {
-            let slots = scalar_slots(&body[1..], 9, &cache);
-            PlaneEnvelope::Compact {
-                prefix: [slots[0], slots[1], slots[2]],
-                corners_3d: [
-                    [slots[3], slots[4], slots[5]],
-                    [slots[6], slots[7], slots[8]],
+        let (envelope, corner_coordinate_equal) = if body.first() == Some(&0x0e) {
+            let slots = scalar_slots_with_tokens(&body[1..], 9, &cache);
+            let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
+            (
+                PlaneEnvelope::Compact {
+                    prefix: [values[0], values[1], values[2]],
+                    corners_3d: [
+                        [values[3], values[4], values[5]],
+                        [values[6], values[7], values[8]],
+                    ],
+                },
+                [
+                    slot_equality(&slots[3], &slots[6]),
+                    slot_equality(&slots[4], &slots[7]),
+                    slot_equality(&slots[5], &slots[8]),
                 ],
-            }
+            )
         } else {
-            let slots = scalar_slots(&body, 10, &cache);
-            PlaneEnvelope::Standard {
-                bounds_2d: [[slots[0], slots[1]], [slots[2], slots[3]]],
-                corners_3d: [
-                    [slots[4], slots[5], slots[6]],
-                    [slots[7], slots[8], slots[9]],
+            let slots = scalar_slots_with_tokens(&body, 10, &cache);
+            let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
+            (
+                PlaneEnvelope::Standard {
+                    bounds_2d: [[values[0], values[1]], [values[2], values[3]]],
+                    corners_3d: [
+                        [values[4], values[5], values[6]],
+                        [values[7], values[8], values[9]],
+                    ],
+                },
+                [
+                    slot_equality(&slots[4], &slots[7]),
+                    slot_equality(&slots[5], &slots[8]),
+                    slot_equality(&slots[6], &slots[9]),
                 ],
-            }
+            )
         };
         envelopes.push(PlaneEnvelopeRecord {
             surface_id: row.id,
             body,
             envelope,
+            corner_coordinate_equal,
             row_offset: row.offset,
             offset: *body_start,
         });
@@ -1055,6 +1098,7 @@ mod tests {
                     [Some(3.0), Some(5.0), Some(9.0)],
                 ],
             },
+            corner_coordinate_equal: [Some(true), Some(false), Some(false)],
             row_offset: 10,
             offset: 20,
         }];
@@ -1071,6 +1115,41 @@ mod tests {
     }
 
     #[test]
+    fn derives_plane_with_unresolved_distinct_corner_coordinates() {
+        let records = [PlaneEnvelopeRecord {
+            surface_id: 42,
+            body: Vec::new(),
+            envelope: PlaneEnvelope::Standard {
+                bounds_2d: [[None; 2]; 2],
+                corners_3d: [
+                    [Some(-3.0), Some(-4.0), None],
+                    [Some(5.0), Some(-4.0), None],
+                ],
+            },
+            corner_coordinate_equal: [Some(false), Some(true), Some(false)],
+            row_offset: 10,
+            offset: 20,
+        }];
+        assert_eq!(outline_planes(&records)[0].origin, [0.0, -4.0, 0.0]);
+        assert_eq!(outline_planes(&records)[0].normal, [0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn unresolved_seven_byte_scalars_preserve_slot_identity() {
+        let body = [
+            0xbb, 1, 2, 3, 4, 5, 6, 0xbb, 1, 2, 3, 4, 5, 6, 0x73, 1, 2, 3, 4, 5, 6,
+        ];
+        let slots = scalar_slots_with_tokens(&body, 3, &scalar::ScalarCache::default());
+
+        assert_eq!(
+            slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
+            vec![None; 3]
+        );
+        assert_eq!(slot_equality(&slots[0], &slots[1]), Some(true));
+        assert_eq!(slot_equality(&slots[1], &slots[2]), Some(false));
+    }
+
+    #[test]
     fn withholds_ambiguous_outline_plane() {
         let records = [PlaneEnvelopeRecord {
             surface_id: 42,
@@ -1082,6 +1161,7 @@ mod tests {
                     [Some(3.0), Some(2.0), Some(9.0)],
                 ],
             },
+            corner_coordinate_equal: [Some(true), Some(true), Some(false)],
             row_offset: 10,
             offset: 20,
         }];
