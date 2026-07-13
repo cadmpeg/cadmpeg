@@ -1153,8 +1153,7 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
 fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
     match schema_class {
         911 => Some("Hole"),
-        913 | 1104 => Some("Round"),
-        914 => Some("Chamfer"),
+        913 => Some("Round"),
         916 | 917 => Some("Protrusion"),
         923 => Some("Datum Plane"),
         _ => None,
