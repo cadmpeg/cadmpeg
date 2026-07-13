@@ -9792,6 +9792,8 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
         )
         .expect("explicit guide sweep decode");
     let ProceduralSurfaceDefinition::Sweep {
+        profile,
+        spine,
         native: Some(native),
         ..
     } = &decoded.ir.model.procedural_surfaces[0].definition
@@ -9800,7 +9802,10 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
     };
     let SweepSurfaceLayout::ExplicitGuide {
         mode,
+        profile_range,
         profile_frame,
+        path_range,
+        guide_curve,
         guide_range,
         guide_modes,
         guide_parameters,
@@ -9816,10 +9821,27 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
     assert_eq!(*guide_modes, [11, 12]);
     assert_eq!(guide_parameters[5], 0.6);
     assert_eq!(*trailing_flags, [true, false, true]);
+    let bounded_curves = [
+        (profile.clone(), *profile_range),
+        (spine.clone(), [path_range[0] / 10.0, path_range[1] / 10.0]),
+        (guide_curve.clone(), *guide_range),
+    ];
 
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    for (ordinal, (curve_id, _)) in bounded_curves.iter().enumerate() {
+        source_less
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == *curve_id)
+            .expect("explicit guide sweep curve")
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(ordinal as f64, -2.0, 1.0),
+            direction: cadmpeg_ir::math::Vector3::new(2.0, 4.0, -3.0),
+        };
+    }
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9834,6 +9856,20 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
             ..
         } if matches!(native.layout, SweepSurfaceLayout::ExplicitGuide { .. })
     ));
+    for (curve_id, range) in bounded_curves {
+        assert!(matches!(
+            round_trip
+                .ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == curve_id)
+                .map(|curve| &curve.geometry),
+            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                if curve.degree == 1
+                    && curve.knots == [range[0], range[0], range[1], range[1]]
+        ));
+    }
 }
 
 #[test]
