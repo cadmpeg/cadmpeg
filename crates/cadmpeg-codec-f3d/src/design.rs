@@ -640,7 +640,11 @@ pub(crate) fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>,
         (0x1000_0000, SketchConstraintKind::CircularPattern),
         (0x2000_0000, SketchConstraintKind::RectangularPattern),
     ];
-    let mut kinds = Vec::new();
+    let mut kinds = if state == 0 {
+        vec![SketchConstraintKind::Coincident]
+    } else {
+        Vec::new()
+    };
     let mut recognized = 0u32;
     for (bit, kind) in definitions {
         if state & bit != 0 {

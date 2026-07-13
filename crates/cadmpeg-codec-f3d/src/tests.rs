@@ -7086,6 +7086,13 @@ fn sketch_constraint_mask_decodes_equal_length_bit() {
 }
 
 #[test]
+fn zero_sketch_constraint_state_decodes_as_coincident() {
+    let (kinds, unknown) = crate::design::decode_constraint_kinds(0);
+    assert_eq!(kinds, [crate::records::SketchConstraintKind::Coincident]);
+    assert_eq!(unknown, 0);
+}
+
+#[test]
 fn generated_f3d_rewrites_native_sketch_nurbs_values() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
