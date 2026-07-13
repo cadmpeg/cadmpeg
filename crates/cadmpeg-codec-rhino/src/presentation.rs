@@ -203,9 +203,7 @@ struct DimensionStyleRecord {
     suppress_extension_line_1: bool,
     suppress_extension_line_2: bool,
     parent_style_uuid: Option<String>,
-    extension_offset: u64,
-    extension_byte_len: u64,
-    extension_sha256: String,
+    controls: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -1149,6 +1147,222 @@ fn scaled_length(
         .ok_or_else(|| structural(reader.position() - 8, format!("scaled {label} is invalid")))
 }
 
+fn named_child(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<serde_json::Value, FramingError> {
+    let offset = reader.position();
+    let chunk = chunk_at(data, offset, reader.end(), archive, false)?;
+    if chunk.typecode != ANONYMOUS || chunk.short {
+        return Err(structural(
+            offset,
+            "dimension-style child wrapper is invalid",
+        ));
+    }
+    reader.skip(chunk.next_offset - offset)?;
+    Ok(serde_json::json!({
+        "offset": offset,
+        "byte_len": chunk.next_offset - offset,
+        "sha256": cadmpeg_ir::hash::sha256_hex(&data[offset..chunk.next_offset]),
+    }))
+}
+
+fn dimension_style_controls(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+    scale: f64,
+    minor: i32,
+) -> Result<BTreeMap<String, serde_json::Value>, FramingError> {
+    let mut values = BTreeMap::new();
+    macro_rules! put {
+        ($name:literal, $value:expr) => {{
+            values.insert($name.to_string(), serde_json::json!($value));
+        }};
+    }
+    put!("legacy_override_parent_count", reader.u32()?);
+    let overrides = reader.bool()?;
+    put!("has_field_overrides", overrides);
+    if overrides {
+        let count = crate::chunks::checked_count_bytes(
+            reader.i32()?,
+            1,
+            reader.remaining(),
+            1 << 16,
+            reader.position() - 4,
+        )?;
+        put!("field_override_bits", reader.take(count)?.to_vec());
+    }
+    put!("tolerance_format", reader.u32()?);
+    put!("tolerance_resolution", reader.i32()?);
+    put!("tolerance_upper", read_finite(reader, "upper tolerance")?);
+    put!("tolerance_lower", read_finite(reader, "lower tolerance")?);
+    put!(
+        "tolerance_height_scale",
+        read_finite(reader, "tolerance height scale")?
+    );
+    put!(
+        "baseline_spacing_mm",
+        scaled_length(reader, scale, "baseline spacing")?
+    );
+    put!("draw_text_mask_legacy", reader.bool()?);
+    put!("mask_fill_type_legacy", reader.u32()?);
+    put!("mask_color_legacy", reader.array::<4>()?);
+    put!("dimension_scale", read_finite(reader, "dimension scale")?);
+    put!("dimension_scale_source", reader.i32()?);
+    let source = uuid(reader)?;
+    put!(
+        "source_dimension_style_uuid",
+        (!source.is_nil()).then(|| source.to_string())
+    );
+    put!("color_sources", reader.array::<4>()?);
+    put!(
+        "colors",
+        [
+            reader.array::<4>()?,
+            reader.array()?,
+            reader.array()?,
+            reader.array()?
+        ]
+    );
+    put!("plot_color_sources", reader.array::<4>()?);
+    put!(
+        "plot_colors",
+        [
+            reader.array::<4>()?,
+            reader.array()?,
+            reader.array()?,
+            reader.array()?
+        ]
+    );
+    put!("plot_weight_sources", reader.array::<2>()?);
+    put!(
+        "extension_line_plot_weight_mm",
+        read_finite(reader, "extension plot weight")?
+    );
+    put!(
+        "dimension_line_plot_weight_mm",
+        read_finite(reader, "dimension plot weight")?
+    );
+    put!(
+        "fixed_extension_length_mm",
+        scaled_length(reader, scale, "fixed extension length")?
+    );
+    put!("fixed_extension_length_enabled", reader.bool()?);
+    put!(
+        "text_rotation_radians",
+        read_finite(reader, "text rotation")?
+    );
+    put!("alternate_tolerance_resolution", reader.i32()?);
+    put!(
+        "tolerance_text_height_fraction",
+        read_finite(reader, "tolerance text fraction")?
+    );
+    put!("suppress_arrow_1", reader.bool()?);
+    put!("suppress_arrow_2", reader.bool()?);
+    put!("text_move_leader", reader.i32()?);
+    put!("arc_length_symbol", reader.i32()?);
+    put!(
+        "stack_text_height_fraction",
+        read_finite(reader, "stack text fraction")?
+    );
+    put!("stack_format", reader.u32()?);
+    put!(
+        "alternate_rounding",
+        read_finite(reader, "alternate rounding")?
+    );
+    put!("rounding", read_finite(reader, "rounding")?);
+    put!("angular_rounding", read_finite(reader, "angular rounding")?);
+    put!("alternate_zero_suppression", reader.u32()?);
+    put!("obsolete_tolerance_zero_suppression", reader.u32()?);
+    put!("zero_suppression", reader.u32()?);
+    put!("angular_zero_suppression", reader.u32()?);
+    put!("alternate_below", reader.bool()?);
+    put!("arrow_types", [reader.u32()?, reader.u32()?, reader.u32()?]);
+    put!(
+        "arrow_block_uuids",
+        [
+            uuid(reader)?.to_string(),
+            uuid(reader)?.to_string(),
+            uuid(reader)?.to_string()
+        ]
+    );
+    if minor >= 1 {
+        put!("obsolete_leader_content_type", reader.u32()?);
+        put!("obsolete_text_vertical_alignment", reader.u32()?);
+        put!("obsolete_leader_vertical_alignment", reader.u32()?);
+        put!("leader_content_angle_style", reader.u32()?);
+        put!("leader_curve_type", reader.u32()?);
+        put!(
+            "leader_content_angle_radians",
+            read_finite(reader, "leader content angle")?
+        );
+        put!("leader_has_landing", reader.bool()?);
+        put!(
+            "leader_landing_length_mm",
+            scaled_length(reader, scale, "leader landing length")?
+        );
+        put!("obsolete_text_horizontal_alignment", reader.u32()?);
+        put!("obsolete_leader_horizontal_alignment", reader.u32()?);
+        put!("draw_forward", reader.bool()?);
+        put!("signed_ordinate", reader.bool()?);
+        put!("scale_value", named_child(data, reader, archive)?);
+        put!("unit_system", reader.u32()?);
+    }
+    if minor >= 2 {
+        put!("font_characteristics", named_child(data, reader, archive)?);
+    }
+    if minor >= 3 {
+        put!("text_mask", named_child(data, reader, archive)?);
+    }
+    if minor >= 4 {
+        for name in [
+            "dimension_text_location",
+            "radial_text_location",
+            "text_vertical_alignment",
+            "text_horizontal_alignment",
+            "leader_text_vertical_alignment",
+            "leader_text_horizontal_alignment",
+            "text_orientation",
+            "leader_text_orientation",
+            "dimension_text_orientation",
+            "radial_text_orientation",
+            "dimension_text_angle_style",
+            "radial_text_angle_style",
+        ] {
+            values.insert(name.to_string(), serde_json::json!(reader.u32()?));
+        }
+        put!("text_underlined", reader.bool()?);
+    }
+    if minor >= 5 {
+        put!("dimension_length_unit", reader.u32()?);
+        put!("alternate_dimension_length_unit", reader.u32()?);
+    }
+    if minor >= 6 {
+        put!("dimension_length_display", reader.u32()?);
+        put!("alternate_dimension_length_display", reader.u32()?);
+    }
+    if minor >= 7 {
+        put!("center_mark_style", reader.u32()?);
+    }
+    if minor >= 8 {
+        put!("force_dimension_line", reader.bool()?);
+        put!("text_fit", reader.u32()?);
+        put!("arrow_fit", reader.u32()?);
+    }
+    if minor >= 9 {
+        put!("decimal_separator", reader.u32()?);
+    }
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "dimension style has trailing bytes",
+        ));
+    }
+    Ok(values)
+}
+
 fn parse_dimension_style(
     data: &[u8],
     range: Range<usize>,
@@ -1192,8 +1406,7 @@ fn parse_dimension_style(
     let suppress_extension_line_1 = reader.bool()?;
     let suppress_extension_line_2 = reader.bool()?;
     let parent = uuid(&mut reader)?;
-    let extension_offset = reader.position();
-    let extension = reader.take(reader.remaining())?;
+    let controls = dimension_style_controls(data, &mut reader, archive, scale, version.1)?;
     let key = if component.id.is_nil() {
         format!("record-{source_offset}")
     } else {
@@ -1231,9 +1444,7 @@ fn parse_dimension_style(
         suppress_extension_line_1,
         suppress_extension_line_2,
         parent_style_uuid: (!parent.is_nil()).then(|| parent.to_string()),
-        extension_offset: extension_offset as u64,
-        extension_byte_len: extension.len() as u64,
-        extension_sha256: cadmpeg_ir::hash::sha256_hex(extension),
+        controls,
     })
 }
 
