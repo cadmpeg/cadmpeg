@@ -10860,6 +10860,16 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Boss-Extrude1"))
         .expect("projected extrusion feature");
+    let cadmpeg_ir::features::FeatureDefinition::Extrude { extent, .. } = &feature.definition
+    else {
+        panic!("typed extrusion feature");
+    };
+    assert_eq!(
+        extent,
+        &cadmpeg_ir::features::Extent::Blind {
+            length: cadmpeg_ir::features::Length(25.0),
+        }
+    );
     let parameter = decoded
         .ir
         .model
