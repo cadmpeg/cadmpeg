@@ -57,7 +57,7 @@ pub fn decode(
                 {
                     body.visible = Some(visibility.visible);
                     body_visibilities.push(crate::records::BodyVisibility {
-                        id: format!("f3d:{}:body-visibility#{}", visibility.stream, body.id),
+                        id: format!("f3d:design:body-visibility#{asm_body_key}"),
                         body: body.id.clone(),
                         stream: visibility.stream.clone(),
                         byte_offset: visibility.byte_offset,

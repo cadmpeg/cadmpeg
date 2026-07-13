@@ -3782,6 +3782,10 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     assert_eq!(native.design_configurations.len(), 1);
     assert_eq!(native.design_configurations[0].entry_name, name);
     assert_eq!(
+        native.design_configurations[0].id,
+        format!("f3d:configuration:entry#{name}")
+    );
+    assert_eq!(
         native.design_configurations[0].kind,
         crate::records::DesignConfigurationKind::Table
     );
@@ -4091,6 +4095,10 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(round_trip.ir.model.bodies[0].visible, Some(false));
     assert_eq!(f3d_native(&round_trip.ir).body_visibilities.len(), 1);
     assert!(!f3d_native(&round_trip.ir).body_visibilities[0].visible);
+    assert_eq!(
+        f3d_native(&round_trip.ir).body_visibilities[0].id,
+        "f3d:design:body-visibility#42"
+    );
     assert_eq!(
         round_trip.ir.model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet

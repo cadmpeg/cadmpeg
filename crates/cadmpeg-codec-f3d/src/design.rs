@@ -59,7 +59,7 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
             };
             validate_configuration_payload(&entry.name, kind, &payload)?;
             Ok(DesignConfiguration {
-                id: format!("f3d:configuration:{}", entry.name),
+                id: format!("f3d:configuration:entry#{}", entry.name),
                 entry_name: entry.name.clone(),
                 kind,
                 payload,
