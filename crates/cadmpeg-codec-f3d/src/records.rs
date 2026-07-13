@@ -489,6 +489,36 @@ pub struct DesignParameterScope {
     pub paired_byte_offset: u64,
 }
 
+/// Local-to-model placement frame referenced by a Design sketch scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignSketchPlacement {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Parameter-scope record that references this placement.
+    pub scope_record_index: u32,
+    /// Full Design entity id of the placed sketch.
+    pub entity_id: String,
+    /// Numeric suffix of `entity_id`.
+    pub entity_suffix: u64,
+    /// Byte offset of the primary indexed record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: String,
+    /// Shared logical record identity.
+    pub record_index: u32,
+    /// Byte length from the primary header to the paired header.
+    pub frame_length: u64,
+    /// Row-major local-to-model affine transform.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offset of the explicit 16-f64 matrix; absent for the compact identity form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform_offset: Option<u64>,
+    /// Per-file dynamic class tag of the paired header.
+    pub paired_class_tag: String,
+    /// Byte offset of the paired indexed record header.
+    pub paired_byte_offset: u64,
+}
+
 /// Persistent-reference channel in the Design construction stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

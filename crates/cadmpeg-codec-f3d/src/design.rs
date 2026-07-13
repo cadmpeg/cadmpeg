@@ -12,9 +12,9 @@ use crate::records::{
     DesignConfigurationKind, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignEntityHeader, DesignObject, DesignObjectKind, DesignParameter,
     DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, LostEdgeReference, PersistentReference, PersistentReferenceKind,
-    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-    SketchRelationOperand,
+    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentReference,
+    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -1112,6 +1112,182 @@ fn parse_parameter_scope(
         paired_class_tag,
         paired_byte_offset: paired_at as u64,
     })
+}
+
+/// Decode the unique local-to-model placement frame referenced by every
+/// parameter-owning sketch scope.
+pub fn decode_sketch_placements(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+) -> Result<Vec<DesignSketchPlacement>, CodecError> {
+    let mut out = Vec::new();
+    for scope in scopes.iter().filter(|scope| scope.kind == "Sketch") {
+        let (Some(entity_id), Some(entity_suffix)) =
+            (scope.entity_id.as_deref(), scope.entity_suffix)
+        else {
+            continue;
+        };
+        let entry = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && scope.id.starts_with(&format!("f3d:{}:", entry.name))
+        });
+        let Some(entry) = entry else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let start = usize::try_from(scope.byte_offset).ok();
+        let end = usize::try_from(scope.paired_byte_offset).ok();
+        let Some(frame) = start
+            .zip(end)
+            .and_then(|(start, end)| bytes.get(start..end))
+        else {
+            continue;
+        };
+        let mut referenced_indices = Vec::new();
+        for window in frame.windows(11) {
+            if window[0] == 1 && window[5..11] == [0; 6] {
+                let record_index = u32::from_le_bytes([window[1], window[2], window[3], window[4]]);
+                if !referenced_indices.contains(&record_index) {
+                    referenced_indices.push(record_index);
+                }
+            }
+        }
+        let mut candidates = Vec::new();
+        for record_index in referenced_indices {
+            candidates.extend(parse_sketch_placement_candidates(
+                bytes,
+                scope.record_index,
+                entity_id,
+                entity_suffix,
+                record_index,
+            ));
+        }
+        if candidates.len() == 1 {
+            let Some(mut placement) = candidates.pop() else {
+                continue;
+            };
+            placement.id = format!(
+                "f3d:{}:design-sketch-placement#{}",
+                entry.name, placement.byte_offset
+            );
+            out.push(placement);
+        }
+    }
+    out.sort_by_key(|placement| placement.byte_offset);
+    Ok(out)
+}
+
+fn parse_sketch_placement_candidates(
+    bytes: &[u8],
+    scope_record_index: u32,
+    entity_id: &str,
+    entity_suffix: u64,
+    record_index: u32,
+) -> Vec<DesignSketchPlacement> {
+    let mut headers = Vec::new();
+    let mut position = 0usize;
+    while let Some(at) = next_indexed_record_offset(bytes, position) {
+        if u32_at(bytes, at + 7) == Some(record_index) {
+            headers.push(at);
+        }
+        position = at + 1;
+    }
+    let mut out = Vec::new();
+    for pair in headers.windows(2) {
+        let start = pair[0];
+        let paired_at = pair[1];
+        let frame_length = paired_at.saturating_sub(start);
+        if frame_length != 201 && frame_length != 329 {
+            continue;
+        }
+        let Some((class_tag, after_tag)) = lp_ascii(bytes, start) else {
+            continue;
+        };
+        let Some((paired_class_tag, paired_after_tag)) = lp_ascii(bytes, paired_at) else {
+            continue;
+        };
+        if after_tag != start + 7
+            || paired_after_tag != paired_at + 7
+            || class_tag.len() != 3
+            || paired_class_tag.len() != 3
+            || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            || u32_at(bytes, paired_after_tag) != Some(record_index)
+        {
+            continue;
+        }
+        let (transform, transform_offset) = if frame_length == 201 {
+            (identity_matrix(), None)
+        } else {
+            let Some(values) = f64s_at(bytes, start + 55, 16) else {
+                continue;
+            };
+            let mut transform = [[0.0; 4]; 4];
+            for (ordinal, value) in values.iter().copied().enumerate() {
+                transform[ordinal / 4][ordinal % 4] = value;
+            }
+            if !valid_sketch_transform(&transform) {
+                continue;
+            }
+            (transform, Some((start + 55) as u64))
+        };
+        out.push(DesignSketchPlacement {
+            id: String::new(),
+            scope_record_index,
+            entity_id: entity_id.to_owned(),
+            entity_suffix,
+            byte_offset: start as u64,
+            class_tag,
+            record_index,
+            frame_length: frame_length as u64,
+            transform,
+            transform_offset,
+            paired_class_tag,
+            paired_byte_offset: paired_at as u64,
+        });
+    }
+    out
+}
+
+fn identity_matrix() -> [[f64; 4]; 4] {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+}
+
+pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
+    const EPSILON: f64 = 1.0e-10;
+    if !transform.iter().flatten().all(|value| value.is_finite())
+        || transform[3] != [0.0, 0.0, 0.0, 1.0]
+    {
+        return false;
+    }
+    let columns = [
+        [transform[0][0], transform[1][0], transform[2][0]],
+        [transform[0][1], transform[1][1], transform[2][1]],
+        [transform[0][2], transform[1][2], transform[2][2]],
+    ];
+    for (ordinal, column) in columns.iter().enumerate() {
+        let norm = column.iter().map(|value| value * value).sum::<f64>();
+        if (norm - 1.0).abs() > EPSILON {
+            return false;
+        }
+        for other in &columns[..ordinal] {
+            let dot = column
+                .iter()
+                .zip(other)
+                .map(|(left, right)| left * right)
+                .sum::<f64>();
+            if dot.abs() > EPSILON {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Decode the persistent u64 point and curve identity references
@@ -2692,9 +2868,10 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod relation_tests {
     use super::{
-        next_indexed_record_offset, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_relation, project_parameter_design,
+        identity_matrix, next_indexed_record_offset, parse_design_parameter,
+        parse_dimension_locus_group, parse_dimension_locus_pair, parse_parameter_companion,
+        parse_parameter_owner, parse_parameter_scope, parse_sketch_placement_candidates,
+        parse_sketch_relation, project_parameter_design,
     };
     use crate::records::{DesignParameterKind, DesignParameterScope, DesignRecordHeader};
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
@@ -2978,6 +3155,60 @@ mod relation_tests {
         assert_eq!(scope.frame_length, paired_at as u64);
         assert_eq!(scope.paired_class_tag, "261");
         assert_eq!(scope.paired_byte_offset, paired_at as u64);
+    }
+
+    #[test]
+    fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
+        fn placement_frame(
+            record_index: u32,
+            length: usize,
+            transform: Option<[[f64; 4]; 4]>,
+        ) -> Vec<u8> {
+            let mut bytes = vec![0; length];
+            bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+            bytes[4..7].copy_from_slice(b"356");
+            bytes[7..11].copy_from_slice(&record_index.to_le_bytes());
+            if let Some(transform) = transform {
+                for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+                    let at = 55 + ordinal * 8;
+                    bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                }
+            }
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+            bytes.extend_from_slice(b"259");
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+            bytes
+        }
+
+        let compact = parse_sketch_placement_candidates(
+            &placement_frame(185, 201, None),
+            177,
+            "0_172",
+            172,
+            185,
+        );
+        assert_eq!(compact.len(), 1);
+        assert_eq!(compact[0].frame_length, 201);
+        assert_eq!(compact[0].transform, identity_matrix());
+        assert_eq!(compact[0].transform_offset, None);
+
+        let transform = [
+            [0.0, 0.0, 1.0, 12.0],
+            [1.0, 0.0, 0.0, 34.0],
+            [0.0, 1.0, 0.0, 56.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let explicit = parse_sketch_placement_candidates(
+            &placement_frame(1773, 329, Some(transform)),
+            1765,
+            "0_1761",
+            1761,
+            1773,
+        );
+        assert_eq!(explicit.len(), 1);
+        assert_eq!(explicit[0].frame_length, 329);
+        assert_eq!(explicit[0].transform, transform);
+        assert_eq!(explicit[0].transform_offset, Some(55));
     }
 
     #[test]

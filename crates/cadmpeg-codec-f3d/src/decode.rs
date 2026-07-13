@@ -358,6 +358,9 @@ fn populate_annotations(
         for entity in &native.design_parameter_scopes {
             note(&entity.id, "design_parameter_scope");
         }
+        for entity in &native.design_sketch_placements {
+            note(&entity.id, "design_sketch_placement");
+        }
         for entity in &native.design_entity_headers {
             note(&entity.id, "design_entity_header");
         }
@@ -529,6 +532,8 @@ fn extend_related_design_records(
         &native.design_record_headers,
         &native.design_entity_headers,
     )?;
+    native.design_sketch_placements =
+        crate::design::decode_sketch_placements(scan, &native.design_parameter_scopes)?;
     Ok(())
 }
 

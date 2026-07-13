@@ -166,6 +166,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .map(|curve| curve.record_index),
         )
         .collect::<HashSet<_>>();
+    let placements_by_scope = native
+        .design_sketch_placements
+        .iter()
+        .map(|placement| (placement.scope_record_index, placement))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut scope_indices = HashSet::new();
     for scope in &native.design_parameter_scopes {
         let unique_index = scope_indices.insert(scope.record_index);
@@ -200,6 +205,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && scope.kind_offset < scope.paired_byte_offset.saturating_sub(78)
             && record_indices.contains(&scope.record_index)
             && entity_link.unwrap_or(scope.kind != "Sketch")
+            && (scope.kind != "Sketch" || placements_by_scope.contains_key(&scope.record_index))
             && unique_index;
         if !valid {
             findings.push(Finding {
@@ -207,6 +213,53 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 severity: Severity::Error,
                 message: "Fusion Design parameter scope has an invalid paired frame".into(),
                 entity: Some(scope.id.clone()),
+            });
+        }
+    }
+    let mut placement_records = HashSet::new();
+    let mut placement_scopes = HashSet::new();
+    for placement in &native.design_sketch_placements {
+        let unique_record = placement_records.insert(placement.record_index);
+        let unique_scope = placement_scopes.insert(placement.scope_record_index);
+        let scope = scopes_by_index.get(&placement.scope_record_index);
+        let compact = placement.frame_length == 201
+            && placement.transform_offset.is_none()
+            && placement.transform
+                == [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ];
+        let explicit = placement.frame_length == 329
+            && placement.transform_offset == Some(placement.byte_offset.saturating_add(55));
+        let valid = placement.class_tag.len() == 3
+            && placement
+                .class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && placement.paired_class_tag.len() == 3
+            && placement
+                .paired_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && placement.paired_byte_offset
+                == placement.byte_offset.saturating_add(placement.frame_length)
+            && (compact || explicit)
+            && design::valid_sketch_transform(&placement.transform)
+            && scope.is_some_and(|scope| {
+                scope.kind == "Sketch"
+                    && scope.entity_id.as_deref() == Some(placement.entity_id.as_str())
+                    && scope.entity_suffix == Some(placement.entity_suffix)
+            })
+            && unique_record
+            && unique_scope;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design sketch placement has an invalid frame or scope link".into(),
+                entity: Some(placement.id.clone()),
             });
         }
     }

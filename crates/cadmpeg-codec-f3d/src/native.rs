@@ -10,10 +10,10 @@ use crate::records::{
     CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignEntityHeader, DesignMaterialAssignment, DesignObject,
     DesignParameter, DesignParameterCompanion, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference,
-    MeshSurfaceSentinel, PersistentDesignLink, PersistentReference, PersistentSubentityTag,
-    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters,
-    TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
+    DesignRecordHeader, DesignSketchPlacement, EdgeContinuity, EdgeOwnership, FaceSidedness,
+    LostEdgeReference, MeshSurfaceSentinel, PersistentDesignLink, PersistentReference,
+    PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
+    TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -44,6 +44,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_parameter_scopes",
     "design_parameters",
     "design_record_headers",
+    "design_sketch_placements",
     "edge_continuities",
     "edge_ownerships",
     "face_sidedness",
@@ -80,6 +81,7 @@ macro_rules! f3d_arenas {
             design_parameters: DesignParameter;
             design_entity_headers: DesignEntityHeader;
             design_record_headers: DesignRecordHeader;
+            design_sketch_placements: DesignSketchPlacement;
             design_body_members: DesignBodyMember;
             design_configurations: DesignConfiguration;
             design_material_assignments: DesignMaterialAssignment;
@@ -191,6 +193,9 @@ pub struct F3dNative {
     /// Indexed Design parameter and expression records.
     #[serde(default)]
     pub design_parameters: Vec<DesignParameter>,
+    /// Local-to-model placement frames for Design sketches.
+    #[serde(default)]
+    pub design_sketch_placements: Vec<DesignSketchPlacement>,
     /// Self-validating per-entity headers from the Design `BulkStream`.
     #[serde(default)]
     pub design_entity_headers: Vec<DesignEntityHeader>,
@@ -284,6 +289,7 @@ impl Default for F3dNative {
             design_parameter_owners: Vec::new(),
             design_parameter_scopes: Vec::new(),
             design_parameters: Vec::new(),
+            design_sketch_placements: Vec::new(),
             design_entity_headers: Vec::new(),
             design_record_headers: Vec::new(),
             design_body_members: Vec::new(),
