@@ -2039,6 +2039,24 @@ fn mismatched_trimmed_topology_partition_stream() -> Vec<u8> {
     stream
 }
 
+fn forward_trimmed_curve_chain_stream() -> Vec<u8> {
+    let mut stream = trimmed_topology_partition_stream();
+    let first = stream
+        .windows(4)
+        .position(|window| window == [0, 133, 0, 12])
+        .expect("first trimmed curve");
+    put_ref(&mut stream, first + 19, 20);
+
+    let mut second = record(133, 85);
+    put_ref(&mut second, 2, 20);
+    second[18] = b'+';
+    put_ref(&mut second, 19, 9);
+    put_f64(&mut second, 69, 0.000_25);
+    put_f64(&mut second, 77, 0.000_75);
+    stream.extend(second);
+    stream
+}
+
 fn topology_with_extended_edge_curve_reference() -> Vec<u8> {
     let mut stream = topology_partition_stream();
     let edge = stream
@@ -3818,6 +3836,16 @@ fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
 #[test]
 fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
     let mut cur = Cursor::new(prt_with_partition(&trimmed_topology_partition_stream()));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let edge = result.ir.model.edges.first().expect("edge");
+    assert_eq!(edge.curve.as_ref(), Some(&result.ir.model.curves[0].id));
+    assert_eq!(edge.param_range, Some([0.25, 0.75]));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_resolves_forward_trimmed_curve_chain() {
+    let mut cur = Cursor::new(prt_with_partition(&forward_trimmed_curve_chain_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let edge = result.ir.model.edges.first().expect("edge");
     assert_eq!(edge.curve.as_ref(), Some(&result.ir.model.curves[0].id));

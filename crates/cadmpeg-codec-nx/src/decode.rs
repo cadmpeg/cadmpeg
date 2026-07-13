@@ -534,46 +534,62 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             *slot = Some(spine);
         }
 
-        for trim in crate::topology::trimmed_curves(semantic) {
-            if let Some(basis) = curves_by_xmt.get(&trim.basis).cloned() {
-                let parameters = canonical_trim_range(&ir, &basis, trim.parameters);
-                curves_by_xmt.insert(trim.xmt, basis);
-                if let Some(parameters) = parameters {
-                    trim_ranges.insert(trim.xmt, parameters);
+        let trimmed_curves = crate::topology::trimmed_curves(semantic);
+        loop {
+            let mapped = curves_by_xmt.len() + pcurves_by_xmt.len();
+            for trim in &trimmed_curves {
+                if let Some(basis) = curves_by_xmt.get(&trim.basis).cloned() {
+                    let parameters = canonical_trim_range(&ir, &basis, trim.parameters);
+                    curves_by_xmt.insert(trim.xmt, basis);
+                    if let Some(parameters) = parameters {
+                        trim_ranges.insert(trim.xmt, parameters);
+                    }
+                }
+                if let Some(pcurve) = pcurves_by_xmt.get(&trim.basis).cloned() {
+                    if let Some(carrier) = ir.model.pcurves.iter_mut().find(|p| p.id == pcurve) {
+                        carrier.parameter_range = Some(trim.parameters);
+                    }
+                    pcurves_by_xmt.insert(trim.xmt, pcurve);
                 }
             }
-            if let Some(pcurve) = pcurves_by_xmt.get(&trim.basis).cloned() {
-                if let Some(carrier) = ir.model.pcurves.iter_mut().find(|p| p.id == pcurve) {
-                    carrier.parameter_range = Some(trim.parameters);
-                }
-                pcurves_by_xmt.insert(trim.xmt, pcurve);
+            if curves_by_xmt.len() + pcurves_by_xmt.len() == mapped {
+                break;
             }
         }
         let mut normalized_pcurves = BTreeSet::new();
-        for surface_curve in crate::topology::surface_curves(semantic) {
-            if let Some(pcurve) = pcurves_by_xmt.get(&surface_curve.pcurve).cloned() {
-                if normalized_pcurves.insert(pcurve.clone()) {
-                    let support = surfaces_by_xmt
-                        .get(&surface_curve.surface)
-                        .and_then(|id| ir.model.surfaces.iter().find(|surface| surface.id == *id))
-                        .map(|surface| surface.geometry.clone());
-                    if let (Some(support), Some(carrier)) = (
-                        support,
-                        ir.model
-                            .pcurves
-                            .iter_mut()
-                            .find(|candidate| candidate.id == pcurve),
-                    ) {
-                        normalize_pcurve_parameters(&mut carrier.geometry, &support);
+        let surface_curves = crate::topology::surface_curves(semantic);
+        loop {
+            let mapped = curves_by_xmt.len() + pcurves_by_xmt.len();
+            for surface_curve in &surface_curves {
+                if let Some(pcurve) = pcurves_by_xmt.get(&surface_curve.pcurve).cloned() {
+                    if normalized_pcurves.insert(pcurve.clone()) {
+                        let support = surfaces_by_xmt
+                            .get(&surface_curve.surface)
+                            .and_then(|id| {
+                                ir.model.surfaces.iter().find(|surface| surface.id == *id)
+                            })
+                            .map(|surface| surface.geometry.clone());
+                        if let (Some(support), Some(carrier)) = (
+                            support,
+                            ir.model
+                                .pcurves
+                                .iter_mut()
+                                .find(|candidate| candidate.id == pcurve),
+                        ) {
+                            normalize_pcurve_parameters(&mut carrier.geometry, &support);
+                        }
                     }
+                    if let Some(carrier) = ir.model.pcurves.iter_mut().find(|p| p.id == pcurve) {
+                        carrier.fit_tolerance = Some(surface_curve.tolerance * 1000.0);
+                    }
+                    pcurves_by_xmt.insert(surface_curve.xmt, pcurve);
                 }
-                if let Some(carrier) = ir.model.pcurves.iter_mut().find(|p| p.id == pcurve) {
-                    carrier.fit_tolerance = Some(surface_curve.tolerance * 1000.0);
+                if let Some(original) = curves_by_xmt.get(&surface_curve.original).cloned() {
+                    curves_by_xmt.insert(surface_curve.xmt, original);
                 }
-                pcurves_by_xmt.insert(surface_curve.xmt, pcurve);
             }
-            if let Some(original) = curves_by_xmt.get(&surface_curve.original).cloned() {
-                curves_by_xmt.insert(surface_curve.xmt, original);
+            if curves_by_xmt.len() + pcurves_by_xmt.len() == mapped {
+                break;
             }
         }
 
