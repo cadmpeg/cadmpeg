@@ -527,7 +527,15 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
                 u_axis,
                 v_axis,
             );
-            (LINE_CLASS, bounded_line_payload(from, to, [0.0, 1.0], 2))
+            (
+                LINE_CLASS,
+                bounded_line_payload(
+                    from,
+                    to,
+                    edge.param_range.expect("validated edge domain"),
+                    2,
+                ),
+            )
         })
         .collect::<Vec<_>>();
     payload.extend(polymorphic_array(&c2));
@@ -538,7 +546,12 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
             let to = vertex_point(model, &edge.end).expect("validated edge end");
             (
                 LINE_CLASS,
-                bounded_line_payload([from.x, from.y, from.z], [to.x, to.y, to.z], [0.0, 1.0], 3),
+                bounded_line_payload(
+                    [from.x, from.y, from.z],
+                    [to.x, to.y, to.z],
+                    edge.param_range.expect("validated edge domain"),
+                    3,
+                ),
             )
         })
         .collect::<Vec<_>>();
@@ -585,7 +598,12 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
             let mut record = (index as i32).to_le_bytes().to_vec();
             record.extend((index as i32).to_le_bytes());
             record.extend(0_i32.to_le_bytes());
-            record.extend([0.0_f64, 1.0].into_iter().flat_map(f64::to_le_bytes));
+            record.extend(
+                edge.param_range
+                    .expect("validated edge domain")
+                    .into_iter()
+                    .flat_map(f64::to_le_bytes),
+            );
             record.extend(vertex_index[&edge.start.0].to_le_bytes());
             record.extend(vertex_index[&edge.end.0].to_le_bytes());
             record.extend(indexes(&[index as i32]));
@@ -601,7 +619,12 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
             let edge = ordered_edges[index];
             let mut record = (index as i32).to_le_bytes().to_vec();
             record.extend((index as i32).to_le_bytes());
-            record.extend([0.0_f64, 1.0].into_iter().flat_map(f64::to_le_bytes));
+            record.extend(
+                edge.param_range
+                    .expect("validated edge domain")
+                    .into_iter()
+                    .flat_map(f64::to_le_bytes),
+            );
             record.extend((index as i32).to_le_bytes());
             let (from, to) = if coedge.sense == Sense::Forward {
                 (&edge.start, &edge.end)
@@ -2845,6 +2868,9 @@ mod tests {
             assert_eq!(decoded.ir.model.coedges.len(), edge_count, "{version:?}");
             assert_eq!(decoded.ir.model.edges.len(), edge_count, "{version:?}");
             assert_eq!(decoded.ir.model.vertices.len(), edge_count, "{version:?}");
+            for (actual, expected) in decoded.ir.model.edges.iter().zip(&ir.model.edges) {
+                assert_eq!(actual.param_range, expected.param_range, "{version:?}");
+            }
             assert!(
                 cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok(),
                 "{version:?}"
