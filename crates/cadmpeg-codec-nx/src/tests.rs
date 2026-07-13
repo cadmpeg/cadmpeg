@@ -45,12 +45,12 @@ fn put_ref(rec: &mut [u8], at: usize, value: u16) {
 }
 
 fn encoded_xmt(value: u32) -> Vec<u8> {
-    if value <= i16::MAX as u32 {
+    if i16::try_from(value).is_ok() {
         return (value as u16).to_be_bytes().to_vec();
     }
     let quotient = value / 32_767;
     let remainder = value % 32_767;
-    assert!(remainder > 0 && remainder <= i16::MAX as u32);
+    assert!(remainder > 0 && i16::try_from(remainder).is_ok());
     let mut out = (-(remainder as i16)).to_be_bytes().to_vec();
     out.extend_from_slice(&(quotient as u16).to_be_bytes());
     out
@@ -247,7 +247,12 @@ fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
 fn om_numeric_expression_retains_identity_name_unit_and_value() {
     let bytes = indexed_om_section();
     let section = crate::om::indexed_sections(&bytes).remove(0);
-    let expressions = section.numeric_expressions();
+    let expression_records = section.numeric_expression_records();
+    assert_eq!(expression_records[0].0, 1);
+    let expressions = expression_records
+        .iter()
+        .map(|(_, expression)| expression)
+        .collect::<Vec<_>>();
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(
@@ -2489,6 +2494,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .unwrap();
     assert_eq!(object_records.len(), 2);
     assert_eq!(object_records[1].object_id, Some(0x102));
+    assert_eq!(expressions[0].record.as_ref(), Some(&object_records[1].id));
     assert_eq!(object_records[1].record_ordinal, 1);
     assert_eq!(object_records[1].byte_len, om_records[1].byte_len);
     assert_eq!(object_records[1].sha256, om_records[1].sha256);

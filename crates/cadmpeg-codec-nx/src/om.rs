@@ -123,6 +123,14 @@ pub struct Section<'a> {
 impl<'a> IndexedSection<'a> {
     /// Decode explicit numeric-expression text within bounded entity records.
     pub fn numeric_expressions(&self) -> Vec<NumericExpression<'a>> {
+        self.numeric_expression_records()
+            .into_iter()
+            .map(|(_, expression)| expression)
+            .collect()
+    }
+
+    /// Decode expressions together with their owning record ordinal.
+    pub fn numeric_expression_records(&self) -> Vec<(usize, NumericExpression<'a>)> {
         if !self.records.iter().any(|record| {
             record
                 .bytes
@@ -133,8 +141,10 @@ impl<'a> IndexedSection<'a> {
         }
         self.records
             .iter()
-            .filter_map(|record| {
+            .enumerate()
+            .filter_map(|(record_ordinal, record)| {
                 numeric_expression_at(record.bytes, record.offset, record.object_id)
+                    .map(|expression| (record_ordinal, expression))
             })
             .collect()
     }

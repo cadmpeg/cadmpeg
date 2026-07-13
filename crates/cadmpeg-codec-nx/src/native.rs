@@ -24,6 +24,8 @@ pub struct Expression {
     pub id: String,
     /// Persistent OM object identifier.
     pub object_id: Option<u32>,
+    /// Owning entry in the native OM record directory, when externally bounded.
+    pub record: Option<String>,
     /// NX parameter name.
     pub name: String,
     /// Declared native unit.
@@ -417,11 +419,16 @@ pub fn persistent_handles(references: &[ObjectReference]) -> Vec<PersistentHandl
 /// Decode explicit numeric expressions from all indexed OM sections.
 pub fn expressions(container: &Container) -> Vec<Expression> {
     let mut indexed = BTreeMap::new();
-    for (entry, section) in container.indexed_om_sections() {
-        for expression in section.numeric_expressions() {
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections().into_iter().enumerate()
+    {
+        for (record_ordinal, expression) in section.numeric_expression_records() {
             indexed.insert(
                 (entry.name.clone(), expression.offset),
-                expression.object_id,
+                (
+                    expression.object_id,
+                    format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
+                ),
             );
         }
     }
@@ -437,13 +444,15 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
             continue;
         };
         for expression in crate::om::numeric_expressions(payload) {
-            let object_id = indexed
+            let indexed_record = indexed
                 .get(&(entry.name.clone(), expression.offset))
-                .copied()
-                .flatten();
+                .cloned();
             expressions.push(Expression {
                 id: format!("nx:om-entry-{entry_index}:expression#{}", expression.offset),
-                object_id,
+                object_id: indexed_record
+                    .as_ref()
+                    .and_then(|(object_id, _)| *object_id),
+                record: indexed_record.map(|(_, record)| record),
                 name: expression.name.to_string(),
                 unit: match expression.unit {
                     crate::om::ExpressionUnit::Millimeter => ExpressionUnit::Millimeter,
