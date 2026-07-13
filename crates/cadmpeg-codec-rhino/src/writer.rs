@@ -6,6 +6,7 @@ use std::io::Write;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
 
 use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
 
@@ -30,6 +31,12 @@ const ARC_CLASS: [u8; 16] = [
 ];
 const NURBS_CURVE_CLASS: [u8; 16] = [
     0xdd, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+];
+const NURBS_SURFACE_CLASS: [u8; 16] = [
+    0xde, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+];
+const PLANE_SURFACE_CLASS: [u8; 16] = [
+    0xdf, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
@@ -64,6 +71,21 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
         };
         objects.push(object_record(4, class, &payload));
     }
+    for surface in &ir.model.surfaces {
+        let (class, payload) = match &surface.geometry {
+            SurfaceGeometry::Plane {
+                origin,
+                normal,
+                u_axis,
+            } => (
+                PLANE_SURFACE_CLASS,
+                plane_surface_payload(*origin, *normal, *u_axis),
+            ),
+            SurfaceGeometry::Nurbs(nurbs) => (NURBS_SURFACE_CLASS, nurbs_surface_payload(nurbs)),
+            _ => unreachable!("representability checked before serialization"),
+        };
+        objects.push(object_record(8, class, &payload));
+    }
 
     let mut bytes = header(version)?;
     bytes.extend(long_chunk(1, b"cadmpeg"));
@@ -96,7 +118,6 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
         ("coedges", model.coedges.len()),
         ("edges", model.edges.len()),
         ("vertices", model.vertices.len()),
-        ("surfaces", model.surfaces.len()),
         ("subds", model.subds.len()),
         ("pcurves", model.pcurves.len()),
         ("procedural_surfaces", model.procedural_surfaces.len()),
@@ -159,10 +180,100 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
             )));
         }
     }
+    for surface in &model.surfaces {
+        match &surface.geometry {
+            SurfaceGeometry::Plane {
+                origin,
+                normal,
+                u_axis,
+            } => {
+                check_frame(&surface.id.0, *origin, *normal, *u_axis, "plane")?;
+            }
+            SurfaceGeometry::Nurbs(nurbs) => check_nurbs_surface(&surface.id.0, nurbs)?,
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "Rhino writer cannot represent surface {} as a native object",
+                    surface.id.0
+                )))
+            }
+        }
+    }
     if ir.native.namespace("rhino").is_some() {
         return Err(CodecError::NotImplemented(
             "Rhino native records require explicit survival handling".into(),
         ));
+    }
+    Ok(())
+}
+
+fn check_frame(
+    id: &str,
+    origin: cadmpeg_ir::math::Point3,
+    normal: cadmpeg_ir::math::Vector3,
+    x: cadmpeg_ir::math::Vector3,
+    family: &str,
+) -> Result<(), CodecError> {
+    let dot = normal.x * x.x + normal.y * x.y + normal.z * x.z;
+    if !origin.x.is_finite()
+        || !origin.y.is_finite()
+        || !origin.z.is_finite()
+        || (normal.norm() - 1.0).abs() > 1.0e-10
+        || (x.norm() - 1.0).abs() > 1.0e-10
+        || dot.abs() > 1.0e-10
+    {
+        return Err(CodecError::Malformed(format!(
+            "{family} {id} has an invalid frame"
+        )));
+    }
+    Ok(())
+}
+
+fn check_nurbs_surface(
+    id: &str,
+    surface: &cadmpeg_ir::geometry::NurbsSurface,
+) -> Result<(), CodecError> {
+    let u_order = surface.u_degree as usize + 1;
+    let v_order = surface.v_degree as usize + 1;
+    let u_count = surface.u_count as usize;
+    let v_count = surface.v_count as usize;
+    let pole_count = u_count.checked_mul(v_count);
+    if u_order < 2
+        || v_order < 2
+        || u_count < u_order
+        || v_count < v_order
+        || i32::try_from(u_order).is_err()
+        || i32::try_from(v_order).is_err()
+        || i32::try_from(u_count).is_err()
+        || i32::try_from(v_count).is_err()
+        || surface.u_knots.len() != u_count + u_order
+        || surface.v_knots.len() != v_count + v_order
+        || pole_count != Some(surface.control_points.len())
+    {
+        return Err(CodecError::Malformed(format!(
+            "surface {id} has inconsistent NURBS counts"
+        )));
+    }
+    if surface
+        .u_knots
+        .iter()
+        .chain(&surface.v_knots)
+        .any(|v| !v.is_finite())
+        || surface
+            .u_knots
+            .windows(2)
+            .chain(surface.v_knots.windows(2))
+            .any(|v| v[0] > v[1])
+        || surface
+            .control_points
+            .iter()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite() || !p.z.is_finite())
+        || surface.weights.as_ref().is_some_and(|w| {
+            w.len() != surface.control_points.len() || w.iter().any(|v| !v.is_finite() || *v == 0.0)
+        })
+    {
+        return Err(CodecError::Malformed(format!(
+            "surface {id} has invalid NURBS data"
+        )));
     }
     Ok(())
 }
@@ -336,6 +447,83 @@ fn nurbs_curve_payload(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Vec<u8> {
     payload
 }
 
+fn plane_surface_payload(
+    origin: cadmpeg_ir::math::Point3,
+    normal: cadmpeg_ir::math::Vector3,
+    x: cadmpeg_ir::math::Vector3,
+) -> Vec<u8> {
+    let y = cross(normal, x);
+    let d = -(normal.x * origin.x + normal.y * origin.y + normal.z * origin.z);
+    let mut payload = vec![0x10];
+    for value in [
+        origin.x, origin.y, origin.z, x.x, x.y, x.z, y.x, y.y, y.z, normal.x, normal.y, normal.z,
+        normal.x, normal.y, normal.z, d, -1.0, 1.0, -1.0, 1.0,
+    ] {
+        payload.extend(value.to_le_bytes());
+    }
+    payload
+}
+
+fn nurbs_surface_payload(surface: &cadmpeg_ir::geometry::NurbsSurface) -> Vec<u8> {
+    let rational = i32::from(surface.weights.is_some());
+    let mut payload = vec![0x10];
+    for value in [
+        3,
+        rational,
+        (surface.u_degree + 1) as i32,
+        (surface.v_degree + 1) as i32,
+        surface.u_count as i32,
+        surface.v_count as i32,
+        0,
+        0,
+    ] {
+        payload.extend(value.to_le_bytes());
+    }
+    let min = surface
+        .control_points
+        .iter()
+        .fold([f64::INFINITY; 3], |a, p| {
+            [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
+        });
+    let max = surface
+        .control_points
+        .iter()
+        .fold([f64::NEG_INFINITY; 3], |a, p| {
+            [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
+        });
+    for value in min.into_iter().chain(max) {
+        payload.extend(value.to_le_bytes());
+    }
+    for knots in [&surface.u_knots, &surface.v_knots] {
+        payload.extend(((knots.len() - 2) as i32).to_le_bytes());
+        for knot in &knots[1..knots.len() - 1] {
+            payload.extend(knot.to_le_bytes());
+        }
+    }
+    payload.extend((surface.control_points.len() as i32).to_le_bytes());
+    for (index, point) in surface.control_points.iter().enumerate() {
+        let weight = surface
+            .weights
+            .as_ref()
+            .map_or(1.0, |weights| weights[index]);
+        payload.extend((point.x * weight).to_le_bytes());
+        payload.extend((point.y * weight).to_le_bytes());
+        payload.extend((point.z * weight).to_le_bytes());
+        if rational != 0 {
+            payload.extend(weight.to_le_bytes());
+        }
+    }
+    payload
+}
+
+fn cross(a: cadmpeg_ir::math::Vector3, b: cadmpeg_ir::math::Vector3) -> cadmpeg_ir::math::Vector3 {
+    cadmpeg_ir::math::Vector3::new(
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x,
+    )
+}
+
 fn object_record(object_type: i64, class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
     let object_type = short_chunk(TCODE_OBJECT_RECORD_TYPE, object_type);
     let mut uuid_body = class_uuid.to_vec();
@@ -467,5 +655,69 @@ mod tests {
             decoded.ir.model.curves[0].geometry,
             ir.model.curves[0].geometry
         );
+    }
+
+    #[test]
+    fn free_plane_and_rational_nurbs_surface_round_trip() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId("surface:plane".into()),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+                origin: Point3::new(1.0, 2.0, 3.0),
+                normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            },
+            source_object: None,
+        });
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId("surface:nurbs".into()),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(
+                cadmpeg_ir::geometry::NurbsSurface {
+                    u_degree: 1,
+                    v_degree: 1,
+                    u_knots: vec![0.0, 0.0, 1.0, 1.0],
+                    v_knots: vec![2.0, 2.0, 5.0, 5.0],
+                    u_count: 2,
+                    v_count: 2,
+                    control_points: vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.0, 2.0, 0.0),
+                        Point3::new(3.0, 0.0, 1.0),
+                        Point3::new(3.0, 2.0, 1.0),
+                    ],
+                    weights: Some(vec![1.0, 0.75, 0.5, 1.0]),
+                    u_periodic: false,
+                    v_periodic: false,
+                },
+            ),
+            source_object: None,
+        });
+        ir.finalize();
+        let expected = ir
+            .model
+            .surfaces
+            .iter()
+            .map(|s| s.geometry.clone())
+            .collect::<Vec<_>>();
+        for version in [
+            RhinoArchiveVersion::V5,
+            RhinoArchiveVersion::V6,
+            RhinoArchiveVersion::V7,
+            RhinoArchiveVersion::V8,
+        ] {
+            let mut bytes = Vec::new();
+            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            let actual = decoded
+                .ir
+                .model
+                .surfaces
+                .iter()
+                .map(|s| s.geometry.clone())
+                .collect::<Vec<_>>();
+            assert_eq!(actual, expected);
+        }
     }
 }

@@ -228,6 +228,41 @@ fn source_less_ir_exports_to_decodable_sldprt() {
 }
 
 #[test]
+fn source_less_ir_exports_to_decodable_rhino() {
+    let dir = tempdir().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.points.push(cadmpeg_ir::topology::Point {
+        id: cadmpeg_ir::ids::PointId("cadir:model:point#cli".into()),
+        position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+    });
+    let input = fixture(dir.path(), "point.cadir.json", &ir);
+    let output = dir.path().join("point.3dm");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--allow-invalid",
+        ])
+        .assert()
+        .success();
+
+    let decoded = cadmpeg_codec_rhino::RhinoCodec
+        .decode(
+            &mut Cursor::new(fs::read(output).unwrap()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(decoded.ir.model.points.len(), 1);
+    assert_eq!(
+        decoded.ir.model.points[0].position,
+        cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+    );
+}
+
+#[test]
 fn validation_blocks_conversion_unless_overridden() {
     let dir = tempdir().unwrap();
     let mut invalid = unit_cube();
