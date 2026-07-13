@@ -39,6 +39,15 @@ pub struct FieldDefinition<'a> {
     pub trailing_code: u8,
 }
 
+/// One self-framed printable string value in an NX OM entity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StringValue<'a> {
+    /// Absolute byte offset of the `66 32 03` marker.
+    pub offset: usize,
+    /// Printable value bytes.
+    pub value: &'a str,
+}
+
 /// Unit declared by an NX numeric-expression serialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExpressionUnit {
@@ -109,6 +118,48 @@ impl<'a> IndexedSection<'a> {
             })
             .collect()
     }
+
+    /// Decode every strictly framed printable string in each bounded record.
+    pub fn string_values(&self) -> Vec<(usize, usize, Option<u32>, StringValue<'a>)> {
+        self.records
+            .iter()
+            .enumerate()
+            .flat_map(|(record_ordinal, record)| {
+                string_values(record.bytes, record.offset)
+                    .into_iter()
+                    .enumerate()
+                    .map(move |(value_ordinal, value)| {
+                        (record_ordinal, value_ordinal, record.object_id, value)
+                    })
+            })
+            .collect()
+    }
+}
+
+/// Decode `66 32 03` printable-string values wholly contained in `bytes`.
+pub fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
+    const MARKER: &[u8] = &[0x66, 0x32, 0x03];
+    bytes
+        .windows(MARKER.len())
+        .enumerate()
+        .filter(|(_, window)| *window == MARKER)
+        .filter_map(|(offset, _)| {
+            let declared = usize::from(*bytes.get(offset + 3)?);
+            let text_len = declared.checked_sub(2)?;
+            let start = offset.checked_add(4)?;
+            let end = start.checked_add(text_len)?;
+            let raw = bytes.get(start..end)?;
+            (!raw.is_empty()
+                && raw
+                    .iter()
+                    .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+                && bytes.get(end) == Some(&0))
+            .then(|| StringValue {
+                offset: base_offset + offset,
+                value: std::str::from_utf8(raw).expect("invariant: printable ASCII is valid UTF-8"),
+            })
+        })
+        .collect()
 }
 
 /// Decode every strictly length-framed numeric expression in an OM payload.

@@ -65,6 +65,7 @@ fn indexed_om_section() -> Vec<u8> {
     let mut expression = vec![0x99, 0x04, (text.len() + 2) as u8];
     expression.extend_from_slice(text);
     expression.push(0);
+    expression.extend_from_slice(b"\x66\x32\x03\x0cSKETCH_001\0");
     let records = [root.as_slice(), expression.as_slice()];
     let table = bytes.len() + 4 * 4;
     let table_end = table + 4 + 3 * 4;
@@ -152,7 +153,7 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
     assert_eq!(sections[0].records[1].object_id, Some(0x102));
     assert_eq!(
         sections[0].records[1].bytes,
-        b"\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00"
+        b"\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00\x66\x32\x03\x0cSKETCH_001\0"
     );
 }
 
@@ -242,6 +243,16 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     );
     assert_eq!(expressions[0].unit, crate::om::ExpressionUnit::Degree);
     assert_eq!(expressions[0].value, 120.0);
+}
+
+#[test]
+fn om_string_value_requires_marker_length_printability_and_terminator() {
+    let bytes = b"\x66\x32\x03\x0cSKETCH_001\0\x66\x32\x03\x03A\0\x66\x32\x03\x03A\x01";
+    let values = crate::om::string_values(bytes, 100);
+    assert_eq!(values.len(), 2);
+    assert_eq!(values[0].offset, 100);
+    assert_eq!(values[0].value, "SKETCH_001");
+    assert_eq!(values[1].value, "A");
 }
 
 #[test]
@@ -2344,6 +2355,17 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(object_records[1].record_ordinal, 1);
     assert_eq!(object_records[1].byte_len, om_records[1].byte_len);
     assert_eq!(object_records[1].sha256, om_records[1].sha256);
+    let strings = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<crate::native::StringValue>("string_values")
+        .unwrap();
+    assert_eq!(strings.len(), 1);
+    assert_eq!(strings[0].record, object_records[1].id);
+    assert_eq!(strings[0].object_id, Some(0x102));
+    assert_eq!(strings[0].value, "SKETCH_001");
     assert_eq!(result.ir.model.features.len(), 1);
     assert!(matches!(
         result.ir.model.features[0].definition,

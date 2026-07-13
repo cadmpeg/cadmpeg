@@ -91,6 +91,25 @@ pub struct ObjectRecord {
     pub source_offset: u64,
 }
 
+/// Self-framed printable string carried by one NX OM record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StringValue {
+    /// Globally unique value identity.
+    pub id: String,
+    /// Owning entry in the native OM record directory.
+    pub record: String,
+    /// Persistent OM object identifier when the section carries an ID table.
+    pub object_id: Option<u32>,
+    /// Zero-based occurrence ordinal within the owning record.
+    pub ordinal: u32,
+    /// Exact printable value.
+    pub value: String,
+    /// Directory entry containing the OM section.
+    pub source_entry: String,
+    /// Absolute file offset of the `66 32 03` marker.
+    pub source_offset: u64,
+}
+
 /// Named NX arrangement from `/Root/part/arrangements`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Configuration {
@@ -257,6 +276,36 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + record.offset as u64,
                 })
+        })
+        .collect()
+}
+
+/// Decode self-framed printable values from bounded NX OM records.
+pub fn string_values(container: &Container) -> Vec<StringValue> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            section.string_values().into_iter().map(
+                move |(record_ordinal, value_ordinal, object_id, value)| {
+                    let record =
+                        format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
+                    StringValue {
+                        id: format!(
+                            "nx:om-string-values-{section_ordinal}-{record_ordinal}:value#{}",
+                            value.offset
+                        ),
+                        record,
+                        object_id,
+                        ordinal: value_ordinal as u32,
+                        value: value.value.to_string(),
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + value.offset as u64,
+                    }
+                },
+            )
         })
         .collect()
 }

@@ -384,6 +384,8 @@ record i = bytes[index[i+1], index[i+2])   # 0 <= i < record_count
 
 The offset-only form does not assign one fixed-width object ID to every record. Entity identity remains unspecified unless a persistent handle is present in the bounded record.
 
+A printable OM string value is framed as `66 32 03, declared_len:u8, text[declared_len-2], 00`. The text is non-empty printable ASCII. The marker, declared length, text, and null terminator lie within one externally bounded record.
+
 **Persistent-handle identity.** `0xe0`-prefixed 4-byte values are persistent handles forming a cross-stream bridge (RMFastLoad ↔ UG_PART OM ↔ EXTREFSTREAM). A second family uses `0xC0..0xCF` (4-bit tag plus 28-bit value) and occurs as `(e0-handle, c-ref)` pairs.
 
 ### 7.2 Partition and deltas merge
