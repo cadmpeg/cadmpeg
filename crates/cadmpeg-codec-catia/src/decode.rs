@@ -197,8 +197,11 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let stream_range = container::e5_record_stream(&scan.data)?;
     let stream = &scan.data[stream_range];
     let circles = geometry::e5_circles(stream);
-    let surfaces = geometry::e5_surfaces(stream);
+    let mut surfaces = geometry::e5_surfaces(stream);
     let topology = crate::e5::parse_topology(stream);
+    if let Some(topology) = &topology {
+        append_e5_planes(stream, topology, &mut surfaces);
+    }
     let points = geometry::vertices(&scan.data);
     if circles.is_empty() && surfaces.is_empty() && points.is_empty() {
         return None;
@@ -261,7 +264,11 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             "e5_0d_03",
             surface.pos as u64,
             "analytic_surface",
-            Exactness::ByteExact,
+            if matches!(surface.geometry, SurfaceGeometry::Plane { .. }) {
+                Exactness::Derived
+            } else {
+                Exactness::ByteExact
+            },
         );
         ir.model.surfaces.push(Surface {
             id,
@@ -298,6 +305,93 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             notes: container::summarize(scan).notes,
         },
     ))
+}
+
+fn append_e5_planes(
+    stream: &[u8],
+    topology: &crate::e5::E5Topology,
+    surfaces: &mut Vec<geometry::E5Surface>,
+) {
+    let carrier_axes: HashMap<u32, Vector3> = surfaces
+        .iter()
+        .filter_map(|surface| {
+            let (SurfaceGeometry::Cylinder { axis, .. }
+            | SurfaceGeometry::Cone { axis, .. }
+            | SurfaceGeometry::Torus { axis, .. }) = surface.geometry
+            else {
+                return None;
+            };
+            Some((surface.record_id, axis))
+        })
+        .collect();
+    for plane in geometry::e5_planes(stream) {
+        let mut normal: Option<Vector3> = None;
+        let mut consistent = true;
+        for face in topology
+            .faces
+            .iter()
+            .filter(|face| face.surface == plane.record_id)
+        {
+            for loop_ in &face.loops {
+                for edge_ref in &loop_.edge_uses {
+                    let Some(edge) = topology.edges.get(edge_ref) else {
+                        consistent = false;
+                        continue;
+                    };
+                    let Some(support) = topology.curve_supports.get(&edge.support) else {
+                        consistent = false;
+                        continue;
+                    };
+                    for pcurve_ref in &support.pcurves {
+                        let Some(crate::e5::E5Pcurve::Line {
+                            surface, direction, ..
+                        }) = topology.pcurves.get(pcurve_ref)
+                        else {
+                            continue;
+                        };
+                        if direction[0].abs() <= 1e-9 || direction[1].abs() > 1e-9 {
+                            continue;
+                        }
+                        let Some(&candidate) = carrier_axes.get(surface) else {
+                            continue;
+                        };
+                        let candidate = canonical_direction(candidate);
+                        if normal.is_some_and(|value| {
+                            value.x * candidate.x + value.y * candidate.y + value.z * candidate.z
+                                < 1.0 - 1e-10
+                        }) {
+                            consistent = false;
+                        } else {
+                            normal = Some(candidate);
+                        }
+                    }
+                }
+            }
+        }
+        let Some(normal) = normal.filter(|_| consistent) else {
+            continue;
+        };
+        surfaces.push(geometry::E5Surface {
+            pos: plane.pos,
+            record_id: plane.record_id,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+                normal,
+                u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+            },
+        });
+    }
+}
+
+fn canonical_direction(mut direction: Vector3) -> Vector3 {
+    let first = [direction.x, direction.y, direction.z]
+        .into_iter()
+        .find(|value| value.abs() > 1e-12)
+        .unwrap_or(1.0);
+    if first < 0.0 {
+        direction = Vector3::new(-direction.x, -direction.y, -direction.z);
+    }
+    direction
 }
 
 fn attach_e5_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {

@@ -466,14 +466,14 @@ fn identify_variant(
         // Nested container, but its directory catalogues no BREP body.
         (Some(_), None) => Variant::InnerNoDirectory,
         (Some(_), Some(_)) => {
-            if census.fbb_runs > 0 {
+            if coherent_e5 {
+                Variant::E5Stream
+            } else if census.fbb_runs > 0 {
                 if census.edge_delimiters > 0 {
                     Variant::StandardNested
                 } else {
                     Variant::FbbOnly
                 }
-            } else if coherent_e5 {
-                Variant::E5Stream
             } else {
                 Variant::FloatPackedInnerNoFbb
             }
@@ -600,5 +600,29 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         container_kind: "v5-cfv2".to_string(),
         entries,
         notes,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{identify_variant, Census, InnerDir};
+    use crate::variant::Variant;
+
+    #[test]
+    fn coherent_e5_stream_overrides_nested_fbb_markers() {
+        let inner = InnerDir {
+            inner: 0,
+            dir_offset: 0,
+            descriptors: Vec::new(),
+        };
+        let census = Census {
+            fbb_runs: 2,
+            edge_delimiters: 1,
+            ..Census::default()
+        };
+        assert_eq!(
+            identify_variant(Some(&inner), Some(&[]), &census, true),
+            Variant::E5Stream
+        );
     }
 }

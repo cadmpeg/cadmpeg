@@ -412,6 +412,8 @@ Classes: `0x01` body, `0x00` advanced face, `0x08` datum/template face, `0x09` e
 
 E5 `0x96` p-curves store `<surface_ref>, origin_u, origin_v, dir_u, dir_v, param_lo, param_hi` as f64 values. E5 `0x97` p-curves store `<surface_ref>, center_u, center_v, <code0:u32>, <code1:u32>, radius, param_lo, param_hi, tail0, tail1>`. Cylinder `0x96` U is arc length (`U_angle=U_native/radius`); torus U and V are arc lengths (`U_angle=U_native/major_radius`, `V_angle=V_native/minor_radius`). `0xc0` is a one-pcurve boundary support and `0xc1` is a two-pcurve intersection support. Edge type follows `0xff -> 0xc0/0xc1 -> pcurve -> carrier`.
 
+A class-`0xc8` plane stores its origin and natural UV bounds but no orientation vectors. Its normal is the canonicalized axis of every adjacent cylinder, cone, or torus carrier for which the shared `0xc1` intersection support contains a circumferential `0x96` pcurve (`dir_v=0`, `dir_u!=0`). The plane carrier resolves only when at least one such axis exists and all such axes are parallel.
+
 E5 carrier frames use f64 fields. `0xc9` stores origin, `frame_u`, `frame_v`, radius, and angular/arc data, with `axis = frame_u × frame_v`. `0xca` stores origin, `frame_u`, `frame_v`, axis, angle, reference radius, UV bounds, and the native-U scale at `+158`. `0xcc` stores origin, `frame_u`, `frame_v`, axis, major radius, minor radius, and UV bounds.
 
 An E5 `0xa0` UV jet is a nonperiodic degree-5 C2 B-spline p-curve. Its knot-site position, first derivative, and second derivative determine the B-spline poles through a square Hermite system. Duplicating each interior knot yields the local quintic Bezier controls.
