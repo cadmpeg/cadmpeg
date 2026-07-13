@@ -15366,7 +15366,8 @@ fn patch_spring_definition(
         bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
     }
     bytes[flag_offset] = native_bool(*discontinuity_flag);
-    bytes[direction_offset + 1..direction_offset + 9].copy_from_slice(&direction.to_le_bytes());
+    let int_width = active_ref_width(bytes);
+    patch_tagged_integer_at(bytes, direction_offset, int_width, *direction)?;
     Ok(())
 }
 
@@ -15638,13 +15639,18 @@ fn patch_three_surface_intersection_definition(
     {
         return Err(CodecError::Malformed("record is not an sss_int_cur".into()));
     }
+    let int_width = active_ref_width(bytes);
+    let token_len = 1 + int_width;
     let mut selector_relative = None;
     for name in ["plane", "cone", "sphere", "torus", "spline", "null_surface"] {
         let mut marker = vec![0x0d, u8::try_from(name.len()).unwrap_or(u8::MAX)];
         marker.extend_from_slice(name.as_bytes());
         for (position, window) in record_bytes.windows(marker.len()).enumerate() {
-            if position >= 9 && window == marker && record_bytes[position - 9] == 0x04 {
-                selector_relative = Some(position - 9);
+            if position >= token_len
+                && window == marker
+                && record_bytes[position - token_len] == 0x04
+            {
+                selector_relative = Some(position - token_len);
                 break;
             }
         }
@@ -15684,7 +15690,7 @@ fn patch_three_surface_intersection_definition(
     ) {
         bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
     }
-    bytes[selector_offset + 1..selector_offset + 9].copy_from_slice(&selector.to_le_bytes());
+    patch_tagged_integer_at(bytes, selector_offset, int_width, *selector)?;
     Ok(())
 }
 
@@ -16122,6 +16128,20 @@ fn patch_layout_integer(
     Ok(())
 }
 
+fn patch_tagged_integer_at(
+    bytes: &mut [u8],
+    tag_offset: usize,
+    width: usize,
+    value: i64,
+) -> Result<(), CodecError> {
+    if !matches!(bytes.get(tag_offset), Some(0x04 | 0x0c | 0x15)) {
+        return Err(CodecError::Malformed(
+            "F3D tagged integer carrier is missing".into(),
+        ));
+    }
+    patch_layout_integer(bytes, tag_offset + 1, width, value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -16507,5 +16527,17 @@ mod tests {
                     && major_radius == 40.0
                     && minor_radius == 10.0
         ));
+    }
+
+    #[test]
+    fn generated_binaryfile4_integer_patch_preserves_following_token() {
+        let mut bytes = vec![0x15];
+        bytes.extend_from_slice(&(-3i32).to_le_bytes());
+        bytes.extend_from_slice(&[0x0d, 0x03, b'n', b'e', b'x']);
+
+        patch_tagged_integer_at(&mut bytes, 0, 4, 7).expect("width-4 enum patch");
+
+        assert_eq!(&bytes[1..5], &7i32.to_le_bytes());
+        assert_eq!(&bytes[5..], &[0x0d, 0x03, b'n', b'e', b'x']);
     }
 }
