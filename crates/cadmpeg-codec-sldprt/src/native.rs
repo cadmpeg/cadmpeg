@@ -226,6 +226,19 @@ impl SldprtNative {
         if let Some(record) = relation_instances.iter().find(|record| {
             !class_ids.contains(record.class_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
+                || record.scalar_refs.is_empty()
+                || record.scalar_refs.len() > 2
+                || record.scalar_refs.windows(2).any(|pair| pair[0] == pair[1])
+                || classes
+                    .iter()
+                    .find(|class| class.id == record.class_ref)
+                    .is_none_or(|class| {
+                        !matches!(
+                            crate::classification::native_object_class(&class.name).kind,
+                            crate::classification::NativeClassKind::SketchRelation(family)
+                                if family == record.family
+                        )
+                    })
                 || record
                     .scalar_refs
                     .iter()
@@ -451,6 +464,7 @@ impl SldprtNative {
                 record.parent != lane.id
                     || !class_ids.contains(record.class_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
+                    || !relation_instance_shape_valid(record, lane)
                     || record
                         .scalar_refs
                         .iter()
@@ -701,4 +715,58 @@ impl SldprtNative {
             .all(|name| namespace.arenas.contains_key(*name)));
         Ok(())
     }
+}
+
+fn relation_instance_shape_valid(
+    record: &FeatureInputRelationInstance,
+    lane: &FeatureInputLane,
+) -> bool {
+    if record.scalar_refs.is_empty() || record.scalar_refs.len() > 2 {
+        return false;
+    }
+    let Some(class) = lane
+        .classes
+        .iter()
+        .find(|class| class.id == record.class_ref)
+    else {
+        return false;
+    };
+    if !matches!(
+        crate::classification::native_object_class(&class.name).kind,
+        crate::classification::NativeClassKind::SketchRelation(family)
+            if family == record.family
+    ) {
+        return false;
+    }
+    let mut positions = Vec::with_capacity(record.scalar_refs.len());
+    for scalar_ref in &record.scalar_refs {
+        let Some((position, scalar)) = lane
+            .scalars
+            .iter()
+            .enumerate()
+            .find(|(_, scalar)| scalar.id == *scalar_ref)
+        else {
+            return false;
+        };
+        if scalar.feature_ref.as_deref() != Some(record.feature_ref.as_str()) {
+            return false;
+        }
+        positions.push((position, scalar));
+    }
+    if positions[0].1.offset != record.offset
+        || positions.windows(2).any(|pair| pair[1].0 != pair[0].0 + 1)
+    {
+        return false;
+    }
+    positions.iter().skip(1).all(|(_, scalar)| {
+        scalar
+            .operands
+            .iter()
+            .map(|operand| (operand.kind, operand.entity_index))
+            .eq(positions[0]
+                .1
+                .operands
+                .iter()
+                .map(|operand| (operand.kind, operand.entity_index)))
+    })
 }
