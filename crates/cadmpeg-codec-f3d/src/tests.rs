@@ -15371,6 +15371,7 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
     for smbh in [
         with_pcurve_discriminator(synthetic_geometry_with_pcurve_smbh(), 2),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 0),
+        with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 7),
     ] {
         let result = F3dCodec
             .decode(

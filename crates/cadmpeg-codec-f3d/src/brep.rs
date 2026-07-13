@@ -749,7 +749,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         &subtype_tables,
                                     )
                                 }
-                                Some(Token::Long(_)) => prec
+                                Some(Token::Long(1 | 2 | -1)) => prec
                                     .ref_at(4)
                                     .and_then(|reference| by_index.get(&reference))
                                     .map(|intcurve| {
