@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
 
 use crate::native::{EntryRecord, PropertyFamily, PropertyRecord};
@@ -44,10 +45,30 @@ pub struct TextFacts {
     pub section_counts: BTreeMap<String, usize>,
     /// Shape-type token census.
     pub shape_types: BTreeMap<String, usize>,
+    /// Ordered location table with resolved transforms.
+    pub locations: Vec<TextLocation>,
     /// Ordered 3D curve table.
     pub curves: Vec<TextCurve>,
     /// Ordered surface table.
     pub surfaces: Vec<TextSurface>,
+}
+
+/// One factor in a compound location.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocationFactor {
+    /// One-based index of an earlier location.
+    pub location: usize,
+    /// Signed composition power.
+    pub power: i64,
+}
+
+/// One text B-rep location record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextLocation {
+    /// Ordered source factors; empty for an elementary transform.
+    pub factors: Vec<LocationFactor>,
+    /// Fully composed affine transform.
+    pub transform: Transform,
 }
 
 /// Supported byte-exact 3D curve records from the text carrier table.
@@ -276,15 +297,175 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
             shape_types.values().sum::<usize>()
         )));
     }
+    let locations = parse_locations(&tokens, &section_counts)?;
     let curves = parse_curves(&tokens, &section_counts)?;
     let surfaces = parse_surfaces(&tokens, &section_counts)?;
     Ok(TextFacts {
         topology_version,
         section_counts,
         shape_types,
+        locations,
         curves,
         surfaces,
     })
+}
+
+fn parse_locations(
+    tokens: &[&str],
+    section_counts: &BTreeMap<String, usize>,
+) -> Result<Vec<TextLocation>, CodecError> {
+    let start = tokens
+        .iter()
+        .position(|token| *token == "Locations")
+        .ok_or_else(|| CodecError::Malformed("text B-rep has no Locations table".into()))?
+        + 2;
+    let end = tokens
+        .iter()
+        .position(|token| *token == "Curve2ds")
+        .ok_or_else(|| CodecError::Malformed("text B-rep has no Curve2ds table".into()))?;
+    let count = section_counts.get("Locations").copied().unwrap_or(0);
+    let mut cursor = TokenCursor::new(&tokens[start..end]);
+    let mut locations: Vec<TextLocation> = Vec::with_capacity(count);
+    for index in 0..count {
+        let kind = cursor.integer("location type")?;
+        let location = match kind {
+            1 => {
+                let mut transform = Transform::identity();
+                for row in 0..3 {
+                    for column in 0..4 {
+                        transform.rows[row][column] = cursor.real("location transform value")?;
+                    }
+                }
+                invert_affine(transform)?;
+                TextLocation {
+                    factors: Vec::new(),
+                    transform,
+                }
+            }
+            2 => {
+                let mut factors = Vec::new();
+                let mut transform = Transform::identity();
+                loop {
+                    let referenced = cursor.integer("location factor index")?;
+                    if referenced == 0 {
+                        break;
+                    }
+                    let referenced = usize::try_from(referenced).map_err(|_| {
+                        CodecError::Malformed("negative location factor index".into())
+                    })?;
+                    if referenced == 0 || referenced > locations.len() {
+                        return Err(CodecError::Malformed(format!(
+                            "location {} references unavailable location {referenced}",
+                            index + 1
+                        )));
+                    }
+                    if factors.len() >= 1_000_000 {
+                        return Err(CodecError::Malformed(
+                            "location factor-count limit exceeded".into(),
+                        ));
+                    }
+                    let power = cursor.integer("location factor power")?;
+                    let powered = transform_power(locations[referenced - 1].transform, power)?;
+                    transform = multiply_transform(powered, transform);
+                    factors.push(LocationFactor {
+                        location: referenced,
+                        power,
+                    });
+                }
+                TextLocation { factors, transform }
+            }
+            other => {
+                return Err(CodecError::Malformed(format!(
+                    "invalid location type {other} at table index {}",
+                    index + 1
+                )))
+            }
+        };
+        locations.push(location);
+    }
+    if !cursor.is_empty() {
+        return Err(CodecError::Malformed(
+            "text B-rep Locations table contains trailing tokens".into(),
+        ));
+    }
+    Ok(locations)
+}
+
+fn multiply_transform(left: Transform, right: Transform) -> Transform {
+    let mut result = Transform {
+        rows: [[0.0; 4]; 4],
+    };
+    for row in 0..4 {
+        for column in 0..4 {
+            result.rows[row][column] = (0..4)
+                .map(|inner| left.rows[row][inner] * right.rows[inner][column])
+                .sum();
+        }
+    }
+    result
+}
+
+fn transform_power(transform: Transform, power: i64) -> Result<Transform, CodecError> {
+    let mut base = if power < 0 {
+        invert_affine(transform)?
+    } else {
+        transform
+    };
+    let mut exponent = power.unsigned_abs();
+    let mut result = Transform::identity();
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            result = multiply_transform(result, base);
+        }
+        exponent >>= 1;
+        if exponent > 0 {
+            base = multiply_transform(base, base);
+        }
+    }
+    Ok(result)
+}
+
+fn invert_affine(transform: Transform) -> Result<Transform, CodecError> {
+    if transform.rows[3] != [0.0, 0.0, 0.0, 1.0] {
+        return Err(CodecError::Malformed(
+            "location transform is not affine".into(),
+        ));
+    }
+    let m = transform.rows;
+    let determinant = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    if !determinant.is_finite() || determinant == 0.0 {
+        return Err(CodecError::Malformed(
+            "location transform is not invertible".into(),
+        ));
+    }
+    let inverse_linear = [
+        [
+            (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / determinant,
+            (m[0][2] * m[2][1] - m[0][1] * m[2][2]) / determinant,
+            (m[0][1] * m[1][2] - m[0][2] * m[1][1]) / determinant,
+        ],
+        [
+            (m[1][2] * m[2][0] - m[1][0] * m[2][2]) / determinant,
+            (m[0][0] * m[2][2] - m[0][2] * m[2][0]) / determinant,
+            (m[0][2] * m[1][0] - m[0][0] * m[1][2]) / determinant,
+        ],
+        [
+            (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / determinant,
+            (m[0][1] * m[2][0] - m[0][0] * m[2][1]) / determinant,
+            (m[0][0] * m[1][1] - m[0][1] * m[1][0]) / determinant,
+        ],
+    ];
+    let translation = [m[0][3], m[1][3], m[2][3]];
+    let mut result = Transform::identity();
+    for (row, inverse_row) in inverse_linear.iter().enumerate() {
+        result.rows[row][..3].copy_from_slice(inverse_row);
+        result.rows[row][3] = -(0..3)
+            .map(|column| inverse_row[column] * translation[column])
+            .sum::<f64>();
+    }
+    Ok(result)
 }
 
 fn parse_surfaces(
@@ -859,5 +1040,16 @@ mod tests {
         };
         assert_eq!(*parameter_ranges, [[0.0, 1.0], [2.0, 3.0]]);
         assert!(matches!(basis.as_ref(), TextSurface::Offset { .. }));
+    }
+
+    #[test]
+    fn resolves_elementary_and_compound_locations_in_source_order() {
+        let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 3\n1 1 0 0 5 0 1 0 0 0 0 1 0\n2 1 2 0\n2 1 -1 2 1 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        let facts = parse_text(input.as_bytes()).expect("location table");
+        assert_eq!(facts.locations.len(), 3);
+        assert_eq!(facts.locations[0].transform.rows[0][3], 5.0);
+        assert_eq!(facts.locations[1].transform.rows[0][3], 10.0);
+        assert_eq!(facts.locations[2].transform.rows[0][3], 5.0);
+        assert_eq!(facts.locations[2].factors[0].power, -1);
     }
 }
