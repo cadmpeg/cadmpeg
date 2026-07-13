@@ -131,7 +131,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                             .filter_map(|dimension| {
                                 Some((
                                     dimension.attribute("Name")?.into(),
-                                    dimension.text()?.trim().into(),
+                                    dimension.text().unwrap_or_default().trim().into(),
                                 ))
                             })
                             .collect::<BTreeMap<_, _>>(),

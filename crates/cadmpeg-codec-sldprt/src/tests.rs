@@ -4660,6 +4660,50 @@ fn semantic_writer_preserves_dimension_attributes() {
 }
 
 #[test]
+fn semantic_writer_preserves_empty_dimensions() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss" Type="BossExtrude" id="7"><Dimension Name="Depth">12mm</Dimension><Dimension Name="External" Driven="true"/></Extrusion></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let empty = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "External")
+        .unwrap();
+    assert_eq!(empty.expression, "");
+    assert_eq!(empty.value, None);
+    let depth = decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap();
+    depth.expression = "20mm".into();
+    depth.value = Some(ParameterValue::Length(Length(20.0)));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.parameters["External"], "");
+    assert_eq!(feature.dimension_properties["External"]["Driven"], "true");
+}
+
+#[test]
 fn semantic_writer_preserves_keywords_attributes() {
     use cadmpeg_ir::features::{Length, ParameterValue};
 
