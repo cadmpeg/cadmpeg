@@ -4,7 +4,7 @@
 use cadmpeg_ir::document::CadIr;
 use serde::Serialize;
 
-use crate::chunks::{BoundedReader, FramingError};
+use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Scan;
 use crate::settings::utf16;
 use crate::wire::{scaled_coordinate, Uuid};
@@ -12,6 +12,8 @@ use crate::wire::{scaled_coordinate, Uuid};
 const SETTINGS_TABLE: u32 = 0x1000_0015;
 const ANNOTATION_SETTINGS: u32 = 0x2000_8034;
 const GRID_DEFAULTS: u32 = 0x2000_803f;
+const RENDER_SETTINGS: u32 = 0x2000_803d;
+const ANONYMOUS: u32 = 0x4000_8000;
 
 #[derive(Debug, Serialize)]
 struct RevisionRecord {
@@ -124,6 +126,47 @@ struct GridDefaultsRecord {
     show_world_axes: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent serialized render switches"
+)]
+struct RenderSettingsRecord {
+    id: String,
+    source_offset: u64,
+    custom_image_size: bool,
+    image_width_pixels: i32,
+    image_height_pixels: i32,
+    image_dpi: Option<f64>,
+    image_unit_system: Option<u32>,
+    ambient_light: [u8; 4],
+    background_style: i32,
+    background_color: [u8; 4],
+    background_bottom_color: Option<[u8; 4]>,
+    background_bitmap_path: String,
+    use_hidden_lights: bool,
+    depth_cue: bool,
+    flat_shade: bool,
+    render_backfaces: bool,
+    render_points: bool,
+    render_curves: bool,
+    render_isoparams: bool,
+    render_mesh_edges: bool,
+    render_annotations: bool,
+    scale_background_to_fit: bool,
+    transparent_background: bool,
+    antialias_style: i32,
+    shadowmap_style: i32,
+    shadowmap_size_pixels: [i32; 2],
+    shadowmap_offset_mm: f64,
+    obsolete_focal_blur: Option<[f64; 5]>,
+    rendering_source: Option<i32>,
+    specific_viewport: String,
+    named_view: String,
+    snapshot: String,
+    force_viewport_aspect_ratio: Option<bool>,
+}
+
 fn structural(reader: &BoundedReader<'_>, message: &str) -> FramingError {
     FramingError::Structural {
         offset: reader.position(),
@@ -228,6 +271,175 @@ fn grid_defaults(
     Ok(value)
 }
 
+fn render_settings(
+    data: &[u8],
+    body: std::ops::Range<usize>,
+    source_offset: usize,
+    archive: ArchiveVersion,
+    scale: f64,
+) -> Result<RenderSettingsRecord, FramingError> {
+    let modern = data.get(body.start).copied() == Some(0);
+    let (mut reader, minor) = if modern {
+        let chunk = chunk_at(data, body.start, body.end, archive, false)?;
+        if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != body.end {
+            return Err(FramingError::Structural {
+                offset: body.start,
+                message: "render-settings wrapper is invalid".to_string(),
+            });
+        }
+        let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+        let (major, minor) = (reader.i32()?, reader.i32()?);
+        if major != 1 || !(0..=3).contains(&minor) {
+            return Err(structural(
+                &reader,
+                "render-settings version is unsupported",
+            ));
+        }
+        (reader, Some(minor))
+    } else {
+        let mut reader = BoundedReader::new(data, body.start, body.end)?;
+        let version = reader.i32()?;
+        if !(100..200).contains(&version) {
+            return Err(structural(
+                &reader,
+                "legacy render-settings version is unsupported",
+            ));
+        }
+        (reader, None)
+    };
+    let custom_image_size = if modern {
+        reader.bool()?
+    } else {
+        flag_i32(&mut reader)?
+    };
+    let image_width_pixels = reader.i32()?;
+    let image_height_pixels = reader.i32()?;
+    let (image_dpi, image_unit_system) = if modern {
+        (Some(reader.f64()?), Some(reader.u32()?))
+    } else {
+        (None, None)
+    };
+    let ambient_light = reader.array()?;
+    let background_style = reader.i32()?;
+    let background_color = reader.array()?;
+    let background_bottom_color = modern.then(|| reader.array()).transpose()?;
+    let background_bitmap_path = utf16(&mut reader)?;
+    let read_flag = |reader: &mut BoundedReader<'_>| {
+        if modern {
+            reader.bool()
+        } else {
+            flag_i32(reader)
+        }
+    };
+    let use_hidden_lights = read_flag(&mut reader)?;
+    let depth_cue = read_flag(&mut reader)?;
+    let flat_shade = read_flag(&mut reader)?;
+    let render_backfaces = read_flag(&mut reader)?;
+    let render_points = read_flag(&mut reader)?;
+    let render_curves = read_flag(&mut reader)?;
+    let render_isoparams = read_flag(&mut reader)?;
+    let render_mesh_edges = read_flag(&mut reader)?;
+    let render_annotations = read_flag(&mut reader)?;
+    let (scale_background_to_fit, transparent_background) = if modern {
+        (reader.bool()?, reader.bool()?)
+    } else {
+        (false, false)
+    };
+    let antialias_style = reader.i32()?;
+    let shadowmap_style = reader.i32()?;
+    let shadowmap_size_pixels = [reader.i32()?, reader.i32()?];
+    let shadowmap_offset_mm = length(&mut reader, scale)?;
+    let obsolete_focal_blur = if minor.is_some_and(|minor| minor >= 1) {
+        Some([
+            f64::from(reader.i32()?),
+            reader.f64()?,
+            reader.f64()?,
+            reader.f64()?,
+            f64::from(reader.i32()?),
+        ])
+    } else {
+        None
+    };
+    let (rendering_source, specific_viewport, named_view, snapshot) =
+        if minor.is_some_and(|minor| minor >= 2) {
+            (
+                Some(reader.i32()?),
+                utf16(&mut reader)?,
+                utf16(&mut reader)?,
+                utf16(&mut reader)?,
+            )
+        } else {
+            (None, String::new(), String::new(), String::new())
+        };
+    let force_viewport_aspect_ratio = if minor.is_some_and(|minor| minor >= 3) {
+        Some(reader.bool()?)
+    } else {
+        None
+    };
+    let (image_dpi, image_unit_system, background_bottom_color, scale_background_to_fit) = if modern
+    {
+        (
+            image_dpi,
+            image_unit_system,
+            background_bottom_color,
+            scale_background_to_fit,
+        )
+    } else {
+        let version = i32::from_le_bytes(
+            data[body.start..body.start + 4]
+                .try_into()
+                .expect("bounded"),
+        );
+        let dpi = (version >= 101).then(|| reader.f64()).transpose()?;
+        let units = (version >= 101).then(|| reader.u32()).transpose()?;
+        let bottom = (version >= 102).then(|| reader.array()).transpose()?;
+        let fit = if version >= 103 {
+            reader.bool()?
+        } else {
+            false
+        };
+        (dpi, units, bottom, fit)
+    };
+    if reader.remaining() != 0 {
+        return Err(structural(&reader, "render settings have trailing bytes"));
+    }
+    Ok(RenderSettingsRecord {
+        id: "rhino:document:render_settings#current".to_string(),
+        source_offset: source_offset as u64,
+        custom_image_size,
+        image_width_pixels,
+        image_height_pixels,
+        image_dpi,
+        image_unit_system,
+        ambient_light,
+        background_style,
+        background_color,
+        background_bottom_color,
+        background_bitmap_path,
+        use_hidden_lights,
+        depth_cue,
+        flat_shade,
+        render_backfaces,
+        render_points,
+        render_curves,
+        render_isoparams,
+        render_mesh_edges,
+        render_annotations,
+        scale_background_to_fit,
+        transparent_background,
+        antialias_style,
+        shadowmap_style,
+        shadowmap_size_pixels,
+        shadowmap_offset_mm,
+        obsolete_focal_blur,
+        rendering_source,
+        specific_viewport,
+        named_view,
+        snapshot,
+        force_viewport_aspect_ratio,
+    })
+}
+
 /// Installs complete typed document-level metadata and named setting records.
 pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let properties = &scan.metadata.properties;
@@ -314,6 +526,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
         .unwrap_or(1.0);
     let mut annotations = Vec::new();
     let mut grids = Vec::new();
+    let mut renders = Vec::new();
     for table in &scan.tables {
         if table.typecode & !0x0000_8000 != SETTINGS_TABLE {
             continue;
@@ -330,6 +543,16 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                     grid_defaults(&scan.data, record.body.clone(), record.range.start, scale)
                 {
                     grids.push(value);
+                }
+            } else if record.typecode == RENDER_SETTINGS {
+                if let Ok(value) = render_settings(
+                    &scan.data,
+                    record.body.clone(),
+                    record.range.start,
+                    scan.archive,
+                    scale,
+                ) {
+                    renders.push(value);
                 }
             }
         }
@@ -360,4 +583,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     namespace
         .set_arena("grid_defaults", &grids)
         .expect("Rhino grid defaults serialize");
+    namespace
+        .set_arena("render_settings", &renders)
+        .expect("Rhino render settings serialize");
 }
