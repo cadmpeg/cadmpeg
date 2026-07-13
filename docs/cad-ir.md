@@ -214,7 +214,7 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "4"`. `CadIr::migrate_json` explicitly migrates version 3 by preserving every field and changing the version discriminator; version 4 adds optional procedural construction fields and the surface-subset construction. The `model.subds` arena remains required, including when it is empty. Version 4 requires the fields and invariants defined by this specification; removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version.
+Readers accept exactly `ir_version: "5"`. `CadIr::migrate_json` explicitly migrates version 4 by preserving every field and changing the version discriminator; version 5 adds exact conic, trimmed, and offset pcurve variants. The `model.subds` arena remains required, including when it is empty. Version 5 requires the fields and invariants defined by this specification; removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version.
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 
@@ -236,7 +236,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "4",
+  "ir_version": "5",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {

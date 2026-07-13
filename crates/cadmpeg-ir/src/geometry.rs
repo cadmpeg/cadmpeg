@@ -2203,6 +2203,54 @@ pub enum PcurveGeometry {
         /// Parameter-space direction.
         direction: Point2,
     },
+    /// Full circle in parameter space.
+    Circle {
+        /// Circle center.
+        center: Point2,
+        /// Zero-angle unit direction.
+        x_axis: Point2,
+        /// Positive-angle unit direction.
+        y_axis: Point2,
+        /// Circle radius.
+        radius: f64,
+    },
+    /// Full ellipse in parameter space.
+    Ellipse {
+        /// Ellipse center.
+        center: Point2,
+        /// Major-axis unit direction.
+        x_axis: Point2,
+        /// Minor-axis unit direction.
+        y_axis: Point2,
+        /// Semi-major radius.
+        major_radius: f64,
+        /// Semi-minor radius.
+        minor_radius: f64,
+    },
+    /// Parabola in parameter space.
+    Parabola {
+        /// Parabola vertex.
+        vertex: Point2,
+        /// Axis unit direction.
+        x_axis: Point2,
+        /// Positive transverse unit direction.
+        y_axis: Point2,
+        /// Focus distance.
+        focal_distance: f64,
+    },
+    /// Hyperbola in parameter space.
+    Hyperbola {
+        /// Hyperbola center.
+        center: Point2,
+        /// Transverse-axis unit direction.
+        x_axis: Point2,
+        /// Conjugate-axis unit direction.
+        y_axis: Point2,
+        /// Semi-transverse radius.
+        major_radius: f64,
+        /// Semi-conjugate radius.
+        minor_radius: f64,
+    },
     /// A free-form NURBS curve in parameter space (control points are (u, v)).
     Nurbs {
         /// Curve degree.
@@ -2217,6 +2265,20 @@ pub enum PcurveGeometry {
         /// Whether the parameter-space curve is periodic.
         #[serde(default)]
         periodic: bool,
+    },
+    /// Parameter restriction of an exact basis pcurve.
+    Trimmed {
+        /// Native parameter interval retained from the basis.
+        parameter_range: [f64; 2],
+        /// Exact basis geometry.
+        basis: Box<PcurveGeometry>,
+    },
+    /// Signed planar offset of an exact basis pcurve.
+    Offset {
+        /// Signed parameter-space distance.
+        distance: f64,
+        /// Exact basis geometry.
+        basis: Box<PcurveGeometry>,
     },
 }
 

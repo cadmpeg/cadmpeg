@@ -1229,14 +1229,14 @@ fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
 }
 
 #[test]
-fn explicit_migration_upgrades_version_three_without_semantic_changes() {
+fn explicit_migration_upgrades_previous_version_without_semantic_changes() {
     let current = unit_cube();
     let mut legacy = serde_json::to_value(&current).unwrap();
     legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
     let legacy = serde_json::to_string(&legacy).unwrap();
 
     assert!(CadIr::from_json(&legacy).is_err());
-    let migrated = CadIr::migrate_json(&legacy).expect("version 3 migration");
+    let migrated = CadIr::migrate_json(&legacy).expect("previous-version migration");
     assert_eq!(migrated, current);
 }
 

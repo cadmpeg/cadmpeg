@@ -305,6 +305,51 @@ pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
             origin.u + t * direction.u,
             origin.v + t * direction.v,
         )),
+        PcurveGeometry::Circle {
+            center,
+            x_axis,
+            y_axis,
+            radius,
+        } => Some(offset2(
+            *center,
+            &[(radius * t.cos(), *x_axis), (radius * t.sin(), *y_axis)],
+        )),
+        PcurveGeometry::Ellipse {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => Some(offset2(
+            *center,
+            &[
+                (major_radius * t.cos(), *x_axis),
+                (minor_radius * t.sin(), *y_axis),
+            ],
+        )),
+        PcurveGeometry::Parabola {
+            vertex,
+            x_axis,
+            y_axis,
+            focal_distance,
+        } if *focal_distance != 0.0 => Some(offset2(
+            *vertex,
+            &[(t * t / (4.0 * focal_distance), *x_axis), (t, *y_axis)],
+        )),
+        PcurveGeometry::Parabola { .. } => None,
+        PcurveGeometry::Hyperbola {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => Some(offset2(
+            *center,
+            &[
+                (major_radius * t.cosh(), *x_axis),
+                (minor_radius * t.sinh(), *y_axis),
+            ],
+        )),
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -312,5 +357,18 @@ pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
             weights,
             ..
         } => nurbs_pcurve_uv(*degree, knots, control_points, weights.as_deref(), t),
+        PcurveGeometry::Trimmed { basis, .. } => pcurve_uv(basis, t),
+        // Exact offset evaluation also requires the basis tangent. The IR
+        // retains the exact construction even when this point-only evaluator
+        // cannot establish a stable tangent.
+        PcurveGeometry::Offset { .. } => None,
     }
+}
+
+fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
+    terms.iter().fold(base, |mut point, (factor, direction)| {
+        point.u += factor * direction.u;
+        point.v += factor * direction.v;
+        point
+    })
 }
