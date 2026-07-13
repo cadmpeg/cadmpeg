@@ -1366,6 +1366,16 @@ fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
         .map(ParameterValue::Real)
 }
 
+fn format_parameter_value(value: &ParameterValue) -> String {
+    match value {
+        ParameterValue::Length(Length(value)) => format_length_mm(*value),
+        ParameterValue::Angle(Angle(value)) => format_angle_rad(*value),
+        ParameterValue::Real(value) => value.to_string(),
+        ParameterValue::Integer(value) => value.to_string(),
+        ParameterValue::Boolean(value) => value.to_string(),
+    }
+}
+
 fn neutral_feature_id(native_id: &str) -> FeatureId {
     let key = native_id
         .strip_prefix("sldprt:history:feature#")
@@ -1646,7 +1656,17 @@ fn sync_neutral_parameters(
             .collect();
         record.dimension_properties = parameters
             .iter()
-            .map(|parameter| (parameter.name.clone(), parameter.properties.clone()))
+            .map(|parameter| {
+                let mut properties = parameter.properties.clone();
+                if parse_parameter_literal(&parameter.expression).is_none() {
+                    if let Some(value) = &parameter.value {
+                        properties.insert("Value".into(), format_parameter_value(value));
+                    } else {
+                        properties.remove("Value");
+                    }
+                }
+                (parameter.name.clone(), properties)
+            })
             .collect();
         let mut names = parameters
             .iter()

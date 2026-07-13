@@ -5104,7 +5104,6 @@ fn semantic_writer_preserves_evaluated_equation_values() {
     assert_eq!(parameter.properties["Value"], "24mm");
     parameter.expression = "Width * 3".into();
     parameter.value = Some(ParameterValue::Length(Length(36.0)));
-    parameter.properties.insert("Value".into(), "36mm".into());
 
     let mut encoded = Vec::new();
     SldprtCodec
