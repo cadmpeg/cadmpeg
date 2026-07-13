@@ -4581,14 +4581,20 @@ fn native_procedural_surface(
     solved_surface: &Surface,
     solved_cache: &NurbsSurface,
 ) -> Result<bool, CodecError> {
-    let Some(procedural) = target
+    let mut definitions = target
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.surface == solved_surface.id)
-    else {
+        .filter(|procedural| procedural.surface == solved_surface.id);
+    let Some(procedural) = definitions.next() else {
         return Ok(false);
     };
+    if definitions.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "surface {} has multiple procedural constructions",
+            solved_surface.id
+        )));
+    }
     match &procedural.definition {
         ProceduralSurfaceDefinition::Deformable { construction } => {
             use cadmpeg_ir::geometry::DeformableSurfaceData;
@@ -6004,14 +6010,20 @@ fn native_cacheless_procedural_surface(
     target: &CadIr,
     surface: &Surface,
 ) -> Result<bool, CodecError> {
-    let Some(procedural) = target
+    let mut definitions = target
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.surface == surface.id)
-    else {
+        .filter(|procedural| procedural.surface == surface.id);
+    let Some(procedural) = definitions.next() else {
         return Ok(false);
     };
+    if definitions.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "surface {} has multiple procedural constructions",
+            surface.id
+        )));
+    }
     if let ProceduralSurfaceDefinition::Helix { construction } = &procedural.definition {
         use cadmpeg_ir::geometry::HelixSurfaceProfile;
         native_surface_base(bytes, "spline")?;

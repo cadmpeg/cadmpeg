@@ -10603,6 +10603,35 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
 }
 
 #[test]
+fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
+    for (smbh, label) in [
+        (synthetic_cyl_spl_sur_smbh(), "cached"),
+        (synthetic_helix_surface_smbh(true), "cacheless"),
+    ] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("generated {label} surface decode: {error}"));
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let mut duplicate = source_less.model.procedural_surfaces[0].clone();
+        duplicate.id = format!("generated:duplicate-{label}").into();
+        source_less.model.procedural_surfaces.push(duplicate);
+
+        let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("multiple procedural constructions"),
+            "unexpected {label} duplicate-owner error: {error}"
+        );
+    }
+}
+
+#[test]
 fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{DeformableSurfaceData, ProceduralSurfaceDefinition};
     let decoded = F3dCodec
