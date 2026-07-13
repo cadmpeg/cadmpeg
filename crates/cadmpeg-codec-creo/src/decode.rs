@@ -375,7 +375,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
         );
         ir.model.edges.push(Edge {
             id,
-            curve: None,
+            curve: Some(CurveId(format!("creo:visibgeom:curve#{curve_id}"))),
             start: VertexId(format!("creo:visibgeom:vertex#{start}")),
             end: VertexId(format!("creo:visibgeom:vertex#{end}")),
             param_range: None,
@@ -705,6 +705,62 @@ fn transfer_cap_pair_cylinders(
     }
 }
 
+fn transfer_plane_intersection_curves(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) {
+    let planes = placed_planes(scan);
+    for row in &scan.curve_topology_rows {
+        let (Some(first), Some(second)) = (planes.get(&row.faces[0]), planes.get(&row.faces[1]))
+        else {
+            continue;
+        };
+        let direction = cross(first.normal, second.normal);
+        let denominator = dot(direction, direction);
+        if denominator <= 1e-18 {
+            continue;
+        }
+        let first_distance = dot(first.normal, first.origin);
+        let second_distance = dot(second.normal, second.origin);
+        let weighted = [0, 1, 2].map(|axis| {
+            first_distance * second.normal[axis] - second_distance * first.normal[axis]
+        });
+        let point_numerator = cross(weighted, direction);
+        let origin = point_numerator.map(|value| value / denominator);
+        let direction_norm = denominator.sqrt();
+        let direction = direction.map(|value| value / direction_norm);
+        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        if ir.model.curves.iter().any(|curve| curve.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            row.offset as u64,
+            "plane_intersection_line",
+            Exactness::Derived,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(origin[0], origin[1], origin[2]),
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+    }
+}
+
 /// Decode a `.prt` stream into an IR document and loss report.
 ///
 /// The stream is read from its beginning. `options.container_only` is reflected
@@ -854,6 +910,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         });
     }
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
+    transfer_plane_intersection_curves(scan, &mut ir, &mut annotations);
     transfer_plane_brep(scan, &mut ir, &mut annotations);
     for (ordinal, operation) in scan.feature_operations.iter().enumerate() {
         let id = IrFeatureId(format!("creo:mdlstatus:feature#{}", operation.feature_id));

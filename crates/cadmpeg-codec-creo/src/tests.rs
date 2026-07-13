@@ -1453,6 +1453,8 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(model.points.len(), 4);
     assert_eq!(model.vertices.len(), 4);
     assert_eq!(model.edges.len(), 6);
+    assert_eq!(model.curves.len(), 6);
+    assert!(model.edges.iter().all(|edge| edge.curve.is_some()));
     assert_eq!(model.faces.len(), 4);
     assert_eq!(model.loops.len(), 4);
     assert_eq!(model.coedges.len(), 12);

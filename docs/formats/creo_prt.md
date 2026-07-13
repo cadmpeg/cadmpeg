@@ -206,6 +206,11 @@ For an axis-aligned plane, the held-coordinate outline defines the placed plane
 equation. An axis-aligned `local_sys` support frame without that outline does not
 establish the model-space offset.
 
+A `crv_array` edge whose two face references resolve to nonparallel placed
+planes has the exact model-space carrier given by their intersection line. Its
+direction is the normalized cross product of the plane normals; its origin is
+the minimum-norm point satisfying both plane equations.
+
 ## 4. Curve namespace: `crv_array`
 
 `crv_array` provides edge identifiers, half-edge topology, type bytes, and pcurve records.
