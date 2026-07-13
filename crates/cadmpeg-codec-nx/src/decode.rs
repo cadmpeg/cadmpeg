@@ -943,9 +943,12 @@ fn attach_free_topology(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     if let Some(shell) = ir.model.shells.first_mut() {
         shell.free_vertices.extend(free_vertices);
         shell.wire_edges.extend(wire_edges);
-        annotations
-            .derived(&shell.id, "free_vertices")
-            .derived(&shell.id, "wire_edges");
+        if !shell.free_vertices.is_empty() {
+            annotations.derived(&shell.id, "free_vertices");
+        }
+        if !shell.wire_edges.is_empty() {
+            annotations.derived(&shell.id, "wire_edges");
+        }
         return;
     }
 
