@@ -4114,7 +4114,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             "edge" | "tedge" if kept_edges.contains(&index) => {
                 Some(AttributeTarget::Edge(EdgeId(id(index))))
             }
-            "vertex" if kept_vertices.contains(&index) => {
+            "vertex" | "tvertex" if kept_vertices.contains(&index) => {
                 Some(AttributeTarget::Vertex(VertexId(id(index))))
             }
             _ => None,
@@ -4150,7 +4150,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             "edge" | "tedge" if kept_edges.contains(&owner_index) => {
                 Some(AttributeTarget::Edge(EdgeId(id(owner_index))))
             }
-            "vertex" if kept_vertices.contains(&owner_index) => {
+            "vertex" | "tvertex" if kept_vertices.contains(&owner_index) => {
                 Some(AttributeTarget::Vertex(VertexId(id(owner_index))))
             }
             _ => None,

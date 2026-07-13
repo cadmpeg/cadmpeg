@@ -16412,6 +16412,57 @@ fn decode_transfers_generated_custom_attribute() {
 }
 
 #[test]
+fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let mut source = cadmpeg_ir::examples::unit_cube();
+    source.source = None;
+    source.set_native_unknowns("f3d", &[]).unwrap();
+    let vertex = source.model.vertices[0].id.clone();
+    source.model.vertices[0].tolerance = Some(0.025);
+    f3d_native_mut(&mut source).creation_timestamps = vec![crate::records::CreationTimestamp {
+        id: "f3d:asm:creation-timestamp#generated".into(),
+        target: AttributeTarget::Vertex(vertex),
+        record_index: 0,
+        unix_microseconds: 1_579_392_000_000_037.0,
+    }];
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source, &mut encoded)
+        .expect("source-less tolerant vertex encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less tolerant vertex decode");
+
+    let tolerant_vertex = round_trip
+        .ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| vertex.tolerance == Some(0.025))
+        .expect("tolerant vertex");
+    let attribute = round_trip
+        .ir
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| {
+            attribute.name == "ATTRIB_CUSTOM-attrib"
+                && attribute.target == AttributeTarget::Vertex(tolerant_vertex.id.clone())
+        })
+        .expect("tolerant vertex attribute");
+    assert_eq!(
+        attribute.target,
+        AttributeTarget::Vertex(tolerant_vertex.id.clone())
+    );
+    assert_eq!(
+        f3d_native(&round_trip.ir).creation_timestamps[0].unix_microseconds,
+        1_579_392_000_000_037.0
+    );
+}
+
+#[test]
 fn generated_f3d_rewrites_creation_timestamp() {
     let source = f3d_with_smbh(&synthetic_geometry_with_attribute_smbh());
     let decoded = F3dCodec
