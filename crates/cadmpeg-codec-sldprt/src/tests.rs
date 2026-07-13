@@ -2574,6 +2574,19 @@ fn encoder_writes_source_less_native_features() {
         sldprt_native(&decoded.ir).feature_histories[0].features[0].xml_tag,
         "Extrusion"
     );
+    let native_features = &sldprt_native(&decoded.ir).feature_histories[0].features;
+    let source_ids = native_features
+        .iter()
+        .map(|feature| {
+            feature
+                .source_id
+                .as_deref()
+                .expect("generated features have source ids")
+                .parse::<u32>()
+                .expect("generated feature source ids are numeric")
+        })
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(source_ids.len(), native_features.len());
     assert!(decoded
         .ir
         .model

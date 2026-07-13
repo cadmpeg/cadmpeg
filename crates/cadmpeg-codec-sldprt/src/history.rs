@@ -21,7 +21,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Edge, Face};
 use cadmpeg_ir::Exactness;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 
 pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureHistory> {
@@ -3469,7 +3469,8 @@ fn sync_neutral_parameters(
             .flat_map(|history| &mut history.features)
             .find(|record| {
                 feature.native_ref.as_deref() == Some(record.id.as_str())
-                    || record.source_id.as_deref() == Some(feature_id.0.as_str())
+                    || (feature.native_ref.is_none()
+                        && record.id == generated_feature_record_id(feature_id))
             })
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
@@ -3795,6 +3796,56 @@ fn synchronize_feature_input_names(
     Ok(())
 }
 
+fn generated_feature_record_id(feature: &FeatureId) -> String {
+    format!("sldprt:generated:feature#{}", feature.0)
+}
+
+fn generated_feature_source_ids(
+    features: &[cadmpeg_ir::features::Feature],
+    native: &crate::native::SldprtNative,
+) -> Result<HashMap<FeatureId, String>, CodecError> {
+    let mut used = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+        .collect::<HashSet<_>>();
+    let existing = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| {
+            Some((
+                feature.id.as_str(),
+                feature.source_id.as_deref()?.parse::<u32>().ok()?,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut next = 1u32;
+    let mut allocated = HashMap::new();
+    for feature in features
+        .iter()
+        .filter(|feature| feature.native_ref.is_none())
+    {
+        let record_id = generated_feature_record_id(&feature.id);
+        let source_id = if let Some(source_id) = existing.get(record_id.as_str()).copied() {
+            source_id
+        } else {
+            while used.contains(&next) {
+                next = next.checked_add(1).ok_or_else(|| {
+                    CodecError::Malformed("SLDPRT feature source-id space is exhausted".into())
+                })?;
+            }
+            let source_id = next;
+            used.insert(source_id);
+            next = next.checked_add(1).unwrap_or(next);
+            source_id
+        };
+        allocated.insert(feature.id.clone(), source_id.to_string());
+    }
+    Ok(allocated)
+}
+
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
 pub fn sync_neutral_features(
     features: &[cadmpeg_ir::features::Feature],
@@ -3839,6 +3890,7 @@ pub fn sync_neutral_features(
 
     synchronize_feature_input_names(features, native)?;
 
+    let generated_sources = generated_feature_source_ids(features, native)?;
     let parent_sources = features
         .iter()
         .map(|feature| {
@@ -3848,6 +3900,7 @@ pub fn sync_neutral_features(
                 .flat_map(|history| &history.features)
                 .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()))
                 .and_then(|candidate| candidate.source_id.clone())
+                .or_else(|| generated_sources.get(&feature.id).cloned())
                 .unwrap_or_else(|| feature.id.0.clone());
             (feature.id.clone(), source_id)
         })
@@ -3861,7 +3914,7 @@ pub fn sync_neutral_features(
                 .flat_map(|history| &history.features)
                 .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()))
                 .and_then(|candidate| candidate.source_id.clone())
-                .or_else(|| feature.native_ref.is_none().then(|| feature.id.0.clone()));
+                .or_else(|| generated_sources.get(&feature.id).cloned());
             (feature.id.clone(), source_id)
         })
         .collect::<HashMap<_, _>>();
@@ -3871,7 +3924,7 @@ pub fn sync_neutral_features(
             let record_id = feature
                 .native_ref
                 .clone()
-                .unwrap_or_else(|| format!("sldprt:generated:feature#{}", feature.id.0));
+                .unwrap_or_else(|| generated_feature_record_id(&feature.id));
             (feature.id.clone(), record_id)
         })
         .collect::<HashMap<_, _>>();
@@ -6822,7 +6875,7 @@ pub fn sync_neutral_features(
                 parent: history.id.clone(),
                 xml_tag: feature_xml_tag(feature),
                 tree_parent,
-                source_id: Some(feature.id.0.clone()),
+                source_id: generated_sources.get(&feature.id).cloned(),
                 parent_source_id,
                 ordinal,
                 name: feature.name.clone().unwrap_or_default(),
