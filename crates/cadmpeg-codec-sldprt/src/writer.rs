@@ -754,6 +754,9 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
     if let Some(name) = &history.part_name {
         xml_attribute(&mut out, "Name", name);
     }
+    for (name, value) in &history.properties {
+        xml_attribute(&mut out, name, value);
+    }
     out.push('>');
     for configuration in &history.configurations {
         out.push_str("<Configuration");

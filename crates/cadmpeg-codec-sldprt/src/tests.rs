@@ -4660,6 +4660,36 @@ fn semantic_writer_preserves_dimension_attributes() {
 }
 
 #[test]
+fn semantic_writer_preserves_keywords_attributes() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords Name="Bracket" Schema="34000" Revision="12"><Extrusion Name="Boss" Type="BossExtrude" id="7"><Dimension Name="Depth">12mm</Dimension></Extrusion></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let parameter = &mut decoded.ir.model.parameters[0];
+    parameter.expression = "20mm".into();
+    parameter.value = Some(ParameterValue::Length(Length(20.0)));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let history = &sldprt_native(&regenerated.ir).feature_histories[0];
+    assert_eq!(history.part_name.as_deref(), Some("Bracket"));
+    assert_eq!(history.properties["Schema"], "34000");
+    assert_eq!(history.properties["Revision"], "12");
+}
+
+#[test]
 fn semantic_writer_applies_neutral_parameter_order() {
     use crate::records::FeatureContent;
 

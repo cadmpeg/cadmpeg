@@ -207,6 +207,11 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                     .attribute("Name")
                     .filter(|value| !value.is_empty())
                     .map(str::to_string),
+                properties: root
+                    .attributes()
+                    .filter(|attribute| attribute.name() != "Name")
+                    .map(|attribute| (attribute.name().to_string(), attribute.value().to_string()))
+                    .collect(),
                 configurations,
                 features,
             })
@@ -1549,6 +1554,7 @@ fn sync_neutral_configurations(
         native.feature_histories.push(FeatureHistory {
             id: "sldprt:generated:feature-history#0".into(),
             part_name: None,
+            properties: BTreeMap::new(),
             configurations: Vec::new(),
             features: Vec::new(),
         });
@@ -1622,6 +1628,7 @@ pub fn sync_neutral_features(
             feature_histories: vec![FeatureHistory {
                 id: "sldprt:generated:feature-history#0".into(),
                 part_name: None,
+                properties: BTreeMap::new(),
                 configurations: Vec::new(),
                 features: Vec::new(),
             }],
@@ -1633,6 +1640,7 @@ pub fn sync_neutral_features(
         native.feature_histories.push(FeatureHistory {
             id: "sldprt:generated:feature-history#0".into(),
             part_name: None,
+            properties: BTreeMap::new(),
             configurations: Vec::new(),
             features: Vec::new(),
         });

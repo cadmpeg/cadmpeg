@@ -98,6 +98,9 @@ pub struct FeatureHistory {
     /// Source part display name, when recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub part_name: Option<String>,
+    /// Source attributes on the `Keywords` root, excluding its `Name` key.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub properties: BTreeMap<String, String>,
     /// Named parametric-model variants defined on this part.
     #[serde(default)]
     pub configurations: Vec<Configuration>,
