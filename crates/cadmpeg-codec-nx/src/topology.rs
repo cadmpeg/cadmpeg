@@ -385,14 +385,22 @@ pub fn composite_curves(stream: &[u8]) -> Vec<CompositeCurve> {
     Graph::parse(stream)
         .of_kind(38)
         .filter_map(|node| {
-            let mut at = node.compact_tail_offset()?;
+            let mut at = 8 + node.shift;
+            let header = read_sequence_at(&node.bytes, &mut at, 5)?;
+            (header[0] == 1 && matches!(node.bytes.get(at), Some(b'+' | b'-'))).then_some(())?;
+            at += 1;
             let references: [u32; 6] =
                 read_sequence_at(&node.bytes, &mut at, 6)?.try_into().ok()?;
-            (references[0] > 1 || references[1] > 1).then_some(CompositeCurve {
-                xmt: node.xmt,
-                references,
-                pos: node.pos,
-            })
+            let complete_witness = references[2..=4].iter().all(|reference| *reference > 1);
+            let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
+            (references.iter().all(|reference| *reference != 0)
+                && (complete_witness || null_witness)
+                && (references[0] > 1 || references[1] > 1))
+                .then_some(CompositeCurve {
+                    xmt: node.xmt,
+                    references,
+                    pos: node.pos,
+                })
         })
         .collect()
 }
@@ -448,7 +456,13 @@ pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
             *reference = value;
             at += 2 + extra;
         }
-        if valid && (references[0] > 1 || references[1] > 1) {
+        let complete_witness = references[2..=4].iter().all(|reference| *reference > 1);
+        let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
+        if valid
+            && references.iter().all(|reference| *reference != 0)
+            && (complete_witness || null_witness)
+            && (references[0] > 1 || references[1] > 1)
+        {
             out.push(CompositeCurve {
                 xmt,
                 references,
@@ -631,6 +645,58 @@ impl Graph {
     /// Iterate nodes of one record type.
     pub fn of_kind(&self, kind: u8) -> impl Iterator<Item = &Node> {
         self.nodes.values().filter(move |node| node.kind == kind)
+    }
+
+    /// Curve identities occupying typed curve-reference slots in the fixed
+    /// topology and procedural graph.
+    pub fn referenced_curve_xmts(&self) -> BTreeSet<u32> {
+        let mut references = BTreeSet::new();
+        references.extend(
+            self.of_kind(16)
+                .filter_map(Node::edge_fields)
+                .map(|fields| fields.curve)
+                .filter(|reference| *reference > 1),
+        );
+        references.extend(
+            self.of_kind(17)
+                .filter_map(Node::fin_fields)
+                .map(|fields| fields.curve_xmt)
+                .filter(|reference| *reference > 1),
+        );
+        for node in self.of_kind(56) {
+            let Some(mut at) = node.compact_tail_offset() else {
+                continue;
+            };
+            if node.bytes.get(at) != Some(&b'R') {
+                continue;
+            }
+            at += 1;
+            if let Some(spine) = read_sequence_at(&node.bytes, &mut at, 3)
+                .and_then(|items| items.get(2).copied())
+                .filter(|reference| *reference > 1)
+            {
+                references.insert(spine);
+            }
+        }
+        for node in self.of_kind(133) {
+            if let Some(reference) = node
+                .compact_tail_references(1)
+                .and_then(|items| items.first().copied())
+                .filter(|reference| *reference > 1)
+            {
+                references.insert(reference);
+            }
+        }
+        for node in self.of_kind(137) {
+            if let Some(reference) = node
+                .compact_tail_references(3)
+                .and_then(|items| items.get(2).copied())
+                .filter(|reference| *reference > 1)
+            {
+                references.insert(reference);
+            }
+        }
+        references
     }
 
     /// Return SHELL nodes whose ownership fields define a body shape.

@@ -34,6 +34,67 @@ pub struct IntersectionCurve {
     pub support_uv: SupportUv,
 }
 
+/// Rejection census for structurally decoded intersection constructions whose
+/// solved chart carrier is incomplete or inconsistent.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RejectionCounts {
+    /// The construction's `CHART_s` reference did not resolve to a valid chart.
+    pub missing_chart: usize,
+    /// The start term-use reference did not resolve.
+    pub missing_start_term: usize,
+    /// The end term-use reference did not resolve.
+    pub missing_end_term: usize,
+    /// A term-use endpoint lies outside the chart's chordal-error contract.
+    pub endpoint_mismatch: usize,
+}
+
+impl RejectionCounts {
+    /// Total rejected construction count.
+    pub fn total(self) -> usize {
+        self.missing_chart
+            + self.missing_start_term
+            + self.missing_end_term
+            + self.endpoint_mismatch
+    }
+
+    fn add(&mut self, rejection: Rejection) {
+        match rejection {
+            Rejection::MissingChart => self.missing_chart += 1,
+            Rejection::MissingStartTerm => self.missing_start_term += 1,
+            Rejection::MissingEndTerm => self.missing_end_term += 1,
+            Rejection::EndpointMismatch => self.endpoint_mismatch += 1,
+        }
+    }
+
+    /// Add another stream's rejection census.
+    pub fn extend(&mut self, other: Self) {
+        self.missing_chart += other.missing_chart;
+        self.missing_start_term += other.missing_start_term;
+        self.missing_end_term += other.missing_end_term;
+        self.endpoint_mismatch += other.endpoint_mismatch;
+    }
+}
+
+/// Complete chart-carrier scan result.
+#[derive(Debug, Clone, Default)]
+pub struct CurveScan {
+    /// Structurally valid constructions with a solved chart or a typed inbound
+    /// curve reference.
+    pub constructions: Vec<CompositeCurve>,
+    /// Constructions with a complete solved 3D chart carrier.
+    pub curves: Vec<IntersectionCurve>,
+    /// Exact rejection census for the remaining parsed constructions.
+    pub rejected: RejectionCounts,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Rejection {
+    MissingChart,
+    MissingStartTerm,
+    MissingEndTerm,
+    EndpointMismatch,
+}
+
 #[derive(Debug, Clone)]
 struct Chart {
     points: Vec<Point3>,
@@ -50,16 +111,35 @@ struct ChartPoints {
 /// Decode type-38 and single-byte `0x5a` records whose referenced chart and
 /// endpoint witnesses form a complete solved cache.
 pub fn curves(stream: &[u8]) -> Vec<IntersectionCurve> {
+    scan(stream).curves
+}
+
+/// Decode chart-backed constructions and classify every rejected construction.
+pub fn scan(stream: &[u8]) -> CurveScan {
     let charts = chart_records(stream);
     let terms = term_records(stream);
     let uv = uv_records(stream);
     let bridges = blend_bound_records(stream);
     let graph = topology::Graph::parse(stream);
-    topology::composite_curves(stream)
+    let referenced_curves = graph.referenced_curve_xmts();
+    let mut result = CurveScan::default();
+    for construction in topology::composite_curves(stream)
         .into_iter()
         .chain(topology::intersection_data_curves(stream))
-        .filter_map(|construction| enrich(construction, &charts, &terms, &uv, &bridges, &graph))
-        .collect()
+    {
+        match enrich(construction, &charts, &terms, &uv, &bridges, &graph) {
+            Ok(curve) => {
+                result.constructions.push(construction);
+                result.curves.push(curve);
+            }
+            Err(rejection) if referenced_curves.contains(&construction.xmt) => {
+                result.constructions.push(construction);
+                result.rejected.add(rejection);
+            }
+            Err(_) => {}
+        }
+    }
+    result
 }
 
 fn enrich(
@@ -69,14 +149,24 @@ fn enrich(
     uv: &BTreeMap<u32, SupportUv>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
-) -> Option<IntersectionCurve> {
-    let chart = charts.get(&construction.references[2])?;
-    let start = terms.get(&construction.references[3])?;
-    let end = terms.get(&construction.references[4])?;
-    if distance(*start, *chart.points.first()?) > chart.fit_tolerance
-        || distance(*end, *chart.points.last()?) > chart.fit_tolerance
+) -> Result<IntersectionCurve, Rejection> {
+    let start = terms
+        .get(&construction.references[3])
+        .ok_or(Rejection::MissingStartTerm)?;
+    let end = terms
+        .get(&construction.references[4])
+        .ok_or(Rejection::MissingEndTerm)?;
+    let chart = charts
+        .get(&construction.references[2])
+        .ok_or(Rejection::MissingChart)?;
+    if distance(
+        *start,
+        *chart.points.first().ok_or(Rejection::MissingChart)?,
+    ) > chart.fit_tolerance
+        || distance(*end, *chart.points.last().ok_or(Rejection::MissingChart)?)
+            > chart.fit_tolerance
     {
-        return None;
+        return Err(Rejection::EndpointMismatch);
     }
     let support_uv = uv
         .get(&construction.references[5])
@@ -97,7 +187,7 @@ fn enrich(
         .or_else(|| is_surface(graph, bridge).then_some(bridge))
         .filter(|secondary| *secondary != primary)
         .unwrap_or(1);
-    Some(IntersectionCurve {
+    Ok(IntersectionCurve {
         xmt: construction.xmt,
         references: construction.references,
         supports: [primary, secondary],

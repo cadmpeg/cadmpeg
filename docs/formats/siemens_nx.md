@@ -272,6 +272,8 @@ Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non
 
 NX stores freeform edges and blend rails as construction relations with branch witnesses. A type-38 record has a compact header through sense `+18` and six support xmt references at `+19,+21,+23,+25,+27,+29`.
 
+The chart/start-term/end-term witness slots `ref[2:5]` are atomic: all three are null reference `1`, or all three are non-null. Mixed null and non-null witness slots do not form a type-38 or `intersection_data` construction. Type-38 common-header `attributes` is null reference `1`. Deltas type-38 records append status byte `01` to every reference; transfer removes those status bytes before applying the partition-style construction grammar.
+
 | Ref | Role                                                                                       |
 | --- | ------------------------------------------------------------------------------------------ |
 | 0/1 | primary support surface + type-59 second-support bridge (order set by the `0x00cc` marker) |

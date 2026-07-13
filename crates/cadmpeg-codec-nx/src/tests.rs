@@ -1143,6 +1143,7 @@ fn blend_surface_with_intersection_spine() -> Vec<u8> {
 
     let mut intersection = record(38, 31);
     put_ref(&mut intersection, 2, 18);
+    put_ref(&mut intersection, 8, 1);
     intersection[18] = b'+';
     for (index, reference) in [6, 6, 1, 1, 1, 1].into_iter().enumerate() {
         put_ref(&mut intersection, 19 + index * 2, reference);
@@ -1189,6 +1190,7 @@ fn intersection_curve_topology_partition_stream() -> Vec<u8> {
     }
     let mut intersection = record(38, 31);
     put_ref(&mut intersection, 2, 12);
+    put_ref(&mut intersection, 8, 1);
     intersection[18] = b'+';
     for (index, reference) in [6, 6, 1, 1, 1, 1].into_iter().enumerate() {
         put_ref(&mut intersection, 19 + index * 2, reference);
@@ -1210,6 +1212,7 @@ fn charted_intersection_curve_topology_partition_stream() -> Vec<u8> {
 
     let mut intersection = record(38, 31);
     put_ref(&mut intersection, 2, 12);
+    put_ref(&mut intersection, 8, 1);
     intersection[18] = b'+';
     for (index, reference) in [6, 1, 20, 21, 22, 23].into_iter().enumerate() {
         put_ref(&mut intersection, 19 + index * 2, reference);
@@ -1465,6 +1468,23 @@ fn status_framed_deltas_point_stream() -> Vec<u8> {
     }
     for value in [0.0125f64, -0.002, 0.004] {
         stream.extend_from_slice(&value.to_be_bytes());
+    }
+    stream
+}
+
+fn status_framed_deltas_intersection_stream() -> Vec<u8> {
+    let mut stream = Vec::new();
+    stream.extend_from_slice(&38u16.to_be_bytes());
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&901u32.to_be_bytes());
+    for reference in [1u16, 2, 3, 4, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    for reference in [6u16, 7, 20, 21, 22, 23] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
     }
     stream
 }
@@ -3229,6 +3249,17 @@ fn decode_tracks_fully_extended_compact_geometry_headers() {
 }
 
 #[test]
+fn intersection_construction_requires_atomic_chart_term_witnesses() {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 25, 1);
+    assert!(crate::topology::composite_curves(&stream).is_empty());
+}
+
+#[test]
 fn decode_resolves_surface_curve_to_its_basis_curve() {
     let stream = surface_curve_topology_partition_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
@@ -3423,6 +3454,15 @@ fn deltas_point_normalizes_to_partition_record_framing() {
     }
     put_vec3(&mut expected, 16, [0.0125, -0.002, 0.004]);
     assert_eq!(record.canonical_bytes, expected);
+}
+
+#[test]
+fn deltas_intersection_normalizes_before_partition_style_decode() {
+    let residual = crate::deltas::procedural_residual(&status_framed_deltas_intersection_stream());
+    let intersections = crate::topology::composite_curves(&residual);
+    assert_eq!(intersections.len(), 1);
+    assert_eq!(intersections[0].xmt, 12);
+    assert_eq!(intersections[0].references, [6, 7, 20, 21, 22, 23]);
 }
 
 #[test]

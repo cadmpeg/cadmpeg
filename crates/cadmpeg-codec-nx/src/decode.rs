@@ -121,7 +121,7 @@ struct Counts {
     ellipses: usize,
     nurbs_curves: usize,
     intersection_curves: usize,
-    unresolved_intersection_curves: usize,
+    intersection_rejections: crate::intersection::RejectionCounts,
 }
 
 impl Counts {
@@ -488,15 +488,17 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             }
         }
 
-        let charted_intersections: BTreeMap<_, _> = crate::intersection::curves(semantic)
+        let intersection_scan = crate::intersection::scan(semantic);
+        counts
+            .intersection_rejections
+            .extend(intersection_scan.rejected);
+        let intersection_constructions = intersection_scan.constructions;
+        let charted_intersections: BTreeMap<_, _> = intersection_scan
+            .curves
             .into_iter()
             .map(|curve| (curve.xmt, curve))
             .collect();
-        for (ci, construction) in crate::topology::composite_curves(semantic)
-            .into_iter()
-            .chain(crate::topology::intersection_data_curves(semantic))
-            .enumerate()
-        {
+        for (ci, construction) in intersection_constructions.into_iter().enumerate() {
             let curve_id = CurveId(format!("nx:s{si}:intersection-crv#{ci}"));
             let procedural_id = ProceduralCurveId(format!("nx:s{si}:intersection#{ci}"));
             let unknown_id = UnknownId(format!("nx:container:parasolid#{si}"));
@@ -581,9 +583,6 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             });
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
-            if charted.is_none() {
-                counts.unresolved_intersection_curves += 1;
-            }
         }
 
         for (procedural_index, spine_xmt) in pending_blend_spines {
@@ -2296,7 +2295,7 @@ fn build_geometry_report(
         });
     }
 
-    if counts.unresolved_intersection_curves > 0 {
+    if counts.intersection_rejections.total() > 0 {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Warning,
@@ -2305,8 +2304,13 @@ fn build_geometry_report(
                  term-endpoint witness remain opaque constructions. Support-UV values govern \
                  optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each \
                  Parasolid stream is preserved verbatim as an unknown passthrough record so the \
-                 unresolved source bytes remain available.",
-                counts.unresolved_intersection_curves
+                 unresolved source bytes remain available. Rejections: {} missing chart, {} missing \
+                 start term, {} missing end term, {} endpoint mismatch.",
+                counts.intersection_rejections.total(),
+                counts.intersection_rejections.missing_chart,
+                counts.intersection_rejections.missing_start_term,
+                counts.intersection_rejections.missing_end_term,
+                counts.intersection_rejections.endpoint_mismatch,
             ),
             provenance: None,
         });

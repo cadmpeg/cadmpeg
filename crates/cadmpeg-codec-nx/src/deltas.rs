@@ -240,6 +240,20 @@ const COMPACT_TWO_REFS: &[Token] = &[
     Token::Ref,
     Token::Ref,
 ];
+const COMPOSITE_CURVE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+];
 
 /// Walk all accepted full records and compact tombstones in an inflated
 /// deltas stream.
@@ -381,11 +395,20 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
 pub fn procedural_residual(stream: &[u8]) -> Vec<u8> {
     let census = walk(stream);
     let mut residual = stream.to_vec();
+    let canonical_procedural = census
+        .records
+        .iter()
+        .filter(|record| record.kind == 38)
+        .map(|record| record.canonical_bytes.clone())
+        .collect::<Vec<_>>();
     for record in census.records {
         residual[record.offset..record.end].fill(0xff);
     }
     for tombstone in census.tombstones {
         residual[tombstone.offset..tombstone.offset + 6].fill(0xff);
+    }
+    for record in canonical_procedural {
+        residual.extend_from_slice(&record);
     }
     residual
 }
@@ -497,6 +520,7 @@ fn family_name(kind: u16) -> Option<&'static str> {
         52 => "CONE",
         53 => "SPHERE",
         54 => "TORUS",
+        38 => "INTERSECTION",
         124 => "B_SURFACE",
         134 => "B_CURVE",
         12 => "BODY",
@@ -523,6 +547,7 @@ fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
         52 => CONE,
         53 => SPHERE,
         54 => TORUS,
+        38 => COMPOSITE_CURVE,
         124 => COMPACT_TWO_REFS,
         134 => COMPACT_TWO_REFS,
         19 => REGION,
