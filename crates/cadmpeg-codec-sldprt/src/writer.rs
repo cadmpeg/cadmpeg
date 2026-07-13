@@ -1116,14 +1116,22 @@ fn materials_payload(ir: &CadIr) -> Result<Vec<u8>, CodecError> {
             materials.push(material);
         }
     }
-    Ok(materials
-        .into_iter()
-        .flat_map(|(name, color)| material_payload(&name, color))
-        .collect())
+    let mut payload = Vec::new();
+    for (name, color) in materials {
+        payload.extend(material_payload(&name, color)?);
+    }
+    Ok(payload)
 }
 
-fn material_payload(name: &str, color: Color) -> Vec<u8> {
+fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
     let name = name.encode_utf16().collect::<Vec<_>>();
+    let length = u8::try_from(name.len())
+        .map_err(|_| CodecError::Malformed("SLDPRT material name is too long".into()))?;
+    if name.is_empty() {
+        return Err(CodecError::Malformed(
+            "SLDPRT material name is empty".into(),
+        ));
+    }
     let mut out = b"moVisualProperties_c".to_vec();
     let component = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
     out.extend_from_slice(
@@ -1138,11 +1146,11 @@ fn material_payload(name: &str, color: Color) -> Vec<u8> {
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&0x00c0_c0c0u32.to_le_bytes());
     out.extend_from_slice(&[0xff, 0xfe, 0xff, 0x00]);
-    out.extend_from_slice(&[0xff, 0xfe, 0xff, name.len().min(u8::MAX as usize) as u8]);
-    for unit in name.into_iter().take(u8::MAX as usize) {
+    out.extend_from_slice(&[0xff, 0xfe, 0xff, length]);
+    for unit in name {
         out.extend_from_slice(&unit.to_le_bytes());
     }
-    out
+    Ok(out)
 }
 
 pub(crate) fn brep_body(

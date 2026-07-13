@@ -4052,6 +4052,26 @@ fn semantic_writer_preserves_body_material() {
 }
 
 #[test]
+fn semantic_writer_rejects_overlong_material_names() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_material(
+                &triangle_body(),
+                "Steel",
+                [32, 64, 128],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.model.appearances[0].name = Some("M".repeat(256));
+    decoded.ir.model.bodies[0].name = Some("M".repeat(256));
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("material name is too long"));
+}
+
+#[test]
 fn decode_binds_entity53_color_to_face() {
     use cadmpeg_ir::appearance::AppearanceTarget;
     let mut body = Vec::new();
