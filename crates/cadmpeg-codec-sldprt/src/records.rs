@@ -193,12 +193,44 @@ pub struct FeatureInputLane {
     /// Named scalar values in this lane.
     #[serde(default)]
     pub scalars: Vec<FeatureInputScalar>,
+    /// Relation-class declarations bound to their attached scalar records.
+    #[serde(default)]
+    pub relation_bindings: Vec<FeatureInputRelationBinding>,
     /// Native entity-reference cells in byte order.
     #[serde(default)]
     pub references: Vec<FeatureInputReference>,
     /// Typed sketch-entity markers located within `native_payload`.
     #[serde(default)]
     pub sketch_entities: Vec<SketchInputEntity>,
+}
+
+/// A declared sketch-relation family and its attached scalar record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureInputRelationBinding {
+    /// Globally unique deterministic identifier for this binding.
+    pub id: String,
+    /// Owning feature-input lane record id.
+    pub parent: String,
+    /// Position among relation bindings in stream order.
+    pub ordinal: u32,
+    /// Byte offset of the relation class declaration.
+    pub offset: u64,
+    /// Declared class record.
+    pub class_ref: String,
+    /// Native relation family.
+    pub family: FeatureInputRelationFamily,
+    /// Scalar record attached to the declaration.
+    pub scalar_ref: String,
+}
+
+/// Native sketch-relation family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureInputRelationFamily {
+    /// Distance between two line loci.
+    LineLineDistance,
+    /// Distance between two point loci.
+    PointPointDistance,
 }
 
 /// One native entity-reference cell in a feature-input stream.

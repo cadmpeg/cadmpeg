@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::records::{
     FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputReference,
-    FeatureInputScalar, PmiDimension,
+    FeatureInputRelationBinding, FeatureInputScalar, PmiDimension,
 };
 
 /// Current schema version for the SOLIDWORKS native namespace.
@@ -19,6 +19,7 @@ pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "feature_input_lanes",
     "feature_input_names",
     "feature_input_references",
+    "feature_input_relation_bindings",
     "feature_input_scalars",
     "features",
     "pmi_dimensions",
@@ -71,6 +72,8 @@ impl SldprtNative {
         let names: Vec<FeatureInputName> = namespace.arena_as("feature_input_names")?;
         let references: Vec<FeatureInputReference> =
             namespace.arena_as("feature_input_references")?;
+        let relation_bindings: Vec<FeatureInputRelationBinding> =
+            namespace.arena_as("feature_input_relation_bindings")?;
         let scalars: Vec<FeatureInputScalar> = namespace.arena_as("feature_input_scalars")?;
         let history_ids = native
             .feature_histories
@@ -145,6 +148,15 @@ impl SldprtNative {
                 record.id, record.parent
             )));
         }
+        if let Some(record) = relation_bindings
+            .iter()
+            .find(|record| !lane_ids.contains(record.parent.as_str()))
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "feature-input relation binding {} references {}",
+                record.id, record.parent
+            )));
+        }
         let name_ids = names
             .iter()
             .map(|record| record.id.as_str())
@@ -162,6 +174,23 @@ impl SldprtNative {
             .iter()
             .map(|record| (record.id.as_str(), record))
             .collect::<std::collections::HashMap<_, _>>();
+        let class_ids = classes
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        let scalar_ids = scalars
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        if let Some(record) = relation_bindings.iter().find(|record| {
+            !class_ids.contains(record.class_ref.as_str())
+                || !scalar_ids.contains(record.scalar_ref.as_str())
+        }) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "feature-input relation binding {} has an unresolved class or scalar",
+                record.id
+            )));
+        }
         for scalar in &scalars {
             for operand in &scalar.operands {
                 let Some(reference) = references_by_id.get(operand.reference_ref.as_str()) else {
@@ -220,6 +249,12 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.references.sort_by_key(|record| record.ordinal);
+            lane.relation_bindings = relation_bindings
+                .iter()
+                .filter(|record| record.parent == lane.id)
+                .cloned()
+                .collect();
+            lane.relation_bindings.sort_by_key(|record| record.ordinal);
             lane.sketch_entities = entities
                 .iter()
                 .filter(|record| record.parent == lane.id)
@@ -267,6 +302,16 @@ impl SldprtNative {
                 .iter()
                 .map(|record| (record.id.as_str(), record))
                 .collect::<std::collections::HashMap<_, _>>();
+            let class_ids = lane
+                .classes
+                .iter()
+                .map(|record| record.id.as_str())
+                .collect::<std::collections::HashSet<_>>();
+            let scalar_ids = lane
+                .scalars
+                .iter()
+                .map(|record| record.id.as_str())
+                .collect::<std::collections::HashSet<_>>();
             if let Some(record) = lane.classes.iter().find(|record| record.parent != lane.id) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input class {} references {} instead of {}",
@@ -293,6 +338,16 @@ impl SldprtNative {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input reference {} references {} instead of {}",
                     record.id, record.parent, lane.id
+                )));
+            }
+            if let Some(record) = lane.relation_bindings.iter().find(|record| {
+                record.parent != lane.id
+                    || !class_ids.contains(record.class_ref.as_str())
+                    || !scalar_ids.contains(record.scalar_ref.as_str())
+            }) {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "feature-input relation binding {} has inconsistent ownership",
+                    record.id
                 )));
             }
             if let Some(record) = lane
@@ -373,6 +428,7 @@ impl SldprtNative {
                 lane.classes.clear();
                 lane.names.clear();
                 lane.scalars.clear();
+                lane.relation_bindings.clear();
                 lane.references.clear();
                 lane.sketch_entities.clear();
                 lane
@@ -409,6 +465,14 @@ impl SldprtNative {
                 .feature_input_lanes
                 .iter()
                 .flat_map(|lane| lane.references.clone())
+                .collect::<Vec<_>>(),
+        )?;
+        namespace.set_arena(
+            "feature_input_relation_bindings",
+            &self
+                .feature_input_lanes
+                .iter()
+                .flat_map(|lane| lane.relation_bindings.clone())
                 .collect::<Vec<_>>(),
         )?;
         namespace.set_arena(

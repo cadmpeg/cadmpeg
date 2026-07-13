@@ -980,6 +980,12 @@ fn resolved_features_payload_with_names(codes: &[u32], names: &[&str]) -> Vec<u8
         payload.extend_from_slice(name.as_bytes());
     }
     for name in names {
+        if *name == "D1" {
+            let class = "sgPntPntDist";
+            payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
+            payload.extend_from_slice(&(class.len() as u16).to_le_bytes());
+            payload.extend_from_slice(class.as_bytes());
+        }
         payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
@@ -5613,6 +5619,33 @@ fn native_validation_rejects_duplicate_sketch_marker_offsets() {
     assert!(crate::validate_native(&decoded.ir)
         .iter()
         .any(|finding| finding.message.contains("repeats entity offset")));
+}
+
+#[test]
+fn native_validation_rejects_edited_relation_binding() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_resolved_features(
+                &triangle_body(),
+                &[0, 1],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_input_lanes[0].relation_bindings[0].family =
+            crate::records::FeatureInputRelationFamily::LineLineDistance;
+    });
+
+    assert!(crate::validate_native(&decoded.ir).iter().any(|finding| {
+        finding
+            .message
+            .contains("relation bindings do not match the native payload")
+    }));
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("edited relation bindings"));
 }
 
 #[test]
@@ -10832,12 +10865,20 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .iter()
             .map(|class| class.name.as_str())
             .collect::<Vec<_>>(),
-        ["sgPointHandle", "sgLineHandle", "sgArcHandle"]
+        [
+            "sgPointHandle",
+            "sgLineHandle",
+            "sgArcHandle",
+            "sgPntPntDist"
+        ]
     );
-    assert!(lane
-        .classes
+    assert!(lane.classes[..3]
         .iter()
         .all(|class| class.role == FeatureInputClassRole::SketchEntity));
+    assert_eq!(
+        lane.classes[3].role,
+        FeatureInputClassRole::SketchConstraint
+    );
     assert_eq!(
         lane.names
             .iter()
@@ -10872,6 +10913,13 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         .operands
         .iter()
         .all(|operand| operand.kind == crate::records::FeatureInputOperandKind::D6));
+    assert_eq!(lane.relation_bindings.len(), 1);
+    assert_eq!(
+        lane.relation_bindings[0].family,
+        crate::records::FeatureInputRelationFamily::PointPointDistance
+    );
+    assert_eq!(lane.relation_bindings[0].class_ref, lane.classes[3].id);
+    assert_eq!(lane.relation_bindings[0].scalar_ref, lane.scalars[0].id);
     assert_eq!(
         lane.scalars[0].role,
         crate::records::FeatureInputScalarRole::Driving

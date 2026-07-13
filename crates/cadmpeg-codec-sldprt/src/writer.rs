@@ -755,6 +755,11 @@ fn resolved_feature_payload(
     let mut expected_lane = lane.clone();
     expected_lane.scalars =
         crate::resolved_features::named_scalars(&lane.native_payload, &lane.id, &lane.names);
+    expected_lane.relation_bindings = crate::resolved_features::relation_bindings(
+        &lane.id,
+        &lane.classes,
+        &expected_lane.scalars,
+    );
     expected_lane.references =
         crate::resolved_features::reference_cells(&lane.native_payload, &lane.id);
     crate::resolved_features::bind_scalar_operands(
@@ -764,6 +769,12 @@ fn resolved_feature_payload(
     if !crate::resolved_features::scalar_indices_match(&lane.scalars, &expected_lane.scalars) {
         return Err(CodecError::NotImplemented(format!(
             "feature-input lane {} has edited named scalars",
+            lane.id
+        )));
+    }
+    if lane.relation_bindings != expected_lane.relation_bindings {
+        return Err(CodecError::NotImplemented(format!(
+            "feature-input lane {} has edited relation bindings",
             lane.id
         )));
     }

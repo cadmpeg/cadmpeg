@@ -264,6 +264,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let mut expected_lane = lane.clone();
         expected_lane.scalars =
             crate::resolved_features::named_scalars(&lane.native_payload, &lane.id, &lane.names);
+        expected_lane.relation_bindings = crate::resolved_features::relation_bindings(
+            &lane.id,
+            &lane.classes,
+            &expected_lane.scalars,
+        );
         expected_lane.references =
             crate::resolved_features::reference_cells(&lane.native_payload, &lane.id);
         crate::resolved_features::bind_scalar_operands(
@@ -297,6 +302,16 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 message: format!(
                     "SolidWorks feature-input scalar index does not match its native payload: {detail}"
                 ),
+                entity: Some(lane.id.clone()),
+            });
+        }
+        if lane.relation_bindings != expected_lane.relation_bindings {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message:
+                    "SolidWorks feature-input relation bindings do not match the native payload"
+                        .into(),
                 entity: Some(lane.id.clone()),
             });
         }

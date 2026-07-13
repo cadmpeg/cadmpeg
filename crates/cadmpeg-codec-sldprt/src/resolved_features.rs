@@ -3,7 +3,8 @@
 
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputName,
-    FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference, FeatureInputScalar,
+    FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference,
+    FeatureInputRelationBinding, FeatureInputRelationFamily, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::annotations::Annotations;
@@ -49,6 +50,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
             let classes = class_declarations(&block.payload, &parent);
             let names = object_names(&block.payload, &parent);
             let scalars = named_scalars(&block.payload, &parent, &names);
+            let relation_bindings = relation_bindings(&parent, &classes, &scalars);
             let references = reference_cells(&block.payload, &parent);
             let sketch_entities = block
                 .payload
@@ -106,10 +108,49 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 classes,
                 names,
                 scalars,
+                relation_bindings,
                 references,
                 sketch_entities,
             })
         })
+        .collect()
+}
+
+pub(crate) fn relation_bindings(
+    parent: &str,
+    classes: &[FeatureInputClass],
+    scalars: &[FeatureInputScalar],
+) -> Vec<FeatureInputRelationBinding> {
+    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    classes
+        .iter()
+        .filter_map(|class| {
+            let family = match class.name.as_str() {
+                "sgLLDist" => FeatureInputRelationFamily::LineLineDistance,
+                "sgPntPntDist" => FeatureInputRelationFamily::PointPointDistance,
+                _ => return None,
+            };
+            let scalar = scalars
+                .iter()
+                .filter(|scalar| scalar.offset > class.offset)
+                .min_by_key(|scalar| scalar.offset)?;
+            (scalar.offset - class.offset <= 128).then_some((class, scalar, family))
+        })
+        .enumerate()
+        .map(
+            |(ordinal, (class, scalar, family))| FeatureInputRelationBinding {
+                id: format!(
+                    "sldprt:feature-input:relation-binding#{lane_key}:{}",
+                    class.offset
+                ),
+                parent: parent.to_string(),
+                ordinal: ordinal as u32,
+                offset: class.offset,
+                class_ref: class.id.clone(),
+                family,
+                scalar_ref: scalar.id.clone(),
+            },
+        )
         .collect()
 }
 
@@ -1309,6 +1350,7 @@ fn source_less_lanes(
                 classes: Vec::new(),
                 names: Vec::new(),
                 scalars: Vec::new(),
+                relation_bindings: Vec::new(),
                 references: Vec::new(),
                 sketch_entities: Vec::new(),
             });
