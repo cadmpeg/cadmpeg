@@ -345,9 +345,6 @@ pub enum SketchConstraintDefinition {
         /// Driving or driven parameter attached to the relation.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameter: Option<ParameterId>,
-        /// Solved distance reported by the source relation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        measured_distance: Option<Length>,
         /// Native operands whose neutral loci are unresolved.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         operands: Vec<SketchNativeOperand>,

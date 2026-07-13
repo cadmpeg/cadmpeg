@@ -1668,7 +1668,6 @@ fn sketch_constraint_native_ref_must_resolve() {
                 native_kind: "test".into(),
                 entities: Vec::new(),
                 parameter: None,
-                measured_distance: Some(crate::features::Length(f64::NAN)),
                 operands: vec![crate::sketches::SketchNativeOperand {
                     native_kind: "test".into(),
                     object_index: 0,
@@ -1681,10 +1680,6 @@ fn sketch_constraint_native_ref_must_resolve() {
         finding.check == Check::NativeLinks
             && finding.entity.as_deref() == Some(id.0.as_str())
             && finding.message.contains("native:missing-relation#0")
-    }));
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.check == Check::ParameterDomain
-            && finding.message.contains("invalid measured sketch distance")
     }));
 }
 

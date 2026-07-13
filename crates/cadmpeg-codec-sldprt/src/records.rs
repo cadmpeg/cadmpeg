@@ -251,9 +251,9 @@ pub struct FeatureInputRelationInstance {
     /// Unique driving scalar carrying the target parameter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_scalar_ref: Option<String>,
-    /// Unique display scalar carrying the solved distance.
+    /// Unique display-role scalar attached to the relation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub measurement_scalar_ref: Option<String>,
+    pub display_scalar_ref: Option<String>,
     /// Operand cells shared by the participating scalar records.
     pub operands: Vec<FeatureInputOperand>,
 }

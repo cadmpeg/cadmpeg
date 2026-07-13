@@ -235,7 +235,7 @@ impl SldprtNative {
                     .as_deref()
                     .is_some_and(|scalar| !record.scalar_refs.iter().any(|value| value == scalar))
                 || record
-                    .measurement_scalar_ref
+                    .display_scalar_ref
                     .as_deref()
                     .is_some_and(|scalar| !record.scalar_refs.iter().any(|value| value == scalar))
                 || record.parameter_scalar_ref.as_deref().is_some_and(|id| {
@@ -246,7 +246,7 @@ impl SldprtNative {
                             scalar.role != crate::records::FeatureInputScalarRole::Driving
                         })
                 })
-                || record.measurement_scalar_ref.as_deref().is_some_and(|id| {
+                || record.display_scalar_ref.as_deref().is_some_and(|id| {
                     scalars
                         .iter()
                         .find(|scalar| scalar.id == id)
@@ -461,12 +461,9 @@ impl SldprtNative {
                         .is_some_and(|scalar| {
                             !record.scalar_refs.iter().any(|value| value == scalar)
                         })
-                    || record
-                        .measurement_scalar_ref
-                        .as_deref()
-                        .is_some_and(|scalar| {
-                            !record.scalar_refs.iter().any(|value| value == scalar)
-                        })
+                    || record.display_scalar_ref.as_deref().is_some_and(|scalar| {
+                        !record.scalar_refs.iter().any(|value| value == scalar)
+                    })
                     || record.parameter_scalar_ref.as_deref().is_some_and(|id| {
                         lane.scalars
                             .iter()
@@ -475,7 +472,7 @@ impl SldprtNative {
                                 scalar.role != crate::records::FeatureInputScalarRole::Driving
                             })
                     })
-                    || record.measurement_scalar_ref.as_deref().is_some_and(|id| {
+                    || record.display_scalar_ref.as_deref().is_some_and(|id| {
                         lane.scalars
                             .iter()
                             .find(|scalar| scalar.id == id)

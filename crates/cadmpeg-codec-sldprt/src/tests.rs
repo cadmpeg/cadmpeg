@@ -11526,7 +11526,6 @@ fn decode_projects_owned_native_sketch_relation() {
             native_kind,
             entities,
             parameter: Some(relation_parameter),
-            measured_distance: None,
             operands,
         } if native_kind == "sgPntPntDist"
             && entities.is_empty()
@@ -11577,7 +11576,7 @@ fn decode_groups_compact_relation_scalar_pair() {
         Some(driving.id.as_str())
     );
     assert_eq!(
-        relation.measurement_scalar_ref.as_deref(),
+        relation.display_scalar_ref.as_deref(),
         Some(display.id.as_str())
     );
     assert_eq!(relation.operands.len(), 2);
@@ -11596,10 +11595,8 @@ fn decode_groups_compact_relation_scalar_pair() {
         SketchConstraintDefinition::Native {
             native_kind,
             parameter: Some(parameter),
-            measured_distance: Some(measured_distance),
             ..
         } if native_kind == "sgPntPntDist"
-            && measured_distance.0 == 25.0
             && decoded.ir.model.parameters.iter().any(|candidate| {
                 &candidate.id == parameter
                     && candidate.native_ref.as_deref() == Some(driving.id.as_str())
