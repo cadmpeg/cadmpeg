@@ -118,7 +118,9 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                         parent_source_id: node
                             .ancestors()
                             .skip(1)
-                            .find_map(|parent| parent.attribute("id").map(str::to_string)),
+                            .find(|ancestor| feature_ids.contains_key(&ancestor.range().start))
+                            .and_then(|parent| parent.attribute("id"))
+                            .map(str::to_string),
                         ordinal: ordinal as u32,
                         name: node.attribute("Name").unwrap_or("").into(),
                         kind: node

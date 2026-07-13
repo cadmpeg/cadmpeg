@@ -4817,6 +4817,25 @@ fn decode_extracts_parametric_history() {
 }
 
 #[test]
+fn keywords_root_id_does_not_create_feature_parentage() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords id="document"><Feature Name="Root" Type="Folder" id="1"><Feature Name="Nested" Type="Custom" id="2"/></Feature></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    let history = &native.feature_histories[0];
+    assert_eq!(history.properties["id"], "document");
+    assert_eq!(history.features[0].parent_source_id, None);
+    assert_eq!(history.features[1].parent_source_id.as_deref(), Some("1"));
+    assert!(crate::validate_native(&decoded.ir).is_empty());
+}
+
+#[test]
 fn native_validation_rejects_duplicate_history_ordinals() {
     let mut decoded = SldprtCodec
         .decode(
