@@ -1989,15 +1989,43 @@ fn attach_native_object_model(
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
     let configurations = crate::native::configurations(&scan.container);
-    if expressions.is_empty() && classes.is_empty() && configurations.is_empty() {
+    let object_sections = scan.container.indexed_om_sections();
+    if expressions.is_empty()
+        && classes.is_empty()
+        && configurations.is_empty()
+        && object_sections.is_empty()
+    {
         return Ok(());
     }
+    let annotation_stream = annotations.stream("nx:container");
+    let mut unknowns = ir.native_unknowns("nx")?;
+    for (section_index, (entry, section)) in object_sections.iter().enumerate() {
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (record_index, record) in section.records.iter().enumerate() {
+            let id = UnknownId(format!(
+                "nx:om-section-{section_index}:record#{record_index}"
+            ));
+            let offset = entry_offset + record.offset as u64;
+            annotations
+                .note(&id, annotation_stream, offset)
+                .tag("OM_ENTITY_RECORD");
+            annotations.exactness(&id, Exactness::ByteExact);
+            unknowns.push(UnknownRecord {
+                id,
+                offset,
+                byte_len: record.bytes.len() as u64,
+                sha256: sha256_hex(record.bytes),
+                data: Some(record.bytes.to_vec()),
+                links: Vec::new(),
+            });
+        }
+    }
+    ir.set_native_unknowns("nx", &unknowns)?;
     if !configurations.is_empty() {
-        let stream = annotations.stream("nx:container");
         for (ordinal, configuration) in configurations.iter().enumerate() {
             let id = ConfigurationId(format!("nx:arrangements:configuration#{ordinal}"));
             annotations
-                .note(&id.0, stream, configuration.source_offset)
+                .note(&id.0, annotation_stream, configuration.source_offset)
                 .tag("Arrangement");
             annotations.derived(&id.0, "ordinal");
             annotations.derived(&id.0, "active");

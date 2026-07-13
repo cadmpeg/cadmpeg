@@ -2228,6 +2228,20 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(expressions[0].unit, crate::native::ExpressionUnit::Degree);
     assert_eq!(expressions[0].value, 120.0);
     assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
+    let om_records = result
+        .ir
+        .native_unknowns("nx")
+        .unwrap()
+        .into_iter()
+        .filter(|record| record.id.0.starts_with("nx:om-section-"))
+        .collect::<Vec<_>>();
+    assert_eq!(om_records.len(), 2);
+    assert!(om_records.iter().all(|record| {
+        record.data.as_ref().is_some_and(|data| {
+            data.len() as u64 == record.byte_len
+                && cadmpeg_ir::hash::sha256_hex(data) == record.sha256
+        })
+    }));
     assert_eq!(result.ir.model.features.len(), 1);
     assert!(matches!(
         result.ir.model.features[0].definition,
