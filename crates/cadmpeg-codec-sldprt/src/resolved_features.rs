@@ -484,6 +484,11 @@ fn relation_instances(
                 .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
                 .copied()
                 .collect::<Vec<_>>();
+            let display = scalars
+                .iter()
+                .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
+                .copied()
+                .collect::<Vec<_>>();
             let offset = scalars[0].offset;
             FeatureInputRelationInstance {
                 id: format!(
@@ -500,6 +505,7 @@ fn relation_instances(
                 feature_ref,
                 scalar_refs: scalars.iter().map(|scalar| scalar.id.clone()).collect(),
                 parameter_scalar_ref: (driving.len() == 1).then(|| driving[0].id.clone()),
+                measurement_scalar_ref: (display.len() == 1).then(|| display[0].id.clone()),
                 operands,
             }
         })
@@ -778,6 +784,11 @@ pub(crate) fn project_relation_bindings(
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
+        let scalars = lane
+            .scalars
+            .iter()
+            .map(|scalar| (scalar.id.as_str(), scalar))
+            .collect::<HashMap<_, _>>();
         for relation in &lane.relation_instances {
             let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
                 continue;
@@ -787,6 +798,11 @@ pub(crate) fn project_relation_bindings(
                 .as_deref()
                 .and_then(|scalar| parameters_by_scalar.get(scalar))
                 .map(|parameter| (*parameter).clone());
+            let measured_distance = relation
+                .measurement_scalar_ref
+                .as_deref()
+                .and_then(|scalar| scalars.get(scalar))
+                .map(|scalar| cadmpeg_ir::features::Length(scalar.value * 1_000.0));
             let native_kind = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance => "sgLLDist",
                 FeatureInputRelationFamily::PointPointDistance => "sgPntPntDist",
@@ -801,6 +817,7 @@ pub(crate) fn project_relation_bindings(
                     native_kind: native_kind.into(),
                     entities: Vec::new(),
                     parameter,
+                    measured_distance,
                     operands: relation
                         .operands
                         .iter()

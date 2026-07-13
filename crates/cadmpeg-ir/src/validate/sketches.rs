@@ -218,6 +218,20 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 "invalid sketch constraint arity",
             );
         }
+        if let Constraint::Native {
+            measured_distance: Some(value),
+            ..
+        } = &constraint.definition
+        {
+            if !value.0.is_finite() || value.0 < 0.0 {
+                finding(
+                    findings,
+                    Check::ParameterDomain,
+                    &constraint.id.0,
+                    "invalid measured sketch distance",
+                );
+            }
+        }
         for locus in constraint_loci(&constraint.definition) {
             let Some(entity_geometry) = geometry.get(locus_entity(locus)) else {
                 continue;
