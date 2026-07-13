@@ -182,6 +182,7 @@ pub(crate) fn transfer(
             wrapper_reversed: None,
             parameter_range: None,
             fit_tolerance: None,
+            native_tail_flags: None,
         });
     }
 

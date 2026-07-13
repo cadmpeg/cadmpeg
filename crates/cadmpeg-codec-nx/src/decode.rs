@@ -457,6 +457,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                                 ],
                                 discontinuities: [Vec::new(), Vec::new(), Vec::new()],
                             },
+                            discontinuity_flag: false,
                         }
                     },
                 ),
