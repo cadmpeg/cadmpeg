@@ -296,6 +296,11 @@ ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, 
 
 An arc radius is the distance from its center to an endpoint in `var_arr`. A trim-vertex identifier is distinct from a `segtab` point identifier.
 
+A `segtab` line whose two endpoint identifiers each have complete type-1 and
+type-2 `var_arr` values is the bounded segment between those two `[u, v]`
+points. It is construction geometry when its `ext_id` is absent from
+`ent_tab`.
+
 In a round-feature generated-entity table, a rowless face-use entry is a cylinder only when the table's following materialized `srf_array` entry is a cylinder. The table class token alone does not identify the surface kind.
 
 ## 6. Features and datums

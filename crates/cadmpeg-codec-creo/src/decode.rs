@@ -25,6 +25,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, Point, Region, Sense, Shell, Vertex,
 };
@@ -159,6 +160,153 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .collect(),
         })
         .collect()
+}
+
+fn section_line_geometry(
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    let start = points.get(&segment.point_ids[0])?;
+    let end = points.get(&segment.point_ids[1])?;
+    Some(SketchGeometry::Line {
+        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+    })
+}
+
+fn transfer_resolved_sketches(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) {
+    for transform in &scan.feature_section_transforms {
+        let Some(definition) = scan
+            .feature_definitions
+            .iter()
+            .find(|definition| definition.id == transform.feature_id)
+        else {
+            continue;
+        };
+        let (Some(variables), Some(segments)) = (&definition.variables, &definition.segments)
+        else {
+            continue;
+        };
+        let points = variables
+            .points
+            .iter()
+            .filter_map(|point| Some((point.point_id, [point.u?, point.v?])))
+            .collect::<BTreeMap<_, _>>();
+        let solved = definition
+            .trim_entities
+            .iter()
+            .flat_map(|table| &table.solved_external_ids)
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let sketch_id = SketchId(format!("creo:featdefs:sketch#{}", definition.id));
+        let entities = segments
+            .rows
+            .iter()
+            .filter_map(|segment| {
+                let geometry = section_line_geometry(&points, segment)?;
+                let id = SketchEntityId(format!(
+                    "creo:featdefs:sketch#{}:entity#{}",
+                    definition.id, segment.external_id
+                ));
+                annotate(
+                    annotations,
+                    &id.0,
+                    "FeatDefs",
+                    segment.offset as u64,
+                    "solved_section_line",
+                    Exactness::Derived,
+                );
+                Some(SketchEntity {
+                    id,
+                    sketch: sketch_id.clone(),
+                    construction: !solved.contains(&segment.external_id),
+                    native_ref: Some(format!(
+                        "creo:featdefs:sketch#{}:segment#{}",
+                        definition.id, segment.external_id
+                    )),
+                    geometry_ref: None,
+                    endpoint_refs: segment
+                        .point_ids
+                        .iter()
+                        .map(|point| {
+                            format!("creo:featdefs:sketch#{}:point#{point}", definition.id)
+                        })
+                        .collect(),
+                    geometry,
+                })
+            })
+            .collect::<Vec<_>>();
+        if entities.is_empty() {
+            continue;
+        }
+        ir.model.sketch_entities.extend(entities);
+        annotate(
+            annotations,
+            &sketch_id.0,
+            "FeatDefs",
+            transform.offset as u64,
+            "datum_placed_section",
+            Exactness::Derived,
+        );
+        ir.model.sketches.push(Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            origin: Point3::new(
+                transform.origin[0],
+                transform.origin[1],
+                transform.origin[2],
+            ),
+            normal: Vector3::new(
+                transform.normal[0],
+                transform.normal[1],
+                transform.normal[2],
+            ),
+            u_axis: Vector3::new(
+                transform.u_axis[0],
+                transform.u_axis[1],
+                transform.u_axis[2],
+            ),
+            profiles: Vec::new(),
+            native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+        });
+    }
+}
+
+#[cfg(test)]
+mod resolved_sketch_tests {
+    use super::*;
+
+    #[test]
+    fn section_line_requires_two_solved_points() {
+        let segment = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [7, 9],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 12,
+            offset: 40,
+        };
+        let mut points = BTreeMap::from([(7, [2.0, 3.0])]);
+        assert!(section_line_geometry(&points, &segment).is_none());
+        points.insert(9, [5.0, 8.0]);
+        assert_eq!(
+            section_line_geometry(&points, &segment),
+            Some(SketchGeometry::Line {
+                start: cadmpeg_ir::math::Point2::new(2.0, 3.0),
+                end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
+            })
+        );
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -971,6 +1119,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     transfer_plane_intersection_curves(scan, &mut ir, &mut annotations);
     transfer_plane_intersection_vertices(scan, &mut ir, &mut annotations);
     transfer_plane_brep(scan, &mut ir, &mut annotations);
+    transfer_resolved_sketches(scan, &mut ir, &mut annotations);
     for (ordinal, operation) in scan.feature_operations.iter().enumerate() {
         let id = IrFeatureId(format!("creo:mdlstatus:feature#{}", operation.feature_id));
         let mut parameters = BTreeMap::new();
