@@ -122,6 +122,34 @@ fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
         .any(|loss| loss.message.contains("EXAMPLE_RECORD")));
 }
 
+#[test]
+fn decode_transfers_placed_analytic_geometry_in_millimetres() {
+    use cadmpeg_ir::geometry::CurveGeometry;
+
+    let bytes = include_bytes!("../tests/fixtures/ap242_geometry.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode typed STEP geometry");
+
+    assert_eq!(result.ir.model.points.len(), 1);
+    assert_eq!(result.ir.model.points[0].position.x, 1.0);
+    assert_eq!(result.ir.model.points[0].position.y, 2.0);
+    assert_eq!(result.ir.model.points[0].position.z, 3.0);
+    assert_eq!(result.ir.model.curves.len(), 2);
+    assert!(result.ir.model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Line { origin, direction }
+            if origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0
+                && direction.x == 0.0 && direction.y == 0.0 && direction.z == 1.0
+    )));
+    assert!(result.ir.model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Circle { center, radius, .. }
+            if center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
+    )));
+    assert!(result.report.geometry_transferred);
+}
+
 fn export(ir: &CadIr) -> String {
     let mut buf = Vec::new();
     write_step(ir, &mut buf, &StepWriteOptions::default()).expect("write");

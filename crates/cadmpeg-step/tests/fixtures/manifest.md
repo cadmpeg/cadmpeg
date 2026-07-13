@@ -9,3 +9,4 @@ authored against `docs/formats/step.md`.
 | `ap242_ed3_sections.p21` | edition-3 ANCHOR, REFERENCE, multiple DATA, and SIGNATURE sections |
 | `complex_instance.p21` | external-mapped complex instance with sibling-supplied attributes |
 | `strings.p21` | apostrophe, reverse-solidus, X, X2, X4, S, and page-selection string escapes |
+| `ap242_geometry.p21` | millimetre unit context and placed point, line, and circle carriers |

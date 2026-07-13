@@ -13,6 +13,8 @@ use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::parse::{self, Exchange, Value};
 
+mod geometry;
+
 /// Decode a complete clear-text exchange structure.
 pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, CodecError> {
     let exchange = parse::parse(input).map_err(|error| CodecError::Malformed(error.to_string()))?;
@@ -44,9 +46,24 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
         return Ok(DecodeResult::new(ir, report));
     }
 
+    let geometry = geometry::decode(&exchange, &mut ir);
+    report.geometry_transferred =
+        !ir.model.points.is_empty() || !ir.model.curves.is_empty() || !ir.model.surfaces.is_empty();
+    report
+        .losses
+        .extend(geometry.warnings.into_iter().map(|message| LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message,
+            provenance: None,
+        }));
+
     let mut opaque = Vec::with_capacity(exchange.records.len());
     let mut counts = BTreeMap::<String, usize>::new();
     for record in exchange.records.values() {
+        if geometry.typed_records.contains(&record.id) {
+            continue;
+        }
         let kind = record
             .partials
             .iter()
