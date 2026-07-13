@@ -549,13 +549,41 @@ pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> 
             .flatten()
             .map(str::to_string)
     })?;
-    scan.blocks.iter().find_map(|block| {
+    let (position, explicit_index, configuration_count) = scan.blocks.iter().find_map(|block| {
         let text = std::str::from_utf8(&block.payload).ok()?;
         let document = roxmltree::Document::parse(text).ok()?;
         let root = document.root_element();
         root.tag_name().name().contains("Keywords").then_some(())?;
-        root.children()
+        let configurations = root
+            .children()
             .filter(|node| node.has_tag_name("Configuration"))
-            .position(|node| node.attribute("Name") == Some(active.as_str()))
-    })
+            .collect::<Vec<_>>();
+        let position = configurations
+            .iter()
+            .position(|node| node.attribute("Name") == Some(active.as_str()))?;
+        let explicit_index = configurations[position]
+            .attribute("SourceIndex")
+            .and_then(|value| value.parse().ok());
+        Some((position, explicit_index, configurations.len()))
+    })?;
+    if explicit_index.is_some() {
+        return explicit_index;
+    }
+    let mut partitions = scan
+        .blocks
+        .iter()
+        .filter(|block| {
+            block
+                .section
+                .as_deref()
+                .is_some_and(|section| section.to_ascii_lowercase().ends_with("-partition"))
+        })
+        .filter_map(|block| configuration_index(block.section.as_deref()?))
+        .collect::<Vec<_>>();
+    partitions.sort_unstable();
+    partitions.dedup();
+    if partitions.len() == configuration_count {
+        return partitions.get(position).copied();
+    }
+    partitions.contains(&position).then_some(position)
 }
