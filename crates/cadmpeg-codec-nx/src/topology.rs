@@ -28,6 +28,10 @@ pub struct Node {
 pub struct FaceFields {
     /// Face tolerance in Parasolid metres.
     pub tolerance: f64,
+    /// Next face in the owning shell, or the null reference.
+    pub next_face: u32,
+    /// Previous face in the owning shell, or the null reference.
+    pub previous_face: u32,
     /// First loop reference.
     pub loop_xmt: u32,
     /// Owning shell reference.
@@ -52,10 +56,22 @@ pub struct EdgeFields {
 /// Sequentially decoded SHELL references.
 #[derive(Debug, Clone, Copy)]
 pub struct ShellFields {
+    /// Attribute-list reference.
+    pub attributes: u32,
     /// Owning body.
     pub body: u32,
+    /// Next shell in the owning body.
+    pub next_shell: u32,
     /// First face in the shell.
     pub first_face: u32,
+    /// First fixed shell sentinel.
+    pub sentinel_0: u32,
+    /// Second fixed shell sentinel.
+    pub sentinel_1: u32,
+    /// Owning region.
+    pub region: u32,
+    /// Third fixed shell sentinel.
+    pub sentinel_2: u32,
 }
 
 /// Sequentially decoded LOOP references.
@@ -176,6 +192,8 @@ impl Node {
         matches!(sense, b'+' | b'-').then_some(())?;
         Some(FaceFields {
             tolerance,
+            next_face: refs[0],
+            previous_face: refs[1],
             loop_xmt: refs[2],
             shell: refs[3],
             surface: refs[4],
@@ -204,8 +222,14 @@ impl Node {
         let mut at = 8 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 8)?;
         Some(ShellFields {
+            attributes: refs[0],
             body: refs[1],
+            next_shell: refs[2],
             first_face: refs[3],
+            sentinel_0: refs[4],
+            sentinel_1: refs[5],
+            region: refs[6],
+            sentinel_2: refs[7],
         })
     }
 
@@ -531,6 +555,52 @@ impl Graph {
     /// Iterate nodes of one record type.
     pub fn of_kind(&self, kind: u8) -> impl Iterator<Item = &Node> {
         self.nodes.values().filter(move |node| node.kind == kind)
+    }
+
+    /// Return SHELL nodes whose ownership fields form a complete body-shape chain.
+    ///
+    /// A body-shape shell has the fixed null sentinels, resolves its BODY and
+    /// REGION in the same ownership domain, and owns a finite FACE chain ending
+    /// at the Parasolid null reference. Every visited FACE must point back to the
+    /// shell. Cycles and broken references reject the shell.
+    pub fn body_shape_shells(&self) -> Vec<&Node> {
+        self.of_kind(13)
+            .filter(|shell| self.is_body_shape_shell(shell))
+            .collect()
+    }
+
+    fn is_body_shape_shell(&self, shell: &Node) -> bool {
+        let Some(fields) = shell.shell_fields() else {
+            return false;
+        };
+        if fields.attributes != 1
+            || fields.next_shell != 1
+            || fields.sentinel_0 != 1
+            || fields.sentinel_1 != 1
+            || fields.sentinel_2 != 1
+            || self.get(12, fields.body).is_none()
+            || self.get(19, fields.region).is_none()
+        {
+            return false;
+        }
+
+        let mut face_xmt = fields.first_face;
+        let mut previous = 1;
+        let mut visited = BTreeSet::new();
+        while face_xmt != 1 {
+            if !visited.insert(face_xmt) {
+                return false;
+            }
+            let Some(face) = self.get(14, face_xmt).and_then(Node::face_fields) else {
+                return false;
+            };
+            if face.shell != shell.xmt || face.previous_face != previous {
+                return false;
+            }
+            previous = face_xmt;
+            face_xmt = face.next_face;
+        }
+        !visited.is_empty()
     }
 }
 

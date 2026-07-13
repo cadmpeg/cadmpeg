@@ -903,8 +903,16 @@ fn emit_topology(
     annotations: &mut AnnotationBuilder,
 ) {
     let prefix = format!("nx:s{stream_index}");
+    let body_shape_shells = graph.body_shape_shells();
+    let body_xmts: BTreeSet<_> = body_shape_shells
+        .iter()
+        .filter_map(|shell| shell.shell_fields().map(|fields| fields.body))
+        .collect();
     let mut bodies = BTreeMap::new();
-    for node in graph.of_kind(12) {
+    for node in graph
+        .of_kind(12)
+        .filter(|node| body_xmts.contains(&node.xmt))
+    {
         let id = BodyId(format!("{prefix}:body#{}", node.xmt));
         annotate_node(annotations, &id, source_stream, node, "BODY");
         bodies.insert(node.xmt, id.clone());
@@ -920,7 +928,7 @@ fn emit_topology(
     }
 
     let mut shells = BTreeMap::new();
-    for node in graph.of_kind(13) {
+    for node in body_shape_shells {
         let Some(fields) = node.shell_fields() else {
             continue;
         };

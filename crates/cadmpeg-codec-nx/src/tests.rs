@@ -185,13 +185,21 @@ fn topology_partition_stream() -> Vec<u8> {
 
     let mut shell = record(13, 24);
     put_ref(&mut shell, 2, 3);
+    put_ref(&mut shell, 8, 1); // attributes
     put_ref(&mut shell, 10, 2); // body
+    put_ref(&mut shell, 12, 1); // next shell
     put_ref(&mut shell, 14, 4); // first face
+    put_ref(&mut shell, 16, 1); // sentinel
+    put_ref(&mut shell, 18, 1); // sentinel
+    put_ref(&mut shell, 20, 12); // region
+    put_ref(&mut shell, 22, 1); // sentinel
     s.extend_from_slice(&shell);
 
     let mut face = record(14, 39);
     put_ref(&mut face, 2, 4);
     put_f64(&mut face, 10, 0.000_2); // 0.2 mm
+    put_ref(&mut face, 18, 1); // next face
+    put_ref(&mut face, 20, 1); // previous face
     put_ref(&mut face, 22, 5); // loop
     put_ref(&mut face, 24, 3); // shell
     put_ref(&mut face, 26, 6); // plane
@@ -243,11 +251,32 @@ fn topology_partition_stream() -> Vec<u8> {
     put_f64(&mut vertex, 18, 0.000_1); // 0.1 mm
     s.extend_from_slice(&vertex);
 
+    let mut region = record(19, 16);
+    put_ref(&mut region, 2, 12);
+    s.extend_from_slice(&region);
+
     let mut point = record(29, 40);
     put_ref(&mut point, 2, 11);
     put_vec3(&mut point, 16, [0.01, 0.02, 0.03]);
     s.extend_from_slice(&point);
     s
+}
+
+#[test]
+fn topology_rejects_shell_with_broken_face_ownership_chain() {
+    let valid = topology_partition_stream();
+    let graph = crate::topology::Graph::parse(&valid);
+    assert_eq!(graph.body_shape_shells().len(), 1);
+
+    let mut broken = valid;
+    let face = broken
+        .windows(2)
+        .position(|window| window == [0, 14])
+        .expect("face record");
+    put_ref(&mut broken, face + 20, 99);
+    assert!(crate::topology::Graph::parse(&broken)
+        .body_shape_shells()
+        .is_empty());
 }
 
 fn offset_surface_topology_partition_stream() -> Vec<u8> {
@@ -672,7 +701,7 @@ fn deltas_shell_partition_stream() -> Vec<u8> {
     stream.extend_from_slice(&13u16.to_be_bytes());
     stream.extend_from_slice(&3u16.to_be_bytes());
     stream.extend_from_slice(&905u32.to_be_bytes());
-    for reference in [1u16, 2, 1, 4, 1, 1, 1, 1] {
+    for reference in [1u16, 2, 1, 4, 1, 1, 12, 1] {
         stream.extend_from_slice(&reference.to_be_bytes());
         stream.push(1);
     }
@@ -1416,7 +1445,7 @@ fn large_xmt_headers(stream: &[u8]) -> Vec<u8> {
         .position(|window| window == marker)
         .unwrap()
         + marker.len();
-    let lengths = [24, 24, 39, 16, 23, 32, 91, 67, 28, 40];
+    let lengths = [24, 24, 39, 16, 23, 32, 91, 67, 28, 16, 40];
     let mut out = stream[..start].to_vec();
     let mut pos = start;
     for len in lengths {
@@ -1500,14 +1529,25 @@ fn many_face_partition_stream(node_id_start: u32) -> Vec<u8> {
     let mut shell = record(13, 24);
     put_ref(&mut shell, 2, 3);
     shell[4..8].copy_from_slice(&(node_id_start + 101).to_be_bytes());
+    put_ref(&mut shell, 8, 1);
     put_ref(&mut shell, 10, 2);
+    put_ref(&mut shell, 12, 1);
     put_ref(&mut shell, 14, 300);
+    put_ref(&mut shell, 16, 1);
+    put_ref(&mut shell, 18, 1);
+    put_ref(&mut shell, 20, 4);
+    put_ref(&mut shell, 22, 1);
     stream.extend(shell);
+    let mut region = record(19, 16);
+    put_ref(&mut region, 2, 4);
+    stream.extend(region);
     for index in 0..50u16 {
         let mut face = record(14, 39);
         put_ref(&mut face, 2, 300 + index);
         face[4..8].copy_from_slice(&(node_id_start + u32::from(index)).to_be_bytes());
         put_f64(&mut face, 10, 0.000_1);
+        put_ref(&mut face, 18, if index == 49 { 1 } else { 301 + index });
+        put_ref(&mut face, 20, if index == 0 { 1 } else { 299 + index });
         put_ref(&mut face, 22, 1);
         put_ref(&mut face, 24, 3);
         put_ref(&mut face, 26, 500 + index);
