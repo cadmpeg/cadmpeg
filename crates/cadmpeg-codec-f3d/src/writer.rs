@@ -1298,7 +1298,7 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         native_ref(&mut records, -1);
         native_ref(&mut records, curve_ref);
         records.push(0x0b);
-        native_string(&mut records, "unknown")?;
+        native_string(&mut records, &edge_continuity(target, edge)?)?;
         records.push(0x11);
     }
 
@@ -3384,7 +3384,7 @@ fn encode_source_less_edges_vertices_points(
         );
         native_ref(records, curve_ref);
         records.push(0x0b);
-        native_string(records, "unknown")?;
+        native_string(records, &edge_continuity(target, edge)?)?;
         records.push(0x11);
     }
     for vertex in &model.vertices {
@@ -3430,6 +3430,27 @@ fn encode_source_less_edges_vertices_points(
         records.push(0x11);
     }
     Ok(())
+}
+
+fn edge_continuity(
+    target: &CadIr,
+    edge: &cadmpeg_ir::topology::Edge,
+) -> Result<String, CodecError> {
+    let continuity = f3d_native(target)?
+        .and_then(|native| {
+            native
+                .edge_continuities
+                .into_iter()
+                .find(|metadata| metadata.edge == edge.id)
+        })
+        .map_or_else(|| "unknown".to_owned(), |metadata| metadata.continuity);
+    if continuity != "tangent" && continuity != "unknown" {
+        return Err(CodecError::Malformed(format!(
+            "F3D edge {} has unsupported continuity token {continuity}",
+            edge.id
+        )));
+    }
+    Ok(continuity)
 }
 
 fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
@@ -7871,6 +7892,7 @@ pub fn write_semantic(
         validate_coedge_sense_edits(&baseline.ir.model.coedges, &target.model.coedges)?;
     let history_state_edits = validate_history_state_edits(&baseline.ir, target)?;
     let creation_timestamp_edits = validate_creation_timestamp_edits(&baseline.ir, target)?;
+    let edge_continuity_edits = validate_edge_continuity_edits(&baseline.ir, target)?;
     let mut supported_target = baseline.ir.clone();
     supported_target
         .model
@@ -7970,6 +7992,9 @@ pub fn write_semantic(
         supported
             .creation_timestamps
             .clone_from(&target_native.creation_timestamps);
+        supported
+            .edge_continuities
+            .clone_from(&target_native.edge_continuities);
         supported.store(supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::semantic_hash(&supported_target) != decode::semantic_hash(target) {
@@ -8173,6 +8198,7 @@ pub fn write_semantic(
                 &procedural_curve_edits,
                 &procedural_surface_fit_edits,
                 &creation_timestamp_edits,
+                &edge_continuity_edits,
             )?;
             if let Some(edits) = history_state_edits.get(&name) {
                 patch_history_states(&mut bytes, edits)?;
@@ -8297,6 +8323,53 @@ fn validate_creation_timestamp_edits(
             ))
         })?;
         edits.insert(record_index, timestamp.unix_microseconds);
+    }
+    Ok(edits)
+}
+
+fn validate_edge_continuity_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, String>, CodecError> {
+    let baseline = f3d_native(baseline)?
+        .map(|native| native.edge_continuities)
+        .unwrap_or_default();
+    let target = f3d_native(target)?
+        .map(|native| native.edge_continuities)
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|metadata| (metadata.id.as_str(), metadata))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target
+        .iter()
+        .map(|metadata| (metadata.id.as_str(), metadata))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D edge-continuity regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.continuity.clone_from(&before.continuity);
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D edge-continuity edit changes structural fields: {id}"
+            )));
+        }
+        if after.continuity == before.continuity {
+            continue;
+        }
+        if !matches!(after.continuity.as_str(), "tangent" | "unknown") {
+            return Err(CodecError::Malformed(format!(
+                "F3D edge continuity {id} has unsupported token {}",
+                after.continuity
+            )));
+        }
+        edits.insert(after.record_index as usize, after.continuity.clone());
     }
     Ok(edits)
 }
@@ -11676,6 +11749,7 @@ fn patch_geometry(
     procedural_curve_edits: &BTreeMap<String, ProceduralCurveEdit>,
     procedural_surface_fits: &BTreeMap<String, f64>,
     creation_timestamps: &BTreeMap<usize, f64>,
+    edge_continuities: &BTreeMap<usize, String>,
 ) -> Result<(), CodecError> {
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
@@ -11708,6 +11782,7 @@ fn patch_geometry(
         procedural_curve_edits,
         procedural_surface_fits,
         creation_timestamps,
+        edge_continuities,
         header_scale,
     )
 }
@@ -11736,6 +11811,7 @@ fn patch_framed_geometry(
     procedural_curve_edits: &BTreeMap<String, ProceduralCurveEdit>,
     procedural_surface_fits: &BTreeMap<String, f64>,
     creation_timestamps: &BTreeMap<usize, f64>,
+    edge_continuities: &BTreeMap<usize, String>,
     header_scale: f64,
 ) -> Result<(), CodecError> {
     let records_by_index = records
@@ -11810,6 +11886,15 @@ fn patch_framed_geometry(
             }
             patch_double_token(bytes, record, 0, *timestamp)?;
             continue;
+        }
+        if let Some(continuity) = edge_continuities.get(&record.index) {
+            if record.head != "edge" {
+                return Err(CodecError::Malformed(format!(
+                    "F3D edge-continuity record {} is not an edge",
+                    record.index
+                )));
+            }
+            patch_string_token(bytes, record, 0, continuity)?;
         }
         if let Some(color) = color_records.get(&record.index) {
             patch_double_token(bytes, record, 0, f64::from(color.r))?;
@@ -12131,6 +12216,34 @@ fn patch_double_token(
             ))
         })?;
     bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+    Ok(())
+}
+
+fn patch_string_token(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    ordinal: usize,
+    value: &str,
+) -> Result<(), CodecError> {
+    let offset = *sab::payload_token_offsets(bytes, record, 8, 0x07)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?
+        .get(ordinal)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "{} record {} lacks string token [{ordinal}]",
+                record.head, record.index
+            ))
+        })?;
+    let encoded_length = bytes.get(offset + 1).copied().ok_or_else(|| {
+        CodecError::Malformed(format!("{} record string is truncated", record.head))
+    })? as usize;
+    if value.len() != encoded_length || !value.is_ascii() {
+        return Err(CodecError::NotImplemented(format!(
+            "{} record {} string edit must retain its encoded ASCII length",
+            record.head, record.index
+        )));
+    }
+    bytes[offset + 2..offset + 2 + encoded_length].copy_from_slice(value.as_bytes());
     Ok(())
 }
 
@@ -13808,6 +13921,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated line edit");
@@ -13857,6 +13971,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &spheres,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -13927,6 +14042,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &tori,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -14015,6 +14131,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated cylinder edit");
@@ -14070,6 +14187,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &conics,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),

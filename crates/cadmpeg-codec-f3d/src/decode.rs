@@ -450,6 +450,7 @@ fn build_geometry_ir(
     let native = F3dNative {
         sketch_curve_links: brep.sketch_curve_links,
         persistent_design_links: brep.persistent_design_links,
+        edge_continuities: brep.edge_continuities,
         creation_timestamps: brep.creation_timestamps,
         ..F3dNative::default()
     };

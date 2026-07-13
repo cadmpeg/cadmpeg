@@ -8,8 +8,8 @@ use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, ConstructionRecipe, CreationTimestamp, DesignBodyMember,
     DesignConfiguration, DesignEntityHeader, DesignMaterialAssignment, DesignObject,
-    DesignRecordHeader, LostEdgeReference, PersistentDesignLink, PersistentReference,
-    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
+    DesignRecordHeader, EdgeContinuity, LostEdgeReference, PersistentDesignLink,
+    PersistentReference, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -32,6 +32,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_material_assignments",
     "design_objects",
     "design_record_headers",
+    "edge_continuities",
     "lost_edge_references",
     "persistent_design_links",
     "persistent_references",
@@ -53,6 +54,7 @@ macro_rules! f3d_arenas {
             design_body_members: DesignBodyMember;
             design_configurations: DesignConfiguration;
             design_material_assignments: DesignMaterialAssignment;
+            edge_continuities: EdgeContinuity;
             construction_recipes: ConstructionRecipe;
             creation_timestamps: CreationTimestamp;
             persistent_design_links: PersistentDesignLink;
@@ -142,6 +144,9 @@ pub struct F3dNative {
     /// Design entity-to-material assignment records.
     #[serde(default)]
     pub design_material_assignments: Vec<DesignMaterialAssignment>,
+    /// Kernel continuity classifications stored on solved ASM edges.
+    #[serde(default)]
+    pub edge_continuities: Vec<EdgeContinuity>,
     /// Parametric regeneration recipes from the Design `BulkStream`.
     #[serde(default)]
     pub construction_recipes: Vec<ConstructionRecipe>,
@@ -187,6 +192,7 @@ impl Default for F3dNative {
             design_body_members: Vec::new(),
             design_configurations: Vec::new(),
             design_material_assignments: Vec::new(),
+            edge_continuities: Vec::new(),
             construction_recipes: Vec::new(),
             creation_timestamps: Vec::new(),
             persistent_design_links: Vec::new(),

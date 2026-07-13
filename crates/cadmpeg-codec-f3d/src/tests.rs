@@ -3659,6 +3659,16 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let tangent_edge = source_less.model.edges[0].id.clone();
+    {
+        let mut native = f3d_native_mut(&mut source_less);
+        let metadata = native
+            .edge_continuities
+            .iter_mut()
+            .find(|metadata| metadata.edge == tangent_edge)
+            .expect("generated edge continuity");
+        metadata.continuity = "tangent".into();
+    }
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -3686,6 +3696,12 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(round_trip.ir.model.coedges.len(), 3);
     assert_eq!(round_trip.ir.model.edges.len(), 3);
     assert_eq!(round_trip.ir.model.vertices.len(), 3);
+    let continuities = f3d_native(&round_trip.ir).edge_continuities;
+    assert_eq!(continuities.len(), 3);
+    assert_eq!(continuities[0].continuity, "tangent");
+    assert!(continuities[1..]
+        .iter()
+        .all(|metadata| metadata.continuity == "unknown"));
     assert_eq!(round_trip.ir.model.points, source_less.model.points);
     assert_eq!(round_trip.ir.model.surfaces, source_less.model.surfaces);
 }
@@ -6705,6 +6721,28 @@ fn generated_f3d_rewrites_edge_parameter_range() {
 }
 
 #[test]
+fn generated_f3d_rewrites_edge_continuity() {
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut edited = decoded.ir;
+    f3d_native_mut(&mut edited).edge_continuities[0].continuity = "tangent".into();
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("edge-continuity regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    assert_eq!(
+        f3d_native(&round_trip.ir).edge_continuities[0].continuity,
+        "tangent"
+    );
+}
+
+#[test]
 fn generated_f3d_rewrites_face_and_coedge_sense() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
@@ -7911,6 +7949,11 @@ fn decode_builds_valid_topology_and_geometry() {
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.points.len(), 3);
     assert_eq!(result.ir.model.surfaces.len(), 1);
+    let continuities = f3d_native(&result.ir).edge_continuities;
+    assert_eq!(continuities.len(), 3);
+    assert!(continuities
+        .iter()
+        .all(|metadata| metadata.continuity == "unknown"));
     assert_f3d_native_parity(&result.ir);
     assert!(result
         .ir

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::ids::CoedgeId;
+use cadmpeg_ir::ids::{CoedgeId, EdgeId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 /// Provenance link from a solved B-rep coedge to its source sketch curve.
@@ -60,6 +60,19 @@ pub struct CreationTimestamp {
     pub record_index: u32,
     /// Creation time as microseconds since the Unix epoch.
     pub unix_microseconds: f64,
+}
+
+/// Kernel continuity classification stored on one solved ASM edge record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EdgeContinuity {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep edge carrying the classification.
+    pub edge: EdgeId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Native continuity token, normally `tangent` or `unknown`.
+    pub continuity: String,
 }
 
 /// Design `BulkStream` regeneration-recipe family.
