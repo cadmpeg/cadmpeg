@@ -243,7 +243,7 @@ fn scan_decodes_plane_local_system_support_frame() {
     payload.extend_from_slice(&[0x0f; 10]);
     payload.push(0xe3);
     payload.extend_from_slice(&[
-        0x0f, 0xe4, 0x0f, // first in-plane direction
+        0x18, 0xe5, // stock first in-plane direction [0, 1, 0]
         0x0f, 0x0f, 0x0f, // structural zero row
         0xe4, 0x0f, 0x0f, // second in-plane direction
     ]);

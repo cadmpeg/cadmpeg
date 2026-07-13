@@ -699,6 +699,25 @@ fn row_scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> V
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
+        if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
+            slots.extend([Some(0.0), Some(1.0), Some(0.0)]);
+            cursor += 2;
+            continue;
+        }
+        if body.get(cursor) == Some(&0x18)
+            && body
+                .get(cursor + 1)
+                .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
+        {
+            slots.push(Some(0.0));
+            cursor += 1;
+            continue;
+        }
+        if body.get(cursor) == Some(&0x10) {
+            slots.push(Some(0.0));
+            cursor += 1;
+            continue;
+        }
         if let Some((value, next)) = scalar::decode_in_row_lane(body, cursor, cache) {
             slots.push(Some(value));
             cursor = next;
