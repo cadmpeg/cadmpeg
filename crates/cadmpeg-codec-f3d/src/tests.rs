@@ -11102,6 +11102,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
 
         let expected = construction.clone();
         let post_curve = construction.post_curve.clone();
+        let primary_curve = construction.primary_curve.clone();
         let side_curves = construction
             .sides
             .iter()
@@ -11119,6 +11120,16 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
             origin: cadmpeg_ir::math::Point3::new(-2.0, 1.0, 3.0),
             direction: cadmpeg_ir::math::Vector3::new(3.0, -4.0, 2.0),
+        };
+        source_less
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == primary_curve)
+            .expect("variable-blend primary curve")
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(3.0, -2.0, 1.0),
+            direction: cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0),
         };
         for (ordinal, side) in side_curves.iter().enumerate() {
             source_less
@@ -11170,6 +11181,17 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                     if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
             ));
         }
+        assert!(matches!(
+            round_trip
+                .ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == actual.primary_curve)
+                .map(|curve| &curve.geometry),
+            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                if curve.degree == 1 && curve.knots == [-1.0, -1.0, 2.0, 2.0]
+        ));
     }
 }
 

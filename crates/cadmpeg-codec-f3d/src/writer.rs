@@ -5699,10 +5699,12 @@ fn encode_native_variable_blend(
     for side in construction.sides.iter() {
         native_variable_blend_side(bytes, target, side)?;
     }
-    native_nurbs_curve(
-        bytes,
-        native_loft_curve(target, &construction.primary_curve)?,
+    let primary_curve = native_loft_curve_in_range(
+        target,
+        &construction.primary_curve,
+        Some(construction.u_range),
     )?;
+    native_nurbs_curve(bytes, &primary_curve)?;
     for offset in construction.offsets {
         native_f64(bytes, offset / 10.0);
     }
