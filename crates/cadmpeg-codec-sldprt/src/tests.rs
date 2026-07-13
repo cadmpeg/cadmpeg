@@ -9205,6 +9205,51 @@ fn semantic_writer_round_trips_typed_combine() {
 }
 
 #[test]
+fn decode_projects_compact_combine_with_unresolved_semantics() {
+    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Compact" Type="Localized" id="119"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("moCombineBodies_c", "Compact", 119)]),
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Combine {
+            target: BodySelection::Unresolved,
+            tools: BodySelection::Unresolved,
+            op: BooleanOp::Unresolved,
+        }
+    ));
+
+    decoded.ir.model.features[0].name = Some("Renamed compact combine".into());
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Combine {
+            target: BodySelection::Unresolved,
+            tools: BodySelection::Unresolved,
+            op: BooleanOp::Unresolved,
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_delete_and_keep_body() {
     use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, FeatureDefinition};
 

@@ -2380,13 +2380,25 @@ fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
 }
 
 fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
-    let op = parse_boolean_op(feature.properties.get("Operation")?)?;
+    let op = feature
+        .properties
+        .get("Operation")
+        .map(|value| parse_boolean_op(value))
+        .unwrap_or(Some(BooleanOp::Unresolved))?;
     if op == BooleanOp::NewBody {
         return None;
     }
     Some(FeatureDefinition::Combine {
-        target: BodySelection::Native(feature.properties.get("Target")?.clone()),
-        tools: BodySelection::Native(feature.properties.get("Tools")?.clone()),
+        target: feature
+            .properties
+            .get("Target")
+            .cloned()
+            .map_or(BodySelection::Unresolved, BodySelection::Native),
+        tools: feature
+            .properties
+            .get("Tools")
+            .cloned()
+            .map_or(BodySelection::Unresolved, BodySelection::Native),
         op,
     })
 }
@@ -5371,33 +5383,39 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Combine { target, tools, op } => {
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Combine"))
-                    || *op == BooleanOp::NewBody
+                if existing.as_deref().is_some_and(|record| {
+                    !feature_family(record, "Combine")
+                        && !feature_input_class(record, NativeClassKind::Combine)
+                }) || *op == BooleanOp::NewBody
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported combine semantics",
                         feature.id
                     )));
                 }
-                let target = body_selection_value(target);
-                let tools = body_selection_value(tools);
-                if target.is_none() || tools.is_none() {
+                if existing.is_none()
+                    && (body_selection_value(target).is_none()
+                        || body_selection_value(tools).is_none()
+                        || *op == BooleanOp::Unresolved)
+                {
                     return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has an empty combine selection",
+                        "SLDPRT feature {} has unresolved combine semantics",
                         feature.id
                     )));
                 }
-                let target = target.expect("checked above");
-                let tools = tools.expect("checked above");
                 let mut properties = feature.source_properties.clone();
-                properties.insert("Target".into(), target);
-                properties.insert("Tools".into(), tools);
-                properties.insert(
-                    "Operation".into(),
-                    resolved_boolean_op(*op, &feature.id)?.into(),
-                );
+                if let Some(target) = body_selection_value(target) {
+                    properties.insert("Target".into(), target);
+                }
+                if let Some(tools) = body_selection_value(tools) {
+                    properties.insert("Tools".into(), tools);
+                }
+                if *op != BooleanOp::Unresolved {
+                    properties.insert(
+                        "Operation".into(),
+                        resolved_boolean_op(*op, &feature.id)?.into(),
+                    );
+                }
                 (
                     existing
                         .as_deref()
