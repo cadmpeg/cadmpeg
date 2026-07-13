@@ -5641,6 +5641,10 @@ fn encode_native_compound_loft(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::geometry::{CompoundLoftDirection, CompoundLoftTail};
 
+    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+        CodecError::Malformed("compound-loft surface requires a native cache-fit tolerance".into())
+    })?;
+
     let first_absent = construction.scales.iter().position(Option::is_none);
     if first_absent
         .is_some_and(|index| construction.scales[index + 1..].iter().any(Option::is_some))
@@ -5659,7 +5663,7 @@ fn encode_native_compound_loft(
     bytes.push(0x0f);
     native_ident(bytes, "cl_loft_spl_sur")?;
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    native_f64(bytes, cache_fit_tolerance / 10.0);
     for scale in construction.scales.iter().flatten() {
         native_compound_loft_scale(bytes, target, scale)?;
     }
@@ -5789,13 +5793,23 @@ fn encode_native_scaled_compound_loft(
                     "scaled compound-loft full shape requires a solved NURBS cache".into(),
                 )
             })?;
+            let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+                CodecError::Malformed(
+                    "scaled compound-loft full shape requires a native cache-fit tolerance".into(),
+                )
+            })?;
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            native_f64(bytes, cache_fit_tolerance / 10.0);
         }
         ScaledCompoundLoftShape::None {
             parameter_ranges,
             parameters,
         } => {
+            if procedural.cache_fit_tolerance.is_some() {
+                return Err(CodecError::Malformed(
+                    "scaled compound-loft none shape cannot carry a cache-fit tolerance".into(),
+                ));
+            }
             for range in parameter_ranges {
                 for value in range {
                     native_f64(bytes, *value);

@@ -11080,6 +11080,17 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     let mut source_less = result.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut missing_tolerance = source_less.clone();
+    missing_tolerance.model.procedural_surfaces[0].cache_fit_tolerance = None;
+    let error = F3dCodec
+        .encode(&missing_tolerance, &mut Vec::new())
+        .expect_err("compound loft without its required tolerance must be rejected");
+    assert!(
+        error
+            .to_string()
+            .contains("compound-loft surface requires a native cache-fit tolerance"),
+        "unexpected error: {error}"
+    );
     source_less
         .model
         .curves
@@ -11299,6 +11310,13 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut missing_tolerance = source_less.clone();
+    missing_tolerance.model.procedural_surfaces[0].cache_fit_tolerance = None;
+    assert!(F3dCodec
+        .encode(&missing_tolerance, &mut Vec::new())
+        .expect_err("full scaled compound loft without tolerance must fail")
+        .to_string()
+        .contains("full shape requires a native cache-fit tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -11446,6 +11464,13 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
         .expect("procedural owner")
         .geometry = SurfaceGeometry::Unknown { record: None };
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut unexpected_tolerance = source_less.clone();
+    unexpected_tolerance.model.procedural_surfaces[0].cache_fit_tolerance = Some(0.04);
+    assert!(F3dCodec
+        .encode(&unexpected_tolerance, &mut Vec::new())
+        .expect_err("none-shape scaled compound loft with tolerance must fail")
+        .to_string()
+        .contains("none shape cannot carry a cache-fit tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
