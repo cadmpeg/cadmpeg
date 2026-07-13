@@ -766,6 +766,51 @@ fn extend_related_design_records(
         &native.design_record_headers,
         &native.design_entity_headers,
     )?;
+    native.design_extrude_selection_groups = crate::design::decode_extrude_selection_groups(
+        scan,
+        &native.design_parameter_scopes,
+        &native.design_record_headers,
+    )?;
+    let indices = native
+        .design_extrude_selection_groups
+        .iter()
+        .flat_map(|group| {
+            let stream = crate::design::native_stream(&group.id)
+                .unwrap_or("f3d:design")
+                .to_owned();
+            group
+                .members
+                .iter()
+                .map(move |record_index| (stream.clone(), *record_index))
+        })
+        .collect::<Vec<_>>();
+    let existing = native
+        .design_record_headers
+        .iter()
+        .filter_map(|record| {
+            Some((
+                crate::design::native_stream(&record.id)?.to_owned(),
+                record.record_index,
+            ))
+        })
+        .collect::<std::collections::HashSet<_>>();
+    native.design_record_headers.extend(
+        crate::design::decode_related_record_headers(reader, scan, &indices)?
+            .into_iter()
+            .filter(|record| {
+                crate::design::native_stream(&record.id).is_none_or(|stream| {
+                    !existing.contains(&(stream.to_owned(), record.record_index))
+                })
+            }),
+    );
+    native
+        .design_record_headers
+        .sort_by_key(|record| record.id.clone());
+    native.design_extrude_selection_members = crate::design::decode_extrude_selection_members(
+        scan,
+        &native.design_extrude_selection_groups,
+        &native.design_record_headers,
+    )?;
     native.design_edge_operands = crate::design::decode_edge_operands(
         scan,
         &native.design_parameter_scopes,

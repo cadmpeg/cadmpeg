@@ -560,6 +560,76 @@ pub struct DesignExtrudeProfileOperand {
     pub paired_byte_offset: u64,
 }
 
+/// Counted selection group owned by an Extrude parameter scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignExtrudeSelectionGroup {
+    /// Globally unique deterministic identifier for this native group.
+    pub id: String,
+    /// Owning Extrude parameter-scope record.
+    pub scope_record_index: u32,
+    /// Zero-based position in the scope's ordered reference table.
+    pub scope_reference_ordinal: u32,
+    /// Primary indexed-record identity named by the scope table.
+    pub record_index: u32,
+    /// Byte offset of the primary indexed-record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: String,
+    /// Byte offset of the counted member-run length.
+    pub member_count_offset: u64,
+    /// Ordered indexed selection-member records.
+    pub members: Vec<u32>,
+    /// Byte offsets parallel to `members`.
+    pub member_offsets: Vec<u64>,
+    /// Opaque nonzero u32 repeated around the f64 scalar.
+    pub opaque_index: u32,
+    /// Byte offset of the first `opaque_index` copy.
+    pub opaque_index_offset: u64,
+    /// Opaque finite f64 between the repeated u32 copies.
+    pub opaque_scalar: f64,
+    /// Byte offset of `opaque_scalar`.
+    pub opaque_scalar_offset: u64,
+    /// Boolean byte between the two nested-record references.
+    pub variant: bool,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    pub paired_class_tag: String,
+    /// Byte offset of the same-index paired header.
+    pub paired_byte_offset: u64,
+}
+
+/// One fixed-width member named by an Extrude selection group.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignExtrudeSelectionMember {
+    /// Globally unique deterministic identifier for this native member.
+    pub id: String,
+    /// Owning selection-group record.
+    pub group_record_index: u32,
+    /// Zero-based position in the group's ordered member run.
+    pub group_member_ordinal: u32,
+    /// Indexed-record identity named by the selection group.
+    pub record_index: u32,
+    /// Byte offset of the indexed-record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: String,
+    /// Opaque u64 preceding the two UUID fields.
+    pub opaque_value: u64,
+    /// Byte offset of `opaque_value`.
+    pub opaque_value_offset: u64,
+    /// First UUID stored by the member frame.
+    pub first_id: String,
+    /// Byte offset of the first UUID's UTF-16LE code units.
+    pub first_id_offset: u64,
+    /// Second UUID stored by the member frame.
+    pub second_id: String,
+    /// Byte offset of the second UUID's UTF-16LE code units.
+    pub second_id_offset: u64,
+    /// Identity of the indexed record immediately following this member.
+    pub next_record_index: u32,
+    /// Byte offset of the indexed record immediately following this member.
+    pub next_byte_offset: u64,
+}
+
 /// Edge-selection operand owned by a Fillet or Chamfer parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignEdgeOperand {

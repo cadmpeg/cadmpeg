@@ -11,11 +11,11 @@ use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
     DesignConfigurationKind, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
-    DesignExtrudeProfileOperand, DesignObject, DesignObjectKind, DesignParameter,
-    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+    DesignObject, DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -2590,6 +2590,208 @@ pub fn bind_extrude_profiles(
     Ok(())
 }
 
+/// Decode the counted selection group named by each Extrude scope.
+pub fn decode_extrude_selection_groups(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<DesignExtrudeSelectionGroup>, CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for scope in scopes.iter().filter(|scope| scope.kind == "Extrude") {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            let Some(header) = headers.get(&(stream, record_index)) else {
+                continue;
+            };
+            if let Some(mut group) = parse_extrude_selection_group(bytes, scope, ordinal, header) {
+                group.id = format!(
+                    "f3d:{}:design-extrude-selection-group#{}",
+                    entry.name, header.byte_offset
+                );
+                out.push(group);
+            }
+        }
+    }
+    out.sort_by_key(|group| group.id.clone());
+    Ok(out)
+}
+
+fn parse_extrude_selection_group(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    scope_reference_ordinal: u32,
+    header: &DesignRecordHeader,
+) -> Option<DesignExtrudeSelectionGroup> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10]
+        || bytes.get(start + 21) != Some(&1)
+        || u32_at(bytes, start + 22)? != scope.record_index
+        || bytes.get(start + 26..start + 32)? != [0; 6]
+    {
+        return None;
+    }
+    let member_count = usize::try_from(u32_at(bytes, start + 32)?).ok()?;
+    if member_count == 0 {
+        return None;
+    }
+    let mut position = start.checked_add(36)?;
+    let mut members = Vec::with_capacity(member_count);
+    let mut member_offsets = Vec::with_capacity(member_count);
+    for _ in 0..member_count {
+        if bytes.get(position) != Some(&1) || bytes.get(position + 5..position + 11)? != [0; 6] {
+            return None;
+        }
+        members.push(u32_at(bytes, position + 1)?);
+        member_offsets.push(u64::try_from(position + 1).ok()?);
+        position = position.checked_add(11)?;
+    }
+    let opaque_index = u32_at(bytes, position)?;
+    let opaque_scalar = f64_at(bytes, position + 4)?;
+    if opaque_index == 0
+        || !opaque_scalar.is_finite()
+        || u32_at(bytes, position + 12)? != opaque_index
+        || bytes.get(position + 16) != Some(&1)
+        || u32_at(bytes, position + 17)? != header.record_index.checked_add(2)?
+        || bytes.get(position + 21..position + 27)? != [0; 6]
+        || bytes.get(position + 27) != Some(&1)
+        || !matches!(bytes.get(position + 28), Some(0 | 1))
+        || bytes.get(position + 29) != Some(&0)
+        || bytes.get(position + 30) != Some(&1)
+        || u32_at(bytes, position + 31)? != header.record_index.checked_add(1)?
+        || bytes.get(position + 35..position + 42)? != [0; 7]
+        || bytes.get(position + 42) != Some(&1)
+        || u32_at(bytes, position + 43)? != scope.record_index
+        || bytes.get(position + 47..position + 53)? != [0; 6]
+    {
+        return None;
+    }
+    let paired_at = position.checked_add(53)?;
+    let (paired_class_tag, after_paired_tag) = lp_ascii(bytes, paired_at)?;
+    if u32_at(bytes, after_paired_tag)? != header.record_index {
+        return None;
+    }
+    Some(DesignExtrudeSelectionGroup {
+        id: String::new(),
+        scope_record_index: scope.record_index,
+        scope_reference_ordinal,
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        member_count_offset: u64::try_from(start + 32).ok()?,
+        members,
+        member_offsets,
+        opaque_index,
+        opaque_index_offset: u64::try_from(position).ok()?,
+        opaque_scalar,
+        opaque_scalar_offset: u64::try_from(position + 4).ok()?,
+        variant: bytes[position + 28] != 0,
+        paired_class_tag,
+        paired_byte_offset: u64::try_from(paired_at).ok()?,
+    })
+}
+
+/// Decode the fixed-width records named by Extrude selection groups.
+pub fn decode_extrude_selection_members(
+    scan: &ContainerScan,
+    groups: &[DesignExtrudeSelectionGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<DesignExtrudeSelectionMember>, CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for group in groups {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            let Some(header) = headers.get(&(stream, record_index)) else {
+                continue;
+            };
+            if let Some(mut member) = parse_extrude_selection_member(bytes, group, ordinal, header)
+            {
+                member.id = format!(
+                    "f3d:{}:design-extrude-selection-member#{}",
+                    entry.name, header.byte_offset
+                );
+                out.push(member);
+            }
+        }
+    }
+    out.sort_by_key(|member| member.id.clone());
+    Ok(out)
+}
+
+fn parse_extrude_selection_member(
+    bytes: &[u8],
+    group: &DesignExtrudeSelectionGroup,
+    group_member_ordinal: u32,
+    header: &DesignRecordHeader,
+) -> Option<DesignExtrudeSelectionMember> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10] {
+        return None;
+    }
+    let opaque_value = read_u64(bytes, start + 21)?;
+    let (first_id, after_first_id) = lp_utf16(bytes, start + 29)?;
+    let (second_id, after_second_id) = lp_utf16(bytes, after_first_id)?;
+    if !is_guid(&first_id)
+        || !is_guid(&second_id)
+        || u32_at(bytes, after_second_id)? != 2
+        || bytes.get(after_second_id + 4..after_second_id + 9)? != [0; 5]
+        || after_second_id.checked_add(9)? != start.checked_add(190)?
+    {
+        return None;
+    }
+    let next_at = start.checked_add(190)?;
+    let (_, after_next_tag) = lp_ascii(bytes, next_at)?;
+    Some(DesignExtrudeSelectionMember {
+        id: String::new(),
+        group_record_index: group.record_index,
+        group_member_ordinal,
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        opaque_value,
+        opaque_value_offset: u64::try_from(start + 21).ok()?,
+        first_id,
+        first_id_offset: u64::try_from(start + 33).ok()?,
+        second_id,
+        second_id_offset: u64::try_from(after_first_id + 4).ok()?,
+        next_record_index: u32_at(bytes, after_next_tag)?,
+        next_byte_offset: u64::try_from(next_at).ok()?,
+    })
+}
+
 fn parse_extrude_profile(
     bytes: &[u8],
     stream: &str,
@@ -4583,10 +4785,10 @@ mod relation_tests {
         bind_dimension_loci, bind_sketch_graph, find_dimension_locus_pair, identity_matrix,
         next_indexed_record_offset, parse_design_parameter, parse_dimension_locus_group,
         parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignDimensionLocusPair, DesignEntityHeader,
@@ -4980,6 +5182,96 @@ mod relation_tests {
         assert_eq!(profile.entity_suffix, 172);
         assert_eq!(profile.entity_id, "0_172");
         assert_eq!(profile.paired_byte_offset, paired_at as u64);
+    }
+
+    #[test]
+    fn extrude_selection_group_and_members_have_exact_counted_frames() {
+        fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+            bytes.extend_from_slice(&class_tag);
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+        }
+
+        let scope = DesignParameterScope {
+            id: "f3d:Design/BulkStream.dat:scope#12".into(),
+            byte_offset: 1000,
+            class_tag: "301".into(),
+            record_index: 12,
+            frame_length: 200,
+            kind: "Extrude".into(),
+            kind_offset: 1100,
+            reference_count_offset: 1080,
+            reference_members: vec![100],
+            reference_member_offsets: vec![1085],
+            extrude_profile: None,
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: "261".into(),
+            paired_byte_offset: 1200,
+        };
+        let record = DesignRecordHeader {
+            id: "f3d:Design/BulkStream.dat:record#100".into(),
+            byte_offset: 0,
+            class_tag: "331".into(),
+            record_index: 100,
+        };
+        let mut group_bytes = Vec::new();
+        header(&mut group_bytes, *b"331", 100);
+        group_bytes.extend_from_slice(&[0; 10]);
+        group_bytes.push(1);
+        group_bytes.extend_from_slice(&12u32.to_le_bytes());
+        group_bytes.extend_from_slice(&[0; 6]);
+        group_bytes.extend_from_slice(&2u32.to_le_bytes());
+        for member in [200u32, 201] {
+            group_bytes.push(1);
+            group_bytes.extend_from_slice(&member.to_le_bytes());
+            group_bytes.extend_from_slice(&[0; 6]);
+        }
+        group_bytes.extend_from_slice(&180u32.to_le_bytes());
+        group_bytes.extend_from_slice(&0.25f64.to_le_bytes());
+        group_bytes.extend_from_slice(&180u32.to_le_bytes());
+        group_bytes.push(1);
+        group_bytes.extend_from_slice(&102u32.to_le_bytes());
+        group_bytes.extend_from_slice(&[0; 6]);
+        group_bytes.extend_from_slice(&[1, 1, 0, 1]);
+        group_bytes.extend_from_slice(&101u32.to_le_bytes());
+        group_bytes.extend_from_slice(&[0; 7]);
+        group_bytes.push(1);
+        group_bytes.extend_from_slice(&12u32.to_le_bytes());
+        group_bytes.extend_from_slice(&[0; 6]);
+        let paired_at = group_bytes.len();
+        header(&mut group_bytes, *b"259", 100);
+
+        let group = parse_extrude_selection_group(&group_bytes, &scope, 0, &record)
+            .expect("counted Extrude selection group");
+        assert_eq!(group.members, [200, 201]);
+        assert_eq!(group.opaque_index, 180);
+        assert_eq!(group.opaque_scalar, 0.25);
+        assert!(group.variant);
+        assert_eq!(group.paired_byte_offset, paired_at as u64);
+
+        let member_record = DesignRecordHeader {
+            id: "f3d:Design/BulkStream.dat:record#200".into(),
+            byte_offset: 0,
+            class_tag: "290".into(),
+            record_index: 200,
+        };
+        let mut member_bytes = Vec::new();
+        header(&mut member_bytes, *b"290", 200);
+        member_bytes.extend_from_slice(&[0; 10]);
+        member_bytes.extend_from_slice(&586u64.to_le_bytes());
+        lp_utf16(&mut member_bytes, "df9087bd-02a6-4a3f-a132-7e69990f323c");
+        lp_utf16(&mut member_bytes, "0b2382d1-caaf-4eb9-b40d-a6322a7ed829");
+        member_bytes.extend_from_slice(&2u32.to_le_bytes());
+        member_bytes.extend_from_slice(&[0; 5]);
+        header(&mut member_bytes, *b"290", 201);
+
+        let member = parse_extrude_selection_member(&member_bytes, &group, 0, &member_record)
+            .expect("fixed Extrude selection member");
+        assert_eq!(member.opaque_value, 586);
+        assert_eq!(member.next_byte_offset, 190);
+        assert_eq!(member.next_record_index, 201);
     }
 
     #[test]

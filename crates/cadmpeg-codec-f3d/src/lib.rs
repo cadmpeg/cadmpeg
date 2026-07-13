@@ -102,6 +102,14 @@ fn design_stream(id: &str) -> &str {
     design::native_stream(id).unwrap_or("f3d:design")
 }
 
+fn valid_design_guid(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| {
+            matches!(index, 8 | 13 | 18 | 23) && byte == b'-'
+                || !matches!(index, 8 | 13 | 18 | 23) && byte.is_ascii_hexdigit()
+        })
+}
+
 /// Validate Fusion native design-record relationships and exact sketch frames.
 pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     use std::collections::HashSet;
@@ -240,11 +248,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         entity.object_kind == Some(records::DesignObjectKind::Sketch)
                             && entity.entity_id == profile.entity_id
                     })
-                    && profile.type_id.len() == 36
-                    && profile.type_id.bytes().enumerate().all(|(index, byte)| {
-                        matches!(index, 8 | 13 | 18 | 23) && byte == b'-'
-                            || !matches!(index, 8 | 13 | 18 | 23) && byte.is_ascii_hexdigit()
-                    })
+                    && valid_design_guid(&profile.type_id)
                     && profile.type_id_offset > profile.byte_offset
                     && profile.entity_reference_offset > profile.type_id_offset
                     && profile.paired_byte_offset > profile.entity_reference_offset
@@ -300,6 +304,175 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 severity: Severity::Error,
                 message: "Fusion Design parameter scope has an invalid paired frame".into(),
                 entity: Some(scope.id.clone()),
+            });
+        }
+    }
+    let groups_by_index = native
+        .design_extrude_selection_groups
+        .iter()
+        .map(|group| ((design_stream(&group.id), group.record_index), group))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut group_scopes = HashSet::new();
+    let mut group_slots = HashSet::new();
+    for group in &native.design_extrude_selection_groups {
+        let native_stream = design_stream(&group.id);
+        let scope = scopes_by_index.get(&(native_stream, group.scope_record_index));
+        let header = records_by_index.get(&(native_stream, group.record_index));
+        let valid = group.class_tag.len() == 3
+            && group.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && group.paired_class_tag.len() == 3
+            && group
+                .paired_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && scope.is_some_and(|scope| {
+                scope.kind == "Extrude"
+                    && usize::try_from(group.scope_reference_ordinal)
+                        .ok()
+                        .and_then(|ordinal| scope.reference_members.get(ordinal))
+                        == Some(&group.record_index)
+            })
+            && header.is_some_and(|header| {
+                header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
+            })
+            && group.member_count_offset == group.byte_offset.saturating_add(32)
+            && !group.members.is_empty()
+            && group.members.len() == group.member_offsets.len()
+            && group.members.iter().copied().collect::<HashSet<_>>().len() == group.members.len()
+            && group.member_offsets.first() == Some(&group.member_count_offset.saturating_add(5))
+            && group
+                .member_offsets
+                .windows(2)
+                .all(|offsets| offsets[1] == offsets[0].saturating_add(11))
+            && group.opaque_index != 0
+            && group.opaque_index_offset
+                == group.member_count_offset.saturating_add(4).saturating_add(
+                    u64::try_from(group.members.len())
+                        .unwrap_or(u64::MAX)
+                        .saturating_mul(11),
+                )
+            && group.opaque_scalar.is_finite()
+            && group.opaque_scalar_offset == group.opaque_index_offset.saturating_add(4)
+            && group.paired_byte_offset == group.opaque_index_offset.saturating_add(53)
+            && group
+                .members
+                .iter()
+                .all(|member| record_indices.contains(&(native_stream, *member)))
+            && group_slots.insert((
+                native_stream,
+                group.scope_record_index,
+                group.scope_reference_ordinal,
+            ))
+            && group_scopes.insert((native_stream, group.scope_record_index));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Extrude selection group has an invalid counted frame"
+                    .into(),
+                entity: Some(group.id.clone()),
+            });
+        }
+    }
+    for scope in native
+        .design_parameter_scopes
+        .iter()
+        .filter(|scope| scope.kind == "Extrude")
+    {
+        let native_stream = design_stream(&scope.id);
+        if !group_scopes.contains(&(native_stream, scope.record_index)) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Extrude scope has no counted selection group".into(),
+                entity: Some(scope.id.clone()),
+            });
+        }
+    }
+    let members_by_slot = native
+        .design_extrude_selection_members
+        .iter()
+        .map(|member| {
+            (
+                (
+                    design_stream(&member.id),
+                    member.group_record_index,
+                    member.group_member_ordinal,
+                ),
+                member,
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut member_slots = HashSet::new();
+    let mut member_records = HashSet::new();
+    for member in &native.design_extrude_selection_members {
+        let native_stream = design_stream(&member.id);
+        let group = groups_by_index.get(&(native_stream, member.group_record_index));
+        let header = records_by_index.get(&(native_stream, member.record_index));
+        let valid = member.class_tag.len() == 3
+            && member.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && group.is_some_and(|group| {
+                usize::try_from(member.group_member_ordinal)
+                    .ok()
+                    .and_then(|ordinal| group.members.get(ordinal))
+                    == Some(&member.record_index)
+            })
+            && header.is_some_and(|header| {
+                header.byte_offset == member.byte_offset && header.class_tag == member.class_tag
+            })
+            && member.opaque_value_offset == member.byte_offset.saturating_add(21)
+            && member.first_id_offset == member.byte_offset.saturating_add(33)
+            && member.second_id_offset > member.first_id_offset
+            && valid_design_guid(&member.first_id)
+            && valid_design_guid(&member.second_id)
+            && member.next_byte_offset == member.byte_offset.saturating_add(190)
+            && member.next_record_index != 0
+            && member_slots.insert((
+                native_stream,
+                member.group_record_index,
+                member.group_member_ordinal,
+            ))
+            && member_records.insert((native_stream, member.record_index));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Extrude selection member has an invalid fixed frame".into(),
+                entity: Some(member.id.clone()),
+            });
+        }
+    }
+    for group in &native.design_extrude_selection_groups {
+        let native_stream = design_stream(&group.id);
+        let complete = (0..group.members.len()).all(|ordinal| {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                return false;
+            };
+            let Some(member) = members_by_slot.get(&(native_stream, group.record_index, ordinal))
+            else {
+                return false;
+            };
+            let next = usize::try_from(ordinal)
+                .ok()
+                .and_then(|ordinal| group.members.get(ordinal + 1));
+            next.is_none_or(|next_record_index| {
+                let next_member = members_by_slot.get(&(
+                    native_stream,
+                    group.record_index,
+                    ordinal.saturating_add(1),
+                ));
+                member.next_record_index == *next_record_index
+                    && next_member.is_some_and(|next_member| {
+                        member.next_byte_offset == next_member.byte_offset
+                    })
+            })
+        });
+        if !complete {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Extrude selection group has missing members".into(),
+                entity: Some(group.id.clone()),
             });
         }
     }
