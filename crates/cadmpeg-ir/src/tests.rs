@@ -1839,6 +1839,34 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
 }
 
 #[test]
+fn analytic_parabola_and_hyperbola_use_step_parameterization() {
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let major = Vector3::new(1.0, 0.0, 0.0);
+    let parabola = CurveGeometry::Parabola {
+        vertex: Point3::new(0.0, 0.0, 0.0),
+        axis,
+        major_direction: major,
+        focal_distance: 2.0,
+    };
+    assert_eq!(
+        crate::eval::curve_point(&parabola, 1.5),
+        Some(Point3::new(4.5, 6.0, 0.0))
+    );
+
+    let hyperbola = CurveGeometry::Hyperbola {
+        center: Point3::new(1.0, 2.0, 3.0),
+        axis,
+        major_direction: major,
+        major_radius: 2.0,
+        minor_radius: 3.0,
+    };
+    let point = crate::eval::curve_point(&hyperbola, 0.5).unwrap();
+    assert_eq!(point.x, 1.0 + 2.0 * 0.5_f64.cosh());
+    assert_eq!(point.y, 2.0 + 3.0 * 0.5_f64.sinh());
+    assert_eq!(point.z, 3.0);
+}
+
+#[test]
 fn edge_endpoint_mismatch_is_flagged() {
     let mut ir = unit_cube();
     let report = validate(&ir, Vec::new());

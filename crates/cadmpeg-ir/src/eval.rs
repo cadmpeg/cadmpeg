@@ -205,6 +205,31 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
                 (minor_radius * t.sin(), cross(*axis, *major_direction)),
             ],
         )),
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => Some(offset(
+            *vertex,
+            &[
+                (focal_distance * t * t, *major_direction),
+                (2.0 * focal_distance * t, cross(*axis, *major_direction)),
+            ],
+        )),
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => Some(offset(
+            *center,
+            &[
+                (major_radius * t.cosh(), *major_direction),
+                (minor_radius * t.sinh(), cross(*axis, *major_direction)),
+            ],
+        )),
         CurveGeometry::Degenerate { point } => Some(*point),
         CurveGeometry::Nurbs(nurbs) => nurbs_curve_point(
             nurbs.degree,
@@ -213,9 +238,7 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
             nurbs.weights.as_deref(),
             t,
         ),
-        CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. }
-        | CurveGeometry::Unknown { .. } => None,
+        CurveGeometry::Unknown { .. } => None,
     }
 }
 
