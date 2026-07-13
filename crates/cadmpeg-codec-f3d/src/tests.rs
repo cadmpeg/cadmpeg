@@ -4,7 +4,7 @@
 //! none may be added, so every fixture is hand-built here to exercise a real
 //! decode path that can fail if the code regresses.
 
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Read, Write};
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, Encoder};
 use zip::write::SimpleFileOptions;
@@ -5425,6 +5425,29 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less Design BulkStream encode");
+    let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
+    let mut bulkstream = Vec::new();
+    archive
+        .by_name("FusionAssetName[Active]/Design1/BulkStream.dat")
+        .expect("generated Design BulkStream")
+        .read_to_end(&mut bulkstream)
+        .expect("read generated Design BulkStream");
+    for name in [
+        b"body_recipe_data".as_slice(),
+        b"face_recipe_data".as_slice(),
+        b"bounded_face_recipe_data".as_slice(),
+        b"edge_recipe_data".as_slice(),
+        b"vertex_recipe_data".as_slice(),
+    ] {
+        let offset = bulkstream
+            .windows(name.len())
+            .position(|window| window == name)
+            .expect("generated recipe name");
+        assert_eq!(
+            u32::from_le_bytes(bulkstream[offset - 4..offset].try_into().unwrap()),
+            u32::try_from(name.len()).unwrap()
+        );
+    }
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design BulkStream round trip");

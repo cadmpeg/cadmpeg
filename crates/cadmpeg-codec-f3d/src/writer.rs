@@ -312,6 +312,7 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         }
     }
     for recipe in &native.construction_recipes {
+        let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
         if let Some(design_id) = &recipe.design_id {
             if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -323,8 +324,13 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
             prefix[4..7].copy_from_slice(design_id.as_bytes());
         }
         prefix[11..15].copy_from_slice(&recipe.record_index.to_le_bytes());
+        prefix[23..27].copy_from_slice(
+            &u32::try_from(name.len())
+                .map_err(|_| CodecError::Malformed("Design recipe name exceeds u32::MAX".into()))?
+                .to_le_bytes(),
+        );
         out.extend_from_slice(&prefix);
-        out.extend_from_slice(construction_recipe_name(recipe.kind));
+        out.extend_from_slice(name);
     }
     if !native.design_body_members.is_empty() {
         native_lp_ascii(&mut out, "BodiesRoot")?;
