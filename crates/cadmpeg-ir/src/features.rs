@@ -322,12 +322,18 @@ pub enum FeatureDefinition {
     },
     /// Sweep of a profile along a path.
     Sweep {
-        /// Cross-section swept along the path.
-        profile: ProfileRef,
-        /// Trajectory followed by the profile.
-        path: PathRef,
-        /// Boolean combination with existing bodies.
-        op: BooleanOp,
+        /// Cross-section swept along the path, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile: Option<ProfileRef>,
+        /// Trajectory followed by the profile, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<PathRef>,
+        /// Boolean combination with existing bodies; absent for a surface sweep.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        op: Option<BooleanOp>,
+        /// Whether the sweep creates a sheet body.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        surface: bool,
         /// Total profile twist along the path, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         twist: Option<Angle>,

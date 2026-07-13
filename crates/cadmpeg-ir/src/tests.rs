@@ -540,9 +540,10 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             draft: None,
         },
         FeatureDefinition::Sweep {
-            profile: ProfileRef::Sketch(sketch.clone()),
-            path: PathRef::Sketch(sketch.clone()),
-            op: BooleanOp::NewBody,
+            profile: Some(ProfileRef::Sketch(sketch.clone())),
+            path: Some(PathRef::Sketch(sketch.clone())),
+            op: Some(BooleanOp::NewBody),
+            surface: false,
             twist: None,
             scale: None,
         },
@@ -2166,6 +2167,14 @@ fn feature_operation_geometry_is_validated() {
                 count: 0,
             },
         },
+        FeatureDefinition::Sweep {
+            profile: None,
+            path: None,
+            op: None,
+            surface: false,
+            twist: None,
+            scale: None,
+        },
     ];
     let expected = [
         "fillet radius is invalid",
@@ -2186,6 +2195,7 @@ fn feature_operation_geometry_is_validated() {
         "body motion is invalid",
         "pattern geometry is invalid",
         "pattern geometry is invalid",
+        "sweep result is invalid",
     ];
     let mut ir = unit_cube();
     for (ordinal, definition) in definitions.into_iter().enumerate() {

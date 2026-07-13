@@ -725,8 +725,12 @@ pub fn bind_topology_selections(
                 resolve_profile_ref(profile, &face_ids);
             }
             FeatureDefinition::Sweep { profile, path, .. } => {
-                resolve_profile_ref(profile, &face_ids);
-                resolve_path_ref(path, &edge_ids, &curve_ids);
+                if let Some(profile) = profile {
+                    resolve_profile_ref(profile, &face_ids);
+                }
+                if let Some(path) = path {
+                    resolve_path_ref(path, &edge_ids, &curve_ids);
+                }
             }
             FeatureDefinition::Loft {
                 profiles, guides, ..
@@ -965,7 +969,9 @@ fn bind_definition_sketch(
         | FeatureDefinition::Revolve { profile, .. }
         | FeatureDefinition::Rib { profile, .. }
         | FeatureDefinition::Wrap { profile, .. } => bind_profile(profile),
-        FeatureDefinition::Sweep { profile, path, .. } => bind_profile(profile) | bind_path(path),
+        FeatureDefinition::Sweep { profile, path, .. } => {
+            profile.as_mut().is_some_and(bind_profile) | path.as_mut().is_some_and(bind_path)
+        }
         FeatureDefinition::TrimSurface { tool, .. } => bind_path(tool),
         FeatureDefinition::ProjectedCurve { source, .. } => bind_path(source),
         FeatureDefinition::CompositeCurve { segments, .. } => segments.iter_mut().any(bind_path),
@@ -1086,7 +1092,7 @@ fn project_definition(
     } else if pattern_form(feature).is_some() {
         project_pattern(feature, by_source, native_by_source)
             .unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Sweep") {
+    } else if is_sweep(feature) {
         project_sweep(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if is_loft(feature) {
         project_loft(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
@@ -1142,6 +1148,12 @@ fn is_loft(feature: &Feature) -> bool {
                 .get("Operation")
                 .and_then(|operation| parse_boolean_op(operation))
                 .is_some()
+}
+
+fn is_sweep(feature: &Feature) -> bool {
+    feature_family(feature, "Sweep")
+        || feature_family(feature, "Surface-Sweep")
+        || feature_family(feature, "Barrer")
 }
 
 fn project_extrude(
@@ -1585,15 +1597,30 @@ fn project_sweep(
     feature: &Feature,
     native_by_source: &HashMap<&str, &str>,
 ) -> Option<FeatureDefinition> {
-    let profile = feature.properties.get("Profile")?;
-    let profile = native_by_source
-        .get(profile.as_str())
-        .map_or_else(|| profile.clone(), |id| (*id).to_string());
-    let path = feature.properties.get("Path")?;
-    let path = native_by_source
-        .get(path.as_str())
-        .map_or_else(|| path.clone(), |id| (*id).to_string());
-    let op = parse_boolean_op(feature.properties.get("Operation")?)?;
+    let native_ref = |source: &String| {
+        native_by_source
+            .get(source.as_str())
+            .map_or_else(|| source.clone(), |id| (*id).to_string())
+    };
+    let profile = feature
+        .properties
+        .get("Profile")
+        .map(|source| ProfileRef::Native(native_ref(source)));
+    let path = feature
+        .properties
+        .get("Path")
+        .map(|source| PathRef::Native(native_ref(source)));
+    let (op, surface) = if feature_family(feature, "Surface-Sweep") {
+        (None, true)
+    } else {
+        (
+            Some(parse_boolean_op(feature.properties.get("Operation")?)?),
+            false,
+        )
+    };
+    if !surface && (profile.is_none() || path.is_none()) {
+        return None;
+    }
     let twist = match feature.parameters.get("Twist") {
         Some(value) => Some(Angle(parse_angle_rad(value)?)),
         None => None,
@@ -1609,9 +1636,10 @@ fn project_sweep(
         None => None,
     };
     Some(FeatureDefinition::Sweep {
-        profile: ProfileRef::Native(profile),
-        path: PathRef::Native(path),
+        profile,
+        path,
         op,
+        surface,
         twist,
         scale,
     })
@@ -5323,32 +5351,46 @@ pub fn sync_neutral_features(
                 profile,
                 path,
                 op,
+                surface,
                 twist,
                 scale,
             } => {
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Sweep"))
-                {
+                if existing.as_deref().is_some_and(|record| !is_sweep(record)) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
                         feature.id
                     )));
                 }
-                let profile_source = profile_source(profile, &record_sources, &sketch_sources)
-                    .ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "SLDPRT feature {} references a missing sweep profile",
-                            feature.id
-                        ))
-                    })?;
-                let path_source =
-                    path_source(path, &record_sources, &sketch_sources).ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "SLDPRT feature {} references a missing sweep path",
-                            feature.id
-                        ))
-                    })?;
+                let profile_source = match profile {
+                    Some(profile) => Some(
+                        profile_source(profile, &record_sources, &sketch_sources).ok_or_else(
+                            || {
+                                CodecError::Malformed(format!(
+                                    "SLDPRT feature {} references a missing sweep profile",
+                                    feature.id
+                                ))
+                            },
+                        )?,
+                    ),
+                    None => None,
+                };
+                let path_source = match path {
+                    Some(path) => Some(
+                        path_source(path, &record_sources, &sketch_sources).ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "SLDPRT feature {} references a missing sweep path",
+                                feature.id
+                            ))
+                        })?,
+                    ),
+                    None => None,
+                };
+                if existing.is_none() && (profile_source.is_none() || path_source.is_none()) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved sweep operands",
+                        feature.id
+                    )));
+                }
                 let mut parameters = existing
                     .as_deref()
                     .map(|record| record.parameters.clone())
@@ -5376,13 +5418,31 @@ pub fn sync_neutral_features(
                     }
                 }
                 let mut properties = feature.source_properties.clone();
-                properties.insert("Profile".into(), profile_source.clone());
-                properties.insert("Path".into(), path_source.clone());
-                properties.insert("Operation".into(), format_boolean_op(*op).into());
+                if let Some(profile) = profile_source {
+                    properties.insert("Profile".into(), profile);
+                }
+                if let Some(path) = path_source {
+                    properties.insert("Path".into(), path);
+                }
+                if *surface == op.is_some() {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has ambiguous sweep result semantics",
+                        feature.id
+                    )));
+                }
+                match op {
+                    Some(op) => {
+                        properties.insert("Operation".into(), format_boolean_op(*op).into());
+                    }
+                    None => {
+                        properties.remove("Operation");
+                    }
+                }
                 (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Sweep".into(), |record| record.kind.clone()),
+                    existing.as_deref().map_or_else(
+                        || if *surface { "Surface-Sweep" } else { "Sweep" }.into(),
+                        |record| record.kind.clone(),
+                    ),
                     parameters,
                     properties,
                 )
@@ -6066,6 +6126,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Sketch { .. } => "Sketch",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",
+        FeatureDefinition::Sweep { surface: true, .. } => "Surface-Sweep",
         FeatureDefinition::Sweep { .. } => "Sweep",
         FeatureDefinition::Loft { .. } => "Loft",
         FeatureDefinition::Rib { .. } => "Rib",

@@ -1135,16 +1135,21 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::Sweep {
                 profile,
                 path,
+                op,
+                surface,
                 twist,
                 scale,
                 ..
             } => {
-                profiles.push(profile);
-                paths.push(path);
+                profiles.extend(profile);
+                paths.extend(path);
                 if twist.is_some_and(|value| !value.0.is_finite())
                     || scale.is_some_and(|value| !value.is_finite() || value <= 0.0)
                 {
                     feature_geometry_error(findings, feature, "sweep magnitude is invalid");
+                }
+                if *surface == op.is_some() {
+                    feature_geometry_error(findings, feature, "sweep result is invalid");
                 }
             }
             FeatureDefinition::Loft {
@@ -1808,8 +1813,8 @@ fn check_feature_sketch_references(
             | FeatureDefinition::Revolve { profile, .. }
             | FeatureDefinition::Rib { profile, .. } => profiles.push(profile),
             FeatureDefinition::Sweep { profile, path, .. } => {
-                profiles.push(profile);
-                paths.push(path);
+                profiles.extend(profile);
+                paths.extend(path);
             }
             FeatureDefinition::Loft {
                 profiles: sections,

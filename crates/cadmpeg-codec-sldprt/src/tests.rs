@@ -1508,9 +1508,10 @@ fn encoder_writes_source_less_line_sketches() {
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::Sweep {
-            profile: profile.clone(),
-            path: path.clone(),
-            op: BooleanOp::Join,
+            profile: Some(profile.clone()),
+            path: Some(path.clone()),
+            op: Some(BooleanOp::Join),
+            surface: false,
             twist: Some(Angle(0.3)),
             scale: Some(1.5),
         },
@@ -5948,8 +5949,8 @@ fn decode_resolves_feature_topology_selections() {
     assert!(matches!(
         &decoded.ir.model.features[5].definition,
         FeatureDefinition::Sweep {
-            profile: ProfileRef::Faces(faces),
-            path: PathRef::Edges(edges),
+            profile: Some(ProfileRef::Faces(faces)),
+            path: Some(PathRef::Edges(edges)),
             ..
         } if faces == &[face_id.clone()] && edges == &[edge_id.clone()]
     ));
@@ -9412,9 +9413,10 @@ fn semantic_writer_round_trips_typed_sweep() {
     assert!(matches!(
         &decoded.ir.model.features[3].definition,
         FeatureDefinition::Sweep {
-            profile: ProfileRef::Native(profile),
-            path: PathRef::Native(path_ref),
-            op: BooleanOp::NewBody,
+            profile: Some(ProfileRef::Native(profile)),
+            path: Some(PathRef::Native(path_ref)),
+            op: Some(BooleanOp::NewBody),
+            surface: false,
             twist: Some(Angle(twist)),
             scale: Some(1.5),
         } if profile == &profile_a
@@ -9432,8 +9434,8 @@ fn semantic_writer_round_trips_typed_sweep() {
     else {
         panic!("typed sweep");
     };
-    *profile = ProfileRef::Native(profile_b);
-    *op = BooleanOp::Join;
+    *profile = Some(ProfileRef::Native(profile_b));
+    *op = Some(BooleanOp::Join);
     *twist = Some(Angle(std::f64::consts::PI));
     *scale = Some(2.0);
 
@@ -9453,6 +9455,63 @@ fn semantic_writer_round_trips_typed_sweep() {
         feature.parameters["Twist"],
         format!("{}rad", std::f64::consts::PI)
     );
+}
+
+#[test]
+fn semantic_writer_round_trips_sparse_surface_sweep() {
+    use cadmpeg_ir::features::{Angle, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Surface-Sweep1" Type="Surface-Sweep" id="137"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Sweep {
+            profile: None,
+            path: None,
+            op: None,
+            surface: true,
+            twist: None,
+            scale: None,
+        }
+    ));
+
+    let FeatureDefinition::Sweep { twist, .. } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("surface sweep");
+    };
+    *twist = Some(Angle(0.5));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.kind, "Surface-Sweep");
+    assert_eq!(native.parameters["Twist"], "0.5rad");
+    assert!(!native.properties.contains_key("Profile"));
+    assert!(!native.properties.contains_key("Path"));
+    assert!(!native.properties.contains_key("Operation"));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Sweep {
+            profile: None,
+            path: None,
+            op: None,
+            surface: true,
+            twist: Some(Angle(0.5)),
+            scale: None,
+        }
+    ));
 }
 
 #[test]
@@ -9951,8 +10010,8 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .iter()
         .find_map(|feature| match &feature.definition {
             FeatureDefinition::Sweep {
-                profile: ProfileRef::Sketch(profile),
-                path: PathRef::Sketch(path),
+                profile: Some(ProfileRef::Sketch(profile)),
+                path: Some(PathRef::Sketch(path)),
                 ..
             } => Some((profile, path)),
             _ => None,
