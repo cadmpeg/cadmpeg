@@ -988,6 +988,19 @@ fn decode_variable_scalar(
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
         return (Some(f64::from_be_bytes(raw)), offset + 7, false);
     }
+    let variable_dict = match prefix {
+        0x80 => Some([0x3f, 0xf5]),
+        0x97 => Some([0x40, 0x0c]),
+        0xc8 => Some([0xbf, 0xf5]),
+        0xdd => Some([0xc0, 0x0c]),
+        _ => None,
+    };
+    if let (Some(head), Some(tail)) = (variable_dict, payload.get(offset + 1..offset + 7)) {
+        let mut raw = [0; 8];
+        raw[..2].copy_from_slice(&head);
+        raw[2..].copy_from_slice(tail);
+        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+    }
     if prefix == 0x18
         && payload
             .get(offset + 1)
@@ -1023,12 +1036,31 @@ fn variable_table(
         None
     };
     let close = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end)?;
+    let named_row = (|| {
+        let type_label = find_bytes(payload, b"type\0", cursor, close)?;
+        let variable_type = named_compact_int(payload, b"type\0", cursor, close)?;
+        let key = named_compact_int(payload, b"key\0", cursor, close)?;
+        let value_label = find_bytes(payload, b"value\0", cursor, close)? + b"value\0".len();
+        let (value, _, dimension_driven) =
+            decode_variable_scalar(payload, value_label, close, cache);
+        let guess_label = find_bytes(payload, b"guess\0", cursor, close)? + b"guess\0".len();
+        let (guess, _, _) = decode_variable_scalar(payload, guess_label, close, cache);
+        Some(FeatureVariableRow {
+            variable_type,
+            key,
+            value,
+            guess,
+            uvar_id: named_compact_int(payload, b"uvar_id\0", cursor, close),
+            dimension_driven,
+            offset: type_label.saturating_sub(2),
+        })
+    })();
     let (_, after_close_ref) = psb::compact_int(payload, close + 2);
     cursor = after_close_ref;
     if payload.get(cursor) == Some(&0xe2) {
         cursor += 1;
     }
-    let mut rows = Vec::new();
+    let mut rows = named_row.into_iter().collect::<Vec<_>>();
     let max_rows = usize::try_from(declared_count)
         .unwrap_or(usize::MAX)
         .saturating_add(64)
@@ -2668,4 +2700,39 @@ pub fn entity_tables(
         });
     }
     tables
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decodes_var_arr_dictionary_sign_pairs() {
+        let cache = scalar::ScalarCache::default();
+        let cases = [
+            (
+                [0x97, 0xc3, 0x95, 0x81, 0x06, 0x24, 0xdc],
+                3.595_499_999_999_999_5,
+            ),
+            (
+                [0xdd, 0xc3, 0x95, 0x81, 0x06, 0x24, 0xdc],
+                -3.595_499_999_999_999_5,
+            ),
+            (
+                [0x80, 0x58, 0x23, 0x8b, 0x27, 0x55, 0x6f],
+                1.334_018_271_988_806_7,
+            ),
+            (
+                [0xc8, 0x58, 0x23, 0x8b, 0x27, 0x55, 0x6f],
+                -1.334_018_271_988_806_7,
+            ),
+        ];
+        for (bytes, expected) in cases {
+            let (value, next, dimension_driven) =
+                decode_variable_scalar(&bytes, 0, bytes.len(), &cache);
+            assert_eq!(value, Some(expected));
+            assert_eq!(next, bytes.len());
+            assert!(!dimension_driven);
+        }
+    }
 }

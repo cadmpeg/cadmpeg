@@ -768,6 +768,26 @@ fn scan_decodes_featdefs_var_arr_section_points() {
 }
 
 #[test]
+fn scan_decodes_featdefs_var_arr_named_prototype_row() {
+    let payload = b"feat_defs_40\0var_arr\0\xf8\x01\xf7\x01\xfb\xe2\
+        \xe0\x05type\0\x01\xe0\x08key\0\x07\xe0\x02value\0\xe4\
+        \xe0\x02guess\0\x0f\xe0\x08uvar_id\0\x03\xf1\xf7\x01\xe2"
+        .to_vec();
+    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+
+    let variables = scan.feature_definitions[0]
+        .variables
+        .as_ref()
+        .expect("var_arr");
+    assert_eq!(variables.rows.len(), 1);
+    assert_eq!(variables.rows[0].variable_type, 1);
+    assert_eq!(variables.rows[0].key, 7);
+    assert_eq!(variables.rows[0].value, Some(1.0));
+    assert_eq!(variables.rows[0].guess, Some(0.0));
+    assert_eq!(variables.rows[0].uvar_id, Some(3));
+}
+
+#[test]
 fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     let mut payload =
         b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
