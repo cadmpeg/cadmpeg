@@ -13,9 +13,9 @@ use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
 };
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::{CurveId, UnknownId};
+use cadmpeg_ir::ids::{CurveId, SurfaceId, UnknownId};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -378,8 +378,10 @@ impl Codec for FcstdCodec {
             namespace.set_arena("logical_ledger", &logical_ledger)?;
             namespace.set_arena("shape_payloads", &shape_payloads)?;
             let curves = transfer_text_curves(&shape_payloads, &graph.properties);
-            geometry_transferred = !curves.is_empty();
+            let surfaces = transfer_text_surfaces(&shape_payloads, &graph.properties);
+            geometry_transferred = !curves.is_empty() || !surfaces.is_empty();
             ir.model.curves.extend(curves);
+            ir.model.surfaces.extend(surfaces);
         }
         let losses = if options.container_only {
             Vec::new()
@@ -489,6 +491,103 @@ fn transfer_text_curves(
                     }),
                 }
             })
+        })
+        .collect()
+}
+
+fn transfer_text_surfaces(
+    payloads: &[brep::ShapePayloadRecord],
+    properties: &[native::PropertyRecord],
+) -> Vec<Surface> {
+    payloads
+        .iter()
+        .filter_map(|payload| payload.text.as_ref().map(|text| (payload, text)))
+        .flat_map(|(payload, text)| {
+            let object_id = properties
+                .iter()
+                .find(|property| property.id == payload.property)
+                .map_or_else(
+                    || payload.property.clone(),
+                    |property| property.owner.clone(),
+                );
+            text.surfaces
+                .iter()
+                .enumerate()
+                .map(move |(index, surface)| {
+                    let geometry = match surface {
+                        brep::TextSurface::Plane {
+                            origin,
+                            axis,
+                            u_axis,
+                        } => SurfaceGeometry::Plane {
+                            origin: *origin,
+                            normal: *axis,
+                            u_axis: *u_axis,
+                        },
+                        brep::TextSurface::Cylinder {
+                            origin,
+                            axis,
+                            ref_direction,
+                            radius,
+                        } => SurfaceGeometry::Cylinder {
+                            origin: *origin,
+                            axis: *axis,
+                            ref_direction: *ref_direction,
+                            radius: *radius,
+                        },
+                        brep::TextSurface::Cone {
+                            origin,
+                            axis,
+                            ref_direction,
+                            radius,
+                            half_angle,
+                        } => SurfaceGeometry::Cone {
+                            origin: *origin,
+                            axis: *axis,
+                            ref_direction: *ref_direction,
+                            radius: *radius,
+                            ratio: 1.0,
+                            half_angle: *half_angle,
+                        },
+                        brep::TextSurface::Sphere {
+                            center,
+                            axis,
+                            ref_direction,
+                            radius,
+                        } => SurfaceGeometry::Sphere {
+                            center: *center,
+                            axis: *axis,
+                            ref_direction: *ref_direction,
+                            radius: *radius,
+                        },
+                        brep::TextSurface::Torus {
+                            center,
+                            axis,
+                            ref_direction,
+                            major_radius,
+                            minor_radius,
+                        } => SurfaceGeometry::Torus {
+                            center: *center,
+                            axis: *axis,
+                            ref_direction: *ref_direction,
+                            major_radius: *major_radius,
+                            minor_radius: *minor_radius,
+                        },
+                    };
+                    Surface {
+                        id: SurfaceId(format!("{}:surface#{}", payload.id, index + 1)),
+                        geometry,
+                        source_object: Some(SourceObjectAssociation {
+                            format: "fcstd".into(),
+                            object_id: object_id.clone(),
+                            name: None,
+                            color: None,
+                            visible: None,
+                            layer: None,
+                            instance_path: Vec::new(),
+                        }),
+                    }
+                })
         })
         .collect()
 }

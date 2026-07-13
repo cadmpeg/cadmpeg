@@ -45,6 +45,8 @@ pub struct TextFacts {
     pub shape_types: BTreeMap<String, usize>,
     /// Ordered 3D curve table.
     pub curves: Vec<TextCurve>,
+    /// Ordered surface table.
+    pub surfaces: Vec<TextSurface>,
 }
 
 /// Supported byte-exact 3D curve records from the text carrier table.
@@ -80,6 +82,48 @@ pub enum TextCurve {
         center: Point3,
         axis: Vector3,
         major_direction: Vector3,
+        major_radius: f64,
+        minor_radius: f64,
+    },
+}
+
+/// Supported byte-exact surface records from the text carrier table.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TextSurface {
+    /// Infinite plane.
+    Plane {
+        origin: Point3,
+        axis: Vector3,
+        u_axis: Vector3,
+    },
+    /// Circular cylinder.
+    Cylinder {
+        origin: Point3,
+        axis: Vector3,
+        ref_direction: Vector3,
+        radius: f64,
+    },
+    /// Circular cone.
+    Cone {
+        origin: Point3,
+        axis: Vector3,
+        ref_direction: Vector3,
+        radius: f64,
+        half_angle: f64,
+    },
+    /// Sphere.
+    Sphere {
+        center: Point3,
+        axis: Vector3,
+        ref_direction: Vector3,
+        radius: f64,
+    },
+    /// Torus.
+    Torus {
+        center: Point3,
+        axis: Vector3,
+        ref_direction: Vector3,
         major_radius: f64,
         minor_radius: f64,
     },
@@ -196,12 +240,85 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
         )));
     }
     let curves = parse_curves(&tokens, &section_counts)?;
+    let surfaces = parse_surfaces(&tokens, &section_counts)?;
     Ok(TextFacts {
         topology_version,
         section_counts,
         shape_types,
         curves,
+        surfaces,
     })
+}
+
+fn parse_surfaces(
+    tokens: &[&str],
+    section_counts: &BTreeMap<String, usize>,
+) -> Result<Vec<TextSurface>, CodecError> {
+    let start = tokens
+        .iter()
+        .position(|token| *token == "Surfaces")
+        .ok_or_else(|| CodecError::Malformed("text B-rep has no Surfaces table".into()))?
+        + 2;
+    let end = tokens
+        .iter()
+        .position(|token| *token == "Triangulations")
+        .ok_or_else(|| CodecError::Malformed("text B-rep has no Triangulations table".into()))?;
+    let count = section_counts.get("Surfaces").copied().unwrap_or(0);
+    let mut cursor = TokenCursor::new(&tokens[start..end]);
+    let mut surfaces = Vec::with_capacity(count);
+    for index in 0..count {
+        let kind = cursor.integer("surface type")?;
+        let origin = cursor.point("surface origin")?;
+        let axis = cursor.vector("surface axis")?;
+        let ref_direction = cursor.vector("surface reference direction")?;
+        let _y_direction = cursor.vector("surface y direction")?;
+        let surface = match kind {
+            1 => TextSurface::Plane {
+                origin,
+                axis,
+                u_axis: ref_direction,
+            },
+            2 => TextSurface::Cylinder {
+                origin,
+                axis,
+                ref_direction,
+                radius: cursor.real("cylinder radius")?,
+            },
+            3 => TextSurface::Cone {
+                origin,
+                axis,
+                ref_direction,
+                radius: cursor.real("cone radius")?,
+                half_angle: cursor.real("cone half angle")?,
+            },
+            4 => TextSurface::Sphere {
+                center: origin,
+                axis,
+                ref_direction,
+                radius: cursor.real("sphere radius")?,
+            },
+            5 => TextSurface::Torus {
+                center: origin,
+                axis,
+                ref_direction,
+                major_radius: cursor.real("torus major radius")?,
+                minor_radius: cursor.real("torus minor radius")?,
+            },
+            other => {
+                return Err(CodecError::NotImplemented(format!(
+                    "text B-rep surface family {other} at table index {}",
+                    index + 1
+                )))
+            }
+        };
+        surfaces.push(surface);
+    }
+    if !cursor.is_empty() {
+        return Err(CodecError::Malformed(
+            "text B-rep Surfaces table contains trailing tokens".into(),
+        ));
+    }
+    Ok(surfaces)
 }
 
 fn parse_curves(

@@ -91,7 +91,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         ("Payload.bin", b"payload"),
         (
             "Shape.brp",
-            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 1\n1 10 20 30 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*",
+            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 1\n1 10 20 30 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 0\n*",
         ),
     ]);
     let result = FcstdCodec
@@ -177,6 +177,19 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             assert_eq!([direction.x, direction.y, direction.z], [1.0, 0.0, 0.0]);
         }
         other => panic!("unexpected curve {other:?}"),
+    }
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    match &result.ir.model.surfaces[0].geometry {
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            assert_eq!([origin.x, origin.y, origin.z], [0.0, 0.0, 0.0]);
+            assert_eq!([normal.x, normal.y, normal.z], [0.0, 0.0, 1.0]);
+            assert_eq!([u_axis.x, u_axis.y, u_axis.z], [1.0, 0.0, 0.0]);
+        }
+        other => panic!("unexpected surface {other:?}"),
     }
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
