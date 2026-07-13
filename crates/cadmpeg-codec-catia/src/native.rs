@@ -74,6 +74,9 @@ pub struct CatiaObjectGraph {
     pub byte_offset: u64,
     /// Total framed byte length.
     pub byte_len: u64,
+    /// Byte offset of the associated schema catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_byte_offset: Option<u64>,
     /// Consecutive `7C09` records in serialized order.
     #[serde(default)]
     pub records: Vec<CatiaObjectRecord>,
@@ -100,6 +103,9 @@ pub struct CatiaObjectRecord {
     pub owner_ref: Option<u32>,
     /// Second head reference, identifying the per-file class ordinal.
     pub class_ref: Option<u32>,
+    /// UTF-8 class name resolved through the graph's schema catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<String>,
     /// Third head reference, selecting class-specific storage.
     pub storage_ref: Option<u32>,
     /// Typed nested payload.
@@ -290,6 +296,7 @@ impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
                 head: record.head,
                 owner_ref: record.owner_ref,
                 class_ref: record.class_ref,
+                class_name: record.class_name,
                 storage_ref: record.storage_ref,
                 payload: record.payload,
                 subtype: record.subtype,
@@ -299,6 +306,7 @@ impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
             id,
             byte_offset: graph.pos as u64,
             byte_len: graph.total_len as u64,
+            catalog_byte_offset: graph.catalog_pos.map(|pos| pos as u64),
             records,
         }
     }

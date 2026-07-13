@@ -5,6 +5,8 @@ use cadmpeg_ir::le::u32_at as u32_le;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::{catalog, value_block};
+
 /// One decoded outer object graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ObjectGraph {
@@ -12,6 +14,8 @@ pub struct ObjectGraph {
     pub pos: usize,
     /// Root total length, including its six-byte header.
     pub total_len: usize,
+    /// Byte offset of the immediately associated `7C02` schema catalog.
+    pub catalog_pos: Option<usize>,
     /// Consecutive nested `7C09` records.
     pub records: Vec<ObjectRecord>,
 }
@@ -33,6 +37,8 @@ pub struct ObjectRecord {
     pub owner_ref: Option<u32>,
     /// Second head reference, identifying the per-file class.
     pub class_ref: Option<u32>,
+    /// UTF-8 class name at `class_ref` in the associated schema catalog.
+    pub class_name: Option<String>,
     /// Third head reference, selecting the class-specific storage form.
     pub storage_ref: Option<u32>,
     /// Decoded nested payload.
@@ -269,11 +275,35 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
 /// Parse the valid `7C08` candidate containing the most `7C09` records.
 #[must_use]
 pub fn parse(data: &[u8]) -> Option<ObjectGraph> {
-    data.windows(2)
+    let mut graph = data
+        .windows(2)
         .enumerate()
         .filter(|(_, marker)| *marker == [0x7c, 0x08])
         .filter_map(|(pos, _)| parse_candidate(data, pos))
-        .max_by_key(|graph| graph.records.len())
+        .max_by_key(|graph| graph.records.len())?;
+    if let Some(schema) = associated_catalog(data, &graph) {
+        graph.catalog_pos = Some(schema.pos);
+        for record in &mut graph.records {
+            record.class_name = record
+                .class_ref
+                .and_then(|ordinal| schema.entries.get(ordinal as usize))
+                .map(|entry| entry.value.clone());
+        }
+    }
+    Some(graph)
+}
+
+fn associated_catalog(data: &[u8], graph: &ObjectGraph) -> Option<catalog::Catalog> {
+    let graph_end = graph.pos.checked_add(graph.total_len)?;
+    let catalogs = catalog::parse(data);
+    if let Some(schema) = catalogs.iter().find(|schema| schema.pos == graph_end) {
+        return Some(schema.clone());
+    }
+    let block = value_block::parse(data)
+        .into_iter()
+        .find(|block| block.pos == graph_end)?;
+    let value_end = block.pos.checked_add(block.total_len)?;
+    catalogs.into_iter().find(|schema| schema.pos == value_end)
 }
 
 fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
@@ -317,6 +347,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             head,
             owner_ref: references.first().copied(),
             class_ref: references.get(1).copied(),
+            class_name: None,
             storage_ref: references.get(2).copied(),
             payload,
             subtype,
@@ -326,6 +357,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
     (records.len() >= 2).then_some(ObjectGraph {
         pos,
         total_len,
+        catalog_pos: None,
         records,
     })
 }

@@ -2861,6 +2861,27 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
 }
 
 #[test]
+fn outer_object_graph_resolves_class_names_from_following_schema() {
+    let mut bytes = object_graph_stream();
+    let graph_len = bytes.len();
+    bytes.extend(value_block_stream(&[0x81]));
+    let catalog_pos = bytes.len();
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+
+    let graph = crate::object_graph::parse(&bytes).expect("object graph with schema");
+    assert_eq!(graph.total_len, graph_len);
+    assert_eq!(graph.catalog_pos, Some(catalog_pos));
+    assert_eq!(graph.records[0].class_name.as_deref(), Some(""));
+    assert_eq!(graph.records[1].class_name.as_deref(), Some("Sketch"));
+}
+
+#[test]
 fn catalog_parser_reads_exact_inclusive_length_dictionary() {
     let entries = [
         "CATCatalogManager",

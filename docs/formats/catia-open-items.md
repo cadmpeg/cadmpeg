@@ -15,7 +15,6 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 ## Design records
 
 - The field grammar inside `7C0B` value-block payloads and its binding to adjacent `7C02` class/field names are unspecified.
-- The relation assigning a `7C08` per-file prototype record to a class definition in the adjacent `7C02` catalog is unspecified.
 
 ## Standard nested `V5_CFV2`
 
