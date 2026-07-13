@@ -932,7 +932,7 @@ fn resolved_features_payload(codes: &[u32]) -> Vec<u8> {
         payload.extend_from_slice(&(name.len() as u16).to_le_bytes());
         payload.extend_from_slice(name.as_bytes());
     }
-    for name in ["Sketch1", "D1"] {
+    for name in ["Sketch1", "Boss-Extrude1", "D1"] {
         payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
@@ -10714,10 +10714,10 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .iter()
             .map(|name| name.value.as_str())
             .collect::<Vec<_>>(),
-        ["Sketch1", "D1"]
+        ["Sketch1", "Boss-Extrude1", "D1"]
     );
     assert_eq!(lane.scalars.len(), 1);
-    assert_eq!(lane.scalars[0].name, lane.names[1].id);
+    assert_eq!(lane.scalars[0].name, lane.names[2].id);
     assert_eq!(lane.scalars[0].value, 0.025);
     assert!(lane
         .classes
@@ -10834,6 +10834,73 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("has edited named scalars"));
+}
+
+#[test]
+fn decode_projects_unambiguous_resolved_feature_parameter() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss-Extrude1" Type="BossExtrude"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload(&[0]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss-Extrude1"))
+        .expect("projected extrusion feature");
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .expect("projected D1 parameter");
+    assert_eq!(parameter.expression, "25mm");
+}
+
+#[test]
+fn decode_does_not_project_ambiguous_resolved_feature_parameter() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss-Extrude1" Type="BossExtrude"/></Keywords>"#,
+    ));
+    let mut payload = resolved_features_payload(&[0]);
+    payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, 2]);
+    payload.extend_from_slice(&[b'D', 0, b'1', 0]);
+    payload.extend_from_slice(&[
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
+        0x00, 0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
+    ]);
+    payload.extend_from_slice(&0.050f64.to_le_bytes());
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(!decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "D1"));
 }
 
 #[test]

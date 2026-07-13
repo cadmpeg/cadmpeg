@@ -146,6 +146,75 @@ pub(crate) fn named_scalars(
         .collect()
 }
 
+/// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
+pub(crate) fn enrich_history_parameters(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let mut feature_name_counts = HashMap::<&str, usize>::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        *feature_name_counts.entry(&feature.name).or_default() += 1;
+    }
+
+    let mut candidates = BTreeMap::<(usize, usize, String), Vec<f64>>::new();
+    for lane in lanes {
+        let names_by_id = lane
+            .names
+            .iter()
+            .map(|name| (name.id.as_str(), name))
+            .collect::<HashMap<_, _>>();
+        let mut starts = Vec::<(u64, usize, usize)>::new();
+        for (history_index, history) in histories.iter().enumerate() {
+            for (feature_index, feature) in history.features.iter().enumerate() {
+                if feature_name_counts.get(feature.name.as_str()) != Some(&1) {
+                    continue;
+                }
+                let mut matches = lane.names.iter().filter(|name| name.value == feature.name);
+                let Some(name) = matches.next() else { continue };
+                if matches.next().is_none() {
+                    starts.push((name.offset, history_index, feature_index));
+                }
+            }
+        }
+        starts.sort_by_key(|start| start.0);
+        for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
+            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            let mut owned = BTreeMap::<&str, Vec<f64>>::new();
+            for scalar in lane
+                .scalars
+                .iter()
+                .filter(|scalar| scalar.offset > start && scalar.offset < end)
+            {
+                let Some(name) = names_by_id.get(scalar.name.as_str()) else {
+                    continue;
+                };
+                owned.entry(&name.value).or_default().push(scalar.value);
+            }
+            for (name, values) in owned {
+                if let [value] = values.as_slice() {
+                    candidates
+                        .entry((history_index, feature_index, name.to_string()))
+                        .or_default()
+                        .push(*value);
+                }
+            }
+        }
+    }
+
+    for ((history_index, feature_index, name), values) in candidates {
+        let Some((&first, rest)) = values.split_first() else {
+            continue;
+        };
+        if rest.iter().any(|value| value.to_bits() != first.to_bits()) {
+            continue;
+        }
+        histories[history_index].features[feature_index]
+            .parameters
+            .entry(name)
+            .or_insert_with(|| crate::history::format_length_mm(first * 1000.0));
+    }
+}
+
 pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     payload

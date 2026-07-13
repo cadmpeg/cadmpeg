@@ -2578,7 +2578,7 @@ fn format_angle_like(value: f64, previous: Option<&str>) -> String {
     }
 }
 
-fn format_length_mm(value: f64) -> String {
+pub(crate) fn format_length_mm(value: f64) -> String {
     format!("{value}mm")
 }
 

@@ -281,8 +281,8 @@ fn build_geometry_ir(
     ir.source = Some(source_meta(scan, block, header));
     ir.annotations = std::mem::take(&mut brep.annotations);
     let histories = crate::history::histories(scan, &mut ir.annotations);
-    project_design_history(&mut ir, &histories);
     let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
+    project_design_history(&mut ir, &histories, &lanes);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches);
@@ -770,12 +770,6 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);
     let model_attributes = crate::metadata::attributes(scan, &mut ir.annotations);
-    let native = crate::native::SldprtNative {
-        version: crate::native::SLDPRT_NATIVE_VERSION,
-        feature_histories: histories.clone(),
-        feature_input_lanes: lanes,
-    };
-    native.store(ir.native.namespace_mut("sldprt"))?;
     ir.model.attributes = model_attributes;
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
@@ -826,8 +820,14 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         format: "sldprt".to_string(),
         attributes,
     });
+    project_design_history(&mut ir, &histories, &lanes);
+    let native = crate::native::SldprtNative {
+        version: crate::native::SLDPRT_NATIVE_VERSION,
+        feature_histories: histories.clone(),
+        feature_input_lanes: lanes,
+    };
+    native.store(ir.native.namespace_mut("sldprt"))?;
     stamp_sketch_baseline(&mut ir, &native);
-    project_design_history(&mut ir, &histories);
     mark_active_configuration(&mut ir);
     let mut unknowns = ir.native_unknowns("sldprt")?;
     preserve_source_image(scan, &mut ir, &mut unknowns);
@@ -836,10 +836,16 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     Ok(ir)
 }
 
-fn project_design_history(ir: &mut CadIr, histories: &[crate::records::FeatureHistory]) {
-    ir.model.features = crate::history::project_features(histories);
-    ir.model.configurations = crate::history::project_configurations(histories);
-    ir.model.parameters = crate::history::project_parameters(histories);
+fn project_design_history(
+    ir: &mut CadIr,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+) {
+    let mut projection = histories.to_vec();
+    crate::resolved_features::enrich_history_parameters(&mut projection, lanes);
+    ir.model.features = crate::history::project_features(&projection);
+    ir.model.configurations = crate::history::project_configurations(&projection);
+    ir.model.parameters = crate::history::project_parameters(&projection);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "sldprt_neutral_feature_sha256".into(),
