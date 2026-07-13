@@ -43,8 +43,41 @@ pub(crate) enum Value {
     Vectors(Vec<Vector3>),
     Transforms(Vec<Xform>),
     Strings(Vec<String>),
+    ObjectReferences(Vec<ObjectReference>),
     Uuids(Vec<Uuid>),
     Opaque { type_code: i32, range: Range<usize> },
+}
+
+/// Persistent object selection stored in a history value.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ObjectReference {
+    pub(crate) object_id: Uuid,
+    pub(crate) component: [i32; 2],
+    pub(crate) geometry_type: i32,
+    pub(crate) point: Point3,
+    pub(crate) evaluation: EvaluationParameter,
+    pub(crate) instance_path: Vec<InstanceReference>,
+    pub(crate) osnap_mode: i32,
+}
+
+/// Evaluation location attached to a persistent object selection.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct EvaluationParameter {
+    pub(crate) parameter_type: i32,
+    pub(crate) component: [i32; 2],
+    pub(crate) parameters: [f64; 4],
+    pub(crate) intervals: [[f64; 2]; 3],
+}
+
+/// One nested instance-definition step in an object selection.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct InstanceReference {
+    pub(crate) reference_id: Uuid,
+    pub(crate) transform: Xform,
+    pub(crate) definition_id: Uuid,
+    pub(crate) geometry_index: i32,
+    pub(crate) component: Option<[i32; 2]>,
+    pub(crate) evaluation: Option<EvaluationParameter>,
 }
 
 /// A complete built-in history record.
@@ -135,6 +168,164 @@ fn array<T>(
     Ok(values)
 }
 
+fn component(reader: &mut BoundedReader<'_>) -> Result<[i32; 2], FramingError> {
+    Ok([reader.i32()?, reader.i32()?])
+}
+
+fn interval(reader: &mut BoundedReader<'_>) -> Result<[f64; 2], FramingError> {
+    Ok([reader.f64()?, reader.f64()?])
+}
+
+fn evaluation(
+    reader: &mut BoundedReader<'_>,
+    interval_count: usize,
+) -> Result<EvaluationParameter, FramingError> {
+    let parameter_type = reader.i32()?;
+    let component = component(reader)?;
+    let parameters = [reader.f64()?, reader.f64()?, reader.f64()?, reader.f64()?];
+    let mut intervals = [[0.0; 2]; 3];
+    for value in intervals.iter_mut().take(interval_count) {
+        *value = interval(reader)?;
+    }
+    Ok(EvaluationParameter {
+        parameter_type,
+        component,
+        parameters,
+        intervals,
+    })
+}
+
+fn instance_reference(
+    bytes: &[u8],
+    offset: usize,
+    end: usize,
+    archive: ArchiveVersion,
+) -> Result<(InstanceReference, usize), FramingError> {
+    let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
+    if !(0..=1).contains(&minor) {
+        return Err(structural(
+            reader.position(),
+            "unsupported instance-reference path version",
+        ));
+    }
+    let reference_id = uuid(&mut reader)?;
+    let transform = xform(&mut reader)?;
+    let definition_id = uuid(&mut reader)?;
+    let geometry_index = reader.i32()?;
+    let (component, evaluation) = if minor >= 1 {
+        let component = component(&mut reader)?;
+        let (mut nested, nested_next, nested_minor) =
+            anonymous(bytes, reader.position(), reader.end(), archive)?;
+        if nested_minor != 0 {
+            return Err(structural(
+                nested.position(),
+                "unsupported object-evaluation version",
+            ));
+        }
+        let evaluation = evaluation(&mut nested, 3)?;
+        if nested.remaining() != 0 {
+            return Err(structural(
+                nested.position(),
+                "object evaluation has trailing bytes",
+            ));
+        }
+        reader.skip(nested_next - reader.position())?;
+        (Some(component), Some(evaluation))
+    } else {
+        (None, None)
+    };
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "instance-reference path has trailing bytes",
+        ));
+    }
+    Ok((
+        InstanceReference {
+            reference_id,
+            transform,
+            definition_id,
+            geometry_index,
+            component,
+            evaluation,
+        },
+        next,
+    ))
+}
+
+fn object_reference(
+    bytes: &[u8],
+    offset: usize,
+    end: usize,
+    archive: ArchiveVersion,
+) -> Result<(ObjectReference, usize), FramingError> {
+    let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
+    if !(0..=3).contains(&minor) {
+        return Err(structural(
+            reader.position(),
+            "unsupported object-reference version",
+        ));
+    }
+    let object_id = uuid(&mut reader)?;
+    let component = component(&mut reader)?;
+    let geometry_type = reader.i32()?;
+    let point = point(&mut reader)?;
+    let mut evaluation = evaluation(&mut reader, 0)?;
+    let path_count = count(&mut reader, 1)?;
+    let mut instance_path = Vec::with_capacity(path_count);
+    for _ in 0..path_count {
+        let (value, value_next) =
+            instance_reference(bytes, reader.position(), reader.end(), archive)?;
+        reader.skip(value_next - reader.position())?;
+        instance_path.push(value);
+    }
+    if minor >= 1 {
+        evaluation.intervals[0] = interval(&mut reader)?;
+        evaluation.intervals[1] = interval(&mut reader)?;
+    }
+    if minor >= 2 {
+        evaluation.intervals[2] = interval(&mut reader)?;
+    }
+    let osnap_mode = if minor >= 3 { reader.i32()? } else { 0 };
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "object reference has trailing bytes",
+        ));
+    }
+    Ok((
+        ObjectReference {
+            object_id,
+            component,
+            geometry_type,
+            point,
+            evaluation,
+            instance_path,
+            osnap_mode,
+        },
+        next,
+    ))
+}
+
+fn object_references(
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<Vec<ObjectReference>, FramingError> {
+    let count = count(reader, 1)?;
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        let (value, next) = object_reference(
+            reader.backing_bytes(),
+            reader.position(),
+            reader.end(),
+            archive,
+        )?;
+        reader.skip(next - reader.position())?;
+        values.push(value);
+    }
+    Ok(values)
+}
+
 fn parse_value(
     bytes: &[u8],
     offset: usize,
@@ -155,6 +346,7 @@ fn parse_value(
         6 => Value::Vectors(array(&mut reader, 24, vector)?),
         7 => Value::Transforms(array(&mut reader, 128, xform)?),
         8 => Value::Strings(array(&mut reader, 4, utf16)?),
+        9 => Value::ObjectReferences(object_references(&mut reader, archive)?),
         11 => Value::Uuids(array(&mut reader, 16, uuid)?),
         _ => {
             reader.skip(reader.remaining())?;
@@ -353,6 +545,16 @@ fn value_text(value: &Value) -> Option<String> {
             .collect::<Vec<_>>()
             .join(";"),
         Value::Strings(values) => values.join("\u{1f}"),
+        Value::ObjectReferences(values) => values
+            .iter()
+            .map(|value| {
+                format!(
+                    "{}@{}:{}",
+                    value.object_id, value.component[0], value.component[1]
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(","),
         Value::Uuids(values) => list(values),
         Value::Opaque { .. } => return None,
     })

@@ -514,10 +514,44 @@ The fixed-layout value-type numbers are:
 |          6 | archive array of `ON_3dVector`               |
 |          7 | archive array of `ON_Xform`                  |
 |          8 | archive array of UTF-16 strings              |
+|          9 | archive array of object references           |
 |         11 | archive array of UUIDs                       |
 
 Every value is independently bounded by its anonymous chunk. The next value or
 record suffix begins at that chunk's declared end.
+
+An object reference is an anonymous version 1.0 through 1.3 chunk:
+
+```text
+ON_UUID object_id
+ON_ComponentIndex component
+i32 geometry_type
+ON_3dPoint selection_point
+i32 evaluation_type
+ON_ComponentIndex evaluation_component
+4 × f64 evaluation_parameter
+array of instance-reference path items
+if minor >= 1: 2 × ON_Interval evaluation_interval
+if minor >= 2: ON_Interval third_evaluation_interval
+if minor >= 3: i32 object_snap_mode
+```
+
+An instance-reference path item is an anonymous version 1.0 or 1.1 chunk:
+
+```text
+ON_UUID instance_reference_id
+ON_Xform instance_transform
+ON_UUID instance_definition_id
+i32 definition_geometry_index
+if minor >= 1:
+  ON_ComponentIndex component
+  object-evaluation anonymous version 1.0 chunk
+```
+
+The object-evaluation chunk contains `i32 evaluation_type`, an
+`ON_ComponentIndex`, four `f64` evaluation parameters, and three
+`ON_Interval` values. Path items are ordered from the selected instance
+reference through nested definitions to the referenced definition geometry.
 
 ### 7.2 Class userdata
 

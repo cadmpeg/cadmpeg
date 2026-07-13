@@ -1355,12 +1355,35 @@ fn scan_decodes_history_identity_dependencies_and_typed_values() {
     integers.extend((-9_i32).to_le_bytes());
     let mut text = 1_i32.to_le_bytes().to_vec();
     text.extend(utf16_bytes("distance"));
+    let referenced_object = [45, 0, 0, 0, 46, 0, 47, 0, 48, 49, 50, 51, 52, 53, 54, 55];
+    let mut object_reference = referenced_object.to_vec();
+    object_reference.extend(7_i32.to_le_bytes());
+    object_reference.extend(8_i32.to_le_bytes());
+    object_reference.extend(4_i32.to_le_bytes());
+    for coordinate in [1.0_f64, 2.0, 3.0] {
+        object_reference.extend(coordinate.to_le_bytes());
+    }
+    object_reference.extend(9_i32.to_le_bytes());
+    object_reference.extend(10_i32.to_le_bytes());
+    object_reference.extend(11_i32.to_le_bytes());
+    for parameter in [0.1_f64, 0.2, 0.3, 0.4] {
+        object_reference.extend(parameter.to_le_bytes());
+    }
+    object_reference.extend(0_i32.to_le_bytes());
+    for bound in [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0] {
+        object_reference.extend(bound.to_le_bytes());
+    }
+    object_reference.extend(12_i32.to_le_bytes());
+    let object_reference = anonymous_chunk(archive, 3, &object_reference);
+    let mut object_references = 1_i32.to_le_bytes().to_vec();
+    object_references.extend(object_reference);
     let values = [
         value(2, 10, &integers),
         value(8, 20, &text),
+        value(9, 25, &object_references),
         value(99, 30, &[0xaa, 0xbb]),
     ];
-    let mut values_body = 3_i32.to_le_bytes().to_vec();
+    let mut values_body = 4_i32.to_le_bytes().to_vec();
     values_body.extend(values.concat());
     let mut body = record_id.to_vec();
     body.extend(202_607_130_i32.to_le_bytes());
@@ -1403,7 +1426,7 @@ fn scan_decodes_history_identity_dependencies_and_typed_values() {
     );
     assert_eq!(history.descendants.len(), 1);
     assert_eq!(history.antecedents.len(), 1);
-    assert_eq!(history.values.len(), 3);
+    assert_eq!(history.values.len(), 4);
     assert!(matches!(
         &history.values[0].value,
         super::history::Value::Integers(values) if values == &[7, -9]
@@ -1413,7 +1436,22 @@ fn scan_decodes_history_identity_dependencies_and_typed_values() {
         super::history::Value::Strings(values) if values == &["distance"]
     ));
     assert!(matches!(
-        history.values[2].value,
+        &history.values[2].value,
+        super::history::Value::ObjectReferences(values)
+            if values.len() == 1
+                && values[0].object_id.to_string() == "0000002d-002e-002f-3031-323334353637"
+                && values[0].component == [7, 8]
+                && values[0].geometry_type == 4
+                && values[0].point.0 == [1.0, 2.0, 3.0]
+                && values[0].evaluation.parameter_type == 9
+                && values[0].evaluation.component == [10, 11]
+                && values[0].evaluation.parameters == [0.1, 0.2, 0.3, 0.4]
+                && values[0].evaluation.intervals == [[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]]
+                && values[0].instance_path.is_empty()
+                && values[0].osnap_mode == 12
+    ));
+    assert!(matches!(
+        history.values[3].value,
         super::history::Value::Opaque { type_code: 99, .. }
     ));
     assert_eq!(
