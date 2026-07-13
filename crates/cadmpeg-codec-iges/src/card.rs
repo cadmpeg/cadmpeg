@@ -212,6 +212,56 @@ fn validate_card_order(lines: &[PhysicalLine]) -> Result<(), CodecError> {
     Ok(())
 }
 
+fn validate_terminate_counts(lines: &[PhysicalLine]) -> Result<(), CodecError> {
+    let terminate = lines
+        .iter()
+        .filter(|line| line.section == Some(Section::Terminate))
+        .collect::<Vec<_>>();
+    if terminate.len() != 1 {
+        return Err(CodecError::Malformed(format!(
+            "IGES Fixed ASCII has {} Terminate cards, expected 1",
+            terminate.len()
+        )));
+    }
+    let data = terminate[0].payload.get(..32).ok_or_else(|| {
+        CodecError::Malformed("IGES Terminate card is shorter than 32 bytes".into())
+    })?;
+    let expected = [
+        (b'S', Section::Start),
+        (b'G', Section::Global),
+        (b'D', Section::Directory),
+        (b'P', Section::Parameter),
+    ];
+    for (field, (marker, section)) in data.chunks_exact(8).zip(expected) {
+        if field[0] != marker || field[1..].iter().any(|byte| !byte.is_ascii_digit()) {
+            return Err(CodecError::Malformed(format!(
+                "IGES Terminate field for {} is malformed",
+                section.name()
+            )));
+        }
+        let declared = std::str::from_utf8(&field[1..])
+            .ok()
+            .and_then(|text| text.parse::<usize>().ok())
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES Terminate count for {} is out of range",
+                    section.name()
+                ))
+            })?;
+        let actual = lines
+            .iter()
+            .filter(|line| line.section == Some(section))
+            .count();
+        if declared != actual {
+            return Err(CodecError::Malformed(format!(
+                "IGES Terminate count for {} is {declared}, actual {actual}",
+                section.name()
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn structural_ledger(source_length: u64, lines: &[PhysicalLine]) -> ByteLedger {
     let mut spans = Vec::new();
     for (index, line) in lines.iter().enumerate() {
@@ -265,6 +315,7 @@ pub(crate) fn scan(reader: &mut dyn ReadSeek) -> Result<CardScan, CodecError> {
     }
     let lines = physical_lines(&source)?;
     validate_card_order(&lines)?;
+    validate_terminate_counts(&lines)?;
     let source_length = u64::try_from(source.len())
         .map_err(|_| CodecError::Malformed("IGES source length exceeds u64".into()))?;
     let ledger = structural_ledger(source_length, &lines);

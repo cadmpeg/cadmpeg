@@ -131,3 +131,16 @@ fn inspect_reports_directory_entity_and_form_census() {
     assert!(summary.notes.contains(&"parameter_records=1".into()));
     assert!(summary.notes.contains(&"parameter_tokens=4".into()));
 }
+
+#[test]
+fn inspect_rejects_terminate_count_mismatch() {
+    let mut bytes = card(b"original fixture", b'S', 1);
+    bytes.extend(card(b"1H,,1H;,,;", b'G', 1));
+    bytes.extend(card(b"S0000001G0000002D0000000P0000000", b'T', 1));
+
+    let error = IgesCodec.inspect(&mut Cursor::new(bytes)).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "malformed container: IGES Terminate count for global is 2, actual 1"
+    );
+}
