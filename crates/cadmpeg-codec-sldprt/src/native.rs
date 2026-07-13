@@ -579,6 +579,22 @@ impl SldprtNative {
                 }
             }
         }
+        let mut expected_histories = self.feature_histories.clone();
+        crate::resolved_features::bind_history_classes(
+            &mut expected_histories,
+            &self.feature_input_lanes,
+        );
+        if self
+            .feature_histories
+            .iter()
+            .zip(&expected_histories)
+            .flat_map(|(history, expected)| history.features.iter().zip(&expected.features))
+            .any(|(feature, expected)| feature.input_class != expected.input_class)
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "history feature classes do not match the feature-input index".into(),
+            ));
+        }
         namespace.version = SLDPRT_NATIVE_VERSION;
         let histories = self
             .feature_histories

@@ -5768,6 +5768,44 @@ fn decode_propagates_unique_object_class_by_serialized_type_token() {
 }
 
 #[test]
+fn decode_binds_repeated_instances_by_class_token() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Feature Name="Seed" Type="LocalizedFillet" id="41"/>
+            <Feature Name="TokenSeed" Type="LocalizedFillet" id="42"/>
+            <Feature Name="TokenOnly" Type="OpaqueType" id="43"/>
+        </Keywords>"#,
+    ));
+    let mut payload = resolved_feature_classes_with_ids(&[("Fillet_c", "Seed", 41)]);
+    for (name, object_id) in [("TokenSeed", 42u32), ("TokenOnly", 43)] {
+        payload.extend_from_slice(&0x37a5u16.to_le_bytes());
+        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
+        for unit in name.encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0; 8]);
+        payload.extend_from_slice(&object_id.to_le_bytes());
+    }
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    assert!(native.feature_histories[0]
+        .features
+        .iter()
+        .all(|feature| feature.input_class.as_deref() == Some("Fillet_c")));
+}
+
+#[test]
 fn decode_does_not_propagate_ambiguous_object_class_by_type_token() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -5793,6 +5831,46 @@ fn decode_does_not_propagate_ambiguous_object_class_by_type_token() {
         .unwrap();
     let native = sldprt_native(&decoded.ir);
     assert_eq!(native.feature_histories[0].features[2].input_class, None);
+}
+
+#[test]
+fn decode_does_not_bind_ambiguous_repeated_class_token() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Feature Name="FilletSeed" Type="FilletType" id="41"/>
+            <Feature Name="PlaneSeed" Type="PlaneType" id="42"/>
+            <Feature Name="FilletToken" Type="FilletType" id="43"/>
+            <Feature Name="PlaneToken" Type="PlaneType" id="44"/>
+            <Feature Name="Unknown" Type="UnknownType" id="45"/>
+        </Keywords>"#,
+    ));
+    let mut payload = resolved_feature_classes_with_ids(&[
+        ("Fillet_c", "FilletSeed", 41),
+        ("moRefPlane_c", "PlaneSeed", 42),
+    ]);
+    for (name, object_id) in [("FilletToken", 43u32), ("PlaneToken", 44), ("Unknown", 45)] {
+        payload.extend_from_slice(&0x37a5u16.to_le_bytes());
+        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
+        for unit in name.encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0; 8]);
+        payload.extend_from_slice(&object_id.to_le_bytes());
+    }
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    assert_eq!(native.feature_histories[0].features[4].input_class, None);
 }
 
 #[test]
@@ -12762,6 +12840,32 @@ fn native_store_rejects_missing_sketch_marker_feature_owner() {
     assert!(error
         .to_string()
         .contains("inconsistent lane or feature ownership"));
+}
+
+#[test]
+fn native_store_rejects_edited_history_feature_class() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Round" Type="Fillet" id="41"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("Fillet_c", "Round", 41)]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut native = sldprt_native(&decoded.ir);
+    native.feature_histories[0].features[0].input_class = Some("moRefPlane_c".into());
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&mut namespace).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("feature classes do not match the feature-input index"));
 }
 
 #[test]

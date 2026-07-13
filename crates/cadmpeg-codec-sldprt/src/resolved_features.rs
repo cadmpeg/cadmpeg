@@ -798,6 +798,12 @@ pub(crate) fn bind_history_classes(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        feature.input_class = None;
+    }
     let mut classes_by_object = HashMap::<u32, Vec<&str>>::new();
     for lane in lanes {
         let names_by_offset = lane
@@ -861,6 +867,92 @@ pub(crate) fn bind_history_classes(
             feature.input_class = Some(class.clone());
         }
     }
+
+    let direct_name_offsets = lanes
+        .iter()
+        .flat_map(|lane| {
+            lane.classes
+                .iter()
+                .map(|class| (lane.id.as_str(), class.offset + 6 + class.name.len() as u64))
+        })
+        .collect::<HashSet<_>>();
+    let mut classes_by_token = HashMap::<(&str, u16), Vec<String>>::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        let (Some(class), Some(object_id)) = (
+            &feature.input_class,
+            feature
+                .source_id
+                .as_deref()
+                .and_then(|value| value.parse::<u32>().ok()),
+        ) else {
+            continue;
+        };
+        for lane in lanes {
+            for name in lane.names.iter().filter(|name| {
+                name.object_id == Some(object_id)
+                    && !direct_name_offsets.contains(&(lane.id.as_str(), name.offset))
+            }) {
+                let Ok(offset) = usize::try_from(name.offset) else {
+                    continue;
+                };
+                if let Some(token) = repeated_class_token(&lane.native_payload, offset) {
+                    classes_by_token
+                        .entry((lane.id.as_str(), token))
+                        .or_default()
+                        .push(class.clone());
+                }
+            }
+        }
+    }
+    for classes in classes_by_token.values_mut() {
+        classes.sort();
+        classes.dedup();
+    }
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+        .filter(|feature| feature.input_class.is_none())
+    {
+        let Some(object_id) = feature
+            .source_id
+            .as_deref()
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let mut candidates = Vec::new();
+        for lane in lanes {
+            for name in lane.names.iter().filter(|name| {
+                name.object_id == Some(object_id)
+                    && !direct_name_offsets.contains(&(lane.id.as_str(), name.offset))
+            }) {
+                let Ok(offset) = usize::try_from(name.offset) else {
+                    continue;
+                };
+                let Some(token) = repeated_class_token(&lane.native_payload, offset) else {
+                    continue;
+                };
+                if let Some([class]) = classes_by_token
+                    .get(&(lane.id.as_str(), token))
+                    .map(Vec::as_slice)
+                {
+                    candidates.push(class.clone());
+                }
+            }
+        }
+        candidates.sort();
+        candidates.dedup();
+        if let [class] = candidates.as_slice() {
+            feature.input_class = Some(class.clone());
+        }
+    }
+}
+
+fn repeated_class_token(payload: &[u8], name_offset: usize) -> Option<u16> {
+    let start = name_offset.checked_sub(2)?;
+    Some(u16::from_le_bytes(
+        payload.get(start..name_offset)?.try_into().ok()?,
+    ))
 }
 
 /// Bind profile streams to uniquely enclosing sketch feature records.
