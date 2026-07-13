@@ -11508,7 +11508,7 @@ fn patch_body_native_keys(
                 "F3D body-key record {record_index} is not a body"
             )));
         }
-        patch_integer_token(bytes, record, 0x04, 0, *key)?;
+        patch_integer_field(bytes, record, ref_width, 1, 0x04, *key)?;
     }
     Ok(())
 }
@@ -11666,7 +11666,7 @@ fn patch_edge_ownerships(bytes: &mut [u8], edits: &BTreeMap<usize, i64>) -> Resu
                 record.head
             )));
         }
-        patch_integer_token(bytes, record, 0x0c, 4, *owner)?;
+        patch_integer_field(bytes, record, ref_width, 7, 0x0c, *owner)?;
     }
     Ok(())
 }
@@ -14019,9 +14019,7 @@ fn patch_framed_geometry(
                 (3usize, 0x0c, *owning_edge),
                 (4, 0x04, i64::from(*endpoint_index)),
             ] {
-                let offset = required_payload_field(bytes, record, ref_width, index, tag)?;
-                bytes[offset + 1..offset + 1 + ref_width]
-                    .copy_from_slice(&value.to_le_bytes()[..ref_width]);
+                patch_integer_field(bytes, record, ref_width, index, tag, value)?;
             }
         }
         if let Some(containment) = face_sidedness.get(&record.index) {
@@ -14577,23 +14575,15 @@ fn patch_ascii_field(
     Ok(())
 }
 
-fn patch_integer_token(
+fn patch_integer_field(
     bytes: &mut [u8],
     record: &sab::Record,
+    ref_width: usize,
+    index: usize,
     tag: u8,
-    ordinal: usize,
     value: i64,
 ) -> Result<(), CodecError> {
-    let ref_width = active_ref_width(bytes);
-    let offset = *sab::payload_token_offsets(bytes, record, ref_width, tag)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .get(ordinal)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "{} record {} lacks integer token {tag:#04x}[{ordinal}]",
-                record.head, record.index
-            ))
-        })?;
+    let offset = required_payload_field(bytes, record, ref_width, index, tag)?;
     if ref_width == 4 && i64::from(value as i32) != value {
         return Err(CodecError::NotImplemented(format!(
             "{} record {} integer edit exceeds BinaryFile4 range",

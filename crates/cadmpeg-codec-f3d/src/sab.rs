@@ -790,6 +790,24 @@ mod tests {
         bytes
     }
 
+    fn generated_body_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 4];
+        bytes.extend_from_slice(b"body");
+        for (tag, value) in [
+            (0x0c, -1i64),
+            (0x04, 42),
+            (0x0c, -1),
+            (0x0c, 1),
+            (0x0c, -1),
+            (0x0c, -1),
+        ] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
     #[test]
     fn generated_payload_subtype_lookup_uses_declared_integer_width() {
         for ref_width in [4, 8] {
@@ -1016,6 +1034,23 @@ mod tests {
                     .expect("tolerant vertex metadata field");
                 assert_eq!(bytes[offset], tag);
             }
+        }
+    }
+
+    #[test]
+    fn generated_ownership_keys_have_fixed_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let body = generated_body_record(ref_width);
+            let records = frame(&body, 0, body.len(), ref_width).expect("generated body");
+            let key =
+                payload_token_offset(&body, &records[0], ref_width, 1).expect("body key field");
+            assert_eq!(body[key], 0x04);
+
+            let edge = generated_edge_record(ref_width);
+            let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
+            let owner =
+                payload_token_offset(&edge, &records[0], ref_width, 7).expect("edge owner field");
+            assert_eq!(edge[owner], 0x0c);
         }
     }
 }
