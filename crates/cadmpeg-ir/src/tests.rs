@@ -37,6 +37,49 @@ where
     assert!(serde_json::from_value::<T>(json).is_err());
 }
 
+#[test]
+fn product_occurrence_tree_validates_references_and_cycles() {
+    use crate::ids::{OccurrenceId, ProductId};
+    use crate::product::{OccurrenceParent, Product, ProductOccurrence};
+    use crate::transform::Transform;
+    use crate::units::Units;
+
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.products.push(Product {
+        id: ProductId("test:product:product#assembly".into()),
+        product_id: "assembly".into(),
+        name: Some("Assembly".into()),
+        bodies: Vec::new(),
+    });
+    ir.model.occurrences.push(ProductOccurrence {
+        id: OccurrenceId("test:product:occurrence#root".into()),
+        product: ProductId("test:product:product#assembly".into()),
+        parent: OccurrenceParent::Root,
+        transform: Transform::identity(),
+        name: None,
+    });
+    ir.model.occurrences.push(ProductOccurrence {
+        id: OccurrenceId("test:product:occurrence#child".into()),
+        product: ProductId("test:product:product#assembly".into()),
+        parent: OccurrenceParent::Occurrence {
+            occurrence: OccurrenceId("test:product:occurrence#root".into()),
+        },
+        transform: Transform::identity(),
+        name: None,
+    });
+    ir.finalize();
+    assert!(crate::validate(&ir, Vec::new()).is_ok());
+
+    ir.model.occurrences[1].parent = OccurrenceParent::Occurrence {
+        occurrence: OccurrenceId("test:product:occurrence#child".into()),
+    };
+    let report = crate::validate(&ir, Vec::new());
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.check == crate::report::Check::ProductStructure));
+}
+
 /// Replace the surface of the cube's first face with an unknown surface,
 /// optionally linking a preserved record, and return the face id and its
 /// surface id. Leaves every loop/coedge/edge of the face intact.

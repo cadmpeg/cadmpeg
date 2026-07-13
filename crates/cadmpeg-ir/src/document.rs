@@ -47,6 +47,8 @@ macro_rules! arena_registry {
             appearances: Appearance, "Appearance arena.", [] => |e| e.id.0.clone();
             appearance_bindings: AppearanceBinding, "Appearance binding arena.", [] => |e| e.id.clone();
             attributes: SourceAttribute, "Attribute arena.", [] => |e| e.id.0.clone();
+            products: crate::product::Product, "Product prototype arena.", [serde(default)] => |e| e.id.0.clone();
+            occurrences: crate::product::ProductOccurrence, "Placed product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
         }
     };
 }
