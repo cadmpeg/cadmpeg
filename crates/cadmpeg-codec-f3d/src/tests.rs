@@ -10648,6 +10648,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 construction.first.curve.clone(),
                 construction.second.curve.clone(),
             ];
+            let center_curve = construction.center_curve.clone();
 
             let mut source_less = result.ir;
             source_less.source = None;
@@ -10664,6 +10665,16 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                     direction: cadmpeg_ir::math::Vector3::new(3.0, -2.0, 4.0),
                 };
             }
+            source_less
+                .model
+                .curves
+                .iter_mut()
+                .find(|curve| curve.id == center_curve)
+                .expect("G2 center curve")
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point3::new(-2.0, 1.0, 3.0),
+                direction: cadmpeg_ir::math::Vector3::new(4.0, -3.0, 2.0),
+            };
             let mut encoded = Vec::new();
             F3dCodec
                 .encode(&source_less, &mut encoded)
@@ -10697,6 +10708,18 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                         if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
                 ));
             }
+            assert!(matches!(
+                round_trip
+                    .ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == construction.center_curve)
+                    .map(|curve| &curve.geometry),
+                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                    if curve.degree == 1
+                        && curve.knots == [-0.5, -0.5, 1.5, 1.5]
+            ));
         }
     }
 }

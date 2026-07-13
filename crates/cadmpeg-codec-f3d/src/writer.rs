@@ -4157,10 +4157,12 @@ fn encode_native_g2_blend(
         ));
     };
     native_nurbs_surface(bytes, second_exact)?;
-    native_nurbs_curve(
-        bytes,
-        native_loft_curve(target, &construction.center_curve)?,
+    let center_curve = native_loft_curve_in_range(
+        target,
+        &construction.center_curve,
+        Some(construction.center_parameters),
     )?;
+    native_nurbs_curve(bytes, &center_curve)?;
     for value in construction.center_parameters {
         native_f64(bytes, value);
     }
