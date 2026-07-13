@@ -86,6 +86,10 @@ pub struct NumericExpression<'a> {
     pub offset: usize,
     /// NX parameter name.
     pub name: &'a str,
+    /// Decimal identifier following the leading `p`, when present.
+    pub parameter_index: Option<u32>,
+    /// Name component following the parameter index and underscore.
+    pub qualifier: Option<&'a str>,
     /// Declared native unit.
     pub unit: ExpressionUnit,
     /// Exact expression text following the serialized name separator.
@@ -645,13 +649,32 @@ fn numeric_expression_at(
         return None;
     }
     let value_text = value_tail.strip_suffix("; ")?;
+    let (parameter_index, qualifier) = parameter_name(name);
     let value = value_text.parse::<f64>().ok()?;
     value.is_finite().then_some(NumericExpression {
         object_id,
         offset: base_offset + relative,
         name,
+        parameter_index,
+        qualifier,
         unit,
         expression: value_text,
         value,
     })
+}
+
+fn parameter_name(name: &str) -> (Option<u32>, Option<&str>) {
+    let Some(tail) = name.strip_prefix('p') else {
+        return (None, None);
+    };
+    let digit_count = tail.bytes().take_while(u8::is_ascii_digit).count();
+    if digit_count == 0 {
+        return (None, None);
+    }
+    let index = tail[..digit_count].parse().ok();
+    let qualifier = tail
+        .get(digit_count..)
+        .and_then(|tail| tail.strip_prefix('_'))
+        .filter(|qualifier| !qualifier.is_empty());
+    (index, qualifier)
 }

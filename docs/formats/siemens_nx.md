@@ -117,7 +117,7 @@ A numeric expression table contains a `hostglobalvariables` root entity. Each ex
 00
 ```
 
-`text_length` includes the leading marker byte and trailing zero, so it equals the ASCII text length plus two. Defined units are `mm` and `degrees`.
+`text_length` includes the leading marker byte and trailing zero, so it equals the ASCII text length plus two. Defined units are `mm` and `degrees`. Parameter names use `p<decimal-index>` or `p<decimal-index>_<qualifier>`. The qualifier remains part of the parameter name; equal decimal indices with distinct qualifiers are distinct parameters.
 
 ---
 

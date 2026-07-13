@@ -28,6 +28,10 @@ pub struct Expression {
     pub record: Option<String>,
     /// NX parameter name.
     pub name: String,
+    /// Decimal source parameter identifier following the leading `p`.
+    pub parameter_index: Option<u32>,
+    /// Qualified role following the parameter identifier.
+    pub qualifier: Option<String>,
     /// Declared native unit.
     pub unit: ExpressionUnit,
     /// Exact serialized expression text.
@@ -456,6 +460,8 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                     .and_then(|(object_id, _)| *object_id),
                 record: indexed_record.map(|(_, record)| record),
                 name: expression.name.to_string(),
+                parameter_index: expression.parameter_index,
+                qualifier: expression.qualifier.map(str::to_string),
                 unit: match expression.unit {
                     crate::om::ExpressionUnit::Millimeter => ExpressionUnit::Millimeter,
                     crate::om::ExpressionUnit::Degree => ExpressionUnit::Degree,

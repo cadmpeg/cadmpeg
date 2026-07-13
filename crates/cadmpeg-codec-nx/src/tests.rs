@@ -259,6 +259,11 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
         expressions[0].name,
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
     );
+    assert_eq!(expressions[0].parameter_index, Some(8));
+    assert_eq!(
+        expressions[0].qualifier,
+        Some("CircularPattern_pattern_Circular_Dir_offset_angle")
+    );
     assert_eq!(expressions[0].unit, crate::om::ExpressionUnit::Degree);
     assert_eq!(expressions[0].expression, "120");
     assert_eq!(expressions[0].value, 120.0);
@@ -316,6 +321,11 @@ fn om_numeric_expression_table_is_independent_of_entity_indexing() {
     assert_eq!(
         expressions[0].name,
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
+    );
+    assert_eq!(expressions[0].parameter_index, Some(8));
+    assert_eq!(
+        expressions[0].qualifier,
+        Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
     assert_eq!(expressions[0].value, 120.0);
 }
@@ -2463,9 +2473,14 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 2);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 3);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
+    assert_eq!(expressions[0].parameter_index, Some(8));
+    assert_eq!(
+        expressions[0].qualifier.as_deref(),
+        Some("CircularPattern_pattern_Circular_Dir_offset_angle")
+    );
     assert_eq!(
         expressions[0].name,
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
