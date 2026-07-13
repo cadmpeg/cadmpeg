@@ -475,10 +475,7 @@ fn transfer_feature_extrusion_surfaces(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if !scan.feature_operations.iter().any(|operation| {
-            operation.feature_id == feature_id
-                && operation.recipe == Some(crate::feature::FeatureRecipeKind::Extrude)
-        }) {
+        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Extrude) {
             continue;
         }
         let (Some(variables), Some(segments), Some(order_table), Some(trim_entities)) = (
@@ -588,6 +585,26 @@ fn transfer_feature_extrusion_surfaces(
         }
     }
     transferred
+}
+
+fn feature_recipe(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<crate::feature::FeatureRecipeKind> {
+    let schema_recipe = scan
+        .feature_rows
+        .iter()
+        .find(|row| row.feature_id == feature_id)
+        .and_then(|row| match row.root_schema_class {
+            Some(916 | 917) => Some(crate::feature::FeatureRecipeKind::Extrude),
+            _ => None,
+        });
+    schema_recipe.or_else(|| {
+        scan.feature_operations
+            .iter()
+            .find(|operation| operation.feature_id == feature_id)
+            .and_then(|operation| operation.recipe)
+    })
 }
 
 fn line_orientation_definition(
@@ -2041,7 +2058,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                 char::from(prefix).to_string(),
             );
         }
-        if let Some(recipe) = operation.recipe {
+        if let Some(recipe) = feature_recipe(scan, operation.feature_id) {
             source_properties.insert(
                 "recipe".to_string(),
                 match recipe {

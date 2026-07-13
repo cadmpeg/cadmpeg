@@ -500,6 +500,13 @@ fn scan_decodes_allfeatur_root_featdefs_schema_class() {
         Some("917")
     );
     assert_eq!(
+        result.ir.model.features[0]
+            .source_properties
+            .get("recipe")
+            .map(String::as_str),
+        Some("protextrude")
+    );
+    assert_eq!(
         result.ir.model.features[1]
             .source_properties
             .get("featdefs_schema_class")

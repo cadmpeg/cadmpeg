@@ -873,9 +873,9 @@ pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<FeatureRow> {
         .into_iter()
         .filter_map(|(start, end, feature_id)| {
             let (_, body_start) = psb::reference_id(payload, start).ok()?;
+            let body = payload.get(body_start..end)?;
             let header = payload.get(body_start..body_start + 2)?.try_into().ok()?;
-            let prefix_end = (body_start + 16).min(end);
-            let root_schema_class = payload[body_start..prefix_end]
+            let root_schema_class = body[..body.len().min(16)]
                 .windows(2)
                 .position(|window| window == [0xe3, 0xf6])
                 .and_then(|relative| {
@@ -887,7 +887,7 @@ pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<FeatureRow> {
                 feature_id,
                 header,
                 root_schema_class,
-                body: payload.get(body_start..end)?.to_vec(),
+                body: body.to_vec(),
                 body_offset: body_start,
                 offset: start,
             })
