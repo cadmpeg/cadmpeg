@@ -29,6 +29,8 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
 
+use crate::container::configuration_index;
+
 use crate::brep::{self, Brep};
 use crate::container::{self, Block, ContainerScan};
 use crate::parasolid::StreamHeader;
@@ -935,15 +937,6 @@ fn assign_configuration_bodies(
                 native_ref: None,
             });
     }
-}
-
-pub(crate) fn configuration_index(section: &str) -> Option<usize> {
-    let start = section.find("Config-")? + "Config-".len();
-    let digits = section[start..]
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect::<String>();
-    (!digits.is_empty()).then(|| digits.parse().ok()).flatten()
 }
 
 fn stamp_configuration_baseline(ir: &mut CadIr) {

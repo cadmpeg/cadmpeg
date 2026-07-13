@@ -302,7 +302,7 @@ fn retained_partition(ir: &CadIr) -> Option<(String, Vec<u8>)> {
 }
 
 fn remapped_partition_section(ir: &CadIr, section: &str) -> Option<String> {
-    let old_index = crate::decode::configuration_index(section)?;
+    let old_index = crate::container::configuration_index(section)?;
     let native = SldprtNative::load(ir.native.namespace("sldprt")?).ok()?;
     let native_id = native
         .feature_histories

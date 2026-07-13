@@ -491,6 +491,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 pub fn select_active_parasolid(
     scan: &ContainerScan,
 ) -> Option<(&Block, crate::parasolid::StreamHeader)> {
+    let active_configuration = active_configuration_index(scan);
     let mut best: Option<(i64, &Block, crate::parasolid::StreamHeader)> = None;
     for b in &scan.blocks {
         let Some(ps) = &b.ps_stream else { continue };
@@ -511,6 +512,9 @@ pub fn select_active_parasolid(
         }
         if name.contains("partition") {
             score += 100_000;
+            if active_configuration.is_some_and(|index| configuration_index(&name) == Some(index)) {
+                score += 1_000_000;
+            }
         } else if name.contains("deltas") || desc.contains("deltas") {
             score += 50_000;
         }
@@ -520,4 +524,38 @@ pub fn select_active_parasolid(
         }
     }
     best.map(|(_, b, sch)| (b, sch))
+}
+
+pub(crate) fn configuration_index(section: &str) -> Option<usize> {
+    let start = section.to_ascii_lowercase().find("config-")? + "config-".len();
+    let digits = section[start..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>();
+    (!digits.is_empty()).then(|| digits.parse().ok()).flatten()
+}
+
+pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> {
+    let active = scan.blocks.iter().find_map(|block| {
+        let text = std::str::from_utf8(&block.payload).ok()?;
+        let document = roxmltree::Document::parse(text).ok()?;
+        let root = document.root_element();
+        (root.tag_name().name() == "swSolidWorks")
+            .then(|| {
+                root.descendants()
+                    .find(|node| node.has_tag_name("swModel"))?
+                    .attribute("swConfigurationName")
+            })
+            .flatten()
+            .map(str::to_string)
+    })?;
+    scan.blocks.iter().find_map(|block| {
+        let text = std::str::from_utf8(&block.payload).ok()?;
+        let document = roxmltree::Document::parse(text).ok()?;
+        let root = document.root_element();
+        root.tag_name().name().contains("Keywords").then_some(())?;
+        root.children()
+            .filter(|node| node.has_tag_name("Configuration"))
+            .position(|node| node.attribute("Name") == Some(active.as_str()))
+    })
 }

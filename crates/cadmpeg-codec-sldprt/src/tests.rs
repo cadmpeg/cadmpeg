@@ -2774,6 +2774,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             native_ref: None,
         })
         .collect();
+    ir.model.configurations[1].active = true;
 
     let mut encoded = Vec::new();
     SldprtCodec.encode(&ir, &mut encoded).unwrap();
@@ -2786,12 +2787,22 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .blocks
         .iter()
         .any(|block| { block.section.as_deref() == Some("Contents/Config-1-Partition") }));
+    assert_eq!(container::active_configuration_index(&scan), Some(1));
+    assert_eq!(
+        container::select_active_parasolid(&scan)
+            .unwrap()
+            .0
+            .section
+            .as_deref(),
+        Some("Contents/Config-1-Partition")
+    );
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.bodies.len(), 2);
     assert_eq!(decoded.ir.model.configurations[0].bodies.len(), 1);
     assert_eq!(decoded.ir.model.configurations[1].bodies.len(), 1);
+    assert!(decoded.ir.model.configurations[1].active);
     assert_ne!(
         decoded.ir.model.configurations[0].bodies,
         decoded.ir.model.configurations[1].bodies
