@@ -27,12 +27,47 @@ pub(crate) fn transfer(
     graph: &B5Graph,
     payload: &UnknownId,
 ) -> bool {
-    let face_record_count = graph
-        .records
-        .iter()
-        .filter(|record| record.class == 0x5f)
-        .count();
-    if graph.faces.is_empty() || graph.faces.len() != face_record_count {
+    if !graph.complete {
+        let mut subset = graph.clone();
+        subset.loops.retain(|_, loop_| {
+            loop_
+                .pcurves
+                .iter()
+                .zip(&loop_.edges)
+                .all(|(pcurve, edge)| {
+                    subset
+                        .pcurves
+                        .get(pcurve)
+                        .is_some_and(|pcurve| pcurve.surface == loop_.surface)
+                        && subset.edge_vertices.contains_key(edge)
+                })
+                && solve_loop_chain(loop_, &subset.edge_vertices).is_some()
+        });
+        subset.faces.retain(|face| {
+            subset.surfaces.contains_key(&face.surface)
+                && !face.loops.is_empty()
+                && face.loops.iter().all(|loop_id| {
+                    subset
+                        .loops
+                        .get(loop_id)
+                        .is_some_and(|loop_| loop_.surface == face.surface)
+                })
+        });
+        let referenced_loops: HashSet<u32> = subset
+            .faces
+            .iter()
+            .flat_map(|face| face.loops.iter().copied())
+            .collect();
+        subset
+            .loops
+            .retain(|loop_id, _| referenced_loops.contains(loop_id));
+        if subset.faces.is_empty() || subset.loops.is_empty() {
+            return false;
+        }
+        subset.complete = true;
+        return transfer(ir, annotations, &subset, payload);
+    }
+    if graph.faces.is_empty() {
         return false;
     }
 
@@ -88,18 +123,25 @@ pub(crate) fn transfer(
             let Some(knots) = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities) else {
                 return false;
             };
+            let Some(surface) = graph.surfaces.get(&loop_.surface) else {
+                return false;
+            };
+            let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
             let geometry = PcurveGeometry::Nurbs {
                 degree: pcurve.degree,
                 knots,
                 control_points: pcurve
                     .control_points
                     .iter()
-                    .map(|point| Point2::new(point[0], point[1]))
+                    .map(|point| neutral_pcurve_point(*point, surface))
                     .collect(),
                 weights: None,
                 periodic: false,
             };
-            if pcurve_plan.insert(pcurve_id, geometry).is_some() {
+            if pcurve_plan
+                .insert(pcurve_id, (geometry, cylinder_reparameterized))
+                .is_some()
+            {
                 return false;
             }
             edge_ids.insert(edge_id);
@@ -166,7 +208,7 @@ pub(crate) fn transfer(
     }
 
     let mut pcurve_ids = HashMap::new();
-    for (object_id, geometry) in pcurve_plan {
+    for (object_id, (geometry, cylinder_reparameterized)) in pcurve_plan {
         let id = PcurveId(format!("catia:b5:pcurve#{object_id}"));
         annotate(
             annotations,
@@ -175,6 +217,9 @@ pub(crate) fn transfer(
             "21_pcurve",
             Exactness::ByteExact,
         );
+        if cylinder_reparameterized {
+            annotations.derived(&id, "geometry.control_points");
+        }
         pcurve_ids.insert(object_id, id.clone());
         ir.model.pcurves.push(Pcurve {
             id,
@@ -392,6 +437,13 @@ pub(crate) fn transfer(
     true
 }
 
+fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
+    match surface {
+        B5Surface::Cylinder { radius, .. } => Point2::new(point[0] / radius, point[1]),
+        _ => Point2::new(point[0], point[1]),
+    }
+}
+
 fn neutral_surface(surface: &B5Surface, payload: &UnknownId) -> SurfaceGeometry {
     match surface {
         B5Surface::Plane {
@@ -543,4 +595,23 @@ fn length(value: [f64; 3]) -> f64 {
 fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
     let length = length(value);
     (length > f64::EPSILON).then(|| [value[0] / length, value[1] / length, value[2] / length])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::neutral_pcurve_point;
+    use crate::b5::B5Surface;
+
+    #[test]
+    fn cylinder_pcurve_arc_length_normalizes_to_neutral_angle() {
+        let surface = B5Surface::Cylinder {
+            origin: [0.0, 0.0, 0.0],
+            reference_x: [1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 2.0,
+        };
+        let point = neutral_pcurve_point([std::f64::consts::PI, 3.0], &surface);
+        assert_eq!(point.u, std::f64::consts::FRAC_PI_2);
+        assert_eq!(point.v, 3.0);
+    }
 }

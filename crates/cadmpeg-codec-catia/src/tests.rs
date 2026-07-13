@@ -2211,10 +2211,15 @@ fn b5_closed_triangle_stream() -> Vec<u8> {
         400,
         &[
             0x87, 0x18, 200, 0, 0x18, 44, 1, 0x18, 201, 0, 0x18, 45, 1, 0x18, 202, 0, 0x18, 46, 1,
-            0x18, 100, 0,
+            0x18, 100, 0, 0x83, 0x05, 0x05,
         ],
     );
-    append_b5_record(&mut bytes, 0x5f, 500, &[0x18, 100, 0, 0x18, 144, 1]);
+    append_b5_record(
+        &mut bytes,
+        0x5f,
+        500,
+        &[0x82, 0x18, 100, 0, 0x18, 144, 1, 0x05],
+    );
     for point in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
         for value in point {
@@ -2222,6 +2227,17 @@ fn b5_closed_triangle_stream() -> Vec<u8> {
         }
     }
     bytes
+}
+
+#[test]
+fn b5_frame_walk_ignores_markers_inside_payloads() {
+    let mut bytes = Vec::new();
+    append_b5_record(&mut bytes, 0x06, 1, &[0xb5, 0x03, 0x5f, 0x08, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&b5_closed_triangle_stream());
+    let graph = crate::b5::parse(&bytes).expect("length-closed B5 graph");
+    assert_eq!(graph.faces.len(), 1);
+    assert_eq!(graph.loops.len(), 1);
+    assert_eq!(graph.edge_vertices.len(), 3);
 }
 
 #[test]

@@ -11,8 +11,12 @@ use cadmpeg_ir::le::{f32_at, f64_at};
 /// together with the `05 08 01` vertex points used to bind edge endpoints.
 #[derive(Debug, Clone, PartialEq)]
 pub struct B5Graph {
-    /// Every `b5 03` record found in the stream, in walk order, including
-    /// records not otherwise resolved into `faces`/`loops`/etc.
+    /// `true` when every serialized face and loop node belongs to the resolved
+    /// reference-closed graph; `false` when the graph is its maximal closed
+    /// subset.
+    pub complete: bool,
+    /// Topology-bearing `b5 03` records from length-closed A8/B5 frame runs, in
+    /// stream order.
     pub records: Vec<B5Record>,
     /// `b5 03 5f` face nodes, in stream declaration order (equal to STEP
     /// `ADVANCED_FACE` order, [spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
@@ -207,11 +211,15 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             .get(&pcurve.surface)
             .and_then(|surface| lift_pcurve_endpoints(surface, &profiles, &pcurve.control_points));
     }
+    let source_face_count = records.iter().filter(|record| record.class == 0x5f).count();
+    let source_loop_count = records.iter().filter(|record| record.class == 0x62).count();
     let loops: BTreeMap<u32, B5Loop> = records
         .iter()
         .filter(|record| record.class == 0x62)
-        .map(|record| parse_loop(record, &by_id, &pcurves).map(|loop_| (record.object_id, loop_)))
-        .collect::<Option<_>>()?;
+        .filter_map(|record| {
+            parse_loop(record, &by_id, &pcurves).map(|loop_| (record.object_id, loop_))
+        })
+        .collect();
     let faces: Vec<B5Face> = records
         .iter()
         .filter(|record| record.class == 0x5f)
@@ -222,7 +230,28 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     }
     let vertex_points = vertex_points(bytes);
     let edge_vertices = bind_edge_vertices(&loops, &pcurves, &vertex_points)?;
+    let referenced_loops: std::collections::HashSet<u32> = faces
+        .iter()
+        .flat_map(|face| face.loops.iter().copied())
+        .collect();
+    let complete = faces.len() == source_face_count
+        && loops.len() == source_loop_count
+        && loops.iter().all(|(loop_id, loop_)| {
+            referenced_loops.contains(loop_id)
+                && loop_
+                    .pcurves
+                    .iter()
+                    .zip(&loop_.edges)
+                    .all(|(pcurve, edge)| {
+                        pcurves
+                            .get(pcurve)
+                            .is_some_and(|pcurve| pcurve.surface == loop_.surface)
+                            && edge_vertices.contains_key(edge)
+                    })
+                && unique_loop_chain(loop_, &edge_vertices)
+        });
     Some(B5Graph {
+        complete,
         records,
         faces,
         loops,
@@ -232,6 +261,36 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         edge_vertices,
         profiles,
     })
+}
+
+fn unique_loop_chain(loop_: &B5Loop, edge_vertices: &BTreeMap<u32, [usize; 2]>) -> bool {
+    let Some(first) = loop_.edges.first().and_then(|edge| edge_vertices.get(edge)) else {
+        return false;
+    };
+    let mut solution_count = 0;
+    for first_reversed in [false, true] {
+        let initial = first[usize::from(first_reversed)];
+        let mut current = first[usize::from(!first_reversed)];
+        let mut valid = true;
+        for edge_id in &loop_.edges[1..] {
+            let Some(endpoints) = edge_vertices.get(edge_id) else {
+                valid = false;
+                break;
+            };
+            match (endpoints[0] == current, endpoints[1] == current) {
+                (true, false) => current = endpoints[1],
+                (false, true) => current = endpoints[0],
+                _ => {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+        if valid && current == initial {
+            solution_count += 1;
+        }
+    }
+    solution_count == 1
 }
 
 fn parse_profile(record: &B5Record) -> Option<B5Profile> {
@@ -284,6 +343,7 @@ fn bind_edge_vertices(
     pcurves: &BTreeMap<u32, B5Pcurve>,
     points: &[[f64; 3]],
 ) -> Option<BTreeMap<u32, [usize; 2]>> {
+    let point_index = point_index(points);
     let mut edges: BTreeMap<u32, [usize; 2]> = BTreeMap::new();
     for loop_ in loops.values() {
         for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
@@ -291,7 +351,7 @@ fn bind_edge_vertices(
                 continue;
             };
             let indices: Option<[usize; 2]> = endpoints
-                .map(|endpoint| unique_point(points, endpoint))
+                .map(|endpoint| canonical_point(points, &point_index, endpoint))
                 .into_iter()
                 .collect::<Option<Vec<_>>>()
                 .and_then(|indices| indices.try_into().ok());
@@ -314,18 +374,45 @@ fn bind_edge_vertices(
     Some(edges)
 }
 
-fn unique_point(points: &[[f64; 3]], endpoint: [f64; 3]) -> Option<usize> {
-    let matches: Vec<usize> = points
-        .iter()
-        .enumerate()
-        .filter_map(|(index, point)| {
-            (distance_squared(*point, endpoint) <= 2.25e-6).then_some(index)
-        })
-        .collect();
-    let [index] = matches.as_slice() else {
-        return None;
-    };
-    Some(*index)
+const POINT_TOLERANCE: f64 = 1.5e-3;
+
+fn point_cell(point: [f64; 3]) -> [i64; 3] {
+    point.map(|coordinate| (coordinate / POINT_TOLERANCE).floor() as i64)
+}
+
+fn point_index(points: &[[f64; 3]]) -> HashMap<[i64; 3], Vec<usize>> {
+    let mut index = HashMap::<[i64; 3], Vec<usize>>::new();
+    for (point_index, point) in points.iter().enumerate() {
+        index
+            .entry(point_cell(*point))
+            .or_default()
+            .push(point_index);
+    }
+    index
+}
+
+fn canonical_point(
+    points: &[[f64; 3]],
+    index: &HashMap<[i64; 3], Vec<usize>>,
+    endpoint: [f64; 3],
+) -> Option<usize> {
+    let cell = point_cell(endpoint);
+    let mut matches = Vec::new();
+    for dx in -1..=1 {
+        for dy in -1..=1 {
+            for dz in -1..=1 {
+                let neighbor = [cell[0] + dx, cell[1] + dy, cell[2] + dz];
+                matches.extend(index.get(&neighbor).into_iter().flatten().filter_map(
+                    |&point_index| {
+                        (distance_squared(points[point_index], endpoint)
+                            <= POINT_TOLERANCE * POINT_TOLERANCE)
+                            .then_some(point_index)
+                    },
+                ));
+            }
+        }
+    }
+    matches.into_iter().min()
 }
 
 fn distance_squared(left: [f64; 3], right: [f64; 3]) -> f64 {
@@ -695,34 +782,81 @@ fn compact(bytes: &[u8], position: &mut usize) -> Option<u32> {
 
 fn records(bytes: &[u8]) -> Vec<B5Record> {
     let mut records = Vec::new();
+    let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
     let mut position = 0;
     while position + 8 <= bytes.len() {
-        let Some(relative) = bytes[position..]
-            .windows(2)
-            .position(|value| value == [0xb5, 0x03])
-        else {
-            break;
+        let Some((end, _, _, _)) = object_frame(bytes, position) else {
+            position += 1;
+            continue;
         };
-        let start = position + relative;
-        let length = usize::from(bytes[start + 3]);
-        let Some(end) = start.checked_add(8 + length) else {
-            break;
-        };
-        if end > bytes.len() {
+        let start = position;
+        let mut at = position;
+        let mut run = Vec::new();
+        while let Some((next, family, class, object_id)) = object_frame(bytes, at) {
+            run.push((at, next, family, class, object_id));
+            at = next;
+        }
+        if run.len() < 2 {
             position = start + 1;
             continue;
         }
-        records.push(B5Record {
-            offset: start,
-            class: bytes[start + 2],
-            object_id: u32::from_le_bytes(
-                bytes[start + 4..start + 8].try_into().expect("object id"),
-            ),
-            payload: bytes[start + 8..end].to_vec(),
-        });
-        position = end;
+        for (record_start, record_end, family, class, object_id) in run {
+            if family != 0xb5 || !is_topology_class(class) {
+                continue;
+            }
+            let payload = bytes[record_start + 8..record_end].to_vec();
+            if seen
+                .get(&object_id)
+                .is_some_and(|(seen_class, seen_payload)| {
+                    *seen_class == class && *seen_payload == payload
+                })
+            {
+                continue;
+            }
+            seen.insert(object_id, (class, payload.clone()));
+            records.push(B5Record {
+                offset: record_start,
+                class,
+                object_id,
+                payload,
+            });
+        }
+        position = at.max(end);
     }
     records
+}
+
+fn object_frame(bytes: &[u8], start: usize) -> Option<(usize, u8, u8, u32)> {
+    if bytes.get(start + 1) != Some(&0x03) {
+        return None;
+    }
+    let family = *bytes.get(start)?;
+    let class = *bytes.get(start + 2)?;
+    let (header, length, object_id) = match family {
+        0xb5 => (
+            8usize,
+            usize::from(*bytes.get(start + 3)?),
+            u32::from_le_bytes(bytes.get(start + 4..start + 8)?.try_into().ok()?),
+        ),
+        0xa8 => (
+            11usize,
+            usize::try_from(u32::from_le_bytes(
+                bytes.get(start + 3..start + 7)?.try_into().ok()?,
+            ))
+            .ok()?,
+            u32::from_le_bytes(bytes.get(start + 7..start + 11)?.try_into().ok()?),
+        ),
+        _ => return None,
+    };
+    let end = start.checked_add(header)?.checked_add(length)?;
+    (end <= bytes.len()).then_some((end, family, class, object_id))
+}
+
+fn is_topology_class(class: u8) -> bool {
+    matches!(
+        class,
+        0x0e | 0x0f | 0x21 | 0x27 | 0x28 | 0x2d | 0x5e | 0x5f | 0x62
+    )
 }
 
 fn parse_face(
@@ -730,7 +864,22 @@ fn parse_face(
     by_id: &HashMap<u32, &B5Record>,
     loops: &BTreeMap<u32, B5Loop>,
 ) -> Option<B5Face> {
-    let references = uncounted_references(&record.payload)?;
+    let references = if let Some(count) = record
+        .payload
+        .first()
+        .and_then(|lead| lead.checked_sub(0x80))
+    {
+        let mut position = 1;
+        let references = (0..count)
+            .map(|_| reference(&record.payload, &mut position))
+            .collect::<Option<Vec<_>>>()?;
+        if position < record.payload.len() && record.payload[position] != 0x05 {
+            return None;
+        }
+        references
+    } else {
+        uncounted_references(&record.payload)?
+    };
     let surface = *references.first()?;
     if !is_surface(by_id.get(&surface)?.class) {
         return None;
@@ -764,7 +913,10 @@ fn parse_loop(
     for _ in 0..count {
         references.push(reference(&record.payload, &mut position)?);
     }
-    if position != record.payload.len() {
+    let edge_count = (count - 1) / 2;
+    if position < record.payload.len()
+        && record.payload.get(position).copied() != u8::try_from(0x80 + edge_count).ok()
+    {
         return None;
     }
     let surface = *references.last()?;

@@ -318,12 +318,26 @@ Frame: `a8 03 <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>
 
 ### 6.7 Object-stream topology (`b5 03`)
 
+Object records occur in length-closed runs containing both common-form A8 and
+B5 frames. Starting at a frame boundary, advance by the declared frame length;
+the next byte is either another A8/B5 frame or the run terminator. Marker bytes
+inside an accepted frame payload do not start records. Repeated byte-identical
+typed records with the same object id are one object.
+
 - `b5 03 5f` (per-face node): first ref token names the surface (`b5 03 27` plane / `28` cylinder / `2d` revolution / `a8 03 34` bspline), resolved through the object-id map. The bspline subset binds injectively to `a8 03 34`. The `5f` stream rank is the native face ordinal.
-- `b5 03 62` (loop node): payload `<0x80 + n_refs> (pcurve_ref edge_ref)* surface_ref`, `n_refs` odd. Member ref tokens use the E5-style compact set (`18`/`38`/`10 <hi>`=hi<<8/`08 <lo>`/`30 <lo><hi>`=(u16le)<<8).
+- `b5 03 62` (loop node): payload `<0x80 + n_refs> (pcurve_ref edge_ref)* surface_ref <tail>`, `n_refs` odd. Member ref tokens use the E5-style compact set (`18`/`38`/`10 <hi>`=hi<<8/`08 <lo>`/`30 <lo><hi>`=(u16le)<<8). The tail begins with `<0x80 + edge_count>`; its remaining topology metadata does not alter member identity or order.
 - `b5 03 21` (pcurve): `catia_support_ref` is the owning surface's `object_id` directly. The 3D edge is the pcurve lifted through the surface (plane / cylinder arc-length `θ=u/r` / surface-of-revolution / bspline), and the clamped end poles land on `05 08 01` vertices to f32 round-trip.
+- `b5 03 5f` (face node): dominant payload `<0x80 + n_refs> surface_ref loop_ref... <05-tail>`; the first reference is the carrier and the remaining references are owned loops.
 - `b5 03 27/28/2d` analytic surfaces: plane origin+normal, cylinder origin+axis+radius, revolution axis origin+direction.
 
-**Object-stream topology:** `b5 03 5f` nodes are faces in native ordinal order. Distinct `b5 03 5e` identifiers referenced by loop nodes are physical edges. Each `b5 03 62` node defines one loop and stores its ordered edge occurrences. A paired pcurve lifted through its carrier defines the edge curve, and its endpoints coincide with unique `05 08 01` vertex rows. The fixed serialized loop sequence has exactly one head-to-tail endpoint-sense assignment when it represents a closed boundary. Pcurve degree and carrier identify lines, circles, and B-splines. An object-stream file contains one body. The 3D edge geometry uses f32 endpoint coordinates, and native pcurves have degree 1 or 2.
+**Object-stream topology:** `b5 03 5f` nodes are faces in native ordinal order. Distinct `b5 03 5e` identifiers referenced by loop nodes are physical edges. Each `b5 03 62` node defines one loop and stores its ordered edge occurrences. A paired pcurve lifted through its carrier defines the edge curve, and its endpoints coincide with `05 08 01` vertex loci. The fixed serialized loop sequence has exactly one head-to-tail endpoint-sense assignment when it represents a closed boundary. Pcurve degree and carrier identify lines, circles, and B-splines. An object-stream file contains one body. The 3D edge geometry uses f32 endpoint coordinates, and native pcurves have degree 1 or 2.
+
+Coincident `05 08 01` rows share an endpoint locus. For topology subsets whose
+allocation identity is otherwise unresolved, the locus binds to the lowest
+serialized matching row; a loop is emitted only when the resulting ordered edge
+sequence has exactly one closed head-to-tail sense assignment. Faces or loops
+with unresolved references, endpoint lifts, or chain sense remain outside the
+connected graph.
 
 ---
 

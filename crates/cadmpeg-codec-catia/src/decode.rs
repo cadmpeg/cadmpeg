@@ -828,11 +828,20 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
-            losses: if topology_transferred {
+            losses: if topology_transferred && b5_graph.as_ref().is_some_and(|graph| graph.complete)
+            {
                 vec![LossNote {
                     category: LossCategory::Topology,
                     severity: Severity::Warning,
                     message: "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved."
+                        .to_string(),
+                    provenance: None,
+                }]
+            } else if topology_transferred {
+                vec![LossNote {
+                    category: LossCategory::Topology,
+                    severity: Severity::Blocking,
+                    message: "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant nodes and unresolved endpoint lifts remain outside the connected graph."
                         .to_string(),
                     provenance: None,
                 }]
