@@ -189,6 +189,9 @@ pub struct FeatureInputScalar {
     pub value: f64,
     /// Function of this scalar in the dimension record.
     pub role: FeatureInputScalarRole,
+    /// Local sketch-entity indices used as dimension operands.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entity_indices: Vec<u16>,
 }
 
 /// Function of a named scalar in its dimension record.

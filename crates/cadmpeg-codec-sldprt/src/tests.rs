@@ -952,6 +952,13 @@ fn resolved_features_payload_with_names(codes: &[u32], names: &[&str]) -> Vec<u8
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02,
                 0x00, 0x00,
             ]);
+            payload.extend_from_slice(&[0; 5]);
+            for index in [0u16, 2] {
+                payload.extend_from_slice(&[0xd6, 0x80]);
+                payload.extend_from_slice(&index.to_le_bytes());
+                payload.extend_from_slice(&[0xff; 4]);
+                payload.extend_from_slice(&[0; 4]);
+            }
         }
     }
     for code in codes {
@@ -10729,6 +10736,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     assert_eq!(lane.scalars[0].name, lane.names[2].id);
     assert_eq!(lane.scalars[0].value, 0.025);
     assert_eq!(lane.scalars[0].object_id, 1);
+    assert_eq!(lane.scalars[0].entity_indices, [0, 2]);
     assert_eq!(
         lane.scalars[0].role,
         crate::records::FeatureInputScalarRole::Driving

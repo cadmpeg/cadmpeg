@@ -139,23 +139,44 @@ pub(crate) fn named_scalars(
                     .ok()?,
             );
             let role = scalar_role(payload, name_offset);
-            value
-                .is_finite()
-                .then_some((name, value_offset, object_id, value, role))
+            let entity_indices = scalar_entity_indices(payload, name_offset);
+            value.is_finite().then_some((
+                name,
+                value_offset,
+                object_id,
+                value,
+                role,
+                entity_indices,
+            ))
         })
         .enumerate()
         .map(
-            |(ordinal, (name, offset, object_id, value, role))| FeatureInputScalar {
-                id: format!("sldprt:feature-input:scalar#{lane_key}:{offset}"),
-                parent: parent.to_string(),
-                ordinal: ordinal as u32,
-                offset: offset as u64,
-                object_id,
-                name: name.id.clone(),
-                value,
-                role,
+            |(ordinal, (name, offset, object_id, value, role, entity_indices))| {
+                FeatureInputScalar {
+                    id: format!("sldprt:feature-input:scalar#{lane_key}:{offset}"),
+                    parent: parent.to_string(),
+                    ordinal: ordinal as u32,
+                    offset: offset as u64,
+                    object_id,
+                    name: name.id.clone(),
+                    value,
+                    role,
+                    entity_indices,
+                }
             },
         )
+        .collect()
+}
+
+fn scalar_entity_indices(payload: &[u8], name_offset: usize) -> Vec<u16> {
+    [75usize, 87]
+        .into_iter()
+        .filter_map(|relative| {
+            let offset = name_offset.checked_add(relative)?;
+            let cell = payload.get(offset..offset + 12)?;
+            (cell[..2] == [0xd6, 0x80] && cell[4..8] == [0xff; 4] && cell[8..12] == [0; 4])
+                .then(|| u16::from_le_bytes([cell[2], cell[3]]))
+        })
         .collect()
 }
 
