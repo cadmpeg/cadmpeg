@@ -143,6 +143,11 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
 }
 
 fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
+    if ir.native.namespace("rhino").is_some() {
+        return Err(CodecError::NotImplemented(
+            "Rhino native records require explicit survival handling".into(),
+        ));
+    }
     let model = &ir.model;
     let unsupported = [
         ("faces", model.faces.len()),
@@ -242,11 +247,6 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
     }
     for mesh in &model.tessellations {
         check_mesh(mesh)?;
-    }
-    if ir.native.namespace("rhino").is_some() {
-        return Err(CodecError::NotImplemented(
-            "Rhino native records require explicit survival handling".into(),
-        ));
     }
     Ok(())
 }
@@ -1260,5 +1260,29 @@ mod tests {
         assert_eq!(decoded.ir.model.bodies.len(), 1);
         assert_eq!(decoded.ir.model.vertices.len(), 2);
         assert_eq!(decoded.ir.model.points.len(), 2);
+    }
+
+    #[test]
+    fn retained_native_records_are_refused_before_output() {
+        let mut source = CadIr::empty(Units::default());
+        source.model.points.push(Point {
+            id: PointId("cadir:model:point#retained".into()),
+            position: Point3::new(1.0, 2.0, 3.0),
+        });
+        let mut bytes = Vec::new();
+        RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&source, &mut bytes)
+            .unwrap();
+        let decoded = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(decoded.ir.native.namespace("rhino").is_some());
+
+        let mut output = vec![0xaa];
+        let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&decoded.ir, &mut output)
+            .unwrap_err();
+        assert!(error.to_string().contains("survival handling"));
+        assert_eq!(output, [0xaa]);
     }
 }
