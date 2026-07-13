@@ -2830,6 +2830,45 @@ fn decode_synthesizes_sparse_partition_configuration() {
             .map(|body| body.id.clone())
             .collect::<Vec<_>>()
     );
+
+    let mut edited = decoded.ir;
+    edited.model.points[0].position.x += 1.0;
+    let mut written = Vec::new();
+    SldprtCodec.write_preserved(&edited, &mut written).unwrap();
+    let scan = container::scan_bytes(&written);
+    assert!(scan
+        .blocks
+        .iter()
+        .any(|block| block.section.as_deref() == Some("Contents/Config-3-Partition")));
+    assert!(!scan
+        .blocks
+        .iter()
+        .any(|block| block.section.as_deref() == Some("Contents/Config-0-Partition")));
+}
+
+#[test]
+fn semantic_writer_rejects_duplicate_configuration_source_indices() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut duplicate = decoded.ir.model.configurations[0].clone();
+    duplicate.id.0.push_str("-duplicate");
+    duplicate.ordinal += 1;
+    duplicate.native_ref = None;
+    decoded.ir.model.configurations.push(duplicate);
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("repeats configuration source index"),
+        "{error}"
+    );
 }
 
 #[test]

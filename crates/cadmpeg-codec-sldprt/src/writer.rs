@@ -376,9 +376,34 @@ fn configuration_partitions(
     }
     let mut configurations = ir.model.configurations.iter().collect::<Vec<_>>();
     configurations.sort_by_key(|configuration| configuration.ordinal);
+    let mut used = HashSet::new();
+    for configuration in &configurations {
+        if let Some(index) = configuration.source_index {
+            if !used.insert(index) {
+                return Err(CodecError::Malformed(format!(
+                    "duplicate SLDPRT configuration source index {index}"
+                )));
+            }
+        }
+    }
+    let mut next = 0u32;
+    let configurations = configurations
+        .into_iter()
+        .map(|configuration| {
+            let index = configuration.source_index.unwrap_or_else(|| {
+                while used.contains(&next) {
+                    next = next.saturating_add(1);
+                }
+                let index = next;
+                used.insert(index);
+                next = next.saturating_add(1);
+                index
+            });
+            (index, configuration)
+        })
+        .collect::<Vec<_>>();
     configurations
         .into_iter()
-        .enumerate()
         .filter(|(_, configuration)| !configuration.bodies.is_empty())
         .map(|(index, configuration)| {
             let subset = body_subset(ir, &configuration.bodies)?;
