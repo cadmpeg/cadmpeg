@@ -392,6 +392,17 @@ fn is_coedge_record(record: &Record) -> bool {
     matches!(record.head.as_str(), "coedge" | "tcoedge")
 }
 
+fn is_known_record_head(head: &str) -> bool {
+    matches!(
+        head,
+        "body" | "region" | "lump" | "shell" | "face" | "loop" | "point" | "asmheader"
+    ) || matches!(
+        head,
+        "coedge" | "tcoedge" | "edge" | "tedge" | "vertex" | "tvertex"
+    ) || is_analytic_surface(head)
+        || is_analytic_curve(head)
+}
+
 /// The millimeter-space position of an edge-record vertex reference.
 fn vertex_position(by_index: &HashMap<i64, &Record>, vertex: i64) -> Option<Point3> {
     let vertex_record = by_index.get(&vertex).filter(|r| is_vertex_record(r))?;
@@ -4140,7 +4151,14 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         };
         let owner_index = owner.index as i64;
         let target = match owner.head.as_str() {
-            "body" => Some(AttributeTarget::Body(BodyId(id(owner_index)))),
+            "body"
+                if out
+                    .bodies
+                    .iter()
+                    .any(|entity| entity.id.0 == id(owner_index)) =>
+            {
+                Some(AttributeTarget::Body(BodyId(id(owner_index))))
+            }
             "face" if kept_faces.contains(&owner_index) => {
                 Some(AttributeTarget::Face(FaceId(id(owner_index))))
             }
@@ -4202,23 +4220,6 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         .filter(|record| kept_pcurves.contains(&(record.index as i64)))
         .filter_map(|record| record.ref_at(4))
         .collect();
-    let known_head = |h: &str| {
-        matches!(
-            h,
-            "body"
-                | "region"
-                | "lump"
-                | "shell"
-                | "face"
-                | "loop"
-                | "coedge"
-                | "edge"
-                | "vertex"
-                | "point"
-        ) || is_analytic_surface(h)
-            || is_analytic_curve(h)
-            || h == "asmheader"
-    };
     for r in records {
         let i = r.index as i64;
         // Spline/intcurve records that decoded into a NURBS carrier are counted
@@ -4229,7 +4230,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             || kept_transforms.contains(&i)
             || emitted_attributes.contains(&i)
             || pcurve_intcurves.contains(&i);
-        if !known_head(&r.head)
+        if !is_known_record_head(&r.head)
             && r.name != "Begin-of-ASM-History-Data"
             && !undecoded_carriers.contains(&i)
             && !transferred
@@ -4959,6 +4960,13 @@ fn region_chain(body_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<Regi
 #[cfg(test)]
 mod topology_tests {
     use super::*;
+
+    #[test]
+    fn tolerant_topology_heads_are_native_topology_not_other_records() {
+        for head in ["tcoedge", "tedge", "tvertex"] {
+            assert!(is_known_record_head(head), "{head}");
+        }
+    }
 
     fn ident(bytes: &mut Vec<u8>, name: &str) {
         bytes.push(0x0d);
