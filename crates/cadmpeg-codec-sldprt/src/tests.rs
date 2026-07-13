@@ -4252,6 +4252,29 @@ fn decode_rejects_inconsistent_display_list_table() {
 }
 
 #[test]
+fn decode_rejects_nonfinite_display_list_values() {
+    let mut payload = display_list_payload();
+    let marker = b"uoTempFaceTessData_c";
+    let position_data = payload
+        .windows(marker.len())
+        .position(|bytes| bytes == marker)
+        .unwrap()
+        + marker.len()
+        + 8
+        + 16
+        + 4
+        + 16;
+    payload[position_data..position_data + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir.model.tessellations.is_empty());
+}
+
+#[test]
 fn decode_extracts_parametric_history() {
     let f = sldprt_with_body_and_history(&triangle_body());
     let mut cur = Cursor::new(f);
