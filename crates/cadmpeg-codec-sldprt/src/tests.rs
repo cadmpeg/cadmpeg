@@ -7298,6 +7298,101 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
 }
 
 #[test]
+fn semantic_writer_round_trips_reference_coordinate_system() {
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><CoordinateSystem Name="Fixture" Type="ReferenceCoordinateSystem" id="28" Origin="1mm,2mm,3mm" XAxis="1,0,0" YAxis="0,1,0" ZAxis="0,0,1"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::DatumCoordinateSystem {
+            origin: Point3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0
+            },
+            x_axis: Vector3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0
+            },
+            y_axis: Vector3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0
+            },
+            z_axis: Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0
+            },
+        }
+    ));
+
+    let FeatureDefinition::DatumCoordinateSystem {
+        origin,
+        x_axis,
+        y_axis,
+        z_axis,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed reference coordinate system");
+    };
+    *origin = Point3::new(4.0, 5.0, 6.0);
+    *x_axis = Vector3::new(0.0, 1.0, 0.0);
+    *y_axis = Vector3::new(-1.0, 0.0, 0.0);
+    *z_axis = Vector3::new(0.0, 0.0, 1.0);
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.xml_tag, "CoordinateSystem");
+    assert_eq!(feature.kind, "ReferenceCoordinateSystem");
+    assert_eq!(feature.properties["Origin"], "4mm,5mm,6mm");
+    assert_eq!(feature.properties["XAxis"], "0,1,0");
+    assert_eq!(feature.properties["YAxis"], "-1,0,0");
+    assert_eq!(feature.properties["ZAxis"], "0,0,1");
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::DatumCoordinateSystem {
+            origin: Point3 {
+                x: 4.0,
+                y: 5.0,
+                z: 6.0
+            },
+            x_axis: Vector3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0
+            },
+            y_axis: Vector3 {
+                x: -1.0,
+                y: 0.0,
+                z: 0.0
+            },
+            z_axis: Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0
+            },
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 

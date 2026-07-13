@@ -1426,6 +1426,34 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                 }
             }
+            FeatureDefinition::DatumCoordinateSystem {
+                origin,
+                x_axis,
+                y_axis,
+                z_axis,
+            } => {
+                let dot = |left: crate::math::Vector3, right: crate::math::Vector3| {
+                    left.x * right.x + left.y * right.y + left.z * right.z
+                };
+                let cross = crate::math::Vector3::new(
+                    x_axis.y * y_axis.z - x_axis.z * y_axis.y,
+                    x_axis.z * y_axis.x - x_axis.x * y_axis.z,
+                    x_axis.x * y_axis.y - x_axis.y * y_axis.x,
+                );
+                let valid = [origin.x, origin.y, origin.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    && [x_axis, y_axis, z_axis]
+                        .into_iter()
+                        .all(|axis| (axis.norm() - 1.0).abs() <= 1.0e-9)
+                    && dot(*x_axis, *y_axis).abs() <= 1.0e-9
+                    && dot(*x_axis, *z_axis).abs() <= 1.0e-9
+                    && dot(*y_axis, *z_axis).abs() <= 1.0e-9
+                    && dot(cross, *z_axis) >= 1.0 - 1.0e-9;
+                if !valid {
+                    feature_geometry_error(findings, feature, "coordinate-system frame is invalid");
+                }
+            }
             FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }

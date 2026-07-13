@@ -904,6 +904,12 @@ fn project_definition(
     if feature_family(feature, "ReferencePoint") {
         return project_datum_point(feature).unwrap_or_else(|| native_definition(feature));
     }
+    if feature_family(feature, "CoordinateSystem")
+        || feature_family(feature, "ReferenceCoordinateSystem")
+    {
+        return project_datum_coordinate_system(feature)
+            .unwrap_or_else(|| native_definition(feature));
+    }
     if is_extrude(feature) {
         project_extrude(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Fillet") {
@@ -1079,6 +1085,48 @@ fn project_datum_point(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::DatumPoint {
         position: parse_point3_mm(feature.properties.get("Position")?)?,
     })
+}
+
+fn project_datum_coordinate_system(feature: &Feature) -> Option<FeatureDefinition> {
+    let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
+    let x_axis = parse_vector3(feature.properties.get("XAxis")?)?;
+    let y_axis = parse_vector3(feature.properties.get("YAxis")?)?;
+    let z_axis = parse_vector3(feature.properties.get("ZAxis")?)?;
+    valid_coordinate_frame(origin, x_axis, y_axis, z_axis).then_some(
+        FeatureDefinition::DatumCoordinateSystem {
+            origin,
+            x_axis,
+            y_axis,
+            z_axis,
+        },
+    )
+}
+
+fn valid_coordinate_frame(
+    origin: Point3,
+    x_axis: Vector3,
+    y_axis: Vector3,
+    z_axis: Vector3,
+) -> bool {
+    let finite_origin = [origin.x, origin.y, origin.z]
+        .into_iter()
+        .all(f64::is_finite);
+    let unit = |axis: Vector3| (axis.norm() - 1.0).abs() <= 1.0e-9;
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let cross = Vector3::new(
+        x_axis.y * y_axis.z - x_axis.z * y_axis.y,
+        x_axis.z * y_axis.x - x_axis.x * y_axis.z,
+        x_axis.x * y_axis.y - x_axis.y * y_axis.x,
+    );
+    finite_origin
+        && unit(x_axis)
+        && unit(y_axis)
+        && unit(z_axis)
+        && dot(x_axis, y_axis).abs() <= 1.0e-9
+        && dot(x_axis, z_axis).abs() <= 1.0e-9
+        && dot(y_axis, z_axis).abs() <= 1.0e-9
+        && dot(cross, z_axis) >= 1.0 - 1.0e-9
 }
 
 fn valid_direction(direction: Vector3) -> bool {
@@ -2760,6 +2808,43 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::DatumCoordinateSystem {
+                origin,
+                x_axis,
+                y_axis,
+                z_axis,
+            } => {
+                if !valid_coordinate_frame(*origin, *x_axis, *y_axis, *z_axis) {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has an invalid coordinate-system frame",
+                        feature.id
+                    )));
+                }
+                if existing.as_deref().is_some_and(|record| {
+                    !feature_family(record, "CoordinateSystem")
+                        && !feature_family(record, "ReferenceCoordinateSystem")
+                }) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Origin".into(), format_point3_mm(*origin));
+                properties.insert("XAxis".into(), format_vector3(*x_axis));
+                properties.insert("YAxis".into(), format_vector3(*y_axis));
+                properties.insert("ZAxis".into(), format_vector3(*z_axis));
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "CoordinateSystem".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
+            }
             FeatureDefinition::Sketch { .. } => {
                 if existing
                     .as_deref()
@@ -4419,6 +4504,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::DatumPlane { .. } => "ReferencePlane",
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",
         FeatureDefinition::DatumPoint { .. } => "ReferencePoint",
+        FeatureDefinition::DatumCoordinateSystem { .. } => "CoordinateSystem",
         FeatureDefinition::Sketch { .. } => "Sketch",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",

@@ -2036,6 +2036,12 @@ fn feature_operation_geometry_is_validated() {
             center: ScaleCenter::Point(Point3::new(0.0, f64::NAN, 0.0)),
             factors: Vector3::new(1.0, 0.0, 1.0),
         },
+        FeatureDefinition::DatumCoordinateSystem {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            x_axis: Vector3::new(1.0, 0.0, 0.0),
+            y_axis: Vector3::new(1.0, 0.0, 0.0),
+            z_axis: Vector3::new(0.0, 0.0, 1.0),
+        },
         FeatureDefinition::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::Linear {
@@ -2051,6 +2057,7 @@ fn feature_operation_geometry_is_validated() {
         "hole geometry is invalid",
         "thicken thickness is invalid",
         "scale transform is invalid",
+        "coordinate-system frame is invalid",
         "pattern geometry is invalid",
     ];
     let mut ir = unit_cube();

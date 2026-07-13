@@ -207,6 +207,17 @@ pub enum FeatureDefinition {
         /// Point position in model space.
         position: Point3,
     },
+    /// Constructed model-space coordinate system.
+    DatumCoordinateSystem {
+        /// Frame origin.
+        origin: Point3,
+        /// Unit x-axis.
+        x_axis: Vector3,
+        /// Unit y-axis.
+        y_axis: Vector3,
+        /// Unit z-axis.
+        z_axis: Vector3,
+    },
     /// Solved sketch node in the construction history.
     Sketch {
         /// Neutral sketch geometry owned by this history node, when resolved.
