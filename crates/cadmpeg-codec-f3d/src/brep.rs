@@ -18,9 +18,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::records::{
-    BodyNativeKey, CreationTimestamp, EdgeContinuity, FaceContainment, FaceSidedness,
-    PersistentDesignLink, SketchCurveLink, TolerantCoedgeParameters, TolerantVertexTail,
-    TransformHints, VertexOwnership, WireSide, WireTopology,
+    BodyNativeKey, CreationTimestamp, EdgeContinuity, EdgeOwnership, FaceContainment,
+    FaceSidedness, PersistentDesignLink, SketchCurveLink, TolerantCoedgeParameters,
+    TolerantVertexTail, TransformHints, VertexOwnership, WireSide, WireTopology,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
@@ -98,6 +98,8 @@ pub struct Brep {
     pub creation_timestamps: Vec<CreationTimestamp>,
     /// Kernel continuity classifications stored on solved edges.
     pub edge_continuities: Vec<EdgeContinuity>,
+    /// Native owner-coedge selectors stored on solved edges.
+    pub edge_ownerships: Vec<EdgeOwnership>,
     /// Native owner-edge and endpoint-slot fields stored on solved vertices.
     pub vertex_ownerships: Vec<VertexOwnership>,
     /// Native sidedness fields stored on solved faces.
@@ -3817,6 +3819,12 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 end: VertexId(id(end)),
                 param_range,
                 tolerance: None,
+            });
+            out.edge_ownerships.push(EdgeOwnership {
+                id: format!("f3d:asm:edge-ownership#{i}"),
+                edge: EdgeId(id(i)),
+                record_index: r.index as u32,
+                owner_coedge: r.ref_at(7).map(|owner| CoedgeId(id(owner))),
             });
             if let Some(Token::Str(continuity)) = r.chunk(10) {
                 out.edge_continuities.push(EdgeContinuity {

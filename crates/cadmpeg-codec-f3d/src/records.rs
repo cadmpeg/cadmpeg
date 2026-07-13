@@ -77,6 +77,20 @@ pub struct EdgeContinuity {
     pub continuity: String,
 }
 
+/// Native owner-coedge selector stored on one ASM edge record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EdgeOwnership {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep edge carrying the selector.
+    pub edge: EdgeId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Selected coedge, or null when the native edge has no owner back-reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_coedge: Option<CoedgeId>,
+}
+
 /// Native owner-edge and endpoint-slot fields stored on one ASM vertex.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VertexOwnership {

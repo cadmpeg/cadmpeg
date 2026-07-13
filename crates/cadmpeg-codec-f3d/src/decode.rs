@@ -466,6 +466,7 @@ fn build_geometry_ir(
         sketch_curve_links: brep.sketch_curve_links,
         persistent_design_links: brep.persistent_design_links,
         edge_continuities: brep.edge_continuities,
+        edge_ownerships: brep.edge_ownerships,
         vertex_ownerships: brep.vertex_ownerships,
         face_sidedness: brep.face_sidedness,
         tolerant_vertex_tails: brep.tolerant_vertex_tails,

@@ -278,7 +278,7 @@ The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partn
 +89 chunk[9] sense byte     +90 0x07 'tangent'|'unknown' continuity text
 ```
 
-`+52` is end_vertex and `+79` is curve, not the other way round. `t_start`/`t_end` are stored parameters on the edge's own parameterization: the referenced curve itself when the sense byte is forward (`0x0b`), its reverse `E(t) = C(−t)` when reversed (`0x0a`). A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`; the shared vertex lies at the `t_start` angle from the major axis, so a full period's phase is significant, not a free normalization. The continuity text is descriptive metadata, **not** a curve-type discriminator.
+`+52` is end_vertex and `+79` is curve, not the other way round. `owner_coedge` is a nullable back-reference selecting one use of the edge; it is retained independently of the radial-ring topology, validated against the selected coedge's edge, and written in both retained and source-less output. `t_start`/`t_end` are stored parameters on the edge's own parameterization: the referenced curve itself when the sense byte is forward (`0x0b`), its reverse `E(t) = C(−t)` when reversed (`0x0a`). A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`; the shared vertex lies at the `t_start` angle from the major axis, so a full period's phase is significant, not a free normalization. The continuity text is descriptive metadata, **not** a curve-type discriminator.
 
 `tedge` inherits this complete base field sequence. Its additional tolerance carrier does not change the base endpoint, curve, sense, or continuity fields.
 

@@ -1283,6 +1283,8 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         records.push(0x11);
     }
 
+    let mut edge_owners = BTreeMap::new();
+    apply_native_edge_owners(target, coedge_start, &mut edge_owners)?;
     for edge in &model.edges {
         let start = model
             .vertices
@@ -1333,7 +1335,10 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         native_f64(&mut records, range[0]);
         native_ref(&mut records, native_record_index(vertex_start, end)?);
         native_f64(&mut records, range[1]);
-        native_ref(&mut records, -1);
+        native_ref(
+            &mut records,
+            edge_owners.get(&edge.id).copied().unwrap_or(-1),
+        );
         native_ref(&mut records, curve_ref);
         let (sense, continuity) = edge_record_metadata(target, edge)?;
         records.push(native_bool(sense == Sense::Reversed));
@@ -1752,7 +1757,7 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         edge_base += shell.wire_edges.len();
     }
     encode_source_less_curves(&mut records, target)?;
-    let wire_edge_owners = model
+    let mut wire_edge_owners = model
         .edges
         .iter()
         .enumerate()
@@ -1760,6 +1765,7 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             native_record_index(wire_coedge_start, ordinal).map(|owner| (edge.id.clone(), owner))
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
+    apply_native_edge_owners(target, wire_coedge_start, &mut wire_edge_owners)?;
     encode_source_less_edges_vertices_points(
         &mut records,
         target,
@@ -2573,6 +2579,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         }
         wire_edge_base += shell.wire_edges.len();
     }
+    apply_native_edge_owners(target, coedge_start, &mut wire_edge_owners)?;
 
     encode_source_less_edges_vertices_points(
         &mut records,
@@ -3672,6 +3679,60 @@ fn edge_record_metadata(
         )));
     }
     Ok((sense, continuity))
+}
+
+fn apply_native_edge_owners(
+    target: &CadIr,
+    coedge_start: i64,
+    owners: &mut BTreeMap<cadmpeg_ir::ids::EdgeId, i64>,
+) -> Result<(), CodecError> {
+    let metadata = f3d_native(target)?
+        .map(|native| native.edge_ownerships)
+        .unwrap_or_default();
+    for ownership in metadata {
+        if !target
+            .model
+            .edges
+            .iter()
+            .any(|edge| edge.id == ownership.edge)
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D edge ownership {} references missing edge {}",
+                ownership.id, ownership.edge
+            )));
+        }
+        let owner = match ownership.owner_coedge {
+            None => -1,
+            Some(owner) => {
+                if let Some((ordinal, coedge)) = target
+                    .model
+                    .coedges
+                    .iter()
+                    .enumerate()
+                    .find(|(_, coedge)| coedge.id == owner)
+                {
+                    if coedge.edge != ownership.edge {
+                        return Err(CodecError::Malformed(format!(
+                            "F3D edge ownership {} selects a coedge of another edge",
+                            ownership.id
+                        )));
+                    }
+                    native_record_index(coedge_start, ordinal)?
+                } else if owners.contains_key(&ownership.edge) {
+                    // Wire coedges are native-only and are reconstructed from
+                    // the shell's wire-edge list before this override runs.
+                    continue;
+                } else {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D edge ownership {} references missing coedge {owner}",
+                        ownership.id
+                    )));
+                }
+            }
+        };
+        owners.insert(ownership.edge, owner);
+    }
+    Ok(())
 }
 
 fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
@@ -8179,6 +8240,7 @@ pub fn write_semantic(
     let history_state_edits = validate_history_state_edits(&baseline.ir, target)?;
     let creation_timestamp_edits = validate_creation_timestamp_edits(&baseline.ir, target)?;
     let edge_continuity_edits = validate_edge_continuity_edits(&baseline.ir, target)?;
+    let edge_ownership_edits = validate_edge_ownership_edits(&baseline.ir, target)?;
     let vertex_ownership_edits = validate_vertex_ownership_edits(&baseline.ir, target)?;
     let face_sidedness_edits = validate_face_sidedness_edits(&baseline.ir, target)?;
     let tolerant_vertex_edits = validate_tolerant_vertex_edits(&baseline.ir, target)?;
@@ -8294,6 +8356,9 @@ pub fn write_semantic(
         supported
             .edge_continuities
             .clone_from(&target_native.edge_continuities);
+        supported
+            .edge_ownerships
+            .clone_from(&target_native.edge_ownerships);
         supported
             .vertex_ownerships
             .clone_from(&target_native.vertex_ownerships);
@@ -8523,6 +8588,7 @@ pub fn write_semantic(
             patch_transform_hints(&mut bytes, &transform_hint_edits)?;
             patch_tolerant_coedge_parameters(&mut bytes, &tolerant_coedge_edits)?;
             patch_wire_topologies(&mut bytes, &wire_topology_edits)?;
+            patch_edge_ownerships(&mut bytes, &edge_ownership_edits)?;
             patch_body_native_keys(&mut bytes, &body_native_key_edits.asm)?;
             if let Some(edits) = history_state_edits.get(&name) {
                 patch_history_states(&mut bytes, edits)?;
@@ -8704,6 +8770,75 @@ fn validate_edge_continuity_edits(
             after.record_index as usize,
             (after.sense, after.continuity.clone()),
         );
+    }
+    Ok(edits)
+}
+
+fn validate_edge_ownership_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, i64>, CodecError> {
+    let baseline = f3d_native(baseline)?
+        .map(|native| native.edge_ownerships)
+        .unwrap_or_default();
+    let target_ownerships = f3d_native(target)?
+        .map(|native| native.edge_ownerships)
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|ownership| (ownership.id.as_str(), ownership))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target_ownerships
+        .iter()
+        .map(|ownership| (ownership.id.as_str(), ownership))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D edge-ownership regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.owner_coedge.clone_from(&before.owner_coedge);
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D edge-ownership edit changes structural fields: {id}"
+            )));
+        }
+        if after.owner_coedge == before.owner_coedge {
+            continue;
+        }
+        let owner = if let Some(owner) = &after.owner_coedge {
+            let coedge = target
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *owner)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "F3D edge ownership {id} references missing coedge {owner}"
+                    ))
+                })?;
+            if coedge.edge != after.edge {
+                return Err(CodecError::Malformed(format!(
+                    "F3D edge ownership {id} selects a coedge of another edge"
+                )));
+            }
+            owner
+                .as_str()
+                .rsplit_once('#')
+                .and_then(|(_, index)| index.parse::<i64>().ok())
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "F3D owning coedge {owner} has no native record index"
+                    ))
+                })?
+        } else {
+            -1
+        };
+        edits.insert(after.record_index as usize, owner);
     }
     Ok(edits)
 }
@@ -10603,6 +10738,35 @@ fn patch_wire_topologies(
             crate::records::WireSide::In => 0x0a,
             crate::records::WireSide::Out => 0x0b,
         };
+    }
+    Ok(())
+}
+
+fn patch_edge_ownerships(bytes: &mut [u8], edits: &BTreeMap<usize, i64>) -> Result<(), CodecError> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+    let start = asm_header::record_stream_start(bytes)
+        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
+    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let records = sab::frame(bytes, start, limit, 8)
+        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
+    for (record_index, owner) in edits {
+        let record = records
+            .iter()
+            .find(|record| record.index == *record_index)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D edge-ownership record {record_index} is missing"
+                ))
+            })?;
+        if !matches!(record.head.as_str(), "edge" | "tedge") {
+            return Err(CodecError::Malformed(format!(
+                "F3D edge-ownership record {record_index} is {}",
+                record.head
+            )));
+        }
+        patch_integer_token(bytes, record, 0x0c, 4, *owner)?;
     }
     Ok(())
 }

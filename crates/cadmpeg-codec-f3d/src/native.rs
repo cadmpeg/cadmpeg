@@ -8,10 +8,10 @@ use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
     CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignEntityHeader,
-    DesignMaterialAssignment, DesignObject, DesignRecordHeader, EdgeContinuity, FaceSidedness,
-    LostEdgeReference, PersistentDesignLink, PersistentReference, SketchCurveIdentity,
-    SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters, TolerantVertexTail,
-    TransformHints, VertexOwnership, WireTopology,
+    DesignMaterialAssignment, DesignObject, DesignRecordHeader, EdgeContinuity, EdgeOwnership,
+    FaceSidedness, LostEdgeReference, PersistentDesignLink, PersistentReference,
+    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters,
+    TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -37,6 +37,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_objects",
     "design_record_headers",
     "edge_continuities",
+    "edge_ownerships",
     "face_sidedness",
     "lost_edge_references",
     "persistent_design_links",
@@ -67,6 +68,7 @@ macro_rules! f3d_arenas {
             design_configurations: DesignConfiguration;
             design_material_assignments: DesignMaterialAssignment;
             edge_continuities: EdgeContinuity;
+            edge_ownerships: EdgeOwnership;
             face_sidedness: FaceSidedness;
             construction_recipes: ConstructionRecipe;
             creation_timestamps: CreationTimestamp;
@@ -171,6 +173,9 @@ pub struct F3dNative {
     /// Kernel continuity classifications stored on solved ASM edges.
     #[serde(default)]
     pub edge_continuities: Vec<EdgeContinuity>,
+    /// Native owner-coedge selectors stored on ASM edges.
+    #[serde(default)]
+    pub edge_ownerships: Vec<EdgeOwnership>,
     /// Native single/double-sided classifications stored on ASM faces.
     #[serde(default)]
     pub face_sidedness: Vec<FaceSidedness>,
@@ -237,6 +242,7 @@ impl Default for F3dNative {
             design_configurations: Vec::new(),
             design_material_assignments: Vec::new(),
             edge_continuities: Vec::new(),
+            edge_ownerships: Vec::new(),
             face_sidedness: Vec::new(),
             construction_recipes: Vec::new(),
             creation_timestamps: Vec::new(),

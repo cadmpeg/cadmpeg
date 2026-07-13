@@ -3746,6 +3746,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     source_less.model.vertices[0].tolerance = Some(0.025);
     let tangent_edge = source_less.model.edges[0].id.clone();
     let tolerant_vertex = source_less.model.vertices[0].id.clone();
+    let owner_coedge = source_less.model.coedges[0].id.clone();
     {
         let mut native = f3d_native_mut(&mut source_less);
         let metadata = native
@@ -3756,6 +3757,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         metadata.continuity = "tangent".into();
         metadata.sense = cadmpeg_ir::topology::Sense::Reversed;
         native.face_sidedness[0].containment = Some(crate::records::FaceContainment::In);
+        native.edge_ownerships[0].owner_coedge = Some(owner_coedge);
         native.tolerant_vertex_tails = vec![crate::records::TolerantVertexTail {
             id: "f3d:asm:tolerant-vertex-tail#generated".into(),
             vertex: tolerant_vertex,
@@ -3835,6 +3837,10 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(continuities.len(), 3);
     assert_eq!(continuities[0].continuity, "tangent");
     assert_eq!(continuities[0].sense, cadmpeg_ir::topology::Sense::Reversed);
+    assert_eq!(
+        f3d_native(&round_trip.ir).edge_ownerships[0].owner_coedge,
+        Some(round_trip.ir.model.coedges[0].id.clone())
+    );
     assert!(continuities[1..]
         .iter()
         .all(|metadata| metadata.continuity == "unknown"));
@@ -6924,10 +6930,12 @@ fn generated_f3d_rewrites_edge_native_metadata() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let mut edited = decoded.ir;
+    let owner = edited.model.coedges[0].id.clone();
     {
         let mut native = f3d_native_mut(&mut edited);
         native.edge_continuities[0].continuity = "tangent".into();
         native.edge_continuities[0].sense = cadmpeg_ir::topology::Sense::Reversed;
+        native.edge_ownerships[0].owner_coedge = Some(owner.clone());
     }
 
     let mut regenerated = Vec::new();
@@ -6944,6 +6952,10 @@ fn generated_f3d_rewrites_edge_native_metadata() {
     assert_eq!(
         f3d_native(&round_trip.ir).edge_continuities[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
+    );
+    assert_eq!(
+        f3d_native(&round_trip.ir).edge_ownerships[0].owner_coedge,
+        Some(owner)
     );
 }
 
