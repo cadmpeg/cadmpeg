@@ -89,6 +89,10 @@ struct CreoSketchDimension {
 struct CreoSketchRelation {
     relation_id: u32,
     used: u32,
+    operands: Vec<u8>,
+    sign: u32,
+    dimension_id: u32,
+    relation_type: u32,
     body: Vec<u8>,
 }
 
@@ -161,6 +165,10 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .map(|relation| CreoSketchRelation {
                     relation_id: relation.relation_id,
                     used: relation.used,
+                    operands: relation.operands.clone(),
+                    sign: relation.sign,
+                    dimension_id: relation.dimension_id,
+                    relation_type: relation.relation_type,
                     body: relation.body.clone(),
                 })
                 .collect(),

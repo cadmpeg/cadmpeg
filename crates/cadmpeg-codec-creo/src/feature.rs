@@ -605,6 +605,14 @@ pub struct FeatureRelation {
     pub relation_id: u32,
     /// Stored `used` field from the second positional field.
     pub used: u32,
+    /// Exact encoded `a`, `b`, and `c` operand-vector block.
+    pub operands: Vec<u8>,
+    /// Stored relation sign selector.
+    pub sign: u32,
+    /// Stored dimension selector.
+    pub dimension_id: u32,
+    /// Stored relation-type discriminator.
+    pub relation_type: u32,
     /// Complete positional fields before the `e2` row terminator.
     pub body: Vec<u8>,
     /// Byte offset of the positional row in the original stream.
@@ -1698,10 +1706,30 @@ fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRel
         let (relation_id, after_id) = psb::compact_int(payload, cursor);
         (after_id > cursor && after_id < row_end).then_some(())?;
         let (used, after_used) = psb::compact_int(payload, after_id);
-        (after_used > after_id && after_used <= row_end).then_some(())?;
+        (after_used > after_id && after_used < row_end).then_some(())?;
+        let mut suffixes = Vec::new();
+        for suffix_start in after_used..row_end {
+            let (sign, after_sign) = psb::compact_int(payload, suffix_start);
+            let (dimension_id, after_dimension) = psb::compact_int(payload, after_sign);
+            let (relation_type, after_type) = psb::compact_int(payload, after_dimension);
+            if after_sign > suffix_start
+                && after_dimension > after_sign
+                && after_type > after_dimension
+                && after_type == row_end
+            {
+                suffixes.push((suffix_start, sign, dimension_id, relation_type));
+            }
+        }
+        let [(suffix_start, sign, dimension_id, relation_type)] = suffixes.as_slice() else {
+            return None;
+        };
         rows.push(FeatureRelation {
             relation_id,
             used,
+            operands: payload[after_used..*suffix_start].to_vec(),
+            sign: *sign,
+            dimension_id: *dimension_id,
+            relation_type: *relation_type,
             body: payload[cursor..row_end].to_vec(),
             offset: cursor,
         });

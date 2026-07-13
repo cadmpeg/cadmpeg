@@ -1050,7 +1050,8 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
 fn scan_decodes_counted_featdefs_constraint_relations() {
     let payload = b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x04\xf7\x6a\xfb\xe2\
         \xe0\x01id\0\xe0\x01used\0\xe0\x01type\0\xf1\xf7\x6a\xe2\
-        \x34\x00\x05\x01\xe2\x35\x01\x07\x02\xe2"
+        \x34\x00\x05\x01\xf6\xe4\x00\xe6\x0f\x10\x0f\xe4\x00\x00\x00\xe2\
+        \x35\x01\x07\x29\x32\xf6\x00\xe6\x0f\x10\x0f\xe4\x01\x2a\x03\xe2"
         .to_vec();
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
 
@@ -1063,9 +1064,17 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     assert_eq!(relations.rows.len(), 2);
     assert_eq!(relations.rows[0].relation_id, 52);
     assert_eq!(relations.rows[0].used, 0);
-    assert_eq!(relations.rows[0].body, [0x34, 0x00, 0x05, 0x01]);
+    assert_eq!(
+        relations.rows[0].operands,
+        [0x05, 0x01, 0xf6, 0xe4, 0x00, 0xe6, 0x0f, 0x10, 0x0f, 0xe4]
+    );
+    assert_eq!(relations.rows[0].sign, 0);
+    assert_eq!(relations.rows[0].dimension_id, 0);
+    assert_eq!(relations.rows[0].relation_type, 0);
     assert_eq!(relations.rows[1].relation_id, 53);
     assert_eq!(relations.rows[1].used, 1);
+    assert_eq!(relations.rows[1].dimension_id, 42);
+    assert_eq!(relations.rows[1].relation_type, 3);
 }
 
 #[test]
