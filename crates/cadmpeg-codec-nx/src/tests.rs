@@ -332,6 +332,34 @@ fn topology_retains_shell_body_identity_without_body_record() {
 }
 
 #[test]
+fn topology_accepts_cached_last_face_and_implicit_region_identity() {
+    let mut stream = topology_partition_stream();
+    let shell = stream
+        .windows(4)
+        .position(|window| window == [0, 13, 0, 3])
+        .expect("shell record");
+    put_ref(&mut stream, shell + 22, 4);
+    let region = stream
+        .windows(4)
+        .position(|window| window == [0, 19, 0, 12])
+        .expect("region record");
+    stream[region..region + 16].fill(0xff);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.get(19, 12).is_none());
+    assert_eq!(graph.body_shape_shells().len(), 1);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.model.regions.len(), 1);
+    assert_eq!(result.ir.model.regions[0].id.0, "nx:s0:region#12");
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn topology_rejects_nonreciprocal_fin_ring() {
     let mut stream = topology_partition_stream();
     let fin = stream

@@ -185,7 +185,7 @@ Topology node layouts (logical offsets, pre-shift):
 | Type        | Fields                                                                                                                                                                                                                           |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | BODY (12)   | `node_id +4`; owner of shells/faces/edges/vertices                                                                                                                                                                               |
-| SHELL (13)  | `node_id +4`, `attributes +8` (=1), `body_ref +10`, `next_shell +12` (=1), `first_face +14`, sentinels `+16/+18` (=1), `region_ref +20`, sentinel `+22` (=1)                                                                     |
+| SHELL (13)  | `node_id +4`, `attributes +8` (=1), `body_ref +10`, `next_shell +12` (=1), `first_face +14`, sentinels `+16/+18` (=1), `region_ref +20`, `last_face +22` (`1` or terminal FACE)                                                        |
 | FACE (14)   | `attributes +8`, `tolerance:f64 +10`, `next_face +18`, `prev_face +20`, `loop +22`, `shell +24`, `surface +26`, `sense +28`, `next_on_surface +29`, `prev_on_surface +31`, `next_front +33`, `prev_front +35`, `front_shell +37` |
 | LOOP (15)   | `attributes +8`, `fin +10`, `face +12`, `next_loop +14`                                                                                                                                                                          |
 | EDGE (16)   | `attributes +8`, `tolerance:f64 +10`, `fin +18`, `prev_edge +20`, `next_edge +22`, `curve +24`, `next_on_curve +26`, `prev_on_curve +28`, `owner +30`                                                                            |
@@ -194,12 +194,12 @@ Topology node layouts (logical offsets, pre-shift):
 | POINT (29)  | `attributes +8`, `owner +10`, `next +12`, `prev +14`, `xyz:3×f64 +16` (meters)                                                                                                                                                   |
 | REGION (19) | `node_id +4`; referenced by SHELL                                                                                                                                                                                                |
 
-A **body-shape SHELL** requires the four sentinel slots `= 1`, a non-null `body_ref`, and `first_face`/`region_ref` to resolve. The `body_ref` is the body ownership identity even when the stream omits the corresponding BODY record. FACE and EDGE `tolerance` decode as the sentinel `-3.14158e13` (`c2 bc 92 8f 99 6e 00 00`) or a finite model-scale value, giving an 8-byte alignment check. `FIN.curve` is non-null only on tolerant edges (tolerant-edge trims use TRIMMED_CURVE→SP_CURVE).
+A **body-shape SHELL** requires the invariant fields `attributes`, `next_shell`, and `+16/+18` to equal `1`, non-null `body_ref` and `region_ref`, and a closed `first_face` ownership chain. `last_face` is either null or the terminal FACE in that chain. The body and region references remain ownership identities when the stream omits the corresponding BODY or REGION record. FACE and EDGE `tolerance` decode as the sentinel `-3.14158e13` (`c2 bc 92 8f 99 6e 00 00`) or a finite model-scale value, giving an 8-byte alignment check. `FIN.curve` is non-null only on tolerant edges (tolerant-edge trims use TRIMMED_CURVE→SP_CURVE).
 
 ### 5.2 Reference domains
 
 - Ordinary BREP references (`FACE.surface`, `EDGE.curve`, `FIN.curve`, `VERTEX.point`, BLEND_SURF/INTERSECTION support refs) resolve within the same stream.
-- SHELL and REGION ownership records may resolve in `{partition, paired_deltas}`. A SHELL's non-null BODY reference remains an ownership identity when no BODY record is serialized.
+- SHELL ownership records may resolve in `{partition, paired_deltas}`. A SHELL's non-null BODY and REGION references remain ownership identities when either referenced record is not serialized.
 
 ### 5.3 Topology assembly
 
@@ -211,7 +211,7 @@ A **body-shape SHELL** requires the four sentinel slots `= 1`, a non-null `body_
 | faces    | one per FACE node, with resolved surface when available               |
 | bodies   | one per validated body-shape SHELL                                    |
 
-Body-shape SHELL validation: sentinel/ref predicate passes; `body_ref` is non-null; `region_ref`→REGION in the ownership domain; `first_face`→FACE in the SHELL's stream; the `FACE.next` walk closes at null with visited faces back-referencing the SHELL.
+Body-shape SHELL validation: invariant/ref predicate passes; `body_ref` and `region_ref` are non-null; `first_face`→FACE in the SHELL's stream; the `FACE.next` walk closes at null with visited faces back-referencing the SHELL; non-null `last_face` equals the terminal visited FACE.
 
 **Periodic faces / closed edges.** Parasolid stores a periodic surface as one face. A full-circle/ellipse edge stores no trim interval or wrap-count field and references the bare CIRCLE/ELLIPSE. Its one-FIN loop has `forward_fin == backward_fin == self`. The FIN vertex is either a VERTEX shared by both edge ends or the null reference; the null form's canonical topological point is the analytic curve point at parameter zero. The full revolution has parameter identity `[0, 2π]`. An EDGE with `curve == 1` has no curve record and is the surface-intersection locus of its incident faces.
 

@@ -72,7 +72,8 @@ pub struct ShellFields {
     /// Owning region.
     pub region: u32,
     /// Third fixed shell sentinel.
-    pub sentinel_2: u32,
+    /// Final face in the shell chain, or null in layouts without this cache.
+    pub last_face: u32,
 }
 
 /// Sequentially decoded LOOP references.
@@ -232,7 +233,7 @@ impl Node {
             sentinel_0: refs[4],
             sentinel_1: refs[5],
             region: refs[6],
-            sentinel_2: refs[7],
+            last_face: refs[7],
         })
     }
 
@@ -757,15 +758,15 @@ impl Graph {
             || fields.next_shell != 1
             || fields.sentinel_0 != 1
             || fields.sentinel_1 != 1
-            || fields.sentinel_2 != 1
             || fields.body <= 1
-            || self.get(19, fields.region).is_none()
+            || fields.region <= 1
         {
             return false;
         }
 
         let mut face_xmt = fields.first_face;
         let mut visited = BTreeSet::new();
+        let mut last_face = 1;
         while face_xmt != 1 {
             if !visited.insert(face_xmt) {
                 return false;
@@ -776,9 +777,10 @@ impl Graph {
             if face.shell != shell.xmt {
                 return false;
             }
+            last_face = face_xmt;
             face_xmt = face.next_face;
         }
-        !visited.is_empty()
+        !visited.is_empty() && (fields.last_face == 1 || fields.last_face == last_face)
     }
 }
 
@@ -792,7 +794,7 @@ impl Node {
                     + usize::from(fields.sentinel_0 == 1)
                     + usize::from(fields.sentinel_1 == 1)
                     + usize::from(fields.region > 1)
-                    + usize::from(fields.sentinel_2 == 1)
+                    + usize::from(fields.last_face > 0)
             }),
             _ => 0,
         }

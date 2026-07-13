@@ -1123,9 +1123,6 @@ fn emit_topology(
         let Some(body) = bodies.get(&fields.body).cloned() else {
             continue;
         };
-        let Some(region_node) = graph.get(19, fields.region) else {
-            continue;
-        };
         let region_id = if let Some((region, owner)) = regions.get(&fields.region) {
             if owner != &body {
                 continue;
@@ -1133,7 +1130,14 @@ fn emit_topology(
             region.clone()
         } else {
             let region = RegionId(format!("{prefix}:region#{}", fields.region));
-            annotate_node(annotations, &region, source_stream, region_node, "REGION");
+            if let Some(region_node) = graph.get(19, fields.region) {
+                annotate_node(annotations, &region, source_stream, region_node, "REGION");
+            } else {
+                annotations
+                    .note(&region, source_stream, node.pos as u64)
+                    .tag("UNRESOLVED_REGION_REFERENCE");
+                annotations.exactness(&region, Exactness::Unknown);
+            }
             annotations.derived(&region, "body");
             ir.model.regions.push(Region {
                 id: region.clone(),
