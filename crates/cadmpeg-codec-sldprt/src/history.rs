@@ -553,7 +553,7 @@ fn project_extrude(
         feature
             .parameters
             .get(name)
-            .and_then(|value| parse_length_mm(value))
+            .and_then(|value| parse_positive_length_mm(value))
             .map(Length)
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
@@ -643,7 +643,7 @@ fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
     let radius = if let Some(radius) = feature
         .parameters
         .get("Radius")
-        .and_then(|value| parse_length_mm(value))
+        .and_then(|value| parse_positive_length_mm(value))
     {
         RadiusSpec::Constant {
             radius: Length(radius),
@@ -663,7 +663,7 @@ fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
                     .trim()
                     .parse::<f64>()
                     .ok()?;
-                let radius = parse_length_mm(radius)?;
+                let radius = parse_positive_length_mm(radius)?;
                 (parameter.is_finite() && (0.0..=1.0).contains(&parameter)).then_some((
                     index,
                     VariableRadius {
@@ -712,7 +712,7 @@ fn project_rib(
             feature
                 .parameters
                 .get("Thickness")
-                .and_then(|value| parse_length_mm(value))?,
+                .and_then(|value| parse_positive_length_mm(value))?,
         ),
         both_sides: parse_bool(feature.properties.get("BothSides")?)?,
         draft,
@@ -831,7 +831,7 @@ fn project_pattern(
                 feature
                     .parameters
                     .get("Spacing")
-                    .and_then(|value| parse_length_mm(value))?,
+                    .and_then(|value| parse_positive_length_mm(value))?,
             ),
             count: parse_count(feature.parameters.get("Count")?)?,
         },
@@ -909,7 +909,7 @@ fn project_hole(feature: &Feature) -> Option<FeatureDefinition> {
     let diameter = feature
         .parameters
         .get("Diameter")
-        .and_then(|value| parse_length_mm(value))?;
+        .and_then(|value| parse_positive_length_mm(value))?;
     let has_counterbore = feature.parameters.contains_key("CounterboreDiameter")
         || feature.parameters.contains_key("CounterboreDepth");
     let has_countersink = feature.parameters.contains_key("CountersinkDiameter")
@@ -923,13 +923,13 @@ fn project_hole(feature: &Feature) -> Option<FeatureDefinition> {
                 feature
                     .parameters
                     .get("CounterboreDiameter")
-                    .and_then(|value| parse_length_mm(value))?,
+                    .and_then(|value| parse_positive_length_mm(value))?,
             ),
             depth: Length(
                 feature
                     .parameters
                     .get("CounterboreDepth")
-                    .and_then(|value| parse_length_mm(value))?,
+                    .and_then(|value| parse_positive_length_mm(value))?,
             ),
         }
     } else if has_countersink {
@@ -938,7 +938,7 @@ fn project_hole(feature: &Feature) -> Option<FeatureDefinition> {
                 feature
                     .parameters
                     .get("CountersinkDiameter")
-                    .and_then(|value| parse_length_mm(value))?,
+                    .and_then(|value| parse_positive_length_mm(value))?,
             ),
             angle: Angle(
                 feature
@@ -956,7 +956,7 @@ fn project_hole(feature: &Feature) -> Option<FeatureDefinition> {
                 feature
                     .parameters
                     .get("Depth")
-                    .and_then(|value| parse_length_mm(value))?,
+                    .and_then(|value| parse_positive_length_mm(value))?,
             ),
         },
         Some("ThroughAll") => Extent::ThroughAll,
@@ -992,7 +992,7 @@ fn project_shell(feature: &Feature) -> Option<FeatureDefinition> {
     let thickness = feature
         .parameters
         .get("Thickness")
-        .and_then(|value| parse_length_mm(value))?;
+        .and_then(|value| parse_positive_length_mm(value))?;
     let outward = parse_bool(feature.properties.get("Outward")?)?;
     Some(FeatureDefinition::Shell {
         removed_faces: feature
@@ -1100,7 +1100,7 @@ fn project_dome(feature: &Feature) -> Option<FeatureDefinition> {
             feature
                 .parameters
                 .get("Height")
-                .and_then(|value| parse_length_mm(value))?,
+                .and_then(|value| parse_positive_length_mm(value))?,
         ),
         elliptical: parse_bool(feature.properties.get("Elliptical")?)?,
         reverse: parse_bool(feature.properties.get("Reverse")?)?,
@@ -1168,7 +1168,7 @@ fn project_chamfer(feature: &Feature) -> Option<FeatureDefinition> {
         feature
             .parameters
             .get(name)
-            .and_then(|value| parse_length_mm(value))
+            .and_then(|value| parse_positive_length_mm(value))
             .map(Length)
     };
     let spec = if let (Some(distance), Some(angle)) = (
@@ -1218,6 +1218,10 @@ fn parse_length_mm(value: &str) -> Option<f64> {
         }
     }
     None
+}
+
+fn parse_positive_length_mm(value: &str) -> Option<f64> {
+    parse_length_mm(value).filter(|value| *value > 0.0)
 }
 
 fn format_length_mm(value: f64) -> String {
