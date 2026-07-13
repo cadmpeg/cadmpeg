@@ -12710,6 +12710,30 @@ fn native_store_rejects_missing_sketch_marker_feature_owner() {
 }
 
 #[test]
+fn native_store_rejects_missing_sketch_marker_local_link() {
+    let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut native = sldprt_native(&decoded.ir);
+    let entity = &mut native.feature_input_lanes[0].sketch_entities[0];
+    entity.links = vec![crate::records::SketchInputLink {
+        local_id: 7,
+        entity_ref: "sldprt:feature-input:sketch-entity#missing".into(),
+    }];
+    entity.link_selector = Some(0);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&mut namespace).unwrap_err();
+    assert!(error.to_string().contains("missing local-link target"));
+}
+
+#[test]
 fn decode_groups_compact_relation_scalar_pair() {
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
 

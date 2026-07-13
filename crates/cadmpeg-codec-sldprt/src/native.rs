@@ -549,6 +549,35 @@ impl SldprtNative {
                     record.id
                 )));
             }
+            let sketch_entities = lane
+                .sketch_entities
+                .iter()
+                .map(|record| (record.id.as_str(), record))
+                .collect::<std::collections::HashMap<_, _>>();
+            for record in &lane.sketch_entities {
+                if record.links.is_empty() != record.link_selector.is_none() {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "sketch input entity {} has inconsistent local-link selector",
+                        record.id
+                    )));
+                }
+                for link in &record.links {
+                    let Some(target) = sketch_entities.get(link.entity_ref.as_str()) else {
+                        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                            "sketch input entity {} references missing local-link target {}",
+                            record.id, link.entity_ref
+                        )));
+                    };
+                    if target.feature_ref != record.feature_ref
+                        || target.local_id != Some(u32::from(link.local_id))
+                    {
+                        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                            "sketch input entity {} has inconsistent local-link target {}",
+                            record.id, link.entity_ref
+                        )));
+                    }
+                }
+            }
         }
         namespace.version = SLDPRT_NATIVE_VERSION;
         let histories = self

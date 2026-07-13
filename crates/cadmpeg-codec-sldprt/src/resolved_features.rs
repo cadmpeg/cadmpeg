@@ -7,6 +7,7 @@ use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference,
     FeatureInputRelationBinding, FeatureInputRelationFamily, FeatureInputRelationInstance,
     FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
+    SketchInputLink,
 };
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
@@ -92,6 +93,8 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                         kind: SketchInputKind::from_native_code(code),
                         state_value: marker_state_value(&block.payload, offset),
                         coordinates_m: marker_coordinates(&block.payload, offset, code),
+                        links: Vec::new(),
+                        link_selector: None,
                     }
                 })
                 .collect::<Vec<_>>();
@@ -220,7 +223,7 @@ pub(crate) fn marker_coordinates(
 
 #[cfg(test)]
 mod marker_tests {
-    use super::marker_coordinates;
+    use super::{marker_coordinates, marker_local_links};
 
     #[test]
     fn geometry_marker_coordinates_require_the_geometry_prefix_and_family() {
@@ -237,6 +240,21 @@ mod marker_tests {
         payload[64..66].copy_from_slice(&[0x1e, 0x00]);
         payload[5] = 0;
         assert_eq!(marker_coordinates(&payload, 0, 5), None);
+    }
+
+    #[test]
+    fn local_links_require_the_reference_trailer() {
+        let mut payload = vec![0; 80];
+        payload[64..66].copy_from_slice(&37u16.to_le_bytes());
+        payload[66..68].copy_from_slice(&39u16.to_le_bytes());
+        payload[68..70].copy_from_slice(&1u16.to_le_bytes());
+        payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        assert_eq!(marker_local_links(&payload, 0), Some(([37, 39], 1)));
+        payload[70] = 1;
+        assert_eq!(marker_local_links(&payload, 0), None);
+        payload[70] = 0;
+        payload[72..80].copy_from_slice(&0.0f64.to_le_bytes());
+        assert_eq!(marker_local_links(&payload, 0), None);
     }
 }
 
@@ -404,6 +422,8 @@ pub(crate) fn bind_scalar_operands(
     for lane in lanes {
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
+            entity.links.clear();
+            entity.link_selector = None;
         }
         let mut starts = histories
             .iter()
@@ -463,6 +483,46 @@ pub(crate) fn bind_scalar_operands(
                 }
             }
         }
+        let mut marker_ids = HashMap::<(String, u32), Vec<String>>::new();
+        for entity in &lane.sketch_entities {
+            if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id) {
+                marker_ids
+                    .entry((feature.clone(), local_id))
+                    .or_default()
+                    .push(entity.id.clone());
+            }
+        }
+        for entity in &mut lane.sketch_entities {
+            let Ok(offset) = usize::try_from(entity.offset) else {
+                continue;
+            };
+            let Some((local_ids, selector)) = marker_local_links(&lane.native_payload, offset)
+            else {
+                continue;
+            };
+            let Some(owner) = &entity.feature_ref else {
+                continue;
+            };
+            let links = local_ids
+                .into_iter()
+                .map(|local_id| {
+                    let [entity_ref] = marker_ids
+                        .get(&(owner.clone(), u32::from(local_id)))?
+                        .as_slice()
+                    else {
+                        return None;
+                    };
+                    Some(SketchInputLink {
+                        local_id,
+                        entity_ref: entity_ref.clone(),
+                    })
+                })
+                .collect::<Option<Vec<_>>>();
+            if let Some(links) = links {
+                entity.links = links;
+                entity.link_selector = Some(selector);
+            }
+        }
         let scalar_owners = lane
             .scalars
             .iter()
@@ -476,6 +536,21 @@ pub(crate) fn bind_scalar_operands(
         }
         lane.relation_instances = relation_instances(histories, lane);
     }
+}
+
+fn marker_local_links(payload: &[u8], offset: usize) -> Option<([u16; 2], u16)> {
+    if payload.get(offset + 70..offset + 72)? != [0, 0]
+        || payload.get(offset + 72..offset + 80)? != (-1.0f64).to_le_bytes()
+    {
+        return None;
+    }
+    Some((
+        [
+            u16::from_le_bytes(payload.get(offset + 64..offset + 66)?.try_into().ok()?),
+            u16::from_le_bytes(payload.get(offset + 66..offset + 68)?.try_into().ok()?),
+        ],
+        u16::from_le_bytes(payload.get(offset + 68..offset + 70)?.try_into().ok()?),
+    ))
 }
 
 fn relation_instances(

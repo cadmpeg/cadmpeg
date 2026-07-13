@@ -359,12 +359,23 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let mut offsets = std::collections::HashSet::new();
         let mut previous_offset = None;
         for (index, entity) in lane.sketch_entities.iter().enumerate() {
-            if entity.feature_ref != expected_lane.sketch_entities[index].feature_ref {
+            let expected_entity = &expected_lane.sketch_entities[index];
+            if entity.feature_ref != expected_entity.feature_ref {
                 findings.push(Finding {
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: "SolidWorks sketch-input marker has inconsistent feature ownership"
                         .into(),
+                    entity: Some(entity.id.clone()),
+                });
+            }
+            if entity.links != expected_entity.links
+                || entity.link_selector != expected_entity.link_selector
+            {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "SolidWorks sketch-input marker has inconsistent local links".into(),
                     entity: Some(entity.id.clone()),
                 });
             }

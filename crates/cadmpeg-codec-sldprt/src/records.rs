@@ -457,6 +457,21 @@ pub struct SketchInputEntity {
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coordinates_m: Option<[f64; 2]>,
+    /// Resolved marker-local links carried by the reference-bearing layout.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<SketchInputLink>,
+    /// Selector stored beside `links` in the reference-bearing layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_selector: Option<u16>,
+}
+
+/// One marker-local reference resolved within its owning feature object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchInputLink {
+    /// Feature-local object identifier stored in the marker payload.
+    pub local_id: u16,
+    /// Typed sketch-input marker with this local identifier.
+    pub entity_ref: String,
 }
 
 /// Kind of sketch entity referenced by a native feature-input marker.

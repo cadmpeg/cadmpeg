@@ -825,6 +825,8 @@ fn resolved_feature_payload(
         if entity.ordinal != ordinal as u32
             || usize::try_from(entity.offset) != Ok(*expected_offset)
             || entity.feature_ref != expected_entity.feature_ref
+            || entity.links != expected_entity.links
+            || entity.link_selector != expected_entity.link_selector
             || entity.local_id
                 != crate::resolved_features::marker_local_id(&lane.native_payload, *expected_offset)
         {
