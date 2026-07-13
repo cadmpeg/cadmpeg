@@ -2246,10 +2246,11 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
 
 #[test]
 fn encoder_writes_source_less_curved_sketches() {
-    use cadmpeg_ir::features::{Angle, Length};
+    use cadmpeg_ir::features::{Angle, Feature, FeatureDefinition, FeatureId, Length, SketchSpace};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -2272,7 +2273,7 @@ fn encoder_writes_source_less_curved_sketches() {
             end_angle: Angle(std::f64::consts::PI),
         },
         SketchGeometry::Arc {
-            center: Point2::new(8.0, 0.0),
+            center: Point2::new(16.0, 0.0),
             radius: Length(2.0),
             start_angle: Angle(std::f64::consts::PI),
             end_angle: Angle(std::f64::consts::TAU),
@@ -2295,6 +2296,14 @@ fn encoder_writes_source_less_curved_sketches() {
             ],
             weights: Some(vec![1.0, 0.75, 1.0]),
             periodic: false,
+        },
+        SketchGeometry::Line {
+            start: Point2::new(6.0, 0.0),
+            end: Point2::new(10.0, 0.0),
+        },
+        SketchGeometry::Line {
+            start: Point2::new(18.0, 0.0),
+            end: Point2::new(14.0, 0.0),
         },
     ];
     let entity_ids = geometries
@@ -2324,7 +2333,7 @@ fn encoder_writes_source_less_curved_sketches() {
             .collect()
     };
     ir.model.sketches.push(Sketch {
-        id: sketch_id,
+        id: sketch_id.clone(),
         name: Some("Curves".into()),
         configuration: Some("Main".into()),
         origin: Point3::new(0.0, 0.0, 0.0),
@@ -2332,10 +2341,38 @@ fn encoder_writes_source_less_curved_sketches() {
         u_axis: Vector3::new(1.0, 0.0, 0.0),
         profiles: vec![
             profile(&[0]),
-            profile(&[1, 2]),
+            profile(&[1, 5]),
+            profile(&[2, 6]),
             profile(&[3]),
             profile(&[4]),
         ],
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#curves".into()),
+        ordinal: 0,
+        name: Some("Curves".into()),
+        suppressed: false,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
+            sketch: Some(sketch_id.clone()),
+        },
+        native_ref: None,
+    });
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: SketchConstraintId("synthetic:test:constraint#arc-angle".into()),
+        sketch: sketch_id,
+        definition: SketchConstraintDefinition::ArcAngle {
+            entity: entity_ids[1].clone(),
+            angle: Angle(std::f64::consts::PI),
+        },
         native_ref: None,
     });
 
@@ -2345,7 +2382,21 @@ fn encoder_writes_source_less_curved_sketches() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketch_entities.len(), 5);
+    assert_eq!(decoded.ir.model.sketch_entities.len(), 7);
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| {
+            matches!(
+                constraint.definition,
+                SketchConstraintDefinition::ArcAngle {
+                    angle: Angle(value),
+                    ..
+                } if (value - std::f64::consts::PI).abs() < 1.0e-12
+            )
+        }));
     assert_eq!(
         decoded
             .ir

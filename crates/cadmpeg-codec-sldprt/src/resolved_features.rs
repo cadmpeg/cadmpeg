@@ -237,9 +237,11 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
 #[cfg(test)]
 mod marker_tests {
     use super::{
-        compact_body_selection_at, compact_body_selection_vector, marker_coordinates,
-        marker_local_id, marker_local_links, unique_locus, unique_marker_candidate,
+        arc_angle_relation_kind, compact_body_selection_at, compact_body_selection_vector,
+        marker_coordinates, marker_local_id, marker_local_links, unique_locus,
+        unique_marker_candidate,
     };
+    use crate::records::SketchRelationKind;
     use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
 
     #[test]
@@ -250,6 +252,23 @@ mod marker_tests {
         assert_eq!(marker_local_id(&payload, 0), Some(37));
         payload[88..92].fill(0xff);
         assert_eq!(marker_local_id(&payload, 0), None);
+    }
+
+    #[test]
+    fn generated_arc_angles_use_only_exact_native_quadrants() {
+        assert_eq!(
+            arc_angle_relation_kind(std::f64::consts::FRAC_PI_2),
+            Some(SketchRelationKind::ArcAngle90)
+        );
+        assert_eq!(
+            arc_angle_relation_kind(std::f64::consts::PI),
+            Some(SketchRelationKind::ArcAngle180)
+        );
+        assert_eq!(
+            arc_angle_relation_kind(3.0 * std::f64::consts::FRAC_PI_2),
+            Some(SketchRelationKind::ArcAngle270)
+        );
+        assert_eq!(arc_angle_relation_kind(std::f64::consts::FRAC_PI_3), None);
     }
 
     #[test]
@@ -2017,6 +2036,10 @@ fn profile_loci_by_marker(
         })
         .collect::<HashMap<_, _>>();
     let mut profile_loci = HashMap::<&SketchId, Vec<(Point2, SketchLocus)>>::new();
+    let geometry_by_entity = sketch_entities
+        .iter()
+        .map(|entity| (&entity.id, &entity.geometry))
+        .collect::<HashMap<_, _>>();
     for entity in sketch_entities {
         for (point, locus) in sketch_entity_loci(entity) {
             profile_loci
@@ -2076,7 +2099,15 @@ fn profile_loci_by_marker(
                 let Some(marker_loci) = loci_by_point.get(&translated) else {
                     continue;
                 };
-                let mut marker_loci = marker_loci.clone();
+                let mut marker_loci = marker_loci
+                    .iter()
+                    .filter(|locus| {
+                        geometry_by_entity
+                            .get(&locus_entity(locus))
+                            .is_some_and(|geometry| marker_accepts_locus(marker.kind, geometry))
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
                 marker_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
                 marker_loci.dedup();
                 result.insert(marker.id.clone(), marker_loci);
@@ -2084,6 +2115,17 @@ fn profile_loci_by_marker(
         }
     }
     result
+}
+
+fn marker_accepts_locus(kind: SketchInputKind, geometry: &SketchGeometry) -> bool {
+    match kind {
+        SketchInputKind::Arc => matches!(geometry, SketchGeometry::Arc { .. }),
+        SketchInputKind::LineOrCircle => !matches!(geometry, SketchGeometry::Arc { .. }),
+        SketchInputKind::Point
+        | SketchInputKind::ConstrainedPoint
+        | SketchInputKind::Relation(_)
+        | SketchInputKind::Native(_) => true,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3350,6 +3392,15 @@ fn validate_generated_marker_constraint(
         SketchConstraintDefinition::Horizontal { entity } => (entity, Some(false)),
         SketchConstraintDefinition::Vertical { entity } => (entity, Some(true)),
         SketchConstraintDefinition::Fixed { entity } => (entity, None),
+        SketchConstraintDefinition::ArcAngle { entity, angle } => {
+            if arc_angle_relation_kind(angle.0).is_none() {
+                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                    "source-less SLDPRT arc-angle constraint {} is not 90, 180, or 270 degrees",
+                    constraint.id.0
+                )));
+            }
+            (entity, None)
+        }
         _ => {
             return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
                 "source-less SLDPRT sketch constraints support solved endpoint coincidences and horizontal, vertical, or fixed marker relations"
@@ -3368,6 +3419,16 @@ fn validate_generated_marker_constraint(
                 constraint.id.0, entity_id.0, constraint.sketch.0
             ))
         })?;
+    if matches!(
+        &constraint.definition,
+        SketchConstraintDefinition::ArcAngle { .. }
+    ) && !matches!(&entity.geometry, SketchGeometry::Arc { .. })
+    {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+            "sketch constraint {} applies an arc-angle relation to a non-arc entity",
+            constraint.id.0
+        )));
+    }
     let Some(axis) = axis else {
         return Ok(());
     };
@@ -3389,6 +3450,20 @@ fn validate_generated_marker_constraint(
         )));
     }
     Ok(())
+}
+
+fn arc_angle_relation_kind(angle: f64) -> Option<SketchRelationKind> {
+    const TOLERANCE: f64 = 1.0e-9;
+    [
+        (std::f64::consts::FRAC_PI_2, SketchRelationKind::ArcAngle90),
+        (std::f64::consts::PI, SketchRelationKind::ArcAngle180),
+        (
+            3.0 * std::f64::consts::FRAC_PI_2,
+            SketchRelationKind::ArcAngle270,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(expected, kind)| ((angle - expected).abs() <= TOLERANCE).then_some(kind))
 }
 
 fn source_less_lanes(
@@ -3502,6 +3577,9 @@ fn append_generated_sketch_markers(
             }
             SketchConstraintDefinition::Fixed { entity } => {
                 Some((SketchRelationKind::Fixed, entity))
+            }
+            SketchConstraintDefinition::ArcAngle { entity, angle } => {
+                Some((arc_angle_relation_kind(angle.0)?, entity))
             }
             _ => None,
         })
