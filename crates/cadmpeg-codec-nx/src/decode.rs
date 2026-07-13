@@ -619,6 +619,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
     ir.annotations = annotations.build();
     retain_live_annotations(&mut ir);
+    retain_live_unknown_links(&mut ir);
     let report = build_geometry_report(
         scan,
         &counts,
@@ -706,6 +707,41 @@ fn retain_live_annotations(ir: &mut CadIr) {
     }
     ir.annotations.provenance.retain(|id, _| ids.contains(id));
     ir.annotations.exactness.retain(|id, _| ids.contains(id));
+}
+
+fn retain_live_unknown_links(ir: &mut CadIr) {
+    let mut ids = BTreeSet::new();
+    ids.extend(ir.model.surfaces.iter().map(|entity| entity.id.to_string()));
+    ids.extend(ir.model.curves.iter().map(|entity| entity.id.to_string()));
+    ids.extend(ir.model.pcurves.iter().map(|entity| entity.id.to_string()));
+    ids.extend(
+        ir.model
+            .procedural_surfaces
+            .iter()
+            .map(|entity| entity.id.to_string()),
+    );
+    ids.extend(
+        ir.model
+            .procedural_curves
+            .iter()
+            .map(|entity| entity.id.to_string()),
+    );
+    let Ok(mut unknowns) = ir.native_unknowns("nx") else {
+        return;
+    };
+    let mut empty_links = Vec::new();
+    for unknown in &mut unknowns {
+        unknown.links.retain(|link| ids.contains(link));
+        if unknown.links.is_empty() {
+            empty_links.push(unknown.id.to_string());
+        }
+    }
+    let _ = ir.set_native_unknowns("nx", &unknowns);
+    for id in empty_links {
+        if let Some(note) = ir.annotations.exactness.get_mut(&id) {
+            note.fields.remove("links");
+        }
+    }
 }
 
 fn topology_body_node_ids(stream_index: usize, graph: &Graph) -> BTreeMap<BodyId, BTreeSet<u32>> {
@@ -889,6 +925,81 @@ fn prune_inactive_topology(ir: &mut CadIr, winner: &BodyId) {
         .map(|vertex| vertex.point.clone())
         .collect();
     ir.model.points.retain(|point| points.contains(&point.id));
+    prune_inactive_geometry(ir);
+}
+
+fn prune_inactive_geometry(ir: &mut CadIr) {
+    let mut surfaces: BTreeSet<_> = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| face.surface.clone())
+        .collect();
+    let mut curves: BTreeSet<_> = ir
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| edge.curve.clone())
+        .collect();
+    let pcurves: BTreeSet<_> = ir
+        .model
+        .coedges
+        .iter()
+        .filter_map(|coedge| coedge.pcurve.clone())
+        .collect();
+
+    loop {
+        let old_surface_count = surfaces.len();
+        let old_curve_count = curves.len();
+        for procedural in &ir.model.procedural_surfaces {
+            if !surfaces.contains(&procedural.surface) {
+                continue;
+            }
+            match &procedural.definition {
+                ProceduralSurfaceDefinition::Offset { support, .. } => {
+                    surfaces.insert(support.clone());
+                }
+                ProceduralSurfaceDefinition::Blend {
+                    supports, spine, ..
+                } => {
+                    surfaces.extend(
+                        supports
+                            .iter()
+                            .flatten()
+                            .map(|support| support.surface.clone()),
+                    );
+                    curves.extend(spine.iter().cloned());
+                }
+                _ => {}
+            }
+        }
+        for procedural in &ir.model.procedural_curves {
+            if !curves.contains(&procedural.curve) {
+                continue;
+            }
+            if let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            {
+                surfaces.extend(context.sides.iter().filter_map(|side| side.surface.clone()));
+            }
+        }
+        if surfaces.len() == old_surface_count && curves.len() == old_curve_count {
+            break;
+        }
+    }
+
+    ir.model
+        .procedural_surfaces
+        .retain(|procedural| surfaces.contains(&procedural.surface));
+    ir.model
+        .procedural_curves
+        .retain(|procedural| curves.contains(&procedural.curve));
+    ir.model
+        .surfaces
+        .retain(|surface| surfaces.contains(&surface.id));
+    ir.model.curves.retain(|curve| curves.contains(&curve.id));
+    ir.model
+        .pcurves
+        .retain(|pcurve| pcurves.contains(&pcurve.id));
 }
 
 fn finalize_point_topology(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {

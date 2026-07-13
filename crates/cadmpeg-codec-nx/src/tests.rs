@@ -765,7 +765,11 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0)
     );
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
-    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+    assert!(
+        validation.findings.is_empty(),
+        "findings: {:?}",
+        validation.findings
+    );
 }
 
 #[test]
@@ -3675,12 +3679,19 @@ fn decode_selects_dominant_rmfastload_body() {
     assert_eq!(result.ir.model.bodies.len(), 1);
     assert!(result.ir.model.bodies[0].id.0.starts_with("nx:s0:"));
     assert_eq!(result.ir.model.faces.len(), 50);
+    assert_eq!(result.ir.model.surfaces.len(), 50);
     assert!(result
         .ir
         .model
         .faces
         .iter()
         .all(|face| face.id.0.starts_with("nx:s0:")));
+    assert!(result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .all(|surface| surface.id.0.starts_with("nx:s0:")));
     assert_eq!(
         result
             .ir
@@ -3691,7 +3702,11 @@ fn decode_selects_dominant_rmfastload_body() {
         Some("rmfastload_object_id_membership")
     );
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
-    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+    assert!(
+        validation.findings.is_empty(),
+        "findings: {:?}",
+        validation.findings
+    );
 }
 
 #[test]
