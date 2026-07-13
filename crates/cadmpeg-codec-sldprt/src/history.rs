@@ -2037,6 +2037,9 @@ fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
         _ if feature.xml_tag.eq_ignore_ascii_case("KeepBody") => {
             Some(BodyRetentionMode::KeepSelected)
         }
+        _ if feature.kind.trim().eq_ignore_ascii_case("Body-Delete/Keep") => {
+            Some(BodyRetentionMode::Unresolved)
+        }
         _ => None,
     }
 }
@@ -2055,7 +2058,11 @@ fn project_cut_with_surface(feature: &Feature) -> Option<FeatureDefinition> {
 
 fn project_delete_body(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::DeleteBody {
-        bodies: BodySelection::Native(feature.properties.get("Bodies")?.clone()),
+        bodies: feature
+            .properties
+            .get("Bodies")
+            .cloned()
+            .map_or(BodySelection::Unresolved, BodySelection::Native),
         mode: body_retention_mode(feature)?,
     })
 }
@@ -4622,7 +4629,6 @@ pub fn sync_neutral_features(
                 if existing
                     .as_deref()
                     .is_some_and(|record| body_retention_mode(record).is_none())
-                    || selection.is_none()
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported delete-body semantics",
@@ -4630,18 +4636,41 @@ pub fn sync_neutral_features(
                     )));
                 }
                 let mut properties = feature.source_properties.clone();
-                properties.insert("Bodies".into(), selection.expect("checked above"));
-                properties.insert(
-                    "Mode".into(),
-                    match mode {
-                        BodyRetentionMode::DeleteSelected => "Delete",
-                        BodyRetentionMode::KeepSelected => "Keep",
+                if let Some(selection) = selection {
+                    properties.insert("Bodies".into(), selection);
+                } else if !matches!(mode, BodyRetentionMode::Unresolved) || existing.is_none() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported delete-body semantics",
+                        feature.id
+                    )));
+                }
+                match mode {
+                    BodyRetentionMode::Unresolved => {
+                        let Some(record) = existing.as_deref() else {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} requires a retained unresolved body operation",
+                                feature.id
+                            )));
+                        };
+                        if body_retention_mode(record) != Some(BodyRetentionMode::Unresolved) {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} removes a resolved body-retention mode",
+                                feature.id
+                            )));
+                        }
+                        properties.remove("Mode");
                     }
-                    .into(),
-                );
+                    BodyRetentionMode::DeleteSelected => {
+                        properties.insert("Mode".into(), "Delete".into());
+                    }
+                    BodyRetentionMode::KeepSelected => {
+                        properties.insert("Mode".into(), "Keep".into());
+                    }
+                }
                 (
                     existing.as_deref().map_or_else(
                         || match mode {
+                            BodyRetentionMode::Unresolved => "Feature".into(),
                             BodyRetentionMode::DeleteSelected => "DeleteBody".into(),
                             BodyRetentionMode::KeepSelected => "KeepBody".into(),
                         },
@@ -5913,6 +5942,10 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
         FeatureDefinition::CutWithSurface { .. } => "CutWithSurface",
+        FeatureDefinition::DeleteBody {
+            mode: BodyRetentionMode::Unresolved,
+            ..
+        } => "Feature",
         FeatureDefinition::DeleteBody {
             mode: BodyRetentionMode::DeleteSelected,
             ..

@@ -593,6 +593,8 @@ pub enum FeatureDefinition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BodyRetentionMode {
+    /// The operation family is known but the selected retention mode is unavailable.
+    Unresolved,
     /// Delete the selected bodies.
     DeleteSelected,
     /// Delete every body except the selected bodies.

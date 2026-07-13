@@ -7229,6 +7229,77 @@ fn semantic_writer_round_trips_delete_and_keep_body() {
 }
 
 #[test]
+fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
+    use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Body-Delete/Keep 1" Type="Body-Delete/Keep " id="20"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::DeleteBody {
+            bodies: BodySelection::Unresolved,
+            mode: BodyRetentionMode::Unresolved,
+        }
+    ));
+
+    decoded.ir.model.features[0].name = Some("Retained sparse operation".into());
+    let mut sparse_encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut sparse_encoded)
+        .unwrap();
+    let mut sparse = SldprtCodec
+        .decode(&mut Cursor::new(sparse_encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&sparse.ir).feature_histories[0].features[0];
+    assert_eq!(native.kind, "Body-Delete/Keep ");
+    assert!(!native.properties.contains_key("Bodies"));
+    assert!(!native.properties.contains_key("Mode"));
+    assert!(matches!(
+        sparse.ir.model.features[0].definition,
+        FeatureDefinition::DeleteBody {
+            bodies: BodySelection::Unresolved,
+            mode: BodyRetentionMode::Unresolved,
+        }
+    ));
+
+    let FeatureDefinition::DeleteBody { bodies, mode } =
+        &mut sparse.ir.model.features[0].definition
+    else {
+        panic!("typed sparse body operation");
+    };
+    *bodies = BodySelection::Native("body:2,body:3".into());
+    *mode = BodyRetentionMode::KeepSelected;
+    let mut resolved_encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&sparse.ir, &mut resolved_encoded)
+        .unwrap();
+    let resolved = SldprtCodec
+        .decode(
+            &mut Cursor::new(resolved_encoded),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = &sldprt_native(&resolved.ir).feature_histories[0].features[0];
+    assert_eq!(native.kind, "Body-Delete/Keep ");
+    assert_eq!(native.properties["Bodies"], "body:2,body:3");
+    assert_eq!(native.properties["Mode"], "Keep");
+    assert!(matches!(
+        &resolved.ir.model.features[0].definition,
+        FeatureDefinition::DeleteBody {
+            bodies: BodySelection::Native(bodies),
+            mode: BodyRetentionMode::KeepSelected,
+        } if bodies == "body:2,body:3"
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_delete_face() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
 
