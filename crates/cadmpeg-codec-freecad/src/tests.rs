@@ -77,17 +77,19 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
 <Object type="PartDesign::Feature" name="Sketch" id="2"/>
 </Objects>
 <ObjectData Count="2">
-<Object name="Body" Extensions="True"><Extensions Count="1"><Extension type="Demo::Extension" name="Demo"><Properties Count="1"><Property name="ExtensionValue" type="App::PropertyString"><String value="kept"/></Property></Properties></Extension></Extensions><Properties Count="3" TransientCount="1">
+<Object name="Body" Extensions="True"><Extensions Count="1"><Extension type="Demo::Extension" name="Demo"><Properties Count="1"><Property name="ExtensionValue" type="App::PropertyString"><String value="kept"/></Property></Properties></Extension></Extensions><Properties Count="4" TransientCount="1">
 <_Property name="TransientState" type="App::PropertyInteger" status="8"/>
 <Property name="Support" type="App::PropertyLinkSub" status="4" group="Attachment" doc="Support object" attr="2" ro="1" hide="0"><Link object="Sketch" sub="Face1"/></Property>
 <Property name="Members" type="App::PropertyLinkList"><LinkList count="2"><Link value="Sketch"/><Link value=""/></LinkList></Property>
 <Property name="Payload" type="App::PropertyFileIncluded"><File file="Payload.bin"/></Property>
+<Property name="Shape" type="Part::PropertyPartShape"><Part ElementMap="" file="Shape.brp"/></Property>
 </Properties></Object>
 <Object name="Sketch"><Properties Count="0"></Properties></Object>
 </ObjectData></Document>"#;
     let bytes = archive_entries(&[
         ("Document.xml", document.as_bytes()),
         ("Payload.bin", b"payload"),
+        ("Shape.brp", b"DBRep_DrawableShape\n"),
     ]);
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -147,6 +149,12 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .find(|property| property.name == "Payload")
         .expect("payload");
     assert_eq!(payload.side_entries, vec!["Payload.bin"]);
+    let shape = properties
+        .iter()
+        .find(|property| property.name == "Shape")
+        .expect("shape");
+    assert_eq!(shape.family, crate::native::PropertyFamily::Geometry);
+    assert_eq!(shape.side_entries, vec!["Shape.brp"]);
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");

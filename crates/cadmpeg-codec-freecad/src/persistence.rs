@@ -284,22 +284,21 @@ fn parse_properties(
         } else {
             Vec::new()
         };
-        let side_entries = if type_name.contains("PropertyFile") {
-            values
-                .iter()
-                .flat_map(|value| {
-                    value
-                        .attributes
-                        .iter()
-                        .filter(|(name, _)| {
-                            matches!(name.as_str(), "file" | "File" | "name" | "Name")
-                        })
-                        .map(|(_, value)| value.clone())
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let side_entries = values
+            .iter()
+            .flat_map(|value| {
+                value
+                    .attributes
+                    .iter()
+                    .filter(|(name, _)| {
+                        matches!(name.as_str(), "file" | "File")
+                            || (type_name.contains("PropertyFile")
+                                && matches!(name.as_str(), "name" | "Name"))
+                    })
+                    .map(|(_, value)| value.clone())
+            })
+            .filter(|value| !value.is_empty())
+            .collect();
         output.push(PropertyRecord {
             id: format!("{owner}:property:{name}"),
             owner: owner.to_owned(),
@@ -338,6 +337,12 @@ fn classify_property(type_name: &str) -> PropertyFamily {
         PropertyFamily::Link
     } else if type_name.contains("PropertyFile") {
         PropertyFamily::File
+    } else if type_name.contains("PropertyPartShape")
+        || type_name.contains("PropertyGeometry")
+        || type_name.contains("PropertyMesh")
+        || type_name.contains("PropertyPoint")
+    {
+        PropertyFamily::Geometry
     } else if type_name.contains("PropertyPlacement") || type_name.contains("PropertyTransform") {
         PropertyFamily::Placement
     } else if type_name.contains("PropertyMatrix") {

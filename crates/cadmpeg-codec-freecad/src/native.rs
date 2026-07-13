@@ -187,6 +187,8 @@ pub enum PropertyFamily {
     Expression,
     /// Embedded or external file reference.
     File,
+    /// Exact geometry, mesh, or point carrier.
+    Geometry,
     /// Inert serialized Python value.
     PythonObject,
     /// Type without a settled family mapping.
