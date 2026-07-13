@@ -25,14 +25,37 @@ fn archive_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
 }
 
 fn streaming_archive(document: &str) -> Vec<u8> {
+    streaming_archive_with_options(document, SimpleFileOptions::default())
+}
+
+fn streaming_archive_with_options(document: &str, options: SimpleFileOptions) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new_stream(Vec::new());
     zip.start_file(
         "Document.xml",
-        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated),
+        options.compression_method(zip::CompressionMethod::Deflated),
     )
     .expect("start streamed entry");
     zip.write_all(document.as_bytes()).expect("write entry");
     zip.finish().expect("finish ZIP").into_inner()
+}
+
+#[test]
+fn frames_zip64_streaming_descriptor_and_local_extra() {
+    let bytes = streaming_archive_with_options(
+        "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>",
+        SimpleFileOptions::default().large_file(true),
+    );
+    let scan = crate::container::scan(&mut Cursor::new(bytes)).expect("ZIP64 streaming ZIP");
+    assert!(scan
+        .ledger
+        .iter()
+        .any(|span| span.role == "local-extra" && span.end > span.start));
+    let descriptor = scan
+        .ledger
+        .iter()
+        .find(|span| span.role == "data-descriptor")
+        .expect("ZIP64 descriptor");
+    assert_eq!(descriptor.end - descriptor.start, 24);
 }
 
 #[test]
