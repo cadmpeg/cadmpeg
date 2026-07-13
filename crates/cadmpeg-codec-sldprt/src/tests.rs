@@ -10603,7 +10603,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
 
 #[test]
 fn decode_projects_nested_feature_input_profile_as_a_sketch() {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry, SketchLocus};
 
     let source = sldprt_with_nested_sketch_profile(&triangle_body());
     let decoded = SldprtCodec
@@ -10612,6 +10612,7 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
 
     assert_eq!(decoded.ir.model.sketches.len(), 1);
     assert_eq!(decoded.ir.model.sketch_entities.len(), 3);
+    assert_eq!(decoded.ir.model.sketch_constraints.len(), 3);
     let sketch = &decoded.ir.model.sketches[0];
     assert_eq!(sketch.configuration.as_deref(), Some("0"));
     assert_eq!(sketch.origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
@@ -10635,6 +10636,22 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
                 .iter()
                 .all(|id| id.contains(":sldprt:brep:point#"))
     }));
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .all(|constraint| {
+            matches!(
+                &constraint.definition,
+                SketchConstraintDefinition::CoincidentLoci { loci }
+                    if loci.len() == 2
+                        && loci.iter().all(|locus| matches!(
+                            locus,
+                            SketchLocus::Start(_) | SketchLocus::End(_)
+                        ))
+            )
+        }));
     assert!(sketch.native_ref.as_deref().is_some_and(|native_ref| {
         native_ref.starts_with("sldprt:feature-input:resolved-features#")
     }));

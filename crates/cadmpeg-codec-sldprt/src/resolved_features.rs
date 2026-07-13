@@ -10,14 +10,15 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::Exactness;
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::io::{Read, Write};
 
@@ -105,9 +106,10 @@ fn configuration(section: &str) -> Option<String> {
 pub fn sketches(
     scan: &ContainerScan,
     annotations: &mut Annotations,
-) -> (Vec<Sketch>, Vec<SketchEntity>) {
+) -> (Vec<Sketch>, Vec<SketchEntity>, Vec<SketchConstraint>) {
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
+    let mut constraints = Vec::new();
     for block in &scan.blocks {
         let Some(section) = block.section.as_deref() else {
             continue;
@@ -132,10 +134,11 @@ pub fn sketches(
                 annotations,
                 &mut sketches,
                 &mut entities,
+                &mut constraints,
             );
         }
     }
-    (sketches, entities)
+    (sketches, entities, constraints)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -150,6 +153,7 @@ fn project_brep(
     annotations: &mut Annotations,
     sketches: &mut Vec<Sketch>,
     entities: &mut Vec<SketchEntity>,
+    constraints: &mut Vec<SketchConstraint>,
 ) {
     let surfaces = brep
         .surfaces
@@ -200,6 +204,7 @@ fn project_brep(
             "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
         ));
         let v_axis = cross(*normal, *u_axis);
+        let first_entity = entities.len();
         let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, SketchEntityId>::new();
         let mut used_vertices = HashSet::new();
         let mut profiles = Vec::new();
@@ -318,6 +323,16 @@ fn project_brep(
             "feature_input_profile",
             Exactness::Derived,
         );
+        project_endpoint_constraints(
+            &sketch_id,
+            &entities[first_entity..],
+            block_offset,
+            stream_ordinal,
+            face_ordinal,
+            section,
+            annotations,
+            constraints,
+        );
         sketches.push(Sketch {
             id: sketch_id,
             name: (!sketch_name.is_empty()).then(|| sketch_name.to_string()),
@@ -327,6 +342,64 @@ fn project_brep(
             u_axis: *u_axis,
             profiles,
             native_ref: Some(native_ref.to_string()),
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn project_endpoint_constraints(
+    sketch: &SketchId,
+    entities: &[SketchEntity],
+    block_offset: usize,
+    stream_ordinal: usize,
+    face_ordinal: usize,
+    section: &str,
+    annotations: &mut Annotations,
+    constraints: &mut Vec<SketchConstraint>,
+) {
+    let mut loci_by_endpoint = BTreeMap::<&str, Vec<SketchLocus>>::new();
+    for entity in entities {
+        if entity.endpoint_refs.len() != 2 {
+            continue;
+        }
+        for (index, endpoint) in entity.endpoint_refs.iter().enumerate() {
+            let locus = if index == 0 {
+                SketchLocus::Start(entity.id.clone())
+            } else {
+                SketchLocus::End(entity.id.clone())
+            };
+            loci_by_endpoint.entry(endpoint).or_default().push(locus);
+        }
+    }
+    for (_endpoint, loci) in loci_by_endpoint {
+        let distinct_entities = loci
+            .iter()
+            .map(|locus| match locus {
+                SketchLocus::Start(entity)
+                | SketchLocus::End(entity)
+                | SketchLocus::Center(entity)
+                | SketchLocus::Entity(entity) => entity,
+            })
+            .collect::<HashSet<_>>();
+        if distinct_entities.len() < 2 {
+            continue;
+        }
+        let id = SketchConstraintId(format!(
+            "sldprt:model:sketch-constraint#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
+            constraints.len()
+        ));
+        crate::annotations::note(
+            annotations,
+            id.0.clone(),
+            section,
+            0,
+            "feature_input_shared_endpoint",
+            Exactness::Derived,
+        );
+        constraints.push(SketchConstraint {
+            id,
+            sketch: sketch.clone(),
+            definition: SketchConstraintDefinition::CoincidentLoci { loci },
         });
     }
 }

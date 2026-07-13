@@ -283,7 +283,8 @@ fn build_geometry_ir(
     let histories = crate::history::histories(scan, &mut ir.annotations);
     project_design_history(&mut ir, &histories);
     let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
-    let (sketches, sketch_entities) = crate::resolved_features::sketches(scan, &mut ir.annotations);
+    let (sketches, sketch_entities, sketch_constraints) =
+        crate::resolved_features::sketches(scan, &mut ir.annotations);
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches);
     stamp_feature_baseline(&mut ir);
     let attributes = crate::metadata::attributes(scan, &mut ir.annotations);
@@ -295,6 +296,7 @@ fn build_geometry_ir(
     ir.model.attributes = attributes;
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
+    ir.model.sketch_constraints = sketch_constraints;
     stamp_sketch_baseline(&mut ir, &native);
 
     ir.model.bodies = brep.bodies;
@@ -765,7 +767,8 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let histories = crate::history::histories(scan, &mut ir.annotations);
     let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
-    let (sketches, sketch_entities) = crate::resolved_features::sketches(scan, &mut ir.annotations);
+    let (sketches, sketch_entities, sketch_constraints) =
+        crate::resolved_features::sketches(scan, &mut ir.annotations);
     let model_attributes = crate::metadata::attributes(scan, &mut ir.annotations);
     let native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
@@ -776,6 +779,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     ir.model.attributes = model_attributes;
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
+    ir.model.sketch_constraints = sketch_constraints;
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "outer_version".to_string(),
