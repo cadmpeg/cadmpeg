@@ -1266,11 +1266,11 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
     }
-    if active_configurations > 1 {
+    if !ir.model.configurations.is_empty() && active_configurations != 1 {
         findings.push(Finding {
             check: Check::Counts,
             severity: Severity::Error,
-            message: "design has multiple active configurations".into(),
+            message: "design requires exactly one active configuration".into(),
             entity: None,
         });
     }

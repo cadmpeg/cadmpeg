@@ -851,7 +851,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations.push(DesignConfiguration {
         id: configuration_id.clone(),
         ordinal: 0,
-        active: false,
+        active: true,
         source_index: Some(7),
         name: "Default".into(),
         material: None,
@@ -900,7 +900,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     assert!(report
         .findings
         .iter()
-        .any(|finding| finding.message.contains("multiple active configurations")));
+        .any(|finding| finding.message.contains("exactly one active configuration")));
     assert!(report.findings.iter().any(|finding| finding
         .message
         .contains("repeats configuration source index")));
@@ -914,6 +914,10 @@ fn configuration_body_membership_round_trips_and_validates() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("configuration has an empty name")));
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("exactly one active configuration")));
 
     ir.model.configurations[0].name = "Default".into();
     ir.model.configurations[1].name = "Default".into();
