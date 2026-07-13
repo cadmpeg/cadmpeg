@@ -2411,6 +2411,17 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(references[0].record, object_records[1].id);
     assert_eq!(references[0].object_id, Some(0x102));
     assert_eq!(references[0].value, 0x1234_5678);
+    let handles = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<crate::native::PersistentHandle>("persistent_handles")
+        .unwrap();
+    assert_eq!(handles.len(), 1);
+    assert_eq!(handles[0].value, 0x1234_5678);
+    assert_eq!(handles[0].records, vec![object_records[1].id.clone()]);
+    assert_eq!(handles[0].occurrence_count, 1);
     assert_eq!(result.ir.model.features.len(), 1);
     assert!(matches!(
         result.ir.model.features[0].definition,

@@ -141,6 +141,19 @@ pub struct ObjectReference {
     pub source_offset: u64,
 }
 
+/// Cross-record identity established by equal persistent-handle values.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PersistentHandle {
+    /// Globally unique handle identity.
+    pub id: String,
+    /// Unsigned persistent-handle value.
+    pub value: u32,
+    /// Ordered distinct OM directory records containing the handle.
+    pub records: Vec<String>,
+    /// Total number of serialized occurrences across those records.
+    pub occurrence_count: u32,
+}
+
 /// Named NX arrangement from `/Root/part/arrangements`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Configuration {
@@ -373,6 +386,30 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
                     }
                 },
             )
+        })
+        .collect()
+}
+
+/// Group persistent-handle occurrences into cross-record identities.
+pub fn persistent_handles(references: &[ObjectReference]) -> Vec<PersistentHandle> {
+    let mut groups = BTreeMap::<u32, (Vec<String>, u32)>::new();
+    for reference in references
+        .iter()
+        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
+    {
+        let (records, occurrence_count) = groups.entry(reference.value).or_default();
+        *occurrence_count += 1;
+        if records.last() != Some(&reference.record) && !records.contains(&reference.record) {
+            records.push(reference.record.clone());
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(value, (records, occurrence_count))| PersistentHandle {
+            id: format!("nx:om-persistent-handles:handle#{value:08x}"),
+            value,
+            records,
+            occurrence_count,
         })
         .collect()
 }
