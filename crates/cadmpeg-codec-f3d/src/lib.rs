@@ -98,6 +98,10 @@ const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 #[derive(Debug, Default, Clone, Copy)]
 pub struct F3dCodec;
 
+fn design_stream(id: &str) -> &str {
+    design::native_stream(id).unwrap_or("f3d:design")
+}
+
 /// Validate Fusion native design-record relationships and exact sketch frames.
 pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     use std::collections::HashSet;
@@ -126,54 +130,70 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let record_indices = native
         .design_record_headers
         .iter()
-        .map(|record| record.record_index)
+        .map(|record| (design_stream(&record.id), record.record_index))
         .collect::<HashSet<_>>();
     let mut parameter_indices = HashSet::new();
     let mut parameter_ordinals = HashSet::new();
     let parameters_by_index = native
         .design_parameters
         .iter()
-        .map(|parameter| (parameter.record_index, parameter))
+        .map(|parameter| {
+            (
+                (design_stream(&parameter.id), parameter.record_index),
+                parameter,
+            )
+        })
         .collect::<std::collections::HashMap<_, _>>();
     let owners_by_index = native
         .design_parameter_owners
         .iter()
-        .map(|owner| (owner.record_index, owner))
+        .map(|owner| ((design_stream(&owner.id), owner.record_index), owner))
         .collect::<std::collections::HashMap<_, _>>();
     let companions_by_index = native
         .design_parameter_companions
         .iter()
-        .map(|companion| (companion.record_index, companion))
+        .map(|companion| {
+            (
+                (design_stream(&companion.id), companion.record_index),
+                companion,
+            )
+        })
         .collect::<std::collections::HashMap<_, _>>();
     let scopes_by_index = native
         .design_parameter_scopes
         .iter()
-        .map(|scope| (scope.record_index, scope))
+        .map(|scope| ((design_stream(&scope.id), scope.record_index), scope))
         .collect::<std::collections::HashMap<_, _>>();
     let entities_by_suffix = native
         .design_entity_headers
         .iter()
-        .map(|entity| (entity.entity_suffix, entity))
+        .map(|entity| ((design_stream(&entity.id), entity.entity_suffix), entity))
         .collect::<std::collections::HashMap<_, _>>();
     let sketch_geometry_indices = native
         .sketch_points
         .iter()
-        .map(|point| point.record_index)
+        .map(|point| (design_stream(&point.id), point.record_index))
         .chain(
             native
                 .sketch_curve_identities
                 .iter()
-                .map(|curve| curve.record_index),
+                .map(|curve| (design_stream(&curve.id), curve.record_index)),
         )
         .collect::<HashSet<_>>();
     let placements_by_scope = native
         .design_sketch_placements
         .iter()
-        .map(|placement| (placement.scope_record_index, placement))
+        .map(|placement| {
+            (
+                (design_stream(&placement.id), placement.scope_record_index),
+                placement,
+            )
+        })
         .collect::<std::collections::HashMap<_, _>>();
     let mut scope_indices = HashSet::new();
     for scope in &native.design_parameter_scopes {
-        let unique_index = scope_indices.insert(scope.record_index);
+        let native_stream = design_stream(&scope.id);
+        let unique_index = scope_indices.insert((native_stream, scope.record_index));
         let entity_link = match (
             scope.entity_id.as_deref(),
             scope.entity_suffix,
@@ -182,7 +202,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             (None, None, None) => None,
             (Some(entity_id), Some(entity_suffix), Some(offset)) => Some(
                 entities_by_suffix
-                    .get(&entity_suffix)
+                    .get(&(native_stream, entity_suffix))
                     .is_some_and(|entity| {
                         entity.entity_id == entity_id
                             && offset > scope.byte_offset
@@ -203,9 +223,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && scope.paired_byte_offset == scope.byte_offset.saturating_add(scope.frame_length)
             && scope.kind_offset > scope.byte_offset
             && scope.kind_offset < scope.paired_byte_offset.saturating_sub(78)
-            && record_indices.contains(&scope.record_index)
+            && record_indices.contains(&(native_stream, scope.record_index))
             && entity_link.unwrap_or(scope.kind != "Sketch")
-            && (scope.kind != "Sketch" || placements_by_scope.contains_key(&scope.record_index))
+            && (scope.kind != "Sketch"
+                || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;
         if !valid {
             findings.push(Finding {
@@ -219,9 +240,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let mut placement_records = HashSet::new();
     let mut placement_scopes = HashSet::new();
     for placement in &native.design_sketch_placements {
-        let unique_record = placement_records.insert(placement.record_index);
-        let unique_scope = placement_scopes.insert(placement.scope_record_index);
-        let scope = scopes_by_index.get(&placement.scope_record_index);
+        let native_stream = design_stream(&placement.id);
+        let unique_record = placement_records.insert((native_stream, placement.record_index));
+        let unique_scope = placement_scopes.insert((native_stream, placement.scope_record_index));
+        let scope = scopes_by_index.get(&(native_stream, placement.scope_record_index));
         let compact = placement.frame_length == 201
             && placement.transform_offset.is_none()
             && placement.transform
@@ -267,11 +289,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let mut owner_ordinals = HashSet::new();
     let mut owner_local_ordinals = HashSet::new();
     for owner in &native.design_parameter_owners {
-        let unique_index = owner_indices.insert(owner.record_index);
-        let unique_ordinal = owner_ordinals.insert(owner.owned_ordinal);
-        let unique_local_ordinal =
-            owner_local_ordinals.insert((owner.scope_record_index, owner.local_ordinal));
-        let parameter = parameters_by_index.get(&owner.parameter_record_index);
+        let native_stream = design_stream(&owner.id);
+        let unique_index = owner_indices.insert((native_stream, owner.record_index));
+        let unique_ordinal = owner_ordinals.insert((native_stream, owner.owned_ordinal));
+        let unique_local_ordinal = owner_local_ordinals.insert((
+            native_stream,
+            owner.scope_record_index,
+            owner.local_ordinal,
+        ));
+        let parameter = parameters_by_index.get(&(native_stream, owner.parameter_record_index));
         let valid = owner.class_tag.len() == 3
             && owner.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && owner.variant <= 1
@@ -279,11 +305,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && owner.evaluated_value_offset == owner.byte_offset + 40
             && owner.parameter_record_index == owner.record_index.saturating_add(1)
             && owner.companion_record_index == owner.record_index.saturating_add(2)
-            && scopes_by_index.contains_key(&owner.scope_record_index)
-            && record_indices.contains(&owner.parameter_record_index)
-            && record_indices.contains(&owner.companion_record_index)
+            && scopes_by_index.contains_key(&(native_stream, owner.scope_record_index))
+            && record_indices.contains(&(native_stream, owner.parameter_record_index))
+            && record_indices.contains(&(native_stream, owner.companion_record_index))
             && companions_by_index
-                .get(&owner.companion_record_index)
+                .get(&(native_stream, owner.companion_record_index))
                 .is_some_and(|companion| companion.owner_record_index == owner.record_index)
             && parameter.is_some_and(|parameter| {
                 parameter.owner_record_index == Some(owner.record_index)
@@ -305,9 +331,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let mut companion_indices = HashSet::new();
     let mut companion_owners = HashSet::new();
     for companion in &native.design_parameter_companions {
-        let unique_index = companion_indices.insert(companion.record_index);
-        let unique_owner = companion_owners.insert(companion.owner_record_index);
-        let owner = owners_by_index.get(&companion.owner_record_index);
+        let native_stream = design_stream(&companion.id);
+        let unique_index = companion_indices.insert((native_stream, companion.record_index));
+        let unique_owner = companion_owners.insert((native_stream, companion.owner_record_index));
+        let owner = owners_by_index.get(&(native_stream, companion.owner_record_index));
         let valid = companion.class_tag.len() == 3
             && companion
                 .class_tag
@@ -315,7 +342,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .all(|byte| byte.is_ascii_digit())
             && companion.opaque_value != 0
             && companion.opaque_value_offset == companion.byte_offset.saturating_add(42)
-            && record_indices.contains(&companion.record_index)
+            && record_indices.contains(&(native_stream, companion.record_index))
             && owner.is_some_and(|owner| owner.companion_record_index == companion.record_index)
             && unique_index
             && unique_owner;
@@ -332,13 +359,17 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let mut locus_pair_indices = HashSet::new();
     let mut locus_pair_companions = HashSet::new();
     for pair in &native.design_dimension_locus_pairs {
-        let unique_index = locus_pair_indices.insert(pair.record_index);
-        let unique_companion = locus_pair_companions.insert(pair.companion_record_index);
-        let companion = companions_by_index.get(&pair.companion_record_index);
+        let native_stream = design_stream(&pair.id);
+        let unique_index = locus_pair_indices.insert((native_stream, pair.record_index));
+        let unique_companion =
+            locus_pair_companions.insert((native_stream, pair.companion_record_index));
+        let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
         let dimension_companion = companion.is_some_and(|companion| {
             owners_by_index
-                .get(&companion.owner_record_index)
-                .and_then(|owner| parameters_by_index.get(&owner.parameter_record_index))
+                .get(&(native_stream, companion.owner_record_index))
+                .and_then(|owner| {
+                    parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                })
                 .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
         });
         let valid = pair.class_tag.len() == 3
@@ -357,8 +388,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && pair.first_role_offset == pair.byte_offset.saturating_add(50)
             && pair.second_geometry_reference_offset == pair.byte_offset.saturating_add(55)
             && pair.second_role_offset == pair.byte_offset.saturating_add(65)
-            && sketch_geometry_indices.contains(&pair.first_geometry_record_index)
-            && sketch_geometry_indices.contains(&pair.second_geometry_record_index)
+            && sketch_geometry_indices.contains(&(native_stream, pair.first_geometry_record_index))
+            && sketch_geometry_indices
+                .contains(&(native_stream, pair.second_geometry_record_index))
             && unique_index
             && unique_companion;
         if !valid {
@@ -374,13 +406,17 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let mut locus_group_indices = HashSet::new();
     let mut locus_group_companions = HashSet::new();
     for group in &native.design_dimension_locus_groups {
-        let unique_index = locus_group_indices.insert(group.record_index);
-        let unique_companion = locus_group_companions.insert(group.companion_record_index);
-        let companion = companions_by_index.get(&group.companion_record_index);
+        let native_stream = design_stream(&group.id);
+        let unique_index = locus_group_indices.insert((native_stream, group.record_index));
+        let unique_companion =
+            locus_group_companions.insert((native_stream, group.companion_record_index));
+        let companion = companions_by_index.get(&(native_stream, group.companion_record_index));
         let dimension_companion = companion.is_some_and(|companion| {
             owners_by_index
-                .get(&companion.owner_record_index)
-                .and_then(|owner| parameters_by_index.get(&owner.parameter_record_index))
+                .get(&(native_stream, companion.owner_record_index))
+                .and_then(|owner| {
+                    parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                })
                 .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
         });
         let count = group.loci.len();
@@ -389,7 +425,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             let start = loci_start.saturating_add((ordinal as u64).saturating_mul(15));
             locus.geometry_reference_offset == start.saturating_add(1)
                 && locus.role_offset == start.saturating_add(11)
-                && sketch_geometry_indices.contains(&locus.geometry_record_index)
+                && sketch_geometry_indices.contains(&(native_stream, locus.geometry_record_index))
         });
         let owner_start = loci_start.saturating_add((count as u64).saturating_mul(15));
         let returns_start = owner_start.saturating_add(24);
@@ -405,7 +441,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         == returns_start
                             .saturating_add((ordinal as u64).saturating_mul(11))
                             .saturating_add(1)
-                        && sketch_geometry_indices.contains(record_index)
+                        && sketch_geometry_indices.contains(&(native_stream, *record_index))
                 });
         let mut locus_members = group
             .loci
@@ -417,7 +453,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         return_members.sort_unstable();
         let (expected_kinds, expected_unknown) = design::decode_constraint_kinds(group.state);
         let owner_is_sketch = entities_by_suffix
-            .get(&u64::from(group.owner_reference))
+            .get(&(native_stream, u64::from(group.owner_reference)))
             .is_some_and(|entity| entity.object_kind == Some(records::DesignObjectKind::Sketch));
         let valid = group.class_tag.len() == 3
             && group.class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -456,8 +492,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     for parameter in &native.design_parameters {
-        let unique_index = parameter_indices.insert(parameter.record_index);
-        let unique_ordinal = parameter_ordinals.insert(parameter.source_ordinal);
+        let native_stream = design_stream(&parameter.id);
+        let unique_index = parameter_indices.insert((native_stream, parameter.record_index));
+        let unique_ordinal = parameter_ordinals.insert((native_stream, parameter.source_ordinal));
         let expected_kind = if parameter.source_kind == "User Parameter" {
             records::DesignParameterKind::User
         } else if parameter.source_kind.contains("Dimension") {
@@ -470,7 +507,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             records::DesignParameterKind::Dimension | records::DesignParameterKind::Feature => {
                 parameter
                     .owner_record_index
-                    .is_some_and(|owner| owners_by_index.contains_key(&owner))
+                    .is_some_and(|owner| owners_by_index.contains_key(&(native_stream, owner)))
             }
         };
         let offsets_ordered = parameter.byte_offset < parameter.expression_offset
@@ -507,13 +544,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     for header in &native.design_entity_headers {
+        let native_stream = design_stream(&header.id);
         let count_matches = header
             .declared_reference_count
             .is_none_or(|count| count as usize == header.reference_indices.len());
         let references_resolve = header
             .reference_indices
             .iter()
-            .all(|index| record_indices.contains(index));
+            .all(|index| record_indices.contains(&(native_stream, *index)));
         if !count_matches || !references_resolve {
             findings.push(Finding {
                 check: Check::ReferentialIntegrity,
@@ -527,15 +565,21 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .design_entity_headers
         .iter()
         .filter(|header| header.object_kind == Some(records::DesignObjectKind::Sketch))
-        .map(|header| header.entity_suffix as u32)
+        .map(|header| (design_stream(&header.id), header.entity_suffix as u32))
         .collect::<HashSet<_>>();
     let sketch_owner_ids = native
         .design_entity_headers
         .iter()
         .filter(|header| header.object_kind == Some(records::DesignObjectKind::Sketch))
-        .map(|header| (header.entity_suffix as u32, header.entity_id.as_str()))
+        .map(|header| {
+            (
+                (design_stream(&header.id), header.entity_suffix as u32),
+                header.entity_id.as_str(),
+            )
+        })
         .collect::<std::collections::HashMap<_, _>>();
     for relation in &native.sketch_relations {
+        let native_stream = design_stream(&relation.id);
         let (constraint_kinds, unknown_constraint_bits) =
             design::decode_constraint_kinds(relation.state);
         let offsets_fit = relation
@@ -550,8 +594,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     .and_then(|offset| offset.checked_add(4))
                     .is_some_and(|end| end <= relation.raw_bytes.len())
             });
-        let valid = sketch_owners.contains(&relation.owner_reference)
-            && sketch_owner_ids.get(&relation.owner_reference).copied()
+        let valid = sketch_owners.contains(&(native_stream, relation.owner_reference))
+            && sketch_owner_ids
+                .get(&(native_stream, relation.owner_reference))
+                .copied()
                 == Some(relation.owner_entity_id.as_str())
             && relation.raw_bytes.len() >= 24
             && relation.members.len() == relation.member_offsets.len()
@@ -582,12 +628,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let typed_sketch_records = native
         .sketch_points
         .iter()
-        .map(|point| point.record_index)
+        .map(|point| (design_stream(&point.id), point.record_index))
         .chain(
             native
                 .sketch_curve_identities
                 .iter()
-                .map(|curve| curve.record_index),
+                .map(|curve| (design_stream(&curve.id), curve.record_index)),
         )
         .collect::<std::collections::HashSet<_>>();
     let sketch_operands = native
@@ -595,7 +641,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|point| {
             (
-                point.record_index,
+                (design_stream(&point.id), point.record_index),
                 records::SketchRelationOperand::Point {
                     record_index: point.record_index,
                     persistent_id: point.persistent_id,
@@ -604,7 +650,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         })
         .chain(native.sketch_curve_identities.iter().map(|curve| {
             (
-                curve.record_index,
+                (design_stream(&curve.id), curve.record_index),
                 records::SketchRelationOperand::Curve {
                     record_index: curve.record_index,
                     primary_id: curve.primary_id,
@@ -615,15 +661,17 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .collect::<std::collections::HashMap<_, _>>();
     let mut relation_owners = std::collections::HashMap::new();
     for relation in &native.sketch_relations {
+        let native_stream = design_stream(&relation.id);
         let resolve = |indices: &[u32]| {
             indices
                 .iter()
                 .map(|record_index| {
-                    sketch_operands.get(record_index).cloned().unwrap_or(
-                        records::SketchRelationOperand::Record {
+                    sketch_operands
+                        .get(&(native_stream, *record_index))
+                        .cloned()
+                        .unwrap_or(records::SketchRelationOperand::Record {
                             record_index: *record_index,
-                        },
-                    )
+                        })
                 })
                 .collect::<Vec<_>>()
         };
@@ -640,11 +688,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
         for member in relation.members.iter().chain(&relation.return_members) {
-            if !typed_sketch_records.contains(member) {
+            if !typed_sketch_records.contains(&(native_stream, *member)) {
                 continue;
             }
             if relation_owners
-                .insert(*member, relation.owner_reference)
+                .insert((native_stream, *member), relation.owner_reference)
                 .is_some_and(|owner| owner != relation.owner_reference)
             {
                 findings.push(Finding {
@@ -652,6 +700,58 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     severity: Severity::Error,
                     message: "Fusion sketch member belongs to multiple sketch owners".into(),
                     entity: Some(relation.id.clone()),
+                });
+            }
+        }
+    }
+    for pair in &native.design_dimension_locus_pairs {
+        let native_stream = design_stream(&pair.id);
+        let owner = companions_by_index
+            .get(&(native_stream, pair.companion_record_index))
+            .and_then(|companion| {
+                owners_by_index.get(&(native_stream, companion.owner_record_index))
+            })
+            .and_then(|parameter_owner| {
+                placements_by_scope.get(&(native_stream, parameter_owner.scope_record_index))
+            })
+            .and_then(|placement| u32::try_from(placement.entity_suffix).ok());
+        let Some(owner) = owner else {
+            continue;
+        };
+        for member in [
+            pair.first_geometry_record_index,
+            pair.second_geometry_record_index,
+        ] {
+            if relation_owners
+                .insert((native_stream, member), owner)
+                .is_some_and(|existing| existing != owner)
+            {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "Fusion sketch member belongs to multiple sketch owners".into(),
+                    entity: Some(pair.id.clone()),
+                });
+            }
+        }
+    }
+    for group in &native.design_dimension_locus_groups {
+        let native_stream = design_stream(&group.id);
+        for member in group
+            .loci
+            .iter()
+            .map(|locus| locus.geometry_record_index)
+            .chain(group.return_members.iter().copied())
+        {
+            if relation_owners
+                .insert((native_stream, member), group.owner_reference)
+                .is_some_and(|existing| existing != group.owner_reference)
+            {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "Fusion sketch member belongs to multiple sketch owners".into(),
+                    entity: Some(group.id.clone()),
                 });
             }
         }
@@ -667,7 +767,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .map(|curve| (&curve.id, curve.record_index, curve.owner_reference)),
         )
     {
-        if relation_owners.get(&record_index).copied() != owner_reference {
+        if relation_owners
+            .get(&(design_stream(id), record_index))
+            .copied()
+            != owner_reference
+        {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,

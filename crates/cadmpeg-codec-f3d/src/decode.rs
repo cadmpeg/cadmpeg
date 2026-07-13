@@ -448,10 +448,7 @@ fn populate_annotations(
         }
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
-            note(
-                &crate::design::neutral_sketch_id(entity.entity_suffix).0,
-                "sketch",
-            );
+            note(&crate::design::neutral_sketch_id(entity).0, "sketch");
         }
         for entity in &native.design_entity_headers {
             note(&entity.id, "design_entity_header");
@@ -474,7 +471,7 @@ fn populate_annotations(
                 .any(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
             {
                 note(
-                    &crate::design::neutral_sketch_constraint_id(entity.record_index).0,
+                    &crate::design::neutral_sketch_constraint_id(&entity.id, entity.record_index).0,
                     "sketch_constraint",
                 );
             }
@@ -488,7 +485,7 @@ fn populate_annotations(
                 .any(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
             {
                 note(
-                    &crate::design::neutral_sketch_entity_id(entity.record_index).0,
+                    &crate::design::neutral_sketch_entity_id(&entity.id, entity.record_index).0,
                     "sketch_entity",
                 );
             }
@@ -502,7 +499,7 @@ fn populate_annotations(
                 .any(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
             {
                 note(
-                    &crate::design::neutral_sketch_entity_id(entity.record_index).0,
+                    &crate::design::neutral_sketch_entity_id(&entity.id, entity.record_index).0,
                     "sketch_entity",
                 );
             }
@@ -595,28 +592,45 @@ fn extend_related_design_records(
     let indices = native
         .sketch_relations
         .iter()
-        .flat_map(|relation| relation.members.iter().chain(&relation.return_members))
-        .copied()
-        .chain(
-            native
-                .design_parameters
+        .flat_map(|relation| {
+            let scope = crate::design::native_stream(&relation.id)
+                .unwrap_or("f3d:design")
+                .to_owned();
+            relation
+                .members
                 .iter()
-                .filter_map(|parameter| parameter.owner_record_index),
-        )
+                .chain(&relation.return_members)
+                .map(move |record_index| (scope.clone(), *record_index))
+        })
+        .chain(native.design_parameters.iter().filter_map(|parameter| {
+            Some((
+                crate::design::native_stream(&parameter.id)?.to_owned(),
+                parameter.owner_record_index?,
+            ))
+        }))
         .collect::<Vec<_>>();
     let existing = native
         .design_record_headers
         .iter()
-        .map(|record| record.record_index)
+        .filter_map(|record| {
+            Some((
+                crate::design::native_stream(&record.id)?.to_owned(),
+                record.record_index,
+            ))
+        })
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
         crate::design::decode_related_record_headers(reader, scan, &indices)?
             .into_iter()
-            .filter(|record| !existing.contains(&record.record_index)),
+            .filter(|record| {
+                crate::design::native_stream(&record.id).is_none_or(|scope| {
+                    !existing.contains(&(scope.to_owned(), record.record_index))
+                })
+            }),
     );
     native
         .design_record_headers
-        .sort_by_key(|record| record.record_index);
+        .sort_by_key(|record| record.id.clone());
     native.design_parameter_owners = crate::design::decode_parameter_owners(
         scan,
         &native.design_parameters,
@@ -626,26 +640,39 @@ fn extend_related_design_records(
         .design_parameter_owners
         .iter()
         .flat_map(|owner| {
+            let scope = crate::design::native_stream(&owner.id)
+                .unwrap_or("f3d:design")
+                .to_owned();
             [
                 owner.scope_record_index,
                 owner.parameter_record_index,
                 owner.companion_record_index,
             ]
+            .map(|record_index| (scope.clone(), record_index))
         })
         .collect::<Vec<_>>();
     let existing = native
         .design_record_headers
         .iter()
-        .map(|record| record.record_index)
+        .filter_map(|record| {
+            Some((
+                crate::design::native_stream(&record.id)?.to_owned(),
+                record.record_index,
+            ))
+        })
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
         crate::design::decode_related_record_headers(reader, scan, &indices)?
             .into_iter()
-            .filter(|record| !existing.contains(&record.record_index)),
+            .filter(|record| {
+                crate::design::native_stream(&record.id).is_none_or(|scope| {
+                    !existing.contains(&(scope.to_owned(), record.record_index))
+                })
+            }),
     );
     native
         .design_record_headers
-        .sort_by_key(|record| record.record_index);
+        .sort_by_key(|record| record.id.clone());
     native.design_parameter_companions = crate::design::decode_parameter_companions(
         scan,
         &native.design_parameter_owners,

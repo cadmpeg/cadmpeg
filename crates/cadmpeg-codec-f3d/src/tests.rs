@@ -6928,12 +6928,22 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     let mut curves = native.sketch_curve_identities.clone();
     let mut relations = native.sketch_relations.clone();
     let mut conflicting_relation = relations[0].clone();
-    conflicting_relation.id = "generated:sketch-relation#1".into();
+    let relation_scope = relations[0]
+        .id
+        .rsplit_once(':')
+        .expect("generated relation identity has a stream")
+        .0;
+    conflicting_relation.id = format!("{relation_scope}:sketch-relation-conflict#1");
     conflicting_relation.owner_reference = 278;
     relations.push(conflicting_relation);
     let mut entities = native.design_entity_headers.clone();
     let mut second_owner = entities[0].clone();
-    second_owner.id = "generated:sketch-header#1".into();
+    let entity_scope = entities[0]
+        .id
+        .rsplit_once(':')
+        .expect("generated entity identity has a stream")
+        .0;
+    second_owner.id = format!("{entity_scope}:sketch-header-conflict#1");
     second_owner.entity_suffix = 278;
     second_owner.entity_id = "0_278".into();
     entities.push(second_owner);
