@@ -2075,12 +2075,29 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Metric".into(),
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
+        bodies: vec![ir.model.bodies[0].id.clone()],
+        native_ref: None,
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId("sldprt:model:configuration#generated:1".into()),
+        name: "Empty".into(),
+        material: None,
+        properties: BTreeMap::new(),
         bodies: Vec::new(),
         native_ref: None,
     });
 
     let mut encoded = Vec::new();
     SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    let scan = container::scan_bytes(&encoded);
+    assert!(scan
+        .blocks
+        .iter()
+        .any(|block| { block.section.as_deref() == Some("Contents/Config-0-Partition") }));
+    assert!(!scan
+        .blocks
+        .iter()
+        .any(|block| { block.section.as_deref() == Some("Contents/Config-1-Partition") }));
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -2088,6 +2105,81 @@ fn encoder_writes_source_less_neutral_configurations() {
     assert_eq!(configuration.name, "Metric");
     assert_eq!(configuration.material.as_deref(), Some("Steel"));
     assert_eq!(configuration.properties["Finish"], "Ground");
+    assert_eq!(
+        configuration.bodies,
+        decoded
+            .ir
+            .model
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>()
+    );
+    assert!(decoded.ir.model.configurations[1].bodies.is_empty());
+}
+
+#[test]
+fn encoder_partitions_source_less_bodies_by_configuration() {
+    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
+    use std::collections::BTreeMap;
+
+    let mut body = Vec::new();
+    body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 501, 0x0017, &[701, 0, 0, 0, 0, 0]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    body.extend(owned_triangle(200, 701, 10.0));
+    let mut ir = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap()
+        .ir;
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    ir.annotations = cadmpeg_ir::Annotations::default();
+    ir.model.bodies.iter_mut().for_each(|body| body.name = None);
+    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    let body_ids = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    ir.model.configurations = body_ids
+        .iter()
+        .enumerate()
+        .map(|(index, body)| DesignConfiguration {
+            id: ConfigurationId(format!("synthetic:test:configuration#config-{index}")),
+            name: format!("Config {index}"),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: vec![body.clone()],
+            native_ref: None,
+        })
+        .collect();
+
+    let mut encoded = Vec::new();
+    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    let scan = container::scan_bytes(&encoded);
+    assert!(scan
+        .blocks
+        .iter()
+        .any(|block| { block.section.as_deref() == Some("Contents/Config-0-Partition") }));
+    assert!(scan
+        .blocks
+        .iter()
+        .any(|block| { block.section.as_deref() == Some("Contents/Config-1-Partition") }));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.bodies.len(), 2);
+    assert_eq!(decoded.ir.model.configurations[0].bodies.len(), 1);
+    assert_eq!(decoded.ir.model.configurations[1].bodies.len(), 1);
+    assert_ne!(
+        decoded.ir.model.configurations[0].bodies,
+        decoded.ir.model.configurations[1].bodies
+    );
 }
 
 #[test]

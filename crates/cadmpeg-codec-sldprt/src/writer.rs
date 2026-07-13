@@ -73,10 +73,12 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         None
     };
     let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
-    let (partition_section, partition_payload) = if let Some(retained) = retained_partition {
-        retained
+    let partition_sections = if let Some(retained) = retained_partition {
+        vec![retained]
     } else if let Some(patched) = patched_partition {
-        patched
+        vec![patched]
+    } else if !ir.model.configurations.is_empty() {
+        configuration_partitions(ir, length_scale)?
     } else {
         let schema_32001 = ir
             .model
@@ -89,13 +91,16 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         } else {
             "SCH_SW_33103_11000"
         };
-        (
+        vec![(
             "Contents/Config-0-Partition".to_string(),
             parasolid_stream(&body, schema),
-        )
+        )]
     };
-    let active_partition_section = partition_section.clone();
-    let mut sections = vec![(partition_section, partition_payload)];
+    let active_partition_section = partition_sections
+        .first()
+        .map(|(section, _)| section.clone())
+        .unwrap_or_default();
+    let mut sections = partition_sections;
     if let Some((name, color)) = body_material(ir)? {
         sections.push(("SWObjects".into(), material_payload(&name, color)));
     }
@@ -345,6 +350,180 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
         }
     }
     Ok(())
+}
+
+fn configuration_partitions(
+    ir: &CadIr,
+    length_scale: f64,
+) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+    let configured = ir
+        .model
+        .configurations
+        .iter()
+        .flat_map(|configuration| configuration.bodies.iter().cloned())
+        .collect::<HashSet<_>>();
+    if let Some(body) = ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| !configured.contains(&body.id))
+    {
+        return Err(CodecError::Malformed(format!(
+            "SLDPRT body {} belongs to no configuration",
+            body.id.0
+        )));
+    }
+    ir.model
+        .configurations
+        .iter()
+        .enumerate()
+        .filter(|(_, configuration)| !configuration.bodies.is_empty())
+        .map(|(index, configuration)| {
+            let subset = body_subset(ir, &configuration.bodies)?;
+            let schema_32001 = subset
+                .model
+                .bodies
+                .iter()
+                .any(|body| body.kind == BodyKind::Sheet);
+            let body = brep_body(&subset, length_scale, schema_32001)?;
+            let schema = if schema_32001 {
+                "SCH_SW_32001_11000"
+            } else {
+                "SCH_SW_33103_11000"
+            };
+            Ok((
+                format!("Contents/Config-{index}-Partition"),
+                parasolid_stream(&body, schema),
+            ))
+        })
+        .collect()
+}
+
+fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {
+    let selected = selected.iter().cloned().collect::<HashSet<_>>();
+    if let Some(id) = selected
+        .iter()
+        .find(|id| !ir.model.bodies.iter().any(|body| &body.id == *id))
+    {
+        return Err(CodecError::Malformed(format!(
+            "configuration references missing body {}",
+            id.0
+        )));
+    }
+    let mut subset = ir.clone();
+    subset
+        .model
+        .bodies
+        .retain(|body| selected.contains(&body.id));
+    let regions = subset
+        .model
+        .bodies
+        .iter()
+        .flat_map(|body| body.regions.iter().cloned())
+        .collect::<HashSet<_>>();
+    subset
+        .model
+        .regions
+        .retain(|region| regions.contains(&region.id));
+    let shells = subset
+        .model
+        .regions
+        .iter()
+        .flat_map(|region| region.shells.iter().cloned())
+        .collect::<HashSet<_>>();
+    subset
+        .model
+        .shells
+        .retain(|shell| shells.contains(&shell.id));
+    let faces = subset
+        .model
+        .shells
+        .iter()
+        .flat_map(|shell| shell.faces.iter().cloned())
+        .collect::<HashSet<_>>();
+    subset.model.faces.retain(|face| faces.contains(&face.id));
+    let loops = subset
+        .model
+        .faces
+        .iter()
+        .flat_map(|face| face.loops.iter().cloned())
+        .collect::<HashSet<_>>();
+    subset.model.loops.retain(|loop_| loops.contains(&loop_.id));
+    let coedges = subset
+        .model
+        .loops
+        .iter()
+        .flat_map(|loop_| loop_.coedges.iter().cloned())
+        .collect::<HashSet<_>>();
+    subset
+        .model
+        .coedges
+        .retain(|coedge| coedges.contains(&coedge.id));
+    let mut edges = subset
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| coedge.edge.clone())
+        .collect::<HashSet<_>>();
+    for shell in &subset.model.shells {
+        edges.extend(shell.wire_edges.iter().cloned());
+    }
+    subset.model.edges.retain(|edge| edges.contains(&edge.id));
+    let mut vertices = subset
+        .model
+        .edges
+        .iter()
+        .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
+        .collect::<HashSet<_>>();
+    for shell in &subset.model.shells {
+        vertices.extend(shell.free_vertices.iter().cloned());
+    }
+    subset
+        .model
+        .vertices
+        .retain(|vertex| vertices.contains(&vertex.id));
+    let points = subset
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.clone())
+        .collect::<HashSet<_>>();
+    subset
+        .model
+        .points
+        .retain(|point| points.contains(&point.id));
+    let surfaces = subset
+        .model
+        .faces
+        .iter()
+        .map(|face| face.surface.clone())
+        .collect::<HashSet<_>>();
+    subset
+        .model
+        .surfaces
+        .retain(|surface| surfaces.contains(&surface.id));
+    let curves = subset
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| edge.curve.clone())
+        .collect::<HashSet<_>>();
+    subset
+        .model
+        .curves
+        .retain(|curve| curves.contains(&curve.id));
+    let pcurves = subset
+        .model
+        .coedges
+        .iter()
+        .filter_map(|coedge| coedge.pcurve.clone())
+        .collect::<HashSet<_>>();
+    subset
+        .model
+        .pcurves
+        .retain(|pcurve| pcurves.contains(&pcurve.id));
+    subset.model.finalize();
+    Ok(subset)
 }
 
 fn opaque_blocks(
