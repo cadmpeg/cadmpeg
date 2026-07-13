@@ -15310,6 +15310,47 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
         .coedges
         .iter()
         .any(|coedge| coedge.pcurve.as_ref() == Some(&actual.id)));
+
+    let mut mixed = edited;
+    let mut inline = mixed.model.pcurves[0].clone();
+    inline.id = cadmpeg_ir::ids::PcurveId("generated:mixed-inline-pcurve#0".into());
+    inline.wrapper_reversed = Some(false);
+    inline.native_tail_flags = Some([true, false, true, false]);
+    inline.fit_tolerance = Some(0.002);
+    mixed.model.coedges[1].pcurve = Some(inline.id.clone());
+    mixed.model.pcurves.push(inline);
+    let mut mixed_bytes = Vec::new();
+    F3dCodec
+        .encode(&mixed, &mut mixed_bytes)
+        .expect("mixed inline/ref-form pcurve encode");
+    let mixed_round_trip = F3dCodec
+        .decode(&mut Cursor::new(mixed_bytes), &DecodeOptions::default())
+        .expect("mixed inline/ref-form pcurve round trip");
+    assert_eq!(mixed_round_trip.ir.model.pcurves.len(), 2);
+    assert!(mixed_round_trip
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .any(|pcurve| pcurve.wrapper_reversed.is_none()));
+    assert!(mixed_round_trip
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .any(|pcurve| pcurve.wrapper_reversed == Some(false)));
+    assert!(mixed_round_trip
+        .ir
+        .model
+        .coedges
+        .iter()
+        .filter_map(|coedge| coedge.pcurve.as_ref())
+        .all(|pcurve_id| mixed_round_trip
+            .ir
+            .model
+            .pcurves
+            .iter()
+            .any(|pcurve| pcurve.id == *pcurve_id)));
 }
 
 #[test]
