@@ -1029,6 +1029,24 @@ fn blend_surface_with_extended_support_reference() -> Vec<u8> {
     stream
 }
 
+fn blend_surface_with_intersection_spine() -> Vec<u8> {
+    let mut stream = blend_surface_topology_partition_stream();
+    let blend = stream
+        .windows(4)
+        .position(|window| window == [0, 56, 0, 12])
+        .expect("blend record");
+    put_ref(&mut stream, blend + 24, 18);
+
+    let mut intersection = record(38, 31);
+    put_ref(&mut intersection, 2, 18);
+    intersection[18] = b'+';
+    for (index, reference) in [6, 6, 1, 1, 1, 1].into_iter().enumerate() {
+        put_ref(&mut intersection, 19 + index * 2, reference);
+    }
+    stream.extend(intersection);
+    stream
+}
+
 fn intersection_curve_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
     for (tag, xmt, offset) in [(16, 8, 24), (17, 7, 18)] {
@@ -2984,6 +3002,24 @@ fn decode_emits_blend_with_extended_support_reference() {
         result.ir.model.faces[0].surface,
         result.ir.model.procedural_surfaces[0].surface
     );
+}
+
+#[test]
+fn decode_binds_blend_ball_centre_spine() {
+    let stream = blend_surface_with_intersection_spine();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let ProceduralSurfaceDefinition::Blend { spine, .. } =
+        &result.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("blend definition");
+    };
+    assert_eq!(
+        spine.as_ref(),
+        Some(&result.ir.model.procedural_curves[0].curve)
+    );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]

@@ -349,6 +349,8 @@ pub struct BlendSurface {
     pub xmt: u32,
     /// Ordered support-surface references.
     pub supports: [u32; 2],
+    /// Ball-centre spine curve reference.
+    pub spine: u32,
     /// Signed support offsets in millimetres.
     pub offsets: [f64; 2],
     /// Record type-tag offset in the inflated stream.
@@ -471,6 +473,7 @@ pub fn blend_surfaces(stream: &[u8]) -> Vec<BlendSurface> {
             Some(BlendSurface {
                 xmt: node.xmt,
                 supports: [refs[0], refs[1]],
+                spine: refs[2],
                 offsets: [values[0] * 1000.0, values[1] * 1000.0],
                 pos: node.pos,
             })

@@ -164,6 +164,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         let mut curves_by_xmt = BTreeMap::new();
         let mut pcurves_by_xmt = BTreeMap::new();
         let mut trim_ranges = BTreeMap::new();
+        let mut pending_blend_spines = Vec::new();
         let first_surface = ir.model.surfaces.len();
         let first_curve = ir.model.curves.len();
         let mut point_ordinal = 0usize;
@@ -333,6 +334,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 .note(&procedural_id, source_stream, blend.pos as u64)
                 .tag("BLEND_SURF");
             annotations.derived(&procedural_id, "definition");
+            let procedural_index = ir.model.procedural_surfaces.len();
             ir.model.procedural_surfaces.push(ProceduralSurface {
                 id: procedural_id,
                 surface: surface_id.clone(),
@@ -347,6 +349,9 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 },
                 cache_fit_tolerance: None,
             });
+            if blend.spine > 1 {
+                pending_blend_spines.push((procedural_index, blend.spine));
+            }
             surfaces_by_xmt.insert(blend.xmt, surface_id);
             counts.blend_surfaces += 1;
         }
@@ -504,6 +509,20 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             });
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
+        }
+
+        for (procedural_index, spine_xmt) in pending_blend_spines {
+            let Some(spine) = curves_by_xmt.get(&spine_xmt).cloned() else {
+                continue;
+            };
+            let Some(ProceduralSurface {
+                definition: ProceduralSurfaceDefinition::Blend { spine: slot, .. },
+                ..
+            }) = ir.model.procedural_surfaces.get_mut(procedural_index)
+            else {
+                continue;
+            };
+            *slot = Some(spine);
         }
 
         for trim in crate::topology::trimmed_curves(semantic) {
