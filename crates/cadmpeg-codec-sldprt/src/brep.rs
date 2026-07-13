@@ -119,6 +119,42 @@ pub(crate) enum CarrierGeometry {
     Curve(CurveGeometry),
 }
 
+#[derive(Default)]
+pub(crate) struct CarrierIndex {
+    curves: HashMap<u16, Carrier>,
+    surfaces: HashMap<u16, Carrier>,
+}
+
+impl CarrierIndex {
+    fn insert(&mut self, carrier: Carrier) {
+        match carrier.geometry {
+            CarrierGeometry::Curve(_) => {
+                self.curves.insert(carrier.attr, carrier);
+            }
+            CarrierGeometry::Surface(_) => {
+                self.surfaces.insert(carrier.attr, carrier);
+            }
+        }
+    }
+
+    pub(crate) fn curve(&self, attr: u16) -> Option<&Carrier> {
+        self.curves.get(&attr)
+    }
+
+    pub(crate) fn surface(&self, attr: u16) -> Option<&Carrier> {
+        self.surfaces.get(&attr)
+    }
+
+    pub(crate) fn merge_missing(&mut self, other: Self) {
+        for (attr, carrier) in other.curves {
+            self.curves.entry(attr).or_insert(carrier);
+        }
+        for (attr, carrier) in other.surfaces {
+            self.surfaces.entry(attr).or_insert(carrier);
+        }
+    }
+}
+
 /// Try to parse a compact analytic carrier whose tag byte pair `00 TT` begins at
 /// `off`. Validated by the `0x2b`/`0x2d` marker gate and by a complete f64 run;
 /// returns `None` when the candidate does not frame as a carrier.
@@ -267,37 +303,40 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<CarrierGeometry> {
 /// id. When two carriers share an attr (a partition base and a deltas variant),
 /// the first (partition-order) wins, matching the "weak deltas must not
 /// overwrite a stronger partition record" rule ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#42-deltas-encodings)).
-pub(crate) fn scan_carriers(body: &[u8]) -> HashMap<u16, Carrier> {
-    let mut out: HashMap<u16, Carrier> = HashMap::new();
+pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
+    let mut out = CarrierIndex::default();
     let mut i = 0usize;
     while i + 2 <= body.len() {
         if body[i] == 0x00 {
             if let Some(c) = parse_carrier(body, i) {
-                out.insert(c.attr, c.clone());
+                out.insert(c);
             }
         }
         i += 1;
     }
     for (attr, carrier) in spline::scan_curve_carriers(body) {
-        out.insert(attr, carrier);
+        debug_assert_eq!(attr, carrier.attr);
+        out.insert(carrier);
     }
     for (attr, carrier) in spline::scan_surface_carriers(body) {
-        out.insert(attr, carrier);
+        debug_assert_eq!(attr, carrier.attr);
+        out.insert(carrier);
     }
     out
 }
 
 /// Return the typed curve carried by one stream-local attribute.
 pub(crate) fn curve_by_attr(body: &[u8], attr: u16) -> Option<CurveGeometry> {
-    match scan_carriers(body).remove(&attr)?.geometry {
-        CarrierGeometry::Curve(curve) => Some(curve),
-        CarrierGeometry::Surface(_) => None,
+    match &scan_carriers(body).curve(attr)?.geometry {
+        CarrierGeometry::Curve(curve) => Some(curve.clone()),
+        CarrierGeometry::Surface(_) => unreachable!("curve index contains only curve carriers"),
     }
 }
 
 /// Replace the scalar run of one compact analytic carrier.
 pub(crate) fn patch_compact_values(body: &mut [u8], attr: u16, values: &[f64]) -> bool {
-    let Some(carrier) = scan_carriers(body).remove(&attr) else {
+    let carriers = scan_carriers(body);
+    let Some(carrier) = carriers.curve(attr) else {
         return false;
     };
     let Some(start) = carrier.end.checked_sub(values.len() * 8) else {
@@ -318,13 +357,14 @@ pub(crate) fn patch_nurbs_by_attr(
     attr: u16,
     new: &cadmpeg_ir::geometry::NurbsCurve,
 ) -> bool {
-    let Some(carrier) = scan_carriers(body).remove(&attr) else {
+    let carriers = scan_carriers(body);
+    let Some(carrier) = carriers.curve(attr) else {
         return false;
     };
-    let CarrierGeometry::Curve(CurveGeometry::Nurbs(old)) = carrier.geometry else {
+    let CarrierGeometry::Curve(CurveGeometry::Nurbs(old)) = &carrier.geometry else {
         return false;
     };
-    patch_nurbs_curve(body, carrier.offset, &old, new, 0.001).is_some()
+    patch_nurbs_curve(body, carrier.offset, old, new, 0.001).is_some()
 }
 
 #[cfg(test)]
@@ -354,8 +394,8 @@ mod tests {
 
         let carriers = scan_carriers(&bytes);
 
-        assert!(carriers.contains_key(&7));
-        assert!(carriers.contains_key(&8));
+        assert!(carriers.curve(7).is_some());
+        assert!(carriers.curve(8).is_some());
     }
 
     #[test]

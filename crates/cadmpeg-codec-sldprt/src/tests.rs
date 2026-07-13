@@ -4381,6 +4381,46 @@ fn edge_uses_decode_typed_reference_nurbs_curve() {
 }
 
 #[test]
+fn reused_carrier_attribute_resolves_by_geometry_kind() {
+    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+
+    let mut body = triangle_body();
+    let bridge = body
+        .windows(2)
+        .position(|window| window == [0x00, 0x0e])
+        .expect("bridge");
+    body[bridge + 26..bridge + 28].copy_from_slice(&70u16.to_be_bytes());
+    let edge = body
+        .windows(2)
+        .position(|window| window == [0x00, 0x10])
+        .expect("edge-use");
+    body[edge + 24..edge + 26].copy_from_slice(&70u16.to_be_bytes());
+    body.extend(line_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
+    body.extend(plane_carrier(
+        70,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(matches!(
+        result.ir.model.curves[0].geometry,
+        CurveGeometry::Line { .. }
+    ));
+    assert!(matches!(
+        result.ir.model.surfaces[0].geometry,
+        SurfaceGeometry::Plane { .. }
+    ));
+}
+
+#[test]
 fn faces_decode_nurbs_surface() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 

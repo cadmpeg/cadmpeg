@@ -24,7 +24,7 @@ use cadmpeg_ir::Exactness;
 
 use super::entity;
 use super::topology::{self, Record};
-use super::{scan_carriers, Carrier, CarrierGeometry, LEN_TO_MM};
+use super::{scan_carriers, Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
 /// Decoded B-rep arenas, provenance, and transfer statistics.
@@ -293,7 +293,7 @@ pub fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
 /// Input order determines override order for topology records with the same
 /// attribute id. `stream` names the combined provenance source.
 pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
-    let mut carriers = HashMap::new();
+    let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();
     let mut initialized = false;
@@ -303,9 +303,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
         let scanned_tables = topology::scan(body);
         let mut scanned_facts = entity::scan(body);
         if !initialized || !is_deltas {
-            for (attr, carrier) in scan_carriers(body) {
-                carriers.entry(attr).or_insert(carrier);
-            }
+            carriers.merge_missing(scan_carriers(body));
             if initialized {
                 tables.merge_deltas(scanned_tables);
                 if facts.bodies.is_empty() {
@@ -318,9 +316,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                 initialized = true;
             }
         } else {
-            for (attr, carrier) in scan_carriers(body) {
-                carriers.entry(attr).or_insert(carrier);
-            }
+            carriers.merge_missing(scan_carriers(body));
             tables.merge_deltas(scanned_tables);
             facts.face_colors.append(&mut scanned_facts.face_colors);
         }
@@ -336,7 +332,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
 }
 
 fn decode_graph(
-    carriers: &HashMap<u16, Carrier>,
+    carriers: &CarrierIndex,
     t: &topology::Tables,
     entity_facts: entity::Facts,
     stream: &str,
@@ -452,7 +448,7 @@ fn decode_graph(
         let (start_v, end_v, curve_attr) = edge_ends[&e];
         let resolved_endpoints = kept_vertices.contains(&start_v) && kept_vertices.contains(&end_v);
         let closed_circle_point = (!resolved_endpoints && start_v <= 1 && end_v <= 1)
-            .then(|| carriers.get(&curve_attr))
+            .then(|| carriers.curve(curve_attr))
             .flatten()
             .and_then(|carrier| match &carrier.geometry {
                 CarrierGeometry::Curve(CurveGeometry::Circle {
@@ -497,10 +493,13 @@ fn decode_graph(
         let eu = t.edge_uses.get(&e);
         let mut curve = None;
         if curve_attr != 0 {
-            match carriers.get(&curve_attr).map(|c| &c.geometry) {
+            match carriers.curve(curve_attr).map(|c| &c.geometry) {
                 Some(CarrierGeometry::Curve(_)) => {
                     if emitted_curves.insert(curve_attr) {
-                        emit_curve(&mut out, &carriers[&curve_attr]);
+                        emit_curve(
+                            &mut out,
+                            carriers.curve(curve_attr).expect("matched curve carrier"),
+                        );
                     }
                     curve = Some(CurveId(id_curve(curve_attr)));
                 }
@@ -668,7 +667,7 @@ fn decode_graph(
         }
         // Support surface: a decoded surface carrier, else an opaque carrier.
         let surf_off = t.bridges.get(&f.bridge_attr).map_or(0, |r| r.offset);
-        match carriers.get(&f.surface_attr).map(|c| (c, &c.geometry)) {
+        match carriers.surface(f.surface_attr).map(|c| (c, &c.geometry)) {
             Some((c, CarrierGeometry::Surface(geo))) => {
                 annotations
                     .note(id_surf(f.bridge_attr), source_stream, c.offset as u64)
@@ -844,7 +843,7 @@ fn decode_graph(
         else {
             continue;
         };
-        if let Some(carrier) = carriers.get(&attr) {
+        if let Some(carrier) = carriers.curve(attr) {
             annotations
                 .note(&curve.id, source_stream, carrier.offset as u64)
                 .tag("compact_curve");
