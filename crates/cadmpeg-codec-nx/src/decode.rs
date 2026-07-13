@@ -171,23 +171,13 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             let pi = point_ordinal;
             point_ordinal += 1;
             let pid = PointId(format!("nx:s{si}:pt#{pi}"));
-            let vid = VertexId(format!("nx:s{si}:v#{pi}"));
             annotations
                 .note(&pid, source_stream, pt.pos as u64)
                 .tag("POINT");
             annotations.derived(&pid, "position");
-            annotations
-                .note(&vid, source_stream, pt.pos as u64)
-                .tag("POINT");
-            annotations.exactness(&vid, Exactness::Inferred);
             ir.model.points.push(Point {
                 id: pid.clone(),
                 position: pt.position,
-            });
-            ir.model.vertices.push(Vertex {
-                id: vid.clone(),
-                point: pid,
-                tolerance: None,
             });
             if let Some(node) = graph.at_pos(pt.pos) {
                 if node.kind == 29 {
@@ -198,7 +188,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                         .expect("invariant: just pushed above")
                         .id
                         .clone();
-                    points_by_xmt.insert(node.xmt, (point_id, vid));
+                    points_by_xmt.insert(node.xmt, point_id);
                 }
             }
             counts.points += 1;
@@ -213,21 +203,13 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             let pi = point_ordinal;
             point_ordinal += 1;
             let pid = PointId(format!("nx:s{si}:pt#{pi}"));
-            let vid = VertexId(format!("nx:s{si}:v#{pi}"));
             annotate_node(&mut annotations, &pid, source_stream, node, "POINT");
             annotations.derived(&pid, "position");
-            annotate_node(&mut annotations, &vid, source_stream, node, "POINT");
-            annotations.exactness(&vid, Exactness::Inferred);
             ir.model.points.push(Point {
                 id: pid.clone(),
                 position,
             });
-            ir.model.vertices.push(Vertex {
-                id: vid.clone(),
-                point: pid.clone(),
-                tolerance: None,
-            });
-            points_by_xmt.insert(node.xmt, (pid, vid));
+            points_by_xmt.insert(node.xmt, pid);
             counts.points += 1;
         }
 
@@ -624,7 +606,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         &body_node_ids,
         &scan.container.rmfastload_object_ids(),
     );
-    attach_free_topology(&mut ir, &mut annotations);
+    finalize_point_topology(&mut ir, &mut annotations);
     let referenced_pcurves: BTreeSet<_> = ir
         .model
         .coedges
@@ -908,74 +890,65 @@ fn prune_inactive_topology(ir: &mut CadIr, winner: &BodyId) {
     ir.model.points.retain(|point| points.contains(&point.id));
 }
 
-fn attach_free_topology(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
-    let edge_vertices: BTreeSet<_> = ir
-        .model
-        .edges
-        .iter()
-        .flat_map(|edge| [&edge.start, &edge.end])
-        .cloned()
-        .collect();
-    let coedge_edges: BTreeSet<_> = ir
-        .model
-        .coedges
-        .iter()
-        .map(|coedge| coedge.edge.clone())
-        .collect();
-    let free_vertices: Vec<_> = ir
+fn finalize_point_topology(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+    let referenced_points: BTreeSet<_> = ir
         .model
         .vertices
         .iter()
-        .filter(|vertex| !edge_vertices.contains(&vertex.id))
-        .map(|vertex| vertex.id.clone())
+        .map(|vertex| vertex.point.clone())
         .collect();
-    let wire_edges: Vec<_> = ir
-        .model
-        .edges
-        .iter()
-        .filter(|edge| !coedge_edges.contains(&edge.id))
-        .map(|edge| edge.id.clone())
-        .collect();
-    if free_vertices.is_empty() && wire_edges.is_empty() {
+    if !ir.model.bodies.is_empty() {
+        ir.model
+            .points
+            .retain(|point| referenced_points.contains(&point.id));
         return;
     }
 
-    if let Some(shell) = ir.model.shells.first_mut() {
-        shell.free_vertices.extend(free_vertices);
-        shell.wire_edges.extend(wire_edges);
-        if !shell.free_vertices.is_empty() {
-            annotations.derived(&shell.id, "free_vertices");
-        }
-        if !shell.wire_edges.is_empty() {
-            annotations.derived(&shell.id, "wire_edges");
-        }
+    if ir.model.points.is_empty() {
         return;
     }
 
-    let body_id = BodyId("nx:derived:body#0".to_string());
-    let region_id = RegionId("nx:derived:region#0".to_string());
-    let shell_id = ShellId("nx:derived:shell#0".to_string());
+    let body_id = BodyId("nx:derived:point-body#0".to_string());
+    let region_id = RegionId("nx:derived:point-region#0".to_string());
+    let shell_id = ShellId("nx:derived:point-shell#0".to_string());
     let stream = annotations.stream("nx:container");
     for id in [&body_id.0, &region_id.0, &shell_id.0] {
-        annotations.note(id, stream, 0).tag("derived_free_topology");
+        annotations
+            .note(id, stream, 0)
+            .tag("derived_point_topology");
         annotations.exactness(id, Exactness::Inferred);
+    }
+
+    let mut free_vertices = Vec::with_capacity(ir.model.points.len());
+    for (index, point) in ir.model.points.iter().enumerate() {
+        let vertex_id = VertexId(format!("nx:derived:point-vertex#{index}"));
+        annotations
+            .note(&vertex_id, stream, 0)
+            .tag("derived_point_topology");
+        annotations.exactness(&vertex_id, Exactness::Inferred);
+        ir.model.vertices.push(Vertex {
+            id: vertex_id.clone(),
+            point: point.id.clone(),
+            tolerance: None,
+        });
+        free_vertices.push(vertex_id);
     }
     ir.model.shells.push(Shell {
         id: shell_id.clone(),
         region: region_id.clone(),
         faces: Vec::new(),
-        wire_edges,
+        wire_edges: Vec::new(),
         free_vertices,
     });
     ir.model.regions.push(Region {
-        id: region_id,
+        id: region_id.clone(),
         body: body_id.clone(),
         shells: vec![shell_id],
     });
     ir.model.bodies.push(Body {
         id: body_id,
         kind: BodyKind::General,
-        regions: vec!["nx:derived:region#0".into()],
+        regions: vec![region_id],
         transform: None,
         name: None,
         color: None,
@@ -1060,7 +1033,7 @@ fn emit_topology(
     ir: &mut CadIr,
     stream_index: usize,
     graph: &Graph,
-    points: &BTreeMap<u32, (PointId, VertexId)>,
+    points: &BTreeMap<u32, PointId>,
     surfaces: &BTreeMap<u32, SurfaceId>,
     curves: &BTreeMap<u32, CurveId>,
     pcurves: &BTreeMap<u32, PcurveId>,
@@ -1069,9 +1042,15 @@ fn emit_topology(
     annotations: &mut AnnotationBuilder,
 ) {
     let prefix = format!("nx:s{stream_index}");
-    let valid_loop_rings: BTreeMap<u32, Vec<u32>> = graph
-        .of_kind(14)
-        .filter_map(|face| graph.face_loop_rings(face.xmt))
+    let body_shape_shells = graph.body_shape_shells();
+    let valid_face_xmts: BTreeSet<u32> = body_shape_shells
+        .iter()
+        .filter_map(|shell| graph.shell_face_xmts(shell))
+        .flatten()
+        .collect();
+    let valid_loop_rings: BTreeMap<u32, Vec<u32>> = valid_face_xmts
+        .iter()
+        .filter_map(|face_xmt| graph.face_loop_rings(*face_xmt))
         .flatten()
         .collect();
     let valid_fin_xmts: BTreeSet<u32> = valid_loop_rings
@@ -1082,7 +1061,16 @@ fn emit_topology(
         .iter()
         .filter_map(|xmt| graph.get(17, *xmt)?.fin_fields().map(|fields| fields.edge))
         .collect();
-    let body_shape_shells = graph.body_shape_shells();
+    let valid_vertex_xmts: BTreeSet<u32> = valid_fin_xmts
+        .iter()
+        .filter_map(|xmt| {
+            graph
+                .get(17, *xmt)?
+                .fin_fields()
+                .map(|fields| fields.vertex)
+        })
+        .filter(|xmt| *xmt > 1)
+        .collect();
     let body_xmts: BTreeSet<_> = body_shape_shells
         .iter()
         .filter_map(|shell| shell.shell_fields().map(|fields| fields.body))
@@ -1176,27 +1164,27 @@ fn emit_topology(
     }
 
     let mut vertices = BTreeMap::new();
-    for node in graph.of_kind(18) {
+    for node in graph
+        .of_kind(18)
+        .filter(|node| valid_vertex_xmts.contains(&node.xmt))
+    {
         let Some(fields) = node.vertex_fields() else {
             continue;
         };
-        let Some((_, vertex)) = points.get(&fields.point) else {
+        let Some(point) = points.get(&fields.point).cloned() else {
             continue;
         };
         let tolerance = decoded_tolerance(fields.tolerance);
-        if let (Some(decoded_vertex), Some(tolerance)) = (
-            ir.model
-                .vertices
-                .iter_mut()
-                .find(|candidate| candidate.id == *vertex),
+        let vertex = VertexId(format!("{prefix}:vertex#{}", node.xmt));
+        annotate_node(annotations, &vertex, source_stream, node, "VERTEX");
+        if tolerance.is_some() {
+            annotations.derived(&vertex, "tolerance");
+        }
+        ir.model.vertices.push(Vertex {
+            id: vertex.clone(),
+            point,
             tolerance,
-        ) {
-            decoded_vertex.tolerance = Some(tolerance);
-        }
-        annotate_node(annotations, vertex, source_stream, node, "VERTEX");
-        if decoded_tolerance(fields.tolerance).is_some() {
-            annotations.derived(vertex, "tolerance");
-        }
+        });
         vertices.insert(node.xmt, vertex.clone());
     }
 
@@ -1300,7 +1288,10 @@ fn emit_topology(
     }
 
     let mut faces = BTreeMap::new();
-    for node in graph.of_kind(14) {
+    for node in graph
+        .of_kind(14)
+        .filter(|node| valid_face_xmts.contains(&node.xmt))
+    {
         let Some(fields) = node.face_fields() else {
             continue;
         };
@@ -1428,6 +1419,26 @@ fn emit_topology(
             parent.coedges.push(id);
         }
     }
+
+    let owned_edges: BTreeSet<_> = ir
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| coedge.edge.clone())
+        .collect();
+    let candidate_edges: BTreeSet<_> = edges.into_values().collect();
+    ir.model
+        .edges
+        .retain(|edge| !candidate_edges.contains(&edge.id) || owned_edges.contains(&edge.id));
+    let retained_vertices: BTreeSet<_> = ir
+        .model
+        .edges
+        .iter()
+        .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
+        .collect();
+    ir.model.vertices.retain(|vertex| {
+        !vertex.id.0.starts_with(&prefix) || retained_vertices.contains(&vertex.id)
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1778,7 +1789,7 @@ fn build_geometry_report(
         category: LossCategory::Geometry,
         severity: Severity::Info,
         message: format!(
-            "Decoded {} vertex point(s) verbatim from Parasolid POINT records (3×f64 big-endian, \
+            "Decoded {} POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, \
              metres → millimetres), {} analytic surface carrier(s) ({} plane, {} cylinder, {} \
              cone, {} sphere, {} torus), and {} analytic curve carrier(s) ({} line, {} circle, {} \
              ellipse). All parameters are byte-exact at the document's millimetre scale.",
@@ -1831,8 +1842,8 @@ fn build_geometry_report(
             message: format!(
                 "{} Parasolid deltas stream(s) were paired by adjacency and equal schema. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, B_SURFACE, and B_CURVE full records and compact \
-                 tombstones were applied from the current shell-delimited transaction using its \
-                 first snapshot for each key. Tombstones \
+                 non-topology replacements and tombstones were applied using the last event for \
+                 each key; validated partition topology remained authoritative. Tombstones \
                  without an exact partition key remain unresolved.",
                 scan.count(StreamKind::Deltas)
             ),

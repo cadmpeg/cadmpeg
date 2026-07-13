@@ -745,7 +745,7 @@ impl Graph {
         self.shell_face_xmts(shell).is_some()
     }
 
-    fn shell_face_xmts(&self, shell: &Node) -> Option<Vec<u32>> {
+    pub(crate) fn shell_face_xmts(&self, shell: &Node) -> Option<Vec<u32>> {
         let fields = shell.shell_fields()?;
         if fields.last_face != 1 {
             (fields.last_face == fields.first_face).then_some(())?;

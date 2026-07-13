@@ -297,35 +297,12 @@ pub fn points(stream: &[u8]) -> Vec<Point> {
 /// Overlay supported complete deltas records onto one paired partition stream.
 ///
 /// Replaced partition records are masked with non-tag bytes. Status-free
-/// canonical current-snapshot replacements are appended once. The result is a
-/// topology image only: raw deltas bytes remain in their original stream for
-/// independent procedural decoders and cannot be reinterpreted as partition
-/// records here.
+/// canonical current replacements are appended once. Raw deltas bytes remain
+/// available to independent procedural decoders.
 pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     let census = walk(deltas);
-    let snapshot_end = census
-        .records
-        .iter()
-        .filter(|record| {
-            record.kind == 13
-                && record.references.len() == 8
-                && record.references[0] == 1
-                && record.references[1] > 1
-                && record.references[2] == 1
-                && record.references[3] > 1
-                && record.references[4] == 1
-                && record.references[5] == 1
-                && record.references[6] > 1
-                && (record.references[7] == 1 || record.references[7] == record.references[3])
-        })
-        .nth(1)
-        .map_or(usize::MAX, |record| record.end);
     let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
-    for record in census
-        .records
-        .iter()
-        .filter(|record| record.offset < snapshot_end)
-    {
+    for record in &census.records {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
@@ -334,18 +311,14 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
                 .get(kind, record.xmt)
                 .is_some()
         {
-            replacements.entry((kind, record.xmt)).or_insert(record);
+            replacements.insert((kind, record.xmt), record);
         }
     }
 
     let mut tombstones = BTreeMap::new();
-    for tombstone in census
-        .tombstones
-        .iter()
-        .filter(|tombstone| tombstone.offset < snapshot_end)
-    {
+    for tombstone in &census.tombstones {
         if let Ok(kind) = u8::try_from(tombstone.kind) {
-            tombstones.entry((kind, tombstone.xmt)).or_insert(tombstone);
+            tombstones.insert((kind, tombstone.xmt), tombstone);
         }
     }
 
@@ -353,7 +326,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     replacements.retain(|key, record| {
         tombstones
             .get(key)
-            .is_none_or(|tombstone| record.offset < tombstone.offset)
+            .is_none_or(|tombstone| record.offset > tombstone.offset)
     });
     let deletions = tombstones
         .into_iter()
@@ -361,7 +334,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
             graph.get(key.0, key.1).is_some()
                 && replacements
                     .get(key)
-                    .is_none_or(|record| tombstone.offset < record.offset)
+                    .is_none_or(|record| tombstone.offset > record.offset)
         })
         .collect::<BTreeMap<_, _>>();
     let build = |include_topology: bool| {
@@ -381,6 +354,9 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         }
         merged
     };
+    if !graph.body_shape_shells().is_empty() {
+        return build(false);
+    }
     let merged = build(true);
     let merged_graph = crate::topology::Graph::parse(&merged);
     let base_complete = graph.has_complete_body_topology();

@@ -476,6 +476,26 @@ fn decode_retains_topology_owned_point_at_origin() {
 }
 
 #[test]
+fn decode_does_not_attach_unreferenced_point_to_solid_topology() {
+    let mut stream = topology_partition_stream();
+    let mut point = record(29, 40);
+    put_ref(&mut point, 2, 77);
+    put_vec3(&mut point, 16, [0.04, 0.05, 0.06]);
+    stream.extend_from_slice(&point);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.points.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 1);
+    assert_eq!(result.ir.model.shells[0].free_vertices.len(), 0);
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn decode_retains_connected_topology_with_unknown_surface_carrier() {
     let mut stream = topology_partition_stream();
     let face = stream
@@ -2681,7 +2701,7 @@ fn merged_exact_key_tombstone_removes_partition_node() {
 }
 
 #[test]
-fn merged_deltas_uses_first_full_or_tombstone_snapshot() {
+fn merged_deltas_uses_last_full_or_tombstone_event() {
     let partition = topology_partition_stream();
     let tombstone = [0, 29, 0, 11, 0, 1];
     let mut full = status_framed_deltas_point_stream();
@@ -2690,37 +2710,12 @@ fn merged_deltas_uses_first_full_or_tombstone_snapshot() {
     let mut delete_then_replace = tombstone.to_vec();
     delete_then_replace.extend_from_slice(&full);
     let merged = crate::deltas::merge_full_records(&partition, &delete_then_replace);
-    assert!(crate::geometry::points(&merged).is_empty());
+    assert_eq!(crate::geometry::points(&merged)[0].position.x, 12.5);
 
     let mut replace_then_delete = full;
     replace_then_delete.extend_from_slice(&tombstone);
     let merged = crate::deltas::merge_full_records(&partition, &replace_then_delete);
-    assert_eq!(crate::geometry::points(&merged).len(), 1);
-    assert_eq!(crate::geometry::points(&merged)[0].position.x, 12.5);
-}
-
-#[test]
-fn merged_deltas_stops_after_current_shell_transaction() {
-    let partition = topology_partition_stream();
-    let mut current_point = status_framed_deltas_point_stream();
-    current_point[2..4].copy_from_slice(&11u16.to_be_bytes());
-    let shell_stream = deltas_shell_partition_stream();
-    let shell_at = shell_stream
-        .windows(2)
-        .position(|window| window == 13u16.to_be_bytes())
-        .expect("deltas shell");
-    let shell = &shell_stream[shell_at..];
-    let mut stale_point = status_framed_deltas_point_stream();
-    stale_point[2..4].copy_from_slice(&99u16.to_be_bytes());
-
-    let mut deltas = current_point;
-    deltas.extend_from_slice(shell);
-    deltas.extend_from_slice(shell);
-    deltas.extend_from_slice(&stale_point);
-
-    let merged = crate::deltas::merge_full_records(&partition, &deltas);
-    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_some());
-    assert!(crate::topology::Graph::parse(&merged).get(29, 99).is_none());
+    assert!(crate::geometry::points(&merged).is_empty());
 }
 
 #[test]
@@ -2751,13 +2746,13 @@ fn decode_replaces_partition_point_with_same_xmt_deltas_point() {
 }
 
 #[test]
-fn decode_replaces_partition_edge_from_status_framed_deltas() {
+fn decode_preserves_partition_edge_topology_over_deltas_history() {
     let partition = topology_partition_stream();
     let deltas = deltas_edge_partition_stream();
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir.model.edges.len(), 1);
-    assert_eq!(result.ir.model.edges[0].tolerance, Some(0.9));
+    assert_eq!(result.ir.model.edges[0].tolerance, Some(0.3));
     assert_eq!(
         result.ir.model.edges[0].curve.as_ref(),
         Some(&result.ir.model.curves[0].id)
@@ -2766,20 +2761,20 @@ fn decode_replaces_partition_edge_from_status_framed_deltas() {
 }
 
 #[test]
-fn decode_replaces_partition_face_and_vertex_from_deltas() {
+fn decode_preserves_partition_face_and_vertex_topology_over_deltas_history() {
     let partition = topology_partition_stream();
     let deltas = deltas_face_vertex_partition_stream();
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.faces[0].tolerance, Some(0.8));
+    assert_eq!(result.ir.model.faces[0].tolerance, Some(0.2));
     assert_eq!(result.ir.model.vertices.len(), 1);
-    assert_eq!(result.ir.model.vertices[0].tolerance, Some(0.7));
+    assert_eq!(result.ir.model.vertices[0].tolerance, Some(0.1));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]
-fn decode_replaces_partition_loop_from_status_framed_deltas() {
+fn decode_preserves_partition_loop_topology_over_deltas_history() {
     let partition = topology_partition_stream();
     let deltas = deltas_loop_partition_stream();
     let merged = crate::deltas::merge_full_records(&partition, &deltas);
@@ -2787,7 +2782,7 @@ fn decode_replaces_partition_loop_from_status_framed_deltas() {
         crate::topology::Graph::parse(&merged)
             .get(15, 5)
             .and_then(|node| node.u32_at(4)),
-        Some(904)
+        Some(0)
     );
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
@@ -2797,7 +2792,7 @@ fn decode_replaces_partition_loop_from_status_framed_deltas() {
 }
 
 #[test]
-fn decode_replaces_partition_shell_from_status_framed_deltas() {
+fn decode_preserves_partition_shell_topology_over_deltas_history() {
     let partition = topology_partition_stream();
     let deltas = deltas_shell_partition_stream();
     let merged = crate::deltas::merge_full_records(&partition, &deltas);
@@ -2805,7 +2800,7 @@ fn decode_replaces_partition_shell_from_status_framed_deltas() {
         crate::topology::Graph::parse(&merged)
             .get(13, 3)
             .and_then(|node| node.u32_at(4)),
-        Some(905)
+        Some(0)
     );
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
@@ -2815,7 +2810,7 @@ fn decode_replaces_partition_shell_from_status_framed_deltas() {
 }
 
 #[test]
-fn decode_replaces_partition_fin_from_status_framed_deltas() {
+fn decode_preserves_partition_fin_topology_over_deltas_history() {
     let partition = topology_partition_stream();
     let deltas = deltas_fin_partition_stream();
     let file = prt_with_streams(&[&partition, &deltas]);
@@ -2825,7 +2820,7 @@ fn decode_replaces_partition_fin_from_status_framed_deltas() {
     assert_eq!(result.ir.model.coedges.len(), 1);
     assert_eq!(
         result.ir.model.coedges[0].sense,
-        cadmpeg_ir::topology::Sense::Reversed
+        cadmpeg_ir::topology::Sense::Forward
     );
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }

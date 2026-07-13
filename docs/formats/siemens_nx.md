@@ -211,6 +211,9 @@ A **body-shape SHELL** requires the invariant fields `attributes`, `next_shell`,
 | faces    | one per FACE node, with resolved surface when available               |
 | bodies   | one per validated body-shape SHELL                                    |
 
+POINT is a geometric carrier. It becomes a topological vertex only through a validated `FIN.vertex → VERTEX.point` path. An unreferenced POINT is not a free vertex of an existing body.
+An EDGE belongs to the assembled B-rep only when a FIN in a fully resolved owned LOOP references it.
+
 Body-shape SHELL validation: invariant/ref predicate passes; `body_ref` and `region_ref` are non-null; `first_face`→FACE in the SHELL's stream. A null `face_anchor` requires the `FACE.next` walk to close at null with visited faces back-referencing the SHELL. A non-null `face_anchor` equals `first_face` and selects all FACE records that back-reference the SHELL.
 
 **Periodic faces / closed edges.** Parasolid stores a periodic surface as one face. A full-circle/ellipse edge stores no trim interval or wrap-count field and references the bare CIRCLE/ELLIPSE. Its one-FIN loop has `forward_fin == backward_fin == self`. The FIN vertex is either a VERTEX shared by both edge ends or the null reference; the null form's canonical topological point is the analytic curve point at parameter zero. The full revolution has parameter identity `[0, 2π]`. An EDGE with `curve == 1` has no curve record and is the surface-intersection locus of its incident faces.
@@ -383,16 +386,11 @@ live = partition ∪ delta_full − tombstones
 - A full record with `xmt ∉ partition` (high range) adds a new entity.
 - The deltas stream adds entities through explicit high-range records.
 
-BODY (`00 0c`, xmt=3) records delimit body revisions. Body-shape SHELL records delimit reverse-ordered topology transactions. The current transaction ends at the second valid SHELL snapshot when present; a stream with zero or one valid SHELL is one transaction. Records after that boundary belong to historical transactions. `node_id` is a monotonic per-body revision counter.
+BODY (`00 0c`, xmt=3) records delimit body revisions. `node_id` is a monotonic per-body revision counter. A partition containing a validated body-shape SHELL is the authoritative current topology image. BODY through REGION records in its paired deltas stream are revision history and do not replace or delete that topology image.
 
 `RMFastLoad` stores an object-id set alongside the partition and deltas body records.
 
-A compact deltas tombstone is `type:u16 BE, xmt:u16 BE, 00 01`. When its
-`(type, xmt)` key matches a partition entity, it deletes that entity. Full
-deltas records with the same key replace the partition record. Within the
-current transaction, repeated events for one key are reverse snapshots: the
-first full record or tombstone is the current event and takes precedence over
-later states.
+A compact deltas tombstone is `type:u16 BE, xmt:u16 BE, 00 01`. Outside the authoritative partition topology families, a matching key deletes the partition record and a full record replaces it. Repeated events are chronological; the last full record or tombstone for one key is current. A deltas topology image is assembled only when its partition has no validated body-shape SHELL.
 
 ---
 
