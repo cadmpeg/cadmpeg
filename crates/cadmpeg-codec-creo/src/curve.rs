@@ -48,6 +48,8 @@ pub struct CurveExpressionRecord {
     pub entity_id: u32,
     /// Whether the enclosing record is `backup_ents(crv_fr_eqn)`.
     pub backup: bool,
+    /// Bounded native placement frame carried by the equation entity.
+    pub local_system: Option<CurveExpressionLocalSystem>,
     /// Ordered source lines declared by the `f8` array.
     pub lines: Vec<CurveExpressionLine>,
     /// Assignment statements in source order.
@@ -56,6 +58,19 @@ pub struct CurveExpressionRecord {
     pub offset: usize,
     /// Byte offset of the `expression` field.
     pub expression_offset: usize,
+}
+
+/// Count-bounded `local_sys` payload carried by a curve-equation entity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurveExpressionLocalSystem {
+    /// Tuple dimensionality from the `f9` wrapper.
+    pub dimensions: u8,
+    /// Stored tuple count from the `f9` wrapper.
+    pub count: u8,
+    /// Exact stateful scalar body through the next named field.
+    pub body: Vec<u8>,
+    /// Byte offset of the `local_sys` named-record header.
+    pub offset: usize,
 }
 
 /// One executable assignment in a curve expression program.
@@ -308,6 +323,7 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
     const BACKUP: &[u8] = b"backup_ents(crv_fr_eqn)\0";
     const ID: &[u8] = b"\xe0\x01id\0";
     const EXPRESSION: &[u8] = b"\xe0\x0aexpression\0";
+    const LOCAL_SYSTEM: &[u8] = b"\xe0\x02local_sys\0\xf9";
 
     let mut labels = Vec::new();
     for (label, backup) in [(PRIMARY, false), (BACKUP, true)] {
@@ -332,6 +348,21 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
         if after_id == id_start {
             continue;
         }
+        let local_system = find_in(payload, LOCAL_SYSTEM, after_id, end).and_then(|offset| {
+            let dimensions = *payload.get(offset + LOCAL_SYSTEM.len())?;
+            let count = *payload.get(offset + LOCAL_SYSTEM.len() + 1)?;
+            let body_start = offset + LOCAL_SYSTEM.len() + 2;
+            let body_end = payload[body_start..end]
+                .windows(1)
+                .position(|window| window[0] == psb::token::NAMED_RECORD)
+                .map_or(end, |relative| body_start + relative);
+            Some(CurveExpressionLocalSystem {
+                dimensions,
+                count,
+                body: payload[body_start..body_end].to_vec(),
+                offset,
+            })
+        });
         let Some(expression_offset) = find_in(payload, EXPRESSION, after_id, end) else {
             continue;
         };
@@ -376,6 +407,7 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
+                local_system,
                 lines,
                 assignments,
                 offset,

@@ -102,8 +102,17 @@ struct CreoCurveExpressionRecord {
     id: String,
     entity_id: u32,
     backup: bool,
+    local_system: Option<CreoCurveExpressionLocalSystem>,
     lines: Vec<CreoCurveExpressionLine>,
     assignments: Vec<CreoCurveExpressionAssignment>,
+}
+
+#[derive(Serialize)]
+struct CreoCurveExpressionLocalSystem {
+    dimensions: u8,
+    count: u8,
+    body: Vec<u8>,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -128,6 +137,14 @@ fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionReco
             id: curve_expression_record_id(record),
             entity_id: record.entity_id,
             backup: record.backup,
+            local_system: record.local_system.as_ref().map(|frame| {
+                CreoCurveExpressionLocalSystem {
+                    dimensions: frame.dimensions,
+                    count: frame.count,
+                    body: frame.body.clone(),
+                    offset: frame.offset,
+                }
+            }),
             lines: record
                 .lines
                 .iter()

@@ -455,6 +455,8 @@ A curve-from-equation entity stores `expression f8 <count>` followed by exactly 
 
 The identifiers `r`, `theta`, and `z` define cylindrical curve coordinates over the normalized parameter `t` from zero through one. `theta` is in degrees. Constant positive `r` with affine `theta(t)` and affine `z(t)` is a circular helix: its angular travel divided by 360 is the signed revolution count, `z(1) - z(0)` is its signed axial rise, and `theta(0)` is its start angle. The owning curve-equation entity retains the native placement axis.
 
+A curve-equation entity carries its placement in `local_sys f9 <dimensions> <count> <body>`. The scalar body is bounded by the following named field and uses the stateful local-system lane; it is part of the equation entity rather than a reference to a separate coordinate-system entity.
+
 A `protextrude` or `protrevolve` operation references its sweep axis through `gsec3d_ptr` placement fields rather than an inline axis vector. Extruding a section line yields a plane, extruding an arc yields a cylinder, and a closed profile yields cap planes. Revolving a line parallel, angled, or perpendicular to the axis yields a cylinder, cone, or plane. An arc with center on or off the axis yields a sphere or torus.
 
 `FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table pointer. `e1` is an explicit null pointer; `f7 <canonical-reference-id>` identifies a present driver table.
