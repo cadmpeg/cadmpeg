@@ -2332,6 +2332,18 @@ fn decode_retains_typed_nx_numeric_expression() {
                 && cadmpeg_ir::hash::sha256_hex(data) == record.sha256
         })
     }));
+    let object_records = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<crate::native::ObjectRecord>("object_records")
+        .unwrap();
+    assert_eq!(object_records.len(), 2);
+    assert_eq!(object_records[1].object_id, Some(0x102));
+    assert_eq!(object_records[1].record_ordinal, 1);
+    assert_eq!(object_records[1].byte_len, om_records[1].byte_len);
+    assert_eq!(object_records[1].sha256, om_records[1].sha256);
     assert_eq!(result.ir.model.features.len(), 1);
     assert!(matches!(
         result.ir.model.features[0].definition,

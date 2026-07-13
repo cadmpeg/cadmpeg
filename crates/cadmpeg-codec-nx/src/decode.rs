@@ -1989,11 +1989,13 @@ fn attach_native_object_model(
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
     let fields = crate::native::field_definitions(&scan.container);
+    let object_records = crate::native::object_records(&scan.container);
     let configurations = crate::native::configurations(&scan.container);
     let object_sections = scan.container.indexed_om_sections();
     if expressions.is_empty()
         && classes.is_empty()
         && fields.is_empty()
+        && object_records.is_empty()
         && configurations.is_empty()
         && object_sections.is_empty()
     {
@@ -2058,6 +2060,9 @@ fn attach_native_object_model(
     }
     if !fields.is_empty() {
         namespace.set_arena("field_definitions", &fields)?;
+    }
+    if !object_records.is_empty() {
+        namespace.set_arena("object_records", &object_records)?;
     }
     if !configurations.is_empty() {
         namespace.set_arena("configurations", &configurations)?;

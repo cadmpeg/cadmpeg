@@ -70,6 +70,27 @@ pub struct FieldDefinition {
     pub source_offset: u64,
 }
 
+/// Directory entry for one externally bounded NX OM entity record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Persistent OM object identifier when the section carries an ID table.
+    pub object_id: Option<u32>,
+    /// Zero-based indexed-section ordinal within the container.
+    pub section_ordinal: u32,
+    /// Zero-based record ordinal within the indexed section.
+    pub record_ordinal: u32,
+    /// Exact serialized record length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact serialized record bytes.
+    pub sha256: String,
+    /// Directory entry containing the OM section.
+    pub source_entry: String,
+    /// Absolute file offset of the record start.
+    pub source_offset: u64,
+}
+
 /// Named NX arrangement from `/Root/part/arrangements`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Configuration {
@@ -212,6 +233,32 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
         );
     }
     definitions
+}
+
+/// Catalog every externally bounded NX OM entity record.
+pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            section
+                .records
+                .into_iter()
+                .enumerate()
+                .map(move |(record_ordinal, record)| ObjectRecord {
+                    id: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
+                    object_id: record.object_id,
+                    section_ordinal: section_ordinal as u32,
+                    record_ordinal: record_ordinal as u32,
+                    byte_len: record.bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
+                    source_entry: entry.name.clone(),
+                    source_offset: entry_offset + record.offset as u64,
+                })
+        })
+        .collect()
 }
 
 /// Decode explicit numeric expressions from all indexed OM sections.
