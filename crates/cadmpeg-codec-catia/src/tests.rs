@@ -2057,6 +2057,25 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
     ));
 }
 
+#[test]
+fn standard_curve_supports_begin_after_the_surface_roster() {
+    let mut bytes = vec![
+        0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 0, // earlier valid-looking row
+    ];
+    bytes.extend_from_slice(&[0x34, 0x12, 0, 0, 0, 0]);
+    for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+    bytes.push(0x01);
+    bytes.extend_from_slice(&[
+        0x60, 2, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 0, // roster-adjacent row
+    ]);
+
+    let rows = crate::geometry::standard_curve_supports(&bytes, 1);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].tag, 2);
+}
+
 fn zero_entity_record(kind: u8, mut tail: Vec<u8>) -> Vec<u8> {
     let length = 12 + tail.len();
     let mut record = vec![

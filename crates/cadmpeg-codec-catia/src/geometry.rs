@@ -2695,6 +2695,15 @@ pub struct StandardCurveSupport {
 pub fn standard_curve_supports(brep: &[u8], face_count: usize) -> Vec<StandardCurveSupport> {
     const LINE: [u8; 5] = [0x00, 0x02, 0x00, 0x33, 0x36];
     const CIRCLE: [u8; 5] = [0x00, 0x12, 0x00, 0x33, 0x37];
+    if let Some(first) = standard_surface_records(brep, face_count)
+        .and_then(|records| records.last().map(StandardSurfaceRecord::end))
+    {
+        let rows = standard_curve_supports_at(brep, face_count, first);
+        if !rows.is_empty() {
+            return rows;
+        }
+    }
+
     let Some(mut first) = (0..brep.len()).find(|&position| {
         brep.get(position) == Some(&0x60)
             && brep
@@ -2740,8 +2749,18 @@ pub fn standard_curve_supports(brep: &[u8], face_count: usize) -> Vec<StandardCu
         first = previous;
     }
 
+    standard_curve_supports_at(brep, face_count, first)
+}
+
+fn standard_curve_supports_at(
+    brep: &[u8],
+    face_count: usize,
+    mut position: usize,
+) -> Vec<StandardCurveSupport> {
+    const LINE: [u8; 5] = [0x00, 0x02, 0x00, 0x33, 0x36];
+    const CIRCLE: [u8; 5] = [0x00, 0x12, 0x00, 0x33, 0x37];
+
     let mut rows = Vec::new();
-    let mut position = first;
     while brep.get(position) == Some(&0x60) {
         let Some(tag_bytes) = brep.get(position + 1..position + 4) else {
             break;
