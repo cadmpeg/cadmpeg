@@ -53,8 +53,10 @@ pub struct BinaryFacts {
     pub polygons3d: Vec<TextPolygon3d>,
     /// Ordered polygons indexing triangulation nodes.
     pub polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
-    /// Byte offset immediately after the `Surfaces` section header.
-    pub surfaces_offset: usize,
+    /// Ordered exact surface table.
+    pub surfaces: Vec<TextSurface>,
+    /// Byte offset immediately after the `Triangulations` section header.
+    pub triangulations_offset: usize,
 }
 
 /// Framing facts from a text shape set.
@@ -715,7 +717,12 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
             parameters,
         });
     }
-    cursor.expect_section_name("Surfaces")?;
+    let surface_count = cursor.section_count("Surfaces")?;
+    let mut surfaces = Vec::with_capacity(surface_count);
+    for _ in 0..surface_count {
+        surfaces.push(parse_binary_surface(&mut cursor, 0)?);
+    }
+    cursor.expect_section_name("Triangulations")?;
     Ok(BinaryFacts {
         topology_version: version,
         locations,
@@ -723,8 +730,201 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
         curves,
         polygons3d,
         polygons_on_triangulations,
-        surfaces_offset: cursor.offset,
+        surfaces,
+        triangulations_offset: cursor.offset,
     })
+}
+
+fn parse_binary_surface(
+    cursor: &mut BinaryCursor<'_>,
+    depth: usize,
+) -> Result<TextSurface, CodecError> {
+    if depth > 256 {
+        return Err(CodecError::Malformed(
+            "binary surface nesting exceeds 256".into(),
+        ));
+    }
+    Ok(match cursor.u8("binary surface kind")? {
+        1 => {
+            let origin = cursor.point3("binary plane origin")?;
+            let axis = cursor.vector3("binary plane axis")?;
+            let u_axis = cursor.vector3("binary plane u axis")?;
+            cursor.vector3("binary plane v axis")?;
+            TextSurface::Plane {
+                origin,
+                axis,
+                u_axis,
+            }
+        }
+        2 => {
+            let origin = cursor.point3("binary cylinder origin")?;
+            let axis = cursor.vector3("binary cylinder axis")?;
+            let ref_direction = cursor.vector3("binary cylinder reference direction")?;
+            cursor.vector3("binary cylinder v direction")?;
+            TextSurface::Cylinder {
+                origin,
+                axis,
+                ref_direction,
+                radius: cursor.f64("binary cylinder radius")?,
+            }
+        }
+        3 => {
+            let origin = cursor.point3("binary cone origin")?;
+            let axis = cursor.vector3("binary cone axis")?;
+            let ref_direction = cursor.vector3("binary cone reference direction")?;
+            cursor.vector3("binary cone v direction")?;
+            TextSurface::Cone {
+                origin,
+                axis,
+                ref_direction,
+                radius: cursor.f64("binary cone reference radius")?,
+                half_angle: cursor.f64("binary cone half angle")?,
+            }
+        }
+        4 => {
+            let center = cursor.point3("binary sphere center")?;
+            let axis = cursor.vector3("binary sphere axis")?;
+            let ref_direction = cursor.vector3("binary sphere reference direction")?;
+            cursor.vector3("binary sphere v direction")?;
+            TextSurface::Sphere {
+                center,
+                axis,
+                ref_direction,
+                radius: cursor.f64("binary sphere radius")?,
+            }
+        }
+        5 => {
+            let center = cursor.point3("binary torus center")?;
+            let axis = cursor.vector3("binary torus axis")?;
+            let ref_direction = cursor.vector3("binary torus reference direction")?;
+            cursor.vector3("binary torus v direction")?;
+            TextSurface::Torus {
+                center,
+                axis,
+                ref_direction,
+                major_radius: cursor.f64("binary torus major radius")?,
+                minor_radius: cursor.f64("binary torus minor radius")?,
+            }
+        }
+        6 => TextSurface::Extrusion {
+            direction: cursor.vector3("binary extrusion direction")?,
+            directrix: Box::new(parse_binary_curve(cursor, depth + 1)?),
+        },
+        7 => TextSurface::Revolution {
+            axis_origin: cursor.point3("binary revolution axis origin")?,
+            axis_direction: cursor.vector3("binary revolution axis direction")?,
+            directrix: Box::new(parse_binary_curve(cursor, depth + 1)?),
+        },
+        8 => {
+            let u_rational = cursor.bool("binary Bezier u-rational flag")?;
+            let v_rational = cursor.bool("binary Bezier v-rational flag")?;
+            let u_degree = usize::from(cursor.u16("binary Bezier u degree")?);
+            let v_degree = usize::from(cursor.u16("binary Bezier v degree")?);
+            let u_count = u_degree.checked_add(1).ok_or_else(|| {
+                CodecError::Malformed("binary Bezier u pole count overflow".into())
+            })?;
+            let v_count = v_degree.checked_add(1).ok_or_else(|| {
+                CodecError::Malformed("binary Bezier v pole count overflow".into())
+            })?;
+            let pole_count = checked_grid_count(u_count, v_count, "binary Bezier")?;
+            let rational = u_rational || v_rational;
+            let mut control_points = Vec::with_capacity(pole_count);
+            let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+            for _ in 0..pole_count {
+                control_points.push(cursor.point3("binary Bezier surface pole")?);
+                if let Some(weights) = &mut weights {
+                    weights.push(cursor.f64("binary Bezier surface weight")?);
+                }
+            }
+            TextSurface::Nurbs(NurbsSurface {
+                u_degree: u32::try_from(u_degree).map_err(|_| {
+                    CodecError::Malformed("binary Bezier u degree exceeds u32".into())
+                })?,
+                v_degree: u32::try_from(v_degree).map_err(|_| {
+                    CodecError::Malformed("binary Bezier v degree exceeds u32".into())
+                })?,
+                u_knots: clamped_bezier_knots(u_degree),
+                v_knots: clamped_bezier_knots(v_degree),
+                u_count: u32::try_from(u_count).map_err(|_| {
+                    CodecError::Malformed("binary Bezier u count exceeds u32".into())
+                })?,
+                v_count: u32::try_from(v_count).map_err(|_| {
+                    CodecError::Malformed("binary Bezier v count exceeds u32".into())
+                })?,
+                control_points,
+                weights,
+                u_periodic: false,
+                v_periodic: false,
+            })
+        }
+        9 => {
+            let u_rational = cursor.bool("binary B-spline u-rational flag")?;
+            let v_rational = cursor.bool("binary B-spline v-rational flag")?;
+            let u_periodic = cursor.bool("binary B-spline u-periodic flag")?;
+            let v_periodic = cursor.bool("binary B-spline v-periodic flag")?;
+            let u_degree = u32::from(cursor.u16("binary B-spline u degree")?);
+            let v_degree = u32::from(cursor.u16("binary B-spline v degree")?);
+            let u_count = cursor.count("binary B-spline u pole count")?;
+            let v_count = cursor.count("binary B-spline v pole count")?;
+            let u_knot_count = cursor.count("binary B-spline u knot count")?;
+            let v_knot_count = cursor.count("binary B-spline v knot count")?;
+            let pole_count = checked_grid_count(u_count, v_count, "binary B-spline")?;
+            let rational = u_rational || v_rational;
+            let mut control_points = Vec::with_capacity(pole_count);
+            let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+            for _ in 0..pole_count {
+                control_points.push(cursor.point3("binary B-spline surface pole")?);
+                if let Some(weights) = &mut weights {
+                    weights.push(cursor.f64("binary B-spline surface weight")?);
+                }
+            }
+            TextSurface::Nurbs(NurbsSurface {
+                u_degree,
+                v_degree,
+                u_knots: cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?,
+                v_knots: cursor.expanded_knots(v_knot_count, "binary B-spline v knots")?,
+                u_count: u32::try_from(u_count).map_err(|_| {
+                    CodecError::Malformed("binary B-spline u count exceeds u32".into())
+                })?,
+                v_count: u32::try_from(v_count).map_err(|_| {
+                    CodecError::Malformed("binary B-spline v count exceeds u32".into())
+                })?,
+                control_points,
+                weights,
+                u_periodic,
+                v_periodic,
+            })
+        }
+        10 => TextSurface::Trimmed {
+            parameter_ranges: [
+                [
+                    cursor.f64("binary surface u trim start")?,
+                    cursor.f64("binary surface u trim end")?,
+                ],
+                [
+                    cursor.f64("binary surface v trim start")?,
+                    cursor.f64("binary surface v trim end")?,
+                ],
+            ],
+            basis: Box::new(parse_binary_surface(cursor, depth + 1)?),
+        },
+        11 => TextSurface::Offset {
+            distance: cursor.f64("binary surface offset")?,
+            basis: Box::new(parse_binary_surface(cursor, depth + 1)?),
+        },
+        other => {
+            return Err(CodecError::Malformed(format!(
+                "invalid binary surface kind {other}"
+            )))
+        }
+    })
+}
+
+fn checked_grid_count(u_count: usize, v_count: usize, label: &str) -> Result<usize, CodecError> {
+    u_count
+        .checked_mul(v_count)
+        .filter(|count| *count <= 1_000_000)
+        .ok_or_else(|| CodecError::Malformed(format!("{label} pole-count limit exceeded")))
 }
 
 fn parse_binary_curve(
@@ -2664,7 +2864,20 @@ mod tests {
         bytes.extend_from_slice(&2_i32.to_le_bytes());
         real(&mut bytes, 0.02);
         bytes.push(0);
-        bytes.extend_from_slice(b"Surfaces 0\n");
+        bytes.extend_from_slice(b"Surfaces 2\n");
+        bytes.push(1);
+        for value in [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
+            real(&mut bytes, value);
+        }
+        bytes.push(11);
+        real(&mut bytes, 0.25);
+        bytes.push(4);
+        for value in [
+            0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 2.0,
+        ] {
+            real(&mut bytes, value);
+        }
+        bytes.extend_from_slice(b"Triangulations 0\n");
 
         let facts = parse_binary_prefix(&bytes).expect("binary prefix");
         assert_eq!(facts.topology_version, 3);
@@ -2679,7 +2892,9 @@ mod tests {
             Some(&[0.0, 1.0][..])
         );
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
-        assert_eq!(&bytes[facts.surfaces_offset..], b"");
+        assert!(matches!(facts.surfaces[0], TextSurface::Plane { .. }));
+        assert!(matches!(facts.surfaces[1], TextSurface::Offset { .. }));
+        assert_eq!(&bytes[facts.triangulations_offset..], b"");
     }
 
     #[test]

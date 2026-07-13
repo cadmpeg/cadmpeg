@@ -589,10 +589,14 @@ fn transfer_text_surfaces(
     curve_transfer: &mut CurveTransfer,
 ) -> SurfaceTransfer {
     let mut transfer = SurfaceTransfer::default();
-    for (payload, text) in payloads
-        .iter()
-        .filter_map(|payload| payload.text.as_ref().map(|text| (payload, text)))
-    {
+    for payload in payloads {
+        let surfaces = if let Some(text) = &payload.text {
+            &text.surfaces
+        } else if let Some(binary) = &payload.binary {
+            &binary.surfaces
+        } else {
+            continue;
+        };
         let object_id = properties
             .iter()
             .find(|property| property.id == payload.property)
@@ -609,7 +613,7 @@ fn transfer_text_surfaces(
             layer: None,
             instance_path: Vec::new(),
         };
-        for (index, surface) in text.surfaces.iter().enumerate() {
+        for (index, surface) in surfaces.iter().enumerate() {
             append_text_surface(
                 surface,
                 SurfaceId(format!("{}:surface#{}", payload.id, index + 1)),

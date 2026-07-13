@@ -33,7 +33,7 @@ fn transfers_recursive_exact_parameter_curve_geometry() {
 }
 
 #[test]
-fn transfers_binary_exact_curve_carrier() {
+fn transfers_binary_exact_curve_and_surface_carriers() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.bin"/></Property></Properties></Object></ObjectData>
@@ -43,7 +43,14 @@ fn transfers_binary_exact_curve_carrier() {
     for value in [0.0_f64, 0.0, 0.0, 1.0, 0.0, 0.0] {
         brep.extend_from_slice(&value.to_le_bytes());
     }
-    brep.extend_from_slice(b"Polygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\n");
+    brep.extend_from_slice(b"Polygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n");
+    brep.push(1);
+    for value in [
+        0.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+    ] {
+        brep.extend_from_slice(&value.to_le_bytes());
+    }
+    brep.extend_from_slice(b"Triangulations 0\n");
     let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.bin", &brep)]);
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -52,6 +59,11 @@ fn transfers_binary_exact_curve_carrier() {
     assert!(matches!(
         result.ir.model.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Line { .. }
+    ));
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert!(matches!(
+        result.ir.model.surfaces[0].geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
     ));
     assert!(result.report.geometry_transferred);
 }
