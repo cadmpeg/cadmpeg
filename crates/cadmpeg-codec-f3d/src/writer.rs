@@ -15722,67 +15722,75 @@ fn patch_nurbs_pcurve_record(
         let at = scope.start + layout.periodic_value_offset;
         patch_layout_integer(bytes, at, layout.int_width, value)?;
     }
-    if let Some(reversed) = edit.wrapper_reversed {
-        let mut offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x0a)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?;
-        offsets.extend(
-            sab::payload_token_offsets(bytes, record, ref_width, 0x0b)
-                .map_err(|error| CodecError::Malformed(error.to_string()))?,
-        );
-        offsets.sort_unstable();
-        let offset = *offsets.first().ok_or_else(|| {
+    if record.head == "pcurve" {
+        if let Some(reversed) = edit.wrapper_reversed {
+            let offset =
+                sab::payload_token_offset(bytes, record, ref_width, 4).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "pcurve record {} lacks wrapper-reversal carrier",
+                        record.index
+                    ))
+                })?;
+            if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
+                return Err(CodecError::Malformed(format!(
+                    "pcurve record {} has a non-boolean wrapper-reversal carrier",
+                    record.index
+                )));
+            }
+            bytes[offset] = if reversed { 0x0a } else { 0x0b };
+        }
+        if bytes.get(scope.end) != Some(&0x10) {
+            return Err(CodecError::Malformed(format!(
+                "pcurve record {} lacks the exp_par_cur close",
+                record.index
+            )));
+        }
+        let suffix_start = record.tokens.len().checked_sub(6).ok_or_else(|| {
             CodecError::Malformed(format!(
-                "pcurve record {} lacks wrapper-reversal carrier",
+                "pcurve record {} lacks its native metadata suffix",
                 record.index
             ))
         })?;
-        bytes[offset] = if reversed { 0x0a } else { 0x0b };
-    }
-    if let Some(flags) = edit.native_tail_flags {
-        let mut offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x0a)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?;
-        offsets.extend(
-            sab::payload_token_offsets(bytes, record, ref_width, 0x0b)
-                .map_err(|error| CodecError::Malformed(error.to_string()))?,
-        );
-        offsets.sort_unstable();
-        let tail = offsets
-            .get(offsets.len().saturating_sub(4)..)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "pcurve record {} lacks native boolean-tail carriers",
-                    record.index
-                ))
-            })?;
-        if tail.len() != 4 {
-            return Err(CodecError::Malformed(format!(
-                "pcurve record {} has an incomplete native boolean tail",
-                record.index
-            )));
+        let suffix_offsets = (suffix_start..record.tokens.len())
+            .map(|index| {
+                sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "pcurve record {} has an incomplete native metadata suffix",
+                        record.index
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some(flags) = edit.native_tail_flags {
+            for (offset, flag) in suffix_offsets[..4].iter().zip(flags) {
+                if !matches!(bytes.get(*offset), Some(0x0a | 0x0b)) {
+                    return Err(CodecError::Malformed(format!(
+                        "pcurve record {} has an incomplete native boolean tail",
+                        record.index
+                    )));
+                }
+                bytes[*offset] = native_bool(flag);
+            }
+        } else {
+            for offset in &suffix_offsets[..4] {
+                if !matches!(bytes.get(*offset), Some(0x0a | 0x0b)) {
+                    return Err(CodecError::Malformed(format!(
+                        "pcurve record {} has an incomplete native boolean tail",
+                        record.index
+                    )));
+                }
+            }
         }
-        for (offset, flag) in tail.iter().zip(flags) {
-            bytes[*offset] = native_bool(flag);
-        }
-    }
-    if let Some(range) = edit.parameter_range {
-        let offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x06)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?;
-        let pair = offsets
-            .get(offsets.len().saturating_sub(2)..)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "pcurve record {} lacks parameter-range carriers",
-                    record.index
-                ))
-            })?;
-        if pair.len() != 2 {
-            return Err(CodecError::Malformed(format!(
-                "pcurve record {} has an incomplete parameter range",
-                record.index
-            )));
-        }
-        for (offset, value) in pair.iter().zip(range) {
-            bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+        if let Some(range) = edit.parameter_range {
+            for (offset, value) in suffix_offsets[4..].iter().zip(range) {
+                if bytes.get(*offset) != Some(&0x06) {
+                    return Err(CodecError::Malformed(format!(
+                        "pcurve record {} has an incomplete parameter range",
+                        record.index
+                    )));
+                }
+                bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+            }
         }
     }
     if let Some(tolerance) = edit.fit_tolerance {

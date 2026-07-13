@@ -164,6 +164,38 @@ pub(crate) fn payload_subtype_range(
     None
 }
 
+/// Return the absolute byte offset of one payload token by its framed index.
+pub(crate) fn payload_token_offset(
+    bytes: &[u8],
+    record: &Record,
+    ref_width: usize,
+    token_index: usize,
+) -> Option<usize> {
+    let limit = record.offset.checked_add(record.len)?;
+    let mut position = record.offset;
+    let mut name_done = false;
+    let mut payload_index = 0usize;
+    while position < limit {
+        let token_offset = position;
+        let (lexed, next) = lex(bytes, position, ref_width).ok()?;
+        position = next;
+        match lexed {
+            Lexed::SubIdent(_) if !name_done => {}
+            Lexed::Ident(_) if !name_done => name_done = true,
+            Lexed::Value(_) => {
+                name_done = true;
+                if payload_index == token_index {
+                    return Some(token_offset);
+                }
+                payload_index += 1;
+            }
+            Lexed::Terminator => return None,
+            Lexed::Ident(_) | Lexed::SubIdent(_) => {}
+        }
+    }
+    None
+}
+
 /// A framing error: an unrecognized tag or a truncated token payload leaves the
 /// stream un-synchronizable, so the caller falls back to metadata-only decode.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -449,7 +481,7 @@ pub fn frame(
 
 #[cfg(test)]
 mod tests {
-    use super::{frame, payload_subtype_span};
+    use super::{frame, payload_subtype_span, payload_token_offset};
 
     fn generated_pcurve_record(ref_width: usize) -> Vec<u8> {
         let mut bytes = vec![0x0d, 6];
@@ -473,6 +505,15 @@ mod tests {
             assert!(payload_subtype_span(&bytes, record, 5, ref_width, "exp_par_cur").is_some());
             assert!(payload_subtype_span(&bytes, record, 4, ref_width, "exp_par_cur").is_none());
             assert!(payload_subtype_span(&bytes, record, 5, ref_width, "bad_par_cur").is_none());
+            assert_eq!(
+                bytes[payload_token_offset(&bytes, record, ref_width, 4).unwrap()],
+                0x0b
+            );
+            assert_eq!(
+                bytes[payload_token_offset(&bytes, record, ref_width, 5).unwrap()],
+                0x0f
+            );
+            assert!(payload_token_offset(&bytes, record, ref_width, 8).is_none());
         }
     }
 }
