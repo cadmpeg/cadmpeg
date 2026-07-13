@@ -265,6 +265,8 @@ pub struct FeatureInputRelationInstance {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureInputRelationFamily {
+    /// Diameter of one circular sketch entity.
+    CircleDiameter,
     /// Distance between two line loci.
     LineLineDistance,
     /// Distance between two point loci.

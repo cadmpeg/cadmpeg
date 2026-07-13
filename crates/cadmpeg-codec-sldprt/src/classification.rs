@@ -197,6 +197,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             relation_class(FeatureInputRelationFamily::PointPointVerticalDistance)
         }
         "sgAnglDim" => relation_class(FeatureInputRelationFamily::Angle),
+        "sgCircleDim" => relation_class(FeatureInputRelationFamily::CircleDiameter),
         "ParallelPlaneDistanceDim_c"
         | "ThreeDRadiusDim_c"
         | "faceRadiusObject_c"
@@ -212,8 +213,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         | "moDisplayLinearPattCntDim_c"
         | "moNumberDim_c"
         | "moScalerDim_c"
-        | "AngleDim_c"
-        | "sgCircleDim" => (NativeClassKind::Dimension, Dimension, None, None),
+        | "AngleDim_c" => (NativeClassKind::Dimension, Dimension, None, None),
         "sgDimEntityHelpData_c" | "sgLinearPattCntDim" | "sgOffsetDim" | "sgSkOffsetDim" => {
             (NativeClassKind::Dimension, Dimension, None, None)
         }
@@ -441,6 +441,12 @@ mod tests {
             relation.kind,
             NativeClassKind::SketchRelation(FeatureInputRelationFamily::PointPointDistance)
         );
+        let diameter = native_object_class("sgCircleDim");
+        assert_eq!(
+            diameter.kind,
+            NativeClassKind::SketchRelation(FeatureInputRelationFamily::CircleDiameter)
+        );
+        assert_eq!(diameter.role, FeatureInputClassRole::SketchConstraint);
 
         for name in [
             "sgArcHandle",
@@ -463,7 +469,6 @@ mod tests {
             "moScalerDim_c",
             "moSkDimHandleLinearPattCnt_c",
             "moSkDimHandleOffset_c",
-            "sgCircleDim",
             "sgDimEntityHelpData_c",
             "sgLinearPattCntDim",
             "sgOffsetDim",

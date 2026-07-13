@@ -12808,6 +12808,72 @@ fn decode_groups_native_tagged_point_line_relations() {
 }
 
 #[test]
+fn decode_groups_unary_circle_diameter_relations() {
+    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+
+    let mut source = sldprt_with_tagged_compact_relation(
+        &triangle_body(),
+        "sgCircleDim",
+        [[0xfe, 0x83], [0, 0]],
+    );
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"><Dimension Name="D2">&lt;MOD-DIAM&gt;25mm</Dimension></Sketch></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    let [relation] = native.feature_input_lanes[0].relation_instances.as_slice() else {
+        panic!("one circle-diameter relation instance");
+    };
+    assert_eq!(
+        relation.family,
+        crate::records::FeatureInputRelationFamily::CircleDiameter
+    );
+    assert_eq!(relation.operands.len(), 1);
+    assert_eq!(
+        relation.operands[0].kind,
+        crate::records::FeatureInputOperandKind::Native(0x83fe)
+    );
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D2")
+        .expect("diameter parameter");
+    assert_eq!(
+        relation.parameter_scalar_ref.as_deref(),
+        parameter.native_ref.as_deref()
+    );
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| {
+            constraint.native_ref.as_deref() == Some(relation.id.as_str())
+                && matches!(
+                    &constraint.definition,
+                    SketchConstraintDefinition::Native {
+                        native_kind,
+                        parameter: Some(bound_parameter),
+                        operands,
+                        ..
+                    } if native_kind == "sgCircleDim"
+                        && bound_parameter == &parameter.id
+                        && operands.len() == 1
+                        && operands[0].native_kind == "fe83"
+                )
+        }));
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap();
+}
+
+#[test]
 fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
     let cases = [
         (

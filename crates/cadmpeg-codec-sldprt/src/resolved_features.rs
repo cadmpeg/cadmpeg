@@ -134,6 +134,7 @@ pub(crate) fn relation_bindings(
                 "sgPntPntHorDist" => FeatureInputRelationFamily::PointPointHorizontalDistance,
                 "sgPntPntVertDist" => FeatureInputRelationFamily::PointPointVerticalDistance,
                 "sgAnglDim" => FeatureInputRelationFamily::Angle,
+                "sgCircleDim" => FeatureInputRelationFamily::CircleDiameter,
                 _ => return None,
             };
             let scalar = scalars
@@ -456,13 +457,10 @@ fn relation_instances(
         else {
             continue;
         };
-        let [first, second] = scalar.operands.as_slice() else {
-            continue;
-        };
         let Some((_, family, class_ref)) = declarations
             .iter()
             .filter(|(offset, family, _)| {
-                *offset < scalar.offset && relation_signature(*family, first.kind, second.kind)
+                *offset < scalar.offset && relation_signature(*family, &scalar.operands)
             })
             .max_by_key(|(offset, _, _)| offset)
         else {
@@ -542,34 +540,40 @@ fn relation_family(name: &str) -> Option<FeatureInputRelationFamily> {
 
 fn relation_signature(
     family: FeatureInputRelationFamily,
-    first: FeatureInputOperandKind,
-    second: FeatureInputOperandKind,
+    operands: &[FeatureInputOperand],
 ) -> bool {
     use FeatureInputOperandKind::{Native, D6, E1};
     use FeatureInputRelationFamily::{
-        Angle, LineLineDistance, PointLineDistance, PointPointDistance,
+        Angle, CircleDiameter, LineLineDistance, PointLineDistance, PointPointDistance,
         PointPointHorizontalDistance, PointPointVerticalDistance,
+    };
+    if family == CircleDiameter {
+        return matches!(operands, [operand] if operand.kind == Native(0x83fe));
+    }
+    let [first, second] = operands else {
+        return false;
     };
     match family {
         PointPointDistance => {
-            (first == D6 && second == D6)
-                || (first == Native(0x837b) && second == Native(0x837b))
-                || (first == Native(0xbc7c) && second == Native(0xbc7c))
+            (first.kind == D6 && second.kind == D6)
+                || (first.kind == Native(0x837b) && second.kind == Native(0x837b))
+                || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc7c))
         }
         LineLineDistance => {
-            (first == E1 && second == E1)
-                || (first == Native(0x8386) && second == Native(0x8386))
-                || (first == Native(0xbc87) && second == Native(0xbc87))
+            (first.kind == E1 && second.kind == E1)
+                || (first.kind == Native(0x8386) && second.kind == Native(0x8386))
+                || (first.kind == Native(0xbc87) && second.kind == Native(0xbc87))
         }
         PointLineDistance => {
-            (first == D6 && second == E1)
-                || (first == Native(0x837b) && second == Native(0x8386))
-                || (first == Native(0xbc7c) && second == Native(0xbc87))
+            (first.kind == D6 && second.kind == E1)
+                || (first.kind == Native(0x837b) && second.kind == Native(0x8386))
+                || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc87))
         }
         PointPointHorizontalDistance | PointPointVerticalDistance => {
-            first == Native(0x8dcb) && second == Native(0x8dcb)
+            first.kind == Native(0x8dcb) && second.kind == Native(0x8dcb)
         }
-        Angle => first == Native(0x8dda) && second == Native(0x8dda),
+        Angle => first.kind == Native(0x8dda) && second.kind == Native(0x8dda),
+        CircleDiameter => unreachable!("handled as a unary relation"),
     }
 }
 
@@ -881,6 +885,7 @@ pub(crate) fn project_relation_bindings(
                 FeatureInputRelationFamily::PointPointHorizontalDistance => "sgPntPntHorDist",
                 FeatureInputRelationFamily::PointPointVerticalDistance => "sgPntPntVertDist",
                 FeatureInputRelationFamily::Angle => "sgAnglDim",
+                FeatureInputRelationFamily::CircleDiameter => "sgCircleDim",
             };
             constraints.push(SketchConstraint {
                 id: SketchConstraintId(format!(
