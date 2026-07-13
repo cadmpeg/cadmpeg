@@ -53,12 +53,12 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
     let entry_count = usize::try_from(declared_count.checked_sub(1)?).ok()?;
     let mut entries = Vec::with_capacity(entry_count);
     for ordinal in 0..entry_count {
-        let framed_len = usize::from(*bytes.get(at)?);
-        if framed_len == 0 {
-            return None;
-        }
-        let value_start = at + 1;
-        let next = at.checked_add(framed_len)?;
+        let (value_len, header_len) = match *bytes.get(at)? {
+            0 => (usize::try_from(u32_le(bytes, at + 1)?).ok()?, 5usize),
+            len => (usize::from(len).checked_sub(1)?, 1usize),
+        };
+        let value_start = at.checked_add(header_len)?;
+        let next = value_start.checked_add(value_len)?;
         if next > end {
             return None;
         }
@@ -128,5 +128,34 @@ mod tests {
         let catalogs = parse(&bytes);
         assert_eq!(catalogs.len(), 1);
         assert_eq!(catalogs[0].entries[4].value, "angle\n°");
+    }
+
+    #[test]
+    fn catalog_accepts_zero_tagged_u32_entry_lengths() {
+        let long = "x".repeat(300);
+        let entries = ["CATCatalogManager", "catalogManager", "catalogLinks", ""];
+        let mut body = vec![0x86];
+        for entry in entries {
+            body.push(u8::try_from(entry.len() + 1).expect("fixture entry fits in u8"));
+            body.extend_from_slice(entry.as_bytes());
+        }
+        body.push(0);
+        body.extend_from_slice(
+            &u32::try_from(long.len())
+                .expect("fixture entry length fits in u32")
+                .to_le_bytes(),
+        );
+        body.extend_from_slice(long.as_bytes());
+        let total_len = 6 + body.len();
+        let mut bytes = vec![0x7c, 0x02];
+        bytes.extend_from_slice(
+            &u32::try_from(total_len)
+                .expect("fixture catalog length fits in u32")
+                .to_le_bytes(),
+        );
+        bytes.extend_from_slice(&body);
+        let catalogs = parse(&bytes);
+        assert_eq!(catalogs.len(), 1);
+        assert_eq!(catalogs[0].entries[4].value, long);
     }
 }
