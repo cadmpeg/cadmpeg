@@ -1505,7 +1505,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "pattern geometry is invalid");
                 }
             }
-            FeatureDefinition::Sketch { sketch } => {
+            FeatureDefinition::Sketch { space, sketch } => {
+                if matches!(space, crate::features::SketchSpace::Spatial) && sketch.is_some() {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "spatial sketch owns planar sketch geometry",
+                    );
+                }
                 if let Some(sketch) = sketch {
                     if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
                         ref_error(findings, &feature.id.0, "owned sketch", &sketch.0);
@@ -1767,6 +1774,7 @@ fn check_feature_sketch_references(
     for feature in &ir.model.features {
         if let FeatureDefinition::Sketch {
             sketch: Some(sketch),
+            ..
         } = &feature.definition
         {
             if owners

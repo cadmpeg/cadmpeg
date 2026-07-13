@@ -1492,6 +1492,7 @@ fn encoder_writes_source_less_line_sketches() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: None,
@@ -1609,7 +1610,10 @@ fn encoder_writes_source_less_line_sketches() {
         )));
     assert!(decoded.ir.model.features.iter().any(|feature| matches!(
         feature.definition,
-        FeatureDefinition::Sketch { sketch: Some(_) }
+        FeatureDefinition::Sketch {
+            sketch: Some(_),
+            ..
+        }
     )));
     assert!(decoded.ir.model.features.iter().any(|feature| matches!(
         &feature.definition,
@@ -1863,6 +1867,7 @@ fn encoder_binds_multiple_source_less_sketches_by_name() {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id),
             },
             native_ref: None,
@@ -1893,6 +1898,7 @@ fn encoder_binds_multiple_source_less_sketches_by_name() {
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
                 sketch: Some(sketch),
+                ..
             } => Some(sketch),
             _ => None,
         })
@@ -9814,7 +9820,9 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
     let sketch_id = decoded.ir.model.sketches[0].id.clone();
     assert!(decoded.ir.model.features.iter().any(|feature| matches!(
         &feature.definition,
-        FeatureDefinition::Sketch { sketch: Some(value) } if value == &sketch_id
+        FeatureDefinition::Sketch {
+            sketch: Some(value), ..
+        } if value == &sketch_id
     )));
     assert!(decoded.ir.model.features.iter().any(|feature| matches!(
         &feature.definition,
@@ -9831,7 +9839,10 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
         .unwrap();
     assert!(round_trip.ir.model.features.iter().any(|feature| matches!(
         feature.definition,
-        FeatureDefinition::Sketch { sketch: Some(_) }
+        FeatureDefinition::Sketch {
+            sketch: Some(_),
+            ..
+        }
     )));
 }
 
@@ -9856,6 +9867,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
                 sketch: Some(sketch),
+                ..
             } => Some(sketch.clone()),
             _ => None,
         })
@@ -9910,7 +9922,65 @@ fn decode_does_not_bind_duplicate_sketch_names_by_order() {
     assert_eq!(decoded.ir.model.sketches.len(), 2);
     assert!(decoded.ir.model.features.iter().all(|feature| matches!(
         feature.definition,
-        FeatureDefinition::Sketch { sketch: None }
+        FeatureDefinition::Sketch { sketch: None, .. }
+    )));
+}
+
+#[test]
+fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
+    use cadmpeg_ir::features::{FeatureDefinition, SketchSpace};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Sketch Name="Spatial path" Type="3DSketch" id="40"/>
+            <Sketch Name="Profile" Type="Sketch" id="41"/>
+        </Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Sketch {
+            space: SketchSpace::Spatial,
+            sketch: None,
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
+            sketch: None,
+        }
+    ));
+
+    decoded.ir.model.features[0].name = Some("Renamed spatial path".into());
+    let FeatureDefinition::Sketch { space, .. } = &mut decoded.ir.model.features[1].definition
+    else {
+        panic!("typed planar sketch");
+    };
+    *space = SketchSpace::Spatial;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native[0].kind, "3DSketch");
+    assert_eq!(native[0].name, "Renamed spatial path");
+    assert_eq!(native[1].kind, "3DSketch");
+    assert!(regenerated.ir.model.features.iter().all(|feature| matches!(
+        feature.definition,
+        FeatureDefinition::Sketch {
+            space: SketchSpace::Spatial,
+            sketch: None,
+        }
     )));
 }
 

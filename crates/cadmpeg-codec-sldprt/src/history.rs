@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
     DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterId,
     ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, RuledSurfaceMode, ScaleCenter,
-    SurfaceContinuity, SurfaceExtension, TrimRegion, VariableRadius, WrapMode,
+    SketchSpace, SurfaceContinuity, SurfaceExtension, TrimRegion, VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -597,7 +597,15 @@ pub fn bind_unique_sketch_feature(
     let feature_indices = features
         .iter()
         .enumerate()
-        .filter(|(_, feature)| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
+        .filter(|(_, feature)| {
+            matches!(
+                feature.definition,
+                FeatureDefinition::Sketch {
+                    space: SketchSpace::Planar,
+                    ..
+                }
+            )
+        })
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     let mut bindings = Vec::new();
@@ -643,6 +651,7 @@ pub fn bind_unique_sketch_feature(
     }
     for (index, _, _, sketch) in &bindings {
         features[*index].definition = FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
             sketch: Some(sketch.clone()),
         };
     }
@@ -975,7 +984,14 @@ fn project_definition(
     native_by_source: &HashMap<&str, &str>,
 ) -> FeatureDefinition {
     if feature_family(feature, "Sketch") {
-        return FeatureDefinition::Sketch { sketch: None };
+        return FeatureDefinition::Sketch {
+            space: if feature.kind.eq_ignore_ascii_case("3DSketch") {
+                SketchSpace::Spatial
+            } else {
+                SketchSpace::Planar
+            },
+            sketch: None,
+        };
     }
     if feature_family(feature, "ReferencePlane") {
         return project_datum_plane(feature).unwrap_or_else(|| native_definition(feature));
@@ -3209,6 +3225,7 @@ pub fn sync_neutral_features(
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
                 sketch: Some(sketch),
+                ..
             } => parent_sources
                 .get(&feature.id)
                 .map(|source| (sketch.clone(), source.clone())),
@@ -3824,7 +3841,7 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::Sketch { .. } => {
+            FeatureDefinition::Sketch { space, .. } => {
                 if existing
                     .as_deref()
                     .is_some_and(|record| !feature_family(record, "Sketch"))
@@ -3835,9 +3852,27 @@ pub fn sync_neutral_features(
                     )));
                 }
                 (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Sketch".into(), |record| record.kind.clone()),
+                    existing.as_deref().map_or_else(
+                        || match space {
+                            SketchSpace::Planar => "Sketch".into(),
+                            SketchSpace::Spatial => "3DSketch".into(),
+                        },
+                        |record| {
+                            let native_space = if record.kind.eq_ignore_ascii_case("3DSketch") {
+                                SketchSpace::Spatial
+                            } else {
+                                SketchSpace::Planar
+                            };
+                            if native_space == *space {
+                                record.kind.clone()
+                            } else {
+                                match space {
+                                    SketchSpace::Planar => "Sketch".into(),
+                                    SketchSpace::Spatial => "3DSketch".into(),
+                                }
+                            }
+                        },
+                    ),
                     existing
                         .as_deref()
                         .map(|record| record.parameters.clone())

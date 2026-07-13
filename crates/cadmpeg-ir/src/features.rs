@@ -283,6 +283,9 @@ pub enum FeatureDefinition {
     },
     /// Solved sketch node in the construction history.
     Sketch {
+        /// Coordinate space containing the sketch geometry.
+        #[serde(default)]
+        space: SketchSpace,
         /// Neutral sketch geometry owned by this history node, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sketch: Option<crate::sketches::SketchId>,
@@ -587,6 +590,17 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
     },
+}
+
+/// Coordinate space of a sketch history node.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchSpace {
+    /// Geometry lies on one plane and may resolve into the planar sketch arena.
+    #[default]
+    Planar,
+    /// Geometry is spatial and cannot resolve into the planar sketch arena.
+    Spatial,
 }
 
 /// Selection interpretation for a delete/keep-body operation.
