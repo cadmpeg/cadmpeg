@@ -14603,43 +14603,22 @@ fn patch_blend_radius_tokens(
     record: &sab::Record,
     radii: [f64; 2],
 ) -> Result<(), CodecError> {
-    let boundary = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x15)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .into_iter()
-        .find(|offset| {
-            bytes
-                .get(offset + 1..offset + 9)
-                .and_then(|value| value.try_into().ok())
-                .map(i64::from_le_bytes)
-                == Some(-1)
-        })
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("rolling-ball record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("rolling-ball record is truncated".into()))?;
+    let layout = crate::nurbs::rolling_ball_patch_layout(record_bytes, active_ref_width(bytes))
         .ok_or_else(|| {
             CodecError::Malformed(format!(
-                "spline record {} lacks the blend-radius boundary",
+                "spline record {} lacks a writable rolling-ball radius pair",
                 record.index
             ))
         })?;
-    let offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .into_iter()
-        .filter(|offset| *offset < boundary)
-        .collect::<Vec<_>>();
-    let pair = offsets
-        .get(offsets.len().saturating_sub(2)..)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "spline record {} lacks rolling-ball radius doubles",
-                record.index
-            ))
-        })?;
-    if pair.len() != 2 {
-        return Err(CodecError::Malformed(format!(
-            "spline record {} has an incomplete rolling-ball radius pair",
-            record.index
-        )));
-    }
-    for (offset, radius) in pair.iter().zip(radii) {
-        bytes[*offset + 1..*offset + 9].copy_from_slice(&(radius / 10.0).to_le_bytes());
+    for (offset, radius) in layout.radii.into_iter().zip(radii) {
+        let payload = record.offset + offset;
+        bytes[payload..payload + 8].copy_from_slice(&(radius / 10.0).to_le_bytes());
     }
     Ok(())
 }

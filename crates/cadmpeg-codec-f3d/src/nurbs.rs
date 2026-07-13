@@ -4802,6 +4802,66 @@ pub(crate) fn spring_patch_layout(bytes: &[u8], int_width: usize) -> Option<Spri
     })
 }
 
+/// Writable radius-law payloads in a rolling-ball blend surface subtype.
+pub(crate) struct RollingBallPatchLayout {
+    pub(crate) radii: [usize; 2],
+}
+
+/// Locate the rolling-ball radius pair by walking both supports and the slice curve.
+pub(crate) fn rolling_ball_patch_layout(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<RollingBallPatchLayout> {
+    let names: [&[u8]; 6] = [
+        b"rb_blend_spl_sur",
+        b"rbblnsur",
+        b"pipe_spl_sur",
+        b"pipesur",
+        b"sss_blend_spl_sur",
+        b"sssblndsur",
+    ];
+    let (start, name_len) = names.into_iter().find_map(|name| {
+        bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len()))
+    })?;
+    let span = subtype_span(bytes, start, int_width)?;
+    let payload_start = name_len + 3;
+    let radii = (|| {
+        let mut position = payload_start;
+        decode_rolling_ball_side(span, &mut position, int_width)?;
+        decode_rolling_ball_side(span, &mut position, int_width)?;
+        position = decode_curve_block(span, position, int_width)?.end;
+        Some([
+            start + take_double_payload(span, &mut position)?,
+            start + take_double_payload(span, &mut position)?,
+        ])
+    })()
+    .or_else(|| {
+        let mut position = payload_start;
+        for _ in 0..2 {
+            take_native_string(span, &mut position)?;
+            let support_kind = take_native_ident(span, &mut position)?;
+            if !matches!(support_kind.as_str(), "plane" | "sphere" | "cone" | "torus") {
+                return None;
+            }
+            position = decode_surface_block(span, position, int_width)?.end;
+        }
+        position = decode_curve_block(span, position, int_width)?.end;
+        Some([
+            start + take_double_payload(span, &mut position)?,
+            start + take_double_payload(span, &mut position)?,
+        ])
+    })?;
+    Some(RollingBallPatchLayout { radii })
+}
+
 fn decode_embedded_surface_offset(bytes: &[u8], int_width: usize) -> Option<EmbeddedSurfaceOffset> {
     let name = b"off_surf_int_cur";
     let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
@@ -6362,6 +6422,23 @@ mod width_tests {
         out.extend_from_slice(&value.to_le_bytes());
     }
 
+    fn push_ident(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&[0x0d, value.len() as u8]);
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    fn push_string(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&[0x07, value.len() as u8]);
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    fn push_position(out: &mut Vec<u8>, values: [f64; 3]) {
+        out.push(0x13);
+        for value in values {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
     /// A degree-1 two-pole 3D `nubs` curve block over `[0, 1]`.
     fn curve_block(int_width: usize) -> Vec<u8> {
         let mut b = NUBS_MARKER.to_vec();
@@ -6415,6 +6492,59 @@ mod width_tests {
             push_f64(&mut b, component);
         }
         b
+    }
+
+    fn rolling_ball_side(int_width: usize, label: &str) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        push_string(&mut bytes, label);
+        push_ident(&mut bytes, "null_surface");
+        bytes.extend_from_slice(&curve_block(int_width));
+        bytes.extend_from_slice(&pcurve_block(int_width));
+        push_position(&mut bytes, [7.0, 8.0, 9.0]);
+        push_ident(&mut bytes, "nullbs");
+        push_ident(&mut bytes, "nullbs");
+        bytes
+    }
+
+    #[test]
+    fn rolling_ball_layout_walks_both_integer_widths() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "rb_blend_spl_sur");
+            bytes.extend_from_slice(&rolling_ball_side(int_width, "left"));
+            bytes.extend_from_slice(&rolling_ball_side(int_width, "right"));
+            bytes.extend_from_slice(&curve_block(int_width));
+            push_f64(&mut bytes, -0.3);
+            push_f64(&mut bytes, -0.6);
+            push_int(&mut bytes, 0x15, -1, int_width);
+            bytes.push(0x10);
+
+            let layout = rolling_ball_patch_layout(&bytes, int_width)
+                .unwrap_or_else(|| panic!("rolling-ball layout at width {int_width}"));
+            let values = layout
+                .radii
+                .map(|offset| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()));
+            assert_eq!(values, [-0.3, -0.6]);
+
+            let mut compact = vec![0x0f];
+            push_ident(&mut compact, "pipe_spl_sur");
+            for (label, kind) in [("left", "plane"), ("right", "sphere")] {
+                push_string(&mut compact, label);
+                push_ident(&mut compact, kind);
+                compact.extend_from_slice(&surface_block(int_width));
+            }
+            compact.extend_from_slice(&curve_block(int_width));
+            push_f64(&mut compact, -1.5);
+            push_f64(&mut compact, -2.5);
+            push_int(&mut compact, 0x15, -1, int_width);
+            compact.push(0x10);
+            let layout = rolling_ball_patch_layout(&compact, int_width)
+                .unwrap_or_else(|| panic!("compact rolling-ball layout at width {int_width}"));
+            let values = layout
+                .radii
+                .map(|offset| f64::from_le_bytes(compact[offset..offset + 8].try_into().unwrap()));
+            assert_eq!(values, [-1.5, -2.5]);
+        }
     }
 
     #[test]
