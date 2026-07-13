@@ -702,6 +702,20 @@ fn tessellation_counts_must_be_consistent() {
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 2],
         channels: Vec::new(),
     });
+    ir.model.tessellations.push(Tessellation {
+        id: "synthetic:test:tessellation#invalid-strips".into(),
+        body: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        triangles: vec![[0, 2, 1]],
+        strip_lengths: vec![3],
+        normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
+        channels: Vec::new(),
+    });
     ir.finalize();
     let report = validate(&ir, Vec::new());
     assert!(report
@@ -712,6 +726,10 @@ fn tessellation_counts_must_be_consistent() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("strips do not match")));
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("triangles do not match strips")));
 }
 
 #[test]
