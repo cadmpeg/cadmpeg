@@ -246,6 +246,14 @@ pub enum FeatureDefinition {
         #[serde(default)]
         bidirectional: bool,
     },
+    /// Ordered chain of source paths exposed as one construction curve.
+    CompositeCurve {
+        /// Source segments in traversal order.
+        segments: Vec<PathRef>,
+        /// Whether the final segment joins the first.
+        #[serde(default)]
+        closed: bool,
+    },
     /// Circular helix or planar spiral constructed around an axis.
     Helix {
         /// Point on the construction axis at the curve start.

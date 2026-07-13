@@ -8311,6 +8311,73 @@ fn semantic_writer_round_trips_projected_curve() {
 }
 
 #[test]
+fn semantic_writer_round_trips_ordered_composite_curve() {
+    use cadmpeg_ir::features::{FeatureDefinition, PathRef};
+
+    let base_bytes = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(base_bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let first = base.ir.model.edges[0].id.0.clone();
+    let second = base.ir.model.edges[1].id.0.clone();
+    let xml = format!(
+        r#"<Keywords><CompositeCurve Name="Chain" Type="CompositeCurve" id="41" Segments="{first};{second}" Closed="false" Simplify="true"/></Keywords>"#
+    );
+    let mut source = base_bytes;
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let first_id = decoded.ir.model.edges[0].id.clone();
+    let second_id = decoded.ir.model.edges[1].id.clone();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::CompositeCurve { segments, closed: false }
+            if segments == &vec![
+                PathRef::Edges(vec![first_id.clone()]),
+                PathRef::Edges(vec![second_id.clone()]),
+            ]
+    ));
+
+    let FeatureDefinition::CompositeCurve { segments, closed } =
+        &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed composite curve");
+    };
+    *segments = vec![
+        PathRef::Edges(vec![second_id.clone()]),
+        PathRef::Edges(vec![first_id.clone()]),
+    ];
+    *closed = true;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(
+        native.properties["Segments"],
+        format!("{};{}", second_id.0, first_id.0)
+    );
+    assert_eq!(native.properties["Closed"], "true");
+    assert_eq!(native.properties["Simplify"], "true");
+    assert!(matches!(
+        &regenerated.ir.model.features[0].definition,
+        FeatureDefinition::CompositeCurve { segments, closed: true }
+            if segments == &vec![
+                PathRef::Edges(vec![second_id]),
+                PathRef::Edges(vec![first_id]),
+            ]
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 

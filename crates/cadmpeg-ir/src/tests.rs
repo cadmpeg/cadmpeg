@@ -2079,6 +2079,10 @@ fn feature_operation_geometry_is_validated() {
             direction: Some(Vector3::new(0.0, 0.0, 0.0)),
             bidirectional: false,
         },
+        FeatureDefinition::CompositeCurve {
+            segments: Vec::new(),
+            closed: false,
+        },
         FeatureDefinition::Helix {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_direction: Vector3::new(0.0, 0.0, 0.0),
@@ -2125,6 +2129,7 @@ fn feature_operation_geometry_is_validated() {
         "coordinate-system frame is invalid",
         "equation curve is invalid",
         "projection direction is invalid",
+        "composite curve is empty",
         "helix geometry is invalid",
         "wrap depth is invalid",
         "body motion is invalid",

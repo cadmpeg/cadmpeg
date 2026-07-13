@@ -796,6 +796,11 @@ pub fn bind_topology_selections(
                 resolve_path_ref(source, &edge_ids, &curve_ids);
                 resolve_face_selection(target_faces, &face_ids);
             }
+            FeatureDefinition::CompositeCurve { segments, .. } => {
+                for segment in segments {
+                    resolve_path_ref(segment, &edge_ids, &curve_ids);
+                }
+            }
             _ => {}
         }
     }
@@ -922,6 +927,7 @@ fn bind_definition_sketch(
         FeatureDefinition::Sweep { profile, path, .. } => bind_profile(profile) | bind_path(path),
         FeatureDefinition::TrimSurface { tool, .. } => bind_path(tool),
         FeatureDefinition::ProjectedCurve { source, .. } => bind_path(source),
+        FeatureDefinition::CompositeCurve { segments, .. } => segments.iter_mut().any(bind_path),
         FeatureDefinition::Loft {
             profiles, guides, ..
         } => {
@@ -967,6 +973,10 @@ fn project_definition(
     }
     if feature_family(feature, "ProjectedCurve") || feature_family(feature, "ProjectionCurve") {
         return project_projected_curve(feature, native_by_source)
+            .unwrap_or_else(|| native_definition(feature));
+    }
+    if feature_family(feature, "CompositeCurve") {
+        return project_composite_curve(feature, native_by_source)
             .unwrap_or_else(|| native_definition(feature));
     }
     if feature_family(feature, "Helix") || feature_family(feature, "HelixSpiral") {
@@ -1235,6 +1245,36 @@ fn project_projected_curve(
             .get("Bidirectional")
             .and_then(|value| parse_bool(value))
             .unwrap_or(false),
+    })
+}
+
+fn project_composite_curve(
+    feature: &Feature,
+    native_by_source: &HashMap<&str, &str>,
+) -> Option<FeatureDefinition> {
+    let segments = feature
+        .properties
+        .get("Segments")?
+        .split(';')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|source| {
+            PathRef::Native(
+                native_by_source
+                    .get(source)
+                    .map_or_else(|| source.to_string(), |id| (*id).to_string()),
+            )
+        })
+        .collect::<Vec<_>>();
+    if segments.is_empty() {
+        return None;
+    }
+    Some(FeatureDefinition::CompositeCurve {
+        segments,
+        closed: feature
+            .properties
+            .get("Closed")
+            .map_or(Some(false), |value| parse_bool(value))?,
     })
 }
 
@@ -3462,6 +3502,47 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::CompositeCurve { segments, closed } => {
+                if segments.is_empty() {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no composite-curve segments",
+                        feature.id
+                    )));
+                }
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !feature_family(record, "CompositeCurve"))
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let segments = segments
+                    .iter()
+                    .map(|segment| {
+                        path_source(segment, &record_sources, &sketch_sources).ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "SLDPRT feature {} references a missing composite segment",
+                                feature.id
+                            ))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Segments".into(), segments.join(";"));
+                properties.insert("Closed".into(), closed.to_string());
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "CompositeCurve".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
+            }
             FeatureDefinition::Helix {
                 axis_origin,
                 axis_direction,
@@ -5499,6 +5580,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::DatumCoordinateSystem { .. } => "CoordinateSystem",
         FeatureDefinition::EquationCurve { .. } => "EquationDrivenCurve",
         FeatureDefinition::ProjectedCurve { .. } => "ProjectedCurve",
+        FeatureDefinition::CompositeCurve { .. } => "CompositeCurve",
         FeatureDefinition::Helix { .. } => "Helix",
         FeatureDefinition::Wrap { .. } => "Wrap",
         FeatureDefinition::Sketch { .. } => "Sketch",
