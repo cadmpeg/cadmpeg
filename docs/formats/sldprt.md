@@ -91,6 +91,8 @@ Point-reference object indices address sketch-marker local identifiers within th
 
 `Helix/Spiral` history records use positional dimensions when explicit axis placement is absent: `D3` is the initial radius, `D4` is the signed total axial rise, `D5` is the positive revolution count, and `D7` is the start angle. The history record owns the unresolved construction axis.
 
+Built-in reference-plane history records use source IDs `2`, `3`, and `4` for the Front, Top, and Right principal planes. The IDs are independent of the localized plane names and `Plane`/`Plano` type spelling.
+
 ---
 
 ## 3. Parasolid stream

@@ -8482,6 +8482,72 @@ fn semantic_writer_round_trips_typed_dome() {
 }
 
 #[test]
+fn semantic_writer_round_trips_principal_reference_planes() {
+    use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Alzado" Type="Plano" id="2"/><Feature Name="Planta" Type="Plano" id="3"/><Feature Name="Vista lateral" Type="Plano" id="4"/><Feature Name="Plane2" Type="Plane" id="39"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    for (feature, plane) in decoded.ir.model.features[..3].iter().zip([
+        PrincipalPlane::Front,
+        PrincipalPlane::Top,
+        PrincipalPlane::Right,
+    ]) {
+        assert_eq!(
+            feature.definition,
+            FeatureDefinition::DatumPrincipalPlane { plane }
+        );
+    }
+    assert!(matches!(
+        &decoded.ir.model.features[3].definition,
+        FeatureDefinition::Native { kind, .. } if kind == "Plane"
+    ));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        regenerated.ir.model.features[..3]
+            .iter()
+            .map(|feature| feature.definition.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            FeatureDefinition::DatumPrincipalPlane {
+                plane: PrincipalPlane::Front,
+            },
+            FeatureDefinition::DatumPrincipalPlane {
+                plane: PrincipalPlane::Top,
+            },
+            FeatureDefinition::DatumPrincipalPlane {
+                plane: PrincipalPlane::Right,
+            },
+        ]
+    );
+    assert_eq!(
+        sldprt_native(&regenerated.ir).feature_histories[0].features[0].kind,
+        "Plano"
+    );
+
+    decoded.ir.model.features[0].definition = FeatureDefinition::DatumPrincipalPlane {
+        plane: PrincipalPlane::Right,
+    };
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("principal-plane role"));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_reference_plane() {
     use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::math::{Point3, Vector3};

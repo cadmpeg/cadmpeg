@@ -1064,6 +1064,9 @@ fn project_definition(
         return project_offset_plane(feature, by_source)
             .unwrap_or_else(|| native_definition(feature));
     }
+    if let Some(plane) = principal_plane(feature) {
+        return FeatureDefinition::DatumPrincipalPlane { plane };
+    }
     if feature_family(feature, "ReferencePlane") {
         return project_datum_plane(feature).unwrap_or_else(|| native_definition(feature));
     }
@@ -1271,6 +1274,23 @@ fn is_helix(feature: &Feature) -> bool {
 fn is_offset_plane(feature: &Feature) -> bool {
     (feature_family(feature, "Plane") || feature_family(feature, "Plano"))
         && feature.parameters.contains_key("D1")
+}
+
+fn principal_plane(feature: &Feature) -> Option<cadmpeg_ir::features::PrincipalPlane> {
+    use cadmpeg_ir::features::PrincipalPlane;
+
+    if !(feature_family(feature, "Plane") || feature_family(feature, "Plano"))
+        || !feature.parameters.is_empty()
+        || !feature.properties.is_empty()
+    {
+        return None;
+    }
+    match feature.source_id.as_deref()? {
+        "2" => Some(PrincipalPlane::Front),
+        "3" => Some(PrincipalPlane::Top),
+        "4" => Some(PrincipalPlane::Right),
+        _ => None,
+    }
 }
 
 fn project_extrude(
@@ -3637,6 +3657,25 @@ pub fn sync_neutral_features(
                 let mut merged = feature.source_properties.clone();
                 merged.extend(properties.clone());
                 (kind.clone(), parameters.clone(), merged)
+            }
+            FeatureDefinition::DatumPrincipalPlane { plane } => {
+                let record = existing.as_deref().ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained principal-plane record",
+                        feature.id
+                    ))
+                })?;
+                if principal_plane(record) != Some(*plane) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes its principal-plane role",
+                        feature.id
+                    )));
+                }
+                (
+                    record.kind.clone(),
+                    record.parameters.clone(),
+                    feature.source_properties.clone(),
+                )
             }
             FeatureDefinition::DatumPlane {
                 origin,
@@ -6582,6 +6621,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
     }
     let tag = match &feature.definition {
         FeatureDefinition::TreeNode { .. } => "Feature",
+        FeatureDefinition::DatumPrincipalPlane { .. } => "Feature",
         FeatureDefinition::DatumPlane { .. } => "ReferencePlane",
         FeatureDefinition::DatumOffsetPlane { .. } => "Feature",
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",

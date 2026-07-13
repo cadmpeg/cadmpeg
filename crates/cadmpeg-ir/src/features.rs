@@ -244,6 +244,11 @@ pub enum FeatureDefinition {
         /// Structural or presentation role of the node.
         role: FeatureTreeNodeRole,
     },
+    /// Built-in world-origin reference plane.
+    DatumPrincipalPlane {
+        /// Canonical principal-plane role.
+        plane: PrincipalPlane,
+    },
     /// Constructed reference plane.
     DatumPlane {
         /// Plane origin in model space.
@@ -717,6 +722,18 @@ pub enum FeatureTreeNodeRole {
     SolidBodies,
     /// Surface-body container.
     SurfaceBodies,
+}
+
+/// Canonical role of a built-in reference plane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PrincipalPlane {
+    /// Front plane through the model origin.
+    Front,
+    /// Top plane through the model origin.
+    Top,
+    /// Right plane through the model origin.
+    Right,
 }
 
 /// Coordinate space of a sketch history node.
