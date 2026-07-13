@@ -3197,6 +3197,56 @@ fn sync_neutral_parameters(
         content.extend(names.map(FeatureContent::Dimension));
         record.content = content;
     }
+    for parameter in &parameters {
+        let Some(native_ref) = parameter.native_ref.as_deref() else {
+            continue;
+        };
+        let location = native
+            .feature_input_lanes
+            .iter()
+            .enumerate()
+            .find_map(|(lane_index, lane)| {
+                lane.scalars
+                    .iter()
+                    .position(|scalar| scalar.id == native_ref)
+                    .map(|scalar_index| (lane_index, scalar_index))
+            })
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT parameter {} references missing scalar {native_ref}",
+                    parameter.id.0
+                ))
+            })?;
+        let lane = &mut native.feature_input_lanes[location.0];
+        let scalar = &mut lane.scalars[location.1];
+        if scalar.role == crate::records::FeatureInputScalarRole::Display {
+            return Err(CodecError::Malformed(format!(
+                "SLDPRT parameter {} references a display scalar",
+                parameter.id.0
+            )));
+        }
+        let Some(ParameterValue::Length(length)) = parameter.value else {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT scalar {} requires a length-valued parameter",
+                scalar.id
+            )));
+        };
+        let value = length.0 / 1000.0;
+        let offset = usize::try_from(scalar.offset).map_err(|_| {
+            CodecError::Malformed("SLDPRT scalar offset exceeds address space".into())
+        })?;
+        let bytes = lane
+            .native_payload
+            .get_mut(offset..offset + 8)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT scalar {} lies outside its payload",
+                    scalar.id
+                ))
+            })?;
+        bytes.copy_from_slice(&value.to_le_bytes());
+        scalar.value = value;
+    }
     Ok(())
 }
 
