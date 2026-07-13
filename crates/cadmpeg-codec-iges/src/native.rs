@@ -55,6 +55,17 @@ struct NativeTransformation {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeCopiousData {
+    id: String,
+    source_entity: String,
+    form: i64,
+    interpretation: Option<i64>,
+    declared_tuple_count: Option<i64>,
+    common_z: Option<f64>,
+    tuples: Vec<Vec<Option<f64>>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -207,11 +218,60 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let copious_data = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 106)
+        .map(|entry| {
+            let parameters = by_directory.get(&entry.sequence).copied();
+            let interpretation = parameters.and_then(|record| record.integer(1));
+            let declared_tuple_count = parameters.and_then(|record| record.integer(2));
+            let common_z = (interpretation == Some(1))
+                .then(|| parameters.and_then(|record| record.number(3)))
+                .flatten();
+            let (start, width) = match interpretation {
+                Some(1) => (4, 2),
+                Some(2) => (3, 3),
+                Some(3) => (3, 6),
+                _ => (3, 1),
+            };
+            let count = declared_tuple_count
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let tuples = parameters
+                .map(|record| {
+                    let available = record.tokens.len().saturating_sub(start) / width;
+                    (0..count.min(available))
+                        .map(|tuple| {
+                            (0..width)
+                                .map(|component| {
+                                    tuple
+                                        .checked_mul(width)
+                                        .and_then(|offset| offset.checked_add(start))
+                                        .and_then(|offset| offset.checked_add(component))
+                                        .and_then(|index| record.number(index))
+                                })
+                                .collect()
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            NativeCopiousData {
+                id: format!("iges:native:copious-data#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                interpretation,
+                declared_tuple_count,
+                common_z,
+                tuples,
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 1;
     namespace.set_arena("cards", &cards)?;
     namespace.set_arena("entities", &entities)?;
     namespace.set_arena("directions", &directions)?;
     namespace.set_arena("transformations", &transforms)?;
+    namespace.set_arena("copious_data", &copious_data)?;
     Ok(())
 }

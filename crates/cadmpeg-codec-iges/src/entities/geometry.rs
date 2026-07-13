@@ -810,6 +810,12 @@ pub(crate) fn project_geometry(
     decoded.extend(conics.decoded);
     losses.extend(conics.losses);
     wire_edges.extend(conics.wire_edges);
+    let copious = super::copious::project(ir, directory, parameters, global);
+    handled.extend(copious.handled);
+    decoded.extend(copious.decoded);
+    losses.extend(copious.losses);
+    wire_edges.extend(copious.wire_edges);
+    free_vertices.extend(copious.free_vertices);
     let splines = super::splines::project(ir, directory, parameters, global);
     handled.extend(splines.handled);
     decoded.extend(splines.decoded);
