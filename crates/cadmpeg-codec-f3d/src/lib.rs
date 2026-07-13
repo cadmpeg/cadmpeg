@@ -221,6 +221,40 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             ),
             _ => Some(false),
         };
+        let extrude_profile_link = match (&scope.extrude_profile, scope.kind.as_str()) {
+            (None, "Extrude") => false,
+            (None, _) => true,
+            (Some(_), kind) if kind != "Extrude" => false,
+            (Some(profile), _) => {
+                let header = records_by_index.get(&(native_stream, profile.record_index));
+                let entity = entities_by_suffix.get(&(native_stream, profile.entity_suffix));
+                usize::try_from(profile.scope_reference_ordinal)
+                    .ok()
+                    .and_then(|ordinal| scope.reference_members.get(ordinal))
+                    == Some(&profile.record_index)
+                    && header.is_some_and(|header| {
+                        header.byte_offset == profile.byte_offset
+                            && header.class_tag == profile.class_tag
+                    })
+                    && entity.is_some_and(|entity| {
+                        entity.object_kind == Some(records::DesignObjectKind::Sketch)
+                            && entity.entity_id == profile.entity_id
+                    })
+                    && profile.type_id.len() == 36
+                    && profile.type_id.bytes().enumerate().all(|(index, byte)| {
+                        matches!(index, 8 | 13 | 18 | 23) && byte == b'-'
+                            || !matches!(index, 8 | 13 | 18 | 23) && byte.is_ascii_hexdigit()
+                    })
+                    && profile.type_id_offset > profile.byte_offset
+                    && profile.entity_reference_offset > profile.type_id_offset
+                    && profile.paired_byte_offset > profile.entity_reference_offset
+                    && profile.paired_class_tag.len() == 3
+                    && profile
+                        .paired_class_tag
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit())
+            }
+        };
         let valid = scope.class_tag.len() == 3
             && scope.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && scope.paired_class_tag.len() == 3
@@ -256,6 +290,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .all(|record_index| record_indices.contains(&(native_stream, *record_index)))
             && record_indices.contains(&(native_stream, scope.record_index))
             && entity_link.unwrap_or(scope.kind != "Sketch")
+            && extrude_profile_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;

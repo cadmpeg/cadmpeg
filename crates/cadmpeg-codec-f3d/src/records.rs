@@ -515,6 +515,9 @@ pub struct DesignParameterScope {
     pub reference_members: Vec<u32>,
     /// Byte offsets parallel to `reference_members`.
     pub reference_member_offsets: Vec<u64>,
+    /// Profile operand carried by an Extrude scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_profile: Option<DesignExtrudeProfileOperand>,
     /// Full Design entity id of a sketch scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_id: Option<String>,
@@ -527,6 +530,33 @@ pub struct DesignParameterScope {
     /// Per-file dynamic class tag of the paired header.
     pub paired_class_tag: String,
     /// Byte offset of the paired indexed record header.
+    pub paired_byte_offset: u64,
+}
+
+/// Sketch-profile selection frame named by an Extrude scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignExtrudeProfileOperand {
+    /// Zero-based position in the scope's ordered reference table.
+    pub scope_reference_ordinal: u32,
+    /// Primary indexed-record identity named by the scope table.
+    pub record_index: u32,
+    /// Byte offset of the primary indexed-record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: String,
+    /// UUID selecting the profile-reference record family.
+    pub type_id: String,
+    /// Byte offset of the type UUID's UTF-16LE code units.
+    pub type_id_offset: u64,
+    /// Full Design entity id of the selected Sketch.
+    pub entity_id: String,
+    /// Numeric suffix stored by the profile frame.
+    pub entity_suffix: u64,
+    /// Byte offset of the suffix's UTF-16LE code units.
+    pub entity_reference_offset: u64,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    pub paired_class_tag: String,
+    /// Byte offset of the same-index paired header.
     pub paired_byte_offset: u64,
 }
 

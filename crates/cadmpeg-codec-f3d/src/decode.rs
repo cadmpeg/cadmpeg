@@ -760,6 +760,12 @@ fn extend_related_design_records(
     native
         .design_record_headers
         .sort_by_key(|record| record.id.clone());
+    crate::design::bind_extrude_profiles(
+        scan,
+        &mut native.design_parameter_scopes,
+        &native.design_record_headers,
+        &native.design_entity_headers,
+    )?;
     native.design_edge_operands = crate::design::decode_edge_operands(
         scan,
         &native.design_parameter_scopes,

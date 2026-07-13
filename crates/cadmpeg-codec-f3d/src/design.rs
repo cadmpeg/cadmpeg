@@ -11,10 +11,11 @@ use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
     DesignConfigurationKind, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
-    DesignObject, DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignExtrudeProfileOperand, DesignObject, DesignObjectKind, DesignParameter,
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentReference,
+    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -354,6 +355,15 @@ pub fn project_parameter_design(
                         .unwrap_or(ChamferSpec::Unresolved { form }),
                 }
             } else {
+                let mut properties = BTreeMap::new();
+                if let Some(profile) = scope.extrude_profile.as_ref() {
+                    if let Some(placement) = placements.iter().find(|placement| {
+                        native_stream(&placement.id) == Some(native_scope)
+                            && placement.entity_id == profile.entity_id
+                    }) {
+                        properties.insert("profile".into(), neutral_sketch_id(placement).0);
+                    }
+                }
                 FeatureDefinition::Native {
                     kind: scope.kind.clone(),
                     parameters: parameters
@@ -362,7 +372,7 @@ pub fn project_parameter_design(
                             (parameter.name.clone(), parameter.expression.clone())
                         })
                         .collect(),
-                    properties: BTreeMap::new(),
+                    properties,
                 }
             };
             Feature {
@@ -2447,6 +2457,102 @@ pub fn decode_edge_operands(
     Ok(out)
 }
 
+/// Resolve the unique sketch-profile frame named by every Extrude scope.
+pub fn bind_extrude_profiles(
+    scan: &ContainerScan,
+    scopes: &mut [DesignParameterScope],
+    headers: &[DesignRecordHeader],
+    entities: &[DesignEntityHeader],
+) -> Result<(), CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    for scope in scopes.iter_mut().filter(|scope| scope.kind == "Extrude") {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let candidates = scope
+            .reference_members
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(ordinal, record_index)| {
+                let ordinal = u32::try_from(ordinal).ok()?;
+                let header = headers.get(&(stream, record_index))?;
+                parse_extrude_profile(bytes, stream, ordinal, header, entities)
+            })
+            .collect::<Vec<_>>();
+        if let [profile] = candidates.as_slice() {
+            scope.extrude_profile = Some(profile.clone());
+        }
+    }
+    Ok(())
+}
+
+fn parse_extrude_profile(
+    bytes: &[u8],
+    stream: &str,
+    scope_reference_ordinal: u32,
+    header: &DesignRecordHeader,
+    entities: &[DesignEntityHeader],
+) -> Option<DesignExtrudeProfileOperand> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10]
+        || bytes.get(start + 21) != Some(&1)
+        || u32_at(bytes, start + 22)? != header.record_index.checked_add(3)?
+        || bytes.get(start + 26..start + 32)? != [0; 6]
+        || u32_at(bytes, start + 32)? != 1
+    {
+        return None;
+    }
+    let (type_id, after_type_id) = lp_utf16(bytes, start + 36)?;
+    if !is_guid(&type_id) {
+        return None;
+    }
+    let (entity_suffix_text, after_entity_suffix) = lp_utf16(bytes, after_type_id)?;
+    let entity_suffix = entity_suffix_text.parse::<u64>().ok()?;
+    let paired_at = next_indexed_record_offset(bytes, start + 11)?;
+    let (paired_class_tag, after_paired_tag) = lp_ascii(bytes, paired_at)?;
+    if u32_at(bytes, after_paired_tag)? != header.record_index
+        || after_entity_suffix.checked_add(94)? != paired_at
+    {
+        return None;
+    }
+    let matches = entities
+        .iter()
+        .filter(|entity| {
+            native_stream(&entity.id) == Some(stream)
+                && entity.object_kind == Some(DesignObjectKind::Sketch)
+                && entity.entity_suffix == entity_suffix
+        })
+        .collect::<Vec<_>>();
+    let [entity] = matches.as_slice() else {
+        return None;
+    };
+    Some(DesignExtrudeProfileOperand {
+        scope_reference_ordinal,
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        type_id,
+        type_id_offset: u64::try_from(start + 40).ok()?,
+        entity_id: entity.entity_id.clone(),
+        entity_suffix,
+        entity_reference_offset: u64::try_from(after_type_id + 4).ok()?,
+        paired_class_tag,
+        paired_byte_offset: u64::try_from(paired_at).ok()?,
+    })
+}
+
 fn parse_edge_operand(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -2583,6 +2689,7 @@ fn parse_parameter_scope(
         reference_count_offset: u64::try_from(*reference_count_at).ok()?,
         reference_members: reference_members.clone(),
         reference_member_offsets: reference_member_offsets.clone(),
+        extrude_profile: None,
         entity_id: None,
         entity_suffix: None,
         entity_reference_offset: None,
@@ -4384,9 +4491,9 @@ mod relation_tests {
         bind_dimension_loci, bind_sketch_graph, find_dimension_locus_pair, identity_matrix,
         next_indexed_record_offset, parse_design_parameter, parse_dimension_locus_group,
         parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_parameter_design,
-        project_sketch_constraints, project_sketch_design,
+        parse_extrude_profile, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignDimensionLocusPair, DesignEntityHeader,
@@ -4734,6 +4841,54 @@ mod relation_tests {
     }
 
     #[test]
+    fn extrude_profile_resolves_its_decimal_sketch_entity_suffix() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"308");
+        bytes.extend_from_slice(&100u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.push(1);
+        bytes.extend_from_slice(&103u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        lp_utf16(&mut bytes, "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b");
+        lp_utf16(&mut bytes, "172");
+        bytes.extend_from_slice(&[0; 94]);
+        let paired_at = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"259");
+        bytes.extend_from_slice(&100u32.to_le_bytes());
+        let header = DesignRecordHeader {
+            id: "f3d:Design/BulkStream.dat:record#100".into(),
+            byte_offset: 0,
+            class_tag: "308".into(),
+            record_index: 100,
+        };
+        let entity = DesignEntityHeader {
+            id: "f3d:Design/BulkStream.dat:entity#172".into(),
+            byte_offset: 1000,
+            entity_suffix: 172,
+            entity_id: "0_172".into(),
+            class_tag: "269".into(),
+            optional_slot_present: false,
+            object_kind: Some(DesignObjectKind::Sketch),
+            record_reference: Some(200),
+            record_reference_offset: Some(1010),
+            declared_reference_count: Some(0),
+            reference_indices: Vec::new(),
+            reference_offsets: Vec::new(),
+        };
+
+        let profile =
+            parse_extrude_profile(&bytes, "f3d:Design/BulkStream.dat", 4, &header, &[entity])
+                .expect("Extrude sketch-profile operand");
+        assert_eq!(profile.scope_reference_ordinal, 4);
+        assert_eq!(profile.entity_suffix, 172);
+        assert_eq!(profile.entity_id, "0_172");
+        assert_eq!(profile.paired_byte_offset, paired_at as u64);
+    }
+
+    #[test]
     fn edge_operand_follows_consecutive_nested_records_to_its_recipe() {
         fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> u64 {
             let offset = u64::try_from(bytes.len()).expect("generated frame length fits u64");
@@ -4762,6 +4917,7 @@ mod relation_tests {
             reference_count_offset: 1080,
             reference_members: vec![100],
             reference_member_offsets: vec![1085],
+            extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -5314,6 +5470,7 @@ mod relation_tests {
             reference_count_offset: 180,
             reference_members: vec![44],
             reference_member_offsets: vec![185],
+            extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -5385,6 +5542,7 @@ mod relation_tests {
             reference_count_offset: byte_offset + 80,
             reference_members: vec![record_index + 1],
             reference_member_offsets: vec![byte_offset + 85],
+            extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -5468,6 +5626,7 @@ mod relation_tests {
             reference_count_offset: byte_offset + 80,
             reference_members: vec![record_index + 1],
             reference_member_offsets: vec![byte_offset + 85],
+            extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
