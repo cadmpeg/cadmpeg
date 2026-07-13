@@ -184,7 +184,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moSurfaceBodyFolder_c" => tree_node_class(FeatureTreeNodeRole::SurfaceBodies),
 
         "sgSketch" => (NativeClassKind::Sketch, Sketch, None, None),
-        "sgArcHandle" | "sgEntHandle" | "sgLineHandle" | "sgPointHandle" => {
+        "sgArcHandle" | "sgEntHandle" | "sgLineHandle" | "sgPointHandle" | "sgSplineHandle" => {
             (NativeClassKind::SketchEntity, SketchEntity, None, None)
         }
         "sgLLDist" => relation_class(FeatureInputRelationFamily::LineLineDistance),
@@ -205,7 +205,18 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         | "moFeatureDimHandle_c"
         | "moSkDimHandleRadial_c"
         | "moSkDimHandleValG2_c"
+        | "moSkDimHandleOffset_c"
+        | "moSkDimHandleLinearPattCnt_c"
+        | "moDisplayAngularDim_c"
+        | "moDisplayDim_c"
+        | "moDisplayLinearPattCntDim_c"
+        | "moNumberDim_c"
+        | "moScalerDim_c"
+        | "AngleDim_c"
         | "sgCircleDim" => (NativeClassKind::Dimension, Dimension, None, None),
+        "sgDimEntityHelpData_c" | "sgLinearPattCntDim" | "sgOffsetDim" | "sgSkOffsetDim" => {
+            (NativeClassKind::Dimension, Dimension, None, None)
+        }
         "moLengthParameter_c" => (NativeClassKind::LengthParameter, Parameter, None, None),
         "moCompEdge_c"
         | "moCompFace_c"
@@ -430,6 +441,38 @@ mod tests {
             relation.kind,
             NativeClassKind::SketchRelation(FeatureInputRelationFamily::PointPointDistance)
         );
+
+        for name in [
+            "sgArcHandle",
+            "sgEntHandle",
+            "sgLineHandle",
+            "sgPointHandle",
+            "sgSplineHandle",
+        ] {
+            let entity = native_object_class(name);
+            assert_eq!(entity.kind, NativeClassKind::SketchEntity, "{name}");
+            assert_eq!(entity.role, FeatureInputClassRole::SketchEntity, "{name}");
+        }
+
+        for name in [
+            "AngleDim_c",
+            "moDisplayAngularDim_c",
+            "moDisplayDim_c",
+            "moDisplayLinearPattCntDim_c",
+            "moNumberDim_c",
+            "moScalerDim_c",
+            "moSkDimHandleLinearPattCnt_c",
+            "moSkDimHandleOffset_c",
+            "sgCircleDim",
+            "sgDimEntityHelpData_c",
+            "sgLinearPattCntDim",
+            "sgOffsetDim",
+            "sgSkOffsetDim",
+        ] {
+            let dimension = native_object_class(name);
+            assert_eq!(dimension.kind, NativeClassKind::Dimension, "{name}");
+            assert_eq!(dimension.role, FeatureInputClassRole::Dimension, "{name}");
+        }
 
         assert_eq!(
             native_object_class("futureClass_c").kind,
