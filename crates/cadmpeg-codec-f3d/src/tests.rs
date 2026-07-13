@@ -11157,6 +11157,88 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
 }
 
 #[test]
+fn generated_procedural_curve_optional_tolerance_absence_round_trips() {
+    let cases = [
+        (synthetic_geometry_with_exact_curve_smbh(), "exact"),
+        (synthetic_geometry_with_law_curve_smbh(), "law"),
+        (
+            synthetic_geometry_with_deformable_curve_smbh(8),
+            "deformable",
+        ),
+        (synthetic_geometry_with_projection_smbh(), "projection"),
+        (
+            synthetic_geometry_with_early_close_projection_smbh(),
+            "early-close projection",
+        ),
+        (synthetic_geometry_with_compound_curve_smbh(), "compound"),
+        (
+            synthetic_geometry_with_procedural_curve_smbh(),
+            "intersection",
+        ),
+        (
+            synthetic_geometry_with_surface_curve_smbh("surf_int_cur"),
+            "surface curve",
+        ),
+        (
+            synthetic_geometry_with_silhouette_smbh("para_silh_int_cur", None),
+            "silhouette",
+        ),
+        (
+            synthetic_geometry_with_surface_offset_smbh(),
+            "surface offset",
+        ),
+        (synthetic_geometry_with_spring_smbh(), "spring"),
+        (
+            synthetic_geometry_with_three_surface_intersection_smbh(),
+            "three-surface intersection",
+        ),
+        (
+            synthetic_geometry_with_two_sided_offset_curve_smbh(),
+            "two-sided offset",
+        ),
+        (
+            synthetic_geometry_with_vector_offset_curve_smbh(),
+            "vector offset",
+        ),
+        (synthetic_geometry_with_subset_curve_smbh(), "subset"),
+        (synthetic_geometry_with_helix_curve_smbh(), "helix"),
+    ];
+    for (smbh, family) in cases {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{family} decode: {error}"));
+        assert_eq!(
+            decoded.ir.model.procedural_curves.len(),
+            1,
+            "{family} fixture must decode one procedural curve"
+        );
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.model.procedural_curves[0].cache_fit_tolerance = None;
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .unwrap_or_else(|error| panic!("{family} source-less encode: {error}"));
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{family} round trip: {error}"));
+        assert_eq!(
+            round_trip.ir.model.procedural_curves.len(),
+            1,
+            "{family} procedural curve was not reconstructed"
+        );
+        assert_eq!(
+            round_trip.ir.model.procedural_curves[0].cache_fit_tolerance, None,
+            "{family} invented a cache-fit tolerance"
+        );
+    }
+}
+
+#[test]
 fn generated_compound_loft_decodes_scale_and_zero_tail() {
     use cadmpeg_ir::geometry::{
         CompoundLoftDirection, CompoundLoftTail, ProceduralSurfaceDefinition,

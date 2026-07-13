@@ -7685,6 +7685,11 @@ fn native_procedural_curve(
     ) {
         return Ok(false);
     }
+    let write_cache_fit_tolerance = |bytes: &mut Vec<u8>| {
+        if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+            native_f64(bytes, cache_fit_tolerance / 10.0);
+        }
+    };
     if matches!(
         procedural.definition,
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
@@ -7693,7 +7698,7 @@ fn native_procedural_curve(
         bytes.push(0x0f);
         native_ident(bytes, "exact_int_cur")?;
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -7708,7 +7713,7 @@ fn native_procedural_curve(
         bytes.push(0x0f);
         native_ident(bytes, "law_int_cur")?;
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         native_intcurve_support_context(bytes, target, context)?;
         native_i64(bytes, *extension);
         native_law_formula(bytes, target, primary)?;
@@ -7785,7 +7790,7 @@ fn native_procedural_curve(
             }
         }
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -7814,7 +7819,7 @@ fn native_procedural_curve(
                 bytes.push(native_bool(*flag));
                 bytes.push(0x10);
                 native_nurbs_curve(bytes, solved_cache)?;
-                native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+                write_cache_fit_tolerance(bytes);
             }
             cadmpeg_ir::geometry::ProjectionTail::Ranged {
                 flag,
@@ -7827,7 +7832,7 @@ fn native_procedural_curve(
                 }
                 native_string(bytes, role)?;
                 native_nurbs_curve(bytes, solved_cache)?;
-                native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+                write_cache_fit_tolerance(bytes);
                 bytes.push(0x10);
             }
         }
@@ -7884,7 +7889,7 @@ fn native_procedural_curve(
             native_nurbs_curve(bytes, &component)?;
         }
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -7899,7 +7904,7 @@ fn native_procedural_curve(
         native_intcurve_support_context(bytes, target, context)?;
         bytes.push(native_bool(*discontinuity_flag));
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -7917,7 +7922,7 @@ fn native_procedural_curve(
         native_ident(bytes, name)?;
         native_intcurve_support_context(bytes, target, context)?;
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -7954,7 +7959,7 @@ fn native_procedural_curve(
             native_f64(bytes, draft_factor);
         }
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -7995,7 +8000,7 @@ fn native_procedural_curve(
         native_f64(bytes, *shift);
         native_f64(bytes, *scale);
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -8081,7 +8086,7 @@ fn native_procedural_curve(
         bytes.push(native_bool(*discontinuity_flag));
         native_enum(bytes, *direction);
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -8119,7 +8124,7 @@ fn native_procedural_curve(
         native_embedded_surface(bytes, &surface.geometry)?;
         native_nurbs_pcurve_block(bytes, pcurve)?;
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -8138,7 +8143,7 @@ fn native_procedural_curve(
             native_f64(bytes, *offset / 10.0);
         }
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -8170,7 +8175,7 @@ fn native_procedural_curve(
         native_string(bytes, labels_1)?;
         native_i64(bytes, codes[1]);
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -8193,7 +8198,7 @@ fn native_procedural_curve(
         native_f64(bytes, parameter_range[0]);
         native_f64(bytes, parameter_range[1]);
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -8226,7 +8231,7 @@ fn native_procedural_curve(
     native_f64(bytes, *apex_factor);
     native_vector(bytes, [axis.x, axis.y, axis.z]);
     native_nurbs_curve(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    write_cache_fit_tolerance(bytes);
     bytes.push(0x10);
     Ok(true)
 }
