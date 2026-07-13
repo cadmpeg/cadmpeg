@@ -882,13 +882,7 @@ fn resolved_feature_payload(
                     "feature-input marker coordinates must be finite".into(),
                 ));
             }
-            let native_code = entity.kind.native_code();
-            if crate::resolved_features::marker_coordinates(
-                &lane.native_payload,
-                offset,
-                native_code,
-            )
-            .is_none()
+            if crate::resolved_features::marker_coordinates(&lane.native_payload, offset).is_none()
             {
                 return Err(CodecError::NotImplemented(
                     "feature-input marker does not carry editable coordinate fields".into(),

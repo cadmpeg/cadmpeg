@@ -92,7 +92,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                         local_id: marker_local_id(&block.payload, offset),
                         kind: SketchInputKind::from_native_code(code),
                         state_value: marker_state_value(&block.payload, offset),
-                        coordinates_m: marker_coordinates(&block.payload, offset, code),
+                        coordinates_m: marker_coordinates(&block.payload, offset),
                         links: Vec::new(),
                         link_selector: None,
                     }
@@ -202,16 +202,11 @@ fn marker_state_value(payload: &[u8], offset: usize) -> Option<f64> {
     value.is_finite().then_some(value)
 }
 
-pub(crate) fn marker_coordinates(
-    payload: &[u8],
-    offset: usize,
-    native_code: u32,
-) -> Option<[f64; 2]> {
+pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
     const GEOMETRY_PREFIX: [u8; 12] = [
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x80, 0xbf,
     ];
-    if native_code > 5
-        || payload.get(offset + 5..offset + 17)? != GEOMETRY_PREFIX
+    if payload.get(offset + 5..offset + 17)? != GEOMETRY_PREFIX
         || payload.get(offset + 64..offset + 66)? != [0x1e, 0x00]
     {
         return None;
@@ -226,20 +221,20 @@ mod marker_tests {
     use super::{marker_coordinates, marker_local_links};
 
     #[test]
-    fn geometry_marker_coordinates_require_the_geometry_prefix_and_family() {
+    fn geometry_marker_coordinates_are_selected_by_layout() {
         let mut payload = vec![0; 82];
         payload[5..13].fill(0xff);
         payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&10u32.to_le_bytes());
         payload[64..66].copy_from_slice(&[0x1e, 0x00]);
         payload[66..74].copy_from_slice(&1.25f64.to_le_bytes());
         payload[74..82].copy_from_slice(&(-2.5f64).to_le_bytes());
-        assert_eq!(marker_coordinates(&payload, 0, 5), Some([1.25, -2.5]));
-        assert_eq!(marker_coordinates(&payload, 0, 6), None);
+        assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
         payload[64..66].copy_from_slice(&[0x14, 0x00]);
-        assert_eq!(marker_coordinates(&payload, 0, 5), None);
+        assert_eq!(marker_coordinates(&payload, 0), None);
         payload[64..66].copy_from_slice(&[0x1e, 0x00]);
         payload[5] = 0;
-        assert_eq!(marker_coordinates(&payload, 0, 5), None);
+        assert_eq!(marker_coordinates(&payload, 0), None);
     }
 
     #[test]
