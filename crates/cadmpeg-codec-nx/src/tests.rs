@@ -211,6 +211,7 @@ fn topology_partition_stream() -> Vec<u8> {
     put_ref(&mut loop_, 2, 5);
     put_ref(&mut loop_, 10, 7); // fin
     put_ref(&mut loop_, 12, 4); // face
+    put_ref(&mut loop_, 14, 1); // next loop
     s.extend_from_slice(&loop_);
 
     let mut fin = record(17, 23);
@@ -278,6 +279,26 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
     assert!(crate::topology::Graph::parse(&broken)
         .body_shape_shells()
         .is_empty());
+}
+
+#[test]
+fn topology_rejects_nonreciprocal_fin_ring() {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 8, 99);
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.face_loop_rings(4).is_none());
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir.model.loops.is_empty());
+    assert!(result.ir.model.coedges.is_empty());
+    assert!(result.ir.model.edges.is_empty());
 }
 
 #[test]

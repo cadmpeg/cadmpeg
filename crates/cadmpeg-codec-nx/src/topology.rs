@@ -81,6 +81,8 @@ pub struct LoopFields {
     pub fin: u32,
     /// Owning face.
     pub face: u32,
+    /// Next loop owned by the same face, or the null reference.
+    pub next_loop: u32,
 }
 
 /// Sequentially decoded FIN references and sense.
@@ -241,6 +243,7 @@ impl Node {
         Some(LoopFields {
             fin: refs[1],
             face: refs[2],
+            next_loop: refs[3],
         })
     }
 
@@ -588,6 +591,63 @@ impl Graph {
         self.of_kind(13)
             .filter(|shell| self.is_body_shape_shell(shell))
             .collect()
+    }
+
+    /// Return the validated loop-to-FIN rings owned by a face.
+    ///
+    /// The face's loop chain must terminate at the null reference. Each loop
+    /// points back to the face. Each FIN cycle closes at its first FIN, stays in
+    /// the loop, and has reciprocal forward/backward links. Every FIN resolves
+    /// its edge and vertex.
+    pub fn face_loop_rings(&self, face_xmt: u32) -> Option<Vec<(u32, Vec<u32>)>> {
+        let face = self.get(14, face_xmt)?.face_fields()?;
+        let mut loop_xmt = face.loop_xmt;
+        let mut seen_loops = BTreeSet::new();
+        let mut rings = Vec::new();
+        while loop_xmt != 1 {
+            if !seen_loops.insert(loop_xmt) {
+                return None;
+            }
+            let fields = self.get(15, loop_xmt)?.loop_fields()?;
+            if fields.face != face_xmt {
+                return None;
+            }
+            rings.push((loop_xmt, self.fin_ring(loop_xmt, fields.fin)?));
+            loop_xmt = fields.next_loop;
+        }
+        Some(rings)
+    }
+
+    fn fin_ring(&self, loop_xmt: u32, first: u32) -> Option<Vec<u32>> {
+        (first != 1).then_some(())?;
+        let mut current = first;
+        let mut previous = None;
+        let mut seen = BTreeSet::new();
+        let mut ring = Vec::new();
+        loop {
+            if !seen.insert(current) {
+                return (current == first).then_some(ring);
+            }
+            ring.push(current);
+            let fields = self.get(17, current)?.fin_fields()?;
+            if fields.loop_xmt != loop_xmt
+                || self.get(16, fields.edge).is_none()
+                || self.get(18, fields.vertex).is_none()
+            {
+                return None;
+            }
+            if let Some(previous) = previous {
+                if fields.backward != previous {
+                    return None;
+                }
+            }
+            let next = self.get(17, fields.forward)?.fin_fields()?;
+            if next.backward != current {
+                return None;
+            }
+            previous = Some(current);
+            current = fields.forward;
+        }
     }
 
     fn is_body_shape_shell(&self, shell: &Node) -> bool {

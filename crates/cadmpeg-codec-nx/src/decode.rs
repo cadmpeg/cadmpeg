@@ -984,6 +984,19 @@ fn emit_topology(
     annotations: &mut AnnotationBuilder,
 ) {
     let prefix = format!("nx:s{stream_index}");
+    let valid_loop_rings: BTreeMap<u32, Vec<u32>> = graph
+        .of_kind(14)
+        .filter_map(|face| graph.face_loop_rings(face.xmt))
+        .flatten()
+        .collect();
+    let valid_fin_xmts: BTreeSet<u32> = valid_loop_rings
+        .values()
+        .flat_map(|ring| ring.iter().copied())
+        .collect();
+    let valid_edge_xmts: BTreeSet<u32> = valid_fin_xmts
+        .iter()
+        .filter_map(|xmt| graph.get(17, *xmt)?.fin_fields().map(|fields| fields.edge))
+        .collect();
     let body_shape_shells = graph.body_shape_shells();
     let body_xmts: BTreeSet<_> = body_shape_shells
         .iter()
@@ -1066,7 +1079,10 @@ fn emit_topology(
     }
 
     let mut edges = BTreeMap::new();
-    for node in graph.of_kind(16) {
+    for node in graph
+        .of_kind(16)
+        .filter(|node| valid_edge_xmts.contains(&node.xmt))
+    {
         let Some(fields) = node.edge_fields() else {
             continue;
         };
@@ -1137,7 +1153,10 @@ fn emit_topology(
     }
 
     let mut loops = BTreeMap::new();
-    for node in graph.of_kind(15) {
+    for &loop_xmt in valid_loop_rings.keys() {
+        let Some(node) = graph.get(15, loop_xmt) else {
+            continue;
+        };
         let Some(fields) = node.loop_fields() else {
             continue;
         };
@@ -1162,16 +1181,20 @@ fn emit_topology(
         loops.insert(node.xmt, id);
     }
 
-    let fin_ids: BTreeMap<u32, CoedgeId> = graph
-        .of_kind(17)
-        .filter_map(|node| {
-            node.fin_fields()
-                .map(|fields| fields.loop_xmt)
-                .filter(|loop_xmt| loops.contains_key(loop_xmt))
-                .map(|_| (node.xmt, CoedgeId(format!("{prefix}:fin#{}", node.xmt))))
+    let fin_ids: BTreeMap<u32, CoedgeId> = valid_fin_xmts
+        .iter()
+        .filter(|xmt| {
+            graph
+                .get(17, **xmt)
+                .and_then(Node::fin_fields)
+                .is_some_and(|fields| loops.contains_key(&fields.loop_xmt))
         })
+        .map(|xmt| (*xmt, CoedgeId(format!("{prefix}:fin#{xmt}"))))
         .collect();
-    for node in graph.of_kind(17) {
+    for &fin_xmt in fin_ids.keys() {
+        let Some(node) = graph.get(17, fin_xmt) else {
+            continue;
+        };
         let Some(fields) = node.fin_fields() else {
             continue;
         };
@@ -1186,11 +1209,11 @@ fn emit_topology(
         let next = fin_ids
             .get(&fields.forward)
             .cloned()
-            .unwrap_or_else(|| id.clone());
+            .expect("validated FIN ring resolves forward link");
         let previous = fin_ids
             .get(&fields.backward)
             .cloned()
-            .unwrap_or_else(|| id.clone());
+            .expect("validated FIN ring resolves backward link");
         let partner = fin_ids.get(&fields.other).cloned();
         let radial_next = partner.clone().unwrap_or_else(|| id.clone());
         ir.model.coedges.push(Coedge {

@@ -205,7 +205,7 @@ A **body-shape SHELL** requires the four sentinel slots `= 1` and `body_ref`/`fi
 | -------- | --------------------------------------------------------------------- |
 | vertices | FIN-referenced VERTEX nodes; coordinates from same-stream POINT nodes |
 | edges    | one per EDGE node, with resolved curve when available                 |
-| loops    | walked from `LOOP.fin` through FIN forward/backward chains            |
+| loops    | walked from `FACE.loop` through the null-terminated LOOP chain; each FIN ring closes at its first FIN with reciprocal forward/backward links |
 | faces    | one per FACE node, with resolved surface when available               |
 | bodies   | one per validated body-shape SHELL                                    |
 
