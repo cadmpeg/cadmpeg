@@ -2051,6 +2051,17 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                 .to_string(),
             );
         }
+        if let Some(schema_class) = scan
+            .feature_rows
+            .iter()
+            .find(|row| row.feature_id == operation.feature_id)
+            .and_then(|row| row.root_schema_class)
+        {
+            source_properties.insert(
+                "featdefs_schema_class".to_string(),
+                schema_class.to_string(),
+            );
+        }
         let mut parameters = BTreeMap::new();
         for affected in scan
             .feature_affected_ids

@@ -470,6 +470,45 @@ fn scan_bounds_known_allfeatur_feature_rows() {
 }
 
 #[test]
+fn scan_decodes_allfeatur_root_featdefs_schema_class() {
+    let mut geometry = visibgeom_payload(2, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    geometry.extend_from_slice(&[8, 0x22, 9, 0x01, 0, 0]);
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 9, 0xeb,
+        0x04, 0, 0x10, 1, 0, 0xe5, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
+    ];
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", geometry),
+            ("AllFeatur", allfeatur),
+            ("MdlStatus", b"Protrusion id 4\0Round id 9\0".to_vec()),
+        ],
+    );
+    let scan = container::scan_bytes(data.clone());
+
+    assert_eq!(scan.feature_rows[0].root_schema_class, Some(917));
+    assert_eq!(scan.feature_rows[1].root_schema_class, Some(913));
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    assert_eq!(
+        result.ir.model.features[0]
+            .source_properties
+            .get("featdefs_schema_class")
+            .map(String::as_str),
+        Some("917")
+    );
+    assert_eq!(
+        result.ir.model.features[1]
+            .source_properties
+            .get("featdefs_schema_class")
+            .map(String::as_str),
+        Some("913")
+    );
+}
+
+#[test]
 fn scan_resolves_allfeatur_walker_order_entity_references() {
     let allfeatur = b"\xe0\x22first\0\xf7\x01\xe3\xe0\x24second\0\xf7\x00\xe3".to_vec();
     let scan = container::scan_bytes(build_prt("c", &[("AllFeatur", allfeatur)]));

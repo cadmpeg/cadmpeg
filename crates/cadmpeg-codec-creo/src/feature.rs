@@ -131,6 +131,8 @@ pub struct FeatureRow {
     pub feature_id: u32,
     /// Two-byte row-header family discriminator.
     pub header: [u8; 2],
+    /// Root `FeatDefs` schema class from the fixed row prefix.
+    pub root_schema_class: Option<u32>,
     /// Row bytes after the compact feature identifier, ending before the next
     /// known feature row or at the end of the section.
     pub body: Vec<u8>,
@@ -872,9 +874,19 @@ pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<FeatureRow> {
         .filter_map(|(start, end, feature_id)| {
             let (_, body_start) = psb::reference_id(payload, start).ok()?;
             let header = payload.get(body_start..body_start + 2)?.try_into().ok()?;
+            let prefix_end = (body_start + 16).min(end);
+            let root_schema_class = payload[body_start..prefix_end]
+                .windows(2)
+                .position(|window| window == [0xe3, 0xf6])
+                .and_then(|relative| {
+                    let value_offset = body_start + relative + 2;
+                    let (value, after) = psb::compact_int(payload, value_offset);
+                    (after > value_offset && payload.get(after) == Some(&0xe1)).then_some(value)
+                });
             Some(FeatureRow {
                 feature_id,
                 header,
+                root_schema_class,
                 body: payload.get(body_start..end)?.to_vec(),
                 body_offset: body_start,
                 offset: start,
