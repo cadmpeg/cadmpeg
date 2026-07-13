@@ -521,6 +521,11 @@ impl SldprtNative {
                     record.id, record.name
                 )));
             }
+            let sketch_entities = lane
+                .sketch_entities
+                .iter()
+                .map(|record| (record.id.as_str(), record))
+                .collect::<std::collections::HashMap<_, _>>();
             for scalar in &lane.scalars {
                 for operand in &scalar.operands {
                     let Some(reference) = references_by_id.get(operand.reference_ref.as_str())
@@ -538,6 +543,26 @@ impl SldprtNative {
                             "feature-input scalar {} has inconsistent cell {}",
                             scalar.id, operand.reference_ref
                         )));
+                    }
+                    if let Some(entity_ref) = operand.entity_ref.as_deref() {
+                        let Some(target) = sketch_entities.get(entity_ref) else {
+                            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                                "feature-input scalar {} references missing sketch marker {}",
+                                scalar.id, entity_ref
+                            )));
+                        };
+                        if target.feature_ref != scalar.feature_ref
+                            || target.local_id != Some(u32::from(operand.entity_index))
+                            || !crate::resolved_features::operand_accepts_marker(
+                                operand.kind,
+                                target.kind,
+                            )
+                        {
+                            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                                "feature-input scalar {} has inconsistent sketch marker {}",
+                                scalar.id, entity_ref
+                            )));
+                        }
                     }
                 }
             }
@@ -563,11 +588,6 @@ impl SldprtNative {
                     record.id
                 )));
             }
-            let sketch_entities = lane
-                .sketch_entities
-                .iter()
-                .map(|record| (record.id.as_str(), record))
-                .collect::<std::collections::HashMap<_, _>>();
             for record in &lane.sketch_entities {
                 if record.links.is_empty() != record.link_selector.is_none() {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -793,6 +813,7 @@ fn relation_instance_shape_valid(
     }
     if positions[0].1.offset != record.offset
         || positions.windows(2).any(|pair| pair[1].0 != pair[0].0 + 1)
+        || record.operands != positions[0].1.operands
     {
         return false;
     }

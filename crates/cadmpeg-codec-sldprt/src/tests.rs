@@ -14210,6 +14210,54 @@ fn native_store_rejects_nonlocal_relation_scalar_groups() {
 }
 
 #[test]
+fn native_store_rejects_relation_instance_operand_disagreement() {
+    let mut source = sldprt_with_compact_relation_pair(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut native = sldprt_native(&decoded.ir);
+    native.feature_input_lanes[0].relation_instances[0].operands[0].entity_index += 1;
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&mut namespace).unwrap_err();
+    assert!(
+        error.to_string().contains("relation instance")
+            && error.to_string().contains("inconsistent ownership")
+    );
+}
+
+#[test]
+fn native_store_rejects_inconsistent_scalar_marker_target() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload_with_names(&[0, 0, 2], &["Sketch1", "D1"]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut native = sldprt_native(&decoded.ir);
+    let wrong_target = native.feature_input_lanes[0].sketch_entities[0].id.clone();
+    native.feature_input_lanes[0].scalars[0].operands[1].entity_ref = Some(wrong_target.clone());
+    native.feature_input_lanes[0].relation_instances[0].operands[1].entity_ref = Some(wrong_target);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&mut namespace).unwrap_err();
+    assert!(error.to_string().contains("inconsistent sketch marker"));
+}
+
+#[test]
 fn decode_extracts_pmi_semantic_dimension() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
