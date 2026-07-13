@@ -5,7 +5,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{AppearanceId, BodyId, FaceId};
+use cadmpeg_ir::ids::{
+    AppearanceId, BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointId,
+    ProductId, SurfaceId, VertexId,
+};
+use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use cadmpeg_ir::topology::Color;
 
 use crate::parse::{Exchange, RawRecord, Value};
@@ -33,6 +37,36 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
         .map(|(index, body)| (body.id.0.clone(), index))
         .collect::<BTreeMap<_, _>>();
     let mut appearance_ids = BTreeMap::<u64, AppearanceId>::new();
+    for (&layer_id, layer) in &exchange.records {
+        if layer.simple_name() != Some("PRESENTATION_LAYER_ASSIGNMENT") {
+            continue;
+        }
+        let Some(name) = layer.parameter(0).and_then(ValueExt::text) else {
+            warnings.push(format!(
+                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
+            ));
+            continue;
+        };
+        let description = layer
+            .parameter(1)
+            .and_then(ValueExt::text)
+            .filter(|value| !value.is_empty());
+        let items = layer
+            .parameter(2)
+            .and_then(ValueExt::list)
+            .into_iter()
+            .flatten()
+            .filter_map(ValueExt::reference)
+            .map(|id| presentation_item(id, exchange, ir))
+            .collect();
+        ir.model.presentation_layers.push(PresentationLayer {
+            id: LayerId(format!("step:presentation:layer#{layer_id}")),
+            name,
+            description,
+            items,
+        });
+        typed.insert(layer_id);
+    }
     for (&style_id, style) in &exchange.records {
         if !matches!(
             style.simple_name(),
@@ -103,6 +137,82 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
     PresentationResult {
         typed_records: typed,
         warnings,
+    }
+}
+
+fn presentation_item(id: u64, exchange: &Exchange, ir: &CadIr) -> PresentationItem {
+    let candidate = |kind: &str| format!("step:data:{kind}#{id}");
+    let body = candidate("body");
+    if ir.model.bodies.iter().any(|item| item.id.as_str() == body) {
+        return PresentationItem::Body { body: BodyId(body) };
+    }
+    let face = candidate("face");
+    if ir.model.faces.iter().any(|item| item.id.as_str() == face) {
+        return PresentationItem::Face { face: FaceId(face) };
+    }
+    let edge = candidate("edge");
+    if ir.model.edges.iter().any(|item| item.id.as_str() == edge) {
+        return PresentationItem::Edge { edge: EdgeId(edge) };
+    }
+    let vertex = candidate("vertex");
+    if ir
+        .model
+        .vertices
+        .iter()
+        .any(|item| item.id.as_str() == vertex)
+    {
+        return PresentationItem::Vertex {
+            vertex: VertexId(vertex),
+        };
+    }
+    let point = candidate("point");
+    if ir.model.points.iter().any(|item| item.id.as_str() == point) {
+        return PresentationItem::Point {
+            point: PointId(point),
+        };
+    }
+    let curve = candidate("curve");
+    if ir.model.curves.iter().any(|item| item.id.as_str() == curve) {
+        return PresentationItem::Curve {
+            curve: CurveId(curve),
+        };
+    }
+    let surface = candidate("surface");
+    if ir
+        .model
+        .surfaces
+        .iter()
+        .any(|item| item.id.as_str() == surface)
+    {
+        return PresentationItem::Surface {
+            surface: SurfaceId(surface),
+        };
+    }
+    match exchange.records.get(&id).and_then(RecordExt::simple_name) {
+        Some("PRODUCT") => PresentationItem::Product {
+            product: ProductId(format!("step:product:product#{id}")),
+        },
+        Some("NEXT_ASSEMBLY_USAGE_OCCURRENCE") => PresentationItem::Occurrence {
+            occurrence: OccurrenceId(format!("step:product:occurrence#{id}")),
+        },
+        Some(name)
+            if name == "DATUM"
+                || name == "DATUM_SYSTEM"
+                || name.starts_with("DIMENSIONAL_")
+                || name.ends_with("_TOLERANCE") =>
+        {
+            PresentationItem::Pmi {
+                annotation: PmiId(format!("step:presentation:pmi#{id}")),
+            }
+        }
+        Some("TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE" | "TRIANGULATED_SURFACE_SET") => {
+            PresentationItem::Tessellation {
+                tessellation: format!("step:tessellation:mesh#{id}"),
+            }
+        }
+        _ => PresentationItem::Source {
+            source_id: format!("#{id}"),
+        },
     }
 }
 
@@ -208,6 +318,7 @@ trait ValueExt {
     fn reference(&self) -> Option<u64>;
     fn number(&self) -> Option<f64>;
     fn text(&self) -> Option<String>;
+    fn list(&self) -> Option<&[Value]>;
 }
 impl ValueExt for Value {
     fn reference(&self) -> Option<u64> {
@@ -227,6 +338,13 @@ impl ValueExt for Value {
     fn text(&self) -> Option<String> {
         if let Value::String(bytes) = self {
             crate::strings::decode(bytes).ok()
+        } else {
+            None
+        }
+    }
+    fn list(&self) -> Option<&[Value]> {
+        if let Value::List(values) = self {
+            Some(values)
         } else {
             None
         }

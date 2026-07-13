@@ -333,6 +333,15 @@ fn decode_builds_a_valid_connected_sheet_brep() {
             a: 1.0,
         })
     );
+    assert_eq!(result.ir.model.presentation_layers.len(), 1);
+    assert_eq!(
+        result.ir.model.presentation_layers[0].name,
+        "machined faces"
+    );
+    assert!(matches!(
+        result.ir.model.presentation_layers[0].items.as_slice(),
+        [cadmpeg_ir::PresentationItem::Face { .. }]
+    ));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
