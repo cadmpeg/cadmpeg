@@ -28,6 +28,7 @@ pub(crate) mod mesh;
 pub(crate) mod morph;
 pub(crate) mod objects;
 pub(crate) mod polyedge;
+pub(crate) mod presentation;
 pub(crate) mod product;
 pub(crate) mod settings;
 pub(crate) mod subd;
