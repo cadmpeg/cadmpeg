@@ -683,6 +683,38 @@ fn feature_parameters_require_unique_names_and_ordinals() {
 }
 
 #[test]
+fn tessellation_counts_must_be_consistent() {
+    use crate::math::{Point3, Vector3};
+    use crate::tessellation::Tessellation;
+
+    let mut ir = unit_cube();
+    ir.model.tessellations.push(Tessellation {
+        id: "synthetic:test:tessellation#invalid-counts".into(),
+        body: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        triangles: vec![[0, 1, 2]],
+        strip_lengths: vec![4],
+        normals: vec![Vector3::new(0.0, 0.0, 1.0); 2],
+        channels: Vec::new(),
+    });
+    ir.finalize();
+    let report = validate(&ir, Vec::new());
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("normals do not match")));
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("strips do not match")));
+}
+
+#[test]
 fn configuration_body_membership_round_trips_and_validates() {
     use crate::features::{ConfigurationId, DesignConfiguration};
     use crate::ids::BodyId;

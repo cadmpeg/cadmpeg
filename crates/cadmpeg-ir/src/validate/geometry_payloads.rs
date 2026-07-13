@@ -78,6 +78,28 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 entity: Some(mesh.id.clone()),
             });
         }
+        if !mesh.normals.is_empty() && mesh.normals.len() != mesh.vertices.len() {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "tessellation normals do not match vertex count".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
+        if !mesh.strip_lengths.is_empty()
+            && mesh.strip_lengths.iter().try_fold(0usize, |total, length| {
+                usize::try_from(*length)
+                    .ok()
+                    .and_then(|length| total.checked_add(length))
+            }) != Some(mesh.vertices.len())
+        {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "tessellation strips do not match vertex count".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
         if mesh.channels.iter().any(|channel| {
             channel.data.len() != channel.item_size as usize * channel.count as usize
         }) {
