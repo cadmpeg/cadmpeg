@@ -369,6 +369,8 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
 }
 
 /// Byte offsets of payload tokens with `tag` inside one framed record.
+#[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn payload_token_offsets(
     bytes: &[u8],
     record: &Record,
@@ -847,6 +849,40 @@ mod tests {
         bytes
     }
 
+    fn generated_rgb_attribute_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 9];
+        bytes.extend_from_slice(b"rgb_color");
+        bytes.extend_from_slice(&[0x0e, 2]);
+        bytes.extend_from_slice(b"st");
+        bytes.extend_from_slice(&[0x0d, 6]);
+        bytes.extend_from_slice(b"attrib");
+        bytes.push(0x0c);
+        bytes.extend_from_slice(&(-1i64).to_le_bytes()[..ref_width]);
+        for value in [0.1f64, 0.2, 0.3] {
+            bytes.push(0x06);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_timestamp_attribute_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 13];
+        bytes.extend_from_slice(b"ATTRIB_CUSTOM");
+        bytes.extend_from_slice(&[0x0d, 6]);
+        bytes.extend_from_slice(b"attrib");
+        bytes.push(0x0c);
+        bytes.extend_from_slice(&(-1i64).to_le_bytes()[..ref_width]);
+        bytes.extend_from_slice(&[0x07, 20]);
+        bytes.extend_from_slice(b"Timestamp_attrib_def");
+        bytes.push(0x04);
+        bytes.extend_from_slice(&1i64.to_le_bytes()[..ref_width]);
+        bytes.push(0x06);
+        bytes.extend_from_slice(&1_579_392_000_000_007.0f64.to_le_bytes());
+        bytes.push(0x11);
+        bytes
+    }
+
     #[test]
     fn generated_payload_subtype_lookup_uses_declared_integer_width() {
         for ref_width in [4, 8] {
@@ -1120,6 +1156,29 @@ mod tests {
             let offset =
                 payload_token_offset(&bytes, &records[0], ref_width, 7).expect("wire side field");
             assert_eq!(bytes[offset], 0x0b);
+        }
+    }
+
+    #[test]
+    fn generated_attribute_values_have_semantic_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let color = generated_rgb_attribute_record(ref_width);
+            let records =
+                frame(&color, 0, color.len(), ref_width).expect("generated RGB attribute");
+            for index in 1..=3 {
+                let offset = payload_token_offset(&color, &records[0], ref_width, index)
+                    .expect("RGB channel field");
+                assert_eq!(color[offset], 0x06);
+            }
+
+            let timestamp = generated_timestamp_attribute_record(ref_width);
+            let records = frame(&timestamp, 0, timestamp.len(), ref_width)
+                .expect("generated timestamp attribute");
+            for (index, tag) in [(1usize, 0x07), (2, 0x04), (3, 0x06)] {
+                let offset = payload_token_offset(&timestamp, &records[0], ref_width, index)
+                    .expect("timestamp semantic field");
+                assert_eq!(timestamp[offset], tag);
+            }
         }
     }
 }

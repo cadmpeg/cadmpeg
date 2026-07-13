@@ -13989,7 +13989,22 @@ fn patch_framed_geometry(
                     record.index
                 )));
             }
-            patch_double_token(bytes, record, 0, *timestamp)?;
+            let family = record
+                .tokens
+                .iter()
+                .position(
+                    |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
+                )
+                .expect("timestamp family was checked");
+            if !matches!(record.chunk(family + 1), Some(sab::Token::Long(1))) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D timestamp record {} lacks marker 1 after its family",
+                    record.index
+                )));
+            }
+            let offset =
+                required_payload_field(bytes, record, active_ref_width(bytes), family + 2, 0x06)?;
+            bytes[offset + 1..offset + 9].copy_from_slice(&timestamp.to_le_bytes());
             continue;
         }
         if let Some((sense, continuity)) = edge_continuities.get(&record.index) {
@@ -14048,9 +14063,15 @@ fn patch_framed_geometry(
             }
         }
         if let Some(color) = color_records.get(&record.index) {
-            patch_double_token(bytes, record, 0, f64::from(color.r))?;
-            patch_double_token(bytes, record, 1, f64::from(color.g))?;
-            patch_double_token(bytes, record, 2, f64::from(color.b))?;
+            let ref_width = active_ref_width(bytes);
+            for (index, value) in [
+                (1usize, f64::from(color.r)),
+                (2, f64::from(color.g)),
+                (3, f64::from(color.b)),
+            ] {
+                let offset = required_payload_field(bytes, record, ref_width, index, 0x06)?;
+                bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+            }
             continue;
         }
         if let Some(transform) = transform_records.get(&record.index) {
@@ -14527,26 +14548,6 @@ fn patch_extrusion_definition(
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
     }
-    Ok(())
-}
-
-fn patch_double_token(
-    bytes: &mut [u8],
-    record: &sab::Record,
-    ordinal: usize,
-    value: f64,
-) -> Result<(), CodecError> {
-    let ref_width = active_ref_width(bytes);
-    let offset = *sab::payload_token_offsets(bytes, record, ref_width, 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .get(ordinal)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "{} record {} lacks double token [{ordinal}]",
-                record.head, record.index
-            ))
-        })?;
-    bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
     Ok(())
 }
 
