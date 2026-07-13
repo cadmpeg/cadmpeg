@@ -1642,6 +1642,7 @@ fn sync_neutral_configurations(
             .configurations
             .sort_by_key(|configuration| configuration.ordinal);
     }
+    synchronize_history_content_order(native);
 }
 
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
@@ -2997,7 +2998,61 @@ pub fn sync_neutral_features(
         }
     }
     synchronize_feature_content_order(native);
+    synchronize_history_content_order(native);
     Ok(())
+}
+
+fn synchronize_history_content_order(native: &mut crate::native::SldprtNative) {
+    for history in &mut native.feature_histories {
+        let configurations = history
+            .configurations
+            .iter()
+            .map(|configuration| (configuration.ordinal, configuration.id.clone()))
+            .collect::<Vec<_>>();
+        let mut features = history
+            .features
+            .iter()
+            .filter(|feature| feature.tree_parent.is_none() && feature.parent_source_id.is_none())
+            .map(|feature| (feature.ordinal, feature.id.clone()))
+            .collect::<Vec<_>>();
+        let mut configurations = configurations;
+        configurations.sort();
+        features.sort();
+        let mut configuration_index = 0;
+        let mut feature_index = 0;
+        for item in &mut history.content {
+            match item {
+                HistoryContent::Configuration(id) => {
+                    *id = configurations
+                        .get(configuration_index)
+                        .map_or_else(String::new, |(_, id)| id.clone());
+                    configuration_index += 1;
+                }
+                HistoryContent::Feature(id) => {
+                    *id = features
+                        .get(feature_index)
+                        .map_or_else(String::new, |(_, id)| id.clone());
+                    feature_index += 1;
+                }
+                HistoryContent::Text(_) => {}
+            }
+        }
+        history.content.retain(|item| {
+            !matches!(item, HistoryContent::Configuration(id) | HistoryContent::Feature(id) if id.is_empty())
+        });
+        history.content.extend(
+            configurations
+                .iter()
+                .skip(configuration_index)
+                .map(|(_, id)| HistoryContent::Configuration(id.clone())),
+        );
+        history.content.extend(
+            features
+                .iter()
+                .skip(feature_index)
+                .map(|(_, id)| HistoryContent::Feature(id.clone())),
+        );
+    }
 }
 
 fn synchronize_feature_content_order(native: &mut crate::native::SldprtNative) {

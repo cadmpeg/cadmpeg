@@ -4777,6 +4777,58 @@ fn semantic_writer_preserves_keywords_child_order() {
 }
 
 #[test]
+fn semantic_writer_applies_history_root_ordinals() {
+    use crate::records::HistoryContent;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="First" Type="Custom" id="1"/><Configuration Name="A"/><Feature Name="Second" Type="Custom" id="2"/><Configuration Name="B"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    for feature in &mut decoded.ir.model.features {
+        feature.ordinal = if feature.name.as_deref() == Some("First") {
+            1
+        } else {
+            0
+        };
+    }
+    for configuration in &mut decoded.ir.model.configurations {
+        configuration.ordinal = if configuration.name == "A" { 1 } else { 0 };
+    }
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let history = &sldprt_native(&regenerated.ir).feature_histories[0];
+    let names = history
+        .content
+        .iter()
+        .filter_map(|item| match item {
+            HistoryContent::Feature(id) => history
+                .features
+                .iter()
+                .find(|feature| feature.id == *id)
+                .map(|feature| feature.name.as_str()),
+            HistoryContent::Configuration(id) => history
+                .configurations
+                .iter()
+                .find(|configuration| configuration.id == *id)
+                .map(|configuration| configuration.name.as_str()),
+            HistoryContent::Text(_) => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(names, vec!["Second", "B", "First", "A"]);
+}
+
+#[test]
 fn semantic_writer_applies_neutral_parameter_order() {
     use crate::records::FeatureContent;
 
