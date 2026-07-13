@@ -6529,23 +6529,15 @@ fn native_procedural_curve(
                         "compound curve references missing component {component}"
                     ))
                 })?;
-            let component = match &component.geometry {
-                CurveGeometry::Nurbs(component) => component.clone(),
-                CurveGeometry::Line { .. } => {
-                    let range = parameters.get(ordinal..ordinal + 2).ok_or_else(|| {
-                        CodecError::Malformed(
-                            "compound line component has no construction interval".into(),
-                        )
-                    })?;
-                    native_interval_curve(&component.geometry, [range[0], range[1]])?
-                }
-                _ => {
-                    return Err(CodecError::NotImplemented(
-                        "source-less F3D compound curves require NURBS or bounded line components"
-                            .into(),
-                    ));
-                }
+            let parameter_range = if matches!(component.geometry, CurveGeometry::Nurbs(_)) {
+                None
+            } else {
+                let range = parameters.get(ordinal..ordinal + 2).ok_or_else(|| {
+                    CodecError::Malformed("compound component has no construction interval".into())
+                })?;
+                Some([range[0], range[1]])
             };
+            let component = native_spline_field_curve(&component.geometry, parameter_range)?;
             native_nurbs_curve(bytes, &component)?;
         }
         native_nurbs_curve(bytes, solved_cache)?;
