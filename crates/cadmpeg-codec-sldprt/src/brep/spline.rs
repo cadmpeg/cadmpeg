@@ -28,11 +28,10 @@ fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
     if bytes.get(off..off + 2) != Some(&[0x00, tag]) {
         return None;
     }
-    let marker = *bytes.get(off + 2)?;
-    if marker != 0x2b && marker != 0x2d {
-        return None;
+    let mut p = off + 2;
+    if matches!(bytes.get(p), Some(0x2b | 0x2d)) {
+        p += 1;
     }
-    let mut p = off + 3;
     if bytes.get(p) == Some(&0xff) {
         p += 1;
     }
@@ -126,6 +125,16 @@ fn scan_curve_descriptors(bytes: &[u8]) -> HashMap<u16, CurveDescriptor> {
         });
     }
     out
+}
+
+fn curve_descriptor<'a>(
+    bytes: &[u8],
+    attr_at: usize,
+    descriptors: &'a HashMap<u16, CurveDescriptor>,
+) -> Option<&'a CurveDescriptor> {
+    (attr_at + 2..(attr_at + 24).min(bytes.len().saturating_sub(1)))
+        .filter_map(|at| u16_be(bytes, at))
+        .find_map(|reference| descriptors.get(&reference))
 }
 
 fn expanded_knots(values: &[f64], multiplicities: &[u16]) -> Vec<f64> {
@@ -226,10 +235,7 @@ pub(crate) fn patch_nurbs_curve(
         p += 1;
     }
     let descriptors = scan_curve_descriptors(bytes);
-    let descriptor = (p + 2..(p + 18).min(bytes.len()))
-        .step_by(2)
-        .filter_map(|at| u16_be(bytes, at))
-        .find_map(|reference| descriptors.get(&reference))?;
+    let descriptor = curve_descriptor(bytes, p, &descriptors)?;
     if descriptor.degree != old.degree
         || descriptor.control_count != old.control_points.len()
         || descriptor.dimension != if old.weights.is_some() { 4 } else { 3 }
@@ -300,11 +306,7 @@ pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         let Some(attr) = u16_be(bytes, p) else {
             continue;
         };
-        let descriptor = (p + 2..(p + 18).min(bytes.len()))
-            .step_by(2)
-            .filter_map(|at| u16_be(bytes, at))
-            .find_map(|reference| descriptors.get(&reference));
-        let Some(descriptor) = descriptor else {
+        let Some(descriptor) = curve_descriptor(bytes, p, &descriptors) else {
             continue;
         };
         let Some(control) = arrays.f64s.get(&descriptor.control_attr) else {

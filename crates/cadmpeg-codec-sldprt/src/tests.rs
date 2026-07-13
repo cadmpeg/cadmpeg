@@ -361,6 +361,19 @@ fn u16_array(attr: u16, values: &[u16]) -> Vec<u8> {
     b
 }
 
+fn remove_array_type_markers(bytes: &mut Vec<u8>) {
+    let mut offset = 0;
+    while offset + 2 < bytes.len() {
+        if bytes[offset] == 0
+            && matches!(bytes[offset + 1], 0x2d | 0x7f | 0x80)
+            && bytes[offset + 2] == 0x2b
+        {
+            bytes.remove(offset + 2);
+        }
+        offset += 1;
+    }
+}
+
 fn nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
     let control_attr = descriptor_attr + 1;
     let mult_attr = descriptor_attr + 2;
@@ -388,6 +401,27 @@ fn nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
     b.extend(u16_array(mult_attr, &[3, 3]));
     b.extend(f64_array(0x80, knot_attr, &[0.0, 1.0]));
     b
+}
+
+fn typed_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
+    let mut bytes = nurbs_curve_carrier(wrapper_attr, descriptor_attr);
+    let descriptor = bytes.split_off(14);
+    bytes.truncate(4);
+    be32(&mut bytes, 0x1a);
+    for reference in [
+        descriptor_attr + 20,
+        descriptor_attr + 21,
+        descriptor_attr + 22,
+    ] {
+        be16(&mut bytes, reference);
+    }
+    be16(&mut bytes, 1);
+    bytes.push(0x2b);
+    be16(&mut bytes, descriptor_attr);
+    be16(&mut bytes, descriptor_attr + 1);
+    bytes.extend(descriptor);
+    remove_array_type_markers(&mut bytes);
+    bytes
 }
 
 fn rational_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
@@ -485,6 +519,16 @@ fn nurbs_surface_carrier(wrapper_attr: u16, descriptor_attr: u16, bridge_attr: u
     b.extend(f64_array(0x80, u_knot_attr, &[0.0, 1.0]));
     b.extend(f64_array(0x80, v_knot_attr, &[0.0, 1.0]));
     b
+}
+
+fn markerless_nurbs_surface_carrier(
+    wrapper_attr: u16,
+    descriptor_attr: u16,
+    bridge_attr: u16,
+) -> Vec<u8> {
+    let mut bytes = nurbs_surface_carrier(wrapper_attr, descriptor_attr, bridge_attr);
+    remove_array_type_markers(&mut bytes);
+    bytes
 }
 
 /// Bridge `00 0e`: `refs[2]` = loop head, `refs[4]` = surface carrier.
@@ -4304,6 +4348,39 @@ fn edge_uses_decode_nurbs_curve() {
 }
 
 #[test]
+fn edge_uses_decode_typed_reference_nurbs_curve() {
+    use cadmpeg_ir::geometry::CurveGeometry;
+
+    let mut body = triangle_body();
+    body.extend(typed_nurbs_curve_carrier(170, 171));
+    let edge = body
+        .windows(2)
+        .position(|window| window == [0x00, 0x10])
+        .expect("edge-use");
+    body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let nurbs = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find_map(|curve| match &curve.geometry {
+            CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+            _ => None,
+        })
+        .expect("NURBS curve");
+    assert_eq!(nurbs.degree, 2);
+    assert_eq!(nurbs.control_points.len(), 3);
+}
+
+#[test]
 fn faces_decode_nurbs_surface() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
@@ -4334,6 +4411,38 @@ fn faces_decode_nurbs_surface() {
     assert_eq!((nurbs.u_degree, nurbs.v_degree), (1, 1));
     assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
     assert_eq!(nurbs.control_points.len(), 4);
+}
+
+#[test]
+fn faces_decode_markerless_nurbs_surface_arrays() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let mut body = triangle_body();
+    body.extend(markerless_nurbs_surface_carrier(180, 181, 10));
+    let bridge = body
+        .windows(2)
+        .position(|window| window == [0x00, 0x0e])
+        .expect("bridge");
+    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let nurbs = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find_map(|surface| match &surface.geometry {
+            SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+            _ => None,
+        })
+        .expect("NURBS surface");
+    assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
 }
 
 #[test]
