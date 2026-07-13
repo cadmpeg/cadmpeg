@@ -275,6 +275,7 @@ fn parse_surfaces(
         let kind = cursor.integer("surface type")?;
         let surface = match kind {
             1..=5 => parse_analytic_surface(kind, &mut cursor)?,
+            8 => TextSurface::Nurbs(parse_bezier_surface(&mut cursor)?),
             9 => TextSurface::Nurbs(parse_nurbs_surface(&mut cursor)?),
             other => {
                 return Err(CodecError::NotImplemented(format!(
@@ -377,6 +378,39 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Cod
     })
 }
 
+fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, CodecError> {
+    let u_rational = cursor.boolean("Bezier u rational flag")?;
+    let v_rational = cursor.boolean("Bezier v rational flag")?;
+    let rational = u_rational || v_rational;
+    let u_degree = cursor.count("Bezier u degree", 64)?;
+    let v_degree = cursor.count("Bezier v degree", 64)?;
+    let u_count = u_degree + 1;
+    let v_count = v_degree + 1;
+    let pole_count = u_count
+        .checked_mul(v_count)
+        .ok_or_else(|| CodecError::Malformed("Bezier surface pole count overflow".into()))?;
+    let mut control_points = Vec::with_capacity(pole_count);
+    let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+    for _ in 0..pole_count {
+        control_points.push(cursor.point("Bezier surface pole")?);
+        if let Some(weights) = &mut weights {
+            weights.push(cursor.real("Bezier surface weight")?);
+        }
+    }
+    Ok(NurbsSurface {
+        u_degree: u_degree as u32,
+        v_degree: v_degree as u32,
+        u_knots: clamped_bezier_knots(u_degree),
+        v_knots: clamped_bezier_knots(v_degree),
+        u_count: u_count as u32,
+        v_count: v_count as u32,
+        control_points,
+        weights,
+        u_periodic: false,
+        v_periodic: false,
+    })
+}
+
 fn parse_knots(
     cursor: &mut TokenCursor<'_>,
     knot_count: usize,
@@ -472,6 +506,7 @@ fn parse_curves(
                     minor_radius: cursor.real("hyperbola minor radius")?,
                 }
             }
+            6 => TextCurve::Nurbs(parse_bezier_curve(&mut cursor)?),
             7 => {
                 let rational = cursor.boolean("B-spline rational flag")?;
                 let periodic = cursor.boolean("B-spline periodic flag")?;
@@ -523,6 +558,33 @@ fn parse_curves(
         ));
     }
     Ok(curves)
+}
+
+fn parse_bezier_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecError> {
+    let rational = cursor.boolean("Bezier rational flag")?;
+    let degree = cursor.count("Bezier degree", 64)?;
+    let pole_count = degree + 1;
+    let mut control_points = Vec::with_capacity(pole_count);
+    let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+    for _ in 0..pole_count {
+        control_points.push(cursor.point("Bezier pole")?);
+        if let Some(weights) = &mut weights {
+            weights.push(cursor.real("Bezier weight")?);
+        }
+    }
+    Ok(NurbsCurve {
+        degree: degree as u32,
+        knots: clamped_bezier_knots(degree),
+        control_points,
+        weights,
+        periodic: false,
+    })
+}
+
+fn clamped_bezier_knots(degree: usize) -> Vec<f64> {
+    std::iter::repeat_n(0.0, degree + 1)
+        .chain(std::iter::repeat_n(1.0, degree + 1))
+        .collect()
 }
 
 struct TokenCursor<'a> {
@@ -597,5 +659,42 @@ impl<'a> TokenCursor<'a> {
         })?;
         self.index += 1;
         Ok(token)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text_brep(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) -> String {
+        format!(
+            "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves {curve_count}\n{curves}\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces {surface_count}\n{surfaces}\nTriangulations 0\nTShapes 0\n*"
+        )
+    }
+
+    #[test]
+    fn normalizes_rational_bezier_curve_to_nurbs() {
+        let input = text_brep("6 1 2 0 0 0 1 5 0 0 2 10 0 0 1", 1, "", 0);
+        let facts = parse_text(input.as_bytes()).expect("valid Bezier curve");
+        let TextCurve::Nurbs(curve) = &facts.curves[0] else {
+            panic!("Bezier curve was not normalized to NURBS")
+        };
+        assert_eq!(curve.degree, 2);
+        assert_eq!(curve.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        assert_eq!(curve.weights.as_deref(), Some(&[1.0, 2.0, 1.0][..]));
+    }
+
+    #[test]
+    fn normalizes_bezier_surface_to_nurbs() {
+        let input = text_brep("", 0, "8 0 0 1 1 0 0 0 0 1 0 1 0 0 1 1 0", 1);
+        let facts = parse_text(input.as_bytes()).expect("valid Bezier surface");
+        let TextSurface::Nurbs(surface) = &facts.surfaces[0] else {
+            panic!("Bezier surface was not normalized to NURBS")
+        };
+        assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
+        assert_eq!((surface.u_count, surface.v_count), (2, 2));
+        assert_eq!(surface.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(surface.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
+        assert!(surface.weights.is_none());
     }
 }
