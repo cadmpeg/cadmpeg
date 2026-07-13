@@ -743,6 +743,11 @@ pub(crate) fn project_geometry(
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }
+    let conics = super::conics::project(ir, directory, parameters, global);
+    handled.extend(conics.handled);
+    decoded.extend(conics.decoded);
+    losses.extend(conics.losses);
+    wire_edges.extend(conics.wire_edges);
     let surfaces = super::surfaces::project(ir, directory, parameters, global);
     handled.extend(surfaces.handled);
     decoded.extend(surfaces.decoded);

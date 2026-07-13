@@ -204,6 +204,76 @@ fn circular_arc_file() -> Vec<u8> {
     bytes
 }
 
+fn conic_arc_file(form: i64, parameters: &[u8]) -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let parameter_count = parameters.len().div_ceil(64);
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["104", "1", "0", "0", "0", "0", "0", "0", "00000000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        [
+            "104",
+            "0",
+            "0",
+            &parameter_count.to_string(),
+            &form.to_string(),
+            "",
+            "",
+            "CONIC",
+            "0",
+        ],
+        2,
+    ));
+    bytes.extend(parameter_cards(parameters, 1, 1));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000002P{parameter_count:07}").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
+    let fixtures: [(i64, &[u8]); 4] = [
+        (0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;"),
+        (1, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;"),
+        (
+            2,
+            b"104,0.25,0,-0.1111111111111111,0,0,-1,0,2,0,3.086161269630487,3.525603580931404;",
+        ),
+        (3, b"104,1,0,0,0,-4,0,0,2,1,-2,1;"),
+    ];
+    for (form, parameters) in fixtures {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(conic_arc_file(form, parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(result.ir.model.curves.len(), 1, "form {form}");
+        assert_eq!(result.ir.model.edges.len(), 1, "form {form}");
+        match (&result.ir.model.curves[0].geometry, form) {
+            (cadmpeg_ir::geometry::CurveGeometry::Ellipse { .. }, 0 | 1)
+            | (cadmpeg_ir::geometry::CurveGeometry::Hyperbola { .. }, 2)
+            | (cadmpeg_ir::geometry::CurveGeometry::Parabola { .. }, 3) => {}
+            (geometry, _) => panic!("unexpected form {form} geometry {geometry:?}"),
+        }
+        assert!(result.report.losses.is_empty(), "form {form}");
+        let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+        assert!(
+            validation.is_ok(),
+            "form {form}: {:#?}",
+            validation.findings
+        );
+    }
+}
+
 fn nurbs_curve_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
