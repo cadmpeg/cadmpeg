@@ -5,10 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface,
-    SurfaceGeometry,
+    derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralCurve,
+    ProceduralCurveDefinition, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, PointId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, PointId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Point;
 
@@ -52,6 +52,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             _ => {}
         }
     }
+
     let mut point_carriers = BTreeSet::new();
     for record in exchange.records.values() {
         if record.simple_name() == Some("VERTEX_POINT") {
@@ -205,6 +206,54 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 "B_SPLINE_CURVE_WITH_KNOTS #{id} has invalid geometry"
             ));
         }
+    }
+
+    let curve_geometries = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve.id.clone(), curve.geometry.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for (&id, record) in &exchange.records {
+        if record.simple_name() != Some("TRIMMED_CURVE") {
+            continue;
+        }
+        let basis_step = record.parameter(1).and_then(Value::reference);
+        let start = record.parameter(2).and_then(trim_parameter);
+        let end = record.parameter(3).and_then(trim_parameter);
+        let sense = record.parameter(4).and_then(Value::logical);
+        let Some((basis_step, start, end, sense)) = basis_step
+            .zip(start)
+            .zip(end)
+            .zip(sense)
+            .map(|(((basis, start), end), sense)| (basis, start, end, sense))
+        else {
+            warnings.push(format!(
+                "TRIMMED_CURVE #{id} requires numeric trim parameters"
+            ));
+            continue;
+        };
+        let basis = CurveId(format!("step:data:curve#{basis_step}"));
+        let Some(geometry) = curve_geometries.get(&basis).cloned() else {
+            warnings.push(format!("TRIMMED_CURVE #{id} has no decoded basis curve"));
+            continue;
+        };
+        let curve = CurveId(format!("step:data:curve#{id}"));
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry,
+            source_object: None,
+        });
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: ProceduralCurveId(format!("step:construction:trimmed_curve#{id}")),
+            curve,
+            definition: ProceduralCurveDefinition::Subset {
+                source: basis,
+                parameter_range: if sense { [start, end] } else { [end, start] },
+            },
+            cache_fit_tolerance: Some(0.0),
+        });
+        typed.insert(id);
     }
 
     for (&id, record) in &exchange.records {
@@ -437,6 +486,16 @@ fn measure_number(value: &Value) -> Option<f64> {
         Value::Integer(value) => Some(*value as f64),
         Value::Real(value) => Some(*value),
         Value::Typed(_, value) => measure_number(value),
+        _ => None,
+    }
+}
+
+fn trim_parameter(value: &Value) -> Option<f64> {
+    match value {
+        Value::Integer(value) => Some(*value as f64),
+        Value::Real(value) => Some(*value),
+        Value::Typed(_, value) => trim_parameter(value),
+        Value::List(values) => values.iter().find_map(trim_parameter),
         _ => None,
     }
 }

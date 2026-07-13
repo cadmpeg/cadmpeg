@@ -226,7 +226,7 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert_eq!(placed.position.x, 1.0);
     assert_eq!(placed.position.y, 2.0);
     assert_eq!(placed.position.z, 3.0);
-    assert_eq!(result.ir.model.curves.len(), 4);
+    assert_eq!(result.ir.model.curves.len(), 5);
     assert!(result.ir.model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Line { origin, direction }
@@ -286,6 +286,16 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             if center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
     )));
     assert!(result.report.geometry_transferred);
+    assert_eq!(result.ir.model.procedural_curves.len(), 1);
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+        ref source,
+        parameter_range,
+    } = result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("trimmed curve was not retained as a subset construction")
+    };
+    assert_eq!(source.as_str(), "step:data:curve#8");
+    assert_eq!(parameter_range, [0.0, std::f64::consts::FRAC_PI_2]);
 }
 
 #[test]
