@@ -406,6 +406,20 @@ fn distance(a: Point3, b: Point3) -> f64 {
     ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
 }
 
+fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2]> {
+    let (Some(Token::Double(start)), Some(Token::Double(end))) = (edge.chunk(4), edge.chunk(6))
+    else {
+        return None;
+    };
+    let direct = [*start, *end];
+    let negated = [-start, -end];
+    Some(if matches!(edge.chunk(9), Some(Token::True)) {
+        [negated, direct]
+    } else {
+        [direct, negated]
+    })
+}
+
 /// Select the candidate 2D block that is the face surface's parameter-space
 /// image of the coedge: its endpoints, mapped through the surface, land on the
 /// owning edge's vertex positions. On a non-NURBS surface, or when the edge's
@@ -453,20 +467,29 @@ fn select_face_pcurve(
                 t,
             )
         };
-        let (Some(uv0), Some(uv1)) = (uv_at(t0), uv_at(t1)) else {
+        let mut parameter_ranges = Vec::with_capacity(2);
+        if let Some(ranges) = edge.and_then(edge_pcurve_parameter_ranges) {
+            parameter_ranges.extend(ranges);
+        }
+        parameter_ranges.push([t0, t1]);
+        let Some(mismatch) = parameter_ranges
+            .into_iter()
+            .filter_map(|[first, second]| {
+                let (uv0, uv1) = (uv_at(first)?, uv_at(second)?);
+                let (p0, p1) = (
+                    eval::nurbs_surface_point(surface, uv0.u, uv0.v)?,
+                    eval::nurbs_surface_point(surface, uv1.u, uv1.v)?,
+                );
+                // Coedge sense can reverse traversal independently of the
+                // edge carrier, so accept either endpoint assignment.
+                let forward = distance(p0, start).max(distance(p1, end));
+                let reversed = distance(p0, end).max(distance(p1, start));
+                Some(forward.min(reversed))
+            })
+            .reduce(f64::min)
+        else {
             continue;
         };
-        let (Some(p0), Some(p1)) = (
-            eval::nurbs_surface_point(surface, uv0.u, uv0.v),
-            eval::nurbs_surface_point(surface, uv1.u, uv1.v),
-        ) else {
-            continue;
-        };
-        // The candidate's parameter direction is independent of the edge
-        // sense, so accept either endpoint assignment.
-        let forward = distance(p0, start).max(distance(p1, end));
-        let reversed = distance(p0, end).max(distance(p1, start));
-        let mismatch = forward.min(reversed);
         if mismatch <= PCURVE_ENDPOINT_TOLERANCE_MM
             && best.as_ref().is_none_or(|(current, _)| mismatch < *current)
         {
@@ -5100,5 +5123,33 @@ mod topology_tests {
             &by_index,
         )
         .is_some());
+    }
+
+    #[test]
+    fn reversed_edge_negates_its_pcurve_validation_interval() {
+        let edge = Record {
+            index: 1,
+            name: "edge".into(),
+            head: "edge".into(),
+            tokens: vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(2),
+                Token::Double(0.55),
+                Token::Ref(3),
+                Token::Double(0.60),
+                Token::Ref(-1),
+                Token::Ref(4),
+                Token::True,
+            ],
+            offset: 0,
+            len: 0,
+        };
+
+        assert_eq!(
+            edge_pcurve_parameter_ranges(&edge),
+            Some([[-0.55, -0.60], [0.55, 0.60]])
+        );
     }
 }
