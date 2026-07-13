@@ -162,7 +162,14 @@ pub(crate) fn transfer(
             {
                 return false;
             }
-            if let Some(geometry) = lifted_curve_geometry(pcurve, surface) {
+            let lifted = lifted_curve_geometry(pcurve, surface).or_else(|| {
+                let SurfaceGeometry::Nurbs(cache) = &surface_plan.get(&loop_.surface)?.geometry
+                else {
+                    return None;
+                };
+                nurbs_isocurve(pcurve, cache).map(CurveGeometry::Nurbs)
+            });
+            if let Some(geometry) = lifted {
                 edge_curve_plan.entry(edge_id).or_insert(geometry);
             }
             edge_ids.insert(edge_id);

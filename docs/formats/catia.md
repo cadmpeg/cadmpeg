@@ -337,7 +337,7 @@ For `b5 03 2d`, surface U is the referenced `0e` line or `0f` arc profile parame
 
 Plane lifting is affine: every pcurve pole `(u,v)` maps to `origin + u·direction_u + v·direction_v`, preserving degree, knots, and weights. On a cylinder, constant U with varying V is an axis-parallel line; constant V with varying U is a circle centered at `origin + V·axis`, with cylinder axis, reference direction, and radius. Other pcurve/carrier compositions retain the pcurve-on-surface construction until an exact solved 3D carrier is available.
 
-A constant-U or constant-V pcurve on a tensor-product NURBS surface is the corresponding exact surface isocurve. Fixing U contracts each V-column in homogeneous coordinates by the U basis values; fixing V contracts each U-row by the V basis values. The varying direction retains its degree, knot vector, and periodic flag. Each resulting control point is the contracted homogeneous numerator divided by its contracted weight.
+A constant-U or constant-V pcurve on a tensor-product NURBS surface, including an exact revolution cache in the native chart, is the corresponding exact surface isocurve. Fixing U contracts each V-column in homogeneous coordinates by the U basis values; fixing V contracts each U-row by the V basis values. The varying direction retains its degree, knot vector, and periodic flag. Each resulting control point is the contracted homogeneous numerator divided by its contracted weight.
 
 Coincident `05 08 01` rows share an endpoint locus. For topology subsets whose
 allocation identity is otherwise unresolved, the locus binds to the lowest
