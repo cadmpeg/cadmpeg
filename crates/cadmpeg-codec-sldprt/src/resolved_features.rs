@@ -2221,16 +2221,36 @@ fn profile_loci_by_marker(
             let Some(loci) = profile_loci.get(sketch) else {
                 continue;
             };
-            let marker_points = markers
-                .iter()
-                .filter_map(|marker| marker.coordinates_m)
-                .map(|[u, v]| quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM))
-                .collect::<HashSet<_>>();
-            let locus_points = loci
-                .iter()
-                .map(|(point, _)| quantize(*point, QUANTUM))
-                .collect::<HashSet<_>>();
-            let Some(transform) = unique_marker_transform(&marker_points, &locus_points) else {
+            let mut compatible_locus_points = HashMap::<(i64, i64), HashSet<(i64, i64)>>::new();
+            for marker in &markers {
+                if !matches!(
+                    marker.kind,
+                    SketchInputKind::Point
+                        | SketchInputKind::LineOrCircle
+                        | SketchInputKind::Arc
+                        | SketchInputKind::ConstrainedPoint
+                ) {
+                    continue;
+                }
+                let Some([u, v]) = marker.coordinates_m else {
+                    continue;
+                };
+                let marker_point =
+                    quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                for (point, locus) in loci {
+                    if geometry_by_entity
+                        .get(&locus_entity(locus))
+                        .is_some_and(|geometry| marker_accepts_locus(marker.kind, geometry))
+                    {
+                        compatible_locus_points
+                            .entry(marker_point)
+                            .or_default()
+                            .insert(quantize(*point, QUANTUM));
+                    }
+                }
+            }
+            let Some(transform) = unique_compatible_marker_transform(&compatible_locus_points)
+            else {
                 continue;
             };
             let loci_by_point = loci.iter().fold(
@@ -2309,6 +2329,7 @@ impl MarkerTransform {
     }
 }
 
+#[cfg(test)]
 fn unique_marker_transform(
     marker_points: &HashSet<(i64, i64)>,
     locus_points: &HashSet<(i64, i64)>,
@@ -2376,6 +2397,94 @@ fn unique_marker_transform(
     candidates.next().is_none().then_some(first)
 }
 
+fn unique_compatible_marker_transform(
+    compatible_locus_points: &HashMap<(i64, i64), HashSet<(i64, i64)>>,
+) -> Option<MarkerTransform> {
+    let score = |axes: MarkerTransform| {
+        let mut translations = HashMap::<(i64, i64), usize>::new();
+        for (marker, loci) in compatible_locus_points {
+            let Some(marker) = axes.apply_axes(*marker) else {
+                continue;
+            };
+            for locus in loci {
+                let Some(translation) = locus
+                    .0
+                    .checked_sub(marker.0)
+                    .zip(locus.1.checked_sub(marker.1))
+                else {
+                    continue;
+                };
+                *translations.entry(translation).or_default() += 1;
+            }
+        }
+        translations
+    };
+    let identity = MarkerTransform {
+        swap: false,
+        u_sign: 1,
+        v_sign: 1,
+        translation: (0, 0),
+    };
+    if let Some(transform) = unique_scored_transform(identity, score(identity)) {
+        return Some(transform);
+    }
+    let mut scored = Vec::new();
+    for swap in [false, true] {
+        for u_sign in [-1, 1] {
+            for v_sign in [-1, 1] {
+                if !swap && u_sign == 1 && v_sign == 1 {
+                    continue;
+                }
+                let axes = MarkerTransform {
+                    swap,
+                    u_sign,
+                    v_sign,
+                    translation: (0, 0),
+                };
+                scored.extend(score(axes).into_iter().map(|(translation, count)| {
+                    (
+                        MarkerTransform {
+                            translation,
+                            ..axes
+                        },
+                        count,
+                    )
+                }));
+            }
+        }
+    }
+    let maximum = scored
+        .iter()
+        .map(|(_, count)| *count)
+        .max()
+        .filter(|count| *count >= 2)?;
+    let mut candidates = scored
+        .into_iter()
+        .filter_map(|(transform, count)| (count == maximum).then_some(transform));
+    let first = candidates.next()?;
+    candidates.next().is_none().then_some(first)
+}
+
+fn unique_scored_transform(
+    axes: MarkerTransform,
+    translations: HashMap<(i64, i64), usize>,
+) -> Option<MarkerTransform> {
+    let maximum = translations
+        .values()
+        .copied()
+        .max()
+        .filter(|count| *count >= 2)?;
+    let mut candidates = translations
+        .into_iter()
+        .filter_map(|(translation, count)| (count == maximum).then_some(translation));
+    let translation = candidates.next()?;
+    candidates.next().is_none().then_some(MarkerTransform {
+        translation,
+        ..axes
+    })
+}
+
+#[cfg(test)]
 fn unique_transform_translation(
     transform: MarkerTransform,
     marker_points: &HashSet<(i64, i64)>,
@@ -2514,7 +2623,7 @@ fn marker_entities(
 mod profile_join_tests {
     use super::{
         marker_entities, profile_loci_by_marker, typed_marker_relation_definition,
-        typed_relation_definition, unique_marker_transform,
+        typed_relation_definition, unique_compatible_marker_transform, unique_marker_transform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -2528,7 +2637,7 @@ mod profile_join_tests {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
     };
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::{BTreeMap, HashMap, HashSet};
 
     fn marker(id: &str, coordinates_m: Option<[f64; 2]>) -> SketchInputEntity {
         SketchInputEntity {
@@ -2903,6 +3012,20 @@ mod profile_join_tests {
         let markers = [(0, 0), (48, 0), (48, 24), (0, 24)].into_iter().collect();
         let loci = [(0, 0), (24, 0), (24, 48), (0, 48)].into_iter().collect();
         assert_eq!(unique_marker_transform(&markers, &loci), None);
+    }
+
+    #[test]
+    fn marker_kinds_disambiguate_axis_swaps() {
+        let compatible = HashMap::from([
+            ((0, 0), HashSet::from([(10, 20)])),
+            ((0, 2), HashSet::from([(12, 20)])),
+            ((3, 1), HashSet::from([(11, 23)])),
+        ]);
+        let transform = unique_compatible_marker_transform(&compatible).unwrap();
+        assert!(transform.swap);
+        assert_eq!(transform.u_sign, 1);
+        assert_eq!(transform.v_sign, 1);
+        assert_eq!(transform.translation, (10, 20));
     }
 }
 

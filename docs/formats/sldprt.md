@@ -151,7 +151,7 @@ Point-reference object indices address sketch-marker local identifiers within th
 
 Operand tags `837b` and `bc7c` select point or constrained-point markers. Tags `8386`, `83fe`, and `bc87` select the shared line/circle marker family. The tag-qualified marker kind disambiguates equal local identifiers before uniqueness is tested.
 
-Feature-input marker coordinates and the nested Parasolid profile differ by a signed axis permutation and constant translation per sketch feature. A unique transform mapping at least two distinct marker coordinates onto profile loci binds the matching markers to those loci. The identity axis permutation has precedence when it has a unique translation. A reference marker whose linked endpoint markers share one profile entity identifies that entity.
+Feature-input geometry-handle coordinates and the nested Parasolid profile differ by a signed axis permutation and constant translation per sketch feature. A unique transform mapping at least two distinct geometry-handle coordinates onto profile loci binds every matching geometry or relation marker coordinate to those loci. Relation-marker coordinates do not participate in selecting the frame. The identity axis permutation has precedence when it has a unique translation. A reference marker whose linked endpoint markers share one profile entity identifies that entity.
 
 Point-distance operands select explicit profile loci. Line-distance and angular operands select the profile entity shared by their linked endpoint markers. A relation with resolved operands and one driving scalar maps to the corresponding neutral distance, horizontal-distance, vertical-distance, angle, radius, or diameter constraint.
 
