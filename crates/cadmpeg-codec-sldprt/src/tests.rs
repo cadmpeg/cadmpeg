@@ -5731,6 +5731,107 @@ fn decode_projects_cut_extrude_with_canonical_length() {
 }
 
 #[test]
+fn semantic_writer_round_trips_sparse_positional_extrusions() {
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Extrusion Name="Boss-Extrude7" id="9"><Dimension Name="D1">200</Dimension></Extrusion>
+            <Extrusion Name="Cortar-Extruir2" id="10"><Dimension Name="D1">3</Dimension></Extrusion>
+            <Extrusion Name="Custom operation" id="11"><Dimension Name="D1">4</Dimension></Extrusion>
+        </Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::Blind {
+                length: Length(200.0)
+            },
+            op: BooleanOp::Join,
+            ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::Blind {
+                length: Length(3.0)
+            },
+            op: BooleanOp::Cut,
+            ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[2].definition,
+        FeatureDefinition::Native { .. }
+    ));
+
+    let FeatureDefinition::Extrude {
+        extent: Extent::Blind { length },
+        ..
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed positional boss extrusion");
+    };
+    *length = Length(250.0);
+    let FeatureDefinition::Extrude {
+        extent: Extent::Blind { length },
+        ..
+    } = &mut decoded.ir.model.features[1].definition
+    else {
+        panic!("typed positional cut extrusion");
+    };
+    *length = Length(4.5);
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native[0].parameters["D1"], "250");
+    assert_eq!(native[1].parameters["D1"], "4.5");
+    for feature in &native[..2] {
+        assert!(!feature.parameters.contains_key("Depth"));
+        assert!(!feature.properties.contains_key("EndCondition"));
+        assert!(!feature.properties.contains_key("Operation"));
+        assert!(!feature.properties.contains_key("Profile"));
+    }
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::Blind {
+                length: Length(250.0)
+            },
+            op: BooleanOp::Join,
+            ..
+        }
+    ));
+    assert!(matches!(
+        regenerated.ir.model.features[1].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::Blind {
+                length: Length(4.5)
+            },
+            op: BooleanOp::Cut,
+            ..
+        }
+    ));
+    assert!(matches!(
+        regenerated.ir.model.features[2].definition,
+        FeatureDefinition::Native { .. }
+    ));
+}
+
+#[test]
 fn decode_resolves_feature_topology_selections() {
     use cadmpeg_ir::features::{
         BodySelection, EdgeSelection, Extent, FaceSelection, FeatureDefinition, PathRef, ProfileRef,

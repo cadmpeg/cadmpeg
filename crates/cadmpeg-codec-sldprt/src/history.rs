@@ -1061,13 +1061,17 @@ fn is_chamfer(feature: &Feature) -> bool {
 }
 
 fn is_extrude(feature: &Feature) -> bool {
-    extrude_op(&feature.kind).is_some()
+    extrude_feature_op(feature).is_some()
         || feature.xml_tag.eq_ignore_ascii_case("Extrusion")
             && feature
                 .properties
                 .get("Operation")
                 .and_then(|operation| parse_boolean_op(operation))
                 .is_some()
+}
+
+fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
+    extrude_op(&feature.kind).or_else(|| extrude_op(&feature.name))
 }
 
 fn is_revolve(feature: &Feature) -> bool {
@@ -1099,12 +1103,18 @@ fn project_extrude(
         .properties
         .get("Operation")
         .and_then(|value| parse_boolean_op(value))
-        .or_else(|| extrude_op(&feature.kind))?;
+        .or_else(|| extrude_feature_op(feature))?;
     let length = |name| {
         feature
             .parameters
             .get(name)
             .and_then(|value| parse_positive_length_mm(value))
+            .or_else(|| {
+                (name == "Depth")
+                    .then(|| feature.parameters.get("D1"))
+                    .flatten()
+                    .and_then(|value| parse_positive_dimension_length_mm(value))
+            })
             .map(Length)
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
@@ -3797,10 +3807,22 @@ pub fn sync_neutral_features(
                             feature.id
                         ))
                     })?;
+                if let Some(record) = existing.as_deref() {
+                    if !record.properties.contains_key("Operation")
+                        && extrude_feature_op(record).is_some_and(|native_op| native_op != *op)
+                    {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} changes its inferred extrusion operation",
+                            feature.id
+                        )));
+                    }
+                }
                 let mut parameters = existing
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
+                let positional_depth =
+                    parameters.contains_key("D1") && !parameters.contains_key("Depth");
                 let mut properties = feature.source_properties.clone();
                 parameters.remove("Depth");
                 parameters.remove("Depth2");
@@ -3809,8 +3831,20 @@ pub fn sync_neutral_features(
                 properties.remove("Face");
                 match extent {
                     Extent::Blind { length } => {
-                        properties.insert("EndCondition".into(), "Blind".into());
-                        parameters.insert("Depth".into(), format_length_mm(length.0));
+                        if properties.contains_key("EndCondition") || existing.is_none() {
+                            properties.insert("EndCondition".into(), "Blind".into());
+                        }
+                        let key = if positional_depth { "D1" } else { "Depth" };
+                        parameters.insert(
+                            key.into(),
+                            format_length_like(
+                                length.0,
+                                existing
+                                    .as_deref()
+                                    .and_then(|record| record.parameters.get(key))
+                                    .map(String::as_str),
+                            ),
+                        );
                     }
                     Extent::Symmetric { length } => {
                         properties.insert("EndCondition".into(), "Symmetric".into());
@@ -3857,8 +3891,18 @@ pub fn sync_neutral_features(
                     }
                     parameters.insert("Draft".into(), format_angle_rad(draft.0));
                 }
-                properties.insert("Operation".into(), format_boolean_op(*op).into());
-                properties.insert("Profile".into(), profile_source);
+                if properties.contains_key("Operation")
+                    || existing.as_deref().and_then(extrude_feature_op).is_none()
+                {
+                    properties.insert("Operation".into(), format_boolean_op(*op).into());
+                }
+                let implicit_profile = existing.as_deref().is_some_and(|record| {
+                    !record.properties.contains_key("Profile")
+                        && matches!(profile, ProfileRef::Native(native) if native == &record.id)
+                });
+                if !implicit_profile {
+                    properties.insert("Profile".into(), profile_source);
+                }
                 let kind = existing.as_deref().map_or_else(
                     || match op {
                         BooleanOp::Join => "BossExtrude".into(),
@@ -5724,10 +5768,19 @@ fn path_source(
 }
 
 fn extrude_op(kind: &str) -> Option<BooleanOp> {
-    match kind.to_ascii_lowercase().as_str() {
-        "bossextrude" => Some(BooleanOp::Join),
-        "cutextrude" => Some(BooleanOp::Cut),
-        _ => None,
+    let kind = kind.trim().to_ascii_lowercase();
+    if kind.starts_with("boss-extrude")
+        || kind.starts_with("bossextrude")
+        || kind.starts_with("saliente-extruir")
+    {
+        Some(BooleanOp::Join)
+    } else if kind.starts_with("cut-extrude")
+        || kind.starts_with("cutextrude")
+        || kind.starts_with("cortar-extruir")
+    {
+        Some(BooleanOp::Cut)
+    } else {
+        None
     }
 }
 
