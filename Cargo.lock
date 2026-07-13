@@ -158,6 +158,8 @@ name = "cadmpeg-codec-catia"
 version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
+ "schemars",
+ "serde",
  "sha2",
 ]
 

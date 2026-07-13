@@ -13,6 +13,7 @@
 //! container view returned by codec inspection.
 
 use std::collections::BTreeMap;
+use std::ops::Range;
 
 use cadmpeg_ir::be::u32_at as u32_be;
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
@@ -23,6 +24,128 @@ use crate::variant::Variant;
 pub const OUTER_MAGIC: &[u8; 8] = b"V5_CFV2\0";
 /// The nested-container stream-directory magic.
 pub const DIR_MAGIC: &[u8; 16] = b"CATIA_V5 CB0001\0";
+/// Marker opening a FINJPL named outer-body segment.
+pub const FINJPL_MARKER: &[u8; 8] = b"FINJPL  ";
+
+/// Semantic family of a FINJPL segment's big-endian type word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FinjplKind {
+    /// `CATStorageProperty` carrier.
+    Storage,
+    /// `CATProjectFlags` or `CATSummaryInformation` carrier.
+    ProjectFlags,
+    /// Manufacturer, OSMX, preview, or other named block.
+    Other,
+}
+
+/// One FINJPL segment bounded by the next marker or the supplied body end.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FinjplSegment {
+    /// Complete byte range beginning at the marker.
+    pub range: Range<usize>,
+    /// Big-endian type word immediately following the marker.
+    pub type_word: u32,
+    /// Classified type family.
+    pub kind: FinjplKind,
+}
+
+/// Split FINJPL segments within a bounded outer-body range.
+#[must_use]
+pub fn finjpl_segments(data: &[u8], body_start: usize, body_end: usize) -> Vec<FinjplSegment> {
+    let end = body_end.min(data.len());
+    if body_start >= end {
+        return Vec::new();
+    }
+    let positions: Vec<usize> = data[body_start..end]
+        .windows(FINJPL_MARKER.len())
+        .enumerate()
+        .filter_map(|(relative, bytes)| (bytes == FINJPL_MARKER).then_some(body_start + relative))
+        .collect();
+    positions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &pos)| {
+            let type_word = u32_be(data, pos + FINJPL_MARKER.len())?;
+            let segment_end = positions.get(index + 1).copied().unwrap_or(end);
+            let kind = match type_word {
+                0x0000_0080 | 0x0000_0082 | 0x0000_0084 | 0x0000_0086 | 0x0000_008e
+                | 0x0000_0090 | 0x0000_0092 => FinjplKind::Storage,
+                0x0101_0001..=0x0101_0003 => FinjplKind::ProjectFlags,
+                _ => FinjplKind::Other,
+            };
+            Some(FinjplSegment {
+                range: pos..segment_end,
+                type_word,
+                kind,
+            })
+        })
+        .collect()
+}
+
+/// Locate the coherent E5 record stream in the outer-body preamble or a FINJPL segment.
+///
+/// A candidate must contain at least ten stride-valid records. The preamble wins when
+/// coherent; otherwise the segment with the largest valid walk wins, with storage type
+/// `0x0000_008e` breaking ties.
+#[must_use]
+pub fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
+    if !data.starts_with(OUTER_MAGIC) {
+        return None;
+    }
+    let directory_offset = usize::try_from(u32_be(data, 8)?).ok()?;
+    let directory_length = usize::try_from(u32_be(data, 12)?).ok()?;
+    if directory_offset.checked_add(directory_length)? != data.len()
+        || directory_length >= data.len()
+    {
+        return None;
+    }
+    let first_finjpl = data[directory_length..]
+        .windows(FINJPL_MARKER.len())
+        .position(|bytes| bytes == FINJPL_MARKER)
+        .map_or(data.len(), |relative| directory_length + relative);
+    let preamble = directory_length..first_finjpl;
+    if count_e5_records(&data[preamble.clone()]) >= 10 {
+        return Some(preamble);
+    }
+
+    finjpl_segments(data, directory_length, data.len())
+        .into_iter()
+        .filter_map(|segment| {
+            let count = count_e5_records(&data[segment.range.clone()]);
+            (count >= 10).then_some((count, segment.type_word == 0x0000_008e, segment.range))
+        })
+        .max_by_key(|(count, preferred, _)| (*count, *preferred))
+        .map(|(_, _, range)| range)
+}
+
+fn count_e5_records(data: &[u8]) -> usize {
+    let mut count = 0;
+    let mut position = 0;
+    while position + 13 <= data.len() {
+        let Some(relative) = data[position..]
+            .windows(E5_MARKER.len())
+            .position(|bytes| bytes == E5_MARKER)
+        else {
+            break;
+        };
+        let record = position + relative;
+        let Some(size) = data
+            .get(record + 5..record + 7)
+            .map(|bytes| usize::from(u16::from_le_bytes([bytes[0], bytes[1]])))
+        else {
+            break;
+        };
+        let Some(end) = record.checked_add(size + 13) else {
+            break;
+        };
+        if end > data.len() {
+            break;
+        }
+        count += 1;
+        position = end;
+    }
+    count
+}
 
 /// Standard-nested BREP-spine markers used for variant identification.
 const FBB_MARKER: &[u8; 4] = &[0x30, 0x04, 0x04, 0xff];
@@ -325,7 +448,12 @@ fn find_subslice(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 /// `a9 03` family; the object-stream / E5 families are named from their record
 /// census when no FBB spine is present. Anything that matches no invariant is
 /// [`Variant::Unknown`].
-fn identify_variant(inner: Option<&InnerDir>, brep: Option<&[u8]>, census: &Census) -> Variant {
+fn identify_variant(
+    inner: Option<&InnerDir>,
+    brep: Option<&[u8]>,
+    census: &Census,
+    coherent_e5: bool,
+) -> Variant {
     match (inner, brep) {
         // No nested container at all.
         (None, _) => {
@@ -344,9 +472,7 @@ fn identify_variant(inner: Option<&InnerDir>, brep: Option<&[u8]>, census: &Cens
                 } else {
                     Variant::FbbOnly
                 }
-            } else if census.e5_markers > 0 {
-                // An E5 family without an FBB spine identifies the E5 stream
-                // variant. Classification does not require a coherent topology walk.
+            } else if coherent_e5 {
                 Variant::E5Stream
             } else {
                 Variant::FloatPackedInnerNoFbb
@@ -386,7 +512,12 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         census.vertex_markers = count_subslice(b, VERTEX_MARKER);
     }
 
-    let variant = identify_variant(inner.as_ref(), brep.as_deref(), &census);
+    let variant = identify_variant(
+        inner.as_ref(),
+        brep.as_deref(),
+        &census,
+        e5_record_stream(&data).is_some(),
+    );
 
     ContainerScan {
         data,
