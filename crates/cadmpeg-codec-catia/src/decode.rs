@@ -1560,7 +1560,7 @@ fn build_standard_edge_curve(
                 .faces
                 .iter()
                 .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
-                .filter_map(surface_axis)
+                .filter_map(|surface| circle_axis_from_carrier(*center, *radius, &surface.geometry))
                 .collect();
             let axis = *axes.first()?;
             if axes
@@ -1620,7 +1620,9 @@ fn attach_standard_circles(
                     .iter()
                     .find(|surface| surface.id == *surface_id)
             })
-            .filter_map(surface_axis)
+            .filter_map(|surface| {
+                circle_axis_from_carrier(circle.center, circle.radius, &surface.geometry)
+            })
             .collect();
         let Some(axis) = axes.first().copied() else {
             continue;
@@ -1656,13 +1658,185 @@ fn attach_standard_circles(
     }
 }
 
-fn surface_axis(surface: &Surface) -> Option<Vector3> {
-    match &surface.geometry {
-        SurfaceGeometry::Plane { normal, .. } => Some(*normal),
-        SurfaceGeometry::Cylinder { axis, .. }
-        | SurfaceGeometry::Cone { axis, .. }
-        | SurfaceGeometry::Torus { axis, .. } => Some(*axis),
-        _ => None,
+fn circle_axis_from_carrier(
+    center: Point3,
+    circle_radius: f64,
+    surface: &SurfaceGeometry,
+) -> Option<Vector3> {
+    match surface {
+        SurfaceGeometry::Plane { origin, normal, .. } => {
+            close_length(dot_point_vector(center, *origin, *normal), 0.0).then_some(*normal)
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            radius,
+            ..
+        } => {
+            let offset = point_delta(center, *origin);
+            let axial = axis_dot(offset, *axis);
+            let radial = subtract_vector(offset, scale_vector(*axis, axial));
+            (close_length(vector_norm(radial), 0.0) && close_length(circle_radius, *radius))
+                .then_some(*axis)
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            radius,
+            half_angle,
+            ..
+        } => {
+            let offset = point_delta(center, *origin);
+            let axial = axis_dot(offset, *axis);
+            let radial = subtract_vector(offset, scale_vector(*axis, axial));
+            let section_radius = (radius + axial * half_angle.tan()).abs();
+            (close_length(vector_norm(radial), 0.0) && close_length(circle_radius, section_radius))
+                .then_some(*axis)
+        }
+        SurfaceGeometry::Sphere {
+            center: sphere_center,
+            radius: sphere_radius,
+            ..
+        } => {
+            let offset = point_delta(center, *sphere_center);
+            let distance = vector_norm(offset);
+            (distance > f64::EPSILON
+                && close_squared(
+                    distance * distance + circle_radius * circle_radius,
+                    sphere_radius * sphere_radius,
+                ))
+            .then(|| scale_vector(offset, 1.0 / distance))
+        }
+        SurfaceGeometry::Torus {
+            center: torus_center,
+            axis,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            let offset = point_delta(center, *torus_center);
+            let axial = axis_dot(offset, *axis);
+            let radial = subtract_vector(offset, scale_vector(*axis, axial));
+            let radial_distance = vector_norm(radial);
+            if close_length(axial, 0.0)
+                && close_length(radial_distance, *major_radius)
+                && close_length(circle_radius, *minor_radius)
+            {
+                unit_vector(cross_vector(*axis, radial))
+            } else if close_length(radial_distance, 0.0)
+                && close_squared(
+                    (circle_radius - major_radius).powi(2) + axial * axial,
+                    minor_radius * minor_radius,
+                )
+            {
+                Some(*axis)
+            } else {
+                None
+            }
+        }
+        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
+fn point_delta(left: Point3, right: Point3) -> Vector3 {
+    Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+}
+
+fn subtract_vector(left: Vector3, right: Vector3) -> Vector3 {
+    Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+}
+
+fn scale_vector(vector: Vector3, scalar: f64) -> Vector3 {
+    Vector3::new(vector.x * scalar, vector.y * scalar, vector.z * scalar)
+}
+
+fn vector_norm(vector: Vector3) -> f64 {
+    axis_dot(vector, vector).sqrt()
+}
+
+fn unit_vector(vector: Vector3) -> Option<Vector3> {
+    let norm = vector_norm(vector);
+    (norm > f64::EPSILON).then(|| scale_vector(vector, 1.0 / norm))
+}
+
+fn close_length(left: f64, right: f64) -> bool {
+    (left - right).abs() <= 1e-5 * (1.0 + left.abs().max(right.abs()))
+}
+
+fn close_squared(left: f64, right: f64) -> bool {
+    (left - right).abs() <= 2e-5 * (1.0 + left.abs().max(right.abs()))
+}
+
+#[cfg(test)]
+mod circle_axis_tests {
+    use super::circle_axis_from_carrier;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    fn x() -> Vector3 {
+        Vector3::new(1.0, 0.0, 0.0)
+    }
+
+    fn y() -> Vector3 {
+        Vector3::new(0.0, 1.0, 0.0)
+    }
+
+    fn z() -> Vector3 {
+        Vector3::new(0.0, 0.0, 1.0)
+    }
+
+    fn origin() -> Point3 {
+        Point3::new(0.0, 0.0, 0.0)
+    }
+
+    #[test]
+    fn circle_axes_follow_exact_carrier_sections() {
+        let plane = SurfaceGeometry::Plane {
+            origin: origin(),
+            normal: z(),
+            u_axis: x(),
+        };
+        assert_eq!(circle_axis_from_carrier(origin(), 2.0, &plane), Some(z()));
+
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: origin(),
+            axis: z(),
+            ref_direction: x(),
+            radius: 2.0,
+        };
+        assert_eq!(
+            circle_axis_from_carrier(origin(), 2.0, &cylinder),
+            Some(z())
+        );
+        assert_eq!(circle_axis_from_carrier(origin(), 3.0, &cylinder), None);
+
+        let sphere = SurfaceGeometry::Sphere {
+            center: origin(),
+            axis: z(),
+            ref_direction: x(),
+            radius: 5.0,
+        };
+        assert_eq!(
+            circle_axis_from_carrier(Point3::new(0.0, 0.0, 3.0), 4.0, &sphere),
+            Some(z())
+        );
+        assert_eq!(circle_axis_from_carrier(origin(), 5.0, &sphere), None);
+
+        let torus = SurfaceGeometry::Torus {
+            center: origin(),
+            axis: z(),
+            ref_direction: x(),
+            major_radius: 10.0,
+            minor_radius: 2.0,
+        };
+        assert_eq!(
+            circle_axis_from_carrier(Point3::new(10.0, 0.0, 0.0), 2.0, &torus),
+            Some(y())
+        );
+        assert_eq!(
+            circle_axis_from_carrier(Point3::new(0.0, 0.0, 2.0), 10.0, &torus),
+            Some(z())
+        );
     }
 }
 
@@ -1884,9 +2058,9 @@ fn build_geometry_report(
     losses.push(LossNote {
         category: LossCategory::Attribute,
         severity: Severity::Warning,
-        message: "Standard circles with a consistent adjacent-carrier axis and plane-plane lines \
-                  are transferred as curves. Spline edge curves, persistent object tags, materials, \
-                  and document metadata are not yet transferred."
+        message: "Standard circles with an exact adjacent-carrier section normal and plane-plane \
+                  lines are transferred as curves. Spline edge curves, persistent object tags, \
+                  materials, and document metadata are not yet transferred."
             .to_string(),
         provenance: None,
     });
