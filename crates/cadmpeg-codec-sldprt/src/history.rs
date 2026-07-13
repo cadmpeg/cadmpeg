@@ -584,13 +584,11 @@ fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
         }
     };
     Some(FeatureDefinition::Fillet {
-        edges: EdgeSelection::Native(
-            feature
-                .properties
-                .get("Edges")
-                .cloned()
-                .unwrap_or_else(|| feature.id.clone()),
-        ),
+        edges: feature
+            .properties
+            .get("Edges")
+            .cloned()
+            .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
         radius,
     })
 }
@@ -859,8 +857,7 @@ fn project_hole(feature: &Feature) -> Option<FeatureDefinition> {
             .properties
             .get("Face")
             .cloned()
-            .map(FaceSelection::Native)
-            .or_else(|| Some(FaceSelection::Native(feature.id.clone()))),
+            .map(FaceSelection::Native),
         position: match feature.properties.get("Position") {
             Some(value) => Some(parse_point3_mm(value)?),
             None => None,
@@ -888,13 +885,11 @@ fn project_shell(feature: &Feature) -> Option<FeatureDefinition> {
         .and_then(|value| parse_length_mm(value))?;
     let outward = parse_bool(feature.properties.get("Outward")?)?;
     Some(FeatureDefinition::Shell {
-        removed_faces: FaceSelection::Native(
-            feature
-                .properties
-                .get("RemovedFaces")
-                .cloned()
-                .unwrap_or_else(|| feature.id.clone()),
-        ),
+        removed_faces: feature
+            .properties
+            .get("RemovedFaces")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         thickness: Length(thickness),
         outward,
     })
@@ -906,20 +901,16 @@ fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
         return None;
     }
     Some(FeatureDefinition::Draft {
-        faces: FaceSelection::Native(
-            feature
-                .properties
-                .get("Faces")
-                .cloned()
-                .unwrap_or_else(|| feature.id.clone()),
-        ),
-        neutral_plane: FaceSelection::Native(
-            feature
-                .properties
-                .get("NeutralPlane")
-                .cloned()
-                .unwrap_or_else(|| feature.id.clone()),
-        ),
+        faces: feature
+            .properties
+            .get("Faces")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+        neutral_plane: feature
+            .properties
+            .get("NeutralPlane")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         pull_direction,
         angle: Angle(
             feature
@@ -1031,13 +1022,11 @@ fn project_chamfer(feature: &Feature) -> Option<FeatureDefinition> {
         }
     };
     Some(FeatureDefinition::Chamfer {
-        edges: EdgeSelection::Native(
-            feature
-                .properties
-                .get("Edges")
-                .cloned()
-                .unwrap_or_else(|| feature.id.clone()),
-        ),
+        edges: feature
+            .properties
+            .get("Edges")
+            .cloned()
+            .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
         spec,
     })
 }
@@ -1859,18 +1848,23 @@ pub fn sync_neutral_features(
                 );
                 (kind, parameters, properties)
             }
-            FeatureDefinition::Fillet {
-                edges:
+            FeatureDefinition::Fillet { edges, radius } => {
+                let selection = match edges {
                     EdgeSelection::Native(selection)
                     | EdgeSelection::Resolved {
                         native: selection, ..
-                    },
-                radius,
-            } => {
+                    } if !selection.trim().is_empty() => Some(selection.as_str()),
+                    EdgeSelection::Unresolved if existing.is_some() => None,
+                    _ => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} changes unsupported fillet semantics",
+                            feature.id
+                        )))
+                    }
+                };
                 if existing
                     .as_deref()
                     .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Fillet"))
-                    || selection.trim().is_empty()
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported fillet semantics",
@@ -1919,12 +1913,14 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.properties.clone())
                     .unwrap_or_default();
-                write_native_selection(
-                    &mut properties,
-                    "Edges",
-                    selection,
-                    existing.as_deref().map_or("", |record| record.id.as_str()),
-                );
+                if let Some(selection) = selection {
+                    write_native_selection(
+                        &mut properties,
+                        "Edges",
+                        selection,
+                        existing.as_deref().map_or("", |record| record.id.as_str()),
+                    );
+                }
                 (
                     existing
                         .as_deref()
@@ -2354,6 +2350,12 @@ pub fn sync_neutral_features(
                     Some(FaceSelection::Faces(_)) => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} uses a resolved hole face selection",
+                            feature.id
+                        )));
+                    }
+                    Some(FaceSelection::Unresolved) => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has an unresolved hole face selection",
                             feature.id
                         )));
                     }

@@ -356,6 +356,8 @@ pub enum FeatureDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum EdgeSelection {
+    /// Selection exists semantically but its operands are not resolved.
+    Unresolved,
     /// Resolved topological edges.
     Edges(Vec<EdgeId>),
     /// Resolved edges paired with the format-native selection required for rewrite.
@@ -373,6 +375,8 @@ pub enum EdgeSelection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum FaceSelection {
+    /// Selection exists semantically but its operands are not resolved.
+    Unresolved,
     /// Resolved topological faces; empty for no selected faces.
     Faces(Vec<FaceId>),
     /// Resolved faces paired with the format-native selection required for rewrite.
@@ -390,6 +394,8 @@ pub enum FaceSelection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum BodySelection {
+    /// Selection exists semantically but its operands are not resolved.
+    Unresolved,
     /// Resolved topological bodies.
     Bodies(Vec<BodyId>),
     /// Resolved bodies paired with the format-native selection required for rewrite.

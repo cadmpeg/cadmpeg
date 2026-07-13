@@ -4613,7 +4613,9 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
 
 #[test]
 fn semantic_writer_round_trips_variable_radius_fillet() {
-    use cadmpeg_ir::features::{FeatureDefinition, Length, RadiusSpec, VariableRadius};
+    use cadmpeg_ir::features::{
+        EdgeSelection, FeatureDefinition, Length, RadiusSpec, VariableRadius,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -4627,8 +4629,8 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Fillet {
+            edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Variable { points },
-            ..
         } if points == &vec![
             VariableRadius { parameter: 0.0, radius: Length(2.0) },
             VariableRadius { parameter: 0.5, radius: Length(4.0) },
@@ -5335,7 +5337,7 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
 
 #[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
-    use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition, HoleKind, Length};
+    use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -5346,14 +5348,10 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native_id = decoded.ir.model.features[0]
-        .native_ref
-        .clone()
-        .expect("native hole record");
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Hole {
-            face: Some(FaceSelection::Native(selection)),
+            face: None,
             position: None,
             direction: None,
             kind: HoleKind::Simple,
@@ -5361,7 +5359,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
             extent: Extent::Blind {
                 length: Length(12.0),
             },
-        } if selection == &native_id
+        }
     ));
 
     let FeatureDefinition::Hole {

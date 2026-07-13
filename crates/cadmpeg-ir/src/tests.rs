@@ -1651,6 +1651,7 @@ fn edge_selections_round_trip_through_json() {
     use crate::ids::EdgeId;
 
     let selections = vec![
+        EdgeSelection::Unresolved,
         EdgeSelection::Edges(vec![EdgeId("synthetic:test:edge#0".into())]),
         EdgeSelection::Resolved {
             edges: vec![EdgeId("synthetic:test:edge#0".into())],
@@ -1671,6 +1672,7 @@ fn face_selections_round_trip_through_json() {
     use crate::ids::FaceId;
 
     let selections = vec![
+        FaceSelection::Unresolved,
         FaceSelection::Faces(vec![FaceId("synthetic:test:face#0".into())]),
         FaceSelection::Resolved {
             faces: vec![FaceId("synthetic:test:face#0".into())],
@@ -1691,6 +1693,7 @@ fn body_selections_round_trip_through_json() {
     use crate::ids::BodyId;
 
     let selections = vec![
+        BodySelection::Unresolved,
         BodySelection::Bodies(vec![BodyId("synthetic:test:body#0".into())]),
         BodySelection::Resolved {
             bodies: vec![BodyId("synthetic:test:body#0".into())],
