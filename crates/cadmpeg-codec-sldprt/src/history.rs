@@ -716,6 +716,9 @@ pub fn bind_topology_selections(
             FeatureDefinition::OffsetSurface { faces, .. } => {
                 resolve_face_selection(faces, &face_ids);
             }
+            FeatureDefinition::KnitSurface { faces, .. } => {
+                resolve_face_selection(faces, &face_ids);
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
@@ -944,6 +947,8 @@ fn project_definition(
         project_thicken(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "OffsetSurface") {
         project_offset_surface(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature_family(feature, "KnitSurface") || feature_family(feature, "Knit") {
+        project_knit_surface(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Draft") {
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Combine") {
@@ -1686,6 +1691,27 @@ fn project_offset_surface(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::OffsetSurface {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
         distance: Length(parse_length_mm(feature.parameters.get("Distance")?)?),
+    })
+}
+
+fn project_knit_surface(feature: &Feature) -> Option<FeatureDefinition> {
+    let gap_tolerance = match feature.parameters.get("GapTolerance") {
+        Some(value) => Some(parse_length_mm(value).filter(|value| *value >= 0.0)?),
+        None => None,
+    };
+    Some(FeatureDefinition::KnitSurface {
+        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
+        merge_entities: feature
+            .properties
+            .get("MergeEntities")
+            .and_then(|value| parse_bool(value))
+            .unwrap_or(true),
+        create_solid: feature
+            .properties
+            .get("CreateSolid")
+            .and_then(|value| parse_bool(value))
+            .unwrap_or(false),
+        gap_tolerance: gap_tolerance.map(Length),
     })
 }
 
@@ -3576,6 +3602,56 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::KnitSurface {
+                faces,
+                merge_entities,
+                create_solid,
+                gap_tolerance,
+            } => {
+                let selection = face_selection_value(faces).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no knit-surface input faces",
+                        feature.id
+                    ))
+                })?;
+                if existing.as_deref().is_some_and(|record| {
+                    !feature_family(record, "KnitSurface") && !feature_family(record, "Knit")
+                }) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                match gap_tolerance {
+                    Some(value) if value.0.is_finite() && value.0 >= 0.0 => {
+                        parameters.insert("GapTolerance".into(), format_length_mm(value.0));
+                    }
+                    Some(_) => {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has an invalid knit tolerance",
+                            feature.id
+                        )));
+                    }
+                    None => {
+                        parameters.remove("GapTolerance");
+                    }
+                }
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Faces".into(), selection);
+                properties.insert("MergeEntities".into(), merge_entities.to_string());
+                properties.insert("CreateSolid".into(), create_solid.to_string());
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "KnitSurface".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
+            }
             FeatureDefinition::Draft {
                 faces: face_selection,
                 neutral_plane: plane_selection,
@@ -4948,6 +5024,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Shell { .. } => "Shell",
         FeatureDefinition::Thicken { .. } => "Thicken",
         FeatureDefinition::OffsetSurface { .. } => "OffsetSurface",
+        FeatureDefinition::KnitSurface { .. } => "KnitSurface",
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
         FeatureDefinition::DeleteBody {

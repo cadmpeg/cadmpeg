@@ -1232,6 +1232,16 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "surface offset is invalid");
                 }
             }
+            FeatureDefinition::KnitSurface {
+                faces,
+                gap_tolerance,
+                ..
+            } => {
+                face_selections.push(faces);
+                if gap_tolerance.is_some_and(|value| !value.0.is_finite() || value.0 < 0.0) {
+                    feature_geometry_error(findings, feature, "knit tolerance is invalid");
+                }
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,

@@ -381,6 +381,18 @@ pub enum FeatureDefinition {
         /// Signed normal offset in canonical millimeters.
         distance: Length,
     },
+    /// Joins selected surface bodies along coincident or near-coincident boundaries.
+    KnitSurface {
+        /// Faces participating in the knit operation.
+        faces: FaceSelection,
+        /// Whether coincident face and edge entities are merged.
+        merge_entities: bool,
+        /// Whether a closed result is converted to a solid body.
+        create_solid: bool,
+        /// Maximum boundary gap accepted by the operation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        gap_tolerance: Option<Length>,
+    },
     /// Taper applied to selected faces about a neutral plane.
     Draft {
         /// Faces whose angle is modified.

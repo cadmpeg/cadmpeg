@@ -7817,6 +7817,75 @@ fn semantic_writer_round_trips_offset_surface() {
 }
 
 #[test]
+fn semantic_writer_round_trips_knit_surface() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+
+    let base_bytes = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(base_bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let face = base.ir.model.faces[0].id.0.clone();
+    let xml = format!(
+        r#"<Keywords><KnitSurface Name="Knit" Type="Knit" id="34" Faces="{face}" MergeEntities="false" CreateSolid="false" CheckGeometry="true"><Dimension Name="GapTolerance">0.01mm</Dimension></KnitSurface></Keywords>"#
+    );
+    let mut source = base_bytes;
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let face_id = decoded.ir.model.faces[0].id.clone();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::KnitSurface {
+            faces: FaceSelection::Resolved { faces, native },
+            merge_entities: false,
+            create_solid: false,
+            gap_tolerance: Some(Length(0.01)),
+        } if faces == &[face_id.clone()] && native == &face
+    ));
+
+    let FeatureDefinition::KnitSurface {
+        faces,
+        merge_entities,
+        create_solid,
+        gap_tolerance,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed knit surface");
+    };
+    *faces = FaceSelection::Faces(vec![face_id.clone()]);
+    *merge_entities = true;
+    *create_solid = true;
+    *gap_tolerance = None;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.properties["Faces"], face_id.0);
+    assert_eq!(native.properties["MergeEntities"], "true");
+    assert_eq!(native.properties["CreateSolid"], "true");
+    assert_eq!(native.properties["CheckGeometry"], "true");
+    assert!(!native.parameters.contains_key("GapTolerance"));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::KnitSurface {
+            merge_entities: true,
+            create_solid: true,
+            gap_tolerance: None,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 
