@@ -14995,30 +14995,16 @@ fn patch_subset_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("subset record is truncated".into()))?;
-    if !record_bytes
-        .windows(b"subset_int_cur".len())
-        .any(|window| window == b"subset_int_cur")
-    {
-        return Err(CodecError::Malformed(format!(
-            "procedural curve record {} is not a subset",
-            record.index
-        )));
-    }
-    let source = crate::nurbs::first_curve_patch_layout(record_bytes).ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "subset record {} has no parent curve",
-            record.index
-        ))
-    })?;
-    for (ordinal, value) in parameter_range.iter().copied().enumerate() {
-        let tag = record.offset + source.end + ordinal * 9;
-        if bytes.get(tag) != Some(&0x06) {
-            return Err(CodecError::Malformed(format!(
-                "subset record {} has no parameter range",
+    let layout = crate::nurbs::subset_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "subset record {} lacks writable construction fields",
                 record.index
-            )));
-        }
-        bytes[tag + 1..tag + 9].copy_from_slice(&value.to_le_bytes());
+            ))
+        })?;
+    for (offset, value) in layout.parameter_range.into_iter().zip(*parameter_range) {
+        let at = record.offset + offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
 }
