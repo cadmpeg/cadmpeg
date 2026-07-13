@@ -29,6 +29,7 @@ const TCODE_HISTORY_RECORD_TABLE: u32 = 0x1000_0026;
 const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
 const TCODE_PROPERTIES_OPENNURBS_VERSION: u32 = 0xa000_0026;
 const TCODE_UNITS_AND_TOLERANCES: u32 = 0x2000_8031;
+const TCODE_LAYER_RECORD: u32 = 0x2000_8050;
 const TCODE_OBJECT_RECORD: u32 = 0x2000_8070;
 const TCODE_OBJECT_RECORD_TYPE: u32 = 0x0200_0071;
 const TCODE_OBJECT_RECORD_ATTRIBUTES: u32 = 0x0200_8072;
@@ -64,6 +65,9 @@ const PLANE_SURFACE_CLASS: [u8; 16] = [
 ];
 const MESH_CLASS: [u8; 16] = [
     0xe4, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+];
+const LAYER_CLASS: [u8; 16] = [
+    0x13, 0x98, 0x80, 0x95, 0x85, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
 const CHANNEL_UV: u32 = 0x5248_0001;
 const CHANNEL_COLOR: u32 = 0x5248_0002;
@@ -230,7 +234,6 @@ fn write_archive(
         TCODE_TEXTURE_MAPPING_TABLE,
         TCODE_MATERIAL_TABLE,
         TCODE_LINETYPE_TABLE,
-        TCODE_LAYER_TABLE,
         TCODE_GROUP_TABLE,
         TCODE_FONT_TABLE,
         TCODE_DIMSTYLE_TABLE,
@@ -239,6 +242,15 @@ fn write_archive(
         TCODE_INSTANCE_DEFINITION_TABLE,
     ] {
         bytes.extend(table(typecode, &[]));
+        if typecode == TCODE_LINETYPE_TABLE {
+            bytes.extend(table(
+                TCODE_LAYER_TABLE,
+                &[zero_crc_chunk(
+                    TCODE_LAYER_RECORD,
+                    &class_wrapper(LAYER_CLASS, &default_layer_payload()),
+                )],
+            ));
+        }
     }
     bytes.extend(table(TCODE_OBJECT_TABLE, objects));
     bytes.extend(table(TCODE_HISTORY_RECORD_TABLE, &[]));
@@ -3146,7 +3158,7 @@ fn object_attributes_payload(
     let digest = Sha256::digest(identity.as_bytes());
     let mut payload = vec![0x20];
     payload.extend(&digest[..16]);
-    payload.extend((-1_i32).to_le_bytes());
+    payload.extend(0_i32.to_le_bytes());
     if let Some(name) = name {
         payload.push(1);
         payload.extend(utf16(name));
@@ -3165,6 +3177,28 @@ fn object_attributes_payload(
         payload.extend([11, u8::from(visible)]);
     }
     payload.push(0);
+    payload
+}
+
+fn default_layer_payload() -> Vec<u8> {
+    let mut payload = vec![0x15];
+    payload.extend(0_i32.to_le_bytes());
+    payload.extend(0_i32.to_le_bytes());
+    payload.extend((-1_i32).to_le_bytes());
+    payload.extend((-1_i32).to_le_bytes());
+    payload.extend((-1_i32).to_le_bytes());
+    payload.extend([0_u8, 0, 0, 0]);
+    payload.extend(0_i16.to_le_bytes());
+    payload.extend(0_i16.to_le_bytes());
+    payload.extend(0.0_f64.to_le_bytes());
+    payload.extend(1.0_f64.to_le_bytes());
+    payload.extend(utf16("Default"));
+    payload.push(1);
+    payload.extend((-1_i32).to_le_bytes());
+    payload.extend([0_u8, 0, 0, 0]);
+    payload.extend(0.0_f64.to_le_bytes());
+    payload.push(0);
+    payload.extend(&Sha256::digest(b"cadmpeg:default-layer")[..16]);
     payload
 }
 
@@ -3408,6 +3442,15 @@ mod tests {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .unwrap();
+            assert!(
+                decoded
+                    .report
+                    .losses
+                    .iter()
+                    .all(|loss| !loss.message.contains("CRC mismatch")),
+                "{version:?}: {:?}",
+                decoded.report.losses
+            );
             assert_eq!(decoded.ir.model.tessellations.len(), 1);
             let actual = &decoded.ir.model.tessellations[0];
             assert_eq!(actual.vertices, ir.model.tessellations[0].vertices);
@@ -4290,6 +4333,15 @@ mod tests {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .unwrap();
+            assert!(
+                decoded
+                    .report
+                    .losses
+                    .iter()
+                    .all(|loss| !loss.message.contains("CRC mismatch")),
+                "{version:?}: {:?}",
+                decoded.report.losses
+            );
             assert_eq!(decoded.ir.model.bodies.len(), 2, "{version:?}");
             assert_eq!(decoded.ir.model.faces.len(), 3, "{version:?}");
             assert_eq!(decoded.ir.model.edges.len(), 10, "{version:?}");

@@ -1195,8 +1195,13 @@ pub(crate) fn parse_object_record(
     offset = uuid_chunk.next_offset;
     let data_chunk = child(bytes, offset, class.body.end, archive, false)?;
     require_long(&data_chunk, CLASS_DATA)?;
-    if let Some(note) = checksum_warning(bytes, &data_chunk)? {
-        warnings.push(note);
+    // Brep and mesh class-data payloads contain checksummed nested chunks.
+    // Their container CRC excludes those chunks, so full-body verification is
+    // invalid. Their family readers validate the nested leaf checksums.
+    if !crate::brep::supported_class(class_uuid) && !crate::mesh::supported_class(class_uuid) {
+        if let Some(note) = checksum_warning(bytes, &data_chunk)? {
+            warnings.push(note);
+        }
     }
     let class_data_range = data_chunk.body.clone();
     offset = data_chunk.next_offset;

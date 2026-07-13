@@ -468,14 +468,25 @@ fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, Co
                     record.typecode, chunk.typecode
                 ));
             }
-            if let Some(note) = checksum_warning(
-                &data,
-                record.typecode,
-                child_offset,
-                chunk.body.end,
-                archive,
-            )? {
-                warnings.push(note);
+            // A layer wrapper has no direct bytes, and object records use a
+            // zero outer CRC. Checksummed leaf children remain independently
+            // validated.
+            let zero_nested_container_crc =
+                matches!(record.typecode, TCODE_OBJECT_RECORD | TCODE_LAYER_RECORD)
+                    && child
+                        .checksum
+                        .as_ref()
+                        .is_some_and(|range| data[range.clone()].iter().all(|byte| *byte == 0));
+            if !zero_nested_container_crc {
+                if let Some(note) = checksum_warning(
+                    &data,
+                    record.typecode,
+                    child_offset,
+                    chunk.body.end,
+                    archive,
+                )? {
+                    warnings.push(note);
+                }
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
