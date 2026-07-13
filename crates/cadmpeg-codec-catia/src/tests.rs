@@ -1149,6 +1149,15 @@ fn catalog_stream(entries: &[&str]) -> Vec<u8> {
     bytes
 }
 
+fn value_block_stream(payload: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![0x7c, 0x0b, 0, 0, 0, 0];
+    bytes.extend_from_slice(payload);
+    let declared_len = u32::try_from(bytes.len()).expect("generated 7C0B length");
+    bytes[2..6].copy_from_slice(&declared_len.to_le_bytes());
+    bytes.push(0xfe);
+    bytes
+}
+
 fn standard_catpart_with_object_graph() -> Vec<u8> {
     let graph = object_graph_stream();
     let mut file = standard_catpart();
@@ -1169,6 +1178,22 @@ fn standard_catpart_with_catalog() -> Vec<u8> {
     ]);
     let mut file = standard_catpart();
     file.splice(16..16, catalog);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
+fn standard_catpart_with_value_block() -> Vec<u8> {
+    let mut stream = value_block_stream(&[0x81, 0x83, 0x32, 0xea, 0, 0, 0, 0x83, 0x82]);
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
     let file_len = u32::try_from(file.len()).unwrap();
     file[8..12].copy_from_slice(&be32(file_len));
     file
@@ -2732,6 +2757,26 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
 }
 
 #[test]
+fn value_block_parser_reads_length_to_terminator_boundary() {
+    let payload = [0x81, 0x83, 0x32, 0xea, 0, 0, 0, 0x83, 0x82];
+    let mut bytes = value_block_stream(&payload);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+
+    let blocks = crate::value_block::parse(&bytes);
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].pos, 0);
+    assert_eq!(blocks[0].declared_len, 15);
+    assert_eq!(blocks[0].total_len, 16);
+    assert_eq!(blocks[0].payload, payload);
+}
+
+#[test]
 fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
     use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
 
@@ -2803,6 +2848,32 @@ fn decode_retains_catalog_schema_names_without_promoting_features() {
     assert_eq!(native.catalogs[0].entries[4].value, "Sketch");
     assert_eq!(native.catalogs[0].entries[5].value, "Pad");
     assert!(decoded.ir.model.features.is_empty());
+}
+
+#[test]
+fn decode_retains_value_blocks_at_their_schema_boundary() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_value_block()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated value block part");
+    let native = crate::native::CatiaNative::load(
+        decoded
+            .ir
+            .native
+            .namespace("catia")
+            .expect("CATIA namespace"),
+    )
+    .expect("load CATIA native records");
+
+    assert_eq!(native.value_blocks.len(), 1);
+    assert_eq!(native.value_blocks[0].byte_offset, 16);
+    assert_eq!(native.value_blocks[0].byte_len, 16);
+    assert_eq!(
+        native.value_blocks[0].payload,
+        [0x81, 0x83, 0x32, 0xea, 0, 0, 0, 0x83, 0x82]
+    );
 }
 
 #[test]

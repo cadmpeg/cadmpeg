@@ -12,6 +12,11 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 - The extent-struct `flags` word is carried raw; its bit assignments are unresolved.
 
+## Design records
+
+- The field grammar inside `7C0B` value-block payloads and its binding to adjacent `7C02` class/field names are unspecified.
+- The relation assigning a `7C08` per-file prototype record to a class definition in the adjacent `7C02` catalog is unspecified.
+
 ## Standard nested `V5_CFV2`
 
 - The `a5 03 32` header token byte at `record + 7` is a small repeating type code; its value space and semantics are unresolved.

@@ -6,16 +6,33 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalog;
 use crate::object_graph::{self, HeadToken, ObjectPayload, PayloadSubtype};
+use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 1;
+pub const CATIA_NATIVE_VERSION: u32 = 2;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "catalog_entries",
     "catalogs",
     "object_graph_records",
     "object_graphs",
+    "value_blocks",
 ];
+
+/// One exact `7C0B` value block adjacent to its source-schema catalog.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaValueBlock {
+    /// Globally unique value-block identity.
+    pub id: String,
+    /// Byte offset of the `7C0B` marker.
+    pub byte_offset: u64,
+    /// Complete framed extent including the trailing terminator.
+    pub byte_len: u64,
+    /// Stored length from the marker through the byte before the terminator.
+    pub declared_len: u64,
+    /// Value payload in serialized order.
+    pub payload: Vec<u8>,
+}
 
 /// One exact `7C02` source-schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -102,6 +119,9 @@ pub struct CatiaNative {
     /// Outer ownership graphs.
     #[serde(default)]
     pub object_graphs: Vec<CatiaObjectGraph>,
+    /// Framed value blocks adjacent to source-schema catalogs.
+    #[serde(default)]
+    pub value_blocks: Vec<CatiaValueBlock>,
 }
 
 impl Default for CatiaNative {
@@ -110,6 +130,7 @@ impl Default for CatiaNative {
             version: CATIA_NATIVE_VERSION,
             catalogs: Vec::new(),
             object_graphs: Vec::new(),
+            value_blocks: Vec::new(),
         }
     }
 }
@@ -126,10 +147,15 @@ impl CatiaNative {
             .into_iter()
             .map(CatiaObjectGraph::from)
             .collect();
+        let value_blocks = value_block::parse(bytes)
+            .into_iter()
+            .map(CatiaValueBlock::from)
+            .collect();
         Self {
             version: CATIA_NATIVE_VERSION,
             catalogs,
             object_graphs,
+            value_blocks,
         }
     }
 
@@ -157,10 +183,12 @@ impl CatiaNative {
                 .collect();
             graph.records.sort_by_key(|record| record.ordinal);
         }
+        let value_blocks: Vec<CatiaValueBlock> = namespace.arena_as("value_blocks")?;
         Ok(Self {
             version: namespace.version,
             catalogs,
             object_graphs: graphs,
+            value_blocks,
         })
     }
 
@@ -202,10 +230,23 @@ impl CatiaNative {
         namespace.set_arena("catalog_entries", &entries)?;
         namespace.set_arena("object_graphs", &graphs)?;
         namespace.set_arena("object_graph_records", &records)?;
+        namespace.set_arena("value_blocks", &self.value_blocks)?;
         debug_assert!(CATIA_ARENA_NAMES
             .iter()
             .all(|name| namespace.arenas.contains_key(*name)));
         Ok(())
+    }
+}
+
+impl From<value_block::ValueBlock> for CatiaValueBlock {
+    fn from(block: value_block::ValueBlock) -> Self {
+        Self {
+            id: format!("catia:value-block#{:010}", block.pos),
+            byte_offset: block.pos as u64,
+            byte_len: block.total_len as u64,
+            declared_len: block.declared_len as u64,
+            payload: block.payload,
+        }
     }
 }
 

@@ -57,6 +57,7 @@ pub mod geometry;
 pub mod native;
 pub mod object_graph;
 pub mod topology;
+pub mod value_block;
 pub mod variant;
 pub mod zero_entity;
 
