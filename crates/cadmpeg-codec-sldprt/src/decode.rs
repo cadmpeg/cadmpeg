@@ -762,20 +762,6 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
             provenance: None,
         });
     }
-    losses.push(LossNote {
-        category: LossCategory::Geometry,
-        severity: Severity::Warning,
-        message: "Deltas tombstones are not reconstructed.".to_string(),
-        provenance: None,
-    });
-    losses.push(LossNote {
-        category: LossCategory::Material,
-        severity: Severity::Warning,
-        message: "Conflicting per-face appearance carriers have unresolved override precedence."
-            .to_string(),
-        provenance: None,
-    });
-
     DecodeReport {
         format: "sldprt".to_string(),
         container_only: false,

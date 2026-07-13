@@ -23,7 +23,6 @@ The schema-33103 sheet discriminator is unresolved. `0x1d/flo2` belongs to the f
 ## Auxiliary lanes
 
 - The mapping from B-rep face attributes to DisplayLists triangle ranges is unresolved.
-- Per-face color carriers can disagree. The precedence rule for appearance overrides is unresolved.
 
 ## Design intent
 

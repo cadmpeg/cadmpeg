@@ -5102,6 +5102,11 @@ fn decode_binds_entity53_color_to_face() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
     let binding = result
         .ir
         .model
