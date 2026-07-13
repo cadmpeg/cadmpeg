@@ -1036,16 +1036,19 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
     let feature_direction_bytes = feature::direction_bytes(&feature_rows);
     let feature_definitions = feature_definitions(&data, &sections);
+    let feature_entity_tables =
+        feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
     let feature_section_transforms = placement::resolve(
         &feature_definitions,
         &datum_planes,
         &plane_local_systems,
         &outline_planes,
+        &feature_geometry_tables,
+        &feature_entity_tables,
+        &feature_affected_ids,
     );
     let feature_operations = feature_operations(&data, &sections);
     let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections);
-    let feature_entity_tables =
-        feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
     let declared_body_count = geomlists_value(&data, &sections, b"n_bodies\0");
     let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0");
 

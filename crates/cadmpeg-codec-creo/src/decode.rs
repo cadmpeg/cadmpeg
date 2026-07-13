@@ -465,12 +465,15 @@ fn transfer_feature_extrusion_surfaces(
 ) {
     for transform in &scan.feature_section_transforms {
         let Some(definition) = scan.feature_definitions.iter().find(|definition| {
-            definition.owner_feature_id == Some(transform.feature_id)
+            definition.id == transform.definition_id
                 && definition
                     .body
                     .windows(b"protextrude\0".len())
                     .any(|window| window == b"protextrude\0")
         }) else {
+            continue;
+        };
+        let Some(feature_id) = transform.feature_id else {
             continue;
         };
         let (Some(variables), Some(segments), Some(order_table), Some(trim_entities)) = (
@@ -484,7 +487,7 @@ fn transfer_feature_extrusion_surfaces(
         let tables = scan
             .feature_entity_tables
             .iter()
-            .filter(|table| table.feature_id == Some(transform.feature_id))
+            .filter(|table| table.feature_id == Some(feature_id))
             .collect::<Vec<_>>();
         let [table] = tables.as_slice() else {
             continue;
@@ -709,7 +712,7 @@ fn transfer_resolved_sketches(
         let Some(definition) = scan
             .feature_definitions
             .iter()
-            .find(|definition| definition.owner_feature_id == Some(transform.feature_id))
+            .find(|definition| definition.id == transform.definition_id)
         else {
             continue;
         };
@@ -728,7 +731,7 @@ fn transfer_resolved_sketches(
             .flat_map(|table| &table.solved_external_ids)
             .copied()
             .collect::<BTreeSet<_>>();
-        let sketch_id = SketchId(format!("creo:featdefs:sketch#{}", definition.id));
+        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
         let entities = segments
             .rows
             .iter()
@@ -802,10 +805,7 @@ fn transfer_resolved_sketches(
                     id,
                     sketch: sketch_id.clone(),
                     definition: constraint_definition,
-                    native_ref: Some(format!(
-                        "creo:featdefs:sketch#{}:segment#{}",
-                        definition.id, segment.external_id
-                    )),
+                    native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
                 })
             })
             .collect::<Vec<_>>();
@@ -951,7 +951,8 @@ mod resolved_sketch_tests {
     #[test]
     fn placed_extrusion_line_defines_plane() {
         let transform = crate::placement::FeatureSectionTransform {
-            feature_id: 5,
+            definition_id: 5,
+            feature_id: Some(5),
             origin: [10.0, 20.0, 30.0],
             u_axis: [0.0, 1.0, 0.0],
             v_axis: [0.0, 0.0, 1.0],
@@ -984,7 +985,8 @@ mod resolved_sketch_tests {
     #[test]
     fn placed_extrusion_arc_defines_cylinder() {
         let transform = crate::placement::FeatureSectionTransform {
-            feature_id: 5,
+            definition_id: 5,
+            feature_id: Some(5),
             origin: [10.0, 20.0, 30.0],
             u_axis: [0.0, 1.0, 0.0],
             v_axis: [0.0, 0.0, 1.0],

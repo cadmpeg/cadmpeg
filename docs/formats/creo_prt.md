@@ -359,6 +359,12 @@ edges; neither establishes feature-tree containment.
 datum namespace used by `gsec3d.plane_id`; they are distinct from
 `ActDatums.srf_array.geom_id` values.
 
+An outer datum identifier resolves through the generated-entity table that
+contains it. When that table's owning datum feature has one `parent_table` row,
+the nested reference-plane geometry identifies one datum parent by
+`ActDatums.srf_array.feat_id`; the other unique datum parent is the sketch
+plane.
+
 `ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section includes one named datum row and can include positional `<gid> 22 ...` rows. For datum planes, `outline` stores two diagonal corners. Let `k = argmin_i |p0[i] - p1[i]|`; the plane equation is `x_k = p0[k]`. Datum names do not define their geometric orientation.
 
 The datum surface row's `feat_id` is the owning modeling feature identifier.
@@ -371,9 +377,9 @@ The row's `geom_id` remains the separate datum-geometry identifier used by
 
 In `gsec3d` placement, project the referenced datum normal into the sketch plane to obtain the in-plane sketch `u` direction, then derive `v` as `n × u`. The resulting section-to-model transform is a proper rigid transform and is not a stored global matrix.
 
-When the sketch plane is a placed plane carrier or axis-aligned `ActDatums`
-plane, the reference plane is a perpendicular axis-aligned `ActDatums` plane,
-and the flip fields are clear, their section transform is:
+When the sketch plane resolves to a placed plane carrier or axis-aligned
+`ActDatums` plane and the reference plane is perpendicular, their section
+transform is:
 
 ```text
 n      = sketch_plane.normal
@@ -382,6 +388,10 @@ v      = cross(n, u)
 origin = sketch_plane.offset * n + reference_plane.offset * u
 model([s, t, 0]) = origin + s*u + t*v
 ```
+
+A set `plane_flip` or section `flip` negates `n` and its plane offset. A set
+reference `flip_flag` negates `u` and its plane offset. Apply the two sketch
+normal flips independently before deriving `v`.
 
 Parallel plane references and set flip fields do not use this transform case.
 
