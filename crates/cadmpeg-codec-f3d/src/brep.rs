@@ -744,20 +744,22 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             // land on the edge's vertices through the face
                             // surface.
                             let candidates = match (prec.chunk(3), prec.chunk(4)) {
-                                (Some(Token::Long(0)), Some(Token::True | Token::False))
-                                    if crate::sab::payload_subtype_is(
+                                (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
+                                    crate::sab::payload_subtype_span(
                                         bytes,
                                         prec,
                                         5,
                                         ref_width,
                                         "exp_par_cur",
-                                    ) =>
-                                {
-                                    nurbs::decode_pcurve_cache_candidates_resolving_refs(
-                                        record_slice(prec, bytes),
-                                        bytes,
-                                        &subtype_tables,
                                     )
+                                    .map(|span| {
+                                        nurbs::decode_pcurve_cache_candidates_resolving_refs(
+                                            span,
+                                            bytes,
+                                            &subtype_tables,
+                                        )
+                                    })
+                                    .unwrap_or_default()
                                 }
                                 (Some(Token::Long(1 | 2 | -1)), Some(Token::Ref(reference))) => {
                                     by_index

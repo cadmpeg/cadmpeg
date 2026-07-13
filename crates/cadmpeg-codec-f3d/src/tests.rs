@@ -627,6 +627,27 @@ fn synthetic_geometry_with_short_pcurve_tail_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_geometry_with_out_of_scope_pcurve_cache_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_pcurve_smbh();
+    let subtype = bytes
+        .windows(b"exp_par_cur".len())
+        .position(|window| window == b"exp_par_cur")
+        .expect("generated inline pcurve subtype");
+    let cache = bytes[subtype..]
+        .windows(b"nubs".len())
+        .position(|window| window == b"nubs")
+        .map(|offset| subtype + offset)
+        .expect("generated inline pcurve cache");
+    bytes[cache] = b'x';
+    let tail = bytes[subtype..]
+        .windows([0x10, 0x0a, 0x0b, 0x0a, 0x0b].len())
+        .position(|window| window == [0x10, 0x0a, 0x0b, 0x0a, 0x0b])
+        .map(|offset| subtype + offset)
+        .expect("generated inline pcurve subtype close");
+    bytes.splice(tail + 1..tail + 1, generated_pcurve_block());
+    bytes
+}
+
 fn synthetic_geometry_with_rational_pcurve_smbh() -> Vec<u8> {
     synthetic_geometry_with_pcurve_block_smbh(generated_rational_pcurve_block())
 }
@@ -15411,6 +15432,7 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
             "exp_par_cur",
             "bad_par_cur",
         ),
+        synthetic_geometry_with_out_of_scope_pcurve_cache_smbh(),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 0),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 7),
         with_ref_pcurve_companion_name(synthetic_geometry_with_ref_pcurve_smbh(), b"badcurve"),

@@ -86,24 +86,22 @@ impl Record {
     }
 }
 
-/// Return whether payload token `token_index` is a subtype opening immediately
-/// followed by `expected` as its identifier or sub-identifier.
-pub(crate) fn payload_subtype_is(
-    bytes: &[u8],
+/// Return the bytes inside payload subtype `token_index` when its immediately
+/// following identifier is `expected`.
+pub(crate) fn payload_subtype_span<'a>(
+    bytes: &'a [u8],
     record: &Record,
     token_index: usize,
     ref_width: usize,
     expected: &str,
-) -> bool {
-    let Some(limit) = record.offset.checked_add(record.len) else {
-        return false;
-    };
+) -> Option<&'a [u8]> {
+    let limit = record.offset.checked_add(record.len)?;
     let mut pos = record.offset;
     let mut name_done = false;
     let mut payload_index = 0usize;
     while pos < limit {
         let Ok((lexed, next)) = lex(bytes, pos, ref_width) else {
-            return false;
+            return None;
         };
         pos = next;
         match lexed {
@@ -113,20 +111,44 @@ pub(crate) fn payload_subtype_is(
                 name_done = true;
                 if payload_index == token_index {
                     if !matches!(token, Token::SubtypeOpen) {
-                        return false;
+                        return None;
                     }
-                    return matches!(
-                        lex(bytes, pos, ref_width),
-                        Ok((Lexed::Ident(name) | Lexed::SubIdent(name), _)) if name == expected
-                    );
+                    let Ok((Lexed::Ident(name) | Lexed::SubIdent(name), start)) =
+                        lex(bytes, pos, ref_width)
+                    else {
+                        return None;
+                    };
+                    if name != expected {
+                        return None;
+                    }
+                    pos = start;
+                    let mut depth = 1usize;
+                    while pos < limit {
+                        let token_start = pos;
+                        let Ok((nested, next)) = lex(bytes, pos, ref_width) else {
+                            return None;
+                        };
+                        pos = next;
+                        match nested {
+                            Lexed::Value(Token::SubtypeOpen) => depth += 1,
+                            Lexed::Value(Token::SubtypeClose) => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    return bytes.get(start..token_start);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    return None;
                 }
                 payload_index += 1;
             }
-            Lexed::Terminator => return false,
+            Lexed::Terminator => return None,
             Lexed::Ident(_) | Lexed::SubIdent(_) => {}
         }
     }
-    false
+    None
 }
 
 /// A framing error: an unrecognized tag or a truncated token payload leaves the
@@ -414,7 +436,7 @@ pub fn frame(
 
 #[cfg(test)]
 mod tests {
-    use super::{frame, payload_subtype_is};
+    use super::{frame, payload_subtype_span};
 
     fn generated_pcurve_record(ref_width: usize) -> Vec<u8> {
         let mut bytes = vec![0x0d, 6];
@@ -435,27 +457,9 @@ mod tests {
             let bytes = generated_pcurve_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated record");
             let record = records.first().expect("generated pcurve");
-            assert!(payload_subtype_is(
-                &bytes,
-                record,
-                5,
-                ref_width,
-                "exp_par_cur"
-            ));
-            assert!(!payload_subtype_is(
-                &bytes,
-                record,
-                4,
-                ref_width,
-                "exp_par_cur"
-            ));
-            assert!(!payload_subtype_is(
-                &bytes,
-                record,
-                5,
-                ref_width,
-                "bad_par_cur"
-            ));
+            assert!(payload_subtype_span(&bytes, record, 5, ref_width, "exp_par_cur").is_some());
+            assert!(payload_subtype_span(&bytes, record, 4, ref_width, "exp_par_cur").is_none());
+            assert!(payload_subtype_span(&bytes, record, 5, ref_width, "bad_par_cur").is_none());
         }
     }
 }
