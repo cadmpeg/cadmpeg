@@ -1090,7 +1090,7 @@ fn project_definition(
         return project_composite_curve(feature, native_by_source)
             .unwrap_or_else(|| native_definition(feature));
     }
-    if feature_family(feature, "Helix") || feature_family(feature, "HelixSpiral") {
+    if is_helix(feature) {
         return project_helix(feature).unwrap_or_else(|| native_definition(feature));
     }
     if feature_family(feature, "Wrap") {
@@ -1258,6 +1258,12 @@ fn is_sweep(feature: &Feature) -> bool {
     feature_family(feature, "Sweep")
         || feature_family(feature, "Surface-Sweep")
         || feature_family(feature, "Barrer")
+}
+
+fn is_helix(feature: &Feature) -> bool {
+    feature_family(feature, "Helix")
+        || feature_family(feature, "HelixSpiral")
+        || feature_family(feature, "Helix/Spiral")
 }
 
 fn is_offset_plane(feature: &Feature) -> bool {
@@ -4148,9 +4154,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if existing.as_deref().is_some_and(|record| {
-                    !feature_family(record, "Helix") && !feature_family(record, "HelixSpiral")
-                }) {
+                if existing.as_deref().is_some_and(|record| !is_helix(record)) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
                         feature.id

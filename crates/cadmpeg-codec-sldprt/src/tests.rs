@@ -8856,6 +8856,65 @@ fn semantic_writer_round_trips_helix() {
 }
 
 #[test]
+fn semantic_writer_round_trips_slash_named_helix() {
+    use cadmpeg_ir::features::{FeatureDefinition, Length};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Coil" Type="Helix/Spiral" id="30" AxisOrigin="1mm,2mm,3mm" AxisDirection="0,0,1"><Dimension Name="Radius">4mm</Dimension><Dimension Name="Pitch">2mm</Dimension><Dimension Name="Revolutions">3.5</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Helix {
+            radius: Length(4.0),
+            pitch: Length(2.0),
+            revolutions: 3.5,
+            ..
+        }
+    ));
+
+    let FeatureDefinition::Helix {
+        axis_origin,
+        axis_direction,
+        radius,
+        pitch,
+        revolutions,
+        clockwise,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed helix");
+    };
+    *axis_origin = Point3::new(4.0, 5.0, 6.0);
+    *axis_direction = Vector3::new(0.0, 1.0, 0.0);
+    *radius = Length(7.0);
+    *pitch = Length(8.0);
+    *revolutions = 9.25;
+    *clockwise = true;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.kind, "Helix/Spiral");
+    assert_eq!(native.parameters["Radius"], "7mm");
+    assert_eq!(native.parameters["Pitch"], "8mm");
+    assert_eq!(native.parameters["Revolutions"], "9.25");
+    assert_eq!(native.properties["AxisOrigin"], "4mm,5mm,6mm");
+    assert_eq!(native.properties["AxisDirection"], "0,1,0");
+    assert_eq!(native.properties["Clockwise"], "true");
+}
+
+#[test]
 fn semantic_writer_round_trips_wrap() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ProfileRef, WrapMode};
 
