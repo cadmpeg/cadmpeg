@@ -1552,7 +1552,10 @@ not analytic extrusion geometry.
 
 A multiple-profile extrusion stores a polycurve whose segment count is the
 profile count. Profile segments are closed and contain one outer segment
-followed by inner segments in a common profile plane.
+followed by inner segments in a common profile plane. The profile and every
+polycurve segment are two-dimensional curve payloads in extrusion profile
+coordinates. Profile coordinates use document length conversion before the
+profile frame places them at the trimmed path endpoints.
 
 ## 17. SubD
 

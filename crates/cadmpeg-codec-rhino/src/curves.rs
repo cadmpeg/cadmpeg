@@ -373,6 +373,105 @@ pub(crate) fn decode_embedded_curve(
     Ok(curve)
 }
 
+/// Reads one bounded polymorphic plane-space curve and applies length scaling.
+pub(crate) fn decode_embedded_curve_2d(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+    archive: ArchiveVersion,
+    depth: usize,
+) -> Result<DecodedCurve, GeometryError> {
+    if depth > MAX_CURVE_DEPTH {
+        return Err(malformed(
+            reader.position(),
+            "plane-space curve recursion limit exceeded",
+        ));
+    }
+    let start = reader.position();
+    let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
+    let mut wrapper_warnings = Vec::new();
+    let class = parse_class_wrapper(
+        data,
+        start..wrapper.next_offset,
+        archive,
+        &mut wrapper_warnings,
+    )?;
+    reader.skip(wrapper.next_offset - start)?;
+    if !curve_class(class.class_uuid) || matches!(class.class_uuid, CURVE_PROXY | CURVE_ON_SURFACE)
+    {
+        return Err(malformed(
+            start,
+            "embedded plane-space object is not a supported curve",
+        ));
+    }
+    let decoded = decode_inner_2d(
+        data,
+        class.class_uuid,
+        class.class_data_range,
+        archive,
+        depth,
+    )?;
+    let DecodedGeometry::Curve { mut curve } = decoded else {
+        return Err(malformed(
+            start,
+            "embedded plane-space object is not a curve",
+        ));
+    };
+    scale_decoded_curve(&mut curve, scale, start)?;
+    curve.warnings.splice(0..0, wrapper_warnings);
+    Ok(curve)
+}
+
+fn scale_decoded_curve(
+    curve: &mut DecodedCurve,
+    scale: f64,
+    offset: usize,
+) -> Result<(), GeometryError> {
+    if let Some(compound) = &mut curve.compound {
+        for child in &mut compound.children {
+            scale_decoded_curve(child, scale, offset)?;
+        }
+        return Ok(());
+    }
+    match &mut curve.geometry {
+        CurveGeometry::Nurbs(nurbs) => {
+            for point in &mut nurbs.control_points {
+                *point = scale_ir_point(*point, scale)
+                    .ok_or_else(|| malformed(offset, "scaled plane-space curve is invalid"))?;
+            }
+        }
+        CurveGeometry::Circle { center, radius, .. } => {
+            *center = scale_ir_point(*center, scale)
+                .ok_or_else(|| malformed(offset, "scaled plane-space circle is invalid"))?;
+            *radius *= scale;
+            if !radius.is_finite() || *radius <= 0.0 {
+                return Err(malformed(
+                    offset,
+                    "scaled plane-space circle radius is invalid",
+                ));
+            }
+        }
+        CurveGeometry::Line { origin, .. } => {
+            *origin = scale_ir_point(*origin, scale)
+                .ok_or_else(|| malformed(offset, "scaled plane-space line is invalid"))?;
+        }
+        CurveGeometry::Degenerate { point } => {
+            *point = scale_ir_point(*point, scale)
+                .ok_or_else(|| malformed(offset, "scaled plane-space point is invalid"))?;
+        }
+        CurveGeometry::Unknown { .. } => {
+            return Err(malformed(offset, "plane-space curve has unknown geometry"));
+        }
+        _ => return Err(malformed(offset, "unsupported plane-space analytic curve")),
+    }
+    Ok(())
+}
+
+fn scale_ir_point(value: Point3, scale: f64) -> Option<Point3> {
+    let point = Point3::new(value.x * scale, value.y * scale, value.z * scale);
+    (point.x.is_finite() && point.y.is_finite() && point.z.is_finite()).then_some(point)
+}
+
 /// Converts a decoded curve tree to one exact NURBS curve when possible.
 pub(crate) fn exact_nurbs(
     curve: &DecodedCurve,
