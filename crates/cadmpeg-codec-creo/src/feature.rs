@@ -2205,11 +2205,146 @@ fn saved_entity_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
     named_compact_int(payload, b"\xe0\x01id\0", start, end)
 }
 
+fn saved_arc_scalar(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> (Option<f64>, usize) {
+    let decoded = saved_section_scalar(payload, offset, end, cache);
+    if decoded.1 > offset + 1 || decoded.0.is_some() {
+        return decoded;
+    }
+    if payload
+        .get(offset)
+        .is_some_and(|prefix| matches!(prefix, 0x80..=0xdf))
+        && offset + 7 <= end
+    {
+        return (None, offset + 7);
+    }
+    decoded
+}
+
+fn saved_positional_arcs(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+    order_table: Option<&FeatureOrderTable>,
+    segments: Option<&FeatureSegmentTable>,
+) -> Vec<FeatureSavedEntity> {
+    let (Some(order_table), Some(segments)) = (order_table, segments) else {
+        return Vec::new();
+    };
+    let valid_ids = order_table
+        .rows
+        .iter()
+        .filter(|row| {
+            segments.rows.iter().any(|segment| {
+                segment.external_id == row.external_id && segment.kind == FeatureSegmentKind::Arc
+            })
+        })
+        .map(|row| row.internal_id)
+        .collect::<BTreeSet<_>>();
+    let mut starts = Vec::new();
+    for separator in start..end {
+        if payload.get(separator) != Some(&0xe3) {
+            continue;
+        }
+        let row_start = separator + 1;
+        let (Some(entity_id), after_id) = segment_int(payload, row_start) else {
+            continue;
+        };
+        if !valid_ids.contains(&entity_id) {
+            continue;
+        }
+        let header_end = after_id.saturating_add(24).min(end);
+        if payload[after_id..header_end].contains(&0xe2) {
+            starts.push(row_start);
+        }
+    }
+    starts.sort_unstable();
+    starts.dedup();
+
+    let mut entities = Vec::new();
+    for (index, row_start) in starts.iter().copied().enumerate() {
+        let row_end = starts
+            .get(index + 1)
+            .map_or(end, |next| next.saturating_sub(1));
+        let (Some(entity_id), after_id) = segment_int(payload, row_start) else {
+            continue;
+        };
+        let Some(header_size) = payload[after_id..row_end]
+            .iter()
+            .position(|byte| *byte == 0xe2)
+        else {
+            continue;
+        };
+        let mut cursor = after_id + header_size + 1;
+        let mut values = Vec::with_capacity(12);
+        while cursor < row_end && values.len() < 12 {
+            if payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
+                values.extend([Some(0.0), Some(1.0), Some(0.0)]);
+                cursor += 2;
+                continue;
+            }
+            if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
+                let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
+                    break;
+                };
+                cursor = next;
+                continue;
+            }
+            if payload
+                .get(cursor..cursor + 2)
+                .is_some_and(|bytes| matches!(bytes, [0xf0 | 0xf1, 0xf7]))
+            {
+                let Ok((_, next)) = psb::reference_id(payload, cursor + 2) else {
+                    break;
+                };
+                cursor = next;
+                continue;
+            }
+            if payload.get(cursor) == Some(&0xeb) {
+                cursor += 6;
+                continue;
+            }
+            if matches!(payload.get(cursor), Some(0xf6)) {
+                cursor += 1;
+                continue;
+            }
+            let (value, next) = saved_arc_scalar(payload, cursor, row_end, cache);
+            if next <= cursor {
+                break;
+            }
+            values.push(value);
+            cursor = next;
+        }
+        if values.len() != 12 {
+            continue;
+        }
+        entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
+            entity_id,
+            center: [values[0], values[1], values[2]],
+            radius: values[3],
+            endpoints: [
+                [values[4], values[5], values[6]],
+                [values[7], values[8], values[9]],
+            ],
+            parameters: [values[10], values[11]],
+            offset: row_start,
+        }));
+    }
+    entities
+}
+
 fn saved_circular_entities(
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
+    order_table: Option<&FeatureOrderTable>,
+    segments: Option<&FeatureSegmentTable>,
 ) -> Vec<FeatureSavedEntity> {
     let mut entities = Vec::new();
     for (kind, label) in [
@@ -2269,6 +2404,14 @@ fn saved_circular_entities(
                     parameters: [start_parameter, end_parameter],
                     offset: entity_offset,
                 }));
+                entities.extend(saved_positional_arcs(
+                    payload,
+                    body_start,
+                    body_end,
+                    cache,
+                    order_table,
+                    segments,
+                ));
             } else {
                 entities.push(FeatureSavedEntity::Circle(FeatureSavedCircle {
                     entity_id,
@@ -2313,13 +2456,22 @@ fn saved_section(
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
+    order_table: Option<&FeatureOrderTable>,
+    segments: Option<&FeatureSegmentTable>,
 ) -> Option<FeatureSavedSection> {
     let table = find_bytes(payload, b"\xe0\x00p_saved_result\0", start, end)?;
     let table_end = find_bytes(payload, b"\xe0\x02local_sys\0", table, end)
         .or_else(|| find_bytes(payload, b"\xe0\x00rigid_data\0", table, end))
         .unwrap_or(end);
     let mut entities = saved_line_entities(payload, table, table_end, cache);
-    entities.extend(saved_circular_entities(payload, table, table_end, cache));
+    entities.extend(saved_circular_entities(
+        payload,
+        table,
+        table_end,
+        cache,
+        order_table,
+        segments,
+    ));
     entities.extend(saved_dummy_entities(payload, table, table_end));
     entities.sort_by_key(saved_entity_offset);
     (!entities.is_empty()).then_some(FeatureSavedSection {
@@ -2780,7 +2932,14 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         let section_3d = section_3d(payload, start, end);
         let dimensions = dimension_table(payload, start, end, &cache);
         let relations = relation_table(payload, start, end);
-        let saved_section = saved_section(payload, start, end, &cache);
+        let saved_section = saved_section(
+            payload,
+            start,
+            end,
+            &cache,
+            order_table.as_ref(),
+            segments.as_ref(),
+        );
         let owner_ids = psb::tokens(&payload[start..end])
             .into_iter()
             .filter(|token| token.kind == psb::TokenKind::NamedRecord)
@@ -3156,6 +3315,58 @@ mod tests {
             saved_section_scalar(&[0x18, 0xe0], 0, 2, &cache),
             (Some(0.0), 1)
         );
+    }
+
+    #[test]
+    fn saved_arc_replay_uses_order_table_row_boundaries() {
+        let mut payload = vec![0xe3, 7, 0xe2];
+        payload.extend([0x0f; 12]);
+        payload.push(0xe3);
+        let order = FeatureOrderTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![FeatureOrderRow {
+                external_id: 42,
+                internal_id: 7,
+                bitmask: 0,
+                offset: 0,
+            }],
+            offset: 0,
+        };
+        let segments = FeatureSegmentTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![FeatureSegment {
+                kind: FeatureSegmentKind::Arc,
+                directions: [None; 3],
+                point_ids: [1, 2],
+                center_id: Some(3),
+                arc_orientation: Some(0),
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 42,
+                offset: 0,
+            }],
+            offset: 0,
+        };
+
+        let entities = saved_positional_arcs(
+            &payload,
+            0,
+            payload.len(),
+            &scalar::ScalarCache::default(),
+            Some(&order),
+            Some(&segments),
+        );
+
+        assert_eq!(entities.len(), 1);
+        let FeatureSavedEntity::Arc(arc) = &entities[0] else {
+            panic!("expected saved arc");
+        };
+        assert_eq!(arc.entity_id, 7);
+        assert_eq!(arc.center, [Some(0.0); 3]);
+        assert_eq!(arc.radius, Some(0.0));
     }
 
     #[test]

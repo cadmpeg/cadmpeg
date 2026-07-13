@@ -530,6 +530,60 @@ fn saved_section_line_geometry(
     })
 }
 
+fn saved_section_arc_geometry(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    (segment.kind == crate::feature::FeatureSegmentKind::Arc && segment.arc_orientation == Some(0))
+        .then_some(())?;
+    let internal_id = definition
+        .order_table
+        .as_ref()?
+        .rows
+        .iter()
+        .find(|row| row.external_id == segment.external_id)?
+        .internal_id;
+    let arc = definition
+        .saved_section
+        .as_ref()?
+        .entities
+        .iter()
+        .find_map(|entity| match entity {
+            crate::feature::FeatureSavedEntity::Arc(arc) if arc.entity_id == internal_id => {
+                Some(arc)
+            }
+            _ => None,
+        })?;
+    let [Some(center_u), Some(center_v), _] = arc.center else {
+        return None;
+    };
+    let radius = arc.radius.filter(|radius| *radius > 1e-12)?;
+    let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
+    else {
+        return None;
+    };
+    let first = [first_u - center_u, first_v - center_v];
+    let second = [second_u - center_u, second_v - center_v];
+    let first_radius = first[0].hypot(first[1]);
+    let second_radius = second[0].hypot(second[1]);
+    let scale = radius.max(first_radius).max(second_radius).max(1.0);
+    if (first_radius - radius).abs() > 1e-9 * scale || (second_radius - radius).abs() > 1e-9 * scale
+    {
+        return None;
+    }
+    let start = second[1].atan2(second[0]);
+    let mut end = first[1].atan2(first[0]);
+    while end <= start {
+        end += std::f64::consts::TAU;
+    }
+    Some(SketchGeometry::Arc {
+        center: cadmpeg_ir::math::Point2::new(center_u, center_v),
+        radius: Length(radius),
+        start_angle: Angle(start),
+        end_angle: Angle(end),
+    })
+}
+
 fn resolved_section_segment_geometry(
     definition: &crate::feature::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
@@ -537,6 +591,7 @@ fn resolved_section_segment_geometry(
 ) -> Option<SketchGeometry> {
     section_segment_geometry(points, segment)
         .or_else(|| saved_section_line_geometry(definition, segment))
+        .or_else(|| saved_section_arc_geometry(definition, segment))
 }
 
 fn trim_segment_id(
@@ -2749,6 +2804,74 @@ mod resolved_sketch_tests {
             Some(SketchGeometry::Line {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+            })
+        );
+    }
+
+    #[test]
+    fn saved_arc_joins_through_order_table() {
+        let segment = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Arc,
+            directions: [None; 3],
+            point_ids: [7, 9],
+            center_id: Some(8),
+            arc_orientation: Some(0),
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 42,
+            offset: 40,
+        };
+        let definition = crate::feature::FeatureDefinition {
+            id: 5,
+            owner_feature_id: Some(6),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: Some(crate::feature::FeatureOrderTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: vec![crate::feature::FeatureOrderRow {
+                    external_id: 42,
+                    internal_id: 3,
+                    bitmask: 0,
+                    offset: 10,
+                }],
+                offset: 8,
+            }),
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: Some(crate::feature::FeatureSavedSection {
+                entities: vec![crate::feature::FeatureSavedEntity::Arc(
+                    crate::feature::FeatureSavedArc {
+                        entity_id: 3,
+                        center: [Some(0.0), Some(0.0), Some(0.0)],
+                        radius: Some(2.0),
+                        endpoints: [
+                            [Some(0.0), Some(-2.0), Some(0.0)],
+                            [Some(-2.0), Some(0.0), Some(0.0)],
+                        ],
+                        parameters: [None; 2],
+                        offset: 20,
+                    },
+                )],
+                offset: 18,
+            }),
+            offset: 0,
+        };
+
+        assert_eq!(
+            saved_section_arc_geometry(&definition, &segment),
+            Some(SketchGeometry::Arc {
+                center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+                start_angle: Angle(std::f64::consts::PI),
+                end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
             })
         );
     }

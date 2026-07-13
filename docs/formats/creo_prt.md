@@ -503,6 +503,15 @@ by a named-record opener and is not dictionary index `e0`.
 
 A saved entity identifier is an `order_table.int_id`; joining through that row's `ext_id` binds its evaluated geometry to the corresponding `segtab` entity. A saved line with two complete section-space XY endpoints supplies that entity's line geometry when its `var_arr` endpoints are relation-backed. The saved-entity and solved-`segtab` sets are one-to-one by entity family. After explicit `order_table` joins, exactly one unmatched saved entity and one unmatched solved entity of the same family bind as the unique remaining pair; multiple unmatched pairs remain unresolved.
 
+The named `entity(arc)` record is followed by positional generated-entity
+rows. Each row begins after `e3` with its saved entity identifier and a header
+ending at `e2`. The identifier joins `order_table.int_id`; the row is an arc
+only when the joined `order_table.ext_id` names an arc in `segtab`. Its scalar
+body stores `center(3)`, `radius`, `end1(3)`, `end2(3)`, `t0`, and `t1` in that
+order. A complete saved arc supplies section-space center, radius, endpoints,
+and increasing circular parameterization when its `var_arr` carrier is
+relation-backed.
+
 When an `order_table` omission lies between adjacent stored `segtab` rows whose internal identifiers differ by two, the omitted row has the intervening internal identifier if a saved entity of the same family carries that identifier. For an evaluated saved line, if one `ent_tab` trim endpoint equals exactly one saved endpoint, the other saved endpoint determines the opposite trim endpoint. A line without an inline carrier is then determined by its two trim endpoints only when they satisfy its stored horizontal or vertical selector.
 
 The `segtab` positional replay stores `type`, three direction fields, two endpoint point identifiers, `cntrid`, `arcorient`, `verhor`, two radii, and `ext_id`. A raw `verhor` value of `f5` adds one field before `radius`.
