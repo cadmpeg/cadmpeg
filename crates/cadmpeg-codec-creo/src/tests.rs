@@ -1608,18 +1608,32 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
     plane_row(&mut payload, 11, 12, 2.0);
     plane_row(&mut payload, 12, 0, -2.0);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\x02topol_ref_data\0");
-    circle_row(&mut payload, 20, 11, 2.0);
+    let mut one_cap_payload = payload.clone();
+    circle_row(&mut one_cap_payload, 20, 11, -5.0);
     let one_cap = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload.clone())])),
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", one_cap_payload)])),
         &DecodeOptions::default(),
     )
     .expect("one-cap decode");
-    assert!(one_cap
+    let one_cap_cylinder = one_cap
         .ir
         .model
         .surfaces
         .iter()
-        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#10"));
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#10")
+        .expect("placed one-cap cylinder");
+    assert!(matches!(
+        one_cap_cylinder.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+            origin: cadmpeg_ir::math::Point3 {
+                x: -5.0,
+                y: 5.0,
+                z: 3.0
+            },
+            radius: 1.0,
+            ..
+        }
+    ));
     let one_cap_circle = one_cap
         .ir
         .model
@@ -1644,6 +1658,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
             ..
         }
     ));
+    circle_row(&mut payload, 20, 11, 2.0);
     circle_row(&mut payload, 21, 12, -2.0);
     let result = decode::decode(
         &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),

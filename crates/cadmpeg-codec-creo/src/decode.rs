@@ -2054,12 +2054,14 @@ fn transfer_fc05_cap_circles(
             .faces
             .iter()
             .filter(|face| kinds.get(face) == Some(&crate::surface::SurfaceKind::Cylinder))
-            .count();
-        let ([cap], 1, Some(reference), Some(parameter_sign)) = (
+            .copied()
+            .collect::<Vec<_>>();
+        let ([cap], [cylinder_id], Some(reference), Some(parameter_sign), Some(axis_ordinate)) = (
             cap_planes.as_slice(),
-            cylinders,
+            cylinders.as_slice(),
             circle.reference_direction_row_frame,
             circle.parameter_sign,
+            circle.cap_ordinate_row_frame,
         ) else {
             continue;
         };
@@ -2085,28 +2087,71 @@ fn transfer_fc05_cap_circles(
             )
         };
         let id = CurveId(format!("creo:visibgeom:curve#{}", circle.curve_id));
-        if ir.model.curves.iter().any(|curve| curve.id == id) {
+        if !ir.model.curves.iter().any(|curve| curve.id == id) {
+            annotate(
+                annotations,
+                &id,
+                "VisibGeom",
+                circle.offset as u64,
+                "fc05_cap_circle",
+                Exactness::Derived,
+            );
+            ir.model.curves.push(Curve {
+                id,
+                geometry: CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(axis[0], axis[1], axis[2]),
+                    ref_direction: Vector3::new(
+                        ref_direction[0],
+                        ref_direction[1],
+                        ref_direction[2],
+                    ),
+                    radius: circle.radius_mm,
+                },
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("VisibGeom:{}", circle.curve_id),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+        }
+        let surface_id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
+        if ir
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| surface.id == surface_id)
+        {
             continue;
         }
+        let axis_origin = if axis_index == 0 {
+            [axis_ordinate, second, first]
+        } else {
+            [first, axis_ordinate, second]
+        };
         annotate(
             annotations,
-            &id,
+            &surface_id,
             "VisibGeom",
             circle.offset as u64,
-            "fc05_cap_circle",
+            "fc05_axis_cylinder",
             Exactness::Derived,
         );
-        ir.model.curves.push(Curve {
-            id,
-            geometry: CurveGeometry::Circle {
-                center: Point3::new(center[0], center[1], center[2]),
+        ir.model.surfaces.push(Surface {
+            id: surface_id,
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(axis_origin[0], axis_origin[1], axis_origin[2]),
                 axis: Vector3::new(axis[0], axis[1], axis[2]),
                 ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
                 radius: circle.radius_mm,
             },
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
-                object_id: format!("VisibGeom:{}", circle.curve_id),
+                object_id: format!("VisibGeom:{cylinder_id}"),
                 name: None,
                 color: None,
                 visible: None,

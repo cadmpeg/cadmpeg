@@ -269,7 +269,7 @@ Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a bod
 | `fc 08` | World-coordinate control-polyline family |
 | `fc 13` | Held-cap-ordinate control polyline       |
 
-`fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and `C` use eight-byte world-coordinate tokens and `B` and `t` use DICT or standalone-zero scalar tokens. `C` is the cap ordinate along the owning cylinder axis. `t` is the angular curve parameter in radians. The signed relation between successive polar angles and `t` determines curve sense; subtracting the signed stored parameter from a point's polar angle determines the parameter-zero radial direction. For a model-X axis, `(A, B, C)` maps to `(Z, Y, X)`; for a model-Y axis it maps to `(X, Z, Y)`. `fc 13` stores a control polyline rather than an analytic circle.
+`fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and `C` use eight-byte world-coordinate tokens and `B` and `t` use DICT or standalone-zero scalar tokens. `C` is the owning cylinder's axis-placement ordinate. The adjacent plane supplies the cap circle's axial coordinate. `t` is the angular curve parameter in radians. The signed relation between successive polar angles and `t` determines curve sense; subtracting the signed stored parameter from a point's polar angle determines the parameter-zero radial direction. For a model-X axis, `(A, B, C)` maps to `(Z, Y, X)`; for a model-Y axis it maps to `(X, Z, Y)`. `fc 13` stores a control polyline rather than an analytic circle.
 
 Within the `fc 05` scalar lane, `8b <tail6>` reconstructs the IEEE-754 bytes `40 00 <tail6>` and consumes seven stored bytes. This lane-specific interpretation takes precedence over the context-independent `8b` scalar form.
 
@@ -288,7 +288,7 @@ Each participating `fc 05` curve is a circle centered at the shared in-plane
 center and its own transformed cap ordinate, with the cylinder axis and radius.
 The curve identifier remains the `crv_array.crv_id`.
 
-One `fc 05` curve bound to one cylinder face and one resolved model-X or model-Y cap plane independently defines its model-space circle. A second agreeing cap is required only to define the cylinder carrier.
+One `fc 05` curve bound to one cylinder face and one resolved model-X or model-Y cap plane independently defines both its model-space circle and the cylinder carrier. The in-plane fitted center, stored `C` ordinate, signed parameter sense, parameter-zero radial direction, and fitted radius form the cylinder axis placement and radius.
 
 ## 5. Topology and section records
 
