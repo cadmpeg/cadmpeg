@@ -9,33 +9,47 @@ use crate::subd::SubdSurface;
 
 macro_rules! define_model_entity_json {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] => $key:expr; )*) => {
-        fn model_entity_json(ir: &CadIr, id: &str) -> Option<serde_json::Value> {
+        fn model_entity_json(
+            ir: &CadIr,
+            wanted: &HashSet<&str>,
+        ) -> HashMap<String, serde_json::Value> {
+            let mut entities = HashMap::new();
             $(
                 let key: fn(&$element) -> String = $key;
-                if let Some(entity) = ir.model.$field.iter().find(|entity| key(entity) == id) {
-                    return serde_json::to_value(entity).ok();
+                for entity in &ir.model.$field {
+                    let id = key(entity);
+                    if wanted.contains(id.as_str()) {
+                        if let Ok(value) = serde_json::to_value(entity) {
+                            entities.insert(id, value);
+                        }
+                    }
                 }
             )*
-            None
+            entities
         }
     };
 }
 crate::document::arena_registry!(define_model_entity_json);
 
-/// Serialize the single entity `id` names. Covers the same id universe as the
-/// identity checks: model arenas, unknowns, and native records including
+/// Serialize annotated entities in one arena pass. Covers the same id universe
+/// as the identity checks: model arenas, unknowns, and native records including
 /// nested history and feature entities.
-fn entity_json(ir: &CadIr, id: &str) -> Option<serde_json::Value> {
-    if let Some(value) = model_entity_json(ir, id) {
-        return Some(value);
-    }
-    ir.native
+fn annotated_entity_json(ir: &CadIr, wanted: &HashSet<&str>) -> HashMap<String, serde_json::Value> {
+    let mut entities = model_entity_json(ir, wanted);
+    for record in ir
+        .native
         .0
         .values()
         .flat_map(|namespace| namespace.arenas.values())
         .flatten()
-        .find(|record| record.id == id)
-        .and_then(|record| serde_json::to_value(record).ok())
+    {
+        if wanted.contains(record.id.as_str()) {
+            if let Ok(value) = serde_json::to_value(record) {
+                entities.insert(record.id.clone(), value);
+            }
+        }
+    }
+    entities
 }
 
 pub(super) fn check_annotations(
@@ -43,6 +57,13 @@ pub(super) fn check_annotations(
     all_ids: &HashSet<String>,
     findings: &mut Vec<Finding>,
 ) {
+    let wanted: HashSet<&str> = ir
+        .annotations
+        .exactness
+        .iter()
+        .filter_map(|(id, note)| (!note.fields.is_empty()).then_some(id.as_str()))
+        .collect();
+    let entity_json = annotated_entity_json(ir, &wanted);
     for (id, provenance) in &ir.annotations.provenance {
         if !all_ids.contains(id) {
             annotation_finding(
@@ -74,7 +95,7 @@ pub(super) fn check_annotations(
         if note.fields.is_empty() {
             continue;
         }
-        let Some(entity) = entity_json(ir, id) else {
+        let Some(entity) = entity_json.get(id) else {
             annotation_finding(
                 findings,
                 Severity::Warning,
@@ -84,7 +105,7 @@ pub(super) fn check_annotations(
             continue;
         };
         for path in note.fields.keys() {
-            if path.is_empty() || !field_path_resolves(&entity, path) {
+            if path.is_empty() || !field_path_resolves(entity, path) {
                 annotation_finding(
                     findings,
                     Severity::Warning,
