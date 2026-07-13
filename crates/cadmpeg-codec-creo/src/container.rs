@@ -17,9 +17,9 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 
 use crate::curve::{
-    self, BoundPrototypePcurve, CurveParameterRecord, CurvePrototype, CurvePrototypeTopology,
-    CurveTopologyRow, Fc05Circle, Fc05CylinderCapPair, FcCurveControlPoints, PcurveEndpoints,
-    PrototypePcurveEndpoints,
+    self, BoundPrototypePcurve, CurveExpressionRecord, CurveParameterRecord, CurvePrototype,
+    CurvePrototypeTopology, CurveTopologyRow, Fc05Circle, Fc05CylinderCapPair,
+    FcCurveControlPoints, PcurveEndpoints, PrototypePcurveEndpoints,
 };
 use crate::datum::{self, DatumPlane};
 use crate::feature::{
@@ -161,6 +161,8 @@ pub struct ContainerScan {
     /// Labeled curve prototypes from geometry sections. The curve body and
     /// its analytic interpretation are decoded separately.
     pub curve_prototypes: Vec<CurvePrototype>,
+    /// Source programs from curve-from-equation entity records.
+    pub curve_expressions: Vec<CurveExpressionRecord>,
     /// Bounded analytic parameter bodies from positional curve rows.
     pub curve_parameters: Vec<CurveParameterRecord>,
     /// Complete eight-slot pcurve endpoints in both adjacent face frames.
@@ -568,6 +570,30 @@ fn curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<CurvePrototype> {
     prototypes
 }
 
+fn curve_expressions(data: &[u8], sections: &[Section]) -> Vec<CurveExpressionRecord> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.role == role::GEOMETRY || section.name == "DEPDB_DATA")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            curve::expression_records(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record.expression_offset += section.offset;
+                    for line in &mut record.lines {
+                        line.offset += section.offset;
+                    }
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
 fn curve_parameters(data: &[u8], sections: &[Section]) -> Vec<CurveParameterRecord> {
     let mut records = Vec::new();
     for section in sections
@@ -933,6 +959,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let surface_prototypes = surface_prototypes(&data, &sections);
     let surface_prototype_records = surface_prototype_records(&data, &sections);
     let curve_prototypes = curve_prototypes(&data, &sections);
+    let curve_expressions = curve_expressions(&data, &sections);
     let curve_parameters = curve_parameters(&data, &sections);
     let curve_topology_rows = curve_topology_rows(&data, &sections);
     let pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
@@ -985,6 +1012,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         surface_prototypes,
         surface_prototype_records,
         curve_prototypes,
+        curve_expressions,
         curve_parameters,
         pcurves,
         fc_curve_control_points,

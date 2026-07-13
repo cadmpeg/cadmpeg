@@ -97,6 +97,44 @@ struct CreoSketchRelation {
     body: Vec<u8>,
 }
 
+#[derive(Serialize)]
+struct CreoCurveExpressionRecord {
+    id: String,
+    entity_id: u32,
+    backup: bool,
+    lines: Vec<CreoCurveExpressionLine>,
+}
+
+#[derive(Serialize)]
+struct CreoCurveExpressionLine {
+    text: String,
+    offset: usize,
+}
+
+fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionRecord> {
+    scan.curve_expressions
+        .iter()
+        .map(|record| CreoCurveExpressionRecord {
+            id: format!(
+                "creo:curve_expression#{}:{}@{}",
+                if record.backup { "backup" } else { "active" },
+                record.entity_id,
+                record.offset
+            ),
+            entity_id: record.entity_id,
+            backup: record.backup,
+            lines: record
+                .lines
+                .iter()
+                .map(|line| CreoCurveExpressionLine {
+                    text: line.text.clone(),
+                    offset: line.offset,
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
     scan.feature_definitions
         .iter()
@@ -1702,6 +1740,22 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("sketches", &sketches)?;
     }
+    let curve_expressions = curve_expression_records(scan);
+    if !curve_expressions.is_empty() {
+        for (expression, source) in curve_expressions.iter().zip(&scan.curve_expressions) {
+            annotate(
+                &mut annotations,
+                &expression.id,
+                "DEPDB_DATA",
+                source.expression_offset as u64,
+                "curve_expression_program",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("curve_expressions", &curve_expressions)?;
+    }
     ir.annotations = annotations.build();
     Ok(ir)
 }
@@ -1769,6 +1823,10 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_curve_parameter_record_count".to_string(),
         scan.curve_parameters.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_curve_expression_record_count".to_string(),
+        scan.curve_expressions.len().to_string(),
     );
     attributes.insert(
         "decoded_pcurve_count".to_string(),

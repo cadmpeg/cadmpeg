@@ -30,6 +30,30 @@ pub struct CurvePrototype {
     pub offset: usize,
 }
 
+/// One source line in a curve-equation expression program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurveExpressionLine {
+    /// UTF-8 source text without its NUL terminator.
+    pub text: String,
+    /// Byte offset of the first source byte.
+    pub offset: usize,
+}
+
+/// Expression program stored by a curve-from-equation entity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurveExpressionRecord {
+    /// Entity identifier from the enclosing record.
+    pub entity_id: u32,
+    /// Whether the enclosing record is `backup_ents(crv_fr_eqn)`.
+    pub backup: bool,
+    /// Ordered source lines declared by the `f8` array.
+    pub lines: Vec<CurveExpressionLine>,
+    /// Byte offset of the enclosing entity label.
+    pub offset: usize,
+    /// Byte offset of the `expression` field.
+    pub expression_offset: usize,
+}
+
 /// A curve row with a uniquely delimited topology suffix.
 ///
 /// `faces` and `next_edges` preserve the two native sides in order.
@@ -242,6 +266,77 @@ pub fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
         });
     }
     result
+}
+
+/// Decode bounded curve-from-equation expression programs.
+pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
+    const PRIMARY: &[u8] = b"entity(crv_fr_eqn)\0";
+    const BACKUP: &[u8] = b"backup_ents(crv_fr_eqn)\0";
+    const ID: &[u8] = b"\xe0\x01id\0";
+    const EXPRESSION: &[u8] = b"\xe0\x0aexpression\0";
+
+    let mut labels = Vec::new();
+    for (label, backup) in [(PRIMARY, false), (BACKUP, true)] {
+        let mut start = 0;
+        while let Some(offset) = find(payload, label, start) {
+            labels.push((offset, label.len(), backup));
+            start = offset + label.len();
+        }
+    }
+    labels.sort_unstable_by_key(|(offset, _, _)| *offset);
+
+    let mut records = Vec::new();
+    for (index, &(offset, label_len, backup)) in labels.iter().enumerate() {
+        let end = labels
+            .get(index + 1)
+            .map_or(payload.len(), |(next, _, _)| *next);
+        let Some(id_label) = find_in(payload, ID, offset + label_len, end) else {
+            continue;
+        };
+        let id_start = id_label + ID.len();
+        let (entity_id, after_id) = compact_int(payload, id_start);
+        if after_id == id_start {
+            continue;
+        }
+        let Some(expression_offset) = find_in(payload, EXPRESSION, after_id, end) else {
+            continue;
+        };
+        let opener = expression_offset + EXPRESSION.len();
+        if payload.get(opener) != Some(&psb::token::ARRAY_OPEN) {
+            continue;
+        }
+        let (count, mut cursor) = compact_int(payload, opener + 1);
+        if cursor == opener + 1 {
+            continue;
+        }
+        let mut lines = Vec::new();
+        for _ in 0..count {
+            let Some(relative_end) = payload[cursor..end].iter().position(|byte| *byte == 0) else {
+                lines.clear();
+                break;
+            };
+            let line_end = cursor + relative_end;
+            let Ok(text) = std::str::from_utf8(&payload[cursor..line_end]) else {
+                lines.clear();
+                break;
+            };
+            lines.push(CurveExpressionLine {
+                text: text.to_owned(),
+                offset: cursor,
+            });
+            cursor = line_end + 1;
+        }
+        if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
+            records.push(CurveExpressionRecord {
+                entity_id,
+                backup,
+                lines,
+                offset,
+                expression_offset,
+            });
+        }
+    }
+    records
 }
 
 /// Decode positional `crv_array` rows whose terminal
@@ -906,6 +1001,29 @@ mod tests {
     #[test]
     fn ignores_incomplete_labeled_rows() {
         assert!(prototypes(b"crv_array\0crv_id\0\x07").is_empty());
+    }
+
+    #[test]
+    fn decodes_counted_curve_expression_source_lines() {
+        let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x89\x4c\
+            \xe0\x0aexpression\0\xf8\x03r=5\0theta=t*360\0z=71*t\0\
+            \xe0\x00backup_ents(crv_fr_eqn)\0\xe3\xe0\x01id\0\0\
+            \xe0\x0aexpression\0\xf8\x01r=5\0";
+        let records = expression_records(payload);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].entity_id, 0x094c);
+        assert!(!records[0].backup);
+        assert_eq!(
+            records[0]
+                .lines
+                .iter()
+                .map(|line| line.text.as_str())
+                .collect::<Vec<_>>(),
+            ["r=5", "theta=t*360", "z=71*t"]
+        );
+        assert!(records[1].backup);
+        assert_eq!(records[1].lines[0].text, "r=5");
+        assert!(records[0].lines[0].offset < records[0].lines[1].offset);
     }
 
     #[test]

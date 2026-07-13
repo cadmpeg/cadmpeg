@@ -1195,6 +1195,32 @@ fn scan_discovers_labeled_curve_prototypes() {
 }
 
 #[test]
+fn decode_preserves_counted_curve_expression_programs() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x89\x4c\
+        \xe0\x0aexpression\0\xf8\x03r=5\0theta=t*360\0z=71*t\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+    let scan = container::scan_bytes(data.clone());
+    assert_eq!(scan.curve_expressions.len(), 1);
+    assert_eq!(scan.curve_expressions[0].entity_id, 0x094c);
+    assert_eq!(scan.curve_expressions[0].lines.len(), 3);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let records = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"];
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].fields["entity_id"], 0x094c);
+    assert_eq!(records[0].fields["lines"][1]["text"], "theta=t*360");
+    assert_annotation(
+        &result.ir,
+        &records[0].id,
+        "creo:DEPDB_DATA",
+        scan.curve_expressions[0].expression_offset as u64,
+        "curve_expression_program",
+        Exactness::ByteExact,
+    );
+}
+
+#[test]
 fn scan_discovers_curve_halfedge_topology() {
     let mut payload = visibgeom_payload(0, 1);
     payload
