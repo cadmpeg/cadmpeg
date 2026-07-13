@@ -1479,31 +1479,9 @@ fn profile_loci_by_marker(
                 .iter()
                 .map(|(point, _)| quantize(*point, QUANTUM))
                 .collect::<HashSet<_>>();
-            let mut translations = HashMap::<(i64, i64), usize>::new();
-            for marker in &marker_points {
-                for locus in &locus_points {
-                    *translations
-                        .entry((locus.0 - marker.0, locus.1 - marker.1))
-                        .or_default() += 1;
-                }
-            }
-            let Some(maximum) = translations
-                .values()
-                .copied()
-                .max()
-                .filter(|count| *count >= 2)
-            else {
+            let Some(transform) = unique_marker_transform(&marker_points, &locus_points) else {
                 continue;
             };
-            let mut candidates = translations
-                .into_iter()
-                .filter_map(|(translation, count)| (count == maximum).then_some(translation));
-            let Some(translation) = candidates.next() else {
-                continue;
-            };
-            if candidates.next().is_some() {
-                continue;
-            }
             let loci_by_point = loci.iter().fold(
                 HashMap::<(i64, i64), Vec<SketchLocus>>::new(),
                 |mut by_point, (point, locus)| {
@@ -1519,7 +1497,9 @@ fn profile_loci_by_marker(
                     continue;
                 };
                 let point = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                let translated = (point.0 + translation.0, point.1 + translation.1);
+                let Some(translated) = transform.apply(point) else {
+                    continue;
+                };
                 let Some(marker_loci) = loci_by_point.get(&translated) else {
                     continue;
                 };
@@ -1531,6 +1511,136 @@ fn profile_loci_by_marker(
         }
     }
     result
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MarkerTransform {
+    swap: bool,
+    u_sign: i8,
+    v_sign: i8,
+    translation: (i64, i64),
+}
+
+impl MarkerTransform {
+    fn apply_axes(self, point: (i64, i64)) -> Option<(i64, i64)> {
+        let (u, v) = if self.swap { (point.1, point.0) } else { point };
+        Some((
+            i64::try_from(i128::from(u) * i128::from(self.u_sign)).ok()?,
+            i64::try_from(i128::from(v) * i128::from(self.v_sign)).ok()?,
+        ))
+    }
+
+    fn apply(self, point: (i64, i64)) -> Option<(i64, i64)> {
+        let point = self.apply_axes(point)?;
+        Some((
+            point.0.checked_add(self.translation.0)?,
+            point.1.checked_add(self.translation.1)?,
+        ))
+    }
+}
+
+fn unique_marker_transform(
+    marker_points: &HashSet<(i64, i64)>,
+    locus_points: &HashSet<(i64, i64)>,
+) -> Option<MarkerTransform> {
+    let identity = MarkerTransform {
+        swap: false,
+        u_sign: 1,
+        v_sign: 1,
+        translation: (0, 0),
+    };
+    if let Some(transform) = unique_transform_translation(identity, marker_points, locus_points) {
+        return Some(transform);
+    }
+    let mut scored = Vec::new();
+    for swap in [false, true] {
+        for u_sign in [-1, 1] {
+            for v_sign in [-1, 1] {
+                if !swap && u_sign == 1 && v_sign == 1 {
+                    continue;
+                }
+                let transform = MarkerTransform {
+                    swap,
+                    u_sign,
+                    v_sign,
+                    translation: (0, 0),
+                };
+                let transformed = marker_points
+                    .iter()
+                    .filter_map(|point| transform.apply_axes(*point))
+                    .collect::<HashSet<_>>();
+                let mut translations = HashMap::<(i64, i64), usize>::new();
+                for marker in &transformed {
+                    for locus in locus_points {
+                        let Some(translation) = locus
+                            .0
+                            .checked_sub(marker.0)
+                            .zip(locus.1.checked_sub(marker.1))
+                        else {
+                            continue;
+                        };
+                        *translations.entry(translation).or_default() += 1;
+                    }
+                }
+                scored.extend(translations.into_iter().map(|(translation, count)| {
+                    (
+                        MarkerTransform {
+                            translation,
+                            ..transform
+                        },
+                        count,
+                    )
+                }));
+            }
+        }
+    }
+    let maximum = scored
+        .iter()
+        .map(|(_, count)| *count)
+        .max()
+        .filter(|count| *count >= 2)?;
+    let mut candidates = scored
+        .into_iter()
+        .filter_map(|(transform, count)| (count == maximum).then_some(transform));
+    let first = candidates.next()?;
+    candidates.next().is_none().then_some(first)
+}
+
+fn unique_transform_translation(
+    transform: MarkerTransform,
+    marker_points: &HashSet<(i64, i64)>,
+    locus_points: &HashSet<(i64, i64)>,
+) -> Option<MarkerTransform> {
+    let transformed = marker_points
+        .iter()
+        .filter_map(|point| transform.apply_axes(*point))
+        .collect::<HashSet<_>>();
+    let mut translations = HashMap::<(i64, i64), usize>::new();
+    for marker in &transformed {
+        for locus in locus_points {
+            let Some(translation) = locus
+                .0
+                .checked_sub(marker.0)
+                .zip(locus.1.checked_sub(marker.1))
+            else {
+                continue;
+            };
+            *translations.entry(translation).or_default() += 1;
+        }
+    }
+    let maximum = translations
+        .values()
+        .copied()
+        .max()
+        .filter(|count| *count >= 2)?;
+    let mut candidates = translations
+        .into_iter()
+        .filter_map(|(translation, count)| (count == maximum).then_some(translation));
+    let translation = candidates.next()?;
+    candidates.next().is_none().then_some(MarkerTransform {
+        translation,
+        ..transform
+    })
 }
 
 fn quantize(point: Point2, quantum: f64) -> (i64, i64) {
@@ -1632,7 +1742,9 @@ fn marker_entities(
 
 #[cfg(test)]
 mod profile_join_tests {
-    use super::{marker_entities, profile_loci_by_marker, typed_relation_definition};
+    use super::{
+        marker_entities, profile_loci_by_marker, typed_relation_definition, unique_marker_transform,
+    };
     use crate::records::{
         FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
         FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
@@ -1782,6 +1894,26 @@ mod profile_join_tests {
                 ..
             }) if parameter.0 == "distance"
         ));
+    }
+
+    #[test]
+    fn unique_axis_swap_maps_marker_coordinates_to_profile_loci() {
+        let markers = [(0, 0), (2, 1), (7, 4), (3, 9)].into_iter().collect();
+        let loci = [(0, 0), (1, 2), (4, 7), (9, 3)].into_iter().collect();
+        let transform = unique_marker_transform(&markers, &loci).expect("unique transform");
+        assert!(transform.swap);
+        assert_eq!(transform.u_sign, 1);
+        assert_eq!(transform.v_sign, 1);
+        assert!(markers
+            .into_iter()
+            .all(|point| loci.contains(&transform.apply(point).unwrap())));
+    }
+
+    #[test]
+    fn symmetric_axis_swaps_remain_unbound() {
+        let markers = [(0, 0), (48, 0), (48, 24), (0, 24)].into_iter().collect();
+        let loci = [(0, 0), (24, 0), (24, 48), (0, 48)].into_iter().collect();
+        assert_eq!(unique_marker_transform(&markers, &loci), None);
     }
 }
 
