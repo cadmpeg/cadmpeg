@@ -41,7 +41,6 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The reference-lane rule associating a `0638` oriented use with its owner-local `21xx` support and `05xx` incidence record is unspecified.
 - The fields that bind each `05 0b`/`05 10`/`05 15` incidence lane to physical-edge endpoints are unspecified.
 - The pole-reference program in non-inline `2145`, `2172`, and `219f` support records is unspecified.
-- The byte-semantic distinction between non-inner loop classes `0x41` and `0xc1` is unspecified.
 - The records or fields encoding body and shell membership are unspecified.
 - The six `0x10`-tagged `u32` reference tokens of the `5e 1a` edge-stride record (offsets `7, 12, 17, 22, 27, 32`) are carried raw; their referents are unresolved.
 

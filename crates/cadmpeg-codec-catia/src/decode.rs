@@ -141,7 +141,7 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
                 losses: vec![LossNote {
                     category: LossCategory::Topology,
                     severity: Severity::Blocking,
-                    message: "The zero-entity B-rep graph is reconstructed; face/shell orientation gauge and pcurve geometry for odd support families remain unresolved."
+                    message: "The zero-entity B-rep graph and face orientation are reconstructed; pcurve geometry for odd support families remains unresolved."
                         .to_string(),
                     provenance: None,
                 }],
@@ -438,6 +438,19 @@ fn transfer_zero_entity_topology(
     for (face_index, face) in topology.faces.iter().enumerate() {
         let id = FaceId(format!("catia:zero-entity:face#{face_index}"));
         let carrier = face.carrier_run.unwrap_or(face_index);
+        let outer_classes: Vec<u8> = face
+            .loop_indices
+            .iter()
+            .filter_map(|index| {
+                let loop_ = &topology.loops[*index];
+                (!loop_.inner).then_some(loop_.loop_class)
+            })
+            .collect();
+        let sense = match outer_classes.as_slice() {
+            [0x41] => Sense::Forward,
+            [0xc1] => Sense::Reversed,
+            _ => return false,
+        };
         annotate(
             annotations,
             &id,
@@ -456,7 +469,7 @@ fn transfer_zero_entity_topology(
                 face_components[face_index]
             )),
             surface: SurfaceId(format!("catia:zero-entity:surf#{carrier}")),
-            sense: Sense::Forward,
+            sense,
             loops: face
                 .loop_indices
                 .iter()
