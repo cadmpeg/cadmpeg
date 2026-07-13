@@ -10733,10 +10733,21 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
     assert!(profiles[0].data.pcurve.is_some());
     assert!(profiles[0].data.direction.is_some());
     assert_eq!(*tail, [-1, 7]);
+    let profile_curve = profiles[0].curve.clone();
 
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == profile_curve)
+        .expect("skin profile curve")
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+        origin: cadmpeg_ir::math::Point3::new(2.0, -1.0, 3.0),
+        direction: cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0),
+    };
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -10753,6 +10764,20 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
         &construction.layout,
         SkinSurfaceLayout::Profiles { profiles, .. }
             if profiles.len() == 1 && profiles[0].data.direction.is_some()
+    ));
+    let SkinSurfaceLayout::Profiles { profiles, .. } = &construction.layout else {
+        unreachable!()
+    };
+    assert!(matches!(
+        round_trip
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == profiles[0].curve)
+            .map(|curve| &curve.geometry),
+        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
     ));
 }
 

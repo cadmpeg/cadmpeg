@@ -4948,7 +4948,50 @@ fn encode_native_skin_surface(
             }
             for profile in profiles {
                 native_i64(bytes, profile.type_code);
-                native_nurbs_curve(bytes, native_loft_curve(target, &profile.curve)?)?;
+                let curve = target
+                    .model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == profile.curve)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "skin references missing profile curve {}",
+                            profile.curve
+                        ))
+                    })?;
+                let curve = match (&curve.geometry, &profile.data.pcurve) {
+                    (CurveGeometry::Nurbs(curve), _) => curve.clone(),
+                    (CurveGeometry::Line { .. }, Some(PcurveGeometry::Nurbs { knots, .. })) => {
+                        native_interval_curve(
+                            &curve.geometry,
+                            [
+                                knots.first().copied().ok_or_else(|| {
+                                    CodecError::Malformed(
+                                        "skin profile pcurve has no knot domain".into(),
+                                    )
+                                })?,
+                                knots.last().copied().ok_or_else(|| {
+                                    CodecError::Malformed(
+                                        "skin profile pcurve has no knot domain".into(),
+                                    )
+                                })?,
+                            ],
+                        )?
+                    }
+                    (CurveGeometry::Line { .. }, _) => {
+                        return Err(CodecError::NotImplemented(
+                            "source-less F3D skin profile line requires a bounded NURBS pcurve"
+                                .into(),
+                        ));
+                    }
+                    _ => {
+                        return Err(CodecError::NotImplemented(
+                            "source-less F3D skin profile requires a NURBS or bounded line curve"
+                                .into(),
+                        ));
+                    }
+                };
+                native_nurbs_curve(bytes, &curve)?;
                 native_skin_profile_data(bytes, target, &profile.data)?;
             }
             native_nurbs_curve(bytes, native_loft_curve(target, path)?)?;
