@@ -1951,6 +1951,12 @@ fn saved_section_scalar(
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
         return (Some(f64::from_be_bytes(raw)), offset + 7);
     }
+    if prefix == 0xdd && offset + 7 <= end {
+        let mut raw = [0; 8];
+        raw[..2].copy_from_slice(&[0x40, 0x0c]);
+        raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
+        return (Some(f64::from_be_bytes(raw)), offset + 7);
+    }
     if prefix == 0xd5 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0xbf;
@@ -3356,6 +3362,20 @@ mod tests {
         assert_eq!(
             saved_section_scalar(&[0x18, 0xe0], 0, 2, &cache),
             (Some(0.0), 1)
+        );
+    }
+
+    #[test]
+    fn saved_section_dd_form_supplies_ieee_high_bytes() {
+        let bytes = [0xdd, 0xe6, 0x8a, 0x84, 0x79, 0xd0, 0x62];
+        assert_eq!(
+            saved_section_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
+            (
+                Some(f64::from_be_bytes([
+                    0x40, 0x0c, 0xe6, 0x8a, 0x84, 0x79, 0xd0, 0x62,
+                ])),
+                7,
+            )
         );
     }
 
