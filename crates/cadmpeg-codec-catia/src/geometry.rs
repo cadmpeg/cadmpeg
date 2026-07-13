@@ -2353,30 +2353,54 @@ fn read_f64_array<const N: usize>(data: &[u8], start: usize) -> Option<[f64; N]>
 /// Decode framed `a8 03 20` UV jet records.
 #[must_use]
 pub fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
+    object_stream_pcurves(data)
+        .into_iter()
+        .filter(|pcurve| data.get(pcurve.pos) == Some(&0xa8))
+        .collect()
+}
+
+/// Decode framed `a8 03 20` and `b5 03 20` object-stream UV jet records.
+#[must_use]
+pub fn object_stream_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
     let mut out = Vec::new();
-    let mut search = 0;
-    while let Some(relative) = data[search..].windows(3).position(|v| v == [0xa8, 3, 0x20]) {
-        let pos = search + relative;
-        search = pos + 3;
-        let Some(length) = u32_le(data, pos + 3).and_then(|v| usize::try_from(v).ok()) else {
+    for pos in 0..data.len().saturating_sub(11) {
+        if data.get(pos + 1..pos + 3) != Some(&[0x03, 0x20]) {
+            continue;
+        }
+        let Some((payload, length, object_id)) = (match data[pos] {
+            0xa8 => u32_le(data, pos + 3)
+                .and_then(|length| usize::try_from(length).ok())
+                .zip(u32_le(data, pos + 7))
+                .map(|(length, object_id)| (pos + 11, length, object_id)),
+            0xb5 => data
+                .get(pos + 3)
+                .zip(u32_le(data, pos + 4))
+                .map(|(length, object_id)| (pos + 8, usize::from(*length), object_id)),
+            _ => None,
+        }) else {
             continue;
         };
-        let Some(end) = pos.checked_add(11).and_then(|v| v.checked_add(length)) else {
+        let Some(end) = payload.checked_add(length) else {
             continue;
         };
         if end > data.len() {
             continue;
         }
-        if let Some(value) = parse_a8_pcurve(data, pos, end) {
+        if let Some(value) = parse_object_stream_pcurve(data, pos, payload, end, object_id) {
             out.push(value);
         }
     }
     out
 }
 
-fn parse_a8_pcurve(data: &[u8], pos: usize, end: usize) -> Option<A8Pcurve> {
-    let object_id = u32_le(data, pos + 7)?;
-    let mut at = pos + 12;
+fn parse_object_stream_pcurve(
+    data: &[u8],
+    pos: usize,
+    payload: usize,
+    end: usize,
+    object_id: u32,
+) -> Option<A8Pcurve> {
+    let mut at = payload + 1;
     let support_id = match *data.get(at)? {
         0x18 => {
             let v = u32::from(u16_le(data, at + 1)?);
@@ -2456,6 +2480,55 @@ fn parse_a8_pcurve(data: &[u8], pos: usize, end: usize) -> Option<A8Pcurve> {
         second_derivatives: ddu.into_iter().zip(ddv).map(|p| [p.0, p.1]).collect(),
         range,
     })
+}
+
+/// Convert degree-5 position/first/second-derivative knot jets into an exact
+/// piecewise Bézier B-spline control net.
+pub(crate) fn quintic_jet_bspline(
+    degree: u32,
+    knots: &[f64],
+    points: &[[f64; 2]],
+    first: &[[f64; 2]],
+    second: &[[f64; 2]],
+) -> Option<(Vec<f64>, Vec<[f64; 2]>)> {
+    if degree != 5
+        || knots.len() < 2
+        || points.len() != knots.len()
+        || first.len() != knots.len()
+        || second.len() != knots.len()
+    {
+        return None;
+    }
+    let mut controls = Vec::with_capacity(6 * (knots.len() - 1));
+    let mut full_knots = vec![knots[0]; 6];
+    for index in 0..knots.len() - 1 {
+        let h = knots[index + 1] - knots[index];
+        if !h.is_finite() || h <= 0.0 {
+            return None;
+        }
+        let p0 = points[index];
+        let p1 = points[index + 1];
+        let d0 = first[index];
+        let d1 = first[index + 1];
+        let dd0 = second[index];
+        let dd1 = second[index + 1];
+        controls.extend([
+            p0,
+            [p0[0] + h * d0[0] / 5.0, p0[1] + h * d0[1] / 5.0],
+            [
+                p0[0] + 2.0 * h * d0[0] / 5.0 + h * h * dd0[0] / 20.0,
+                p0[1] + 2.0 * h * d0[1] / 5.0 + h * h * dd0[1] / 20.0,
+            ],
+            [
+                p1[0] - 2.0 * h * d1[0] / 5.0 + h * h * dd1[0] / 20.0,
+                p1[1] - 2.0 * h * d1[1] / 5.0 + h * h * dd1[1] / 20.0,
+            ],
+            [p1[0] - h * d1[0] / 5.0, p1[1] - h * d1[1] / 5.0],
+            p1,
+        ]);
+        full_knots.extend([knots[index + 1]; 6]);
+    }
+    Some((full_knots, controls))
 }
 
 /// A circle carrier in the standard `0x60` edge-support table.
@@ -2729,6 +2802,13 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<A8Surface> {
         control_points.push(f64_point(data, at)?);
         at += 24;
     }
+    if control_points
+        .iter()
+        .flat_map(|point| [point.x, point.y, point.z])
+        .any(|coordinate| !coordinate.is_finite() || coordinate.abs() >= 1e12)
+    {
+        return None;
+    }
     let weights = match mode {
         0x01 => None,
         0x05 => Some(a5_weights(
@@ -2809,6 +2889,13 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
     for _ in 0..poles {
         control_points.push(f64_point(data, at)?);
         at += 24;
+    }
+    if control_points
+        .iter()
+        .flat_map(|point| [point.x, point.y, point.z])
+        .any(|coordinate| !coordinate.is_finite() || coordinate.abs() >= 1e12)
+    {
+        return None;
     }
     let weights = if mode == 0x05 {
         let values = f64_values(data, &mut at, poles, end)?;

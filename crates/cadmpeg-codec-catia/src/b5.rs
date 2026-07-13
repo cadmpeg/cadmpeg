@@ -220,6 +220,36 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             Some((record.object_id, pcurve))
         })
         .collect();
+    for jet in crate::geometry::object_stream_pcurves(bytes) {
+        if jet.rational
+            || by_id
+                .get(&jet.object_id)
+                .is_none_or(|record| record.class != 0x20)
+        {
+            continue;
+        }
+        let Some((_, control_points)) = crate::geometry::quintic_jet_bspline(
+            jet.degree,
+            &jet.knots,
+            &jet.points,
+            &jet.first_derivatives,
+            &jet.second_derivatives,
+        ) else {
+            continue;
+        };
+        pcurves.insert(
+            jet.object_id,
+            B5Pcurve {
+                object_id: jet.object_id,
+                surface: jet.support_id,
+                degree: jet.degree,
+                distinct_knots: jet.knots.clone(),
+                multiplicities: vec![jet.degree + 1; jet.knots.len()],
+                control_points,
+                lifted_endpoints: None,
+            },
+        );
+    }
     for pcurve in pcurves.values_mut() {
         pcurve.lifted_endpoints = surfaces
             .get(&pcurve.surface)
@@ -697,7 +727,11 @@ fn canonical_point(
     for dx in -1..=1 {
         for dy in -1..=1 {
             for dz in -1..=1 {
-                let neighbor = [cell[0] + dx, cell[1] + dy, cell[2] + dz];
+                let neighbor = [
+                    cell[0].saturating_add(dx),
+                    cell[1].saturating_add(dy),
+                    cell[2].saturating_add(dz),
+                ];
                 matches.extend(index.get(&neighbor).into_iter().flatten().filter_map(
                     |&point_index| {
                         (distance_squared(points[point_index], endpoint)
@@ -1129,6 +1163,7 @@ fn compact(bytes: &[u8], position: &mut usize) -> Option<u32> {
 }
 
 fn records(bytes: &[u8]) -> Vec<B5Record> {
+    let recurse: fn(&[u8]) -> Vec<B5Record> = records;
     let mut records = Vec::new();
     let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
     let mut position = 0;
@@ -1149,6 +1184,22 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
             continue;
         }
         for (record_start, record_end, family, class, object_id) in run {
+            if family == 0xa8 {
+                let payload = record_start + 11;
+                for mut child in recurse(&bytes[payload..record_end]) {
+                    child.offset += payload;
+                    if seen
+                        .get(&child.object_id)
+                        .is_some_and(|(seen_class, seen_payload)| {
+                            *seen_class == child.class && *seen_payload == child.payload
+                        })
+                    {
+                        continue;
+                    }
+                    seen.insert(child.object_id, (child.class, child.payload.clone()));
+                    records.push(child);
+                }
+            }
             if !is_topology_class(class) || !matches!((family, class), (0xb5, _) | (0xa8, 0x62)) {
                 continue;
             }
@@ -1204,7 +1255,7 @@ fn object_frame(bytes: &[u8], start: usize) -> Option<(usize, u8, u8, u32)> {
 fn is_topology_class(class: u8) -> bool {
     matches!(
         class,
-        0x0e | 0x0f | 0x18 | 0x21 | 0x27 | 0x28 | 0x2d | 0x5e | 0x5f | 0x62
+        0x0e | 0x0f | 0x18 | 0x20 | 0x21 | 0x27 | 0x28 | 0x2d | 0x5e | 0x5f | 0x62
     )
 }
 
@@ -1277,7 +1328,7 @@ fn parse_loop(
     let mut pcurves = Vec::with_capacity((count - 1) / 2);
     let mut edges = Vec::with_capacity((count - 1) / 2);
     for pair in references[..count - 1].chunks_exact(2) {
-        if !matches!(by_id.get(&pair[0])?.class, 0x18 | 0x21)
+        if !matches!(by_id.get(&pair[0])?.class, 0x18 | 0x20 | 0x21)
             || by_id.get(&pair[1])?.class != 0x5e
             || !parsed_pcurves.contains_key(&pair[0])
         {
@@ -1437,6 +1488,29 @@ mod tests {
                     payload: Vec::new(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn record_walk_descends_into_length_bounded_a8_wrappers() {
+        let mut payload = vec![0xb5, 0x03, 0x27, 0x00];
+        payload.extend_from_slice(&1u32.to_le_bytes());
+        payload.extend_from_slice(&[0xb5, 0x03, 0x5e, 0x00]);
+        payload.extend_from_slice(&2u32.to_le_bytes());
+
+        let mut bytes = vec![0xa8, 0x03, 0x34];
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        bytes.extend_from_slice(&payload);
+        bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0x00]);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+
+        assert_eq!(
+            records(&bytes)
+                .iter()
+                .map(|record| (record.offset, record.object_id, record.class))
+                .collect::<Vec<_>>(),
+            vec![(11, 1, 0x27), (19, 2, 0x5e), (27, 3, 0x5e)]
         );
     }
 

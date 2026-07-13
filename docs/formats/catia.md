@@ -325,12 +325,15 @@ B5 frames. The flag byte is `03`, `13`, or `83`; topology-bearing frames use
 `03`, while alternate-flag records can bridge adjacent topology frames in the
 same run. Starting at a frame boundary, advance by the declared frame length;
 the next byte is either another A8/B5 frame or the run terminator. Marker bytes
-inside an accepted frame payload do not start records. Repeated byte-identical
-typed records with the same object id are one object.
+inside an accepted frame payload do not start peer records. An A8 wrapper may
+own a nested length-closed B5 run; that run is walked recursively within the A8
+payload boundary. Repeated byte-identical typed records with the same object id
+are one object.
 
 - `b5 03 5f` (per-face node): first ref token names the surface (`b5 03 27` plane / `28` cylinder / `2d` revolution / `a8 03 34` bspline), resolved through the object-id map. The bspline subset binds injectively to `a8 03 34`. The `5f` stream rank is the native face ordinal.
 - `b5 03 62` and wide-header `a8 03 62` (loop node): payload `<n_refs> (pcurve_ref edge_ref)* surface_ref <edge_count> <tail>`, `n_refs = 2*edge_count+1`. A cardinality below 128 is one byte `80+n`; larger cardinalities use the same positional-byte token as an object id. Member ref tokens use a positional-byte mask: `08 <lo>`, `10 <mid>`, `18 <lo><mid>`, `20 <page>`, `28 <lo><page>`, `30 <mid><page>`, and `38 <lo><mid><page>`. Omitted id bytes are zero; present bytes occupy bits 0–7, 8–15, and 16–23 respectively. A single byte in `80..ff` names object id `byte - 80`. The remaining tail begins with `05`; its topology metadata does not alter member identity or order.
 - `b5 03 21` (pcurve): `catia_support_ref` is the owning surface's `object_id` directly. The 3D edge is the pcurve lifted through the surface (plane / cylinder arc-length `θ=u/r` / surface-of-revolution / bspline), and the clamped end poles land on `05 08 01` vertices to f32 round-trip.
+- `a8/b5 03 20` (degree-5 pcurve jet): the common object-stream payload stores support id, degree, distinct knots and multiplicities, then UV position, first-derivative, and second-derivative channels. Each adjacent knot pair defines the exact quintic Bézier poles from its two endpoint jets; knot multiplicity is six at every piece boundary.
 - `b5 03 18` (analytic line pcurve): mode `01` payload `81 surface_ref 01 <u0:f64le> <v0:f64le> <du:f64le> <dv:f64le> <t0:f64le> <t1:f64le>` defines `P(t) = (u0,v0) + t(du,dv)`. Mode `05` payload `81 surface_ref 05 <u:f64le> <v0:f64le> <v1:f64le>` defines the isoparametric line from `(u,v0)` to `(u,v1)`. Mode `09` payload `81 surface_ref 09 <v:f64le> <u0:f64le> <u1:f64le>` defines the transverse isoparametric line from `(u0,v)` to `(u1,v)`. Intervals are increasing. The equivalent clamped B-spline has degree 1, endpoint knots with multiplicities `[2,2]`, and endpoint poles equal to the interval endpoints.
 - `b5 03 5f` (face node): dominant payload `<0x80 + n_refs> surface_ref loop_ref... <05-tail>`; the first reference is the carrier and the remaining references are owned loops.
 - `b5 03 5e` (edge node): payload `85 curve_ref start_vertex_ref end_vertex_ref start_parameter_ref end_parameter_ref <21|22-tail>`. The second and third references are native `5d` vertex identities. Their sharing closes the fixed loop sequence exactly; coincident coordinate loci do not merge distinct identities.

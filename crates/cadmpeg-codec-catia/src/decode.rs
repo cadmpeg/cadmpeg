@@ -1759,47 +1759,15 @@ fn quintic_jet_pcurve(
     first: &[[f64; 2]],
     second: &[[f64; 2]],
 ) -> Option<PcurveGeometry> {
-    if degree != 5
-        || knots.len() < 2
-        || points.len() != knots.len()
-        || first.len() != knots.len()
-        || second.len() != knots.len()
-    {
-        return None;
-    }
-    let mut controls = Vec::with_capacity(6 * (knots.len() - 1));
-    let mut full_knots = vec![knots[0]; 6];
-    for index in 0..knots.len() - 1 {
-        let h = knots[index + 1] - knots[index];
-        if !h.is_finite() || h <= 0.0 {
-            return None;
-        }
-        let p0 = points[index];
-        let p1 = points[index + 1];
-        let d0 = first[index];
-        let d1 = first[index + 1];
-        let dd0 = second[index];
-        let dd1 = second[index + 1];
-        controls.extend([
-            Point2::new(p0[0], p0[1]),
-            Point2::new(p0[0] + h * d0[0] / 5.0, p0[1] + h * d0[1] / 5.0),
-            Point2::new(
-                p0[0] + 2.0 * h * d0[0] / 5.0 + h * h * dd0[0] / 20.0,
-                p0[1] + 2.0 * h * d0[1] / 5.0 + h * h * dd0[1] / 20.0,
-            ),
-            Point2::new(
-                p1[0] - 2.0 * h * d1[0] / 5.0 + h * h * dd1[0] / 20.0,
-                p1[1] - 2.0 * h * d1[1] / 5.0 + h * h * dd1[1] / 20.0,
-            ),
-            Point2::new(p1[0] - h * d1[0] / 5.0, p1[1] - h * d1[1] / 5.0),
-            Point2::new(p1[0], p1[1]),
-        ]);
-        full_knots.extend([knots[index + 1]; 6]);
-    }
+    let (full_knots, controls) =
+        geometry::quintic_jet_bspline(degree, knots, points, first, second)?;
     Some(PcurveGeometry::Nurbs {
         degree,
         knots: full_knots,
-        control_points: controls,
+        control_points: controls
+            .into_iter()
+            .map(|point| Point2::new(point[0], point[1]))
+            .collect(),
         weights: None,
         periodic: false,
     })
