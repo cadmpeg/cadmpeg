@@ -492,7 +492,8 @@ The line prototype can close with `f1 e3`; positional line rows follow that
 close. Within a saved-line coordinate row, `18 e5` expands to the coordinate
 triple `[0, 1, 0]`, `41` occupies eight bytes, and `74` and `75` are positive
 DICT prefixes. Entity references may also follow the sixth coordinate before
-the row-closing `e3`.
+the row-closing `e3`. Consecutive `18 18` bytes are two standalone zero scalar
+slots; the first `18` does not consume the second as a dictionary index.
 
 A saved-line family may contain a named `entity(point)` prototype between
 positional line rows. Positional line replay resumes after that prototype's

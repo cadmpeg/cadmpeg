@@ -1925,7 +1925,7 @@ fn saved_section_scalar(
     if prefix == 0x18
         && payload
             .get(offset + 1)
-            .is_some_and(|next| matches!(next, 0xe0 | 0xe3 | 0xf0 | 0xf1))
+            .is_some_and(|next| matches!(next, 0x18 | 0xe0 | 0xe3 | 0xf0 | 0xf1))
     {
         return (Some(0.0), offset + 1);
     }
@@ -3362,6 +3362,20 @@ mod tests {
         assert_eq!(
             saved_section_scalar(&[0x18, 0xe0], 0, 2, &cache),
             (Some(0.0), 1)
+        );
+    }
+
+    #[test]
+    fn saved_section_consecutive_zero_slots_remain_distinct() {
+        let cache = scalar::ScalarCache::default();
+        let bytes = [0x18, 0x18, 0x81, 0, 0, 0, 0, 0, 0];
+        assert_eq!(
+            saved_section_scalar(&bytes, 0, bytes.len(), &cache),
+            (Some(0.0), 1)
+        );
+        assert_eq!(
+            saved_section_scalar(&bytes, 1, bytes.len(), &cache),
+            (Some(0.0), 2)
         );
     }
 
