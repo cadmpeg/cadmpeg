@@ -192,6 +192,7 @@ fn pcurve_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
         PcurveGeometry::Nurbs { knots, .. } => Some([*knots.first()?, *knots.last()?]),
         PcurveGeometry::Line { .. }
         | PcurveGeometry::Circle { .. }
-        | PcurveGeometry::Ellipse { .. } => None,
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::PolarHarmonic { .. } => None,
     }
 }

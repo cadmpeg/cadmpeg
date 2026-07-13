@@ -1472,6 +1472,22 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && !nonpositive(*major_radius)
                     && !nonpositive(*minor_radius)
             }
+            crate::geometry::PcurveGeometry::PolarHarmonic {
+                radial_center,
+                radial_cos,
+                radial_sin,
+                axial_origin,
+                axial_cos,
+                axial_sin,
+            } => {
+                point_finite(radial_center)
+                    && point_finite(radial_cos)
+                    && point_finite(radial_sin)
+                    && (direction_valid(radial_cos) || direction_valid(radial_sin))
+                    && axial_origin.is_finite()
+                    && axial_cos.is_finite()
+                    && axial_sin.is_finite()
+            }
             crate::geometry::PcurveGeometry::Nurbs {
                 degree,
                 knots,

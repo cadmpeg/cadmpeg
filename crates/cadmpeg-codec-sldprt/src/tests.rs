@@ -4380,6 +4380,52 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
 }
 
 #[test]
+fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    let mut body = Vec::new();
+    body.extend(cylinder_carrier(100, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0));
+    body.extend(ellipse_carrier(
+        200,
+        [0.0, 0.0, 0.0],
+        [-s, 0.0, s],
+        [s, 0.0, s],
+        std::f64::consts::SQRT_2,
+        1.0,
+    ));
+    body.extend(bridge(10, 20, 100));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 30, 50, 0, 40, false));
+    body.extend(edge_use(40, 200));
+    body.extend(vertex_use(50, 60));
+    body.extend(world_point(60, [1.0, 0.0, 1.0]));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(decoded.ir.model.pcurves.len(), 1);
+    assert!(matches!(
+        decoded.ir.model.pcurves[0].geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::PolarHarmonic {
+            radial_center,
+            radial_cos,
+            radial_sin,
+            axial_origin: 0.0,
+            axial_sin: 0.0,
+            ..
+        } if radial_center == cadmpeg_ir::math::Point2::new(0.0, 0.0)
+            && (radial_cos.u - 1000.0).abs() < 1e-9
+            && radial_cos.v.abs() < 1e-9
+            && radial_sin.u.abs() < 1e-9
+            && (radial_sin.v - 1000.0).abs() < 1e-9
+    ));
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn sphere_patch_gets_degenerate_meridian_seam() {
     let mut cur = Cursor::new(sldprt_with_body(&sphere_patch_body()));
     let result = SldprtCodec

@@ -2200,6 +2200,21 @@ pub enum PcurveGeometry {
         #[serde(default)]
         clockwise: bool,
     },
+    /// Polar angle and axial coordinate of a first-order harmonic spatial curve.
+    PolarHarmonic {
+        /// Radial-plane offset before the harmonic terms are applied.
+        radial_center: Point2,
+        /// Radial-plane coefficient multiplying `cos(t)`.
+        radial_cos: Point2,
+        /// Radial-plane coefficient multiplying `sin(t)`.
+        radial_sin: Point2,
+        /// Constant axial coordinate.
+        axial_origin: f64,
+        /// Axial coefficient multiplying `cos(t)`.
+        axial_cos: f64,
+        /// Axial coefficient multiplying `sin(t)`.
+        axial_sin: f64,
+    },
     /// An ellipse in parameter space, evaluated by angle in radians.
     Ellipse {
         /// Ellipse center.

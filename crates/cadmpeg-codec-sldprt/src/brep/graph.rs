@@ -1292,6 +1292,62 @@ fn derive_cylindrical_pcurves(
                     ),
                 }
             }
+            CurveGeometry::Ellipse {
+                center,
+                axis: ellipse_axis,
+                major_direction,
+                major_radius,
+                minor_radius,
+            } => {
+                let minor_direction = cadmpeg_ir::math::Vector3::new(
+                    ellipse_axis.y * major_direction.z - ellipse_axis.z * major_direction.y,
+                    ellipse_axis.z * major_direction.x - ellipse_axis.x * major_direction.z,
+                    ellipse_axis.x * major_direction.y - ellipse_axis.y * major_direction.x,
+                );
+                let relative = [
+                    center.x - origin.x,
+                    center.y - origin.y,
+                    center.z - origin.z,
+                ];
+                let major = [
+                    major_radius * major_direction.x,
+                    major_radius * major_direction.y,
+                    major_radius * major_direction.z,
+                ];
+                let minor = [
+                    minor_radius * minor_direction.x,
+                    minor_radius * minor_direction.y,
+                    minor_radius * minor_direction.z,
+                ];
+                let radial_center = cadmpeg_ir::math::Point2::new(
+                    dot(relative, *u_reference),
+                    dot(relative, cross),
+                );
+                let radial_cos =
+                    cadmpeg_ir::math::Point2::new(dot(major, *u_reference), dot(major, cross));
+                let radial_sin =
+                    cadmpeg_ir::math::Point2::new(dot(minor, *u_reference), dot(minor, cross));
+                let norm = |value: cadmpeg_ir::math::Point2| value.u.hypot(value.v);
+                let product = |a: cadmpeg_ir::math::Point2, b: cadmpeg_ir::math::Point2| {
+                    a.u * b.u + a.v * b.v
+                };
+                let tolerance = 1e-6_f64.max(radius.abs() * 1e-9);
+                if norm(radial_center) > tolerance
+                    || (norm(radial_cos) - radius.abs()).abs() > tolerance
+                    || (norm(radial_sin) - radius.abs()).abs() > tolerance
+                    || product(radial_cos, radial_sin).abs() > tolerance * radius.abs()
+                {
+                    continue;
+                }
+                PcurveGeometry::PolarHarmonic {
+                    radial_center,
+                    radial_cos,
+                    radial_sin,
+                    axial_origin: dot(relative, *axis),
+                    axial_cos: dot(major, *axis),
+                    axial_sin: dot(minor, *axis),
+                }
+            }
             _ => continue,
         };
         let id = PcurveId(format!(

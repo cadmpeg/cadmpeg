@@ -333,6 +333,21 @@ pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
                     + minor_radius * sin * major_direction.u,
             ))
         }
+        PcurveGeometry::PolarHarmonic {
+            radial_center,
+            radial_cos,
+            radial_sin,
+            axial_origin,
+            axial_cos,
+            axial_sin,
+        } => {
+            let cos = t.cos();
+            let sin = t.sin();
+            let x = radial_center.u + radial_cos.u * cos + radial_sin.u * sin;
+            let y = radial_center.v + radial_cos.v * cos + radial_sin.v * sin;
+            ((x != 0.0) || (y != 0.0))
+                .then(|| Point2::new(y.atan2(x), axial_origin + axial_cos * cos + axial_sin * sin))
+        }
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -364,10 +379,21 @@ mod tests {
             minor_radius: 2.0,
             clockwise: false,
         };
+        let polar = PcurveGeometry::PolarHarmonic {
+            radial_center: Point2::new(0.0, 0.0),
+            radial_cos: Point2::new(2.0, 0.0),
+            radial_sin: Point2::new(0.0, 2.0),
+            axial_origin: 3.0,
+            axial_cos: 4.0,
+            axial_sin: 0.0,
+        };
 
         let circle = pcurve_uv(&circle, std::f64::consts::FRAC_PI_2).unwrap();
         let ellipse = pcurve_uv(&ellipse, std::f64::consts::FRAC_PI_2).unwrap();
+        let polar = pcurve_uv(&polar, std::f64::consts::FRAC_PI_2).unwrap();
         assert!((circle.u - 2.0).abs() < 1e-12 && (circle.v + 1.0).abs() < 1e-12);
         assert!(ellipse.u.abs() < 1e-12 && (ellipse.v - 3.0).abs() < 1e-12);
+        assert!((polar.u - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+        assert!((polar.v - 3.0).abs() < 1e-12);
     }
 }
