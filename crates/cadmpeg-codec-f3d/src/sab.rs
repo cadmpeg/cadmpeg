@@ -680,6 +680,21 @@ mod tests {
         bytes
     }
 
+    fn generated_point_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 5];
+        bytes.extend_from_slice(b"point");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x13);
+        for value in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
     #[test]
     fn generated_payload_subtype_lookup_uses_declared_integer_width() {
         for ref_width in [4, 8] {
@@ -820,6 +835,18 @@ mod tests {
             let record = &records[0];
             let offset = payload_token_offset(&bytes, record, ref_width, 3)
                 .expect("degenerate point offset");
+            assert_eq!(bytes[offset], 0x13);
+        }
+    }
+
+    #[test]
+    fn generated_point_has_fixed_position_field_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_point_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated point");
+            let record = &records[0];
+            let offset =
+                payload_token_offset(&bytes, record, ref_width, 3).expect("point position offset");
             assert_eq!(bytes[offset], 0x13);
         }
     }

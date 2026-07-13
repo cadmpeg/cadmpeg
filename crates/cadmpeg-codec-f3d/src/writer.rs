@@ -14170,13 +14170,15 @@ fn patch_framed_geometry(
             }
         } else if record.head == "point" {
             if let Some(position) = positions.get(&id) {
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
-                    [position.x / 10.0, position.y / 10.0, position.z / 10.0],
-                )?;
+                let offset =
+                    required_payload_field(bytes, record, active_ref_width(bytes), 3, 0x13)?;
+                for (component, value) in [position.x / 10.0, position.y / 10.0, position.z / 10.0]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let at = offset + 1 + component * 8;
+                    bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                }
             }
         } else if record.head == "straight" {
             if let Some((origin, direction)) = lines.get(&id) {
@@ -14692,30 +14694,6 @@ fn patch_sense_token(
         Sense::Forward => 0x0b,
         Sense::Reversed => 0x0a,
     };
-    Ok(())
-}
-
-fn patch_vec3_token(
-    bytes: &mut [u8],
-    record: &sab::Record,
-    tag: u8,
-    ordinal: usize,
-    values: [f64; 3],
-) -> Result<(), CodecError> {
-    let ref_width = active_ref_width(bytes);
-    let offset = *sab::payload_token_offsets(bytes, record, ref_width, tag)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .get(ordinal)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "{} record {} lacks payload token {tag:#04x}[{ordinal}]",
-                record.head, record.index,
-            ))
-        })?;
-    for (component, value) in values.into_iter().enumerate() {
-        let at = offset + 1 + component * 8;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
     Ok(())
 }
 
