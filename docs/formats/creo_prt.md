@@ -505,12 +505,13 @@ A saved entity identifier is an `order_table.int_id`; joining through that row's
 
 The named `entity(arc)` record is followed by positional generated-entity
 rows. Each row begins after `e3` with its saved entity identifier and a header
-ending at `e2`. The identifier joins `order_table.int_id`; the row is an arc
-only when the joined `order_table.ext_id` names an arc in `segtab`. Its scalar
-body stores `center(3)`, `radius`, `end1(3)`, `end2(3)`, `t0`, and `t1` in that
-order. A complete saved arc supplies section-space center, radius, endpoints,
-and increasing circular parameterization when its `var_arr` carrier is
-relation-backed.
+ending at `e2`. The identifier joins `order_table.int_id`, and the joined
+`order_table.ext_id` supplies the entity kind from `segtab`. An arc row's
+scalar body stores `center(3)`, `radius`, `end1(3)`, `end2(3)`, `t0`, and `t1`
+in that order. A line row stores `end1(3)` and `end2(3)`; a horizontal or
+vertical line is valid only when the corresponding endpoint coordinate is
+equal. A complete saved entity supplies section-space geometry when its
+`var_arr` carrier is relation-backed.
 
 When an `order_table` omission lies between adjacent stored `segtab` rows whose internal identifiers differ by two, the omitted row has the intervening internal identifier if a saved entity of the same family carries that identifier. For an evaluated saved line, if one `ent_tab` trim endpoint equals exactly one saved endpoint, the other saved endpoint determines the opposite trim endpoint. A line without an inline carrier is then determined by its two trim endpoints only when they satisfy its stored horizontal or vertical selector.
 

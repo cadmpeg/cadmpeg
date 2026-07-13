@@ -2225,7 +2225,7 @@ fn saved_arc_scalar(
     decoded
 }
 
-fn saved_positional_arcs(
+fn saved_positional_generated_entities(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -2236,16 +2236,17 @@ fn saved_positional_arcs(
     let (Some(order_table), Some(segments)) = (order_table, segments) else {
         return Vec::new();
     };
-    let valid_ids = order_table
+    let generated_segments = order_table
         .rows
         .iter()
-        .filter(|row| {
-            segments.rows.iter().any(|segment| {
-                segment.external_id == row.external_id && segment.kind == FeatureSegmentKind::Arc
-            })
+        .filter_map(|row| {
+            let segment = segments
+                .rows
+                .iter()
+                .find(|segment| segment.external_id == row.external_id)?;
+            Some((row.internal_id, segment))
         })
-        .map(|row| row.internal_id)
-        .collect::<BTreeSet<_>>();
+        .collect::<BTreeMap<_, _>>();
     let mut starts = Vec::new();
     for separator in start..end {
         if payload.get(separator) != Some(&0xe3) {
@@ -2255,7 +2256,7 @@ fn saved_positional_arcs(
         let (Some(entity_id), after_id) = segment_int(payload, row_start) else {
             continue;
         };
-        if !valid_ids.contains(&entity_id) {
+        if !generated_segments.contains_key(&entity_id) {
             continue;
         }
         let header_end = after_id.saturating_add(24).min(end);
@@ -2274,6 +2275,11 @@ fn saved_positional_arcs(
         let (Some(entity_id), after_id) = segment_int(payload, row_start) else {
             continue;
         };
+        let segment = generated_segments[&entity_id];
+        let value_count = match segment.kind {
+            FeatureSegmentKind::Line => 6,
+            FeatureSegmentKind::Arc => 12,
+        };
         let Some(header_size) = payload[after_id..row_end]
             .iter()
             .position(|byte| *byte == 0xe2)
@@ -2281,8 +2287,8 @@ fn saved_positional_arcs(
             continue;
         };
         let mut cursor = after_id + header_size + 1;
-        let mut values = Vec::with_capacity(12);
-        while cursor < row_end && values.len() < 12 {
+        let mut values = Vec::with_capacity(value_count);
+        while cursor < row_end && values.len() < value_count {
             if payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
                 values.extend([Some(0.0), Some(1.0), Some(0.0)]);
                 cursor += 2;
@@ -2320,20 +2326,56 @@ fn saved_positional_arcs(
             values.push(value);
             cursor = next;
         }
-        if values.len() != 12 {
+        if values.len() != value_count {
             continue;
         }
-        entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
-            entity_id,
-            center: [values[0], values[1], values[2]],
-            radius: values[3],
-            endpoints: [
-                [values[4], values[5], values[6]],
-                [values[7], values[8], values[9]],
-            ],
-            parameters: [values[10], values[11]],
-            offset: row_start,
-        }));
+        match segment.kind {
+            FeatureSegmentKind::Line => {
+                let endpoints = [
+                    [values[0], values[1], values[2]],
+                    [values[3], values[4], values[5]],
+                ];
+                let orientation_matches = match (
+                    segment.vertical_horizontal,
+                    endpoints[0][0],
+                    endpoints[0][1],
+                    endpoints[1][0],
+                    endpoints[1][1],
+                ) {
+                    (Some(0), Some(first), _, Some(second), _) => {
+                        let scale = first.abs().max(second.abs()).max(1.0);
+                        (first - second).abs() <= 1e-9 * scale
+                    }
+                    (Some(1), _, Some(first), _, Some(second)) => {
+                        let scale = first.abs().max(second.abs()).max(1.0);
+                        (first - second).abs() <= 1e-9 * scale
+                    }
+                    _ => false,
+                };
+                if orientation_matches {
+                    entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
+                        entity_id,
+                        references: Vec::new(),
+                        attributes: Vec::new(),
+                        endpoints,
+                        offset: row_start,
+                    }));
+                }
+            }
+            FeatureSegmentKind::Arc => {
+                entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
+                    entity_id,
+                    center: [values[0], values[1], values[2]],
+                    radius: values[3],
+                    endpoints: [
+                        [values[4], values[5], values[6]],
+                        [values[7], values[8], values[9]],
+                    ],
+                    parameters: [values[10], values[11]],
+                    offset: row_start,
+                }));
+            }
+        }
     }
     entities
 }
@@ -2404,7 +2446,7 @@ fn saved_circular_entities(
                     parameters: [start_parameter, end_parameter],
                     offset: entity_offset,
                 }));
-                entities.extend(saved_positional_arcs(
+                entities.extend(saved_positional_generated_entities(
                     payload,
                     body_start,
                     body_end,
@@ -3351,7 +3393,7 @@ mod tests {
             offset: 0,
         };
 
-        let entities = saved_positional_arcs(
+        let entities = saved_positional_generated_entities(
             &payload,
             0,
             payload.len(),
@@ -3367,6 +3409,56 @@ mod tests {
         assert_eq!(arc.entity_id, 7);
         assert_eq!(arc.center, [Some(0.0); 3]);
         assert_eq!(arc.radius, Some(0.0));
+    }
+
+    #[test]
+    fn saved_generated_line_requires_its_orientation_invariant() {
+        let payload = [0xe3, 8, 0xe2, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0xe3];
+        let order = FeatureOrderTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![FeatureOrderRow {
+                external_id: 43,
+                internal_id: 8,
+                bitmask: 0,
+                offset: 0,
+            }],
+            offset: 0,
+        };
+        let segments = FeatureSegmentTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![FeatureSegment {
+                kind: FeatureSegmentKind::Line,
+                directions: [None; 3],
+                point_ids: [1, 2],
+                center_id: None,
+                arc_orientation: Some(0),
+                vertical_horizontal: Some(1),
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 43,
+                offset: 0,
+            }],
+            offset: 0,
+        };
+
+        let entities = saved_positional_generated_entities(
+            &payload,
+            0,
+            payload.len(),
+            &scalar::ScalarCache::default(),
+            Some(&order),
+            Some(&segments),
+        );
+
+        assert_eq!(entities.len(), 1);
+        let FeatureSavedEntity::Line(line) = &entities[0] else {
+            panic!("expected saved line");
+        };
+        assert_eq!(line.entity_id, 8);
+        assert_eq!(line.endpoints[0], [Some(0.0); 3]);
+        assert_eq!(line.endpoints[1], [Some(1.0), Some(0.0), Some(0.0)]);
     }
 
     #[test]
