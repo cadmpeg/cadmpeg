@@ -42,10 +42,7 @@ pub fn decode(input: &[u8]) -> Result<String, StringError> {
                 let Some(&code) = input.get(at + 3) else {
                     return error(at, "truncated S escape");
                 };
-                if page != b'A' {
-                    return error(at, "selected ISO 8859 page is not implemented");
-                }
-                output.push(char::from(code | 0x80));
+                output.push(decode_page_byte(page, code | 0x80, at)?);
                 at += 4;
             }
             b'\\' if input.get(at + 1) == Some(&b'X') => match input.get(at + 2) {
@@ -75,6 +72,28 @@ pub fn decode(input: &[u8]) -> Result<String, StringError> {
         }
     }
     Ok(output)
+}
+
+fn decode_page_byte(page: u8, byte: u8, offset: usize) -> Result<char, StringError> {
+    let part = page - b'A' + 1;
+    let label = format!("iso-8859-{part}");
+    let encoding =
+        encoding_rs::Encoding::for_label(label.as_bytes()).ok_or_else(|| StringError {
+            offset,
+            message: format!("ISO 8859 part {part} is unavailable"),
+        })?;
+    let bytes = [byte];
+    let (decoded, had_errors) = encoding.decode_without_bom_handling(&bytes);
+    if had_errors {
+        return error(
+            offset,
+            "S escape is undefined in the selected ISO 8859 part",
+        );
+    }
+    decoded.chars().next().ok_or_else(|| StringError {
+        offset,
+        message: "S escape decoded to no character".into(),
+    })
 }
 
 /// Encode text as bytes suitable between Part 21 apostrophe delimiters.

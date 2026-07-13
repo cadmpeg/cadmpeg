@@ -28,6 +28,14 @@ fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
     assert_eq!(decode(b"\\X4\\0001F642\\X0\\").unwrap(), "🙂");
     assert_eq!(decode(b"\\S\\D").unwrap(), "Ä");
     assert_eq!(decode(b"\\PA\\\\S\\D").unwrap(), "Ä");
+    assert_eq!(decode(b"\\PB\\\\S\\A").unwrap(), "Á");
+    assert_eq!(decode(b"\\PC\\\\S\\!").unwrap(), "Ħ");
+    assert_eq!(decode(b"\\PD\\\\S\\!").unwrap(), "Ą");
+    assert_eq!(decode(b"\\PE\\\\S\\0").unwrap(), "А");
+    assert_eq!(decode(b"\\PF\\\\S\\G").unwrap(), "ا");
+    assert_eq!(decode(b"\\PG\\\\S\\A").unwrap(), "Α");
+    assert_eq!(decode(b"\\PH\\\\S\\`").unwrap(), "א");
+    assert_eq!(decode(b"\\PI\\\\S\\P").unwrap(), "Ğ");
 
     for text in ["ASCII", "it's \\ quoted", "café Ω 🙂"] {
         assert_eq!(decode(encode(text).as_bytes()).unwrap(), text);
