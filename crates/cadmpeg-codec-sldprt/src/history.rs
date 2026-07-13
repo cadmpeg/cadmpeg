@@ -1882,8 +1882,19 @@ fn project_sweep(
         .properties
         .get("Path")
         .map(|source| PathRef::Native(native_ref(source)));
-    let mode = if feature.xml_tag == "Surface-Sweep" || feature.kind == "Surface-Sweep" {
+    let mode = if feature_input_class(feature, NativeClassKind::SweepReferenceSurface)
+        || feature.xml_tag == "Surface-Sweep"
+        || feature.kind == "Surface-Sweep"
+    {
         SweepMode::Surface
+    } else if feature_input_class(feature, NativeClassKind::Sweep) {
+        SweepMode::Solid {
+            op: feature
+                .properties
+                .get("Operation")
+                .and_then(|value| parse_boolean_op(value))
+                .unwrap_or(BooleanOp::Unresolved),
+        }
     } else if let Some(op) = feature
         .properties
         .get("Operation")
@@ -6421,6 +6432,19 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
+                if existing.is_none()
+                    && matches!(
+                        mode,
+                        SweepMode::Solid {
+                            op: BooleanOp::Unresolved
+                        }
+                    )
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an unresolved boolean operation",
+                        feature.id
+                    )));
+                }
                 let mut parameters = existing
                     .as_deref()
                     .map(|record| record.parameters.clone())
@@ -6455,12 +6479,13 @@ pub fn sync_neutral_features(
                     properties.insert("Path".into(), path);
                 }
                 match mode {
-                    SweepMode::Solid { op } => {
+                    SweepMode::Solid { op } if *op != BooleanOp::Unresolved => {
                         properties.insert(
                             "Operation".into(),
                             resolved_boolean_op(*op, &feature.id)?.into(),
                         );
                     }
+                    SweepMode::Solid { .. } => {}
                     SweepMode::Surface => {
                         properties.remove("Operation");
                     }

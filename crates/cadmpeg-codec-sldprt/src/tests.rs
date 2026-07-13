@@ -13069,8 +13069,8 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
 }
 
 #[test]
-fn semantic_writer_retains_unresolved_native_sweep_mode() {
-    use cadmpeg_ir::features::{FeatureDefinition, SweepMode};
+fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, SweepMode};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -13092,7 +13092,9 @@ fn semantic_writer_retains_unresolved_native_sweep_mode() {
         FeatureDefinition::Sweep {
             profile: None,
             path: None,
-            mode: SweepMode::Unresolved,
+            mode: SweepMode::Solid {
+                op: BooleanOp::Unresolved
+            },
             twist: None,
             scale: None,
         }
@@ -13109,7 +13111,37 @@ fn semantic_writer_retains_unresolved_native_sweep_mode() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::Sweep {
-            mode: SweepMode::Unresolved,
+            mode: SweepMode::Solid {
+                op: BooleanOp::Unresolved
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn decode_projects_native_surface_sweep_class_without_localized_type() {
+    use cadmpeg_ir::features::{FeatureDefinition, SweepMode};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Operacion1" Type="Personalizado" id="137"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("moSweepRefSurface_c", "Operacion1", 137)]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Sweep {
+            mode: SweepMode::Surface,
             ..
         }
     ));

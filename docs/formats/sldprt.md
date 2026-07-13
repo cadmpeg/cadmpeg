@@ -133,6 +133,8 @@ A compact `moDeleteBody_c` object ends with a little-endian u32 schema word `110
 
 `moExtrusion_c` and `moICE_c` are extrusion feature classes. `moProfileFeature_c` and `mo3DProfileFeature_c` are planar and spatial sketch feature classes. `moCombineBodies_c` is the body-Boolean feature class. `moConstSurfRef_w`, `moEndPointRef_w`, `moGeneralCurveRef_w`, `moLineRef_w`, `moSingleFaceRef_w`, `moSolidRef_w`, `moCompReferenceCurve_c`, and `moCompSurfaceBody_c` identify reference objects rather than feature operations.
 
+`moSweep_c` produces a solid sweep. Its Boolean operation remains independently unresolved when no operation carrier is present. `moSweepRefSurface_c` produces a surface sweep.
+
 A `moCombineBodies_c` object is a body-Boolean feature independently of whether its Keywords element carries `Operation`, `Target`, or `Tools` attributes. An absent attribute leaves that field unresolved.
 
 Keywords `Configuration` elements carry a non-empty, document-unique `Name`; `Material` carries the configuration material override and the remaining attributes are configuration-local named values. Exactly one configuration name equals `swModel/@swConfigurationName` and selects the active configuration.
