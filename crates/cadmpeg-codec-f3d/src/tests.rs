@@ -3485,6 +3485,58 @@ fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
+fn f3d_with_configuration(smbh: &[u8], name: &str, payload: &[u8]) -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
+        .unwrap();
+    zip.write_all(smbh).unwrap();
+    zip.start_file(name, stored).unwrap();
+    zip.write_all(payload).unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
+#[test]
+fn generated_design_configuration_json_decodes_and_writes_source_less() {
+    let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
+    let payload = br#"{"configurations":{"wide":{"parameters":{"width":"25 mm"},"suppressed":["slot"]}},"active":"wide","extension":{"future":7}}"#;
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_configuration(
+                &synthetic_geometry_smbh(),
+                name,
+                payload,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("generated configuration decode");
+    let native = f3d_native(&decoded.ir);
+    assert_eq!(native.design_configurations.len(), 1);
+    assert_eq!(native.design_configurations[0].entry_name, name);
+    assert_eq!(native.design_configurations[0].payload["active"], "wide");
+    assert_eq!(
+        native.design_configurations[0].payload["extension"]["future"],
+        7
+    );
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less configuration encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less configuration round trip");
+    assert_eq!(
+        f3d_native(&round_trip.ir).design_configurations,
+        native.design_configurations
+    );
+}
+
 #[test]
 fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());

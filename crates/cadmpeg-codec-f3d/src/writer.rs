@@ -46,7 +46,7 @@ fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
 pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-    let _ = f3d_native(target)?;
+    let native = f3d_native(target)?;
     if !target.model.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "source-less F3D generation does not support SubD surfaces".into(),
@@ -66,6 +66,19 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         )
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D BREP entry: {error}")))?;
     archive.write_all(&smbh)?;
+    if let Some(native) = &native {
+        for configuration in &native.design_configurations {
+            archive
+                .start_file(&configuration.entry_name, options)
+                .map_err(|error| {
+                    CodecError::Malformed(format!("cannot create F3D configuration entry: {error}"))
+                })?;
+            let payload = serde_json::to_vec(&configuration.payload).map_err(|error| {
+                CodecError::Malformed(format!("cannot encode F3D configuration JSON: {error}"))
+            })?;
+            archive.write_all(&payload)?;
+        }
+    }
     if let Some(bulk_stream) = encode_design_bulkstream(target)? {
         archive
             .start_file("FusionAssetName[Active]/Design1/BulkStream.dat", options)

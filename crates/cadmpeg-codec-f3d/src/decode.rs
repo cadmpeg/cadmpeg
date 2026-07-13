@@ -85,6 +85,7 @@ pub fn decode(
             native.sketch_curve_identities =
                 crate::design::decode_sketch_curve_identities(reader, &scan)?;
             native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
+            native.design_configurations = crate::design::decode_configurations(&scan)?;
             let act = crate::act::decode(reader, &scan)?;
             native.act_entities = act.entities;
             native.act_guids = act.guids;
@@ -164,6 +165,7 @@ pub fn decode(
     native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
     native.sketch_curve_identities = crate::design::decode_sketch_curve_identities(reader, &scan)?;
     native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
+    native.design_configurations = crate::design::decode_configurations(&scan)?;
     let act = crate::act::decode(reader, &scan)?;
     native.act_entities = act.entities;
     native.act_guids = act.guids;

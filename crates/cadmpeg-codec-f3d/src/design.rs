@@ -8,10 +8,10 @@
 use std::collections::HashMap;
 
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignEntityHeader, DesignObject,
-    DesignObjectKind, DesignRecordHeader, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchRelation,
+    ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
+    DesignEntityHeader, DesignObject, DesignObjectKind, DesignRecordHeader, LostEdgeReference,
+    PersistentReference, PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry,
+    SketchCurveIdentity, SketchPoint, SketchRelation,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -31,6 +31,29 @@ const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
     (b"edge_recipe_data", ConstructionRecipeKind::Edge),
     (b"vertex_recipe_data", ConstructionRecipeKind::Vertex),
 ];
+
+/// Decode every JSON design-configuration table and rule entry.
+pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfiguration>, CodecError> {
+    scan.entries
+        .iter()
+        .filter(|entry| entry.role == role::DESIGN_CONFIG)
+        .map(|entry| {
+            let bytes = scan.entry_bytes(&entry.name)?;
+            let payload = serde_json::from_slice(bytes).map_err(|error| {
+                CodecError::Malformed(format!(
+                    "invalid F3D configuration JSON {}: {error}",
+                    entry.name
+                ))
+            })?;
+            Ok(DesignConfiguration {
+                id: format!("f3d:configuration:{}", entry.name),
+                entry_name: entry.name.clone(),
+                is_rule: entry.name.ends_with(".dsgcfgrule"),
+                payload,
+            })
+        })
+        .collect()
+}
 
 /// Decode every parametric construction-recipe record (`body_recipe_data`,
 /// `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`,

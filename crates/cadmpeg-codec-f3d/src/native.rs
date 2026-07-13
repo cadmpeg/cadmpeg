@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::history_records::AsmHistory;
 use crate::records::{
-    ActEntity, ActGuid, ActRootComponent, ConstructionRecipe, DesignBodyMember, DesignEntityHeader,
-    DesignMaterialAssignment, DesignObject, DesignRecordHeader, LostEdgeReference,
-    PersistentDesignLink, PersistentReference, SketchCurveIdentity, SketchCurveLink, SketchPoint,
-    SketchRelation,
+    ActEntity, ActGuid, ActRootComponent, ConstructionRecipe, DesignBodyMember,
+    DesignConfiguration, DesignEntityHeader, DesignMaterialAssignment, DesignObject,
+    DesignRecordHeader, LostEdgeReference, PersistentDesignLink, PersistentReference,
+    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -26,6 +26,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "asm_history_records",
     "construction_recipes",
     "design_body_members",
+    "design_configurations",
     "design_entity_headers",
     "design_material_assignments",
     "design_objects",
@@ -49,6 +50,7 @@ macro_rules! f3d_arenas {
             design_entity_headers: DesignEntityHeader;
             design_record_headers: DesignRecordHeader;
             design_body_members: DesignBodyMember;
+            design_configurations: DesignConfiguration;
             design_material_assignments: DesignMaterialAssignment;
             construction_recipes: ConstructionRecipe;
             persistent_design_links: PersistentDesignLink;
@@ -132,6 +134,9 @@ pub struct F3dNative {
     /// `BodiesRoot` list members from the Design `BulkStream`.
     #[serde(default)]
     pub design_body_members: Vec<DesignBodyMember>,
+    /// Design configuration tables and rules with complete JSON payloads.
+    #[serde(default)]
+    pub design_configurations: Vec<DesignConfiguration>,
     /// Design entity-to-material assignment records.
     #[serde(default)]
     pub design_material_assignments: Vec<DesignMaterialAssignment>,
@@ -175,6 +180,7 @@ impl Default for F3dNative {
             design_entity_headers: Vec::new(),
             design_record_headers: Vec::new(),
             design_body_members: Vec::new(),
+            design_configurations: Vec::new(),
             design_material_assignments: Vec::new(),
             construction_recipes: Vec::new(),
             persistent_design_links: Vec::new(),

@@ -190,6 +190,19 @@ pub enum DesignObjectKind {
     CommonData,
 }
 
+/// JSON configuration payload stored in a Fusion design-configuration entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignConfiguration {
+    /// Stable identity derived from the ZIP entry name.
+    pub id: String,
+    /// Complete ZIP entry name used for native regeneration.
+    pub entry_name: String,
+    /// Whether this entry is a configuration table or a configuration rule.
+    pub is_rule: bool,
+    /// Complete decoded JSON payload, including unrecognized fields.
+    pub payload: serde_json::Value,
+}
+
 /// One GUID-owned object-table record from the Design `MetaStream`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignObject {
