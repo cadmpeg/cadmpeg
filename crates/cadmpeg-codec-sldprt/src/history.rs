@@ -414,6 +414,19 @@ fn populate_parameter_dependencies(parameters: &mut [DesignParameter]) {
 }
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
+    expression_identifier_tokens(expression)
+        .into_iter()
+        .map(|token| token.value)
+}
+
+struct ExpressionIdentifier {
+    start: usize,
+    end: usize,
+    value: String,
+    quoted: bool,
+}
+
+fn expression_identifier_tokens(expression: &str) -> Vec<ExpressionIdentifier> {
     let mut identifiers = Vec::new();
     let mut at = 0;
     while at < expression.len() {
@@ -438,7 +451,12 @@ fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_
                 }
             }
             if closed && !value.is_empty() {
-                identifiers.push(value);
+                identifiers.push(ExpressionIdentifier {
+                    start: at,
+                    end: cursor,
+                    value,
+                    quoted: true,
+                });
                 at = cursor;
                 continue;
             }
@@ -454,13 +472,18 @@ fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_
                         || matches!(candidate, '_' | '@' | '$' | '.' | '-'))
                 })
                 .unwrap_or(rest.len());
-            identifiers.push(rest[..end].to_string());
+            identifiers.push(ExpressionIdentifier {
+                start: at,
+                end: at + end,
+                value: rest[..end].to_string(),
+                quoted: false,
+            });
             at += end;
         } else {
             at += character.len_utf8();
         }
     }
-    identifiers.into_iter()
+    identifiers
 }
 
 /// Bind a uniquely identified native sketch history node to solved sketch geometry.
@@ -1933,7 +1956,12 @@ fn sync_neutral_parameters(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
-    let mut projected_dependencies = ir.model.parameters.clone();
+    let mut parameters = ir.model.parameters.clone();
+    if let Some(native) = native.as_ref() {
+        let original = project_parameters(&native.feature_histories);
+        rewrite_renamed_parameter_references(&mut parameters, &original);
+    }
+    let mut projected_dependencies = parameters.clone();
     populate_parameter_dependencies(&mut projected_dependencies);
     if ir
         .model
@@ -1953,7 +1981,7 @@ fn sync_neutral_parameters(
         .map(|feature| (&feature.id, feature))
         .collect::<HashMap<_, _>>();
     let mut desired = HashMap::<FeatureId, Vec<&DesignParameter>>::new();
-    for parameter in &ir.model.parameters {
+    for parameter in &parameters {
         if parse_parameter_literal(&parameter.expression)
             .is_some_and(|literal| parameter.value.as_ref() != Some(&literal))
         {
@@ -2045,6 +2073,82 @@ fn sync_neutral_parameters(
         record.content = content;
     }
     Ok(())
+}
+
+fn rewrite_renamed_parameter_references(
+    parameters: &mut [DesignParameter],
+    original: &[DesignParameter],
+) {
+    let original = original
+        .iter()
+        .map(|parameter| (&parameter.id, parameter))
+        .collect::<HashMap<_, _>>();
+    let desired = parameters
+        .iter()
+        .map(|parameter| (&parameter.id, parameter))
+        .collect::<HashMap<_, _>>();
+    let mut replacements = HashMap::<ParameterId, HashMap<String, String>>::new();
+    for (id, parameter) in &desired {
+        let Some(previous) = original.get(id) else {
+            continue;
+        };
+        let mut aliases = HashMap::new();
+        if previous.name != parameter.name {
+            aliases.insert(previous.name.clone(), parameter.name.clone());
+        }
+        if let Some(previous_id) = previous.properties.get("EquationId") {
+            let replacement = parameter
+                .properties
+                .get("EquationId")
+                .unwrap_or(&parameter.name);
+            if previous_id != replacement {
+                aliases.insert(previous_id.clone(), replacement.clone());
+            }
+        }
+        if !aliases.is_empty() {
+            replacements.insert((*id).clone(), aliases);
+        }
+    }
+    for parameter in parameters {
+        let aliases = parameter
+            .dependencies
+            .iter()
+            .filter_map(|dependency| replacements.get(dependency))
+            .flat_map(|aliases| aliases.iter())
+            .map(|(alias, replacement)| (alias.as_str(), replacement.as_str()))
+            .collect::<HashMap<_, _>>();
+        if aliases.is_empty() {
+            continue;
+        }
+        let tokens = expression_identifier_tokens(&parameter.expression);
+        let mut rewritten = String::with_capacity(parameter.expression.len());
+        let mut copied = 0;
+        for token in tokens {
+            let Some(replacement) = aliases.get(token.value.as_str()) else {
+                continue;
+            };
+            rewritten.push_str(&parameter.expression[copied..token.start]);
+            if token.quoted || !unquoted_expression_identifier(replacement) {
+                rewritten.push('"');
+                rewritten.push_str(&replacement.replace('"', "\"\""));
+                rewritten.push('"');
+            } else {
+                rewritten.push_str(replacement);
+            }
+            copied = token.end;
+        }
+        if copied != 0 {
+            rewritten.push_str(&parameter.expression[copied..]);
+            parameter.expression = rewritten;
+        }
+    }
+}
+
+fn unquoted_expression_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.' | '-')
+        })
 }
 
 fn sync_neutral_configurations(

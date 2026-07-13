@@ -5141,6 +5141,30 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
         ]
     );
 
+    decoded.ir.model.parameters[0]
+        .properties
+        .insert("EquationId".into(), "D1@Renamed".into());
+    decoded.ir.model.parameters[1].name = "Wall Gauge".into();
+    let mut renamed = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut renamed)
+        .unwrap();
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        decoded.ir.model.parameters[3].expression,
+        "\"Wall Gauge\" + \"Datum \"\"A\"\"\" + D1@Renamed + \"Wall Gauge\""
+    );
+    assert_eq!(
+        decoded.ir.model.parameters[3].dependencies,
+        vec![
+            decoded.ir.model.parameters[1].id.clone(),
+            decoded.ir.model.parameters[2].id.clone(),
+            decoded.ir.model.parameters[0].id.clone(),
+        ]
+    );
+
     decoded.ir.model.parameters[3].expression = "6mm".into();
     let error = SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
