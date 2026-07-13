@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
     IntcurveSupportSide, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -578,7 +579,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         return None;
     }
 
-    attach_native_object_model(&mut ir, scan).ok()?;
+    attach_native_object_model(&mut ir, scan, &mut annotations).ok()?;
 
     select_active_body(
         &mut ir,
@@ -1583,7 +1584,7 @@ fn build_metadata_ir(scan: &Scan) -> Result<CadIr, CodecError> {
             ir.push_native_unknown("nx", unknown)?;
         }
     }
-    attach_native_object_model(&mut ir, scan)
+    attach_native_object_model(&mut ir, scan, &mut annotations)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     ir.annotations = annotations.build();
     Ok(ir)
@@ -1592,12 +1593,38 @@ fn build_metadata_ir(scan: &Scan) -> Result<CadIr, CodecError> {
 fn attach_native_object_model(
     ir: &mut CadIr,
     scan: &Scan,
+    annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
     let configurations = crate::native::configurations(&scan.container);
     if expressions.is_empty() && classes.is_empty() && configurations.is_empty() {
         return Ok(());
+    }
+    if !configurations.is_empty() {
+        let stream = annotations.stream("nx:container");
+        for (ordinal, configuration) in configurations.iter().enumerate() {
+            let id = ConfigurationId(format!("nx:arrangements:configuration#{ordinal}"));
+            annotations
+                .note(&id.0, stream, configuration.source_offset)
+                .tag("Arrangement");
+            annotations.derived(&id.0, "ordinal");
+            annotations.derived(&id.0, "active");
+            annotations.derived(&id.0, "source_index");
+            annotations.derived(&id.0, "name");
+            annotations.derived(&id.0, "native_ref");
+            ir.model.configurations.push(DesignConfiguration {
+                id,
+                ordinal: ordinal as u32,
+                active: configuration.active,
+                source_index: Some(ordinal as u32),
+                name: configuration.name.clone(),
+                material: None,
+                properties: BTreeMap::new(),
+                bodies: Vec::new(),
+                native_ref: Some(configuration.id.clone()),
+            });
+        }
     }
     let namespace = ir.native.namespace_mut("nx");
     namespace.version = namespace.version.max(1);

@@ -1990,6 +1990,16 @@ fn decode_retains_nx_arrangement_configurations() {
     assert!(configurations[0].active);
     assert_eq!(configurations[1].name, "Exploded");
     assert!(!configurations[1].active);
+    assert_eq!(result.ir.model.configurations.len(), 2);
+    assert_eq!(result.ir.model.configurations[0].ordinal, 0);
+    assert_eq!(result.ir.model.configurations[0].source_index, Some(0));
+    assert_eq!(result.ir.model.configurations[0].name, "Model");
+    assert!(result.ir.model.configurations[0].active);
+    assert_eq!(result.ir.model.configurations[1].ordinal, 1);
+    assert_eq!(result.ir.model.configurations[1].name, "Exploded");
+    assert!(!result.ir.model.configurations[1].active);
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
@@ -2009,6 +2019,7 @@ fn decode_rejects_ambiguous_nx_arrangement_table_atomically() {
             .unwrap()
             .is_empty()
     }));
+    assert!(result.ir.model.configurations.is_empty());
 }
 
 #[test]
