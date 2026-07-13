@@ -53,6 +53,23 @@ pub struct ClassDefinition {
     pub source_offset: u64,
 }
 
+/// Member declaration from an NX OM field registry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FieldDefinition {
+    /// Globally unique declaration identity.
+    pub id: String,
+    /// Registered `m_` member name.
+    pub name: String,
+    /// Zero-based declaration ordinal within its section.
+    pub ordinal: u32,
+    /// Declaration code serialized immediately after the name.
+    pub trailing_code: u8,
+    /// Directory entry containing the OM section.
+    pub source_entry: String,
+    /// Absolute file offset of the declaration length byte.
+    pub source_offset: u64,
+}
+
 /// Named NX arrangement from `/Root/part/arrangements`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Configuration {
@@ -167,6 +184,34 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
         }
     }
     definitions.into_values().collect()
+}
+
+/// Decode member definitions from every framed OM section.
+pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
+    let mut definitions = Vec::new();
+    for (entry, section) in container.om_sections() {
+        let entry_index = container
+            .entries
+            .iter()
+            .position(|candidate| std::ptr::eq(candidate, entry))
+            .expect("OM entry belongs to container");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        definitions.extend(
+            section
+                .fields
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, definition)| FieldDefinition {
+                    id: format!("nx:om-entry-{entry_index}:field#{}", definition.offset),
+                    name: definition.name.to_string(),
+                    ordinal: ordinal as u32,
+                    trailing_code: definition.trailing_code,
+                    source_entry: entry.name.clone(),
+                    source_offset: entry_offset + definition.offset as u64,
+                }),
+        );
+    }
+    definitions
 }
 
 /// Decode explicit numeric expressions from all indexed OM sections.

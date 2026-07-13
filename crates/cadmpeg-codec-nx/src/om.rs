@@ -28,6 +28,17 @@ pub struct TypeDefinition<'a> {
     pub trailing_code: u8,
 }
 
+/// One member declaration in an NX OM field registry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldDefinition<'a> {
+    /// Offset of the declaration length byte.
+    pub offset: usize,
+    /// Registered `m_` member name.
+    pub name: &'a str,
+    /// Declaration code immediately following the name.
+    pub trailing_code: u8,
+}
+
 /// Unit declared by an NX numeric-expression serialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExpressionUnit {
@@ -76,6 +87,8 @@ pub struct Section<'a> {
     pub byte_len: usize,
     /// Class declarations in the section's contiguous type registry.
     pub types: Vec<TypeDefinition<'a>>,
+    /// Member declarations in the section's field registry.
+    pub fields: Vec<FieldDefinition<'a>>,
 }
 
 impl<'a> IndexedSection<'a> {
@@ -156,10 +169,15 @@ pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
             at = offset + 4;
             continue;
         }
+        let types = type_definitions(bytes, offset + 16, end);
+        let field_start = types.last().map_or(offset + 16, |definition| {
+            definition.offset + definition.name.len() + 2
+        });
         out.push(Section {
             offset,
             byte_len: end - offset,
-            types: type_definitions(bytes, offset + 16, end),
+            types,
+            fields: field_definitions(bytes, field_start, end),
         });
         at = end;
     }
@@ -371,6 +389,36 @@ fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinitio
         }
     }
     out
+}
+
+fn field_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<FieldDefinition<'_>> {
+    let mut out = Vec::new();
+    let mut search = start;
+    let mut limit = start.saturating_add(256).min(end);
+    while let Some((definition, at)) = (search..limit)
+        .find_map(|at| field_definition_at(bytes, at, end).map(|definition| (definition, at)))
+    {
+        let next = at + definition.name.len() + 2;
+        search = next;
+        limit = search.saturating_add(256).min(end);
+        out.push(definition);
+    }
+    out
+}
+
+fn field_definition_at(bytes: &[u8], at: usize, end: usize) -> Option<FieldDefinition<'_>> {
+    let declared = usize::from(*bytes.get(at)?);
+    let length = declared.checked_sub(1)?;
+    let name_start = at.checked_add(1)?;
+    let name_end = name_start.checked_add(length)?;
+    (name_end < end).then_some(())?;
+    let raw = bytes.get(name_start..name_end)?;
+    (raw.starts_with(b"m_") && raw.iter().all(|byte| (0x20..0x7f).contains(byte))).then_some(())?;
+    Some(FieldDefinition {
+        offset: at,
+        name: std::str::from_utf8(raw).ok()?,
+        trailing_code: bytes[name_end],
+    })
 }
 
 fn numeric_expression_at(

@@ -1988,10 +1988,12 @@ fn attach_native_object_model(
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
+    let fields = crate::native::field_definitions(&scan.container);
     let configurations = crate::native::configurations(&scan.container);
     let object_sections = scan.container.indexed_om_sections();
     if expressions.is_empty()
         && classes.is_empty()
+        && fields.is_empty()
         && configurations.is_empty()
         && object_sections.is_empty()
     {
@@ -2053,6 +2055,9 @@ fn attach_native_object_model(
     }
     if !classes.is_empty() {
         namespace.set_arena("class_definitions", &classes)?;
+    }
+    if !fields.is_empty() {
+        namespace.set_arena("field_definitions", &fields)?;
     }
     if !configurations.is_empty() {
         namespace.set_arena("configurations", &configurations)?;
@@ -2224,10 +2229,15 @@ pub fn summary_notes(scan: &Scan) -> Vec<String> {
             .iter()
             .map(|(_, section)| section.types.len())
             .sum::<usize>();
+        let fields = framed_om_sections
+            .iter()
+            .map(|(_, section)| section.fields.len())
+            .sum::<usize>();
         notes.push(format!(
-            "NX object model: {} size-framed section(s), {} class declaration(s)",
+            "NX object model: {} size-framed section(s), {} class declaration(s), {} field declaration(s)",
             framed_om_sections.len(),
-            declarations
+            declarations,
+            fields
         ));
     }
     let om_sections = c.indexed_om_sections();

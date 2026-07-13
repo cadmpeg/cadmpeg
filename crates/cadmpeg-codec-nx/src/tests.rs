@@ -122,6 +122,15 @@ fn size_framed_om_section() -> Vec<u8> {
         bytes.extend_from_slice(name);
         bytes.push(code);
     }
+    for (name, code, suffix) in [
+        (b"m_target".as_slice(), 0x80, [0x01, 0x02]),
+        (b"m_tools".as_slice(), 0x81, [0x03, 0x04]),
+    ] {
+        bytes.push((name.len() + 1) as u8);
+        bytes.extend_from_slice(name);
+        bytes.push(code);
+        bytes.extend_from_slice(&suffix);
+    }
     bytes.extend_from_slice(b"unframed UGS::PayloadText");
     let payload_len = (bytes.len() - 16) as u32;
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
@@ -157,6 +166,9 @@ fn om_size_frame_bounds_its_type_declarations() {
     assert_eq!(sections[0].types.len(), 2);
     assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
     assert_eq!(sections[0].types[1].trailing_code, 0x65);
+    assert_eq!(sections[0].fields.len(), 2);
+    assert_eq!(sections[0].fields[0].name, "m_target");
+    assert_eq!(sections[0].fields[1].trailing_code, 0x81);
 
     let mut truncated = bytes;
     truncated.pop();
@@ -2014,6 +2026,23 @@ fn prt_with_indexed_om_section() -> Vec<u8> {
     file
 }
 
+fn prt_with_size_framed_om_section() -> Vec<u8> {
+    let mut file = single_part_prt();
+    let entry = container::scan_bytes(file.clone())
+        .unwrap()
+        .entries
+        .remove(0);
+    let (offset, size) = entry.file_span.unwrap();
+    assert_eq!(offset as usize + size as usize, file.len());
+    file.truncate(offset as usize);
+    let mut payload = size_framed_om_section();
+    payload.extend(zlib_compress(&partition_stream()));
+    file.extend_from_slice(&payload);
+    let size_at = offset as usize - 8;
+    file[size_at..size_at + 8].copy_from_slice(&(payload.len() as u64).to_le_bytes());
+    file
+}
+
 fn large_xmt_headers(stream: &[u8]) -> Vec<u8> {
     let marker = b"SCH_TEST_1_9999\x00";
     let start = stream
@@ -2340,6 +2369,25 @@ fn decode_retains_length_framed_nx_class_definition() {
     assert_eq!(classes[0].ordinal, 0);
     assert_eq!(classes[0].trailing_code, 0x81);
     assert_eq!(classes[0].source_entry, "/Root/UG_PART/UG_PART");
+}
+
+#[test]
+fn decode_retains_length_framed_nx_field_definitions() {
+    let mut cur = Cursor::new(prt_with_size_framed_om_section());
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let fields = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<crate::native::FieldDefinition>("field_definitions")
+        .unwrap();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "m_target");
+    assert_eq!(fields[0].ordinal, 0);
+    assert_eq!(fields[1].name, "m_tools");
+    assert_eq!(fields[1].trailing_code, 0x81);
+    assert_eq!(fields[1].source_entry, "/Root/UG_PART/UG_PART");
 }
 
 #[test]
