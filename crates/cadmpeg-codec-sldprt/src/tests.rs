@@ -3741,6 +3741,37 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
 }
 
 #[test]
+fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.model.configurations[0].name.clear();
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("non-empty name"), "{error}");
+
+    decoded.ir.model.configurations[0].name = "Default".into();
+    let mut duplicate = decoded.ir.model.configurations[0].clone();
+    duplicate.id.0.push_str("-duplicate");
+    duplicate.ordinal += 1;
+    duplicate.source_index = None;
+    duplicate.native_ref = None;
+    duplicate.active = false;
+    decoded.ir.model.configurations.push(duplicate);
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("unique configuration names"),
+        "{error}"
+    );
+}
+
+#[test]
 fn configuration_source_index_allocation_rejects_exhaustion() {
     let mut used = std::collections::HashSet::from([u32::MAX]);
     let mut next = u32::MAX;
