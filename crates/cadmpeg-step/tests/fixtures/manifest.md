@@ -13,7 +13,7 @@ authored against `docs/formats/step.md`.
 | `ap214_sheet.p21` | connected triangular sheet B-rep with oriented edge uses and a planar face |
 | `ap203_sheet.p21` | CONFIG_CONTROL_DESIGN connected triangular sheet B-rep with millimetre units |
 | `ap242_assembly.p21` | product-definition tree, NAUO identity, and item-defined occurrence placement |
-| `ap242_tessellation.p21` | shared coordinate list and one-based AP242 triangulated face indices |
+| `ap242_tessellation.p21` | exact/tessellated body linkage, one-based indices, and area/volume/centroid validation properties |
 | `ap242_semantic_pmi.p21` | datum, datum system, dimensional size with plus/minus limits, and geometric tolerance |
 | `ap242_conversion_units.p21` | conversion-based length unit chain and representation uncertainty |
 | `ap242_presentation_pmi.p21` | drafting model, annotation plane, placed text literal, and annotation occurrence |

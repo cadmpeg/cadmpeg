@@ -752,7 +752,11 @@ fn length_scale(exchange: &Exchange) -> Option<f64> {
     unit_scale_mm(unit_id, exchange, &mut BTreeSet::new())
 }
 
-fn unit_scale_mm(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Option<f64> {
+pub(super) fn unit_scale_mm(
+    id: u64,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+) -> Option<f64> {
     if !active.insert(id) {
         return None;
     }

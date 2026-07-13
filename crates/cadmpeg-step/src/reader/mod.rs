@@ -20,6 +20,7 @@ mod presentation;
 mod product;
 mod tessellation;
 mod topology;
+mod validation;
 
 /// Decode a complete clear-text exchange structure.
 pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, CodecError> {
@@ -58,8 +59,10 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
     let presentation = presentation::decode(&exchange, &mut ir);
     let product = product::decode(&exchange, &geometry, &mut ir);
     let tessellation = tessellation::decode(&exchange, &geometry, &mut ir);
+    let validation = validation::decode(&exchange, &geometry, &mut ir);
     let pmi = pmi::decode(&exchange, &geometry, &mut ir);
     report.notes.extend(dependencies.notes);
+    report.notes.extend(validation.notes);
     report.geometry_transferred =
         !ir.model.points.is_empty() || !ir.model.curves.is_empty() || !ir.model.surfaces.is_empty();
     report
@@ -110,6 +113,14 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
             message,
             provenance: None,
         }));
+    report
+        .losses
+        .extend(validation.warnings.into_iter().map(|message| LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message,
+            provenance: None,
+        }));
     let mut typed_records = geometry.typed_records;
     typed_records.extend(topology.typed_records);
     typed_records.extend(presentation.typed_records);
@@ -117,6 +128,7 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
     typed_records.extend(tessellation.typed_records);
     typed_records.extend(pmi.typed_records);
     typed_records.extend(dependencies.typed_records);
+    typed_records.extend(validation.typed_records);
 
     let mut opaque = Vec::with_capacity(exchange.records.len());
     let mut counts = BTreeMap::<String, usize>::new();

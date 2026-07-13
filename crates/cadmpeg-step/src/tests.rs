@@ -608,6 +608,20 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert_eq!(complex.triangles, [[0, 1, 2], [2, 1, 3], [0, 1, 3]]);
     assert_eq!(complex.normals.len(), 4);
     assert_eq!(complex.normals[0].z, -1.0);
+    assert!(result
+        .report
+        .notes
+        .iter()
+        .any(|note| note
+            == "geometric validation surface area triangle sheet: expected 50, computed 50"));
+    assert!(result.report.notes.iter().any(|note| note.starts_with(
+        "geometric validation centroid triangle centroid: expected (3.333333333333333,3.333333333333333,0), computed distance"
+    )));
+    assert!(result.report.notes.iter().any(
+        |note| note == "geometric validation volume open sheet volume: expected 0, computed 0"
+    ));
+    assert!(result.report.losses.iter().any(|loss| loss.message
+        == "geometric validation surface area intentional mismatch does not match transferred tessellation"));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
