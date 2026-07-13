@@ -5025,7 +5025,8 @@ fn encode_native_sweep_surface(
             trailing_flag,
         } => {
             native_i64(bytes, *mode);
-            native_nurbs_curve(bytes, native_loft_curve(target, profile)?)?;
+            let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+            native_nurbs_curve(bytes, &profile)?;
             for value in profile_range {
                 native_f64(bytes, *value);
             }
@@ -5040,7 +5041,9 @@ fn encode_native_sweep_surface(
             }
             native_i64(bytes, 1);
             bytes.push(native_bool(*trajectory_flag));
-            native_nurbs_curve(bytes, native_loft_curve(target, spine)?)?;
+            let native_path_range = [path_range[0] / 10.0, path_range[1] / 10.0];
+            let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
+            native_nurbs_curve(bytes, &spine)?;
             for value in path_range {
                 native_f64(bytes, *value / 10.0);
             }

@@ -9699,6 +9699,8 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
         )
         .expect("explicit formula sweep decode");
     let ProceduralSurfaceDefinition::Sweep {
+        profile,
+        spine,
         native: Some(native),
         ..
     } = &decoded.ir.model.procedural_surfaces[0].definition
@@ -9723,10 +9725,24 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
     assert_eq!(origin.z, 60.0);
     assert_eq!(*path_range, [-20.0, 30.0]);
     assert_eq!(formula.name, "null_law");
+    let profile = profile.clone();
+    let spine = spine.clone();
 
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    for (ordinal, curve_id) in [&profile, &spine].into_iter().enumerate() {
+        source_less
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == *curve_id)
+            .expect("explicit sweep curve")
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -1.0),
+            direction: cadmpeg_ir::math::Vector3::new(3.0, -2.0, 4.0),
+        };
+    }
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9734,13 +9750,35 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less explicit formula sweep round trip");
+    let ProceduralSurfaceDefinition::Sweep {
+        profile,
+        spine,
+        native: Some(native),
+        ..
+    } = &round_trip.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected round-trip explicit formula sweep")
+    };
     assert!(matches!(
-        &round_trip.ir.model.procedural_surfaces[0].definition,
-        ProceduralSurfaceDefinition::Sweep {
-            native: Some(native),
-            ..
-        } if matches!(native.layout, SweepSurfaceLayout::ExplicitFormula { .. })
+        native.layout,
+        SweepSurfaceLayout::ExplicitFormula { .. }
     ));
+    for (curve_id, knots) in [
+        (profile, [-0.5, -0.5, 1.5, 1.5]),
+        (spine, [-2.0, -2.0, 3.0, 3.0]),
+    ] {
+        assert!(matches!(
+            round_trip
+                .ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *curve_id)
+                .map(|curve| &curve.geometry),
+            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                if curve.degree == 1 && curve.knots == knots
+        ));
+    }
 }
 
 #[test]
