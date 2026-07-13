@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError, TCODE_ENDOFTABLE};
 use crate::container::{Record, Scan};
-use crate::settings::utf16;
+use crate::settings::{plane, utf16, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
 
 const SETTINGS: u32 = 0x1000_0015;
@@ -57,7 +57,54 @@ struct ViewRecord {
     attributes_extension_offset: Option<u64>,
     attributes_extension_byte_len: Option<u64>,
     attributes_extension_sha256: Option<String>,
+    construction_plane: Option<ConstructionPlane>,
+    viewport: Option<Viewport>,
     children: Vec<ViewChild>,
+}
+
+#[derive(Debug, Serialize)]
+struct ConstructionPlane {
+    plane_origin_mm: [f64; 3],
+    plane_x_axis: [f64; 3],
+    plane_y_axis: [f64; 3],
+    plane_z_axis: [f64; 3],
+    plane_equation_mm: [f64; 4],
+    grid_spacing_mm: f64,
+    snap_spacing_mm: f64,
+    grid_line_count: i32,
+    thick_line_frequency: i32,
+    name: String,
+    depth_buffer: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent serialized viewport validity and lock flags"
+)]
+struct Viewport {
+    version: [u8; 2],
+    camera_valid: bool,
+    frustum_valid: bool,
+    port_valid: bool,
+    projection: i32,
+    camera_location_mm: [f64; 3],
+    camera_direction: [f64; 3],
+    camera_up: [f64; 3],
+    camera_x_axis: [f64; 3],
+    camera_y_axis: [f64; 3],
+    camera_z_axis: [f64; 3],
+    frustum_mm: [f64; 6],
+    port: [i32; 6],
+    source_uuid: Option<String>,
+    camera_up_locked: bool,
+    camera_direction_locked: bool,
+    camera_location_locked: bool,
+    frustum_left_right_symmetric: bool,
+    frustum_top_bottom_symmetric: bool,
+    target_millimeters: Option<[f64; 3]>,
+    camera_frame_valid: Option<bool>,
+    view_scale: Option<[f64; 3]>,
 }
 
 struct ViewAttributes {
@@ -78,6 +125,175 @@ fn structural(offset: usize, message: impl Into<String>) -> FramingError {
 
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(reader.array()?))
+}
+
+fn bool_i32(reader: &mut BoundedReader<'_>, label: &str) -> Result<bool, FramingError> {
+    match reader.i32()? {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(structural(
+            reader.position() - 4,
+            format!("{label} flag is invalid"),
+        )),
+    }
+}
+
+fn scale3(value: &mut [f64; 3], scale: f64, offset: usize) -> Result<(), FramingError> {
+    for coordinate in value {
+        *coordinate = scaled_coordinate(*coordinate, scale)
+            .ok_or_else(|| structural(offset, "scaled view coordinate is invalid"))?;
+    }
+    Ok(())
+}
+
+fn scaled_plane(mut value: Plane, scale: f64, offset: usize) -> Result<Plane, FramingError> {
+    scale3(&mut value.origin.0, scale, offset)?;
+    value.equation[3] = scaled_coordinate(value.equation[3], scale)
+        .ok_or_else(|| structural(offset, "scaled plane equation is invalid"))?;
+    Ok(value)
+}
+
+fn parse_cplane(
+    data: &[u8],
+    body: std::ops::Range<usize>,
+    scale: f64,
+) -> Result<ConstructionPlane, FramingError> {
+    let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let packed = reader.u8()?;
+    if packed >> 4 != 1 || packed & 0x0f > 1 {
+        return Err(structural(
+            body.start,
+            "construction-plane version is unsupported",
+        ));
+    }
+    let value = scaled_plane(plane(&mut reader)?, scale, body.start)?;
+    let grid_spacing_mm = scaled_coordinate(reader.f64()?, scale)
+        .ok_or_else(|| structural(reader.position() - 8, "grid spacing is invalid"))?;
+    let snap_spacing_mm = scaled_coordinate(reader.f64()?, scale)
+        .ok_or_else(|| structural(reader.position() - 8, "snap spacing is invalid"))?;
+    let grid_line_count = reader.i32()?;
+    let thick_line_frequency = reader.i32()?;
+    let name = utf16(&mut reader)?;
+    let depth_buffer = packed & 0x0f < 1 || reader.bool()?;
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "construction plane has trailing bytes",
+        ));
+    }
+    Ok(ConstructionPlane {
+        plane_origin_mm: value.origin.0,
+        plane_x_axis: value.xaxis.0,
+        plane_y_axis: value.yaxis.0,
+        plane_z_axis: value.zaxis.0,
+        plane_equation_mm: value.equation,
+        grid_spacing_mm,
+        snap_spacing_mm,
+        grid_line_count,
+        thick_line_frequency,
+        name,
+        depth_buffer,
+    })
+}
+
+fn parse_viewport(
+    data: &[u8],
+    body: std::ops::Range<usize>,
+    scale: f64,
+) -> Result<Viewport, FramingError> {
+    let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let packed = reader.u8()?;
+    let version = [packed >> 4, packed & 0x0f];
+    if version[0] != 1 || version[1] > 5 {
+        return Err(structural(body.start, "viewport version is unsupported"));
+    }
+    let camera_valid = bool_i32(&mut reader, "camera-valid")?;
+    let frustum_valid = bool_i32(&mut reader, "frustum-valid")?;
+    let port_valid = bool_i32(&mut reader, "port-valid")?;
+    let projection = reader.i32()?;
+    let mut camera_location = [reader.f64()?, reader.f64()?, reader.f64()?];
+    scale3(&mut camera_location, scale, reader.position() - 24)?;
+    let vector = |reader: &mut BoundedReader<'_>| -> Result<[f64; 3], FramingError> {
+        let value = [reader.f64()?, reader.f64()?, reader.f64()?];
+        value
+            .iter()
+            .all(|coordinate| coordinate.is_finite())
+            .then_some(value)
+            .ok_or_else(|| structural(reader.position() - 24, "viewport vector is invalid"))
+    };
+    let camera_direction = vector(&mut reader)?;
+    let camera_up = vector(&mut reader)?;
+    let camera_x_axis = vector(&mut reader)?;
+    let camera_y_axis = vector(&mut reader)?;
+    let camera_z_axis = vector(&mut reader)?;
+    let mut frustum = [0.0; 6];
+    for coordinate in &mut frustum {
+        *coordinate = scaled_coordinate(reader.f64()?, scale)
+            .ok_or_else(|| structural(reader.position() - 8, "viewport frustum is invalid"))?;
+    }
+    let mut port = [0; 6];
+    for coordinate in &mut port {
+        *coordinate = reader.i32()?;
+    }
+    let viewport_id = (version[1] >= 1).then(|| uuid(&mut reader)).transpose()?;
+    let mut locks = [false; 5];
+    if version[1] >= 2 {
+        for lock in &mut locks {
+            *lock = reader.bool()?;
+        }
+    }
+    let target = if version[1] >= 3 {
+        let mut point = [reader.f64()?, reader.f64()?, reader.f64()?];
+        scale3(&mut point, scale, reader.position() - 24)?;
+        Some(point)
+    } else {
+        None
+    };
+    let camera_frame_valid = (version[1] >= 4).then(|| reader.bool()).transpose()?;
+    let view_scale = if version[1] >= 5 {
+        let value = [reader.f64()?, reader.f64()?, reader.f64()?];
+        if !value
+            .iter()
+            .all(|coordinate| coordinate.is_finite() && *coordinate > 0.0)
+        {
+            return Err(structural(
+                reader.position() - 24,
+                "viewport scale is invalid",
+            ));
+        }
+        Some(value)
+    } else {
+        None
+    };
+    if reader.remaining() != 0 {
+        return Err(structural(reader.position(), "viewport has trailing bytes"));
+    }
+    Ok(Viewport {
+        version,
+        camera_valid,
+        frustum_valid,
+        port_valid,
+        projection,
+        camera_location_mm: camera_location,
+        camera_direction,
+        camera_up,
+        camera_x_axis,
+        camera_y_axis,
+        camera_z_axis,
+        frustum_mm: frustum,
+        port,
+        source_uuid: viewport_id
+            .filter(|id| !id.is_nil())
+            .map(|id| id.to_string()),
+        camera_up_locked: locks[0],
+        camera_direction_locked: locks[1],
+        camera_location_locked: locks[2],
+        frustum_left_right_symmetric: locks[3],
+        frustum_top_bottom_symmetric: locks[4],
+        target_millimeters: target,
+        camera_frame_valid,
+        view_scale,
+    })
 }
 
 fn child_kind(typecode: u32) -> &'static str {
@@ -171,6 +387,8 @@ fn parse_view(
     let mut extension_offset = None;
     let mut extension_len = None;
     let mut extension_sha = None;
+    let mut construction_plane = None;
+    let mut viewport = None;
     let mut children = Vec::new();
     let mut terminated = false;
     while offset < record.body.end {
@@ -183,6 +401,12 @@ fn parse_view(
             sha256: cadmpeg_ir::hash::sha256_hex(&data[offset..child.next_offset]),
         });
         match child.typecode {
+            VIEW_CPLANE if !child.short => {
+                construction_plane = Some(parse_cplane(data, child.body.clone(), scale)?);
+            }
+            VIEW_VIEWPORT if !child.short => {
+                viewport = Some(parse_viewport(data, child.body.clone(), scale)?);
+            }
             VIEW_NAME if !child.short => {
                 let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
                 name = utf16(&mut reader)?;
@@ -257,6 +481,8 @@ fn parse_view(
         attributes_extension_offset: extension_offset,
         attributes_extension_byte_len: extension_len,
         attributes_extension_sha256: extension_sha,
+        construction_plane,
+        viewport,
         children,
     })
 }
@@ -333,4 +559,58 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     namespace
         .set_arena("views", &views)
         .expect("Rhino views serialize");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_viewport, Viewport};
+
+    fn point(bytes: &mut Vec<u8>, value: [f64; 3]) {
+        for coordinate in value {
+            bytes.extend(coordinate.to_le_bytes());
+        }
+    }
+
+    fn viewport() -> Vec<u8> {
+        let mut bytes = vec![0x15];
+        for value in [1_i32, 1, 1, 2] {
+            bytes.extend(value.to_le_bytes());
+        }
+        point(&mut bytes, [1.0, 2.0, 3.0]);
+        for vector in [
+            [0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ] {
+            point(&mut bytes, vector);
+        }
+        for value in [-2.0_f64, 2.0, -1.0, 1.0, 0.1, 100.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        for value in [0_i32, 1920, 1080, 0, 0, 1] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend([0x11; 16]);
+        bytes.extend([1, 0, 1, 0, 1]);
+        point(&mut bytes, [4.0, 5.0, 6.0]);
+        bytes.push(1);
+        for value in [1.0_f64, 2.0, 3.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn viewport_scales_spatial_state_but_not_frames_or_view_scale() {
+        let bytes = viewport();
+        let value: Viewport = parse_viewport(&bytes, 0..bytes.len(), 10.0).expect("valid viewport");
+        assert_eq!(value.camera_location_mm, [10.0, 20.0, 30.0]);
+        assert_eq!(value.camera_direction, [0.0, 0.0, -1.0]);
+        assert_eq!(value.frustum_mm, [-20.0, 20.0, -10.0, 10.0, 1.0, 1000.0]);
+        assert_eq!(value.target_millimeters, Some([40.0, 50.0, 60.0]));
+        assert_eq!(value.view_scale, Some([1.0, 2.0, 3.0]));
+        assert!(value.camera_valid && value.camera_location_locked);
+    }
 }
