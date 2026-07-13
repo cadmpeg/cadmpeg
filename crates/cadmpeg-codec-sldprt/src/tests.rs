@@ -12970,6 +12970,39 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
 }
 
 #[test]
+fn decode_projects_hyphenated_extrusion_operations() {
+    for (kind, expected) in [
+        ("Boss-Extrude", cadmpeg_ir::features::BooleanOp::Join),
+        ("Cut-Extrude", cadmpeg_ir::features::BooleanOp::Cut),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            format!(
+                "<Keywords><Extrusion Name=\"Extrude1\" Type=\"{kind}\"><Dimension Name=\"D1\">25</Dimension></Extrusion></Keywords>"
+            )
+            .as_bytes(),
+        ));
+
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let feature = decoded
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Extrude1"))
+            .expect("projected extrusion feature");
+        assert!(matches!(
+            &feature.definition,
+            cadmpeg_ir::features::FeatureDefinition::Extrude { op, .. } if *op == expected
+        ));
+    }
+}
+
+#[test]
 fn semantic_writer_updates_linked_resolved_feature_scalar() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

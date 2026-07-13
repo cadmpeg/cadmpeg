@@ -6893,13 +6893,15 @@ fn path_source(
 }
 
 fn extrude_op(kind: &str) -> Option<BooleanOp> {
-    let kind = kind.trim().to_ascii_lowercase();
-    if kind == "bossextrude" {
-        Some(BooleanOp::Join)
-    } else if kind == "cutextrude" {
-        Some(BooleanOp::Cut)
-    } else {
-        None
+    let kind = kind
+        .bytes()
+        .filter(|byte| byte.is_ascii_alphanumeric())
+        .map(|byte| byte.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    match kind.as_slice() {
+        b"bossextrude" => Some(BooleanOp::Join),
+        b"cutextrude" => Some(BooleanOp::Cut),
+        _ => None,
     }
 }
 
