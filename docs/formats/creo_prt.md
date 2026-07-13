@@ -464,7 +464,7 @@ The placed section is the owning sweep feature's profile input. For `protextrude
 
 `vert_tab` chains bind a solved trim-vertex identifier to two incident `segtab` external identifiers. This vertex namespace is the namespace used by `ent_tab.start_vtx` and `ent_tab.end_vtx`. A solved trim vertex is the intersection of its two defining `segtab` entities evaluated from `var_arr`; its identifier differs from a `segtab` point identifier.
 
-`p_saved_result` contains evaluated section entities and does not define the authoritative solved trim topology.
+`p_saved_result` contains evaluated section entities and does not define the authoritative solved trim topology. A saved entity identifier is an `order_table.int_id`; joining through that row's `ext_id` binds its evaluated geometry to the corresponding `segtab` entity. A saved line with two complete section-space XY endpoints supplies that entity's line geometry when its `var_arr` endpoints are relation-backed.
 
 The `segtab` positional replay stores `type`, three direction fields, two endpoint point identifiers, `cntrid`, `arcorient`, `verhor`, two radii, and `ext_id`. A raw `verhor` value of `f5` adds one field before `radius`.
 

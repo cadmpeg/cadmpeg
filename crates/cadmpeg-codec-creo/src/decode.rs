@@ -432,6 +432,47 @@ fn section_segment_geometry(
     section_line_geometry(points, segment).or_else(|| section_arc_geometry(points, segment))
 }
 
+fn saved_section_line_geometry(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    let internal_id = definition
+        .order_table
+        .as_ref()?
+        .rows
+        .iter()
+        .find(|row| row.external_id == segment.external_id)?
+        .internal_id;
+    let line = definition
+        .saved_section
+        .as_ref()?
+        .entities
+        .iter()
+        .find_map(|entity| match entity {
+            crate::feature::FeatureSavedEntity::Line(line) if line.entity_id == internal_id => {
+                Some(line)
+            }
+            _ => None,
+        })?;
+    let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints else {
+        return None;
+    };
+    Some(SketchGeometry::Line {
+        start: cadmpeg_ir::math::Point2::new(start_u, start_v),
+        end: cadmpeg_ir::math::Point2::new(end_u, end_v),
+    })
+}
+
+fn resolved_section_segment_geometry(
+    definition: &crate::feature::FeatureDefinition,
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    section_segment_geometry(points, segment)
+        .or_else(|| saved_section_line_geometry(definition, segment))
+}
+
 fn section_point_in_model(
     transform: &crate::placement::FeatureSectionTransform,
     point: [f64; 2],
@@ -448,12 +489,20 @@ fn normalized(vector: [f64; 3]) -> Option<[f64; 3]> {
     (magnitude > 1e-12).then(|| vector.map(|value| value / magnitude))
 }
 
+#[cfg(test)]
 fn extruded_segment_surface(
     transform: &crate::placement::FeatureSectionTransform,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SurfaceGeometry> {
-    match section_segment_geometry(points, segment)? {
+    extruded_geometry_surface(transform, &section_segment_geometry(points, segment)?)
+}
+
+fn extruded_geometry_surface(
+    transform: &crate::placement::FeatureSectionTransform,
+    geometry: &SketchGeometry,
+) -> Option<SurfaceGeometry> {
+    match geometry {
         SketchGeometry::Line { start, end } => {
             let start = section_point_in_model(transform, [start.u, start.v]);
             let end = section_point_in_model(transform, [end.u, end.v]);
@@ -486,12 +535,20 @@ fn extruded_segment_surface(
     }
 }
 
+#[cfg(test)]
 fn placed_section_curve_geometry(
     transform: &crate::placement::FeatureSectionTransform,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<CurveGeometry> {
-    match section_segment_geometry(points, segment)? {
+    placed_section_geometry_curve(transform, &section_segment_geometry(points, segment)?)
+}
+
+fn placed_section_geometry_curve(
+    transform: &crate::placement::FeatureSectionTransform,
+    geometry: &SketchGeometry,
+) -> Option<CurveGeometry> {
+    match geometry {
         SketchGeometry::Line { start, end } => {
             let start = section_point_in_model(transform, [start.u, start.v]);
             let end = section_point_in_model(transform, [end.u, end.v]);
@@ -621,7 +678,12 @@ fn transfer_feature_extrusion_surfaces(
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
-            let Some(geometry) = extruded_segment_surface(transform, &points, segment) else {
+            let Some(section_geometry) =
+                resolved_section_segment_geometry(definition, &points, segment)
+            else {
+                continue;
+            };
+            let Some(geometry) = extruded_geometry_surface(transform, &section_geometry) else {
                 continue;
             };
             annotate(
@@ -824,7 +886,7 @@ fn transfer_resolved_sketches(
             .rows
             .iter()
             .filter_map(|segment| {
-                let geometry = section_segment_geometry(&points, segment)?;
+                let geometry = resolved_section_segment_geometry(definition, &points, segment)?;
                 let id = SketchEntityId(format!(
                     "creo:featdefs:sketch_entity#{}:{}",
                     definition.id, segment.external_id
@@ -865,7 +927,12 @@ fn transfer_resolved_sketches(
             continue;
         }
         for segment in &segments.rows {
-            let Some(geometry) = placed_section_curve_geometry(transform, &points, segment) else {
+            let Some(section_geometry) =
+                resolved_section_segment_geometry(definition, &points, segment)
+            else {
+                continue;
+            };
+            let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry) else {
                 continue;
             };
             let id = CurveId(format!(
@@ -903,7 +970,9 @@ fn transfer_resolved_sketches(
         let emitted = segments
             .rows
             .iter()
-            .filter(|segment| section_segment_geometry(&points, segment).is_some())
+            .filter(|segment| {
+                resolved_section_segment_geometry(definition, &points, segment).is_some()
+            })
             .map(|segment| segment.external_id)
             .collect::<BTreeSet<_>>();
         let constraints = segments
@@ -1541,6 +1610,71 @@ mod resolved_sketch_tests {
             Some(SketchGeometry::Line {
                 start: cadmpeg_ir::math::Point2::new(2.0, 3.0),
                 end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
+            })
+        );
+    }
+
+    #[test]
+    fn saved_line_joins_through_order_table() {
+        let segment = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [7, 9],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 42,
+            offset: 40,
+        };
+        let definition = crate::feature::FeatureDefinition {
+            id: 5,
+            owner_feature_id: Some(6),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: Some(crate::feature::FeatureOrderTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: vec![crate::feature::FeatureOrderRow {
+                    external_id: 42,
+                    internal_id: 3,
+                    bitmask: 0,
+                    offset: 10,
+                }],
+                offset: 8,
+            }),
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: Some(crate::feature::FeatureSavedSection {
+                entities: vec![crate::feature::FeatureSavedEntity::Line(
+                    crate::feature::FeatureSavedLine {
+                        entity_id: 3,
+                        references: Vec::new(),
+                        attributes: Vec::new(),
+                        endpoints: [
+                            [Some(-8.0), Some(-0.85), Some(0.0)],
+                            [Some(8.0), Some(-0.85), None],
+                        ],
+                        offset: 20,
+                    },
+                )],
+                offset: 18,
+            }),
+            offset: 0,
+        };
+
+        assert_eq!(
+            saved_section_line_geometry(&definition, &segment),
+            Some(SketchGeometry::Line {
+                start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+                end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
             })
         );
     }
