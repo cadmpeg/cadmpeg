@@ -502,6 +502,15 @@ pub enum ProceduralSurfaceDefinition {
         /// Whether the outer sheet is selected at the self-intersection.
         select_outer: bool,
     },
+    /// Surface domain bounded by ordered curves on a supporting surface.
+    CurveBounded {
+        /// Supporting surface whose parameterization defines the domain.
+        support: SurfaceId,
+        /// Boundary curves on the support.
+        boundaries: Vec<CurveId>,
+        /// Whether the support's natural outer boundary is implicit.
+        implicit_outer: bool,
+    },
     /// Ruled surface joining two directrices.
     Ruled {
         /// First bounding curve of the ruled surface.

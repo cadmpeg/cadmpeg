@@ -761,6 +761,20 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             | ProceduralSurfaceDefinition::TSpline { .. }
             | ProceduralSurfaceDefinition::DegenerateTorus { .. }
             | ProceduralSurfaceDefinition::Unknown { record: None } => {}
+            ProceduralSurfaceDefinition::CurveBounded {
+                support,
+                boundaries,
+                ..
+            } => {
+                if !ids.surfaces.contains(&support.0) {
+                    ref_error(findings, &procedural.id.0, "surface", &support.0);
+                }
+                for boundary in boundaries {
+                    if !ids.curves.contains(&boundary.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &boundary.0);
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::Deformable { construction } => {
                 if !ids.surfaces.contains(&construction.support.0) {
                     ref_error(

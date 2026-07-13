@@ -1084,6 +1084,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Offset { .. }
                 | ProceduralSurfaceDefinition::ParallelOffset { .. }
                 | ProceduralSurfaceDefinition::DegenerateTorus { .. }
+                | ProceduralSurfaceDefinition::CurveBounded { .. }
                 | ProceduralSurfaceDefinition::Ruled { .. }
                 | ProceduralSurfaceDefinition::Blend { .. }
                 | ProceduralSurfaceDefinition::Unknown { .. } => true,

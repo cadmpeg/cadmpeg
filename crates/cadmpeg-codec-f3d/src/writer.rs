@@ -5625,6 +5625,7 @@ fn native_procedural_surface(
         | ProceduralSurfaceDefinition::AxisRevolution { .. }
         | ProceduralSurfaceDefinition::ParallelOffset { .. }
         | ProceduralSurfaceDefinition::DegenerateTorus { .. }
+        | ProceduralSurfaceDefinition::CurveBounded { .. }
         | ProceduralSurfaceDefinition::Unknown { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
