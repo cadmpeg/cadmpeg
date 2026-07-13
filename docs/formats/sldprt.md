@@ -139,6 +139,8 @@ Keywords `Feature` elements use the `Type` attribute as their operation-family t
 
 Sketch relations use named scalar records with reference cells at fixed scalar-record slots. Point references use `d6 80`, `7b 83`, or `7c bc`; line references use `e1 80`, `86 83`, or `87 bc`. Point-point, line-line, and point-line distance relations follow from the operand pair. Two `cb 8d` cells carry horizontal or vertical point-point distance according to the relation declaration. Two `da 8d` cells carry an angular relation. An `sgCircleDim` declaration followed by one `fe 83` cell carries a circular dimension. The bound Keywords dimension's `<MOD-DIAM>` prefix selects diameter semantics; an `R` or `r` prefix selects radius semantics. Scalar records with the same owning sketch, relation family, and ordered operand sequence belong to one relation instance. Display-role and driving-role scalars are distinct. A unique driving scalar stores the target parameter.
 
+Distance, horizontal-distance, vertical-distance, and circular-dimension driving scalars store metres. Angular driving scalars store radians. These relation-family units apply when the owning Keywords feature has no dimension expression.
+
 Point-reference object indices address sketch-marker local identifiers within the owning feature object. A reference resolves when that local identifier is unique in the feature object.
 
 Operand tags `837b` and `bc7c` select point or constrained-point markers. Tags `8386`, `83fe`, and `bc87` select the shared line/circle marker family. The tag-qualified marker kind disambiguates equal local identifiers before uniqueness is tested.

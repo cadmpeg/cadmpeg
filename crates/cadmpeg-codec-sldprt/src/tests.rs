@@ -14352,10 +14352,12 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .iter()
         .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
         .expect("projected sketch D1 parameter");
-    assert_eq!(parameter.expression, "0.025");
+    assert_eq!(parameter.expression, "25mm");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(0.025))
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(25.0)
+        ))
     );
     assert!(parameter
         .native_ref
@@ -14403,6 +14405,13 @@ fn decode_projects_owned_native_sketch_relation() {
         .iter()
         .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
         .expect("projected relation parameter");
+    assert_eq!(parameter.expression, "25mm");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(25.0)
+        ))
+    );
     let constraint = decoded
         .ir
         .model
@@ -14664,6 +14673,20 @@ fn decode_groups_native_tagged_point_line_relations() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D2")
+        .expect("driving point-line parameter");
+    assert_eq!(parameter.expression, "25mm");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(25.0)
+        ))
+    );
     let native = sldprt_native(&decoded.ir);
     let lane = &native.feature_input_lanes[0];
     assert_eq!(lane.references.len(), 4);
@@ -14823,6 +14846,30 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
         let decoded = SldprtCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
+        let parameter = decoded
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == "D2")
+            .expect("driving relation parameter");
+        if family == crate::records::FeatureInputRelationFamily::Angle {
+            assert_eq!(parameter.expression, "0.025rad");
+            assert_eq!(
+                parameter.value,
+                Some(cadmpeg_ir::features::ParameterValue::Angle(
+                    cadmpeg_ir::features::Angle(0.025)
+                ))
+            );
+        } else {
+            assert_eq!(parameter.expression, "25mm");
+            assert_eq!(
+                parameter.value,
+                Some(cadmpeg_ir::features::ParameterValue::Length(
+                    cadmpeg_ir::features::Length(25.0)
+                ))
+            );
+        }
         let native = sldprt_native(&decoded.ir);
         let [relation] = native.feature_input_lanes[0].relation_instances.as_slice() else {
             panic!("one native-tagged relation instance for {class}");

@@ -1027,8 +1027,34 @@ pub(crate) fn enrich_history_parameters(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    let mut candidates = BTreeMap::<(usize, usize, String), Vec<f64>>::new();
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum ScalarUnit {
+        Native,
+        Length,
+        Angle,
+    }
+    let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit)>>::new();
     for lane in lanes {
+        let relation_unit = |family| match family {
+            FeatureInputRelationFamily::Angle => ScalarUnit::Angle,
+            FeatureInputRelationFamily::LineLineDistance
+            | FeatureInputRelationFamily::PointPointDistance
+            | FeatureInputRelationFamily::PointLineDistance
+            | FeatureInputRelationFamily::PointPointHorizontalDistance
+            | FeatureInputRelationFamily::PointPointVerticalDistance
+            | FeatureInputRelationFamily::CircleDiameter => ScalarUnit::Length,
+        };
+        let mut scalar_units = lane
+            .relation_bindings
+            .iter()
+            .map(|binding| (binding.scalar_ref.as_str(), relation_unit(binding.family)))
+            .collect::<HashMap<_, _>>();
+        for relation in &lane.relation_instances {
+            let unit = relation_unit(relation.family);
+            for scalar in &relation.scalar_refs {
+                scalar_units.insert(scalar.as_str(), unit);
+            }
+        }
         let names_by_id = lane
             .names
             .iter()
@@ -1075,21 +1101,33 @@ pub(crate) fn enrich_history_parameters(
                     candidates
                         .entry((history_index, feature_index, name.to_string()))
                         .or_default()
-                        .push(scalar.value);
+                        .push((
+                            scalar.value,
+                            scalar_units
+                                .get(scalar.id.as_str())
+                                .copied()
+                                .unwrap_or(ScalarUnit::Native),
+                        ));
                 }
             }
         }
     }
 
     for ((history_index, feature_index, name), values) in candidates {
-        let Some((&first, rest)) = values.split_first() else {
+        let Some((&(first, unit), rest)) = values.split_first() else {
             continue;
         };
-        if rest.iter().any(|value| value.to_bits() != first.to_bits()) {
+        if rest.iter().any(|(value, candidate_unit)| {
+            value.to_bits() != first.to_bits() || *candidate_unit != unit
+        }) {
             continue;
         }
         let feature = &mut histories[history_index].features[feature_index];
-        let expression = crate::history::format_native_scalar(feature, &name, first);
+        let expression = match unit {
+            ScalarUnit::Native => crate::history::format_native_scalar(feature, &name, first),
+            ScalarUnit::Length => crate::history::format_length_mm(first * 1000.0),
+            ScalarUnit::Angle => crate::history::format_angle_rad(first),
+        };
         feature.parameters.entry(name).or_insert(expression);
     }
 }

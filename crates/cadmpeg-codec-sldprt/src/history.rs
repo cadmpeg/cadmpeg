@@ -2825,7 +2825,7 @@ fn parse_bounded_angle_rad(value: &str) -> Option<f64> {
     parse_positive_angle_rad(value).filter(|value| *value < std::f64::consts::PI)
 }
 
-fn format_angle_rad(value: f64) -> String {
+pub(crate) fn format_angle_rad(value: f64) -> String {
     format!("{}rad", format_f64_literal(value))
 }
 
