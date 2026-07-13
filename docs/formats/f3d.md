@@ -528,7 +528,7 @@ The design `BulkStream` caches each body's axis-aligned bounding box as six f64 
 
 The design BulkStream BREP body map is `u32 count`, followed by `count` pairs of `u64 asm_body_key, u64 entity_suffix`, then `u64 trailing_record_ref`, `u32 pad`, `u32 char_count`, and UTF-16LE `BREP.<uuid>.smbh`. `asm_body_key` is the ASM body `flags` field. `entity_suffix` is the numeric suffix of the design entity ID.
 
-A construction-recipe record places its i32 record index at 16 bytes before the recipe-family name, eight zero bytes at `name−12`, and the u32 byte length of the ASCII family name at `name−4`. The family name selects `body_recipe_data`, `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`, or `vertex_recipe_data`; the preceding record index is not a family discriminator.
+A construction-recipe record places its i32 record index at 16 bytes before the recipe-family name, eight zero bytes at `name−12`, and the u32 byte length of the ASCII family name at `name−4`. The family name selects `body_recipe_data`, `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`, or `vertex_recipe_data`; the preceding record index is not a family discriminator. The common payload begins with an i64 `−1` null sentinel followed by the five i32 values `[2, 0, −1, 1, −1]`.
 
 A browser-node record stores a length-prefixed 36-character UTF-16LE node GUID, a one-byte hidden flag, the `0x01 0x01` marker, and the node's `u64` design-entity suffix. Flag `1` hides the entity in the document display; `0` shows it. **Body visibility join:** ASM `asm_body_key` → BREP body map `entity_suffix` → browser-node hidden flag.
 

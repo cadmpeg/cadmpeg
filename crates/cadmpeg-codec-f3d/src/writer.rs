@@ -331,6 +331,10 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         );
         out.extend_from_slice(&prefix);
         out.extend_from_slice(name);
+        out.extend_from_slice(&(-1i64).to_le_bytes());
+        for value in [2i32, 0, -1, 1, -1] {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
     }
     if !native.design_body_members.is_empty() {
         native_lp_ascii(&mut out, "BodiesRoot")?;

@@ -5447,6 +5447,20 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
             u32::from_le_bytes(bulkstream[offset - 4..offset].try_into().unwrap()),
             u32::try_from(name.len()).unwrap()
         );
+        let payload = offset + name.len();
+        assert_eq!(
+            i64::from_le_bytes(bulkstream[payload..payload + 8].try_into().unwrap()),
+            -1
+        );
+        assert_eq!(
+            (0..5)
+                .map(|ordinal| {
+                    let at = payload + 8 + ordinal * 4;
+                    i32::from_le_bytes(bulkstream[at..at + 4].try_into().unwrap())
+                })
+                .collect::<Vec<_>>(),
+            [2, 0, -1, 1, -1]
+        );
     }
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
