@@ -8374,6 +8374,11 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     range[0] += 0.125;
     range[1] -= 0.125;
     let expected_range = *range;
+    edited.model.faces[0].sense = match edited.model.faces[0].sense {
+        cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
+        cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
+    };
+    let expected_face_sense = edited.model.faces[0].sense;
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -8393,6 +8398,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
             .and_then(|edge| edge.param_range),
         Some(expected_range)
     );
+    assert_eq!(round_trip.ir.model.faces[0].sense, expected_face_sense);
 }
 
 #[test]

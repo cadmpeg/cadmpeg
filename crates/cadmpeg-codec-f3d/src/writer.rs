@@ -11523,7 +11523,8 @@ fn patch_transform_hints(
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let records = sab::frame(bytes, start, limit, 8)
+    let ref_width = active_ref_width(bytes);
+    let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, flags) in edits {
         let record = records
@@ -11540,10 +11541,10 @@ fn patch_transform_hints(
                 record.head
             )));
         }
-        let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x0a)
+        let mut offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x0a)
             .map_err(|error| CodecError::Malformed(error.to_string()))?;
         offsets.extend(
-            sab::payload_token_offsets(bytes, record, 8, 0x0b)
+            sab::payload_token_offsets(bytes, record, ref_width, 0x0b)
                 .map_err(|error| CodecError::Malformed(error.to_string()))?,
         );
         offsets.sort_unstable();
@@ -11569,7 +11570,8 @@ fn patch_tolerant_coedge_parameters(
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let records = sab::frame(bytes, start, limit, 8)
+    let ref_width = active_ref_width(bytes);
+    let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, range) in edits {
         let record = records
@@ -11602,7 +11604,8 @@ fn patch_wire_topologies(
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let records = sab::frame(bytes, start, limit, 8)
+    let ref_width = active_ref_width(bytes);
+    let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, side) in edits {
         let record = records
@@ -11617,10 +11620,10 @@ fn patch_wire_topologies(
                 record.head
             )));
         }
-        let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x0a)
+        let mut offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x0a)
             .map_err(|error| CodecError::Malformed(error.to_string()))?;
         offsets.extend(
-            sab::payload_token_offsets(bytes, record, 8, 0x0b)
+            sab::payload_token_offsets(bytes, record, ref_width, 0x0b)
                 .map_err(|error| CodecError::Malformed(error.to_string()))?,
         );
         let [offset] = offsets.as_slice() else {
@@ -11643,7 +11646,8 @@ fn patch_edge_ownerships(bytes: &mut [u8], edits: &BTreeMap<usize, i64>) -> Resu
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let records = sab::frame(bytes, start, limit, 8)
+    let ref_width = active_ref_width(bytes);
+    let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, owner) in edits {
         let record = records
