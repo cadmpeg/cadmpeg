@@ -270,7 +270,11 @@ fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinitio
     let mut out = Vec::new();
     let mut at = start;
     while at < end {
-        let length = usize::from(bytes[at]);
+        let declared = usize::from(bytes[at]);
+        let Some(length) = declared.checked_sub(1) else {
+            at += 1;
+            continue;
+        };
         let name_start = at + 1;
         let name_end = name_start.saturating_add(length);
         let Some(raw) = bytes.get(name_start..name_end) else {

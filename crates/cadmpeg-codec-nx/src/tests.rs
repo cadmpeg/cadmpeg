@@ -57,7 +57,7 @@ fn indexed_om_section() -> Vec<u8> {
     let mut bytes = vec![0xaa; 32];
     let base = 8usize;
     let class_name = b"UGS::ModlFeature";
-    bytes[base] = class_name.len() as u8;
+    bytes[base] = (class_name.len() + 1) as u8;
     bytes[base + 1..base + 1 + class_name.len()].copy_from_slice(class_name);
     bytes[base + 1 + class_name.len()] = 0x81;
     let root = b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables";
@@ -86,7 +86,7 @@ fn indexed_om_section() -> Vec<u8> {
 fn offset_only_indexed_om_section() -> Vec<u8> {
     let mut bytes = vec![0xaa; 8];
     let class_name = b"UGS::ModlFeature";
-    bytes.push(class_name.len() as u8);
+    bytes.push((class_name.len() + 1) as u8);
     bytes.extend_from_slice(class_name);
     bytes.push(0x81);
     let index_start = bytes.len();
