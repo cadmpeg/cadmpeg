@@ -943,18 +943,27 @@ fn select_active_body(
         })
         .collect();
     scored.sort_by(|first, second| second.0.cmp(&first.0).then(second.1.cmp(&first.1)));
-    let Some(&(top_hits, top_count, ref winner)) = scored.first() else {
+    let Some(&(top_hits, top_count, ref top_body)) = scored.first() else {
         return;
     };
     let next_hits = scored.get(1).map_or(0, |score| score.0);
+    let mut selected: BTreeSet<_> = scored
+        .iter()
+        .filter(|(hits, count, _)| *hits > 0 && *count > 0 && (*hits as f64 / *count as f64) > 0.10)
+        .map(|(_, _, body)| body.clone())
+        .collect();
+    let dominant = top_hits >= 5 * next_hits.max(1);
+    if dominant {
+        selected.retain(|body| body == top_body);
+    }
     if top_count == 0
-        || (top_hits as f64 / top_count as f64) < 0.10
-        || top_hits < 50
-        || top_hits < 5 * next_hits.max(1)
+        || (top_hits as f64 / top_count as f64) <= 0.10
+        || selected.is_empty()
+        || (selected.len() == 1 && !dominant)
     {
         return;
     }
-    prune_inactive_topology(ir, winner);
+    prune_inactive_topology(ir, &selected);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "active_body_selector".to_string(),
@@ -963,12 +972,18 @@ fn select_active_body(
         source
             .attributes
             .insert("rmfastload_hits".to_string(), top_hits.to_string());
+        source.attributes.insert(
+            "rmfastload_active_body_count".to_string(),
+            selected.len().to_string(),
+        );
     }
 }
 
-fn prune_inactive_topology(ir: &mut CadIr, winner: &BodyId) {
-    ir.model.bodies.retain(|body| &body.id == winner);
-    ir.model.regions.retain(|region| &region.body == winner);
+fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {
+    ir.model.bodies.retain(|body| selected.contains(&body.id));
+    ir.model
+        .regions
+        .retain(|region| selected.contains(&region.body));
     let regions: BTreeSet<_> = ir
         .model
         .regions

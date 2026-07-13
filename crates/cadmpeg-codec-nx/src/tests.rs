@@ -2649,6 +2649,33 @@ fn prt_with_two_bodies_and_rmfastload() -> Vec<u8> {
     file
 }
 
+fn prt_with_two_active_bodies_and_rmfastload() -> Vec<u8> {
+    let mut file = prt_with_two_bodies_and_rmfastload();
+    let marker = b"UGS::Solid::Topol";
+    let count_at = file
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("RMFastLoad payload")
+        + marker.len();
+    let ids_at = count_at + 4;
+    let tail = file[ids_at + 50 * 4..].to_vec();
+    file[count_at..count_at + 4].copy_from_slice(&100u32.to_le_bytes());
+    file.truncate(ids_at + 50 * 4);
+    for id in 2_000..2_050u32 {
+        file.extend_from_slice(&id.to_le_bytes());
+    }
+    file.extend_from_slice(&tail);
+    let directory_size_at = file
+        .windows(b"/Root/FastLoad/RMFastLoad".len())
+        .position(|window| window == b"/Root/FastLoad/RMFastLoad")
+        .expect("RMFastLoad directory")
+        + b"/Root/FastLoad/RMFastLoad".len()
+        + 8;
+    file[directory_size_at..directory_size_at + 8]
+        .copy_from_slice(&((marker.len() + 4 + 100 * 4) as u64).to_le_bytes());
+    file
+}
+
 fn prt_with_missing_active_body_record() -> Vec<u8> {
     let mut active_stream = many_face_partition_stream(1_000);
     let body = active_stream
@@ -4257,6 +4284,25 @@ fn decode_selects_dominant_rmfastload_body() {
         "findings: {:?}",
         validation.findings
     );
+}
+
+#[test]
+fn decode_retains_every_rmfastload_active_body() {
+    let mut cur = Cursor::new(prt_with_two_active_bodies_and_rmfastload());
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.bodies.len(), 2);
+    assert_eq!(result.ir.model.faces.len(), 100);
+    assert_eq!(
+        result
+            .ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("rmfastload_active_body_count"))
+            .map(String::as_str),
+        Some("2")
+    );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]
