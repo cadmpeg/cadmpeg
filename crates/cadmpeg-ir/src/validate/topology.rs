@@ -1454,6 +1454,25 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "coordinate-system frame is invalid");
                 }
             }
+            FeatureDefinition::EquationCurve {
+                parameter,
+                x_expression,
+                y_expression,
+                z_expression,
+                start,
+                end,
+            } => {
+                if parameter.trim().is_empty()
+                    || x_expression.trim().is_empty()
+                    || y_expression.trim().is_empty()
+                    || z_expression.trim().is_empty()
+                    || !start.is_finite()
+                    || !end.is_finite()
+                    || start >= end
+                {
+                    feature_geometry_error(findings, feature, "equation curve is invalid");
+                }
+            }
             FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }

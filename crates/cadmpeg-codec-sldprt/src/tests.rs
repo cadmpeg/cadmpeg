@@ -7393,6 +7393,87 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
 }
 
 #[test]
+fn semantic_writer_round_trips_equation_driven_curve() {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><EquationDrivenCurve Name="Spiral" Type="EquationDrivenCurve" id="29" Parameter="t" XEquation="10*cos(t)" YEquation="10*sin(t)" ZEquation="t" Start="0" End="6.283185307179586" Closed="false"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::EquationCurve {
+            parameter,
+            x_expression,
+            y_expression,
+            z_expression,
+            start,
+            end,
+        } if parameter == "t"
+            && x_expression == "10*cos(t)"
+            && y_expression == "10*sin(t)"
+            && z_expression == "t"
+            && *start == 0.0
+            && (*end - std::f64::consts::TAU).abs() < 1.0e-12
+    ));
+
+    let FeatureDefinition::EquationCurve {
+        parameter,
+        x_expression,
+        y_expression,
+        z_expression,
+        start,
+        end,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed equation curve");
+    };
+    *parameter = "u".into();
+    *x_expression = "u".into();
+    *y_expression = "u^2".into();
+    *z_expression = "u^3".into();
+    *start = -2.0;
+    *end = 3.0;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.xml_tag, "EquationDrivenCurve");
+    assert_eq!(feature.kind, "EquationDrivenCurve");
+    assert_eq!(feature.properties["Parameter"], "u");
+    assert_eq!(feature.properties["XEquation"], "u");
+    assert_eq!(feature.properties["YEquation"], "u^2");
+    assert_eq!(feature.properties["ZEquation"], "u^3");
+    assert_eq!(feature.properties["Start"], "-2");
+    assert_eq!(feature.properties["End"], "3");
+    assert_eq!(feature.properties["Closed"], "false");
+    assert!(matches!(
+        &regenerated.ir.model.features[0].definition,
+        FeatureDefinition::EquationCurve {
+            parameter,
+            x_expression,
+            y_expression,
+            z_expression,
+            start: -2.0,
+            end: 3.0,
+        } if parameter == "u"
+            && x_expression == "u"
+            && y_expression == "u^2"
+            && z_expression == "u^3"
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 

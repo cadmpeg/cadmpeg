@@ -2042,6 +2042,14 @@ fn feature_operation_geometry_is_validated() {
             y_axis: Vector3::new(1.0, 0.0, 0.0),
             z_axis: Vector3::new(0.0, 0.0, 1.0),
         },
+        FeatureDefinition::EquationCurve {
+            parameter: String::new(),
+            x_expression: "t".into(),
+            y_expression: "0".into(),
+            z_expression: "0".into(),
+            start: 1.0,
+            end: 0.0,
+        },
         FeatureDefinition::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::Linear {
@@ -2058,6 +2066,7 @@ fn feature_operation_geometry_is_validated() {
         "thicken thickness is invalid",
         "scale transform is invalid",
         "coordinate-system frame is invalid",
+        "equation curve is invalid",
         "pattern geometry is invalid",
     ];
     let mut ir = unit_cube();

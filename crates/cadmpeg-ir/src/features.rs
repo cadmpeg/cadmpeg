@@ -218,6 +218,21 @@ pub enum FeatureDefinition {
         /// Unit z-axis.
         z_axis: Vector3,
     },
+    /// Parametric model-space curve defined by coordinate expressions.
+    EquationCurve {
+        /// Independent parameter symbol used by the coordinate expressions.
+        parameter: String,
+        /// Model-space x-coordinate expression.
+        x_expression: String,
+        /// Model-space y-coordinate expression.
+        y_expression: String,
+        /// Model-space z-coordinate expression.
+        z_expression: String,
+        /// Inclusive lower parameter bound.
+        start: f64,
+        /// Inclusive upper parameter bound.
+        end: f64,
+    },
     /// Solved sketch node in the construction history.
     Sketch {
         /// Neutral sketch geometry owned by this history node, when resolved.

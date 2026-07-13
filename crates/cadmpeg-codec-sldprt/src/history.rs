@@ -910,6 +910,9 @@ fn project_definition(
         return project_datum_coordinate_system(feature)
             .unwrap_or_else(|| native_definition(feature));
     }
+    if feature_family(feature, "EquationDrivenCurve") || feature_family(feature, "EquationCurve") {
+        return project_equation_curve(feature).unwrap_or_else(|| native_definition(feature));
+    }
     if is_extrude(feature) {
         project_extrude(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Fillet") {
@@ -1100,6 +1103,35 @@ fn project_datum_coordinate_system(feature: &Feature) -> Option<FeatureDefinitio
             z_axis,
         },
     )
+}
+
+fn project_equation_curve(feature: &Feature) -> Option<FeatureDefinition> {
+    let parameter = feature.properties.get("Parameter")?.trim().to_string();
+    let x_expression = feature.properties.get("XEquation")?.trim().to_string();
+    let y_expression = feature.properties.get("YEquation")?.trim().to_string();
+    let z_expression = feature.properties.get("ZEquation")?.trim().to_string();
+    let start = feature
+        .properties
+        .get("Start")?
+        .trim()
+        .parse::<f64>()
+        .ok()?;
+    let end = feature.properties.get("End")?.trim().parse::<f64>().ok()?;
+    (!parameter.is_empty()
+        && !x_expression.is_empty()
+        && !y_expression.is_empty()
+        && !z_expression.is_empty()
+        && start.is_finite()
+        && end.is_finite()
+        && start < end)
+        .then_some(FeatureDefinition::EquationCurve {
+            parameter,
+            x_expression,
+            y_expression,
+            z_expression,
+            start,
+            end,
+        })
 }
 
 fn valid_coordinate_frame(
@@ -2845,6 +2877,55 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::EquationCurve {
+                parameter,
+                x_expression,
+                y_expression,
+                z_expression,
+                start,
+                end,
+            } => {
+                if parameter.trim().is_empty()
+                    || x_expression.trim().is_empty()
+                    || y_expression.trim().is_empty()
+                    || z_expression.trim().is_empty()
+                    || !start.is_finite()
+                    || !end.is_finite()
+                    || start >= end
+                {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has an invalid equation curve",
+                        feature.id
+                    )));
+                }
+                if existing.as_deref().is_some_and(|record| {
+                    !feature_family(record, "EquationDrivenCurve")
+                        && !feature_family(record, "EquationCurve")
+                }) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Parameter".into(), parameter.clone());
+                properties.insert("XEquation".into(), x_expression.clone());
+                properties.insert("YEquation".into(), y_expression.clone());
+                properties.insert("ZEquation".into(), z_expression.clone());
+                properties.insert("Start".into(), start.to_string());
+                properties.insert("End".into(), end.to_string());
+                (
+                    existing.as_deref().map_or_else(
+                        || "EquationDrivenCurve".into(),
+                        |record| record.kind.clone(),
+                    ),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
+            }
             FeatureDefinition::Sketch { .. } => {
                 if existing
                     .as_deref()
@@ -4505,6 +4586,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",
         FeatureDefinition::DatumPoint { .. } => "ReferencePoint",
         FeatureDefinition::DatumCoordinateSystem { .. } => "CoordinateSystem",
+        FeatureDefinition::EquationCurve { .. } => "EquationDrivenCurve",
         FeatureDefinition::Sketch { .. } => "Sketch",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",
