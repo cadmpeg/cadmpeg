@@ -1990,7 +1990,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
 fn feature_operation_geometry_is_validated() {
     use crate::features::{
         BooleanOp, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, VariableRadius,
+        HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, ThickenSide, VariableRadius,
     };
 
     let definitions = vec![
@@ -2025,6 +2025,11 @@ fn feature_operation_geometry_is_validated() {
             diameter: Length(0.0),
             extent: Extent::ThroughAll,
         },
+        FeatureDefinition::Thicken {
+            faces: FaceSelection::Unresolved,
+            thickness: Length(0.0),
+            side: ThickenSide::Forward,
+        },
         FeatureDefinition::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::Linear {
@@ -2038,6 +2043,7 @@ fn feature_operation_geometry_is_validated() {
         "fillet radius is invalid",
         "rib geometry is invalid",
         "hole geometry is invalid",
+        "thicken thickness is invalid",
         "pattern geometry is invalid",
     ];
     let mut ir = unit_cube();

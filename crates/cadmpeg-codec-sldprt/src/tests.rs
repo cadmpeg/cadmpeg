@@ -6420,6 +6420,62 @@ fn semantic_writer_round_trips_typed_shell() {
 }
 
 #[test]
+fn semantic_writer_round_trips_typed_thicken() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Thicken Name="Wall" Type="Thicken" id="15" Faces="face:4" BothSides="false" Reverse="true"><Dimension Name="Thickness">0.08in</Dimension></Thicken></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Thicken {
+            faces: FaceSelection::Native(selection),
+            thickness: Length(value),
+            side: ThickenSide::Reverse,
+        } if selection == "face:4" && (*value - 2.032).abs() < 1e-12
+    ));
+
+    let FeatureDefinition::Thicken {
+        faces,
+        thickness,
+        side,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed thicken feature");
+    };
+    *faces = FaceSelection::Native("face:5,face:6".into());
+    *thickness = Length(3.0);
+    *side = ThickenSide::Both;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.parameters["Thickness"], "3mm");
+    assert_eq!(feature.properties["Faces"], "face:5,face:6");
+    assert_eq!(feature.properties["BothSides"], "true");
+    assert_eq!(feature.properties["Reverse"], "false");
+    assert!(matches!(
+        &regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Thicken {
+            thickness: Length(3.0),
+            side: ThickenSide::Both,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_draft() {
     use cadmpeg_ir::features::{Angle, FaceSelection, FeatureDefinition};
     use cadmpeg_ir::math::Vector3;

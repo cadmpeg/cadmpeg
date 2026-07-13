@@ -1217,6 +1217,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "shell thickness is invalid");
                 }
             }
+            FeatureDefinition::Thicken {
+                faces, thickness, ..
+            } => {
+                face_selections.push(faces);
+                if !positive_feature_length(*thickness) {
+                    feature_geometry_error(findings, feature, "thicken thickness is invalid");
+                }
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,

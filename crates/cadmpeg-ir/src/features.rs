@@ -312,6 +312,15 @@ pub enum FeatureDefinition {
         /// as opposed to inward.
         outward: bool,
     },
+    /// Adds material normal to selected faces.
+    Thicken {
+        /// Faces offset by the operation.
+        faces: FaceSelection,
+        /// Finished added thickness.
+        thickness: Length,
+        /// Distribution of thickness relative to the selected faces.
+        side: ThickenSide,
+    },
     /// Taper applied to selected faces about a neutral plane.
     Draft {
         /// Faces whose angle is modified.
@@ -402,6 +411,18 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
     },
+}
+
+/// Direction in which a thicken feature adds material.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ThickenSide {
+    /// Add material along the selected-face normal.
+    Forward,
+    /// Add material opposite the selected-face normal.
+    Reverse,
+    /// Split the thickness equally across both sides.
+    Both,
 }
 
 /// Edge operands resolved by the decoder or retained in native form.

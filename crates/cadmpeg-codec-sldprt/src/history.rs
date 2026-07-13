@@ -709,6 +709,9 @@ pub fn bind_topology_selections(
             FeatureDefinition::Shell { removed_faces, .. } => {
                 resolve_face_selection(removed_faces, &face_ids);
             }
+            FeatureDefinition::Thicken { faces, .. } => {
+                resolve_face_selection(faces, &face_ids);
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
@@ -896,6 +899,8 @@ fn project_definition(
         project_chamfer(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Shell") {
         project_shell(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature_family(feature, "Thicken") || feature_family(feature, "Thickness") {
+        project_thicken(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Draft") {
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Combine") {
@@ -1432,6 +1437,41 @@ fn project_shell(feature: &Feature) -> Option<FeatureDefinition> {
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         thickness: Length(thickness),
         outward,
+    })
+}
+
+fn project_thicken(feature: &Feature) -> Option<FeatureDefinition> {
+    use cadmpeg_ir::features::ThickenSide;
+
+    let thickness = feature
+        .parameters
+        .get("Thickness")
+        .and_then(|value| parse_positive_length_mm(value))?;
+    let both_sides = feature
+        .properties
+        .get("BothSides")
+        .map_or(Some(false), |value| parse_bool(value))?;
+    let reverse = feature
+        .properties
+        .get("Reverse")
+        .map_or(Some(false), |value| parse_bool(value))?;
+    if both_sides && reverse {
+        return None;
+    }
+    Some(FeatureDefinition::Thicken {
+        faces: feature
+            .properties
+            .get("Faces")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+        thickness: Length(thickness),
+        side: if both_sides {
+            ThickenSide::Both
+        } else if reverse {
+            ThickenSide::Reverse
+        } else {
+            ThickenSide::Forward
+        },
     })
 }
 
@@ -2927,6 +2967,61 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::Thicken {
+                faces,
+                thickness,
+                side,
+            } => {
+                use cadmpeg_ir::features::ThickenSide;
+
+                let selection = face_selection_value(faces);
+                if selection.is_none()
+                    && !(matches!(faces, FaceSelection::Unresolved) && existing.is_some())
+                    || existing.as_deref().is_some_and(|record| {
+                        !feature_family(record, "Thicken") && !feature_family(record, "Thickness")
+                    })
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported thicken semantics",
+                        feature.id
+                    )));
+                }
+                if !thickness.0.is_finite() || thickness.0 <= 0.0 {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has an invalid thicken thickness",
+                        feature.id
+                    )));
+                }
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                parameters.insert("Thickness".into(), format_length_mm(thickness.0));
+                let mut properties = feature.source_properties.clone();
+                if let Some(selection) = selection {
+                    write_native_selection(
+                        &mut properties,
+                        "Faces",
+                        &selection,
+                        existing.as_deref().map_or("", |record| record.id.as_str()),
+                    );
+                }
+                properties.insert(
+                    "BothSides".into(),
+                    matches!(side, ThickenSide::Both).to_string(),
+                );
+                properties.insert(
+                    "Reverse".into(),
+                    matches!(side, ThickenSide::Reverse).to_string(),
+                );
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Thicken".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
+            }
             FeatureDefinition::Draft {
                 faces: face_selection,
                 neutral_plane: plane_selection,
@@ -4079,6 +4174,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Fillet { .. } => "Fillet",
         FeatureDefinition::Chamfer { .. } => "Chamfer",
         FeatureDefinition::Shell { .. } => "Shell",
+        FeatureDefinition::Thicken { .. } => "Thicken",
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
         FeatureDefinition::DeleteFace { .. } => "DeleteFace",
