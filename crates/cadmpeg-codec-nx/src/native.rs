@@ -43,8 +43,10 @@ pub struct ClassDefinition {
     pub id: String,
     /// Registered `UGS::` class name.
     pub name: String,
-    /// Stream-local class identifier.
-    pub class_id: u8,
+    /// Zero-based declaration ordinal used as class identity.
+    pub ordinal: u32,
+    /// Declaration code serialized after the class name.
+    pub trailing_code: u8,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the definition's length byte.
@@ -135,7 +137,8 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
                 .map(move |(type_index, definition)| ClassDefinition {
                     id: format!("nx:om-section-{section_index}:class#{type_index}"),
                     name: definition.name.to_string(),
-                    class_id: definition.class_id,
+                    ordinal: type_index as u32,
+                    trailing_code: definition.trailing_code,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
                 })

@@ -153,7 +153,7 @@ fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].types.len(), 1);
     assert_eq!(sections[0].types[0].name, "UGS::ModlFeature");
-    assert_eq!(sections[0].types[0].class_id, 0x81);
+    assert_eq!(sections[0].types[0].trailing_code, 0x81);
     assert_eq!(sections[0].types[0].offset, 8);
 }
 
@@ -2277,7 +2277,8 @@ fn decode_retains_length_framed_nx_class_definition() {
         .unwrap();
     assert_eq!(classes.len(), 1);
     assert_eq!(classes[0].name, "UGS::ModlFeature");
-    assert_eq!(classes[0].class_id, 0x81);
+    assert_eq!(classes[0].ordinal, 0);
+    assert_eq!(classes[0].trailing_code, 0x81);
     assert_eq!(classes[0].source_entry, "/Root/UG_PART/UG_PART");
 }
 

@@ -107,7 +107,7 @@ The wrapper `00 ce` instance owns the stream BODY (`child`), attribute-definitio
 
 An indexed object-model section carries an entity-boundary array followed by an object count and object-ID array. Boundary slot zero is zero. Subsequent values are monotonic offsets relative to the section base. Object IDs in slots `1..count` pair with entity spans bounded by adjacent boundary values. The first entity begins with `04 01 0e "NX "`.
 
-Class definitions before the boundary array use `name_length:u8 + "UGS::" name bytes + class_id:u8`.
+Class definitions before the boundary array use `declared_length:u8 + "UGS::" name bytes + trailing_code:u8`, where `declared_length` includes the trailing code. Declaration order supplies class identity.
 
 A numeric expression table contains a `hostglobalvariables` root entity. Each expression entity contains:
 
@@ -371,7 +371,7 @@ record i = bytes[base + index[i], base + index[i+1])
 object_id(i) = object_id_table[i]
 ```
 
-The first record at `oid_end` begins with the NX root marker `04 01 0e "NX "` (for example, `NX 2027.3102`). A **type registry** declaration is `declared_len:u8, name[declared_len-1], class_id:u8`; `name` is printable ASCII beginning with `UGS::`. The **field registry** stores `m_*` member names such as `m_color` and `m_csys`.
+The first record at `oid_end` begins with the NX root marker `04 01 0e "NX "` (for example, `NX 2027.3102`). A **type registry** declaration is `declared_len:u8, name[declared_len-1], trailing_code:u8`; `name` is printable ASCII beginning with `UGS::`. The zero-based declaration ordinal is the class identity. The **field registry** stores `m_*` member names such as `m_color` and `m_csys`.
 
 The primary UG_PART section uses an offset-only index. A trailing `record_count:u32 LE` follows `record_count+2` monotone offsets. Offsets are relative to the UG_PART payload start. `index[0]` starts identity metadata, `index[1]` starts the first entity, and the remaining entries bound `record_count` entities:
 

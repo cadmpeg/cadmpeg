@@ -26,8 +26,8 @@ pub struct TypeDefinition<'a> {
     pub offset: usize,
     /// Registered `UGS::` class name.
     pub name: &'a str,
-    /// Stream-local class identifier following the name.
-    pub class_id: u8,
+    /// Declaration code following the name.
+    pub trailing_code: u8,
 }
 
 /// Unit declared by an NX numeric-expression serialization.
@@ -289,7 +289,7 @@ fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinitio
             out.push(TypeDefinition {
                 offset: at,
                 name,
-                class_id: bytes[name_end],
+                trailing_code: bytes[name_end],
             });
             at = name_end + 1;
         } else {
