@@ -933,6 +933,17 @@ fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_geometry_with_decoy_curve_sense_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_exact_curve_smbh();
+    let marker = b"\x0f\x0d\x0dexact_int_cur";
+    let subtype = bytes
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("generated exact intcurve subtype");
+    bytes.splice(subtype..subtype, [0x0a, 0x0b]);
+    bytes
+}
+
 fn with_legacy_subtype(mut bytes: Vec<u8>, modern: &str, legacy: &str) -> Vec<u8> {
     let position = bytes
         .windows(modern.len())
@@ -13647,6 +13658,33 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
         assert!(subtype > 0);
         assert_eq!(record.tokens[subtype - 1], crate::sab::Token::False);
     }
+}
+
+#[test]
+fn generated_intcurve_sense_uses_token_adjacent_to_subtype() {
+    let decode_curve = |smbh: Vec<u8>| {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("generated exact intcurve decode");
+        let curve_id = &result.ir.model.procedural_curves[0].curve;
+        result
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *curve_id)
+            .expect("exact intcurve carrier")
+            .geometry
+            .clone()
+    };
+
+    assert_eq!(
+        decode_curve(synthetic_geometry_with_decoy_curve_sense_smbh()),
+        decode_curve(synthetic_geometry_with_exact_curve_smbh())
+    );
 }
 
 #[test]

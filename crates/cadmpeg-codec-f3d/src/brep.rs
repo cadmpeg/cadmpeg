@@ -517,14 +517,16 @@ fn sense_at(rec: &Record, i: usize) -> Sense {
 /// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
 /// spline surface flips the cache normal.
 fn record_reversed(rec: &Record) -> bool {
-    for token in &rec.tokens {
-        match token {
-            Token::True => return true,
-            Token::False | Token::SubtypeOpen => return false,
-            _ => {}
-        }
-    }
-    false
+    rec.tokens
+        .windows(2)
+        .find_map(|tokens| {
+            matches!(tokens[1], Token::SubtypeOpen).then(|| match tokens[0] {
+                Token::True => true,
+                Token::False => false,
+                _ => false,
+            })
+        })
+        .unwrap_or(false)
 }
 
 /// Reparameterize a cached B-spline to its record's reversed sense,
