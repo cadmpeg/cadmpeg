@@ -1189,12 +1189,23 @@ fn sldprt_with_tagged_compact_relation(
     relation_class: &str,
     operand_tags: [[u8; 2]; 2],
 ) -> Vec<u8> {
-    let mut file = sldprt_with_body(body);
-    let mut payload = resolved_features_payload_with_names_and_relation(
-        &[0, 1, 1, 1],
-        &["Sketch1", "D1", "D2"],
+    sldprt_with_tagged_compact_relation_names(
+        body,
         relation_class,
-    );
+        operand_tags,
+        &["Sketch1", "D1", "D2"],
+    )
+}
+
+fn sldprt_with_tagged_compact_relation_names(
+    body: &[u8],
+    relation_class: &str,
+    operand_tags: [[u8; 2]; 2],
+    names: &[&str],
+) -> Vec<u8> {
+    let mut file = sldprt_with_body(body);
+    let mut payload =
+        resolved_features_payload_with_names_and_relation(&[0, 1, 1, 1], names, relation_class);
     let operand_offsets = payload
         .windows(2)
         .enumerate()
@@ -13877,6 +13888,34 @@ fn decode_groups_compact_relation_scalar_pair() {
     SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap();
+}
+
+#[test]
+fn decode_starts_another_relation_after_two_repeated_operand_scalars() {
+    let mut source = sldprt_with_tagged_compact_relation_names(
+        &triangle_body(),
+        "sgPntPntDist",
+        [[0xd6, 0x80]; 2],
+        &["Sketch1", "D1", "D2", "D3"],
+    );
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    assert_eq!(native.feature_input_lanes[0].relation_instances.len(), 2);
+    assert_eq!(
+        native.feature_input_lanes[0]
+            .relation_instances
+            .iter()
+            .map(|relation| relation.scalar_refs.len())
+            .collect::<Vec<_>>(),
+        vec![2, 1]
+    );
 }
 
 #[test]

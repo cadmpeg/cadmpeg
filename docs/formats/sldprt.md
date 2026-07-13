@@ -109,6 +109,8 @@ A coincident relation marker constrains its distinct linked profile loci when ev
 
 A horizontal-points or vertical-points relation marker aligns its two distinct linked profile loci along the corresponding sketch coordinate when every link identifies exactly one locus. The relation remains native when a link identifies zero or multiple loci or the resolved locus count is not two.
 
+A compact dimensional relation instance contains one or two adjacent scalar records with the same owning sketch, declared relation class, and ordered operand cells. A third scalar starts another instance even when its operands repeat. A scalar separated by any other scalar record starts another instance. An instance has a parameter scalar only when exactly one member has the driving role and has a display scalar only when exactly one member has the display role.
+
 A feature-input class declaration is `ff ff 01 00`, a little-endian u16 byte length, and an ASCII class name. When the following record begins at declaration offset `+ 6 + length`, that record is an instance of the declared class. A feature-name record begins with `04 80 ff fe ff`, a u8 UTF-16 code-unit count, and the UTF-16LE name. The little-endian u32 at eight bytes after the name is the feature object ID. It equals the corresponding Keywords feature `id` and binds the records independently of the display name.
 
 A repeated class instance stores a little-endian u16 class token immediately before its feature-name marker. The token is scoped to the `ResolvedFeatures` lane. Repeated instances with the same token have the same declared class.

@@ -655,8 +655,9 @@ fn relation_instances(
         String,
         Vec<FeatureInputOperand>,
         Vec<&FeatureInputScalar>,
+        usize,
     )>::new();
-    for scalar in &lane.scalars {
+    for (scalar_index, scalar) in lane.scalars.iter().enumerate() {
         let Some(feature_ref) = scalar
             .feature_ref
             .as_deref()
@@ -673,22 +674,28 @@ fn relation_instances(
         else {
             continue;
         };
-        if let Some((_, _, _, _, scalars)) =
-            groups
-                .iter_mut()
-                .find(|(owner, candidate, _, operands, _)| {
-                    owner == feature_ref
-                        && candidate == family
-                        && operands
+        let append = groups.last().is_some_and(
+            |(owner, candidate, group_class, operands, scalars, last_index)| {
+                owner == feature_ref
+                    && candidate == family
+                    && group_class == class_ref
+                    && *last_index + 1 == scalar_index
+                    && scalars.len() == 1
+                    && operands
+                        .iter()
+                        .map(|operand| (operand.kind, operand.entity_index))
+                        .eq(scalar
+                            .operands
                             .iter()
-                            .map(|operand| (operand.kind, operand.entity_index))
-                            .eq(scalar
-                                .operands
-                                .iter()
-                                .map(|operand| (operand.kind, operand.entity_index)))
-                })
-        {
+                            .map(|operand| (operand.kind, operand.entity_index)))
+            },
+        );
+        if append {
+            let (_, _, _, _, scalars, last_index) = groups
+                .last_mut()
+                .expect("append requires an existing relation group");
             scalars.push(scalar);
+            *last_index = scalar_index;
         } else {
             groups.push((
                 feature_ref.to_string(),
@@ -696,6 +703,7 @@ fn relation_instances(
                 (*class_ref).to_string(),
                 scalar.operands.clone(),
                 vec![scalar],
+                scalar_index,
             ));
         }
     }
@@ -703,7 +711,7 @@ fn relation_instances(
         .into_iter()
         .enumerate()
         .map(
-            |(ordinal, (feature_ref, family, class_ref, operands, scalars))| {
+            |(ordinal, (feature_ref, family, class_ref, operands, scalars, _))| {
                 let driving = scalars
                     .iter()
                     .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
