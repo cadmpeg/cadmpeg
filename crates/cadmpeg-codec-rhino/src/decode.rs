@@ -1760,6 +1760,7 @@ impl<'a> DecodeContext<'a> {
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> DecodeResult {
         crate::annotations::install(self.scan, &mut self.ir);
+        crate::document_data::install(self.scan, &mut self.ir);
         crate::presentation::install(self.scan, &mut self.ir);
         crate::product::install(self.scan, &mut self.ir);
         crate::accounting::install(self.scan, &mut self.ir);

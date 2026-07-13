@@ -20,6 +20,7 @@ pub(crate) mod curves;
 pub(crate) mod decode;
 pub(crate) mod detail;
 pub(crate) mod dimensions;
+pub(crate) mod document_data;
 pub(crate) mod extrusion;
 pub(crate) mod hatch;
 pub(crate) mod history;
