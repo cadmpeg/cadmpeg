@@ -1600,9 +1600,12 @@ u8 render-mesh-present
 Archive IDs are contiguous, one-based, partitioned vertex/edge/face, and
 records occur in archive-ID order. Level zero is the control cage.
 
-A component pointer is `u32 archive ID` followed by `u8 flags`. Bit 0 is
-direction; bits 1 and 2 encode type: `0x2` vertex, `0x4` edge, `0x6` face.
-Archive ID zero is null. Edge and face direction bits reverse traversal.
+A pointer in a vertex, edge, face, or saved-limit-point field is `u32 archive
+ID` followed by `u8 flags`. The field determines the component type, and bit 0
+is the only serialized flag. Archive ID zero is null and has flags zero. Edge
+and face direction bits reverse traversal. Generic component pointers in
+size-tagged additions use bits 1 and 2 for type: `0x2` vertex, `0x4` edge, and
+`0x6` face.
 
 Each component base has archive ID, component ID, subdivision level, then
 pre-V7 saved point/vector fields or V7+ size-tagged additions. Vertex records
