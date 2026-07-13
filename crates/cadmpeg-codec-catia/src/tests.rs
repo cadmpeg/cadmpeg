@@ -640,6 +640,23 @@ fn e5_torus_stream() -> Vec<u8> {
     record
 }
 
+fn e5_plane_stream() -> Vec<u8> {
+    let mut payload = vec![0u8; 90];
+    for (index, value) in [1.0f64, 2.0, 3.0].into_iter().enumerate() {
+        payload[1 + 8 * index..9 + 8 * index].copy_from_slice(&le_f64(value));
+    }
+    payload[25] = 0x33;
+    for index in 0..4 {
+        payload[26 + 8 * index..34 + 8 * index].copy_from_slice(&le_f64(1.0));
+    }
+    for (index, value) in [-4.0f64, 7.0, -2.0, 9.0].into_iter().enumerate() {
+        payload[58 + 8 * index..66 + 8 * index].copy_from_slice(&le_f64(value));
+    }
+    let mut bytes = Vec::new();
+    append_e5_record(&mut bytes, 0xc8, 42, &payload);
+    bytes
+}
+
 fn a8_surface_stream() -> Vec<u8> {
     let mut payload = Vec::new();
     payload.push(0); // lead
@@ -677,7 +694,555 @@ fn a8_rational_surface_stream() -> Vec<u8> {
     record
 }
 
+fn a8_pcurve_stream() -> Vec<u8> {
+    let mut payload = vec![0, 0x18, 0x34, 0x12, 21, 0, 0, 9, 0x0c];
+    for value in [0.0f64, 1.0] {
+        payload.extend_from_slice(&le_f64(value));
+    }
+    payload.extend_from_slice(&[25, 25, 9, 1]);
+    for values in [[0.0f64, 1.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]] {
+        for value in values {
+            payload.extend_from_slice(&le_f64(value));
+        }
+    }
+    payload.push(0x05);
+    for _ in 0..4 {
+        payload.extend_from_slice(&le_f64(0.0));
+    }
+    payload.extend_from_slice(&le_f64(0.0));
+    payload.extend_from_slice(&le_f64(1.0));
+    payload.push(0x07);
+    let mut record = vec![0xa8, 0x03, 0x20];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&0x5678u32.to_le_bytes());
+    record.extend_from_slice(&payload);
+    record
+}
+
+fn a5_pcurve_stream() -> Vec<u8> {
+    a5_pcurve_stream_with_uv([0.0, 1.0], [0.0, 1.0])
+}
+
+fn a6_pcurve_stream() -> Vec<u8> {
+    let narrow = a5_pcurve_stream();
+    let mut wide = vec![0xa6, 0x03, 0x20];
+    wide.extend_from_slice(&narrow[3..7]);
+    wide.extend_from_slice(&[0x05, 0x00]);
+    wide.extend_from_slice(&narrow[8..]);
+    wide
+}
+
+fn b2_pcurve_stream() -> Vec<u8> {
+    let narrow = a5_pcurve_stream();
+    let payload = &narrow[8..];
+    let mut record = vec![0xb2, 0x03, 0x20, u8::try_from(payload.len()).unwrap(), 0x05];
+    record.extend_from_slice(payload);
+    record
+}
+
+fn b2_parameter_point_stream() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for values in [
+        vec![2.0f64, 3.0],
+        vec![11.0, 4.0, 5.0],
+        vec![1.0, 2.0, 3.0, 4.0, 5.0],
+    ] {
+        let length = 2 + 8 * values.len();
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x18, u8::try_from(length).unwrap(), 0x05, 0x05]);
+        bytes.push(0x12);
+        for value in values {
+            bytes.extend_from_slice(&le_f64(value));
+        }
+    }
+    bytes
+}
+
+fn b2_reference_list_stream() -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x37, 0x22, 0x05];
+    for value in 0u8..26 {
+        record.push(4 * value + 1);
+    }
+    record.extend_from_slice(&le_f64(1.0));
+    record
+}
+
+fn b2_cone_face_stream() -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x3b, 0x20, 0x05];
+    for value in 0u8..16 {
+        record.push(4 * value + 1);
+    }
+    record.extend_from_slice(&le_f64(1.5));
+    record.extend_from_slice(&le_f64(std::f64::consts::FRAC_PI_4));
+    record
+}
+
+fn b2_topology_metadata_stream() -> Vec<u8> {
+    let mut bytes = vec![
+        0xb2, 0x03, 0x5e, 0x07, 0x05, 0x0a, 0x34, 0x12, 0x0a, 0x78, 0x56, 0,
+    ];
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 1, 2, 3, 0x88]);
+    bytes
+}
+
+fn b2_revolution_stream() -> Vec<u8> {
+    let scale = 2.0;
+    let angular_lo = scale * 0.5;
+    let angular_hi = angular_lo + scale * std::f64::consts::TAU;
+    let mean = scale * (std::f64::consts::PI + 0.5);
+    let mut record = vec![0xb2, 0x03, 0x2d, 0xae, 0x05];
+    let mut payload = vec![0u8; 0xae];
+    payload[0] = 0x0a;
+    payload[1..3].copy_from_slice(&0x1234u16.to_le_bytes());
+    let frame = [
+        1.0f64, 2.0, 3.0, // origin
+        1.0, 0.0, 0.0, // first basis
+        0.0, 1.0, 0.0, // second basis
+        0.0, 0.0, 1.0, // axis
+    ];
+    for (index, value) in frame.into_iter().enumerate() {
+        payload[3 + 8 * index..11 + 8 * index].copy_from_slice(&le_f64(value));
+    }
+    for (index, value) in [angular_lo, angular_hi, -4.0, 9.0].into_iter().enumerate() {
+        payload[99 + 8 * index..107 + 8 * index].copy_from_slice(&le_f64(value));
+    }
+    payload[131..133].copy_from_slice(&[0x05, 0x05]);
+    payload[133..141].copy_from_slice(&le_f64(scale));
+    payload[141..149].copy_from_slice(&le_f64(1.0));
+    payload[149..157].copy_from_slice(&le_f64(1.0));
+    payload[157..165].copy_from_slice(&le_f64(0.0));
+    payload[165] = 0x01;
+    payload[166..174].copy_from_slice(&le_f64(mean));
+    record.extend_from_slice(&payload);
+    record
+}
+
+fn b2_group_stream() -> Vec<u8> {
+    vec![
+        0xb2, 0x03, 0x65, 0x04, 0x05, 0x81, 0x03, 0x05, 0x0d, 0xb2, 0x03, 0x60, 0x02, 0x05, 0x81,
+        0x0d,
+    ]
+}
+
+fn a5_pcurve_stream_with_uv(u: [f64; 2], v: [f64; 2]) -> Vec<u8> {
+    let mut payload = vec![0x08, 0x34, 0x12, 21, 9, 0x08, 9];
+    for value in [0.0f64, 1.0] {
+        payload.extend_from_slice(&le_f64(value));
+    }
+    payload.extend_from_slice(&[9, 2]);
+    for values in [u, v, [1.0, 1.0], [0.0, 0.0]] {
+        for value in values {
+            payload.extend_from_slice(&le_f64(value));
+        }
+    }
+    payload.push(0x05);
+    for _ in 0..4 {
+        payload.extend_from_slice(&le_f64(0.0));
+    }
+    payload.extend_from_slice(&le_f64(0.0));
+    payload.extend_from_slice(&le_f64(1.0));
+    let mut record = vec![0xa5, 0x03, 0x20];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.push(0x05);
+    record.extend_from_slice(&payload);
+    record
+}
+
+fn a5_circle_bound_edge_stream() -> Vec<u8> {
+    let radius = 3.0;
+    let arc = [0.0, 2.0 * std::f64::consts::PI * radius];
+    let mut bytes = a5_pcurve_stream_with_uv(arc, [2.0, 2.0]);
+    bytes.extend_from_slice(&a5_pcurve_stream_with_uv(arc, [2.0, 2.0]));
+    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
+    bytes.extend_from_slice(&b2_circle_stream());
+    bytes
+}
+
+fn a5_cone_bound_edge_stream() -> Vec<u8> {
+    let u = [0.0f64, 1.0];
+    let v = [2.0f64, 3.0];
+    let mut bytes = a5_pcurve_stream_with_uv(u, v);
+    bytes.extend_from_slice(&a5_pcurve_stream_with_uv(u, v));
+    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
+    bytes.extend_from_slice(&b2_cone_stream());
+    for (u, v) in u.into_iter().zip(v) {
+        let phi = u / 3.0;
+        let point = [
+            1.0 + v * 0.25f64.sin() * phi.cos(),
+            2.0 + v * 0.25f64.sin() * phi.sin(),
+            3.0 + v * 0.25f64.cos(),
+        ];
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&(value as f32).to_le_bytes());
+        }
+    }
+    bytes
+}
+
+fn b2_offset_support_stream() -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x31, 0x2b, 0x05, 0x08, 0x34, 0x12];
+    for value in [2.5f64, 0.0, -1.0, 4.0, 3.0] {
+        record.extend_from_slice(&le_f64(value));
+    }
+    record
+}
+
+fn b3_offset_support_stream() -> Vec<u8> {
+    let narrow = b2_offset_support_stream();
+    let mut wide = vec![0xb3, 0x03, 0x31, narrow[3], 0x05, 0x00];
+    wide.extend_from_slice(&narrow[5..]);
+    wide
+}
+
+fn b2_edge_parameter_stream() -> Vec<u8> {
+    b2_edge_parameter_stream_for(2.0, 7.0)
+}
+
+fn b2_edge_parameter_stream_for(lo: f64, hi: f64) -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x23, 0x4e, 0];
+    record.extend_from_slice(&[0; 6]);
+    for value in [lo, hi, 1e-6, lo, hi, 1.0, lo, hi, 1e-6] {
+        record.extend_from_slice(&le_f64(value));
+    }
+    record
+}
+
+fn a5_edge_block_stream() -> Vec<u8> {
+    let mut bytes = a5_pcurve_stream();
+    bytes.extend_from_slice(&a5_pcurve_stream());
+    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
+    bytes
+}
+
+fn a5_cylinder_bound_edge_stream() -> Vec<u8> {
+    let mut bytes = a5_edge_block_stream();
+    bytes.extend_from_slice(&b2_cylinder_stream());
+    let endpoints = [
+        [1.0f32, 4.0, 3.0],
+        [2.0, (2.0 + 2.0 * 0.5f32.cos()), (3.0 + 2.0 * 0.5f32.sin())],
+    ];
+    for point in endpoints {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+fn a5_nurbs_bound_edge_stream(offset: f64) -> Vec<u8> {
+    let cylinder_uv = ([0.0f64, 1.0], [0.0f64, 1.0]);
+    let surface_uv = ([0.0f64, 1.0], [0.0f64, 0.0]);
+    let p0 = [1.0, 4.0, 3.0];
+    let p1 = [2.0, 2.0 + 2.0 * 0.5f64.cos(), 3.0 + 2.0 * 0.5f64.sin()];
+    let normal = {
+        let u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+        let v = [0.0f64, 0.0, 1.0];
+        let cross = [u[1] * v[2] - u[2] * v[1], -u[0] * v[2], 0.0];
+        let length = cross[0].hypot(cross[1]);
+        [cross[0] / length, cross[1] / length, 0.0]
+    };
+    let shifted = |point: [f64; 3]| {
+        [
+            point[0] - offset * normal[0],
+            point[1] - offset * normal[1],
+            point[2],
+        ]
+    };
+    let s0 = shifted(p0);
+    let s1 = shifted(p1);
+    let mut bytes = a5_pcurve_stream_with_uv(cylinder_uv.0, cylinder_uv.1);
+    bytes.extend_from_slice(&a5_pcurve_stream_with_uv(surface_uv.0, surface_uv.1));
+    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
+    bytes.extend_from_slice(&b2_cylinder_stream());
+    bytes.extend_from_slice(&a5_surface_stream_with_poles([
+        s0,
+        [s0[0], s0[1], s0[2] + 1.0],
+        s1,
+        [s1[0], s1[1], s1[2] + 1.0],
+    ]));
+    for point in [p0, p1] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&(value as f32).to_le_bytes());
+        }
+    }
+    bytes
+}
+
+fn b2_circle_stream() -> Vec<u8> {
+    let radius = 3.0;
+    let mut record = vec![0xb2, 0x03, 0x19, 0x33, 0x05, 0x08, 0x34, 0x12];
+    for value in [
+        4.0f64,
+        -2.0,
+        radius,
+        0.0,
+        2.0 * std::f64::consts::PI * radius,
+    ] {
+        record.extend_from_slice(&le_f64(value));
+    }
+    record.extend_from_slice(&[0; 8]);
+    record
+}
+
+fn b2_cylinder_stream() -> Vec<u8> {
+    let radius = 2.0;
+    let mut record = vec![0xb2, 0x03, 0x28, 0x5a, 0x05];
+    record.resize(95, 0);
+    let p = 5;
+    for (index, value) in [1.0f64, 2.0, 3.0].into_iter().enumerate() {
+        record[p + 8 * index..p + 8 * index + 8].copy_from_slice(&le_f64(value));
+    }
+    record[p + 24] = 0x19;
+    record[p + 25..p + 33].copy_from_slice(&le_f64(1.0));
+    record[p + 33..p + 41].copy_from_slice(&le_f64(0.0));
+    record[p + 41..p + 49].copy_from_slice(&le_f64(1.0));
+    record[p + 49..p + 57].copy_from_slice(&le_f64(radius));
+    record[p + 57..p + 65].copy_from_slice(&le_f64(0.0));
+    record[p + 65..p + 73].copy_from_slice(&le_f64(2.0 * std::f64::consts::PI * radius));
+    record[p + 73..p + 81].copy_from_slice(&le_f64(-4.0));
+    record[p + 81..p + 89].copy_from_slice(&le_f64(5.0));
+    record[p + 89] = 0x07;
+    record
+}
+
+fn b3_cylinder_stream() -> Vec<u8> {
+    let narrow = b2_cylinder_stream();
+    let mut wide = vec![0xb3, 0x03, 0x28, 0x5a, 0x05, 0x00];
+    wide.extend_from_slice(&narrow[5..]);
+    wide
+}
+
+fn b2_implicit_axis_cylinder_stream() -> Vec<u8> {
+    let radius = 2.0;
+    let mut record = vec![0xb2, 0x03, 0x28, 0x52, 0x05];
+    record.resize(87, 0);
+    let p = 5;
+    record[p + 24] = 0x1d;
+    record[p + 25..p + 33].copy_from_slice(&le_f64(1.0));
+    record[p + 33..p + 41].copy_from_slice(&le_f64(1.0));
+    record[p + 41..p + 49].copy_from_slice(&le_f64(radius));
+    record[p + 49..p + 57].copy_from_slice(&le_f64(0.0));
+    record[p + 57..p + 65].copy_from_slice(&le_f64(2.0 * std::f64::consts::PI * radius));
+    record[p + 65..p + 73].copy_from_slice(&le_f64(-1.0));
+    record[p + 73..p + 81].copy_from_slice(&le_f64(3.0));
+    record[p + 81] = 0x07;
+    record
+}
+
+fn b2_phase_tailed_cylinder_stream() -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x28, 0x62, 0x05];
+    record.resize(103, 0);
+    let p = 5;
+    record[p + 24] = 0x0e;
+    record[p + 25..p + 33].copy_from_slice(&le_f64(0.0));
+    record[p + 33..p + 41].copy_from_slice(&le_f64(1.0));
+    record[p + 49..p + 57].copy_from_slice(&le_f64(4.0));
+    record[p + 57..p + 65].copy_from_slice(&le_f64(0.0));
+    record[p + 65..p + 73].copy_from_slice(&le_f64(8.0));
+    record[p + 73..p + 81].copy_from_slice(&le_f64(-2.0));
+    record[p + 81..p + 89].copy_from_slice(&le_f64(2.0));
+    record[p + 89] = 0x03;
+    record[p + 90..p + 98].copy_from_slice(&le_f64(0.75));
+    record
+}
+
+fn b2_cone_stream() -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x29, 0xb8, 0x05];
+    record.resize(189, 0);
+    for (start, values) in [
+        (5, [1.0f64, 2.0, 3.0]),
+        (29, [1.0, 0.0, 0.0]),
+        (53, [0.0, 1.0, 0.0]),
+        (77, [0.0, 0.0, 1.0]),
+    ] {
+        for (index, value) in values.into_iter().enumerate() {
+            record[start + 8 * index..start + 8 * index + 8].copy_from_slice(&le_f64(value));
+        }
+    }
+    record[101..109].copy_from_slice(&le_f64(0.25));
+    record[125..133].copy_from_slice(&le_f64(0.5));
+    record[133..141].copy_from_slice(&le_f64(2.0));
+    record[141..149].copy_from_slice(&le_f64(8.0));
+    record[149..157].copy_from_slice(&le_f64(3.0));
+    record
+}
+
+fn b2_construction_use_stream() -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x30, 0x2d, 0x05, 0x05, 0x08, 0x34, 0x12];
+    record.extend_from_slice(&le_f64(-2.0));
+    record.push(0x01);
+    for value in [0.0f64, 4.0, -1.0, 3.0] {
+        record.extend_from_slice(&le_f64(value));
+    }
+    record
+}
+
+fn b2_embedded_cylinder_stream() -> Vec<u8> {
+    let standalone = b2_cylinder_stream();
+    let mut record = vec![
+        0xb2, 0x03, 0x60, 0x02, 0x05, 0x81, 0x0d, 0xb4, 0x03, 0x28, 0x5a,
+    ];
+    record.extend_from_slice(&[0x08, 0x78, 0x56]);
+    record.extend_from_slice(&standalone[5..]);
+    record
+}
+
+fn object_graph_record(head: &[u8], payload: &[u8]) -> Vec<u8> {
+    let child_len = 6 + payload.len();
+    let total_len = 6 + head.len() + child_len;
+    let mut bytes = vec![0x7c, 0x09];
+    bytes.extend_from_slice(&(total_len as u32).to_le_bytes());
+    bytes.extend_from_slice(head);
+    bytes.extend_from_slice(&[0x7c, 0x0a]);
+    bytes.extend_from_slice(&(child_len as u32).to_le_bytes());
+    bytes.extend_from_slice(payload);
+    bytes
+}
+
+fn object_graph_from_records(records: &[Vec<u8>]) -> Vec<u8> {
+    let total_len = 6 + records.iter().map(Vec::len).sum::<usize>();
+    let mut bytes = vec![0x7c, 0x08];
+    bytes.extend_from_slice(&(total_len as u32).to_le_bytes());
+    for record in records {
+        bytes.extend_from_slice(record);
+    }
+    bytes
+}
+
+fn object_graph_stream() -> Vec<u8> {
+    let records = [
+        object_graph_record(
+            &[0x04, 0x01, 0x82, 0x83, 0x84],
+            &[0x81, 0x85, 0x3a, 0x87, 0xfe],
+        ),
+        object_graph_record(
+            &[0x14, 0x01, 0x82, 0x84],
+            &[0xe5, 0x02, 0, 0, 0, 0xaa, 0xbb, 0xfe],
+        ),
+    ];
+    object_graph_from_records(&records)
+}
+
+fn object_graph_vm_stream() -> Vec<u8> {
+    object_graph_from_records(&[
+        object_graph_record(
+            &[0x1c, 0x01, 0x82, 0x80, 0xff, 0xff, 0xff, 0xff, 0x83],
+            &[
+                0x3b, 0x83, 0x81, 0x85, 0x80, 0x86, 0xd1, 0x09, 0x3c, 0x82, 1, 0, 0, 0, 0x0d, 0xfe,
+            ],
+        ),
+        object_graph_record(&[0x04, 0x01, 0x82, 0x83], &[0xfe]),
+    ])
+}
+
+fn catalog_stream(entries: &[&str]) -> Vec<u8> {
+    let mut bytes = vec![0x7c, 0x02, 0, 0, 0, 0];
+    bytes.push(0x80 + u8::try_from(entries.len() + 1).unwrap());
+    for entry in entries {
+        bytes.push(u8::try_from(entry.len() + 1).unwrap());
+        bytes.extend_from_slice(entry.as_bytes());
+    }
+    let total_len = u32::try_from(bytes.len()).unwrap();
+    bytes[2..6].copy_from_slice(&total_len.to_le_bytes());
+    bytes
+}
+
+fn value_block_stream(payload: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![0x7c, 0x0b, 0, 0, 0, 0];
+    bytes.extend_from_slice(payload);
+    let declared_len = u32::try_from(bytes.len()).expect("generated 7C0B length");
+    bytes[2..6].copy_from_slice(&declared_len.to_le_bytes());
+    bytes.push(0xfe);
+    bytes
+}
+
+fn standard_catpart_with_object_graph() -> Vec<u8> {
+    let graph = object_graph_stream();
+    let mut file = standard_catpart();
+    file.splice(16..16, graph);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
+fn standard_catpart_with_catalog() -> Vec<u8> {
+    let catalog = catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+        "Pad",
+    ]);
+    let mut file = standard_catpart();
+    file.splice(16..16, catalog);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
+fn standard_catpart_with_value_block() -> Vec<u8> {
+    let mut stream = value_block_stream(&[0x81, 0x83, 0x32, 0xea, 0, 0, 0, 0x83, 0x82]);
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
+fn surface_alias_stream() -> Vec<u8> {
+    let mut bytes = 1u32.to_le_bytes().to_vec();
+    bytes.extend_from_slice(&[0x01, 0x00, 0x04, 0x00]);
+    bytes.extend_from_slice(&0xab12_3456u32.to_le_bytes());
+    bytes.extend_from_slice(&[0xff, 2, 3, 7]);
+    bytes.extend_from_slice(&0x1122_3344u32.to_le_bytes());
+    bytes.extend_from_slice(&0x5566_7788u32.to_le_bytes());
+    bytes
+}
+
+fn marker_7cd9_stream() -> Vec<u8> {
+    vec![0xaa, 0x7c, 0xd9, 1, 2, 3, 0x7c, 0xd9, 4, 5]
+}
+
+fn finjpl_stream() -> Vec<u8> {
+    let mut bytes = vec![0xaa, 0xbb];
+    bytes.extend_from_slice(b"FINJPL  ");
+    bytes.extend_from_slice(&0x0000_008eu32.to_be_bytes());
+    bytes.extend_from_slice(&[1, 2, 3]);
+    bytes.extend_from_slice(b"FINJPL  ");
+    bytes.extend_from_slice(&0x0101_0001u32.to_be_bytes());
+    bytes.extend_from_slice(&[4, 5]);
+    bytes
+}
+
 fn a5_surface_stream() -> Vec<u8> {
+    a5_surface_stream_with_poles([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 1.0],
+        [2.0, 1.0, 0.0],
+        [3.0, 1.0, 1.0],
+    ])
+}
+
+fn a6_surface_stream() -> Vec<u8> {
+    let narrow = a5_surface_stream();
+    let mut wide = vec![0xa6, 0x03, 0x34];
+    wide.extend_from_slice(&narrow[3..7]);
+    wide.extend_from_slice(&[0x05, 0x00]);
+    wide.extend_from_slice(&narrow[8..]);
+    wide
+}
+
+fn a5_surface_stream_with_poles(poles: [[f64; 3]; 4]) -> Vec<u8> {
     let mut record = Vec::new();
     record.extend_from_slice(&[0xa5, 0x03, 0x34]);
     record.extend_from_slice(&0u32.to_le_bytes());
@@ -689,13 +1254,15 @@ fn a5_surface_stream() -> Vec<u8> {
     record.extend_from_slice(&le_f64(0.0));
     record.extend_from_slice(&le_f64(1.0));
     record.push(0x01); // non-rational
-    for i in 0..4 {
-        for value in [i as f64, (i / 2) as f64, (i % 2) as f64] {
+    for pole in poles {
+        for value in pole {
             record.extend_from_slice(&le_f64(value));
         }
     }
     record.extend_from_slice(&[0x05, 0x01, 0x05, 0x01]);
     record.extend(std::iter::repeat_n(0u8, 64));
+    let payload_len = u32::try_from(record.len() - 8).unwrap();
+    record[3..7].copy_from_slice(&payload_len.to_le_bytes());
     record
 }
 
@@ -707,11 +1274,139 @@ fn a5_rational_surface_stream() -> Vec<u8> {
     record.extend_from_slice(&le_f64(2.0)); // mirrored seed row -> [2, 2]
     record.push(0x02); // copy the row for the second u row
     record.extend_from_slice(&tail);
+    let payload_len = u32::try_from(record.len() - 8).unwrap();
+    record[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    record
+}
+
+fn a5_freeform_curve_stream() -> Vec<u8> {
+    let mut payload = vec![9, 21, 9, 0x0c];
+    for value in [0.0f64, 1.0] {
+        payload.extend_from_slice(&le_f64(value));
+    }
+    let sites = [
+        [
+            1.0f64,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+        ],
+        [
+            2.0,
+            0.0,
+            0.0,
+            0.0,
+            2.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+        ],
+    ];
+    for block in 0..3 {
+        for site in sites {
+            for value in if block == 0 { site } else { [0.0; 10] } {
+                payload.extend_from_slice(&le_f64(value));
+            }
+        }
+    }
+    let mut record = vec![0xa5, 0x03, 0x32];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.push(0x05);
+    record.extend_from_slice(&payload);
+    record
+}
+
+fn a6_freeform_curve_stream() -> Vec<u8> {
+    let narrow = a5_freeform_curve_stream();
+    let mut wide = vec![0xa6, 0x03, 0x32];
+    wide.extend_from_slice(&narrow[3..7]);
+    wide.extend_from_slice(&[0x05, 0x00]);
+    wide.extend_from_slice(&narrow[8..]);
+    wide
+}
+
+fn a5_guide_curve_stream() -> Vec<u8> {
+    let mut payload = vec![9, 21, 9, 0x0c];
+    payload.extend_from_slice(&le_f64(0.0));
+    payload.extend_from_slice(&le_f64(1.0));
+    let positions = [
+        [0.0f64, 0.0, 0.0, 1.0, 0.0, 0.0],
+        [2.0, 3.0, 4.0, 2.0, 4.0, 4.0],
+    ];
+    for block in 0..3 {
+        for site in positions {
+            for value in if block == 0 { site } else { [0.0; 6] } {
+                payload.extend_from_slice(&le_f64(value));
+            }
+        }
+    }
+    payload.extend_from_slice(&[0; 48]);
+    let mut record = vec![0xa5, 0x03, 0x39];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.push(0x05);
+    record.extend_from_slice(&payload);
+    record
+}
+
+fn a8_freeform_curve_stream() -> Vec<u8> {
+    let mut payload = vec![0, 9, 21, 0, 0, 9, 0x0c];
+    for value in [0.0f64, 1.0] {
+        payload.extend_from_slice(&le_f64(value));
+    }
+    payload.extend_from_slice(&[25, 25]);
+    let sites = [
+        [
+            1.0f64,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+        ],
+        [
+            2.0,
+            0.0,
+            0.0,
+            0.0,
+            2.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+        ],
+    ];
+    for block in 0..3 {
+        for site in sites {
+            for value in if block == 0 { site } else { [0.0; 10] } {
+                payload.extend_from_slice(&le_f64(value));
+            }
+        }
+    }
+    let mut record = vec![0xa8, 0x03, 0x32];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&0x1234_5678u32.to_le_bytes());
+    record.extend_from_slice(&payload);
     record
 }
 
 fn e5_catpart() -> Vec<u8> {
-    let main = e5_circle_stream();
+    let mut main = e5_circle_stream();
+    for id in 2..=10 {
+        append_e5_record(&mut main, 0xfe, id, &[]);
+    }
     let surf = vec![0u8];
     let main_off = 16u32;
     let surf_off = main_off + main.len() as u32;
@@ -737,7 +1432,10 @@ fn e5_catpart() -> Vec<u8> {
 }
 
 fn a8_catpart() -> Vec<u8> {
-    let main = a8_surface_stream();
+    object_main_catpart(&a8_surface_stream())
+}
+
+fn object_main_catpart(main: &[u8]) -> Vec<u8> {
     let surf = vec![0u8];
     let main_off = 16u32;
     let surf_off = main_off + main.len() as u32;
@@ -751,7 +1449,7 @@ fn a8_catpart() -> Vec<u8> {
     inner.extend_from_slice(OUTER_MAGIC);
     inner.extend_from_slice(&be32(dir_rel));
     inner.extend_from_slice(&be32(dir.len() as u32));
-    inner.extend_from_slice(&main);
+    inner.extend_from_slice(main);
     inner.extend_from_slice(&surf);
     inner.extend_from_slice(&dir);
     let mut file = Vec::new();
@@ -764,6 +1462,17 @@ fn a8_catpart() -> Vec<u8> {
 
 fn inner_no_directory_a8_catpart() -> Vec<u8> {
     let mut file = a8_catpart();
+    let name = b"M\x00a\x00i\x00n\x00D\x00a\x00t\x00a\x00S\x00t\x00r\x00e\x00a\x00m\x00";
+    let pos = file
+        .windows(name.len())
+        .position(|bytes| bytes == name)
+        .expect("main stream name");
+    file[pos] = b'X';
+    file
+}
+
+fn inner_no_directory_b2_catpart() -> Vec<u8> {
+    let mut file = object_main_catpart(&b2_cylinder_stream());
     let name = b"M\x00a\x00i\x00n\x00D\x00a\x00t\x00a\x00S\x00t\x00r\x00e\x00a\x00m\x00";
     let pos = file
         .windows(name.len())
@@ -1071,6 +1780,103 @@ fn e5_uv_line_payload(surface: u16, offset: f64) -> Vec<u8> {
     payload
 }
 
+fn e5_torus_topology_stream() -> Vec<u8> {
+    let mut bytes = Vec::new();
+
+    let mut torus = vec![0; 130];
+    for (offset, value) in [
+        (1, 0.0),
+        (9, 0.0),
+        (17, 0.0),
+        (25, 1.0),
+        (33, 0.0),
+        (41, 0.0),
+        (73, 0.0),
+        (81, 0.0),
+        (89, 1.0),
+        (97, 10.0),
+        (105, 2.0),
+    ] {
+        torus[offset..offset + 8].copy_from_slice(&le_f64(value));
+    }
+    append_e5_record(&mut bytes, 0xcc, 50, &torus);
+
+    for id in [10u32, 20, 30, 40] {
+        append_e5_record(&mut bytes, 0xfe, id, &[]);
+    }
+
+    let raw_corners = [
+        [0.0, 0.0],
+        [5.0 * std::f64::consts::PI, 0.0],
+        [5.0 * std::f64::consts::PI, std::f64::consts::PI],
+        [0.0, std::f64::consts::PI],
+    ];
+    for index in 0..4 {
+        let start = raw_corners[index];
+        let end = raw_corners[(index + 1) % 4];
+        let mut payload = vec![0x81, 0xb2];
+        for value in [
+            start[0],
+            start[1],
+            end[0] - start[0],
+            end[1] - start[1],
+            0.0,
+            1.0,
+        ] {
+            payload.extend_from_slice(&le_f64(value));
+        }
+        append_e5_record(&mut bytes, 0x96, 60 + index as u32, &payload);
+
+        let mut support = vec![0x81, 0xbc + index as u8, 0x81, 0, 0];
+        support.extend_from_slice(&le_f64(0.0));
+        support.extend_from_slice(&le_f64(1.0));
+        append_e5_record(&mut bytes, 0xc0, 70 + index as u32, &support);
+    }
+
+    for (index, (start, end)) in [(10u8, 20u8), (20, 30), (30, 40), (40, 10)]
+        .into_iter()
+        .enumerate()
+    {
+        append_e5_record(
+            &mut bytes,
+            0xff,
+            80 + index as u32,
+            &[
+                0x85,
+                0xc6 + index as u8,
+                0x80 + start,
+                0x80 + end,
+                0x80,
+                0x80,
+                0x80,
+            ],
+        );
+    }
+
+    let mut loop_payload = vec![0x89];
+    for index in 0..4 {
+        loop_payload.extend_from_slice(&[0xbc + index, 0xd0 + index]);
+    }
+    loop_payload.push(0xb2);
+    append_e5_record(&mut bytes, 0x09, 90, &loop_payload);
+    append_e5_record(&mut bytes, 0x00, 91, &[0x82, 0xb2, 0xda, 1, 0]);
+    append_e5_record(&mut bytes, 0x08, 92, &[0x81, 0xdb, 0x81, 1, 0, 1, 0, 1, 0]);
+    append_e5_record(&mut bytes, 0x01, 93, &[0x81, 0xdc]);
+
+    for xyz in [
+        [12.0f32, 0.0, 0.0],
+        [0.0, 12.0, 0.0],
+        [0.0, 10.0, 2.0],
+        [10.0, 0.0, 2.0],
+    ] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in xyz {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
+    bytes
+}
+
 #[test]
 fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     let mut bytes = Vec::new();
@@ -1362,6 +2168,57 @@ fn b5_linear_pcurve_payload(surface: u16, start: [f64; 2], end: [f64; 2]) -> Vec
     payload
 }
 
+fn b5_closed_triangle_stream() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut plane = vec![0; 73];
+    for (offset, value) in [
+        (1usize, 0.0f64),
+        (9, 0.0),
+        (17, 0.0),
+        (25, 1.0),
+        (33, 0.0),
+        (41, 0.0),
+        (49, 0.0),
+        (57, 1.0),
+        (65, 0.0),
+    ] {
+        plane[offset..offset + 8].copy_from_slice(&le_f64(value));
+    }
+    append_b5_record(&mut bytes, 0x27, 100, &plane);
+    for (id, start, end) in [
+        (200u32, [0.0, 0.0], [1.0, 0.0]),
+        (201, [1.0, 0.0], [0.0, 1.0]),
+        (202, [0.0, 1.0], [0.0, 0.0]),
+    ] {
+        append_b5_record(
+            &mut bytes,
+            0x21,
+            id,
+            &b5_linear_pcurve_payload(100, start, end),
+        );
+    }
+    for id in [300u32, 301, 302] {
+        append_b5_record(&mut bytes, 0x5e, id, &[]);
+    }
+    append_b5_record(
+        &mut bytes,
+        0x62,
+        400,
+        &[
+            0x87, 0x18, 200, 0, 0x18, 44, 1, 0x18, 201, 0, 0x18, 45, 1, 0x18, 202, 0, 0x18, 46, 1,
+            0x18, 100, 0,
+        ],
+    );
+    append_b5_record(&mut bytes, 0x5f, 500, &[0x18, 100, 0, 0x18, 144, 1]);
+    for point in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
+    bytes
+}
+
 #[test]
 fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     let mut bytes = a8_surface_stream();
@@ -1497,6 +2354,16 @@ fn e5_surface_parser_reads_framed_torus() {
 }
 
 #[test]
+fn e5_plane_parser_preserves_origin_and_natural_bounds_without_fabricating_axes() {
+    let planes = crate::geometry::e5_planes(&e5_plane_stream());
+    assert_eq!(planes.len(), 1);
+    assert_eq!(planes[0].record_id, 42);
+    assert_eq!(planes[0].origin, [1.0, 2.0, 3.0]);
+    assert_eq!(planes[0].u_range, [-4.0, 7.0]);
+    assert_eq!(planes[0].v_range, [-2.0, 9.0]);
+}
+
+#[test]
 fn a8_surface_parser_reads_common_form_nurbs() {
     let surfaces = crate::geometry::a8_surfaces(&a8_surface_stream());
     assert_eq!(surfaces.len(), 1);
@@ -1509,6 +2376,565 @@ fn a8_surface_parser_reads_common_form_nurbs() {
         }
         other => panic!("expected NURBS surface, got {other:?}"),
     }
+}
+
+#[test]
+fn a8_pcurve_parser_reads_degree5_uv_jet() {
+    let pcurves = crate::geometry::a8_pcurves(&a8_pcurve_stream());
+    assert_eq!(pcurves.len(), 1);
+    assert_eq!(
+        (pcurves[0].object_id, pcurves[0].support_id),
+        (0x5678, 0x1234)
+    );
+    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
+    assert_eq!(pcurves[0].range, [0.0, 1.0]);
+}
+
+#[test]
+fn a5_pcurve_parser_reads_compact_support_and_uv_jet() {
+    let pcurves = crate::geometry::a5_pcurves(&a5_pcurve_stream());
+    assert_eq!(pcurves.len(), 1);
+    assert_eq!(pcurves[0].support_id, 0x1234);
+    assert_eq!(pcurves[0].extrapolation_sites, 2);
+    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
+    assert_eq!(pcurves[0].range, [0.0, 1.0]);
+}
+
+#[test]
+fn consolidated_pcurve_parser_reads_width2_frame() {
+    let pcurves = crate::geometry::a5_pcurves(&a6_pcurve_stream());
+    assert_eq!(pcurves.len(), 1);
+    assert_eq!(pcurves[0].support_id, 0x1234);
+    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
+}
+
+#[test]
+fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
+    let pcurves = crate::geometry::b2_pcurves(&b2_pcurve_stream());
+    assert_eq!(pcurves.len(), 1);
+    assert_eq!(pcurves[0].support_id, 0x1234);
+    assert_eq!(pcurves[0].degree, 5);
+    assert_eq!(pcurves[0].second_derivatives, vec![[0.0, 0.0]; 2]);
+}
+
+#[test]
+fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
+    use crate::geometry::B2ParameterPoint;
+
+    let points = crate::geometry::b2_parameter_points(&b2_parameter_point_stream());
+    assert_eq!(points.len(), 3);
+    assert!(matches!(
+        points[0],
+        B2ParameterPoint::Uv { uv: [2.0, 3.0], .. }
+    ));
+    assert!(matches!(
+        points[1],
+        B2ParameterPoint::StationUv {
+            station: 11.0,
+            uv: [4.0, 5.0],
+            ..
+        }
+    ));
+    assert!(matches!(points[2], B2ParameterPoint::FiveScalars { .. }));
+}
+
+#[test]
+fn b2_reference_list_parser_reads_compact_refs_and_unit_tail() {
+    let records = crate::geometry::b2_reference_lists(&b2_reference_list_stream());
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].references, (0u32..26).collect::<Vec<_>>());
+}
+
+#[test]
+fn b2_cone_face_parser_reads_refs_scale_and_half_angle() {
+    let records = crate::geometry::b2_cone_faces(&b2_cone_face_stream());
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].references.len(), 16);
+    assert_eq!(records[0].angular_scale, 1.5);
+    assert_eq!(records[0].half_angle, std::f64::consts::FRAC_PI_4);
+}
+
+#[test]
+fn b2_topology_metadata_parser_preserves_refs_and_sense_code() {
+    use crate::geometry::B2UseSense;
+
+    let bytes = b2_topology_metadata_stream();
+    let edges = crate::geometry::b2_edge_metadata(&bytes);
+    let uses = crate::geometry::b2_use_metadata(&bytes);
+    assert_eq!(edges[0].references, vec![0x1234, 0x5678]);
+    assert_eq!(edges[0].payload, [0x0a, 0x34, 0x12, 0x0a, 0x78, 0x56, 0]);
+    assert_eq!(uses[0].sense, Some(B2UseSense::Sense88));
+    assert_eq!(uses[0].payload, [1, 2, 3, 0x88]);
+}
+
+#[test]
+fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
+    let records = crate::geometry::b2_revolutions(&b2_revolution_stream());
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].profile_curve_id, 0x1234);
+    assert_eq!(records[0].origin, [1.0, 2.0, 3.0]);
+    assert_eq!(records[0].axis, [0.0, 0.0, 1.0]);
+    assert_eq!(records[0].profile_range, [-4.0, 9.0]);
+}
+
+#[test]
+fn b2_group_parser_reads_separator_and_typed_opener() {
+    let bytes = b2_group_stream();
+    let separators = crate::geometry::b2_group_separators(&bytes);
+    let groups = crate::geometry::b2_groups(&bytes);
+    assert_eq!(separators.len(), 1);
+    assert_eq!(separators[0].token, 0x05);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].group_id, 32);
+    assert_eq!(groups[0].group_type, 3);
+}
+
+#[test]
+fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
+    let offsets = crate::geometry::b2_offset_supports(&b2_offset_support_stream());
+    assert_eq!(offsets.len(), 1);
+    assert_eq!(offsets[0].support_id, 0x1234);
+    assert_eq!(offsets[0].distance, 2.5);
+    assert_eq!(offsets[0].domain, [0.0, -1.0, 4.0, 3.0]);
+}
+
+#[test]
+fn consolidated_offset_support_parser_reads_width2_frame() {
+    let offsets = crate::geometry::b2_offset_supports(&b3_offset_support_stream());
+    assert_eq!(offsets.len(), 1);
+    assert_eq!(offsets[0].support_id, 0x1234);
+    assert_eq!(offsets[0].distance, 2.5);
+}
+
+#[test]
+fn b2_edge_parameter_parser_validates_repeated_range_packet() {
+    let packets = crate::geometry::b2_edge_parameters(&b2_edge_parameter_stream());
+    assert_eq!(packets.len(), 1);
+    assert_eq!(packets[0].range, [2.0, 7.0]);
+    assert_eq!(packets[0].tolerance, 1e-6);
+}
+
+#[test]
+fn a5_edge_block_parser_groups_two_coparametric_pcurves_and_packet() {
+    let blocks = crate::geometry::a5_edge_blocks(&a5_edge_block_stream());
+    assert_eq!(blocks.len(), 1);
+    assert!(blocks[0].co_parametric);
+    assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
+    assert_eq!(blocks[0].pcurves[1].range, [0.0, 1.0]);
+    assert_eq!(blocks[0].parameters.range, [0.0, 1.0]);
+}
+
+#[test]
+fn a5_edge_binding_resolves_cylinder_by_endpoint_lifts() {
+    use crate::geometry::A5SupportBinding;
+
+    let blocks = crate::geometry::resolve_a5_edge_blocks(&a5_cylinder_bound_edge_stream());
+    assert_eq!(blocks.len(), 1);
+    assert!(matches!(
+        blocks[0].supports[0],
+        Some(A5SupportBinding::Cylinder { .. })
+    ));
+    assert!(matches!(
+        blocks[0].supports[1],
+        Some(A5SupportBinding::Cylinder { .. })
+    ));
+}
+
+#[test]
+fn a5_edge_binding_resolves_partner_nurbs_carrier() {
+    use crate::geometry::A5SupportBinding;
+
+    let blocks = crate::geometry::resolve_a5_edge_blocks(&a5_nurbs_bound_edge_stream(0.0));
+    assert!(matches!(
+        blocks[0].supports[0],
+        Some(A5SupportBinding::Cylinder { .. })
+    ));
+    assert!(matches!(
+        blocks[0].supports[1],
+        Some(A5SupportBinding::NurbsCarrier { offset, .. }) if offset == 0.0
+    ));
+}
+
+#[test]
+fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
+    use crate::geometry::A5SupportBinding;
+
+    let blocks = crate::geometry::resolve_a5_edge_blocks(&a5_nurbs_bound_edge_stream(2.0));
+    assert!(matches!(
+        blocks[0].supports[1],
+        Some(A5SupportBinding::NurbsCarrier { offset, .. }) if (offset.abs() - 2.0).abs() < 1e-6
+    ));
+}
+
+#[test]
+fn a5_edge_binding_resolves_circle_by_constant_v_and_arc_range() {
+    use crate::geometry::A5SupportBinding;
+
+    let blocks = crate::geometry::resolve_a5_edge_blocks(&a5_circle_bound_edge_stream());
+    assert!(matches!(
+        blocks[0].supports[0],
+        Some(A5SupportBinding::Circle { .. })
+    ));
+}
+
+#[test]
+fn a5_edge_binding_resolves_cone_by_endpoint_lifts() {
+    use crate::geometry::A5SupportBinding;
+
+    let blocks = crate::geometry::resolve_a5_edge_blocks(&a5_cone_bound_edge_stream());
+    assert!(matches!(
+        blocks[0].supports[0],
+        Some(A5SupportBinding::Cone { .. })
+    ));
+}
+
+#[test]
+fn b2_circle_parser_reads_arc_length_parameterization() {
+    let circles = crate::geometry::b2_circles(&b2_circle_stream());
+    assert_eq!(circles.len(), 1);
+    assert_eq!(circles[0].record_id, 0x1234);
+    assert_eq!(circles[0].center_pair, [4.0, -2.0]);
+    assert_eq!(circles[0].radius, 3.0);
+    assert!(circles[0].full_circle);
+}
+
+#[test]
+fn b2_cylinder_parser_reads_arc_length_carrier() {
+    let cylinders = crate::geometry::b2_cylinders(&b2_cylinder_stream());
+    assert_eq!(cylinders.len(), 1);
+    assert_eq!(cylinders[0].u_range, [0.0, 4.0 * std::f64::consts::PI]);
+    assert_eq!(cylinders[0].v_range, [-4.0, 5.0]);
+    match &cylinders[0].geometry {
+        Some(SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            radius,
+            ..
+        }) => {
+            assert_eq!([origin.x, origin.y, origin.z], [1.0, 2.0, 3.0]);
+            assert_eq!([axis.x, axis.y, axis.z], [1.0, 0.0, 0.0]);
+            assert_eq!(*radius, 2.0);
+        }
+        other => panic!("expected cylinder, got {other:?}"),
+    }
+}
+
+#[test]
+fn consolidated_cylinder_parser_reads_width2_frame() {
+    let cylinders = crate::geometry::b2_cylinders(&b3_cylinder_stream());
+    assert_eq!(cylinders.len(), 1);
+    assert_eq!(cylinders[0].layout, 0x5a);
+    assert!(cylinders[0].geometry.is_some());
+}
+
+#[test]
+fn consolidated_frame_width_and_flag_are_independent() {
+    let mut width1_flag13 = b2_cylinder_stream();
+    width1_flag13[1] = 0x13;
+    let mut width2_flag83 = b3_cylinder_stream();
+    width2_flag83[1] = 0x83;
+    assert_eq!(crate::geometry::b2_cylinders(&width1_flag13).len(), 1);
+    assert_eq!(crate::geometry::b2_cylinders(&width2_flag83).len(), 1);
+}
+
+#[test]
+fn consolidated_record_walk_inventory_preserves_width_flag_and_boundaries() {
+    use crate::geometry::ConsolidatedFamily;
+
+    let first = a6_pcurve_stream();
+    let second = b3_cylinder_stream();
+    let mut bytes = first.clone();
+    bytes.extend_from_slice(&second);
+    let records = crate::geometry::consolidated_records(&bytes);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].family, ConsolidatedFamily::A);
+    assert_eq!(
+        (records[0].width, records[0].flag, records[0].class),
+        (2, 0x03, 0x20)
+    );
+    assert_eq!(records[0].range, 0..first.len());
+    assert_eq!(records[1].family, ConsolidatedFamily::B);
+    assert_eq!(records[1].range, first.len()..first.len() + second.len());
+}
+
+#[test]
+fn b2_cylinder_parser_reads_implicit_axis_layout() {
+    let cylinders = crate::geometry::b2_cylinders(&b2_implicit_axis_cylinder_stream());
+    assert_eq!(cylinders.len(), 1);
+    assert_eq!(cylinders[0].layout, 0x52);
+    assert!(matches!(
+        cylinders[0].geometry,
+        Some(SurfaceGeometry::Cylinder { axis, .. }) if [axis.x, axis.y, axis.z] == [1.0, 0.0, 0.0]
+    ));
+}
+
+#[test]
+fn b2_cylinder_parser_preserves_phase_tailed_layout_raw() {
+    let cylinders = crate::geometry::b2_cylinders(&b2_phase_tailed_cylinder_stream());
+    assert_eq!(cylinders.len(), 1);
+    assert_eq!(cylinders[0].layout, 0x62);
+    assert!(cylinders[0].geometry.is_none());
+    assert_eq!(cylinders[0].stored_vector, Some([0.0, 1.0]));
+    assert_eq!(cylinders[0].phase, Some(0.75));
+}
+
+#[test]
+fn b2_cone_parser_reads_orthonormal_slant_chart() {
+    let cones = crate::geometry::b2_cones(&b2_cone_stream());
+    assert_eq!(cones.len(), 1);
+    assert_eq!(cones[0].apex, [1.0, 2.0, 3.0]);
+    assert_eq!(cones[0].axis, [0.0, 0.0, 1.0]);
+    assert_eq!(cones[0].half_angle, 0.25);
+    assert_eq!(cones[0].slant_range, [2.0, 8.0]);
+    assert_eq!(cones[0].angular_scale, 3.0);
+}
+
+#[test]
+fn b2_construction_use_parser_reorders_offset_domain() {
+    let uses = crate::geometry::b2_construction_uses(&b2_construction_use_stream());
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].support_id, 0x1234);
+    assert_eq!(uses[0].distance, -2.0);
+    assert_eq!(uses[0].kind, 0x01);
+    assert_eq!(uses[0].domain, Some([0.0, -1.0, 4.0, 3.0]));
+}
+
+#[test]
+fn b2_composite_parser_reads_embedded_cylinder_frame() {
+    let cylinders = crate::geometry::b2_embedded_cylinders(&b2_embedded_cylinder_stream());
+    assert_eq!(cylinders.len(), 1);
+    assert_eq!(cylinders[0].object_id, 0x5678);
+    assert_eq!(cylinders[0].wrapper_pos, 0);
+    assert_eq!(
+        cylinders[0].cylinder.u_range,
+        [0.0, 4.0 * std::f64::consts::PI]
+    );
+}
+
+#[test]
+fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
+    use crate::object_graph::{PayloadField, PayloadSubtype};
+
+    let graph = crate::object_graph::parse(&object_graph_stream()).unwrap();
+    assert_eq!(graph.records.len(), 2);
+    assert_eq!(graph.records[0].owner_ref, Some(2));
+    assert_eq!(graph.records[0].class_ref, Some(3));
+    assert_eq!(graph.records[0].storage_ref, Some(4));
+    assert_eq!(graph.records[0].subtype, PayloadSubtype::Empty);
+    assert!(matches!(
+        graph.records[0].payload.fields.as_slice(),
+        [
+            PayloadField::Reference { value: 5, .. },
+            PayloadField::Scalar {
+                tag: 0x3a,
+                value: 7,
+                ..
+            },
+            PayloadField::Terminator
+        ]
+    ));
+    assert_eq!(graph.records[1].subtype, PayloadSubtype::Blob);
+}
+
+#[test]
+fn catalog_parser_reads_exact_inclusive_length_dictionary() {
+    let entries = [
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+        "Pad",
+    ];
+    let catalogs = crate::catalog::parse(&catalog_stream(&entries));
+
+    assert_eq!(catalogs.len(), 1);
+    assert_eq!(catalogs[0].declared_count, 7);
+    assert_eq!(catalogs[0].entries.len(), entries.len());
+    assert_eq!(catalogs[0].entries[4].ordinal, 4);
+    assert_eq!(catalogs[0].entries[4].value, "Sketch");
+    assert_eq!(catalogs[0].entries[5].value, "Pad");
+}
+
+#[test]
+fn value_block_parser_reads_length_to_terminator_boundary() {
+    let payload = [0x81, 0x83, 0x32, 0xea, 0, 0, 0, 0x83, 0x82];
+    let mut bytes = value_block_stream(&payload);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+
+    let blocks = crate::value_block::parse(&bytes);
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].pos, 0);
+    assert_eq!(blocks[0].declared_len, 15);
+    assert_eq!(blocks[0].total_len, 16);
+    assert_eq!(blocks[0].payload, payload);
+}
+
+#[test]
+fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
+    use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
+
+    let graph = crate::object_graph::parse(&object_graph_vm_stream()).unwrap();
+    assert!(graph.records[0].head.contains(&HeadToken::NullHandle));
+    assert_eq!(graph.records[0].subtype, PayloadSubtype::BulkTable);
+    assert!(matches!(
+        &graph.records[0].payload.fields[0],
+        PayloadField::List { items, .. }
+            if items == &vec![ListItem::Reference(5), ListItem::Atom(6), ListItem::Atom(10)]
+    ));
+    assert!(matches!(
+        graph.records[0].payload.fields[1],
+        PayloadField::BulkTable {
+            count: 2,
+            table_count: 1,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn decode_retains_outer_object_graph_order_and_dependencies() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_object_graph()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated object graph part");
+    let native = crate::native::CatiaNative::load(
+        decoded
+            .ir
+            .native
+            .namespace("catia")
+            .expect("CATIA namespace"),
+    )
+    .expect("load CATIA native records");
+
+    assert_eq!(native.object_graphs.len(), 1);
+    let graph = &native.object_graphs[0];
+    assert_eq!(graph.records.len(), 2);
+    assert_eq!(graph.records[0].ordinal, 0);
+    assert_eq!(graph.records[0].owner_ref, Some(2));
+    assert_eq!(graph.records[0].class_ref, Some(3));
+    assert_eq!(graph.records[0].storage_ref, Some(4));
+    assert_eq!(graph.records[1].ordinal, 1);
+    assert_eq!(graph.records[1].owner_ref, Some(2));
+    assert_eq!(graph.records[1].class_ref, Some(4));
+}
+
+#[test]
+fn decode_retains_catalog_schema_names_without_promoting_features() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_catalog()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated catalog part");
+    let native = crate::native::CatiaNative::load(
+        decoded
+            .ir
+            .native
+            .namespace("catia")
+            .expect("CATIA namespace"),
+    )
+    .expect("load CATIA native records");
+
+    assert_eq!(native.catalogs.len(), 1);
+    assert_eq!(native.catalogs[0].entries[4].value, "Sketch");
+    assert_eq!(native.catalogs[0].entries[5].value, "Pad");
+    assert!(decoded.ir.model.features.is_empty());
+}
+
+#[test]
+fn decode_retains_value_blocks_at_their_schema_boundary() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_value_block()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated value block part");
+    let native = crate::native::CatiaNative::load(
+        decoded
+            .ir
+            .native
+            .namespace("catia")
+            .expect("CATIA namespace"),
+    )
+    .expect("load CATIA native records");
+
+    assert_eq!(native.value_blocks.len(), 1);
+    assert_eq!(native.value_blocks[0].byte_offset, 16);
+    assert_eq!(native.value_blocks[0].byte_len, 16);
+    assert_eq!(
+        native.value_blocks[0].payload,
+        [0x81, 0x83, 0x32, 0xea, 0, 0, 0, 0x83, 0x82]
+    );
+}
+
+#[test]
+fn outer_surface_alias_parser_reads_fixed_core() {
+    use crate::object_graph::AliasLead;
+
+    let rows = crate::object_graph::surface_aliases(&surface_alias_stream());
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].lead, AliasLead::SurfaceSupportStorage);
+    assert_eq!(rows[0].tag, 0x0012_3456);
+    assert_eq!(rows[0].tag_raw, 0xab12_3456);
+    assert_eq!(rows[0].entity_record_ordinal, 7);
+    assert_eq!((rows[0].f2, rows[0].f3), (0x1122_3344, 0x5566_7788));
+}
+
+#[test]
+fn unresolved_7cd9_scanner_preserves_bounded_context_and_spacing() {
+    let markers = crate::object_graph::markers_7cd9(&marker_7cd9_stream(), 5);
+    assert_eq!(markers.len(), 2);
+    assert_eq!(markers[0].pos, 1);
+    assert_eq!(markers[0].context, [0x7c, 0xd9, 1, 2, 3]);
+    assert_eq!(markers[0].next_delta, Some(5));
+    assert_eq!(markers[1].next_delta, None);
+}
+
+#[test]
+fn finjpl_parser_splits_segments_and_classifies_type_words() {
+    use crate::container::FinjplKind;
+
+    let bytes = finjpl_stream();
+    let segments = crate::container::finjpl_segments(&bytes, 0, bytes.len());
+    assert_eq!(segments.len(), 2);
+    assert_eq!(segments[0].kind, FinjplKind::Storage);
+    assert_eq!(segments[0].type_word, 0x0000_008e);
+    assert_eq!(segments[0].range, 2..17);
+    assert_eq!(segments[1].kind, FinjplKind::ProjectFlags);
+}
+
+#[test]
+fn e5_stream_selection_prefers_coherent_storage_segment_over_stray_preamble_marker() {
+    let mut bytes = vec![0u8; 32];
+    bytes[..8].copy_from_slice(OUTER_MAGIC);
+    bytes[8..12].copy_from_slice(&512u32.to_be_bytes());
+    bytes[12..16].copy_from_slice(&32u32.to_be_bytes());
+    append_e5_record(&mut bytes, 0xfe, 1, &[]);
+    bytes.extend_from_slice(b"FINJPL  ");
+    bytes.extend_from_slice(&0x0000_0080u32.to_be_bytes());
+    for id in 10..21 {
+        append_e5_record(&mut bytes, 0xfe, id, &[]);
+    }
+    bytes.extend_from_slice(b"FINJPL  ");
+    bytes.extend_from_slice(&0x0000_008eu32.to_be_bytes());
+    let expected_start = bytes.len() - 12;
+    for id in 30..41 {
+        append_e5_record(&mut bytes, 0xfe, id, &[]);
+    }
+    bytes.resize(544, 0);
+
+    let range = crate::container::e5_record_stream(&bytes).expect("coherent E5 stream");
+    assert_eq!(range.start, expected_start);
+    assert_eq!(&bytes[range.start..range.start + 8], b"FINJPL  ");
 }
 
 #[test]
@@ -1535,12 +2961,60 @@ fn a5_surface_parser_reads_consolidated_nurbs() {
 }
 
 #[test]
+fn consolidated_surface_parser_reads_width2_frame() {
+    let surfaces = crate::geometry::a5_surfaces(&a6_surface_stream());
+    assert_eq!(surfaces.len(), 1);
+    match &surfaces[0].geometry {
+        SurfaceGeometry::Nurbs(surface) => assert_eq!((surface.u_count, surface.v_count), (2, 2)),
+        other => panic!("expected NURBS surface, got {other:?}"),
+    }
+}
+
+#[test]
 fn a5_surface_parser_reads_rational_weight_program() {
     let surfaces = crate::geometry::a5_surfaces(&a5_rational_surface_stream());
     match &surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => assert_eq!(surface.weights, Some(vec![2.0; 4])),
         other => panic!("expected NURBS surface, got {other:?}"),
     }
+}
+
+#[test]
+fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
+    let curves = crate::geometry::a5_freeform_curves(&a5_freeform_curve_stream());
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].degree, 5);
+    assert_eq!(curves[0].knots, vec![0.0, 1.0]);
+    assert_eq!(curves[0].sites[1].radius, 2.0);
+    assert!(!curves[0].radius_constant);
+}
+
+#[test]
+fn consolidated_curve_parser_reads_width2_frame() {
+    let curves = crate::geometry::a5_freeform_curves(&a6_freeform_curve_stream());
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].degree, 5);
+    assert_eq!(curves[0].sites[1].radius, 2.0);
+}
+
+#[test]
+fn guide_curve_parser_reads_position_and_unit_direction_jet() {
+    let curves = crate::geometry::a5_guide_curves(&a5_guide_curve_stream());
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].degree, 5);
+    assert_eq!(curves[0].sites[0].point, [0.0, 0.0, 0.0]);
+    assert_eq!(curves[0].sites[0].direction, [1.0, 0.0, 0.0]);
+    assert_eq!(curves[0].sites[1].direction, [0.0, 1.0, 0.0]);
+}
+
+#[test]
+fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
+    let curves = crate::geometry::a8_freeform_curves(&a8_freeform_curve_stream());
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].object_id, 0x1234_5678);
+    assert_eq!(curves[0].degree, 5);
+    assert_eq!(curves[0].multiplicities, vec![6, 6]);
+    assert_eq!(curves[0].sites[1].radius, 2.0);
 }
 
 #[test]
@@ -1560,6 +3034,36 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
 }
 
 #[test]
+fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
+    let stream = b5_closed_triangle_stream();
+    crate::b5::parse(&stream).expect("generated B5 topology");
+    let file = object_main_catpart(&stream);
+    assert_eq!(
+        crate::container::scan_bytes(file.clone()).variant,
+        Variant::FloatPackedInnerNoFbb
+    );
+
+    let mut cur = Cursor::new(file);
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 3);
+    assert_eq!(result.ir.model.edges.len(), 3);
+    assert_eq!(result.ir.model.curves.len(), 3);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir.model.pcurves.len(), 3);
+    assert!(result.report.losses.iter().all(|loss| {
+        loss.category != cadmpeg_ir::report::LossCategory::Topology
+            || loss.severity != cadmpeg_ir::report::Severity::Blocking
+    }));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
 fn decode_inner_no_directory_transfers_a8_nurbs() {
     assert_eq!(
         crate::container::scan_bytes(inner_no_directory_a8_catpart()).variant,
@@ -1576,6 +3080,22 @@ fn decode_inner_no_directory_transfers_a8_nurbs() {
 }
 
 #[test]
+fn decode_inner_no_directory_transfers_b2_cylinder() {
+    assert_eq!(
+        crate::container::scan_bytes(inner_no_directory_b2_catpart()).variant,
+        Variant::InnerNoDirectory
+    );
+    let mut cur = Cursor::new(inner_no_directory_b2_catpart());
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        result.ir.model.surfaces[0].geometry,
+        SurfaceGeometry::Cylinder { radius: 2.0, .. }
+    ));
+}
+
+#[test]
 fn decode_e5_stream_transfers_circle_carrier() {
     let scan = crate::container::scan_bytes(e5_catpart());
     assert_eq!(scan.variant, Variant::E5Stream);
@@ -1585,7 +3105,11 @@ fn decode_e5_stream_transfers_circle_carrier() {
         .unwrap();
     assert_eq!(result.ir.model.curves.len(), 1);
     assert_eq!(result.ir.model.vertices.len(), 2);
-    assert_eq!(result.ir.model.edges.len(), 1);
+    assert!(result.ir.model.edges.is_empty());
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::Topology
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+    }));
     assert!(matches!(
         result.ir.model.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Circle { .. }
@@ -1593,6 +3117,37 @@ fn decode_e5_stream_transfers_circle_carrier() {
     assert!(result.ir.native_unknowns("catia").unwrap()[0]
         .links
         .contains(&"catia:e5:surf#0".to_string()));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_e5_stream_transfers_reference_closed_torus_topology() {
+    let stream = e5_torus_topology_stream();
+    crate::e5::parse_topology(&stream).expect("generated E5 topology");
+    let file = object_main_catpart(&stream);
+    assert_eq!(
+        crate::container::scan_bytes(file.clone()).variant,
+        Variant::E5Stream
+    );
+
+    let mut cur = Cursor::new(file);
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 4);
+    assert_eq!(result.ir.model.edges.len(), 4);
+    assert_eq!(result.ir.model.vertices.len(), 4);
+    assert_eq!(result.ir.model.pcurves.len(), 4);
+    assert!(result.report.losses.iter().all(|loss| {
+        loss.category != cadmpeg_ir::report::LossCategory::Topology
+            || loss.severity != cadmpeg_ir::report::Severity::Blocking
+    }));
+
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
