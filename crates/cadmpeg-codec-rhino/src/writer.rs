@@ -493,7 +493,11 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
 }
 
 fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
-    if ir.native.namespace("rhino").is_some() {
+    if ir
+        .native
+        .namespace("rhino")
+        .is_some_and(|namespace| !rewritable_generated_namespace(namespace))
+    {
         return Err(CodecError::NotImplemented(
             "Rhino native records require explicit survival handling".into(),
         ));
@@ -654,6 +658,145 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
         check_mesh(mesh)?;
     }
     Ok(())
+}
+
+fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bool {
+    const REGENERATED: &[&str] = &[
+        "byte_spans",
+        "document_settings",
+        "layers",
+        "object_presentation",
+        "opaque_records",
+        "unknowns",
+    ];
+    if namespace.version != 2 {
+        return false;
+    }
+    if namespace
+        .arenas
+        .iter()
+        .any(|(name, records)| !records.is_empty() && !REGENERATED.contains(&name.as_str()))
+    {
+        return false;
+    }
+    let opaque = namespace.arenas.get("opaque_records");
+    let generated_comment = opaque.is_some_and(|records| {
+        records.iter().any(|record| {
+            record.id == "rhino:source:opaque#comment"
+                && record
+                    .fields
+                    .get("typecode")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("0x00000001")
+                && record
+                    .fields
+                    .get("data")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("AQAAAAcAAAAAAAAAY2FkbXBlZw==")
+        })
+    });
+    if !generated_comment
+        || opaque.is_some_and(|records| {
+            records.iter().any(|record| {
+                !matches!(
+                    record
+                        .fields
+                        .get("typecode")
+                        .and_then(serde_json::Value::as_str),
+                    Some("0x00000001" | "0xa0000026" | "0x20008031" | "0x20008050")
+                )
+            })
+        })
+    {
+        return false;
+    }
+    if namespace
+        .arenas
+        .get("layers")
+        .is_some_and(|records| records.len() != 1 || !default_native_layer(&records[0]))
+    {
+        return false;
+    }
+    if namespace
+        .arenas
+        .get("object_presentation")
+        .is_some_and(|records| {
+            records
+                .iter()
+                .any(|record| !default_native_presentation(record))
+        })
+    {
+        return false;
+    }
+    namespace.arenas.get("unknowns").is_none_or(|records| {
+        records.iter().all(|record| {
+            record
+                .fields
+                .get("links")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|links| {
+                    !links.is_empty()
+                        && links.iter().all(|link| {
+                            link.as_str().is_some_and(|link| {
+                                [
+                                    "rhino:object:body#",
+                                    "rhino:object:curve#",
+                                    "rhino:object:point#",
+                                    "rhino:object:surface#",
+                                    "rhino:object:tessellation#",
+                                ]
+                                .iter()
+                                .any(|prefix| link.starts_with(prefix))
+                            })
+                        })
+                })
+        })
+    })
+}
+
+fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
+    json_i64(record, "archive_index") == Some(0)
+        && json_i64(record, "linetype_index") == Some(-1)
+        && json_i64(record, "material_index") == Some(-1)
+        && json_str(record, "name") == Some("Default")
+        && json_bool(record, "visible") == Some(true)
+        && json_bool(record, "locked") == Some(false)
+        && json_array_empty(record, "rendering_materials")
+}
+
+fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
+    json_i64(record, "layer_index") == Some(0)
+        && json_i64(record, "material_index") == Some(-1)
+        && json_i64(record, "linetype_index") == Some(-1)
+        && json_i64(record, "hatch_pattern_index") == Some(-1)
+        && json_i64(record, "object_mode") == Some(0)
+        && json_str(record, "name") == Some("")
+        && json_str(record, "url") == Some("")
+        && json_bool(record, "visible") == Some(true)
+        && json_array_empty(record, "group_indexes")
+        && json_array_empty(record, "display_materials")
+        && json_array_empty(record, "rendering_materials")
+        && json_array_empty(record, "clipping_plane_uuids")
+}
+
+fn json_i64(record: &cadmpeg_ir::NativeRecord, name: &str) -> Option<i64> {
+    record.fields.get(name)?.as_i64()
+}
+
+fn json_str<'a>(record: &'a cadmpeg_ir::NativeRecord, name: &str) -> Option<&'a str> {
+    record.fields.get(name)?.as_str()
+}
+
+fn json_bool(record: &cadmpeg_ir::NativeRecord, name: &str) -> Option<bool> {
+    record.fields.get(name)?.as_bool()
+}
+
+fn json_array_empty(record: &cadmpeg_ir::NativeRecord, name: &str) -> bool {
+    record
+        .fields
+        .get(name)
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(Vec::is_empty)
 }
 
 fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
@@ -3617,7 +3760,7 @@ mod tests {
     }
 
     #[test]
-    fn retained_native_records_are_refused_before_output() {
+    fn supported_decoded_geometry_can_be_edited_and_rewritten() {
         let mut source = CadIr::empty(Units::default());
         source.model.points.push(Point {
             id: PointId("cadir:model:point#retained".into()),
@@ -3627,10 +3770,50 @@ mod tests {
         RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&source, &mut bytes)
             .unwrap();
-        let decoded = RhinoCodec
+        let mut decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert!(decoded.ir.native.namespace("rhino").is_some());
+        decoded.ir.model.points[0].position = Point3::new(4.0, 5.0, 6.0);
+
+        let mut output = Vec::new();
+        RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&decoded.ir, &mut output)
+            .unwrap();
+        let rewritten = RhinoCodec
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            rewritten.ir.model.points[0].position,
+            Point3::new(4.0, 5.0, 6.0)
+        );
+    }
+
+    #[test]
+    fn unsupported_retained_native_records_are_refused_before_output() {
+        let mut source = CadIr::empty(Units::default());
+        source.model.points.push(Point {
+            id: PointId("cadir:model:point#retained".into()),
+            position: Point3::new(1.0, 2.0, 3.0),
+        });
+        let mut bytes = Vec::new();
+        RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&source, &mut bytes)
+            .unwrap();
+        let mut decoded = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        decoded
+            .ir
+            .native
+            .namespace_mut("rhino")
+            .arenas
+            .entry("materials".into())
+            .or_default()
+            .push(cadmpeg_ir::NativeRecord {
+                id: "rhino:presentation:material#unsupported".into(),
+                fields: serde_json::Map::new(),
+            });
 
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)

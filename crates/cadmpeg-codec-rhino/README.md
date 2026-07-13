@@ -52,9 +52,11 @@ quantization. B-rep generation supports connected planar faces with holes,
 closed planar solids, and mixed planar and bounded nonperiodic NURBS faces with
 outer and inner loops, exact line or NURBS edges, and parameter-space trim
 curves. Multiple B-reps and free geometry may coexist in one generated archive.
-Unsupported
-topology, geometry, presentation state, native records, and noncanonical NURBS
-contracts are rejected before output.
+Decoded archives produced by this writer can be edited and regenerated when
+their retained namespace contains only generated accounting records and default
+presentation state. Additional native records, unsupported topology, geometry,
+presentation state, and noncanonical NURBS contracts are rejected before
+output.
 
 ```sh
 cadmpeg inspect model.3dm
