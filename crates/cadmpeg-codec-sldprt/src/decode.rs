@@ -370,17 +370,25 @@ fn build_geometry_ir(
                 .split_once('@')
                 .map(|(_, site)| format!("@{site}"))
                 .unwrap_or_default();
-            ir.model.appearance_bindings.push(AppearanceBinding {
-                id: format!(
-                    "sldprt:appearance:binding#face:{}:{}{}",
-                    face_color.face_attr, face_color.color_attr, site
-                ),
-                target: AppearanceTarget::Face(cadmpeg_ir::ids::FaceId(target)),
-                appearance: id,
-                source_entity_id: Some(face_color.face_attr.to_string()),
-                object_type: Some("Face".into()),
-                channels: BTreeMap::new(),
-            });
+            let binding_id = format!(
+                "sldprt:appearance:binding#face:{}:{}{}",
+                face_color.face_attr, face_color.color_attr, site
+            );
+            if !ir
+                .model
+                .appearance_bindings
+                .iter()
+                .any(|binding| binding.id == binding_id)
+            {
+                ir.model.appearance_bindings.push(AppearanceBinding {
+                    id: binding_id,
+                    target: AppearanceTarget::Face(cadmpeg_ir::ids::FaceId(target)),
+                    appearance: id,
+                    source_entity_id: Some(face_color.face_attr.to_string()),
+                    object_type: Some("Face".into()),
+                    channels: BTreeMap::new(),
+                });
+            }
         }
     }
     for (index, material) in materials.into_iter().enumerate() {
