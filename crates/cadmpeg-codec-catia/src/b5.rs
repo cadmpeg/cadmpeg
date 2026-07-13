@@ -109,7 +109,8 @@ pub enum B5Surface {
     Nurbs(NurbsSurface),
 }
 
-/// A resolved `b5 03 21` pcurve node: a 2D B-spline curve in a surface's
+/// A resolved `b5 03 18` or `b5 03 21` pcurve node, represented as a 2D
+/// B-spline curve in a surface's
 /// parameter space ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
 pub struct B5Pcurve {
@@ -203,8 +204,14 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         .collect();
     let mut pcurves: BTreeMap<u32, B5Pcurve> = records
         .iter()
-        .filter(|record| record.class == 0x21)
-        .filter_map(|record| parse_pcurve(record).map(|pcurve| (record.object_id, pcurve)))
+        .filter_map(|record| {
+            let pcurve = match record.class {
+                0x18 => parse_line_pcurve(record),
+                0x21 => parse_pcurve(record),
+                _ => None,
+            }?;
+            Some((record.object_id, pcurve))
+        })
         .collect();
     for pcurve in pcurves.values_mut() {
         pcurve.lifted_endpoints = surfaces
@@ -755,6 +762,51 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     })
 }
 
+fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+    if record.payload.first() != Some(&0x81) {
+        return None;
+    }
+    let mut position = 1;
+    let surface = reference(&record.payload, &mut position)?;
+    if record.payload.get(position) != Some(&0x01) {
+        return None;
+    }
+    position += 1;
+    if record.payload.len() != position.checked_add(48)? {
+        return None;
+    }
+    let mut values = [0.0; 6];
+    for value in &mut values {
+        *value = f64::from_le_bytes(
+            record
+                .payload
+                .get(position..position + 8)?
+                .try_into()
+                .ok()?,
+        );
+        if !value.is_finite() {
+            return None;
+        }
+        position += 8;
+    }
+    let [u, v, du, dv, start, end] = values;
+    if start >= end || du.abs().max(dv.abs()) <= f64::EPSILON {
+        return None;
+    }
+    Some(B5Pcurve {
+        object_id: record.object_id,
+        surface,
+        degree: 1,
+        distinct_knots: vec![start, end],
+        multiplicities: vec![2, 2],
+        control_points: vec![
+            [u + start * du, v + start * dv],
+            [u + end * du, v + end * dv],
+        ],
+        lifted_endpoints: None,
+    })
+}
+
 fn compact(bytes: &[u8], position: &mut usize) -> Option<u32> {
     let lead = *bytes.get(*position)?;
     if lead % 4 == 1 {
@@ -855,7 +907,7 @@ fn object_frame(bytes: &[u8], start: usize) -> Option<(usize, u8, u8, u32)> {
 fn is_topology_class(class: u8) -> bool {
     matches!(
         class,
-        0x0e | 0x0f | 0x21 | 0x27 | 0x28 | 0x2d | 0x5e | 0x5f | 0x62
+        0x0e | 0x0f | 0x18 | 0x21 | 0x27 | 0x28 | 0x2d | 0x5e | 0x5f | 0x62
     )
 }
 
@@ -928,7 +980,7 @@ fn parse_loop(
     for pair in references[..count - 1].chunks_exact(2) {
         if !matches!(by_id.get(&pair[0])?.class, 0x18 | 0x21)
             || by_id.get(&pair[1])?.class != 0x5e
-            || (by_id.get(&pair[0])?.class == 0x21 && !parsed_pcurves.contains_key(&pair[0]))
+            || !parsed_pcurves.contains_key(&pair[0])
         {
             return None;
         }

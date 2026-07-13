@@ -2173,6 +2173,28 @@ fn b5_linear_pcurve_payload(surface: u16, start: [f64; 2], end: [f64; 2]) -> Vec
     payload
 }
 
+fn b5_analytic_line_pcurve_payload(
+    surface: u16,
+    origin: [f64; 2],
+    direction: [f64; 2],
+    interval: [f64; 2],
+) -> Vec<u8> {
+    let mut payload = vec![0x81, 0x18];
+    payload.extend_from_slice(&surface.to_le_bytes());
+    payload.push(0x01);
+    for value in [
+        origin[0],
+        origin[1],
+        direction[0],
+        direction[1],
+        interval[0],
+        interval[1],
+    ] {
+        payload.extend_from_slice(&le_f64(value));
+    }
+    payload
+}
+
 fn b5_closed_triangle_stream() -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut plane = vec![0; 73];
@@ -2238,6 +2260,29 @@ fn b5_frame_walk_ignores_markers_inside_payloads() {
     assert_eq!(graph.faces.len(), 1);
     assert_eq!(graph.loops.len(), 1);
     assert_eq!(graph.edge_vertices.len(), 3);
+}
+
+#[test]
+fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
+    let mut bytes = b5_closed_triangle_stream();
+    append_b5_record(
+        &mut bytes,
+        0x18,
+        600,
+        &b5_analytic_line_pcurve_payload(100, [2.0, 3.0], [4.0, -2.0], [-0.5, 1.5]),
+    );
+    // Keep the appended record in a length-closed run.
+    append_b5_record(&mut bytes, 0x5e, 601, &[]);
+    let graph = crate::b5::parse(&bytes).expect("length-closed B5 graph");
+    let pcurve = graph.pcurves.get(&600).expect("analytic line pcurve");
+    assert_eq!(pcurve.degree, 1);
+    assert_eq!(pcurve.distinct_knots, vec![-0.5, 1.5]);
+    assert_eq!(pcurve.multiplicities, vec![2, 2]);
+    assert_eq!(pcurve.control_points, vec![[0.0, 4.0], [8.0, 0.0]]);
+    assert_eq!(
+        pcurve.lifted_endpoints,
+        Some([[0.0, 4.0, 0.0], [8.0, 0.0, 0.0]])
+    );
 }
 
 #[test]
