@@ -78,6 +78,12 @@ fn raw_deflate(data: &[u8]) -> Vec<u8> {
     enc.finish().unwrap()
 }
 
+fn zlib(data: &[u8]) -> Vec<u8> {
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(data).unwrap();
+    encoder.finish().unwrap()
+}
+
 fn crc32(data: &[u8]) -> u32 {
     let mut h = crc32fast::Hasher::new();
     h.update(data);
@@ -900,6 +906,26 @@ fn sldprt_with_nested_sketch_profile(body: &[u8]) -> Vec<u8> {
         "SCH_SW_33103_11000",
         &triangle_body(),
     ));
+    file.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+    file
+}
+
+fn sldprt_with_compressed_nested_sketch_profile(body: &[u8]) -> Vec<u8> {
+    let mut file = sldprt_with_body(body);
+    let mut payload = resolved_features_payload(&[0, 1, 1, 1]);
+    payload.extend_from_slice(&[
+        0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef,
+        0x99, 0, 0, 0, 0,
+    ]);
+    payload.extend(zlib(&parasolid_with_body(
+        "feature input compressed sketch",
+        "SCH_SW_33103_11000",
+        &triangle_body(),
+    )));
     file.extend(make_block(
         0x45,
         "Contents/Config-0-ResolvedFeatures",
@@ -6049,6 +6075,67 @@ fn semantic_writer_applies_line_sketch_edits() {
             _ => panic!("line sketch entity"),
         })
         .filter(|value| (*value - 1.0).abs() < 1.0e-12)
+        .count();
+    assert_eq!(edited, 2);
+}
+
+#[test]
+fn semantic_writer_applies_compressed_line_sketch_edits() {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_compressed_nested_sketch_profile(
+                &triangle_body(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let point_ref = decoded.ir.model.sketch_entities[0].endpoint_refs[0].clone();
+    for entity in &mut decoded.ir.model.sketch_entities {
+        let SketchGeometry::Line { start, end } = &mut entity.geometry else {
+            panic!("line sketch entity");
+        };
+        if entity.endpoint_refs[0] == point_ref {
+            start.v += 2.0;
+        }
+        if entity.endpoint_refs[1] == point_ref {
+            end.v += 2.0;
+        }
+    }
+
+    let mut written = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut written)
+        .unwrap();
+    let scan = container::scan_bytes(&written);
+    let lane = scan
+        .blocks
+        .iter()
+        .find(|block| {
+            block
+                .section
+                .as_deref()
+                .is_some_and(|section| section.contains("ResolvedFeatures"))
+        })
+        .unwrap();
+    assert!(lane
+        .payload
+        .windows(2)
+        .any(|bytes| { bytes[0] == 0x78 && matches!(bytes[1], 0x01 | 0x9c | 0xda) }));
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    let edited = regenerated
+        .ir
+        .model
+        .sketch_entities
+        .iter()
+        .flat_map(|entity| match &entity.geometry {
+            SketchGeometry::Line { start, end } => [start.v, end.v],
+            _ => panic!("line sketch entity"),
+        })
+        .filter(|value| (*value - 2.0).abs() < 1.0e-12)
         .count();
     assert_eq!(edited, 2);
 }

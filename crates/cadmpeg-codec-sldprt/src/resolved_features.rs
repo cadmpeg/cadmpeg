@@ -19,6 +19,7 @@ use cadmpeg_ir::Exactness;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
+use std::io::{Read, Write};
 
 use crate::container::ContainerScan;
 
@@ -1064,66 +1065,35 @@ fn distance(left: Point3, right: Point3) -> f64 {
 }
 
 fn patch_direct_stream_point(
-    payload: &mut [u8],
+    payload: &mut Vec<u8>,
     stream_ordinal: usize,
     attr: u16,
     point_mm: Point3,
 ) -> Result<(), cadmpeg_ir::codec::CodecError> {
-    let streams = crate::parasolid::extract_streams(payload);
-    let stream = streams.get(stream_ordinal).ok_or_else(|| {
-        cadmpeg_ir::codec::CodecError::Malformed("SLDPRT sketch stream is missing".into())
-    })?;
-    let start = payload
-        .windows(stream.len())
-        .position(|candidate| candidate == stream.as_slice())
-        .ok_or_else(|| {
-            cadmpeg_ir::codec::CodecError::NotImplemented(
-                "SLDPRT sketch write-back for compressed transmit streams is not implemented"
-                    .into(),
-            )
-        })?;
-    let header = crate::parasolid::stream_header(stream).ok_or_else(|| {
-        cadmpeg_ir::codec::CodecError::Malformed("invalid retained SLDPRT sketch stream".into())
-    })?;
-    let body = payload
-        .get_mut(start + header.body_offset..start + stream.len())
-        .ok_or_else(|| {
-            cadmpeg_ir::codec::CodecError::Malformed("SLDPRT sketch stream bounds changed".into())
-        })?;
     let xyz_m = [point_mm.x * 0.001, point_mm.y * 0.001, point_mm.z * 0.001];
-    if !crate::brep::patch_point(body, attr, xyz_m) {
-        return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
-            "SLDPRT sketch point {attr} is missing"
-        )));
-    }
-    Ok(())
+    edit_stream(payload, stream_ordinal, |body| {
+        if !crate::brep::patch_point(body, attr, xyz_m) {
+            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "SLDPRT sketch point {attr} is missing"
+            )));
+        }
+        Ok(())
+    })
 }
 
 fn patch_direct_curve(
-    payload: &mut [u8],
+    payload: &mut Vec<u8>,
     request: &CurvePatch,
 ) -> Result<(), cadmpeg_ir::codec::CodecError> {
-    let streams = crate::parasolid::extract_streams(payload);
-    let stream = streams.get(request.stream).ok_or_else(|| {
-        cadmpeg_ir::codec::CodecError::Malformed("SLDPRT sketch stream is missing".into())
-    })?;
-    let start = payload
-        .windows(stream.len())
-        .position(|candidate| candidate == stream.as_slice())
-        .ok_or_else(|| {
-            cadmpeg_ir::codec::CodecError::NotImplemented(
-                "SLDPRT sketch write-back for compressed transmit streams is not implemented"
-                    .into(),
-            )
-        })?;
-    let header = crate::parasolid::stream_header(stream).ok_or_else(|| {
-        cadmpeg_ir::codec::CodecError::Malformed("invalid retained SLDPRT sketch stream".into())
-    })?;
-    let body = payload
-        .get_mut(start + header.body_offset..start + stream.len())
-        .ok_or_else(|| {
-            cadmpeg_ir::codec::CodecError::Malformed("SLDPRT sketch stream bounds changed".into())
-        })?;
+    edit_stream(payload, request.stream, |body| {
+        patch_direct_curve_body(body, request)
+    })
+}
+
+fn patch_direct_curve_body(
+    body: &mut [u8],
+    request: &CurvePatch,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
     if matches!(request.geometry, SketchGeometry::Nurbs { .. }) {
         return patch_direct_nurbs(body, request);
     }
@@ -1187,6 +1157,56 @@ fn patch_direct_curve(
         }
     }
     Ok(())
+}
+
+fn edit_stream(
+    payload: &mut Vec<u8>,
+    stream_ordinal: usize,
+    edit: impl FnOnce(&mut [u8]) -> Result<(), cadmpeg_ir::codec::CodecError>,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    let stream = crate::parasolid::extract_streams(payload)
+        .get(stream_ordinal)
+        .cloned()
+        .ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::Malformed("SLDPRT sketch stream is missing".into())
+        })?;
+    if let Some(start) = payload
+        .windows(stream.len())
+        .position(|candidate| candidate == stream.as_slice())
+    {
+        let header = crate::parasolid::stream_header(&stream).ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::Malformed("invalid retained SLDPRT sketch stream".into())
+        })?;
+        return edit(&mut payload[start + header.body_offset..start + stream.len()]);
+    }
+    let (start, end) = compressed_member(payload, &stream).ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::Malformed(
+            "compressed retained SLDPRT sketch stream is missing".into(),
+        )
+    })?;
+    let mut inflated = stream;
+    let header = crate::parasolid::stream_header(&inflated).ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::Malformed("invalid retained SLDPRT sketch stream".into())
+    })?;
+    edit(&mut inflated[header.body_offset..])?;
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&inflated)?;
+    payload.splice(start..end, encoder.finish()?);
+    Ok(())
+}
+
+fn compressed_member(payload: &[u8], target: &[u8]) -> Option<(usize, usize)> {
+    for start in 0..payload.len().saturating_sub(1) {
+        if payload[start] != 0x78 || !matches!(payload[start + 1], 0x01 | 0x9c | 0xda) {
+            continue;
+        }
+        let mut decoder = flate2::read::ZlibDecoder::new(&payload[start..]);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_ok() && inflated == target {
+            return Some((start, start + decoder.total_in() as usize));
+        }
+    }
+    None
 }
 
 fn patch_direct_nurbs(
