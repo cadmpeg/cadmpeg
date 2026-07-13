@@ -12111,10 +12111,23 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .abs()
             < 1e-12
     );
+    let component_ids = components.clone();
 
     let mut source_less = result.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    for (ordinal, component) in component_ids.iter().enumerate() {
+        source_less
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == *component)
+            .expect("compound component curve")
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
+            direction: cadmpeg_ir::math::Vector3::new(2.0, 3.0, -4.0),
+        };
+    }
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -12133,6 +12146,21 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     assert_eq!(parameters, &[0.0, 0.5, 1.0]);
     assert_eq!(component_parameters, &[-2.0, 4.0]);
     assert_eq!(components.len(), 2);
+    for (ordinal, component) in components.iter().enumerate() {
+        let curve = round_trip
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *component)
+            .expect("round-trip compound component");
+        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve) = &curve.geometry else {
+            panic!("compound line component was not lowered to NURBS")
+        };
+        assert_eq!(curve.degree, 1);
+        let range = [ordinal as f64 * 0.5, (ordinal + 1) as f64 * 0.5];
+        assert_eq!(curve.knots, [range[0], range[0], range[1], range[1]]);
+    }
 }
 
 #[test]

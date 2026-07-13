@@ -6214,7 +6214,7 @@ fn native_procedural_curve(
             native_f64(bytes, *value);
         }
         bytes.push(0x0b);
-        for component in components {
+        for (ordinal, component) in components.iter().enumerate() {
             let component = target
                 .model
                 .curves
@@ -6225,12 +6225,24 @@ fn native_procedural_curve(
                         "compound curve references missing component {component}"
                     ))
                 })?;
-            let CurveGeometry::Nurbs(component) = &component.geometry else {
-                return Err(CodecError::NotImplemented(
-                    "source-less F3D compound curves require NURBS components".into(),
-                ));
+            let component = match &component.geometry {
+                CurveGeometry::Nurbs(component) => component.clone(),
+                CurveGeometry::Line { .. } => {
+                    let range = parameters.get(ordinal..ordinal + 2).ok_or_else(|| {
+                        CodecError::Malformed(
+                            "compound line component has no construction interval".into(),
+                        )
+                    })?;
+                    native_interval_curve(&component.geometry, [range[0], range[1]])?
+                }
+                _ => {
+                    return Err(CodecError::NotImplemented(
+                        "source-less F3D compound curves require NURBS or bounded line components"
+                            .into(),
+                    ));
+                }
             };
-            native_nurbs_curve(bytes, component)?;
+            native_nurbs_curve(bytes, &component)?;
         }
         native_nurbs_curve(bytes, solved_cache)?;
         native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
