@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, VertexId};
+use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 /// Provenance link from a solved B-rep coedge to its source sketch curve.
@@ -144,6 +144,29 @@ pub struct TolerantCoedgeParameters {
     pub record_index: u32,
     /// Native start and end parameters following the base coedge fields.
     pub parameter_range: [f64; 2],
+}
+
+/// Native side classification stored on an ASM wire record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WireSide {
+    /// Wire bounds the inside side.
+    In,
+    /// Wire bounds the outside side.
+    Out,
+}
+
+/// Native wire record projected onto one neutral-IR shell.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WireTopology {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Neutral shell containing the wire's edge ring.
+    pub shell: ShellId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Native side classification.
+    pub side: WireSide,
 }
 
 /// Design `BulkStream` regeneration-recipe family.

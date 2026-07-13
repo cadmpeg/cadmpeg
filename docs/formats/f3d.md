@@ -232,6 +232,13 @@ All records of a given class are fixed-size on Fusion files. Offsets are record-
 their nearest shell ancestor in the neutral IR; retained-source writing preserves
 the native subshell records and ownership references byte-for-byte.
 
+**Wire:** `chunk[3]` = next sibling wire, `chunk[4]` = first coedge,
+`chunk[5]` = owner shell/body/subshell, `chunk[6]` = reserved reference, and
+`chunk[7]` = side (`0x0a` in, `0x0b` out). Each wire record is retained as typed
+metadata on its normalized shell. Retained writing patches the side token in place;
+source-less writing emits the stored side and rejects multiple native wire records
+that would otherwise collapse into one neutral shell edge list.
+
 **Face (81 B; +1 chunk if double-sided):**
 
 ```

@@ -11,7 +11,7 @@ use crate::records::{
     DesignMaterialAssignment, DesignObject, DesignRecordHeader, EdgeContinuity, FaceSidedness,
     LostEdgeReference, PersistentDesignLink, PersistentReference, SketchCurveIdentity,
     SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters, TolerantVertexTail,
-    TransformHints, VertexOwnership,
+    TransformHints, VertexOwnership, WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -49,6 +49,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "tolerant_vertex_tails",
     "transform_hints",
     "vertex_ownerships",
+    "wire_topologies",
 ];
 
 macro_rules! f3d_arenas {
@@ -80,6 +81,7 @@ macro_rules! f3d_arenas {
             tolerant_coedge_parameters: TolerantCoedgeParameters;
             tolerant_vertex_tails: TolerantVertexTail;
             transform_hints: TransformHints;
+            wire_topologies: WireTopology;
             asm_histories: AsmHistory;
         }
     };
@@ -211,6 +213,9 @@ pub struct F3dNative {
     /// Native transform rotation/reflection/shear classifications.
     #[serde(default)]
     pub transform_hints: Vec<TransformHints>,
+    /// Native wire records and their side classifications.
+    #[serde(default)]
+    pub wire_topologies: Vec<WireTopology>,
     /// ASM construction-history containers and their linked delta states.
     #[serde(default)]
     pub asm_histories: Vec<AsmHistory>,
@@ -246,6 +251,7 @@ impl Default for F3dNative {
             tolerant_coedge_parameters: Vec::new(),
             tolerant_vertex_tails: Vec::new(),
             transform_hints: Vec::new(),
+            wire_topologies: Vec::new(),
             asm_histories: Vec::new(),
         }
     }

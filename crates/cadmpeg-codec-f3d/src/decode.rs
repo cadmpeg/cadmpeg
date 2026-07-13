@@ -470,6 +470,7 @@ fn build_geometry_ir(
         face_sidedness: brep.face_sidedness,
         tolerant_vertex_tails: brep.tolerant_vertex_tails,
         tolerant_coedge_parameters: brep.tolerant_coedge_parameters,
+        wire_topologies: brep.wire_topologies,
         transform_hints: brep.transform_hints,
         creation_timestamps: brep.creation_timestamps,
         ..F3dNative::default()

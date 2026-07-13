@@ -20,7 +20,7 @@ use std::collections::{HashMap, HashSet};
 use crate::records::{
     BodyNativeKey, CreationTimestamp, EdgeContinuity, FaceContainment, FaceSidedness,
     PersistentDesignLink, SketchCurveLink, TolerantCoedgeParameters, TolerantVertexTail,
-    TransformHints, VertexOwnership,
+    TransformHints, VertexOwnership, WireSide, WireTopology,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
@@ -112,6 +112,8 @@ pub struct Brep {
     pub body_keys: HashMap<BodyId, u64>,
     /// Native Design-join key field for every emitted body, including null keys.
     pub body_native_keys: Vec<BodyNativeKey>,
+    /// Native wire records projected onto solved shells.
+    pub wire_topologies: Vec<WireTopology>,
     /// Linked source-native attributes.
     pub attributes: Vec<SourceAttribute>,
     /// Undecoded carrier records preserved verbatim.
@@ -854,6 +856,19 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             else {
                 break;
             };
+            let side = match wire.chunk(7) {
+                Some(Token::True) => Some(WireSide::In),
+                Some(Token::False) => Some(WireSide::Out),
+                _ => None,
+            };
+            if let Some(side) = side {
+                out.wire_topologies.push(WireTopology {
+                    id: format!("f3d:asm:wire-topology#{wire_index}"),
+                    shell: ShellId(id(shell_index)),
+                    record_index: wire.index as u32,
+                    side,
+                });
+            }
             if let Some(first_coedge) = wire.ref_at(4) {
                 let mut coedge_ref = Some(first_coedge);
                 let mut coedge_guard = HashSet::new();

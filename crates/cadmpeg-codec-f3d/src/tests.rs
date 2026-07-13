@@ -1579,7 +1579,6 @@ fn synthetic_wire_body_smbh() -> Vec<u8> {
         t_long(&mut records, -1);
         t_ref(&mut records, -1);
         t_pos(&mut records, position);
-        t_long(&mut records, 1);
         t_end(&mut records);
     }
     t_subident(&mut records, "straight");
@@ -1670,7 +1669,6 @@ fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
         t_long(&mut appended, -1);
         t_ref(&mut appended, -1);
         t_pos(&mut appended, position);
-        t_long(&mut appended, 1);
         t_end(&mut appended);
     }
     t_subident(&mut appended, "straight");
@@ -3554,7 +3552,6 @@ fn synthetic_mixed_smbh() -> Vec<u8> {
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
         t_pos(&mut r, p);
-        t_long(&mut r, 1);
         t_end(&mut r);
     }
 
@@ -7776,7 +7773,6 @@ fn synthetic_geometry_bf4_smbh_with_arc_sense(arc_edge_sense: u8) -> Vec<u8> {
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
         t_pos(&mut r, p);
-        t_long(&mut r, 1);
         t_end(&mut r);
     }
 
@@ -8245,7 +8241,7 @@ fn decode_builds_valid_topology_and_geometry() {
 
 #[test]
 fn decode_transfers_generated_wire_body_topology() {
-    let result = F3dCodec
+    let mut result = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_wire_body_smbh())),
             &DecodeOptions::default(),
@@ -8263,9 +8259,28 @@ fn decode_transfers_generated_wire_body_topology() {
     assert_eq!(result.ir.model.vertices.len(), 2);
     assert_eq!(result.ir.model.points.len(), 2);
     assert_eq!(result.ir.model.curves.len(), 1);
+    assert_eq!(f3d_native(&result.ir).wire_topologies.len(), 1);
+    assert_eq!(
+        f3d_native(&result.ir).wire_topologies[0].side,
+        crate::records::WireSide::Out
+    );
     assert_eq!(
         result.ir.model.shells[0].wire_edges[0],
         result.ir.model.edges[0].id
+    );
+    update_f3d_native(&mut result.ir, |native| {
+        native.wire_topologies[0].side = crate::records::WireSide::In;
+    });
+    let mut edited = Vec::new();
+    F3dCodec
+        .write_preserved(&result.ir, &mut edited)
+        .expect("wire-side retained edit");
+    let edited = F3dCodec
+        .decode(&mut Cursor::new(edited), &DecodeOptions::default())
+        .expect("wire-side retained round trip");
+    assert_eq!(
+        f3d_native(&edited.ir).wire_topologies[0].side,
+        crate::records::WireSide::In
     );
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(
@@ -8480,6 +8495,9 @@ fn generated_source_less_writes_wire_body_topology() {
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    update_f3d_native(&mut source_less, |native| {
+        native.wire_topologies[0].side = crate::records::WireSide::In;
+    });
     let expected_curve = source_less.model.curves[0].geometry.clone();
     let expected_points = source_less
         .model
@@ -8501,6 +8519,10 @@ fn generated_source_less_writes_wire_body_topology() {
         cadmpeg_ir::topology::BodyKind::Wire
     );
     assert_eq!(round_trip.ir.model.shells[0].wire_edges.len(), 1);
+    assert_eq!(
+        f3d_native(&round_trip.ir).wire_topologies[0].side,
+        crate::records::WireSide::In
+    );
     assert_eq!(round_trip.ir.model.edges.len(), 1);
     assert_eq!(
         round_trip

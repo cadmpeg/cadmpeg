@@ -20,6 +20,7 @@ use cadmpeg_ir::geometry::{
     BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
     ProceduralCurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
+use cadmpeg_ir::ids::ShellId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -1717,7 +1718,7 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             native_record_index(shell_start, shell_ordinal)?,
         );
         native_ref(&mut records, -1);
-        records.push(0x0b);
+        records.push(native_wire_side(target, &shell.id)?);
         records.push(0x11);
         edge_base += shell.wire_edges.len();
     }
@@ -2124,7 +2125,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             native_record_index(shell_start, shell_ordinal)?,
         );
         native_ref(&mut records, -1);
-        records.push(0x0b);
+        records.push(native_wire_side(target, &shell.id)?);
         records.push(0x11);
         wire_edge_base += shell.wire_edges.len();
     }
@@ -3579,6 +3580,31 @@ fn native_face_sense(
                 })
         })
         .unwrap_or(face.sense))
+}
+
+fn native_wire_side(target: &CadIr, shell: &ShellId) -> Result<u8, CodecError> {
+    let matches = f3d_native(target)?
+        .map(|native| {
+            native
+                .wire_topologies
+                .into_iter()
+                .filter(|wire| wire.shell == *shell)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let side = match matches.as_slice() {
+        [] => crate::records::WireSide::Out,
+        [wire] => wire.side,
+        _ => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D generation cannot collapse multiple native wires on shell {shell}"
+            )))
+        }
+    };
+    Ok(match side {
+        crate::records::WireSide::In => 0x0a,
+        crate::records::WireSide::Out => 0x0b,
+    })
 }
 
 fn normalized_face_sense_to_native(
@@ -8157,6 +8183,7 @@ pub fn write_semantic(
     let face_sidedness_edits = validate_face_sidedness_edits(&baseline.ir, target)?;
     let tolerant_vertex_edits = validate_tolerant_vertex_edits(&baseline.ir, target)?;
     let tolerant_coedge_edits = validate_tolerant_coedge_edits(&baseline.ir, target)?;
+    let wire_topology_edits = validate_wire_topology_edits(&baseline.ir, target)?;
     let mut supported_target = baseline.ir.clone();
     supported_target
         .model
@@ -8282,6 +8309,9 @@ pub fn write_semantic(
         supported
             .transform_hints
             .clone_from(&target_native.transform_hints);
+        supported
+            .wire_topologies
+            .clone_from(&target_native.wire_topologies);
         supported.store(supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::semantic_hash(&supported_target) != decode::semantic_hash(target) {
@@ -8492,6 +8522,7 @@ pub fn write_semantic(
             )?;
             patch_transform_hints(&mut bytes, &transform_hint_edits)?;
             patch_tolerant_coedge_parameters(&mut bytes, &tolerant_coedge_edits)?;
+            patch_wire_topologies(&mut bytes, &wire_topology_edits)?;
             patch_body_native_keys(&mut bytes, &body_native_key_edits.asm)?;
             if let Some(edits) = history_state_edits.get(&name) {
                 patch_history_states(&mut bytes, edits)?;
@@ -8940,6 +8971,46 @@ fn validate_tolerant_coedge_edits(
         }
         if after.parameter_range != before.parameter_range {
             edits.insert(after.record_index as usize, after.parameter_range);
+        }
+    }
+    Ok(edits)
+}
+
+fn validate_wire_topology_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, crate::records::WireSide>, CodecError> {
+    let baseline_wires = f3d_native(baseline)?
+        .map(|native| native.wire_topologies)
+        .unwrap_or_default();
+    let target_wires = f3d_native(target)?
+        .map(|native| native.wire_topologies)
+        .unwrap_or_default();
+    let baseline_by_id = baseline_wires
+        .iter()
+        .map(|wire| (wire.id.as_str(), wire))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target_wires
+        .iter()
+        .map(|wire| (wire.id.as_str(), wire))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D wire regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.side = before.side;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D wire edit changes structural fields: {id}"
+            )));
+        }
+        if after.side != before.side {
+            edits.insert(after.record_index as usize, after.side);
         }
     }
     Ok(edits)
@@ -10488,6 +10559,50 @@ fn patch_tolerant_coedge_parameters(
         }
         patch_double_token(bytes, record, 0, range[0])?;
         patch_double_token(bytes, record, 1, range[1])?;
+    }
+    Ok(())
+}
+
+fn patch_wire_topologies(
+    bytes: &mut [u8],
+    edits: &BTreeMap<usize, crate::records::WireSide>,
+) -> Result<(), CodecError> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+    let start = asm_header::record_stream_start(bytes)
+        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
+    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let records = sab::frame(bytes, start, limit, 8)
+        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
+    for (record_index, side) in edits {
+        let record = records
+            .iter()
+            .find(|record| record.index == *record_index)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("F3D wire record {record_index} is missing"))
+            })?;
+        if record.head != "wire" {
+            return Err(CodecError::Malformed(format!(
+                "F3D wire record {record_index} is {}",
+                record.head
+            )));
+        }
+        let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x0a)
+            .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        offsets.extend(
+            sab::payload_token_offsets(bytes, record, 8, 0x0b)
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
+        );
+        let [offset] = offsets.as_slice() else {
+            return Err(CodecError::Malformed(format!(
+                "F3D wire record {record_index} does not contain one side token"
+            )));
+        };
+        bytes[*offset] = match side {
+            crate::records::WireSide::In => 0x0a,
+            crate::records::WireSide::Out => 0x0b,
+        };
     }
     Ok(())
 }
