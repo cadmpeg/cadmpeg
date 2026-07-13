@@ -1817,6 +1817,79 @@ fn feature_extent_magnitudes_are_validated() {
 }
 
 #[test]
+fn feature_operation_geometry_is_validated() {
+    use crate::features::{
+        BooleanOp, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
+        HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, VariableRadius,
+    };
+
+    let definitions = vec![
+        FeatureDefinition::Fillet {
+            edges: EdgeSelection::Unresolved,
+            radius: RadiusSpec::Variable {
+                points: vec![
+                    VariableRadius {
+                        parameter: 0.5,
+                        radius: Length(2.0),
+                    },
+                    VariableRadius {
+                        parameter: 0.25,
+                        radius: Length(-1.0),
+                    },
+                ],
+            },
+        },
+        FeatureDefinition::Rib {
+            profile: ProfileRef::Native("profile".into()),
+            direction: Vector3::new(0.0, 0.0, 0.0),
+            thickness: Length(0.0),
+            both_sides: false,
+            draft: None,
+            op: BooleanOp::Join,
+        },
+        FeatureDefinition::Hole {
+            face: Some(FaceSelection::Unresolved),
+            position: None,
+            direction: None,
+            kind: HoleKind::Simple,
+            diameter: Length(0.0),
+            extent: Extent::ThroughAll,
+        },
+        FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Linear {
+                direction: Vector3::new(0.0, 0.0, 0.0),
+                spacing: Length(-1.0),
+                count: 0,
+            },
+        },
+    ];
+    let expected = [
+        "fillet radius is invalid",
+        "rib geometry is invalid",
+        "hole geometry is invalid",
+        "pattern geometry is invalid",
+    ];
+    let mut ir = unit_cube();
+    for (ordinal, definition) in definitions.into_iter().enumerate() {
+        ir.model.features.push(Feature {
+            id: FeatureId(format!("synthetic:test:feature#invalid-{ordinal}")),
+            ordinal: ordinal as u64,
+            name: None,
+            suppressed: false,
+            parent: None,
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        });
+    }
+    let findings = validate(&ir, Vec::new()).findings;
+    for message in expected {
+        assert!(findings.iter().any(|finding| finding.message == message));
+    }
+}
+
+#[test]
 fn flex_modes_round_trip_and_validate() {
     use crate::features::{Angle, Feature, FeatureDefinition, FeatureId, FlexMode, Length};
 

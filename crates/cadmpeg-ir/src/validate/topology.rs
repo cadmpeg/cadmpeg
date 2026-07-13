@@ -3,7 +3,9 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::features::FlexMode;
+use crate::features::{
+    ChamferSpec, FaceMotion, FlexMode, HoleKind, Length, PatternKind, RadiusSpec,
+};
 use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
 /// Presence sets for every arena, keyed by the string id.
@@ -975,9 +977,20 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 profiles.push(profile);
                 extents.push(angle);
             }
-            FeatureDefinition::Sweep { profile, path, .. } => {
+            FeatureDefinition::Sweep {
+                profile,
+                path,
+                twist,
+                scale,
+                ..
+            } => {
                 profiles.push(profile);
                 paths.push(path);
+                if twist.is_some_and(|value| !value.0.is_finite())
+                    || scale.is_some_and(|value| !value.is_finite() || value <= 0.0)
+                {
+                    feature_geometry_error(findings, feature, "sweep magnitude is invalid");
+                }
             }
             FeatureDefinition::Loft {
                 profiles: values,
@@ -987,31 +1000,114 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 profiles.extend(values);
                 paths.extend(guides);
             }
-            FeatureDefinition::Rib { profile, .. } => {
+            FeatureDefinition::Rib {
+                profile,
+                direction,
+                thickness,
+                draft,
+                ..
+            } => {
                 profiles.push(profile);
+                if !valid_feature_direction(*direction)
+                    || !positive_feature_length(*thickness)
+                    || draft.is_some_and(|value| !value.0.is_finite())
+                {
+                    feature_geometry_error(findings, feature, "rib geometry is invalid");
+                }
             }
-            FeatureDefinition::Fillet { edges, .. } | FeatureDefinition::Chamfer { edges, .. } => {
+            FeatureDefinition::Fillet { edges, radius } => {
                 edge_selections.push(edges);
+                let valid = match radius {
+                    RadiusSpec::Constant { radius } => positive_feature_length(*radius),
+                    RadiusSpec::Variable { points } => {
+                        points.len() >= 2
+                            && points.iter().all(|point| {
+                                point.parameter.is_finite()
+                                    && (0.0..=1.0).contains(&point.parameter)
+                                    && positive_feature_length(point.radius)
+                            })
+                            && points
+                                .windows(2)
+                                .all(|pair| pair[0].parameter < pair[1].parameter)
+                    }
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "fillet radius is invalid");
+                }
             }
-            FeatureDefinition::Shell { removed_faces, .. } => {
+            FeatureDefinition::Chamfer { edges, spec } => {
+                edge_selections.push(edges);
+                let valid = match spec {
+                    ChamferSpec::Distance { distance } => positive_feature_length(*distance),
+                    ChamferSpec::TwoDistances { first, second } => {
+                        positive_feature_length(*first) && positive_feature_length(*second)
+                    }
+                    ChamferSpec::DistanceAngle { distance, angle } => {
+                        positive_feature_length(*distance)
+                            && angle.0.is_finite()
+                            && angle.0 > 0.0
+                            && angle.0 < std::f64::consts::PI
+                    }
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "chamfer dimensions are invalid");
+                }
+            }
+            FeatureDefinition::Shell {
+                removed_faces,
+                thickness,
+                ..
+            } => {
                 face_selections.push(removed_faces);
+                if !positive_feature_length(*thickness) {
+                    feature_geometry_error(findings, feature, "shell thickness is invalid");
+                }
             }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
+                pull_direction,
+                angle,
                 ..
             } => {
                 face_selections.push(faces);
                 face_selections.push(neutral_plane);
+                if !valid_feature_direction(*pull_direction) || !angle.0.is_finite() {
+                    feature_geometry_error(findings, feature, "draft geometry is invalid");
+                }
             }
             FeatureDefinition::DeleteFace { faces, .. } => {
                 face_selections.push(faces);
             }
-            FeatureDefinition::MoveFace { faces, .. } => {
+            FeatureDefinition::MoveFace { faces, motion } => {
                 face_selections.push(faces);
+                let valid = match motion {
+                    FaceMotion::Offset { distance } => distance.0.is_finite(),
+                    FaceMotion::Translate {
+                        direction,
+                        distance,
+                    } => valid_feature_direction(*direction) && distance.0.is_finite(),
+                    FaceMotion::Rotate {
+                        axis_origin,
+                        axis_dir,
+                        angle,
+                    } => {
+                        axis_origin.x.is_finite()
+                            && axis_origin.y.is_finite()
+                            && axis_origin.z.is_finite()
+                            && valid_feature_direction(*axis_dir)
+                            && angle.0.is_finite()
+                    }
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "face motion is invalid");
+                }
             }
-            FeatureDefinition::Dome { faces, .. } => {
+            FeatureDefinition::Dome { faces, height, .. } => {
                 face_selections.push(faces);
+                if !positive_feature_length(*height) {
+                    feature_geometry_error(findings, feature, "dome height is invalid");
+                }
             }
             FeatureDefinition::Flex { axis, mode } => {
                 if !axis.norm().is_finite() || axis.norm() <= 0.0 {
@@ -1042,11 +1138,40 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 body_selections.push(target);
                 body_selections.push(tools);
             }
-            FeatureDefinition::Hole { face, extent, .. } => {
+            FeatureDefinition::Hole {
+                face,
+                kind,
+                diameter,
+                extent,
+                direction,
+                position,
+            } => {
                 face_selections.extend(face);
                 extents.push(extent);
+                let kind_valid = match kind {
+                    HoleKind::Simple => true,
+                    HoleKind::Counterbore { diameter, depth } => {
+                        positive_feature_length(*diameter) && positive_feature_length(*depth)
+                    }
+                    HoleKind::Countersink { diameter, angle } => {
+                        positive_feature_length(*diameter)
+                            && angle.0.is_finite()
+                            && angle.0 > 0.0
+                            && angle.0 < std::f64::consts::PI
+                    }
+                };
+                let position_valid = position.is_none_or(|point| {
+                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+                });
+                if !positive_feature_length(*diameter)
+                    || !kind_valid
+                    || !position_valid
+                    || direction.is_some_and(|value| !valid_feature_direction(value))
+                {
+                    feature_geometry_error(findings, feature, "hole geometry is invalid");
+                }
             }
-            FeatureDefinition::Pattern { seeds, .. } => {
+            FeatureDefinition::Pattern { seeds, pattern } => {
                 for seed in seeds {
                     match features.get(seed.0.as_str()) {
                         None => ref_error(findings, &feature.id.0, "seed feature", &seed.0),
@@ -1061,6 +1186,43 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         }),
                         Some(_) => {}
                     }
+                }
+                let valid = match pattern {
+                    PatternKind::Linear {
+                        direction,
+                        spacing,
+                        count,
+                    } => {
+                        valid_feature_direction(*direction)
+                            && positive_feature_length(*spacing)
+                            && *count > 0
+                    }
+                    PatternKind::Circular {
+                        axis_origin,
+                        axis_dir,
+                        angle,
+                        count,
+                    } => {
+                        axis_origin.x.is_finite()
+                            && axis_origin.y.is_finite()
+                            && axis_origin.z.is_finite()
+                            && valid_feature_direction(*axis_dir)
+                            && angle.0.is_finite()
+                            && angle.0 > 0.0
+                            && *count > 0
+                    }
+                    PatternKind::Mirror {
+                        plane_origin,
+                        plane_normal,
+                    } => {
+                        plane_origin.x.is_finite()
+                            && plane_origin.y.is_finite()
+                            && plane_origin.z.is_finite()
+                            && valid_feature_direction(*plane_normal)
+                    }
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "pattern geometry is invalid");
                 }
             }
             FeatureDefinition::Sketch { sketch } => {
@@ -1178,6 +1340,23 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
     }
+}
+
+fn positive_feature_length(value: Length) -> bool {
+    value.0.is_finite() && value.0 > 0.0
+}
+
+fn valid_feature_direction(value: Vector3) -> bool {
+    value.norm().is_finite() && value.norm() > 0.0
+}
+
+fn feature_geometry_error(findings: &mut Vec<Finding>, feature: &Feature, message: &str) {
+    findings.push(Finding {
+        check: Check::GeometricConsistency,
+        severity: Severity::Error,
+        message: message.into(),
+        entity: Some(feature.id.0.clone()),
+    });
 }
 
 fn check_ids<'a>(
