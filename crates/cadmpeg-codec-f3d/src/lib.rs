@@ -140,6 +140,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|owner| (owner.record_index, owner))
         .collect::<std::collections::HashMap<_, _>>();
+    let companions_by_index = native
+        .design_parameter_companions
+        .iter()
+        .map(|companion| (companion.record_index, companion))
+        .collect::<std::collections::HashMap<_, _>>();
     let scopes_by_index = native
         .design_parameter_scopes
         .iter()
@@ -213,6 +218,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && scopes_by_index.contains_key(&owner.scope_record_index)
             && record_indices.contains(&owner.parameter_record_index)
             && record_indices.contains(&owner.companion_record_index)
+            && companions_by_index
+                .get(&owner.companion_record_index)
+                .is_some_and(|companion| companion.owner_record_index == owner.record_index)
             && parameter.is_some_and(|parameter| {
                 parameter.owner_record_index == Some(owner.record_index)
                     && parameter.evaluated_value.to_bits() == owner.evaluated_value.to_bits()
@@ -227,6 +235,33 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 message: "Fusion Design parameter owner has an invalid frame or indexed link"
                     .into(),
                 entity: Some(owner.id.clone()),
+            });
+        }
+    }
+    let mut companion_indices = HashSet::new();
+    let mut companion_owners = HashSet::new();
+    for companion in &native.design_parameter_companions {
+        let unique_index = companion_indices.insert(companion.record_index);
+        let unique_owner = companion_owners.insert(companion.owner_record_index);
+        let owner = owners_by_index.get(&companion.owner_record_index);
+        let valid = companion.class_tag.len() == 3
+            && companion
+                .class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && companion.opaque_value != 0
+            && companion.opaque_value_offset == companion.byte_offset.saturating_add(42)
+            && record_indices.contains(&companion.record_index)
+            && owner.is_some_and(|owner| owner.companion_record_index == companion.record_index)
+            && unique_index
+            && unique_owner;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design parameter companion has an invalid prefix or owner link"
+                    .into(),
+                entity: Some(companion.id.clone()),
             });
         }
     }

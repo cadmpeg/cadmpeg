@@ -1147,6 +1147,7 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
     let native = f3d_native(target)?.unwrap_or_default();
     if !target.model.parameters.is_empty()
         || !native.design_parameters.is_empty()
+        || !native.design_parameter_companions.is_empty()
         || !native.design_parameter_owners.is_empty()
         || !native.design_parameter_scopes.is_empty()
     {

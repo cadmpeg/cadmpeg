@@ -10,9 +10,10 @@ use std::collections::{HashMap, HashSet};
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
     DesignConfigurationKind, DesignEntityHeader, DesignObject, DesignObjectKind, DesignParameter,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-    LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignRecordHeader, LostEdgeReference, PersistentReference, PersistentReferenceKind,
+    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+    SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -613,6 +614,81 @@ fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
         owned_ordinal: u32_at(frame, 59)?,
         variant: *frame.get(79)?,
         companion_record_index: u32_at(frame, 82)?,
+    })
+}
+
+/// Decode the fixed prefix of every indexed record paired with a parameter
+/// owner. Record-specific payload after the prefix is decoded independently.
+pub fn decode_parameter_companions(
+    scan: &ContainerScan,
+    owners: &[DesignParameterOwner],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<DesignParameterCompanion>, CodecError> {
+    let headers = headers
+        .iter()
+        .map(|header| (header.record_index, header))
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for owner in owners {
+        let Some(header) = headers.get(&owner.companion_record_index) else {
+            continue;
+        };
+        let entry = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && owner.id.starts_with(&format!("f3d:{}:", entry.name))
+        });
+        let Some(entry) = entry else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let at = usize::try_from(header.byte_offset).ok();
+        let prefix = at.and_then(|at| at.checked_add(58).and_then(|end| bytes.get(at..end)));
+        let Some(mut companion) = prefix.and_then(parse_parameter_companion) else {
+            continue;
+        };
+        if companion.record_index != owner.companion_record_index
+            || companion.owner_record_index != owner.record_index
+        {
+            continue;
+        }
+        companion.id = format!(
+            "f3d:{}:design-parameter-companion#{}",
+            entry.name, header.byte_offset
+        );
+        companion.byte_offset = header.byte_offset;
+        companion.opaque_value_offset += header.byte_offset;
+        out.push(companion);
+    }
+    out.sort_by_key(|companion| companion.record_index);
+    Ok(out)
+}
+
+fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameterCompanion> {
+    let (class_tag, after_tag) = lp_ascii(prefix, 0)?;
+    if prefix.len() != 58
+        || after_tag != 7
+        || class_tag.len() != 3
+        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || prefix.get(11..31) != Some(&[0; 20])
+        || prefix.get(31) != Some(&1)
+        || prefix.get(36..42) != Some(&[0; 6])
+        || prefix.get(50..58) != Some(&[0; 8])
+    {
+        return None;
+    }
+    let opaque_value = read_u64(prefix, 42)?;
+    if opaque_value == 0 {
+        return None;
+    }
+    Some(DesignParameterCompanion {
+        id: String::new(),
+        byte_offset: 0,
+        class_tag,
+        record_index: u32_at(prefix, 7)?,
+        owner_record_index: u32_at(prefix, 32)?,
+        opaque_value,
+        opaque_value_offset: 42,
     })
 }
 
@@ -2307,8 +2383,9 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod relation_tests {
     use super::{
-        next_indexed_record_offset, parse_design_parameter, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_relation, project_parameter_design,
+        next_indexed_record_offset, parse_design_parameter, parse_parameter_companion,
+        parse_parameter_owner, parse_parameter_scope, parse_sketch_relation,
+        project_parameter_design,
     };
     use crate::records::{DesignParameterKind, DesignParameterScope, DesignRecordHeader};
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
@@ -2457,6 +2534,33 @@ mod relation_tests {
         let mut malformed = parameter_owner_frame();
         malformed[94..98].copy_from_slice(&13u32.to_le_bytes());
         assert!(parse_parameter_owner(&malformed).is_none());
+    }
+
+    #[test]
+    fn parameter_companion_prefix_has_owner_backlink_and_opaque_value() {
+        let mut prefix = vec![0; 58];
+        prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
+        prefix[4..7].copy_from_slice(b"408");
+        prefix[7..11].copy_from_slice(&46u32.to_le_bytes());
+        prefix[31] = 1;
+        prefix[32..36].copy_from_slice(&44u32.to_le_bytes());
+        prefix[42..50].copy_from_slice(&1_678_000_000_000_000u64.to_le_bytes());
+
+        let parsed = parse_parameter_companion(&prefix).unwrap();
+        assert_eq!(parsed.record_index, 46);
+        assert_eq!(parsed.owner_record_index, 44);
+        assert_eq!(parsed.opaque_value, 1_678_000_000_000_000);
+        assert_eq!(parsed.opaque_value_offset, 42);
+
+        prefix[32..36].copy_from_slice(&45u32.to_le_bytes());
+        assert_eq!(
+            parse_parameter_companion(&prefix)
+                .unwrap()
+                .owner_record_index,
+            45
+        );
+        prefix[42..50].fill(0);
+        assert!(parse_parameter_companion(&prefix).is_none());
     }
 
     #[test]

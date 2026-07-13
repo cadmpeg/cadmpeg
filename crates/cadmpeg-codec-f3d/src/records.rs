@@ -339,6 +339,25 @@ pub struct DesignParameterOwner {
     pub companion_record_index: u32,
 }
 
+/// Fixed prefix of the indexed record paired with a Design parameter owner.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignParameterCompanion {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Byte offset of the indexed record header in its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: String,
+    /// Source indexed-record identity.
+    pub record_index: u32,
+    /// Indexed parameter-owner record referenced by this prefix.
+    pub owner_record_index: u32,
+    /// Opaque nonzero u64 stored by the companion prefix.
+    pub opaque_value: u64,
+    /// Byte offset of `opaque_value`.
+    pub opaque_value_offset: u64,
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {

@@ -8,11 +8,12 @@ use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
     CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignEntityHeader,
-    DesignMaterialAssignment, DesignObject, DesignParameter, DesignParameterOwner,
-    DesignParameterScope, DesignRecordHeader, EdgeContinuity, EdgeOwnership, FaceSidedness,
-    LostEdgeReference, MeshSurfaceSentinel, PersistentDesignLink, PersistentReference,
-    PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
-    TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
+    DesignMaterialAssignment, DesignObject, DesignParameter, DesignParameterCompanion,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, EdgeContinuity, EdgeOwnership,
+    FaceSidedness, LostEdgeReference, MeshSurfaceSentinel, PersistentDesignLink,
+    PersistentReference, PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint,
+    SketchRelation, TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership,
+    WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -36,6 +37,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_entity_headers",
     "design_material_assignments",
     "design_objects",
+    "design_parameter_companions",
     "design_parameter_owners",
     "design_parameter_scopes",
     "design_parameters",
@@ -68,6 +70,7 @@ macro_rules! f3d_arenas {
             body_native_keys: BodyNativeKey;
             body_visibilities: BodyVisibility;
             design_objects: DesignObject;
+            design_parameter_companions: DesignParameterCompanion;
             design_parameter_owners: DesignParameterOwner;
             design_parameter_scopes: DesignParameterScope;
             design_parameters: DesignParameter;
@@ -166,6 +169,9 @@ pub struct F3dNative {
     /// Design `MetaStream` object-table records.
     #[serde(default)]
     pub design_objects: Vec<DesignObject>,
+    /// Fixed prefixes of indexed records paired with parameter owners.
+    #[serde(default)]
+    pub design_parameter_companions: Vec<DesignParameterCompanion>,
     /// Fixed-width owner frames for indexed Design parameters.
     #[serde(default)]
     pub design_parameter_owners: Vec<DesignParameterOwner>,
@@ -262,6 +268,7 @@ impl Default for F3dNative {
             body_native_keys: Vec::new(),
             body_visibilities: Vec::new(),
             design_objects: Vec::new(),
+            design_parameter_companions: Vec::new(),
             design_parameter_owners: Vec::new(),
             design_parameter_scopes: Vec::new(),
             design_parameters: Vec::new(),

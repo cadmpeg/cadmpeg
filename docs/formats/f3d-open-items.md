@@ -26,7 +26,7 @@ This document records F3D semantics that the format specification does not yet d
 - The semantic meaning of `design_record_header_flag` is unspecified. Its relationship to UI visibility and explicit appearance assignment is unresolved.
 - The semantic role of the second `0x01`-marker u32 in an ACT counter/registry record is unresolved.
 - The Design `MetaStream` Dimension object is a registry with no owned entity IDs. Indexed parameter records define dimensional values and expressions, but the relation from a dimension parameter's owner record to its concrete constraint loci is unresolved.
-- The indexed parameter owner frame groups each owned parameter under a sketch or construction-operation scope. The semantic role and payload grammar of its `owner_record_index + 2` companion record are unresolved.
+- The indexed parameter companion has a fixed prefix and an owner backlink. The semantic role of its opaque u64 and the class-specific record graph after the prefix are unresolved.
 - Text-frame (`0x10000000000`) and text-path (`0x20000000000`) constraint bits exceed the settled u32 mask in the 101-byte sketch-relation record. The side-stream record carrying those 64-bit text-constraint masks is unresolved.
 - The class-specific fields after the fixed `*_recipe_data` null sentinel and integer prologue are unresolved; their feature-operation, profile, extent, and dependency semantics are not assigned.
 - The three Design body-bounding-box sextuples are value- and unit-defined, but the dynamic-class subrecord grammar that bounds each repetition and associates the repetition with its body is unresolved. Approximate offsets after an assignment container are not a structural decoder.
