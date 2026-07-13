@@ -10884,9 +10884,21 @@ fn decode_resolves_feature_input_operands_within_sketch() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let feature_ref = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .and_then(|feature| feature.native_ref.as_deref())
+        .expect("native sketch feature");
     let native = sldprt_native(&decoded.ir);
     let lane = &native.feature_input_lanes[0];
     let scalar = &lane.scalars[0];
+    assert!(lane
+        .references
+        .iter()
+        .all(|reference| reference.feature_ref.as_deref() == Some(feature_ref)));
     assert_eq!(scalar.operands[0].entity_index, 0);
     assert_eq!(scalar.operands[0].entity_ref, None);
     assert_eq!(scalar.operands[1].entity_index, 2);

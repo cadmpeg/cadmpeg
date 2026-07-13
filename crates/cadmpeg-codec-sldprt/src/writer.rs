@@ -750,6 +750,8 @@ fn resolved_feature_payload(
     let mut expected_lane = lane.clone();
     expected_lane.scalars =
         crate::resolved_features::named_scalars(&lane.native_payload, &lane.id, &lane.names);
+    expected_lane.references =
+        crate::resolved_features::reference_cells(&lane.native_payload, &lane.id);
     crate::resolved_features::bind_scalar_operands(
         histories,
         std::slice::from_mut(&mut expected_lane),
@@ -760,8 +762,7 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
-    if lane.references != crate::resolved_features::reference_cells(&lane.native_payload, &lane.id)
-    {
+    if lane.references != expected_lane.references {
         return Err(CodecError::NotImplemented(format!(
             "feature-input lane {} has edited reference cells",
             lane.id

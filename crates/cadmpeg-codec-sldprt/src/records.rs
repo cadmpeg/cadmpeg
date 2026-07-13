@@ -165,6 +165,9 @@ pub struct FeatureInputReference {
     pub id: String,
     /// Owning feature-input lane record id.
     pub parent: String,
+    /// Native history feature enclosing this cell, when unique.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature_ref: Option<String>,
     /// Position among reference cells in stream order.
     pub ordinal: u32,
     /// Byte offset of the reference cell.

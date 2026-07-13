@@ -133,6 +133,7 @@ pub(crate) fn reference_cells(payload: &[u8], parent: &str) -> Vec<FeatureInputR
             |(ordinal, (offset, kind, object_index))| FeatureInputReference {
                 id: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
                 parent: parent.to_string(),
+                feature_ref: None,
                 ordinal: ordinal as u32,
                 offset: offset as u64,
                 kind,
@@ -256,12 +257,22 @@ pub(crate) fn bind_scalar_operands(
             .filter_map(|feature| {
                 let mut names = lane.names.iter().filter(|name| name.value == feature.name);
                 let first = names.next()?;
-                names.next().is_none().then_some(first.offset)
+                names
+                    .next()
+                    .is_none()
+                    .then_some((first.offset, feature.id.as_str()))
             })
             .collect::<Vec<_>>();
-        starts.sort_unstable();
-        for (index, &start) in starts.iter().enumerate() {
-            let end = starts.get(index + 1).copied().unwrap_or(u64::MAX);
+        starts.sort_unstable_by_key(|start| start.0);
+        for (index, &(start, feature_id)) in starts.iter().enumerate() {
+            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            for reference in lane
+                .references
+                .iter_mut()
+                .filter(|reference| reference.offset > start && reference.offset < end)
+            {
+                reference.feature_ref = Some(feature_id.to_string());
+            }
             let entities = lane
                 .sketch_entities
                 .iter()
