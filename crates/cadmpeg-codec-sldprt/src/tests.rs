@@ -2617,6 +2617,37 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
 }
 
 #[test]
+fn decode_synthesizes_sparse_partition_configuration() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-3-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
+    ));
+    assert_eq!(
+        container::scan_bytes(&source).blocks[0].section.as_deref(),
+        Some("Contents/Config-3-Partition")
+    );
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.configurations.len(), 1);
+    let configuration = &decoded.ir.model.configurations[0];
+    assert_eq!(configuration.ordinal, 3);
+    assert_eq!(configuration.name, "Config-3");
+    assert_eq!(
+        configuration.bodies,
+        decoded
+            .ir
+            .model
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn encoder_writes_source_less_neutral_parameters() {
     use cadmpeg_ir::features::{
         DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId,

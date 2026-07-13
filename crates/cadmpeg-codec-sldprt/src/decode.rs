@@ -852,9 +852,36 @@ fn assign_configuration_bodies(
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
 ) {
     for (index, bodies) in configuration_bodies {
-        if let Some(configuration) = ir.model.configurations.get_mut(*index) {
-            configuration.bodies.clone_from(bodies);
-        }
+        let Ok(ordinal) = u32::try_from(*index) else {
+            continue;
+        };
+        let configuration = if let Some(position) = ir
+            .model
+            .configurations
+            .iter()
+            .position(|configuration| configuration.ordinal == ordinal)
+        {
+            &mut ir.model.configurations[position]
+        } else {
+            ir.model
+                .configurations
+                .push(cadmpeg_ir::features::DesignConfiguration {
+                    id: cadmpeg_ir::features::ConfigurationId(format!(
+                        "sldprt:model:configuration#partition:{index}"
+                    )),
+                    ordinal,
+                    name: format!("Config-{index}"),
+                    material: None,
+                    properties: std::collections::BTreeMap::new(),
+                    bodies: Vec::new(),
+                    native_ref: None,
+                });
+            ir.model
+                .configurations
+                .last_mut()
+                .expect("configuration was inserted")
+        };
+        configuration.bodies.clone_from(bodies);
     }
 }
 
