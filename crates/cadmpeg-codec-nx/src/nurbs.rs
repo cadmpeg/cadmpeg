@@ -312,11 +312,20 @@ fn surface_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload> {
 }
 
 fn curve_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload> {
-    records(bytes, 135, 15)
-        .into_iter()
-        .filter_map(|(pos, xmt)| {
-            let count = be_u32(bytes, pos + 9)? as usize;
-            let raw = bytes.get(pos + 15..pos + 15 + count * 8)?;
+    (0..bytes.len().saturating_sub(15))
+        .filter_map(|pos| {
+            (bytes.get(pos..pos + 2) == Some(&[0, 135])).then_some(())?;
+            let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
+            let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
+            (xmt > 10).then_some(())?;
+            let shift = escape + xmt_len - 2;
+            let count_escape = usize::from(bytes.get(pos + 9 + shift) == Some(&0xff));
+            let count_at = pos + 9 + shift + count_escape;
+            let count = be_u32(bytes, count_at)? as usize;
+            (count > 0 && count <= 0x40000).then_some(())?;
+            let (_, control_ref_len) = read_xmt(bytes, count_at + 4)?;
+            let data = count_at + 4 + control_ref_len;
+            let raw = bytes.get(data..data + count * 8)?;
             let values: Vec<_> = raw
                 .chunks_exact(8)
                 .map(|b| {
@@ -329,7 +338,7 @@ fn curve_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload> {
             values
                 .iter()
                 .all(|value| value.is_finite())
-                .then_some((u32::from(xmt), Payload { values }))
+                .then_some((xmt, Payload { values }))
         })
         .collect()
 }
@@ -426,32 +435,38 @@ struct CurveDescriptor {
 }
 
 fn curve_descriptors(bytes: &[u8]) -> BTreeMap<u32, CurveDescriptor> {
-    records(bytes, 136, 27)
-        .into_iter()
-        .filter_map(|(pos, xmt)| {
+    (0..bytes.len().saturating_sub(27))
+        .filter_map(|pos| {
+            (bytes.get(pos..pos + 2) == Some(&[0, 136])).then_some(())?;
+            let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
+            let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
+            (xmt > 10).then_some(())?;
+            let shift = escape + xmt_len - 2;
+            let degree = be_u16(bytes, pos + 4 + shift)?;
+            let poles = be_u16(bytes, pos + 8 + shift)? as usize;
+            let dimension = be_u16(bytes, pos + 10 + shift)?;
+            let distinct = be_u16(bytes, pos + 14 + shift)? as usize;
+            let form = *bytes.get(pos + 16 + shift)?;
+            ((1..=10).contains(&degree)
+                && (2..=2000).contains(&poles)
+                && matches!(dimension, 2 | 3)
+                && (2..=2000).contains(&distinct)
+                && [1, 4, 5, 6].contains(&form))
+            .then_some(())?;
+            let (mult, mult_len) = read_xmt(bytes, pos + 23 + shift)?;
+            let (knots, _) = read_xmt(bytes, pos + 23 + shift + mult_len)?;
             Some((
-                u32::from(xmt),
+                xmt,
                 CurveDescriptor {
-                    degree: be_u16(bytes, pos + 4)?,
-                    poles: be_u16(bytes, pos + 8)? as usize,
-                    dimension: be_u16(bytes, pos + 10)?,
-                    distinct: be_u16(bytes, pos + 14)? as usize,
-                    form: *bytes.get(pos + 16)?,
-                    mult: u32::from(be_u16(bytes, pos + 23)?),
-                    knots: u32::from(be_u16(bytes, pos + 25)?),
+                    degree,
+                    poles,
+                    dimension,
+                    distinct,
+                    form,
+                    mult,
+                    knots,
                 },
             ))
-        })
-        .collect()
-}
-
-fn records(bytes: &[u8], tag: u8, min_len: usize) -> Vec<(usize, u16)> {
-    (0..bytes.len().saturating_sub(min_len - 1))
-        .filter_map(|pos| {
-            (bytes.get(pos..pos + 2) == Some(&[0, tag]))
-                .then(|| be_u16(bytes, pos + 2).map(|xmt| (pos, xmt)))
-                .flatten()
-                .filter(|(_, xmt)| *xmt > 1 || tag == 127 || tag == 128)
         })
         .collect()
 }

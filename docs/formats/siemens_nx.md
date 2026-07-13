@@ -222,6 +222,9 @@ A **body-shape SHELL** requires the invariant fields `attributes`, `next_shell`,
 
 POINT is a geometric carrier. It becomes a topological vertex only through a validated `FIN.vertex → VERTEX.point` path. An unreferenced POINT is not a free vertex of an existing body.
 An EDGE belongs to the assembled B-rep only when a FIN in a fully resolved owned LOOP references it.
+An unresolved carrier placeholder belongs to the transferred model only when an
+emitted FACE or EDGE references it. Fixed-record scanner candidates outside the
+resolved body closure do not create free unknown carriers.
 An edge's two serialized trim limits are an unordered interval. Canonical start/end order follows evaluation at the ascending limits. A periodic interval is then normalized by reducing its start modulo `2π` and preserving its nonnegative sweep; a seam-crossing interval therefore ends above `2π`.
 
 An EDGE may carry null curve reference `1` with a finite tolerance. This is a tolerant intersection edge: its carrier is the intersection relation between the two distinct surfaces reached through its radial FIN pair, bounded by the EDGE vertices, within the serialized edge tolerance. Transfer represents the relation as a procedural intersection carrier with the two face surfaces; it does not synthesize a line between the vertices. A null-curve edge without exactly two distinct adjacent support surfaces remains carrierless.
@@ -276,6 +279,13 @@ B_SURFACE / B_CURVE are compact: header through sense `+18`, then `nurbs` ref `+
 |  128 | `0080` | knot arrays (`alloc`, ref, `alloc × f64`)                                                                                                                   |
 |  135 | `0087` | B-curve control payload                                                                                                                                     |
 |  136 | `0088` | B-curve descriptor: `degree +4`, `pole_count +8`, `dimension +10` (2=UV, 3=XYZ), distinct-knot `+14`, form `+16`, mult/knot refs `+23/+25`                  |
+
+Types 135 and 136 may place an `ff` envelope escape before their xmt. This
+shifts every subsequent logical field by one byte. Type 135 may place a second
+`ff` escape before its control-value count; the count and control-reference tail
+shift by one additional byte. Multiplicity and knot references in type 136 are
+sequential encoded xmts, so an extended multiplicity reference shifts the knot
+reference.
 
 Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. Canonical multiplicities satisfy `sum(mults) = n_poles + degree + 1` in each direction. Pole-grid ordering is u-major.
 

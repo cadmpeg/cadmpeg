@@ -884,6 +884,30 @@ fn decode_retains_unknown_non_null_edge_curve_carrier() {
 }
 
 #[test]
+fn decode_drops_unknown_carrier_outside_emitted_topology() {
+    let mut stream = topology_partition_stream();
+    let mut orphan = record(16, 32);
+    put_ref(&mut orphan, 2, 88);
+    put_f64(&mut orphan, 10, 0.000_3);
+    put_ref(&mut orphan, 18, 1);
+    put_ref(&mut orphan, 24, 99);
+    stream.extend(orphan);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result
+        .ir
+        .model
+        .curves
+        .iter()
+        .all(|curve| !matches!(curve.geometry, CurveGeometry::Unknown { .. })));
+    assert_eq!(result.ir.model.edges.len(), 1);
+}
+
+#[test]
 fn decode_retains_native_carrierless_edge() {
     let mut stream = topology_partition_stream();
     let edge = stream
@@ -4226,6 +4250,30 @@ fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
     assert_eq!(surface.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
     assert_eq!(surface.control_points.len(), 4);
     assert_eq!(surface.control_points[3].y, 20.0);
+}
+
+#[test]
+fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
+    let mut stream = bspline_partition_stream();
+    let descriptor = stream
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    stream.insert(descriptor + 2, 0xff);
+    let payload = stream
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 41])
+        .expect("curve payload");
+    stream.insert(payload + 2, 0xff);
+    stream.insert(payload + 10, 0xff);
+
+    let curves = crate::nurbs::curves(&stream);
+    assert_eq!(curves.len(), 1);
+    let CurveGeometry::Nurbs(curve) = &curves[0].geometry else {
+        panic!("expected NURBS curve");
+    };
+    assert_eq!(curve.control_points.len(), 2);
+    assert_eq!(curve.control_points[1].x, 20.0);
 }
 
 #[test]

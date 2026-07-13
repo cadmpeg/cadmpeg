@@ -716,6 +716,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         &body_node_ids,
         &scan.container.rmfastload_object_ids(),
     );
+    prune_unreferenced_unknown_carriers(&mut ir);
     classify_body_kinds(&mut ir);
     finalize_point_topology(&mut ir, &mut annotations);
     let referenced_pcurves: BTreeSet<_> = ir
@@ -737,6 +738,65 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         ir.model.bodies.len() > 1,
     );
     Some((ir, report))
+}
+
+pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
+    let mut used_surfaces: BTreeSet<_> = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| face.surface.clone())
+        .collect();
+    let mut used_curves: BTreeSet<_> = ir
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| edge.curve.clone())
+        .collect();
+    loop {
+        let previous = (used_surfaces.len(), used_curves.len());
+        for procedural in &ir.model.procedural_surfaces {
+            if !used_surfaces.contains(&procedural.surface) {
+                continue;
+            }
+            match &procedural.definition {
+                ProceduralSurfaceDefinition::Offset { support, .. } => {
+                    used_surfaces.insert(support.clone());
+                }
+                ProceduralSurfaceDefinition::Blend {
+                    supports, spine, ..
+                } => {
+                    used_surfaces.extend(
+                        supports
+                            .iter()
+                            .flatten()
+                            .map(|support| support.surface.clone()),
+                    );
+                    used_curves.extend(spine.iter().cloned());
+                }
+                _ => {}
+            }
+        }
+        for procedural in &ir.model.procedural_curves {
+            if !used_curves.contains(&procedural.curve) {
+                continue;
+            }
+            if let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            {
+                used_surfaces.extend(context.sides.iter().filter_map(|side| side.surface.clone()));
+            }
+        }
+        if previous == (used_surfaces.len(), used_curves.len()) {
+            break;
+        }
+    }
+    ir.model.surfaces.retain(|surface| {
+        !matches!(surface.geometry, SurfaceGeometry::Unknown { .. })
+            || used_surfaces.contains(&surface.id)
+    });
+    ir.model.curves.retain(|curve| {
+        !matches!(curve.geometry, CurveGeometry::Unknown { .. }) || used_curves.contains(&curve.id)
+    });
 }
 
 pub(crate) fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
