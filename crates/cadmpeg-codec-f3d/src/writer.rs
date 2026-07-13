@@ -6260,9 +6260,191 @@ fn native_interval_curve(
                 periodic: false,
             })
         }
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => native_conic_interval_curve(
+            *center,
+            *axis,
+            *ref_direction,
+            *radius,
+            *radius,
+            parameter_range,
+        ),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => native_conic_interval_curve(
+            *center,
+            *axis,
+            *major_direction,
+            *major_radius,
+            *minor_radius,
+            parameter_range,
+        ),
         _ => Err(CodecError::NotImplemented(
-            "source-less F3D interval construction requires a NURBS or line source curve".into(),
+            "source-less F3D interval construction requires a NURBS, line, circle, or ellipse source curve".into(),
         )),
+    }
+}
+
+fn native_conic_interval_curve(
+    center: Point3,
+    axis: Vector3,
+    major_direction: Vector3,
+    major_radius: f64,
+    minor_radius: f64,
+    parameter_range: [f64; 2],
+) -> Result<NurbsCurve, CodecError> {
+    if !finite_point(center)
+        || !finite_vector(axis)
+        || !finite_vector(major_direction)
+        || !major_radius.is_finite()
+        || !minor_radius.is_finite()
+        || axis.norm() == 0.0
+        || major_direction.norm() == 0.0
+        || major_radius <= 0.0
+        || minor_radius <= 0.0
+    {
+        return Err(CodecError::Malformed(
+            "source-less F3D conic interval requires finite nondegenerate geometry".into(),
+        ));
+    }
+    let axis_norm = axis.norm();
+    let axis = Vector3::new(axis.x / axis_norm, axis.y / axis_norm, axis.z / axis_norm);
+    let major_norm = major_direction.norm();
+    let major_direction = Vector3::new(
+        major_direction.x / major_norm,
+        major_direction.y / major_norm,
+        major_direction.z / major_norm,
+    );
+    let minor_direction = Vector3::new(
+        axis.y * major_direction.z - axis.z * major_direction.y,
+        axis.z * major_direction.x - axis.x * major_direction.z,
+        axis.x * major_direction.y - axis.y * major_direction.x,
+    );
+    let minor_norm = minor_direction.norm();
+    if !minor_norm.is_finite() || minor_norm == 0.0 {
+        return Err(CodecError::Malformed(
+            "source-less F3D conic axis and major direction must not be parallel".into(),
+        ));
+    }
+    let minor_direction = Vector3::new(
+        minor_direction.x / minor_norm,
+        minor_direction.y / minor_norm,
+        minor_direction.z / minor_norm,
+    );
+    let delta = parameter_range[1] - parameter_range[0];
+    let spans = (delta / std::f64::consts::FRAC_PI_2).ceil().max(1.0) as usize;
+    let step = delta / spans as f64;
+    let mut control_points = Vec::with_capacity(spans * 2 + 1);
+    let mut weights = Vec::with_capacity(spans * 2 + 1);
+    let mut knots = Vec::with_capacity(spans * 2 + 4);
+    let point = |angle: f64, scale: f64| {
+        let major_scale = major_radius * angle.cos() * scale;
+        let minor_scale = minor_radius * angle.sin() * scale;
+        Point3::new(
+            center.x + major_direction.x * major_scale + minor_direction.x * minor_scale,
+            center.y + major_direction.y * major_scale + minor_direction.y * minor_scale,
+            center.z + major_direction.z * major_scale + minor_direction.z * minor_scale,
+        )
+    };
+    for span in 0..spans {
+        let start = parameter_range[0] + step * span as f64;
+        let end = start + step;
+        let middle = (start + end) * 0.5;
+        let weight = (step * 0.5).cos();
+        if !weight.is_finite() || weight <= 0.0 {
+            return Err(CodecError::Malformed(
+                "source-less F3D conic interval has an invalid rational span".into(),
+            ));
+        }
+        if span == 0 {
+            control_points.push(point(start, 1.0));
+            weights.push(1.0);
+            knots.extend([start, start, start]);
+        } else {
+            knots.extend([start, start]);
+        }
+        control_points.push(point(middle, 1.0 / weight));
+        weights.push(weight);
+        control_points.push(point(end, 1.0));
+        weights.push(1.0);
+        if span + 1 == spans {
+            knots.extend([end, end, end]);
+        }
+    }
+    Ok(NurbsCurve {
+        degree: 2,
+        knots,
+        control_points,
+        weights: Some(weights),
+        periodic: false,
+    })
+}
+
+#[cfg(test)]
+mod native_interval_curve_tests {
+    use super::*;
+
+    #[test]
+    fn generated_circle_interval_lowers_to_exact_rational_nurbs() {
+        let curve = native_interval_curve(
+            &CurveGeometry::Circle {
+                center: Point3::new(2.0, 3.0, 4.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 5.0,
+            },
+            [0.0, std::f64::consts::PI],
+        )
+        .expect("generated circle interval");
+        let midpoint = cadmpeg_ir::eval::nurbs_curve_point(
+            curve.degree,
+            &curve.knots,
+            &curve.control_points,
+            curve.weights.as_deref(),
+            std::f64::consts::FRAC_PI_2,
+        )
+        .expect("evaluate generated circle interval");
+        assert!((midpoint.x - 2.0).abs() < 1.0e-12);
+        assert!((midpoint.y - 8.0).abs() < 1.0e-12);
+        assert!((midpoint.z - 4.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn generated_ellipse_interval_preserves_both_radii() {
+        let curve = native_interval_curve(
+            &CurveGeometry::Ellipse {
+                center: Point3::new(-1.0, 2.0, 0.5),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                major_direction: Vector3::new(1.0, 0.0, 0.0),
+                major_radius: 6.0,
+                minor_radius: 2.0,
+            },
+            [0.0, std::f64::consts::FRAC_PI_2],
+        )
+        .expect("generated ellipse interval");
+        assert_eq!(curve.control_points[0], Point3::new(5.0, 2.0, 0.5));
+        assert!((curve.control_points[2].x + 1.0).abs() < 1.0e-12);
+        assert_eq!(curve.control_points[2].y, 4.0);
+        assert_eq!(curve.control_points[2].z, 0.5);
+        assert_eq!(
+            curve.knots,
+            vec![
+                0.0,
+                0.0,
+                0.0,
+                std::f64::consts::FRAC_PI_2,
+                std::f64::consts::FRAC_PI_2,
+                std::f64::consts::FRAC_PI_2,
+            ]
+        );
     }
 }
 
