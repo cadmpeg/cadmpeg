@@ -73,6 +73,7 @@ enum Token {
     Sense,
     Position,
     Vector,
+    Scalar,
 }
 
 const FACE: &[Token] = &[
@@ -153,6 +154,43 @@ const PLANE: &[Token] = &[
     Token::Vector,
     Token::Vector,
 ];
+const CIRCLE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Position,
+    Token::Vector,
+    Token::Vector,
+    Token::Scalar,
+];
+const ELLIPSE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Position,
+    Token::Vector,
+    Token::Vector,
+    Token::Scalar,
+    Token::Scalar,
+];
+const CYLINDER: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Position,
+    Token::Vector,
+    Token::Scalar,
+    Token::Vector,
+];
 
 /// Walk all accepted full records and compact tombstones in an inflated
 /// deltas stream.
@@ -221,7 +259,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
-        if matches!(kind, 12..=19 | 29 | 30 | 50)
+        if matches!(kind, 12..=19 | 29..=32 | 50 | 51)
             && crate::topology::Graph::parse(&record.canonical_bytes)
                 .get(kind, record.xmt)
                 .is_some()
@@ -329,6 +367,11 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
                 canonical_bytes.extend_from_slice(stream.get(at..at + 24)?);
                 at += 24;
             }
+            Token::Scalar => {
+                be::f64_at(stream, at)?.is_finite().then_some(())?;
+                canonical_bytes.extend_from_slice(stream.get(at..at + 8)?);
+                at += 8;
+            }
         }
     }
     Some(Record {
@@ -372,7 +415,10 @@ fn family_name(kind: u16) -> Option<&'static str> {
         18 => "VERTEX",
         29 => "POINT",
         30 => "LINE",
+        31 => "CIRCLE",
+        32 => "ELLIPSE",
         50 => "PLANE",
+        51 => "CYLINDER",
         12 => "BODY",
         13 => "SHELL",
         19 => "REGION",
@@ -390,7 +436,10 @@ fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
         18 => VERTEX,
         29 => POINT,
         30 => LINE,
+        31 => CIRCLE,
+        32 => ELLIPSE,
         50 => PLANE,
+        51 => CYLINDER,
         19 => REGION,
         _ => return None,
     })

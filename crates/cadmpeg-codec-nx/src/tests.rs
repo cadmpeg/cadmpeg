@@ -726,6 +726,118 @@ fn deltas_plane_partition_stream() -> Vec<u8> {
     stream
 }
 
+fn circle_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    for (kind, xmt, field) in [(16u8, 8u8, 24usize), (17, 7, 18)] {
+        let record = stream
+            .windows(4)
+            .position(|window| window == [0, kind, 0, xmt])
+            .expect("topology record");
+        put_ref(&mut stream, record + field, 12);
+    }
+    let mut circle = record(31, 99);
+    put_ref(&mut circle, 2, 12);
+    circle[18] = b'+';
+    put_vec3(&mut circle, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut circle, 43, [0.0, 0.0, 1.0]);
+    put_vec3(&mut circle, 67, [1.0, 0.0, 0.0]);
+    put_f64(&mut circle, 91, 0.01);
+    stream.extend(circle);
+    stream
+}
+
+fn deltas_circle_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&31u16.to_be_bytes());
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&908u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    for value in [0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.025] {
+        stream.extend_from_slice(&value.to_be_bytes());
+    }
+    stream
+}
+
+fn ellipse_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    for (kind, xmt, field) in [(16u8, 8u8, 24usize), (17, 7, 18)] {
+        let record = stream
+            .windows(4)
+            .position(|window| window == [0, kind, 0, xmt])
+            .expect("topology record");
+        put_ref(&mut stream, record + field, 13);
+    }
+    let mut ellipse = record(32, 107);
+    put_ref(&mut ellipse, 2, 13);
+    ellipse[18] = b'+';
+    put_vec3(&mut ellipse, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut ellipse, 43, [0.0, 0.0, 1.0]);
+    put_vec3(&mut ellipse, 67, [1.0, 0.0, 0.0]);
+    put_f64(&mut ellipse, 91, 0.02);
+    put_f64(&mut ellipse, 99, 0.01);
+    stream.extend(ellipse);
+    stream
+}
+
+fn deltas_ellipse_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&32u16.to_be_bytes());
+    stream.extend_from_slice(&13u16.to_be_bytes());
+    stream.extend_from_slice(&909u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    for value in [
+        0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.03, 0.012,
+    ] {
+        stream.extend_from_slice(&value.to_be_bytes());
+    }
+    stream
+}
+
+fn cylinder_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    let face = stream
+        .windows(4)
+        .position(|window| window == [0, 14, 0, 4])
+        .expect("face");
+    put_ref(&mut stream, face + 26, 12);
+    let mut cylinder = record(51, 99);
+    put_ref(&mut cylinder, 2, 12);
+    cylinder[18] = b'+';
+    put_vec3(&mut cylinder, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut cylinder, 43, [0.0, 0.0, 1.0]);
+    put_f64(&mut cylinder, 67, 0.01);
+    put_vec3(&mut cylinder, 75, [1.0, 0.0, 0.0]);
+    stream.extend(cylinder);
+    stream
+}
+
+fn deltas_cylinder_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&51u16.to_be_bytes());
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&910u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    for value in [0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 0.025, 1.0, 0.0, 0.0] {
+        stream.extend_from_slice(&value.to_be_bytes());
+    }
+    stream
+}
+
 fn bspline_partition_stream() -> Vec<u8> {
     let mut s = Vec::new();
     s.extend_from_slice(b"PS\x00\x00XX: TRANSMIT FILE (partition)\x00SCH_TEST_1_9999\x00");
@@ -1943,6 +2055,69 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
         result.ir.model.faces[0].surface,
         result.ir.model.surfaces[0].id
     );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_circle_from_status_framed_deltas() {
+    let partition = circle_topology_partition_stream();
+    let deltas = deltas_circle_partition_stream();
+    let file = prt_with_streams(&[&partition, &deltas]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(result.ir.model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Circle { center, axis, ref_direction, radius }
+            if center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && axis == Vector3::new(0.0, 1.0, 0.0)
+                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && radius == 25.0
+    )));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
+    let partition = ellipse_topology_partition_stream();
+    let deltas = deltas_ellipse_partition_stream();
+    let file = prt_with_streams(&[&partition, &deltas]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(result.ir.model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } if center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+            && axis == Vector3::new(0.0, 1.0, 0.0)
+            && major_direction == Vector3::new(1.0, 0.0, 0.0)
+            && major_radius == 30.0
+            && minor_radius == 12.0
+    )));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
+    let partition = cylinder_topology_partition_stream();
+    let deltas = deltas_cylinder_partition_stream();
+    let file = prt_with_streams(&[&partition, &deltas]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Cylinder { origin, axis, ref_direction, radius }
+            if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && axis == Vector3::new(0.0, 1.0, 0.0)
+                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && radius == 25.0
+    )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
