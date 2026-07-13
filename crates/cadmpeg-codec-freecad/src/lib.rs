@@ -476,6 +476,7 @@ fn transfer_text_curves(
                         major_radius: *major_radius,
                         minor_radius: *minor_radius,
                     },
+                    brep::TextCurve::Nurbs(nurbs) => CurveGeometry::Nurbs(nurbs.clone()),
                 };
                 Curve {
                     id: CurveId(format!("{}:curve#{}", payload.id, index + 1)),

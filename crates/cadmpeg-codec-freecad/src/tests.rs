@@ -91,7 +91,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         ("Payload.bin", b"payload"),
         (
             "Shape.brp",
-            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 1\n1 10 20 30 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 0\n*",
+            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 2\n1 10 20 30 1 0 0\n7 0 0 2 3 2 0 0 0 5 0 0 10 0 0 0 3 1 3\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 0\n*",
         ),
     ]);
     let result = FcstdCodec
@@ -170,11 +170,20 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         Some(1)
     );
     assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.curves.len(), 1);
+    assert_eq!(result.ir.model.curves.len(), 2);
     match &result.ir.model.curves[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } => {
             assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
             assert_eq!([direction.x, direction.y, direction.z], [1.0, 0.0, 0.0]);
+        }
+        other => panic!("unexpected curve {other:?}"),
+    }
+    match &result.ir.model.curves[1].geometry {
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) => {
+            assert_eq!(nurbs.degree, 2);
+            assert_eq!(nurbs.control_points.len(), 3);
+            assert_eq!(nurbs.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+            assert!(nurbs.weights.is_none());
         }
         other => panic!("unexpected curve {other:?}"),
     }

@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::geometry::NurbsCurve;
 use cadmpeg_ir::math::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
 
@@ -85,6 +86,8 @@ pub enum TextCurve {
         major_radius: f64,
         minor_radius: f64,
     },
+    /// Rational or non-rational B-spline curve.
+    Nurbs(NurbsCurve),
 }
 
 /// Supported byte-exact surface records from the text carrier table.
@@ -394,6 +397,42 @@ fn parse_curves(
                     minor_radius: cursor.real("hyperbola minor radius")?,
                 }
             }
+            7 => {
+                let rational = cursor.boolean("B-spline rational flag")?;
+                let periodic = cursor.boolean("B-spline periodic flag")?;
+                let degree = cursor.count("B-spline degree", 64)?;
+                let pole_count = cursor.count("B-spline pole count", 1_000_000)?;
+                let knot_count = cursor.count("B-spline knot count", 1_000_000)?;
+                let mut control_points = Vec::with_capacity(pole_count);
+                let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+                for _ in 0..pole_count {
+                    control_points.push(cursor.point("B-spline pole")?);
+                    if let Some(weights) = &mut weights {
+                        weights.push(cursor.real("B-spline weight")?);
+                    }
+                }
+                let mut knots = Vec::new();
+                for _ in 0..knot_count {
+                    let knot = cursor.real("B-spline knot")?;
+                    let multiplicity = cursor.count("B-spline knot multiplicity", degree + 1)?;
+                    let expanded = knots.len().checked_add(multiplicity).ok_or_else(|| {
+                        CodecError::Malformed("B-spline knot count overflow".into())
+                    })?;
+                    if expanded > 2_000_000 {
+                        return Err(CodecError::Malformed(
+                            "expanded B-spline knot limit exceeded".into(),
+                        ));
+                    }
+                    knots.resize(expanded, knot);
+                }
+                TextCurve::Nurbs(NurbsCurve {
+                    degree: degree as u32,
+                    knots,
+                    control_points,
+                    weights,
+                    periodic,
+                })
+            }
             other => {
                 return Err(CodecError::NotImplemented(format!(
                     "text B-rep 3D curve family {other} at table index {}",
@@ -429,6 +468,24 @@ impl<'a> TokenCursor<'a> {
         self.next(label)?.parse().map_err(|_| {
             CodecError::Malformed(format!("invalid {label} in text B-rep Curves table"))
         })
+    }
+
+    fn count(&mut self, label: &str, maximum: usize) -> Result<usize, CodecError> {
+        let value = self.integer(label)?;
+        let value = usize::try_from(value)
+            .map_err(|_| CodecError::Malformed(format!("negative {label}")))?;
+        if value > maximum {
+            return Err(CodecError::Malformed(format!("{label} limit exceeded")));
+        }
+        Ok(value)
+    }
+
+    fn boolean(&mut self, label: &str) -> Result<bool, CodecError> {
+        match self.integer(label)? {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(CodecError::Malformed(format!("invalid {label}"))),
+        }
     }
 
     fn real(&mut self, label: &str) -> Result<f64, CodecError> {
