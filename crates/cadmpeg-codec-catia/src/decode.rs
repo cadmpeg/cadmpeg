@@ -757,6 +757,7 @@ fn point_distance(a: Point3, b: Point3) -> f64 {
 }
 
 fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
+    let b5_graph = crate::b5::parse(&scan.data);
     let mut surfaces: Vec<(usize, u32, SurfaceGeometry, &str)> = geometry::a8_surfaces(&scan.data)
         .into_iter()
         .chain(geometry::a5_surfaces(&scan.data))
@@ -789,34 +790,34 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
             "b2_03_29",
         )
     }));
-    if surfaces.is_empty() {
+    if surfaces.is_empty() && b5_graph.is_none() {
         return None;
     }
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
-    preserve_raw_payload(
-        &mut ir,
-        &mut annotations,
-        scan,
-        "catia:payload:unknown#freeform",
-    )
-    .ok()?;
-    for (index, (pos, object_id, geometry, kind)) in surfaces.iter().enumerate() {
-        let id = SurfaceId(format!("catia:a8:surf#{index}"));
-        annotate(
-            &mut annotations,
-            &id,
-            "object_stream_a8_03",
-            *pos as u64,
-            format!("{kind}:object_id:{object_id:08x}"),
-            Exactness::ByteExact,
-        );
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: geometry.clone(),
-            source_object: None,
-        });
+    let payload_id = UnknownId("catia:payload:unknown#freeform".to_string());
+    preserve_raw_payload(&mut ir, &mut annotations, scan, &payload_id.0).ok()?;
+    let topology_transferred = b5_graph.as_ref().is_some_and(|graph| {
+        crate::b5_transfer::transfer(&mut ir, &mut annotations, graph, &payload_id)
+    });
+    if !topology_transferred {
+        for (index, (pos, object_id, geometry, kind)) in surfaces.iter().enumerate() {
+            let id = SurfaceId(format!("catia:a8:surf#{index}"));
+            annotate(
+                &mut annotations,
+                &id,
+                "object_stream_a8_03",
+                *pos as u64,
+                format!("{kind}:object_id:{object_id:08x}"),
+                Exactness::ByteExact,
+            );
+            ir.model.surfaces.push(Surface {
+                id,
+                geometry: geometry.clone(),
+                source_object: None,
+            });
+        }
     }
     link_payload_carriers(&mut ir, &mut annotations).ok()?;
     ir.annotations = annotations.build();
@@ -826,13 +827,23 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
-            losses: vec![LossNote {
-                category: LossCategory::Topology,
-                severity: Severity::Blocking,
-                message: "Object-stream and consolidated NURBS carriers were decoded, but carrier-to-face binding is not yet transferred."
-                    .to_string(),
-                provenance: None,
-            }],
+            losses: if topology_transferred {
+                vec![LossNote {
+                    category: LossCategory::Topology,
+                    severity: Severity::Warning,
+                    message: "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved."
+                        .to_string(),
+                    provenance: None,
+                }]
+            } else {
+                vec![LossNote {
+                    category: LossCategory::Topology,
+                    severity: Severity::Blocking,
+                    message: "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close."
+                        .to_string(),
+                    provenance: None,
+                }]
+            },
             notes: container::summarize(scan).notes,
         },
     ))

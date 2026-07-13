@@ -48,6 +48,7 @@
 //! format-level access.
 
 pub mod b5;
+mod b5_transfer;
 pub mod catalog;
 pub mod container;
 pub mod decode;

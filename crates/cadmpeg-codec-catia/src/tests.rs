@@ -2143,6 +2143,57 @@ fn b5_linear_pcurve_payload(surface: u16, start: [f64; 2], end: [f64; 2]) -> Vec
     payload
 }
 
+fn b5_closed_triangle_stream() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut plane = vec![0; 73];
+    for (offset, value) in [
+        (1usize, 0.0f64),
+        (9, 0.0),
+        (17, 0.0),
+        (25, 1.0),
+        (33, 0.0),
+        (41, 0.0),
+        (49, 0.0),
+        (57, 1.0),
+        (65, 0.0),
+    ] {
+        plane[offset..offset + 8].copy_from_slice(&le_f64(value));
+    }
+    append_b5_record(&mut bytes, 0x27, 100, &plane);
+    for (id, start, end) in [
+        (200u32, [0.0, 0.0], [1.0, 0.0]),
+        (201, [1.0, 0.0], [0.0, 1.0]),
+        (202, [0.0, 1.0], [0.0, 0.0]),
+    ] {
+        append_b5_record(
+            &mut bytes,
+            0x21,
+            id,
+            &b5_linear_pcurve_payload(100, start, end),
+        );
+    }
+    for id in [300u32, 301, 302] {
+        append_b5_record(&mut bytes, 0x5e, id, &[]);
+    }
+    append_b5_record(
+        &mut bytes,
+        0x62,
+        400,
+        &[
+            0x87, 0x18, 200, 0, 0x18, 44, 1, 0x18, 201, 0, 0x18, 45, 1, 0x18, 202, 0, 0x18, 46, 1,
+            0x18, 100, 0,
+        ],
+    );
+    append_b5_record(&mut bytes, 0x5f, 500, &[0x18, 100, 0, 0x18, 144, 1]);
+    for point in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
+    bytes
+}
+
 #[test]
 fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     let mut bytes = a8_surface_stream();
@@ -2909,6 +2960,36 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
         result.ir.model.surfaces[0].geometry,
         SurfaceGeometry::Nurbs(_)
     ));
+}
+
+#[test]
+fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
+    let stream = b5_closed_triangle_stream();
+    crate::b5::parse(&stream).expect("generated B5 topology");
+    let file = object_main_catpart(&stream);
+    assert_eq!(
+        crate::container::scan_bytes(file.clone()).variant,
+        Variant::FloatPackedInnerNoFbb
+    );
+
+    let mut cur = Cursor::new(file);
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 3);
+    assert_eq!(result.ir.model.edges.len(), 3);
+    assert_eq!(result.ir.model.curves.len(), 3);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir.model.pcurves.len(), 3);
+    assert!(result.report.losses.iter().all(|loss| {
+        loss.category != cadmpeg_ir::report::LossCategory::Topology
+            || loss.severity != cadmpeg_ir::report::Severity::Blocking
+    }));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
