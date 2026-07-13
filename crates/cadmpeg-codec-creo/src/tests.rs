@@ -558,13 +558,13 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
 fn scan_decodes_allfeatur_generated_geometry_manifest() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
-    let allfeatur = b"\x04\xeb\x04edg_id_tab_ptr\0\xf1\xf8\x03\xf7\x53\xfb\xe3used_bodies\0\xf8\x01\xf7\x60\xfb\xe2".to_vec();
+    let allfeatur = b"\x04\xeb\x04edg_id_tab_ptr\0\xf1\xf8\x03\xf7\x53\xfb\xe3used_bodies\0\xf8\x01\xf7\x60\xfb\xe2dtm_id_tab\0\xf2\xf8\x02\xf7\x57\xfb\xe2\xe0\x01dtm_id\0\x2a\xe0\x01dtm_id\0\x2b".to_vec();
     let scan = container::scan_bytes(build_prt(
         "c",
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
 
-    assert_eq!(scan.feature_geometry_tables.len(), 2);
+    assert_eq!(scan.feature_geometry_tables.len(), 3);
     assert_eq!(scan.feature_geometry_tables[0].feature_id, 4);
     assert_eq!(
         scan.feature_geometry_tables[0].kind,
@@ -575,6 +575,14 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
     assert_eq!(
         scan.feature_geometry_tables[1].kind,
         crate::feature::FeatureGeometryTableKind::UsedBodies
+    );
+    assert_eq!(
+        scan.feature_geometry_tables[2].kind,
+        crate::feature::FeatureGeometryTableKind::DatumIds
+    );
+    assert_eq!(
+        scan.feature_geometry_tables[2].entry_ids,
+        Some(vec![42, 43])
     );
 }
 

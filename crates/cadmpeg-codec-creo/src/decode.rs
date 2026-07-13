@@ -404,6 +404,182 @@ fn section_segment_geometry(
     section_line_geometry(points, segment).or_else(|| section_arc_geometry(points, segment))
 }
 
+fn section_point_in_model(
+    transform: &crate::placement::FeatureSectionTransform,
+    point: [f64; 2],
+) -> [f64; 3] {
+    std::array::from_fn(|axis| {
+        transform.origin[axis]
+            + point[0] * transform.u_axis[axis]
+            + point[1] * transform.v_axis[axis]
+    })
+}
+
+fn normalized(vector: [f64; 3]) -> Option<[f64; 3]> {
+    let magnitude = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
+    (magnitude > 1e-12).then(|| vector.map(|value| value / magnitude))
+}
+
+fn extruded_segment_surface(
+    transform: &crate::placement::FeatureSectionTransform,
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SurfaceGeometry> {
+    match section_segment_geometry(points, segment)? {
+        SketchGeometry::Line { start, end } => {
+            let start = section_point_in_model(transform, [start.u, start.v]);
+            let end = section_point_in_model(transform, [end.u, end.v]);
+            let line = normalized(std::array::from_fn(|axis| end[axis] - start[axis]))?;
+            let normal = normalized(cross(line, transform.normal))?;
+            Some(SurfaceGeometry::Plane {
+                origin: Point3::new(start[0], start[1], start[2]),
+                normal: Vector3::new(normal[0], normal[1], normal[2]),
+                u_axis: Vector3::new(line[0], line[1], line[2]),
+            })
+        }
+        SketchGeometry::Arc { center, radius, .. } => {
+            let center = section_point_in_model(transform, [center.u, center.v]);
+            Some(SurfaceGeometry::Cylinder {
+                origin: Point3::new(center[0], center[1], center[2]),
+                axis: Vector3::new(
+                    transform.normal[0],
+                    transform.normal[1],
+                    transform.normal[2],
+                ),
+                ref_direction: Vector3::new(
+                    transform.u_axis[0],
+                    transform.u_axis[1],
+                    transform.u_axis[2],
+                ),
+                radius: radius.0,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn transfer_feature_extrusion_surfaces(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) {
+    for transform in &scan.feature_section_transforms {
+        let Some(definition) = scan.feature_definitions.iter().find(|definition| {
+            definition.owner_feature_id == Some(transform.feature_id)
+                && definition
+                    .body
+                    .windows(b"protextrude\0".len())
+                    .any(|window| window == b"protextrude\0")
+        }) else {
+            continue;
+        };
+        let (Some(variables), Some(segments), Some(order_table), Some(trim_entities)) = (
+            &definition.variables,
+            &definition.segments,
+            &definition.order_table,
+            &definition.trim_entities,
+        ) else {
+            continue;
+        };
+        let tables = scan
+            .feature_entity_tables
+            .iter()
+            .filter(|table| table.feature_id == Some(transform.feature_id))
+            .collect::<Vec<_>>();
+        let [table] = tables.as_slice() else {
+            continue;
+        };
+        let points = variables
+            .points
+            .iter()
+            .filter_map(|point| Some((point.point_id, [point.u?, point.v?])))
+            .collect::<BTreeMap<_, _>>();
+        let solved = trim_entities
+            .solved_external_ids
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let cylinder_entries = table
+            .entry_ids
+            .iter()
+            .filter(|id| {
+                scan.surface_rows
+                    .iter()
+                    .any(|row| row.id == **id && row.kind == crate::surface::SurfaceKind::Cylinder)
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        let mut arcs = segments
+            .rows
+            .iter()
+            .filter(|segment| {
+                solved.contains(&segment.external_id)
+                    && segment.kind == crate::feature::FeatureSegmentKind::Arc
+            })
+            .filter_map(|segment| Some((order_table.internal_id(segment.external_id)?, segment)))
+            .collect::<Vec<_>>();
+        arcs.sort_by_key(|(internal_id, _)| *internal_id);
+        let arc_bindings = if arcs.len() == cylinder_entries.len() {
+            arcs.iter()
+                .zip(&cylinder_entries)
+                .map(|((_, segment), surface_id)| (segment.external_id, *surface_id))
+                .collect::<BTreeMap<_, _>>()
+        } else {
+            BTreeMap::new()
+        };
+
+        for segment in segments
+            .rows
+            .iter()
+            .filter(|segment| solved.contains(&segment.external_id))
+        {
+            let surface_id = match segment.kind {
+                crate::feature::FeatureSegmentKind::Line => order_table
+                    .internal_id(segment.external_id)
+                    .and_then(|internal_id| internal_id.checked_sub(1))
+                    .and_then(|index| usize::try_from(index).ok())
+                    .and_then(|index| table.entry_ids.get(index))
+                    .copied()
+                    .filter(|id| table.surface_ids.contains(id)),
+                crate::feature::FeatureSegmentKind::Arc => {
+                    arc_bindings.get(&segment.external_id).copied()
+                }
+            };
+            let Some(surface_id) = surface_id else {
+                continue;
+            };
+            let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+                continue;
+            }
+            let Some(geometry) = extruded_segment_surface(transform, &points, segment) else {
+                continue;
+            };
+            annotate(
+                annotations,
+                &id,
+                "FeatDefs",
+                segment.offset as u64,
+                "protextrude_section_carrier",
+                Exactness::Derived,
+            );
+            ir.model.surfaces.push(Surface {
+                id,
+                geometry,
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("VisibGeom:{surface_id}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+        }
+    }
+}
+
 fn line_orientation_definition(
     segment: &crate::feature::FeatureSegment,
     entity: SketchEntityId,
@@ -768,6 +944,73 @@ mod resolved_sketch_tests {
             Some(SketchGeometry::Line {
                 start: cadmpeg_ir::math::Point2::new(2.0, 3.0),
                 end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
+            })
+        );
+    }
+
+    #[test]
+    fn placed_extrusion_line_defines_plane() {
+        let transform = crate::placement::FeatureSectionTransform {
+            feature_id: 5,
+            origin: [10.0, 20.0, 30.0],
+            u_axis: [0.0, 1.0, 0.0],
+            v_axis: [0.0, 0.0, 1.0],
+            normal: [1.0, 0.0, 0.0],
+            offset: 7,
+        };
+        let segment = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [1, 2],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 3,
+            offset: 9,
+        };
+        let points = BTreeMap::from([(1, [2.0, 3.0]), (2, [6.0, 3.0])]);
+        assert_eq!(
+            extruded_segment_surface(&transform, &points, &segment),
+            Some(SurfaceGeometry::Plane {
+                origin: Point3::new(10.0, 22.0, 33.0),
+                normal: Vector3::new(0.0, 0.0, -1.0),
+                u_axis: Vector3::new(0.0, 1.0, 0.0),
+            })
+        );
+    }
+
+    #[test]
+    fn placed_extrusion_arc_defines_cylinder() {
+        let transform = crate::placement::FeatureSectionTransform {
+            feature_id: 5,
+            origin: [10.0, 20.0, 30.0],
+            u_axis: [0.0, 1.0, 0.0],
+            v_axis: [0.0, 0.0, 1.0],
+            normal: [1.0, 0.0, 0.0],
+            offset: 7,
+        };
+        let segment = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Arc,
+            directions: [None; 3],
+            point_ids: [1, 2],
+            center_id: Some(3),
+            arc_orientation: Some(0),
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 4,
+            offset: 9,
+        };
+        let points = BTreeMap::from([(1, [2.0, 0.0]), (2, [-2.0, 0.0]), (3, [0.0, 0.0])]);
+        assert_eq!(
+            extruded_segment_surface(&transform, &points, &segment),
+            Some(SurfaceGeometry::Cylinder {
+                origin: Point3::new(10.0, 20.0, 30.0),
+                axis: Vector3::new(1.0, 0.0, 0.0),
+                ref_direction: Vector3::new(0.0, 1.0, 0.0),
+                radius: 2.0,
             })
         );
     }
@@ -1700,6 +1943,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     transfer_plane_intersection_vertices(scan, &mut ir, &mut annotations);
     transfer_plane_brep(scan, &mut ir, &mut annotations);
     transfer_resolved_sketches(scan, &mut ir, &mut annotations);
+    transfer_feature_extrusion_surfaces(scan, &mut ir, &mut annotations);
     for datum in &scan.datum_planes {
         let id = IrFeatureId(format!("creo:model:feature#{}", datum.feature_id));
         if ir.model.features.iter().any(|feature| feature.id == id) {

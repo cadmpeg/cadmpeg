@@ -204,6 +204,9 @@ pub struct FeatureGeometryTable {
     pub count: u32,
     /// Entity-class identifier following the `f7` marker.
     pub entity_class: u32,
+    /// Complete datum identifiers for a `dtm_id_tab`; other table bodies remain
+    /// untyped.
+    pub entry_ids: Option<Vec<u32>>,
     /// Byte offset of the field label in the original stream.
     pub offset: usize,
 }
@@ -2199,14 +2202,43 @@ pub fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> {
             {
                 continue;
             }
-            let Ok((entity_class, _)) = psb::reference_id(&row.body, after_count + 1) else {
+            let Ok((entity_class, mut after_class)) = psb::reference_id(&row.body, after_count + 1)
+            else {
                 continue;
+            };
+            if row.body.get(after_class) == Some(&0xfb) {
+                after_class += 1;
+            }
+            if row.body.get(after_class) == Some(&0xe2) {
+                after_class += 1;
+            }
+            let entry_ids = if kind == FeatureGeometryTableKind::DatumIds {
+                let mut entries = Vec::new();
+                let mut entry_cursor = after_class;
+                for _ in 0..count {
+                    const ENTRY: &[u8] = b"\xe0\x01dtm_id\0";
+                    if row.body.get(entry_cursor..entry_cursor + ENTRY.len()) != Some(ENTRY) {
+                        entries.clear();
+                        break;
+                    }
+                    let (entry, next) = psb::compact_int(&row.body, entry_cursor + ENTRY.len());
+                    if next == entry_cursor + ENTRY.len() {
+                        entries.clear();
+                        break;
+                    }
+                    entries.push(entry);
+                    entry_cursor = next;
+                }
+                (entries.len() == usize::try_from(count).unwrap_or(usize::MAX)).then_some(entries)
+            } else {
+                None
             };
             tables.push(FeatureGeometryTable {
                 feature_id: row.feature_id,
                 kind,
                 count,
                 entity_class,
+                entry_ids,
                 offset: row.body_offset + offset,
             });
         }

@@ -354,6 +354,11 @@ regeneration-parent table. Its compact integers are modeling feature
 identifiers. Both `parent_table` and `strong_parents` contribute dependency
 edges; neither establishes feature-tree containment.
 
+`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly
+`count` named `dtm_id` compact integers. These identifiers occupy the outer
+datum namespace used by `gsec3d.plane_id`; they are distinct from
+`ActDatums.srf_array.geom_id` values.
+
 `ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section includes one named datum row and can include positional `<gid> 22 ...` rows. For datum planes, `outline` stores two diagonal corners. Let `k = argmin_i |p0[i] - p1[i]|`; the plane equation is `x_k = p0[k]`. Datum names do not define their geometric orientation.
 
 The datum surface row's `feat_id` is the owning modeling feature identifier.
