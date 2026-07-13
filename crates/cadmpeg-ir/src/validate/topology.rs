@@ -710,9 +710,33 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         .iter()
         .map(|feature| feature.id.0.as_str())
         .collect::<HashSet<_>>();
+    let mut parameter_names = HashSet::new();
+    let mut parameter_ordinals = HashSet::new();
     for parameter in &ir.model.parameters {
         if !features.contains(parameter.owner.0.as_str()) {
             ref_error(findings, &parameter.id.0, "feature", &parameter.owner.0);
+        }
+        if !parameter_names.insert((&parameter.owner, parameter.name.as_str())) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: format!(
+                    "feature {} repeats parameter name `{}`",
+                    parameter.owner, parameter.name
+                ),
+                entity: Some(parameter.id.0.clone()),
+            });
+        }
+        if !parameter_ordinals.insert((&parameter.owner, parameter.ordinal)) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: format!(
+                    "feature {} repeats parameter ordinal {}",
+                    parameter.owner, parameter.ordinal
+                ),
+                entity: Some(parameter.id.0.clone()),
+            });
         }
     }
     let sketches = ir

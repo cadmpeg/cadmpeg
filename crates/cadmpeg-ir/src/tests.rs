@@ -624,6 +624,49 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
 }
 
 #[test]
+fn feature_parameters_require_unique_names_and_ordinals() {
+    use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
+    use std::collections::BTreeMap;
+
+    let mut ir = unit_cube();
+    let owner = FeatureId("synthetic:test:feature#parameters".into());
+    ir.model.features.push(Feature {
+        id: owner.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: false,
+        parent: None,
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Native {
+            kind: "Test".into(),
+            parameters: BTreeMap::new(),
+            properties: BTreeMap::new(),
+        },
+        native_ref: None,
+    });
+    for (index, name) in ["Width", "Width"].into_iter().enumerate() {
+        ir.model.parameters.push(DesignParameter {
+            id: ParameterId(format!("synthetic:test:parameter#{index}")),
+            owner: owner.clone(),
+            ordinal: 0,
+            name: name.into(),
+            expression: "1mm".into(),
+            value: None,
+        });
+    }
+    ir.finalize();
+    let report = validate(&ir, Vec::new());
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("repeats parameter name")));
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("repeats parameter ordinal")));
+}
+
+#[test]
 fn configuration_body_membership_round_trips_and_validates() {
     use crate::features::{ConfigurationId, DesignConfiguration};
     use crate::ids::BodyId;
