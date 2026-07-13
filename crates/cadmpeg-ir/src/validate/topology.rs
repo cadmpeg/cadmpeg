@@ -1380,6 +1380,26 @@ fn check_feature_sketch_references(
 ) {
     use crate::features::{FeatureDefinition, PathRef, ProfileRef};
 
+    let mut owners = HashMap::new();
+    for feature in &ir.model.features {
+        if let FeatureDefinition::Sketch {
+            sketch: Some(sketch),
+        } = &feature.definition
+        {
+            if owners
+                .insert(sketch.0.as_str(), (feature.id.0.as_str(), feature.ordinal))
+                .is_some()
+            {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!("sketch `{}` has multiple owning features", sketch.0),
+                    entity: Some(feature.id.0.clone()),
+                });
+            }
+        }
+    }
+
     for feature in &ir.model.features {
         let mut profiles = Vec::new();
         let mut paths = Vec::new();
@@ -1405,6 +1425,17 @@ fn check_feature_sketch_references(
             if let ProfileRef::Sketch(sketch) = profile {
                 if !sketches.contains(sketch.0.as_str()) {
                     ref_error(findings, &feature.id.0, "sketch profile", &sketch.0);
+                } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
+                    if *ordinal >= feature.ordinal {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "sketch owner `{owner}` does not precede its profile consumer"
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
                 }
             }
         }
@@ -1412,6 +1443,17 @@ fn check_feature_sketch_references(
             if let PathRef::Sketch(sketch) = path {
                 if !sketches.contains(sketch.0.as_str()) {
                     ref_error(findings, &feature.id.0, "sketch path", &sketch.0);
+                } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
+                    if *ordinal >= feature.ordinal {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "sketch owner `{owner}` does not precede its path consumer"
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
                 }
             }
         }

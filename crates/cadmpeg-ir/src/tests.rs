@@ -1818,6 +1818,66 @@ fn feature_extent_magnitudes_are_validated() {
 }
 
 #[test]
+fn sketch_feature_ownership_and_order_are_validated() {
+    use crate::features::{
+        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+    };
+    use crate::sketches::{Sketch, SketchId};
+
+    let mut ir = unit_cube();
+    let sketch_id = SketchId("synthetic:test:sketch#ordered".into());
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#consumer".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: false,
+        parent: None,
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Extrude {
+            profile: ProfileRef::Sketch(sketch_id.clone()),
+            direction: None,
+            extent: Extent::Blind {
+                length: Length(1.0),
+            },
+            op: BooleanOp::NewBody,
+            draft: None,
+        },
+        native_ref: None,
+    });
+    for (ordinal, suffix) in [(1, "owner"), (2, "duplicate-owner")] {
+        ir.model.features.push(Feature {
+            id: FeatureId(format!("synthetic:test:feature#{suffix}")),
+            ordinal,
+            name: None,
+            suppressed: false,
+            parent: None,
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                sketch: Some(sketch_id.clone()),
+            },
+            native_ref: None,
+        });
+    }
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(findings.iter().any(|finding| finding
+        .message
+        .contains("does not precede its profile consumer")));
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("has multiple owning features")));
+}
+
+#[test]
 fn feature_operation_geometry_is_validated() {
     use crate::features::{
         BooleanOp, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
