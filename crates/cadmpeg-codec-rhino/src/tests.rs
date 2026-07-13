@@ -819,8 +819,8 @@ fn content_hash(archive: ArchiveVersion) -> Vec<u8> {
     let mut body = 123_u64.to_le_bytes().to_vec();
     body.extend(456_u64.to_le_bytes());
     body.extend(789_u64.to_le_bytes());
-    body.extend(anonymous_chunk(archive, 0, &[0x11; 20]));
-    body.extend(anonymous_chunk(archive, 0, &[0x22; 20]));
+    body.extend([0x11; 20]);
+    body.extend([0x22; 20]);
     anonymous_chunk(archive, 0, &body)
 }
 
@@ -1215,19 +1215,6 @@ fn object_record_with_payload(
     )
 }
 
-fn class_wrapper(archive: ArchiveVersion, class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
-    let mut uuid_body = class_uuid.to_vec();
-    uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
-    let uuid = long_chunk(archive, 0x0002_fffb, &uuid_body);
-    let class_data = crc_chunk(archive, 0x0002_fffc, payload);
-    let class_end = short_chunk(archive, 0x8002_7fff, 0);
-    long_chunk(
-        archive,
-        0x0002_7ffa,
-        &[uuid, class_data, class_end].concat(),
-    )
-}
-
 fn object_record_without_end(
     archive: ArchiveVersion,
     object_type: i64,
@@ -1305,167 +1292,6 @@ fn document_table_record_budget_rejects_compact_record_amplification() {
     let error = super::container::scan_with_test_record_limit(bytes, 1)
         .expect_err("record budget must fail before descriptor amplification");
     assert!(error.to_string().contains("table record budget"));
-}
-
-#[test]
-fn scan_retains_history_record_source_boundaries() {
-    let archive = ArchiveVersion::V5;
-    let history_record = crc_chunk(archive, 0x2000_807b, &[1, 2, 3, 4]);
-    let bytes = minimal_document(
-        "50",
-        &[
-            crc_table(archive, 0x1000_0014, &[]),
-            crc_table(archive, 0x1000_0015, &[]),
-            crc_table(archive, 0x1000_0013, &[]),
-            crc_table(archive, 0x1000_0026, &[history_record]),
-        ],
-    );
-
-    let scan = super::container::scan(bytes).expect("history table");
-    let history = scan
-        .tables
-        .iter()
-        .find(|table| table.typecode & !TCODE_CRC == 0x1000_0026)
-        .expect("history table descriptor");
-    assert_eq!(history.records.len(), 1);
-    assert_eq!(history.records[0].typecode, 0x2000_807b);
-    assert_eq!(&scan.data[history.records[0].body.clone()], &[1, 2, 3, 4]);
-}
-
-#[test]
-fn scan_decodes_history_identity_dependencies_and_typed_values() {
-    let archive = ArchiveVersion::V5;
-    let record_id = [1, 0, 0, 0, 2, 0, 3, 0, 4, 5, 6, 7, 8, 9, 10, 11];
-    let command_id = [12, 0, 0, 0, 13, 0, 14, 0, 15, 16, 17, 18, 19, 20, 21, 22];
-    let descendant = [23, 0, 0, 0, 24, 0, 25, 0, 26, 27, 28, 29, 30, 31, 32, 33];
-    let antecedent = [34, 0, 0, 0, 35, 0, 36, 0, 37, 38, 39, 40, 41, 42, 43, 44];
-    let uuid_list = |uuid: [u8; 16]| {
-        let mut body = 1_i32.to_le_bytes().to_vec();
-        body.extend(uuid);
-        anonymous_chunk(archive, 0, &body)
-    };
-    let value = |kind: i32, id: i32, payload: &[u8]| {
-        let mut body = kind.to_le_bytes().to_vec();
-        body.extend(id.to_le_bytes());
-        body.extend(payload);
-        anonymous_chunk(archive, 0, &body)
-    };
-    let mut integers = 2_i32.to_le_bytes().to_vec();
-    integers.extend(7_i32.to_le_bytes());
-    integers.extend((-9_i32).to_le_bytes());
-    let mut text = 1_i32.to_le_bytes().to_vec();
-    text.extend(utf16_bytes("distance"));
-    let referenced_object = [45, 0, 0, 0, 46, 0, 47, 0, 48, 49, 50, 51, 52, 53, 54, 55];
-    let mut object_reference = referenced_object.to_vec();
-    object_reference.extend(7_i32.to_le_bytes());
-    object_reference.extend(8_i32.to_le_bytes());
-    object_reference.extend(4_i32.to_le_bytes());
-    for coordinate in [1.0_f64, 2.0, 3.0] {
-        object_reference.extend(coordinate.to_le_bytes());
-    }
-    object_reference.extend(9_i32.to_le_bytes());
-    object_reference.extend(10_i32.to_le_bytes());
-    object_reference.extend(11_i32.to_le_bytes());
-    for parameter in [0.1_f64, 0.2, 0.3, 0.4] {
-        object_reference.extend(parameter.to_le_bytes());
-    }
-    object_reference.extend(0_i32.to_le_bytes());
-    for bound in [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0] {
-        object_reference.extend(bound.to_le_bytes());
-    }
-    object_reference.extend(12_i32.to_le_bytes());
-    let object_reference = anonymous_chunk(archive, 3, &object_reference);
-    let mut object_references = 1_i32.to_le_bytes().to_vec();
-    object_references.extend(object_reference);
-    let values = [
-        value(2, 10, &integers),
-        value(8, 20, &text),
-        value(9, 25, &object_references),
-        value(99, 30, &[0xaa, 0xbb]),
-    ];
-    let mut values_body = 4_i32.to_le_bytes().to_vec();
-    values_body.extend(values.concat());
-    let mut body = record_id.to_vec();
-    body.extend(202_607_130_i32.to_le_bytes());
-    body.extend(command_id);
-    body.extend(uuid_list(descendant));
-    body.extend(uuid_list(antecedent));
-    body.extend(anonymous_chunk(archive, 0, &values_body));
-    body.extend(1_i32.to_le_bytes());
-    body.push(1);
-    let payload = anonymous_chunk(archive, 2, &body);
-    let history_class = [
-        0x2f, 0xfd, 0xd0, 0xec, 0x88, 0x20, 0xdc, 0x49, 0x96, 0x41, 0x9c, 0xf7, 0xa2, 0x8f, 0xfa,
-        0x6b,
-    ];
-    let record = crc_chunk(
-        archive,
-        0x2000_807b,
-        &class_wrapper(archive, history_class, &payload),
-    );
-    let bytes = minimal_document(
-        "50",
-        &[
-            crc_table(archive, 0x1000_0014, &[]),
-            crc_table(archive, 0x1000_0015, &[]),
-            crc_table(archive, 0x1000_0013, &[]),
-            crc_table(archive, 0x1000_0026, &[record]),
-        ],
-    );
-
-    let scan = super::container::scan(bytes).expect("typed history record");
-    let history = &scan.history[0];
-    assert_eq!(
-        history.id.to_string(),
-        "00000001-0002-0003-0405-060708090a0b"
-    );
-    assert_eq!(history.version, 202_607_130);
-    assert_eq!(
-        history.command_id.to_string(),
-        "0000000c-000d-000e-0f10-111213141516"
-    );
-    assert_eq!(history.descendants.len(), 1);
-    assert_eq!(history.antecedents.len(), 1);
-    assert_eq!(history.values.len(), 4);
-    assert!(matches!(
-        &history.values[0].value,
-        super::history::Value::Integers(values) if values == &[7, -9]
-    ));
-    assert!(matches!(
-        &history.values[1].value,
-        super::history::Value::Strings(values) if values == &["distance"]
-    ));
-    assert!(matches!(
-        &history.values[2].value,
-        super::history::Value::ObjectReferences(values)
-            if values.len() == 1
-                && values[0].object_id.to_string() == "0000002d-002e-002f-3031-323334353637"
-                && values[0].component == [7, 8]
-                && values[0].geometry_type == 4
-                && values[0].point.0 == [1.0, 2.0, 3.0]
-                && values[0].evaluation.parameter_type == 9
-                && values[0].evaluation.component == [10, 11]
-                && values[0].evaluation.parameters == [0.1, 0.2, 0.3, 0.4]
-                && values[0].evaluation.intervals == [[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]]
-                && values[0].instance_path.is_empty()
-                && values[0].osnap_mode == 12
-    ));
-    assert!(matches!(
-        history.values[3].value,
-        super::history::Value::Opaque { type_code: 99, .. }
-    ));
-    assert_eq!(
-        history.record_type,
-        super::history::RecordType::FeatureParameters
-    );
-    assert!(history.copy_on_replace);
-
-    let decoded = super::decode::decode(&scan);
-    assert_eq!(decoded.ir.model.features.len(), 1);
-    assert_eq!(
-        decoded.ir.model.features[0].native_ref.as_deref(),
-        Some("rhino:history:record#00000001-0002-0003-0405-060708090a0b")
-    );
 }
 
 #[test]
@@ -2234,41 +2060,6 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
 }
 
 #[test]
-fn full_decode_partitions_every_source_byte_and_retains_non_object_records() {
-    let archive = ArchiveVersion::V5;
-    let object = object_record(archive, 1, [0; 16]);
-    let bytes = minimal_document(
-        "50",
-        &[
-            table(archive, 0x1000_0014, &[]),
-            table(archive, 0x1000_0015, &[]),
-            table(archive, 0x1000_0013, &[object]),
-        ],
-    );
-    let result = RhinoCodec
-        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
-        .unwrap();
-    let namespace = result.ir.native.namespace("rhino").unwrap();
-    let spans = namespace.arenas.get("byte_spans").unwrap();
-    let mut cursor = 0_u64;
-    for span in spans {
-        let offset = span.fields["offset"].as_u64().unwrap();
-        let byte_len = span.fields["byte_len"].as_u64().unwrap();
-        assert_eq!(offset, cursor);
-        assert!(matches!(
-            span.fields["classification"].as_str(),
-            Some("typed" | "structural" | "opaque")
-        ));
-        cursor += byte_len;
-    }
-    assert_eq!(cursor, bytes.len() as u64);
-    let opaque = namespace.arenas.get("opaque_records").unwrap();
-    assert_eq!(opaque.len(), 1);
-    assert_eq!(opaque[0].id, "rhino:source:opaque#comment");
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
-}
-
-#[test]
 fn rejected_candidate_detaches_payload_clone_and_preserves_live_bytes() {
     let archive = ArchiveVersion::V5;
     let object = object_record(archive, 1, [0; 16]);
@@ -2457,7 +2248,6 @@ fn static_definition(id: [u8; 16], members: &[[u8; 16]]) -> super::instances::In
         linked_depth: 0,
         linked_appearance: 0,
         file_reference_range: None,
-        file_reference: None,
         reference_settings_range: None,
     }
 }
@@ -2580,17 +2370,6 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
     assert_eq!(
         result.ir.native_unknowns("rhino").unwrap()[2].links.len(),
         1
-    );
-    let native = result.ir.native.namespace("rhino").unwrap();
-    assert_eq!(native.arenas["product_definitions"].len(), 1);
-    assert_eq!(native.arenas["product_occurrences"].len(), 2);
-    assert_eq!(
-        native.arenas["product_occurrences"][0].fields["definition_uuid"],
-        Uuid::from_wire(definition_id).to_string()
-    );
-    assert_eq!(
-        native.arenas["product_occurrences"][0].fields["transform_units"],
-        "millimeter"
     );
     assert!(result
         .report

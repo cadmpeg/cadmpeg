@@ -455,6 +455,8 @@ UV poles are dimensionless surface parameters. `wrapper_reversed` is the inline 
 
 The inline control polygon is followed by a `DOUBLE` parameter-space fit tolerance. After the nested support-surface scope, four ordered trailing booleans precede two final `DOUBLE` values storing the pcurve parameter interval `(t_start, t_end)`. The four booleans are retained and regenerated independently. Ref-form pcurves store the same interval immediately after their intcurve reference and have no wrapper, boolean tail, or inline fit-tolerance carrier.
 
+Pcurve UV coordinates use the owning surface's exact parameterization. A procedural surface's solved NURBS block is an evaluated model-space cache and does not redefine that parameterization. Candidate validation against the solved cache therefore applies only when the NURBS surface is itself the exact carrier; a pcurve on a procedural surface selects the first unambiguous BS2 carrier in native traversal order.
+
 Coedge sense is the edge-use orientation for a pcurve inherited from its surface: `effective_pcurve = flip_pcurve(surface_pcurve, coedge.sense)`. The stored 2D B-spline poles and knots retain their native order. `wrapper_reversed` is separate from coedge sense.
 
 An explicit pcurve reference belongs to a free-form B-spline face. Analytic plane, cylinder, cone, sphere, and torus faces store `-1` in the coedge pcurve field; their UV boundary is not serialized as a pcurve record.

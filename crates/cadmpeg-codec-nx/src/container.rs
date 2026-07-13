@@ -149,23 +149,27 @@ fn parse_extref_paths(payload: &[u8]) -> Vec<String> {
     else {
         return Vec::new();
     };
-    let Some(mut cursor) =
-        cadmpeg_ir::cursor::Cursor::with_bounds(payload, marker + 1, payload.len())
-    else {
+    let Some(count) = u32_le(payload, marker + 1).map(|value| value as usize) else {
         return Vec::new();
     };
-    let Some(count) = cursor.u32_le() else {
-        return Vec::new();
-    };
-    // Each path is at least a u16 length prefix; an implausible declared
-    // count fails here instead of reserving unbounded capacity.
-    cursor
-        .read_counted(u64::from(count), 2, |cursor| {
-            let length = usize::from(cursor.u16_le()?);
-            let raw = cursor.take(length)?;
-            Some(std::str::from_utf8(raw).ok()?.to_string())
-        })
-        .unwrap_or_default()
+    let mut pos = marker + 5;
+    let mut out = Vec::with_capacity(count);
+    for _ in 0..count {
+        let Some(raw_length) = payload.get(pos..pos + 2) else {
+            return Vec::new();
+        };
+        let length = usize::from(u16::from_le_bytes([raw_length[0], raw_length[1]]));
+        pos += 2;
+        let Some(raw) = payload.get(pos..pos + length) else {
+            return Vec::new();
+        };
+        let Ok(path) = std::str::from_utf8(raw) else {
+            return Vec::new();
+        };
+        out.push(path.to_string());
+        pos += length;
+    }
+    out
 }
 
 /// A parsed SPLMSSTR container and its directory entries.

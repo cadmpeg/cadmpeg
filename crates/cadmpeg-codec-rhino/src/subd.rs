@@ -88,6 +88,16 @@ enum ComponentType {
     Face,
 }
 
+impl ComponentType {
+    fn bits(self) -> u8 {
+        match self {
+            Self::Vertex => 0x2,
+            Self::Edge => 0x4,
+            Self::Face => 0x6,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ComponentPointer {
     archive_id: u32,
@@ -373,7 +383,7 @@ fn read_vertex(
         }
         for _ in 0..limit_count {
             read_finite_values(reader, 12, "saved SubD limit point")?;
-            read_pointer(reader, true)?;
+            read_pointer(reader, ComponentType::Face, true)?;
         }
     }
     let serialized_edges = usize::from(reader.u16()?);
@@ -383,7 +393,7 @@ fn read_vertex(
             "SubD vertex serialized edge count disagrees",
         ));
     }
-    let edges = read_pointers(reader, edge_count, false)?;
+    let edges = read_pointers(reader, edge_count, ComponentType::Edge, false)?;
     let serialized_faces = usize::from(reader.u16()?);
     if serialized_faces != face_count {
         return Err(malformed(
@@ -391,7 +401,7 @@ fn read_vertex(
             "SubD vertex serialized face count disagrees",
         ));
     }
-    let faces = read_pointers(reader, face_count, false)?;
+    let faces = read_pointers(reader, face_count, ComponentType::Face, false)?;
     read_record_end(reader, archive, warnings)?;
     Ok(RawVertex {
         base,
@@ -430,7 +440,7 @@ fn read_edge(
             "SubD edge vertex count is not two",
         ));
     }
-    let endpoint_list = read_pointers(reader, 2, false)?;
+    let endpoint_list = read_pointers(reader, 2, ComponentType::Vertex, false)?;
     let vertices = [endpoint_list[0], endpoint_list[1]];
     let serialized_faces = usize::from(reader.u16()?);
     if serialized_faces != face_count {
@@ -439,7 +449,7 @@ fn read_edge(
             "SubD edge serialized face count disagrees",
         ));
     }
-    let faces = read_pointers(reader, face_count, false)?;
+    let faces = read_pointers(reader, face_count, ComponentType::Face, false)?;
     let mut sharpness = [start, start];
     if archive.value() < 70 {
         expect_zero(reader, "SubD edge end marker")?;
@@ -498,7 +508,7 @@ fn read_face(
             "SubD face serialized edge count disagrees",
         ));
     }
-    let edges = read_pointers(reader, edge_count, false)?;
+    let edges = read_pointers(reader, edge_count, ComponentType::Edge, false)?;
     if archive.value() < 70 {
         expect_zero(reader, "SubD face end marker")?;
     } else {
@@ -690,6 +700,7 @@ fn read_record_end(
 fn read_pointers(
     reader: &mut BoundedReader<'_>,
     count: usize,
+    expected: ComponentType,
     allow_null: bool,
 ) -> Result<Vec<ComponentPointer>, SubdError> {
     if count > MAX_INCIDENT_COMPONENTS || count > reader.remaining() / 5 {
@@ -699,26 +710,34 @@ fn read_pointers(
         ));
     }
     (0..count)
-        .map(|_| read_pointer(reader, allow_null))
+        .map(|_| read_pointer(reader, expected, allow_null))
         .collect()
 }
 
 fn read_pointer(
     reader: &mut BoundedReader<'_>,
+    expected: ComponentType,
     allow_null: bool,
 ) -> Result<ComponentPointer, SubdError> {
     let archive_id = reader.u32()?;
     let flags = reader.u8()?;
-    if flags & !0x1 != 0 {
+    if flags & !0x7 != 0 {
         return Err(malformed(
             reader.position() - 1,
             "SubD component pointer has unknown flag bits",
         ));
     }
-    if archive_id == 0 && (!allow_null || flags != 0) {
+    if archive_id == 0 {
+        if !allow_null || flags != 0 {
+            return Err(malformed(
+                reader.position() - 5,
+                "invalid null SubD component pointer",
+            ));
+        }
+    } else if flags & 0x6 != expected.bits() {
         return Err(malformed(
-            reader.position() - 5,
-            "invalid null SubD component pointer",
+            reader.position() - 1,
+            "SubD component pointer type disagrees with its field",
         ));
     }
     Ok(ComponentPointer {
@@ -1450,7 +1469,7 @@ pub(crate) mod tests {
             for value in 0..12 {
                 bytes.extend_from_slice(&(f64::from(value)).to_le_bytes());
             }
-            pointer(bytes, 9, 0);
+            pointer(bytes, 9, 0x6);
         } else {
             bytes.push(0);
         }
@@ -1460,10 +1479,10 @@ pub(crate) mod tests {
                 .to_le_bytes(),
         );
         for edge in serialized_edges {
-            pointer(bytes, *edge, 0);
+            pointer(bytes, *edge, 0x4);
         }
         bytes.extend_from_slice(&1_u16.to_le_bytes());
-        pointer(bytes, 9, 0);
+        pointer(bytes, 9, 0x6);
         record_end(bytes, fixture);
     }
 
@@ -1486,18 +1505,18 @@ pub(crate) mod tests {
         } else {
             endpoints[0]
         };
-        pointer(bytes, first, 0);
+        pointer(bytes, first, if first == 0 { 0 } else { 0x2 });
         pointer(
             bytes,
             endpoints[1],
             if fixture.bad_pointer_type && archive_id == 5 {
-                0x2
+                0x4
             } else {
-                0
+                0x2
             },
         );
         bytes.extend_from_slice(&1_u16.to_le_bytes());
-        pointer(bytes, 9, 0);
+        pointer(bytes, 9, 0x6);
         if fixture.archive.value() < 70 {
             bytes.push(0);
         } else {
@@ -1515,10 +1534,10 @@ pub(crate) mod tests {
         bytes.extend_from_slice(&0_u32.to_le_bytes());
         bytes.extend_from_slice(&4_u16.to_le_bytes());
         bytes.extend_from_slice(&4_u16.to_le_bytes());
-        pointer(bytes, 5, 0);
-        pointer(bytes, 6, u8::from(fixture.reversed_edge));
-        pointer(bytes, 7, 0);
-        pointer(bytes, if fixture.open_ring { 5 } else { 8 }, 0);
+        pointer(bytes, 5, 0x4);
+        pointer(bytes, 6, if fixture.reversed_edge { 0x5 } else { 0x4 });
+        pointer(bytes, 7, 0x4);
+        pointer(bytes, if fixture.open_ring { 5 } else { 8 }, 0x4);
         record_end(bytes, fixture);
     }
 

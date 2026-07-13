@@ -48,16 +48,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          # PR-level sign-off. A checked sign-off declaration or a literal
-          # Signed-off-by trailer satisfies DCO for the whole PR, letting a squash
-          # of unsigned WIP commits merge on one sign-off. The trailer lands
-          # verbatim in the squash commit; the checked declaration records the
-          # same certification in the PR that governs the squash. (Here-strings,
-          # not pipes — see the SIGPIPE note below.)
-          if grep -q '^- \[[xX]\] Signed off' <<<"$PR_BODY"; then
-            echo "::notice::PR description carries a checked sign-off declaration; DCO satisfied at the PR level."
-            exit 0
-          fi
+          # PR-level sign-off. This repo squash-merges with the PR description as
+          # the commit message, so a Signed-off-by trailer here lands verbatim on
+          # the single commit that reaches main and certifies exactly what merges.
+          # When present it satisfies DCO for the whole PR, letting a squash of
+          # unsigned WIP commits merge on one sign-off. (Here-string, not a pipe —
+          # see the SIGPIPE note below.)
           if grep -q '^Signed-off-by: .\+ <.\+@.\+>' <<<"$PR_BODY"; then
             echo "::notice::PR description carries a Signed-off-by trailer; DCO satisfied at the PR level."
             exit 0

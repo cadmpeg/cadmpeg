@@ -10,7 +10,7 @@ use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk,
 };
 use crate::curves::{
-    decode_embedded_curve_2d, error, exact_nurbs, unsupported, DecodedCurve, GeometryError,
+    decode_embedded_curve, error, exact_nurbs, unsupported, DecodedCurve, GeometryError,
     MAX_CURVE_ITEMS,
 };
 use crate::objects::parse_class_wrapper;
@@ -107,7 +107,7 @@ pub(crate) fn decode(
         ));
     }
 
-    let profile = decode_embedded_curve_2d(data, &mut reader, scale, archive, 1)?;
+    let profile = decode_embedded_curve(data, &mut reader, scale, archive, 1)?;
     let path_from = scaled_point(point(&mut reader)?, scale)
         .ok_or_else(|| error(reader.position(), "scaled extrusion path is invalid"))?;
     let path_to = scaled_point(point(&mut reader)?, scale)
@@ -805,7 +805,7 @@ pub(crate) mod tests {
         for value in 0..point_count {
             push_f64(&mut payload, f64::from(u32::try_from(value).unwrap()));
         }
-        push_i32(&mut payload, 2);
+        push_i32(&mut payload, 3);
         let wire_uuid = [
             0xe6, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
             0x22, 0xf0,

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-rhino"
-description = "Read and write Rhino 3DM files."
+description = "Read Rhino 3DM files."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -22,8 +22,9 @@ cadmpeg-ir.workspace = true
 flate2.workspace = true
 crc32fast.workspace = true
 sha2.workspace = true
+
+[dev-dependencies]
 serde_json.workspace = true
-serde.workspace = true
 
 [lints]
 workspace = true

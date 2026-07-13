@@ -587,31 +587,11 @@ pub(crate) fn crc16(seed: u16, bytes: &[u8]) -> u16 {
 
 /// Verifies a parsed chunk's checksum without changing its recoverable boundary.
 pub(crate) fn verify_checksum(bytes: &[u8], chunk: &Chunk) -> Result<ChecksumStatus, FramingError> {
-    verify_checksum_ranges(bytes, chunk, std::slice::from_ref(&chunk.body))
-}
-
-/// Verifies a chunk checksum over its direct byte ranges.
-///
-/// Container checksums exclude complete nested chunks. Callers pass the
-/// ordered ranges written directly at the container's nesting level.
-pub(crate) fn verify_checksum_ranges(
-    bytes: &[u8],
-    chunk: &Chunk,
-    ranges: &[std::ops::Range<usize>],
-) -> Result<ChecksumStatus, FramingError> {
     let Some(checksum) = chunk.checksum.as_ref() else {
         return Ok(ChecksumStatus::NotPresent);
     };
     let stored = &bytes[checksum.clone()];
-    if ranges
-        .iter()
-        .any(|range| range.start < chunk.body.start || range.end > chunk.body.end)
-    {
-        return Err(FramingError::Structural {
-            offset: chunk.body.start,
-            message: "checksum range escapes chunk body".to_string(),
-        });
-    }
+    let body = &bytes[chunk.body.clone()];
     match chunk.checksum_kind {
         ChecksumKind::Crc16 => {
             let actual = u32::from(u16::from_le_bytes(stored.try_into().map_err(|_| {
@@ -620,11 +600,7 @@ pub(crate) fn verify_checksum_ranges(
                     needed: 2,
                 }
             })?));
-            let expected = u32::from(
-                ranges
-                    .iter()
-                    .fold(1, |crc, range| crc16(crc, &bytes[range.clone()])),
-            );
+            let expected = u32::from(crc16(1, body));
             Ok(if expected == actual {
                 ChecksumStatus::Valid
             } else {
@@ -637,11 +613,7 @@ pub(crate) fn verify_checksum_ranges(
                     offset: checksum.start,
                     needed: 4,
                 })?);
-            let mut hasher = crc32fast::Hasher::new();
-            for range in ranges {
-                hasher.update(&bytes[range.clone()]);
-            }
-            let expected = hasher.finalize();
+            let expected = crc32fast::hash(body);
             Ok(if expected == actual {
                 ChecksumStatus::Valid
             } else {

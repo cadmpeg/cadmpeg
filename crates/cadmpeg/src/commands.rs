@@ -48,8 +48,6 @@ pub struct ConvertSettings {
     pub allow_invalid: bool,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
-    /// Explicit Rhino output archive version.
-    pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
@@ -145,7 +143,7 @@ pub fn decode(
     args: &DecodeArgs,
 ) -> Result<()> {
     let loaded = loader::load_ir(registry, path, args.options(), forced)?;
-    export_ir(registry, &loaded.ir, Format::Cadir, out, path, force, None)?;
+    export_ir(registry, &loaded.ir, Format::Cadir, out, path, force)?;
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
@@ -206,8 +204,6 @@ pub struct ExportSettings {
     pub report: Option<PathBuf>,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
-    /// Explicit Rhino output archive version.
-    pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
@@ -225,7 +221,6 @@ pub fn export(
         force,
         report: report_path,
         allow_empty,
-        rhino_version,
         forced_input,
     } = settings;
     let format = resolve_format(format, out)?;
@@ -255,15 +250,7 @@ pub fn export(
             format.name()
         )));
     }
-    let report = export_ir(
-        registry,
-        &loaded.ir,
-        format,
-        out,
-        path,
-        force,
-        rhino_version,
-    )?;
+    let report = export_ir(registry, &loaded.ir, format, out, path, force)?;
     write_command_report(
         path,
         report_path.as_deref(),
@@ -329,15 +316,7 @@ pub fn convert(
             format.name()
         )));
     }
-    let report = export_ir(
-        registry,
-        &loaded.ir,
-        format,
-        out,
-        path,
-        settings.force,
-        settings.rhino_version,
-    )?;
+    let report = export_ir(registry, &loaded.ir, format, out, path, settings.force)?;
     write_command_report(
         path,
         settings.report.as_deref(),
@@ -441,15 +420,12 @@ fn export_ir(
     out: Option<&Path>,
     input: &Path,
     force: bool,
-    rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
 ) -> Result<ExportReport> {
+    let encoder = registry
+        .encoder_by_id(format.name())
+        .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))?;
     let mut bytes = Vec::new();
-    if rhino_version.is_some() && format != Format::Rhino {
-        bail!("--rhino-version requires Rhino output");
-    }
-    let report = registry
-        .encode_by_id(format.name(), rhino_version, ir, &mut bytes)
-        .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))??;
+    let report = encoder.encode(ir, &mut bytes)?;
     if let Some(path) = out {
         write_output(input, path, &bytes, force)?;
         eprintln!(

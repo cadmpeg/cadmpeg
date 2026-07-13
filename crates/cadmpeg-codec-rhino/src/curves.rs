@@ -23,12 +23,6 @@ const POINT: Uuid = Uuid::from_canonical([
 const POINT_CLOUD: Uuid = Uuid::from_canonical([
     0x24, 0x88, 0xf3, 0x47, 0xf8, 0xfa, 0x11, 0xd3, 0xbf, 0xec, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
-const CURVE_PROXY: Uuid = Uuid::from_canonical([
-    0x4e, 0xd7, 0xd4, 0xd9, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
-]);
-const CURVE_ON_SURFACE: Uuid = Uuid::from_canonical([
-    0x4e, 0xd7, 0xd4, 0xd8, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
-]);
 const LINE: Uuid = Uuid::from_canonical([
     0x4e, 0xd7, 0xd4, 0xdb, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
@@ -41,21 +35,9 @@ const POLYLINE: Uuid = Uuid::from_canonical([
 const POLYCURVE: Uuid = Uuid::from_canonical([
     0x4e, 0xd7, 0xd4, 0xe0, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
-const POLYCURVE_LEGACY: Uuid = Uuid::from_canonical([
-    0xef, 0x63, 0x83, 0x17, 0x15, 0x4b, 0x11, 0xd4, 0x80, 0x00, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
-]);
 const NURBS_CURVE: Uuid = crate::surfaces::NURBS_CURVE;
-const NURBS_CURVE_TL: Uuid = Uuid::from_canonical([
-    0x5e, 0xaf, 0x11, 0x19, 0x0b, 0x51, 0x11, 0xd4, 0xbf, 0xfe, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
-]);
-const NURBS_CURVE_LEGACY: Uuid = Uuid::from_canonical([
-    0x76, 0xa7, 0x09, 0xd5, 0x15, 0x50, 0x11, 0xd4, 0x80, 0x00, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
-]);
 const NURBS_SURFACE: Uuid = crate::surfaces::NURBS_SURFACE;
-const NURBS_SURFACE_TL: Uuid = crate::surfaces::NURBS_SURFACE_TL;
-const NURBS_SURFACE_LEGACY: Uuid = crate::surfaces::NURBS_SURFACE_LEGACY;
 const PLANE_SURFACE: Uuid = crate::surfaces::PLANE_SURFACE;
-const CLIPPING_PLANE_SURFACE: Uuid = crate::surfaces::CLIPPING_PLANE_SURFACE;
 const REV_SURFACE: Uuid = crate::surfaces::REV_SURFACE;
 const REV_SURFACE_LEGACY: Uuid = crate::surfaces::REV_SURFACE_LEGACY;
 const SUM_SURFACE: Uuid = crate::surfaces::SUM_SURFACE;
@@ -145,78 +127,17 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
         uuid,
         POINT
             | POINT_CLOUD
-            | CURVE_ON_SURFACE
             | LINE
             | ARC
             | POLYLINE
             | POLYCURVE
-            | POLYCURVE_LEGACY
             | NURBS_CURVE
-            | NURBS_CURVE_TL
-            | NURBS_CURVE_LEGACY
             | NURBS_SURFACE
-            | NURBS_SURFACE_TL
-            | NURBS_SURFACE_LEGACY
             | PLANE_SURFACE
-            | CLIPPING_PLANE_SURFACE
             | REV_SURFACE
             | REV_SURFACE_LEGACY
             | SUM_SURFACE
     )
-}
-
-/// Returns whether class data contains independently checksummed child chunks.
-pub(crate) fn class_data_nests_chunks(uuid: Uuid) -> bool {
-    matches!(uuid, CURVE_ON_SURFACE | POLYCURVE | POLYCURVE_LEGACY)
-}
-
-/// Returns whether a class derives from the curve carrier family.
-pub(crate) fn curve_class(uuid: Uuid) -> bool {
-    matches!(
-        uuid,
-        CURVE_PROXY
-            | CURVE_ON_SURFACE
-            | LINE
-            | ARC
-            | POLYLINE
-            | POLYCURVE
-            | POLYCURVE_LEGACY
-            | NURBS_CURVE
-            | NURBS_CURVE_TL
-            | NURBS_CURVE_LEGACY
-    )
-}
-
-/// Returns whether a class derives from the surface carrier family.
-pub(crate) fn surface_class(uuid: Uuid) -> bool {
-    matches!(
-        uuid,
-        NURBS_SURFACE
-            | NURBS_SURFACE_TL
-            | NURBS_SURFACE_LEGACY
-            | PLANE_SURFACE
-            | CLIPPING_PLANE_SURFACE
-            | REV_SURFACE
-            | REV_SURFACE_LEGACY
-            | SUM_SURFACE
-    )
-}
-
-#[cfg(test)]
-mod alias_tests {
-    use super::*;
-
-    #[test]
-    fn registered_aliases_keep_their_base_and_dispatch_families() {
-        for class in [POLYCURVE_LEGACY, NURBS_CURVE_TL, NURBS_CURVE_LEGACY] {
-            assert!(supported_class(class));
-            assert!(curve_class(class));
-        }
-        for class in [NURBS_SURFACE_TL, NURBS_SURFACE_LEGACY] {
-            assert!(supported_class(class));
-            assert!(surface_class(class));
-        }
-    }
 }
 
 /// Decode one top-level class-data payload.
@@ -240,7 +161,7 @@ pub(crate) fn decode_2d(
     decode_inner_2d(data, class_uuid, range, archive, 0)
 }
 
-pub(crate) fn decode_inner(
+fn decode_inner(
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
@@ -251,27 +172,9 @@ pub(crate) fn decode_inner(
     if depth > MAX_CURVE_DEPTH {
         return Err(malformed(range.start, "curve recursion limit exceeded"));
     }
-    if class_uuid == CURVE_ON_SURFACE {
-        let construction = crate::curve_on_surface::decode(data, range, scale, archive, depth + 1)?;
-        let Some(mut curve) = construction.model_curve else {
-            return Err(unsupported(
-                construction.source_range.start,
-                "curve-on-surface has no stored model-space carrier",
-            ));
-        };
-        curve.warnings.splice(0..0, construction.warnings);
-        return Ok(DecodedGeometry::Curve { curve });
-    }
     if matches!(
         class_uuid,
-        NURBS_SURFACE
-            | NURBS_SURFACE_TL
-            | NURBS_SURFACE_LEGACY
-            | PLANE_SURFACE
-            | CLIPPING_PLANE_SURFACE
-            | REV_SURFACE
-            | REV_SURFACE_LEGACY
-            | SUM_SURFACE
+        NURBS_SURFACE | PLANE_SURFACE | REV_SURFACE | REV_SURFACE_LEGACY | SUM_SURFACE
     ) {
         return Ok(DecodedGeometry::Surface {
             surface: crate::surfaces::decode(data, class_uuid, range, scale, archive, depth)?,
@@ -311,11 +214,11 @@ pub(crate) fn decode_inner(
                 warnings: Vec::new(),
             },
         },
-        POLYCURVE | POLYCURVE_LEGACY => {
+        POLYCURVE => {
             let curve = read_polycurve(data, &mut reader, scale, archive, depth)?;
             DecodedGeometry::Curve { curve }
         }
-        NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
+        NURBS_CURVE => DecodedGeometry::Curve {
             curve: DecodedCurve {
                 geometry: CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve(
                     &mut reader,
@@ -362,13 +265,7 @@ pub(crate) fn decode_embedded_curve(
     reader.skip(wrapper.next_offset - start)?;
     if !matches!(
         class.class_uuid,
-        LINE | ARC
-            | POLYLINE
-            | POLYCURVE
-            | POLYCURVE_LEGACY
-            | NURBS_CURVE
-            | NURBS_CURVE_TL
-            | NURBS_CURVE_LEGACY
+        LINE | ARC | POLYLINE | POLYCURVE | NURBS_CURVE
     ) {
         return Err(malformed(
             start,
@@ -388,105 +285,6 @@ pub(crate) fn decode_embedded_curve(
     };
     curve.warnings.splice(0..0, wrapper_warnings);
     Ok(curve)
-}
-
-/// Reads one bounded polymorphic plane-space curve and applies length scaling.
-pub(crate) fn decode_embedded_curve_2d(
-    data: &[u8],
-    reader: &mut BoundedReader<'_>,
-    scale: f64,
-    archive: ArchiveVersion,
-    depth: usize,
-) -> Result<DecodedCurve, GeometryError> {
-    if depth > MAX_CURVE_DEPTH {
-        return Err(malformed(
-            reader.position(),
-            "plane-space curve recursion limit exceeded",
-        ));
-    }
-    let start = reader.position();
-    let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
-    let mut wrapper_warnings = Vec::new();
-    let class = parse_class_wrapper(
-        data,
-        start..wrapper.next_offset,
-        archive,
-        &mut wrapper_warnings,
-    )?;
-    reader.skip(wrapper.next_offset - start)?;
-    if !curve_class(class.class_uuid) || matches!(class.class_uuid, CURVE_PROXY | CURVE_ON_SURFACE)
-    {
-        return Err(malformed(
-            start,
-            "embedded plane-space object is not a supported curve",
-        ));
-    }
-    let decoded = decode_inner_2d(
-        data,
-        class.class_uuid,
-        class.class_data_range,
-        archive,
-        depth,
-    )?;
-    let DecodedGeometry::Curve { mut curve } = decoded else {
-        return Err(malformed(
-            start,
-            "embedded plane-space object is not a curve",
-        ));
-    };
-    scale_decoded_curve(&mut curve, scale, start)?;
-    curve.warnings.splice(0..0, wrapper_warnings);
-    Ok(curve)
-}
-
-fn scale_decoded_curve(
-    curve: &mut DecodedCurve,
-    scale: f64,
-    offset: usize,
-) -> Result<(), GeometryError> {
-    if let Some(compound) = &mut curve.compound {
-        for child in &mut compound.children {
-            scale_decoded_curve(child, scale, offset)?;
-        }
-        return Ok(());
-    }
-    match &mut curve.geometry {
-        CurveGeometry::Nurbs(nurbs) => {
-            for point in &mut nurbs.control_points {
-                *point = scale_ir_point(*point, scale)
-                    .ok_or_else(|| malformed(offset, "scaled plane-space curve is invalid"))?;
-            }
-        }
-        CurveGeometry::Circle { center, radius, .. } => {
-            *center = scale_ir_point(*center, scale)
-                .ok_or_else(|| malformed(offset, "scaled plane-space circle is invalid"))?;
-            *radius *= scale;
-            if !radius.is_finite() || *radius <= 0.0 {
-                return Err(malformed(
-                    offset,
-                    "scaled plane-space circle radius is invalid",
-                ));
-            }
-        }
-        CurveGeometry::Line { origin, .. } => {
-            *origin = scale_ir_point(*origin, scale)
-                .ok_or_else(|| malformed(offset, "scaled plane-space line is invalid"))?;
-        }
-        CurveGeometry::Degenerate { point } => {
-            *point = scale_ir_point(*point, scale)
-                .ok_or_else(|| malformed(offset, "scaled plane-space point is invalid"))?;
-        }
-        CurveGeometry::Unknown { .. } => {
-            return Err(malformed(offset, "plane-space curve has unknown geometry"));
-        }
-        _ => return Err(malformed(offset, "unsupported plane-space analytic curve")),
-    }
-    Ok(())
-}
-
-fn scale_ir_point(value: Point3, scale: f64) -> Option<Point3> {
-    let point = Point3::new(value.x * scale, value.y * scale, value.z * scale);
-    (point.x.is_finite() && point.y.is_finite() && point.z.is_finite()).then_some(point)
 }
 
 /// Converts a decoded curve tree to one exact NURBS curve when possible.
@@ -653,7 +451,7 @@ fn merge_nurbs_segments(
     })
 }
 
-pub(crate) fn decode_inner_2d(
+fn decode_inner_2d(
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
@@ -665,7 +463,7 @@ pub(crate) fn decode_inner_2d(
     }
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let result = match class_uuid {
-        NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
+        NURBS_CURVE => DecodedGeometry::Curve {
             curve: DecodedCurve {
                 geometry: CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve_2d(&mut reader)?),
                 compound: None,
@@ -696,7 +494,7 @@ pub(crate) fn decode_inner_2d(
                 },
             }
         }
-        POLYCURVE | POLYCURVE_LEGACY => {
+        POLYCURVE => {
             let curve = read_polycurve_2d(data, &mut reader, archive, depth)?;
             DecodedGeometry::Curve { curve }
         }
@@ -1333,20 +1131,6 @@ pub(crate) fn unsupported(offset: usize, message: &str) -> GeometryError {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn curve_on_surface_obeys_the_shared_curve_recursion_limit() {
-        let error = decode_inner(
-            &[],
-            CURVE_ON_SURFACE,
-            0..0,
-            1.0,
-            ArchiveVersion::V8,
-            MAX_CURVE_DEPTH + 1,
-        )
-        .expect_err("excessive cross-family recursion must stop before payload parsing");
-        assert!(error.to_string().contains("curve recursion limit exceeded"));
-    }
     use std::f64::consts::{PI, TAU};
 
     fn unit_circle() -> Circle {

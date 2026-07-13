@@ -414,9 +414,19 @@ fn distance(a: Point3, b: Point3) -> f64 {
 fn select_face_pcurve(
     candidates: Vec<nurbs::NurbsPcurve>,
     surface: Option<&SurfaceGeometry>,
+    exact_procedural_parameterization: bool,
     edge: Option<&Record>,
     by_index: &HashMap<i64, &Record>,
 ) -> Option<nurbs::NurbsPcurve> {
+    // Procedural surfaces retain an evaluated NURBS cache, but their pcurves
+    // are expressed on the exact construction's parameterization. Evaluating
+    // those UVs on the cache can drift between knots and is not a valid
+    // candidate test. Candidate discovery orders unambiguous BS2 carriers
+    // before ambiguous 3D interpretations, so the first candidate is the
+    // authoritative exact-space carrier in this case.
+    if exact_procedural_parameterization {
+        return candidates.into_iter().next();
+    }
     let Some(SurfaceGeometry::Nurbs(surface)) = surface else {
         return candidates.into_iter().next();
     };
@@ -782,6 +792,9 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 face.ref_at(7)
                                     .and_then(|surface| surface_geo.get(&surface))
                                     .map(|(geometry, _)| geometry),
+                                face.ref_at(7).is_some_and(|surface| {
+                                    procedural_surface_defs.contains_key(&surface)
+                                }),
                                 ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied(),
                                 &by_index,
                             );
@@ -4972,5 +4985,120 @@ mod topology_tests {
             subshell_ancestor_shells(&records, &by_index).get(&3),
             Some(&1)
         );
+    }
+
+    #[test]
+    fn exact_procedural_pcurve_bypasses_nurbs_cache_parameterization() {
+        let records = [
+            Record {
+                index: 1,
+                name: "point".into(),
+                head: "point".into(),
+                tokens: vec![Token::Position([0.0, 0.0, 0.0])],
+                offset: 0,
+                len: 0,
+            },
+            Record {
+                index: 2,
+                name: "point".into(),
+                head: "point".into(),
+                tokens: vec![Token::Position([1.0, 0.0, 0.0])],
+                offset: 0,
+                len: 0,
+            },
+            Record {
+                index: 3,
+                name: "vertex".into(),
+                head: "vertex".into(),
+                tokens: vec![
+                    Token::Ref(-1),
+                    Token::Long(-1),
+                    Token::Ref(-1),
+                    Token::Ref(-1),
+                    Token::Long(0),
+                    Token::Ref(1),
+                ],
+                offset: 0,
+                len: 0,
+            },
+            Record {
+                index: 4,
+                name: "vertex".into(),
+                head: "vertex".into(),
+                tokens: vec![
+                    Token::Ref(-1),
+                    Token::Long(-1),
+                    Token::Ref(-1),
+                    Token::Ref(-1),
+                    Token::Long(1),
+                    Token::Ref(2),
+                ],
+                offset: 0,
+                len: 0,
+            },
+            Record {
+                index: 5,
+                name: "edge".into(),
+                head: "edge".into(),
+                tokens: vec![
+                    Token::Ref(-1),
+                    Token::Long(-1),
+                    Token::Ref(-1),
+                    Token::Ref(3),
+                    Token::Double(0.0),
+                    Token::Ref(4),
+                ],
+                offset: 0,
+                len: 0,
+            },
+        ];
+        let by_index = records
+            .iter()
+            .map(|record| (record.index as i64, record))
+            .collect::<HashMap<_, _>>();
+        let cache = SurfaceGeometry::Nurbs(cadmpeg_ir::geometry::NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+        let candidate = || nurbs::NurbsPcurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![
+                cadmpeg_ir::math::Point2::new(10.0, 10.0),
+                cadmpeg_ir::math::Point2::new(11.0, 10.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+
+        assert!(select_face_pcurve(
+            vec![candidate()],
+            Some(&cache),
+            false,
+            Some(&records[4]),
+            &by_index,
+        )
+        .is_none());
+        assert!(select_face_pcurve(
+            vec![candidate()],
+            Some(&cache),
+            true,
+            Some(&records[4]),
+            &by_index,
+        )
+        .is_some());
     }
 }
