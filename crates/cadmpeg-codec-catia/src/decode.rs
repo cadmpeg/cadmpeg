@@ -132,19 +132,39 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
     if topology_transferred {
         link_payload_carriers(&mut ir, &mut annotations).ok()?;
         ir.annotations = annotations.build();
+        let unresolved_pcurves = topology
+            .as_ref()
+            .map(|topology| {
+                topology
+                    .supports
+                    .iter()
+                    .filter(|support| {
+                        matches!(
+                            topology.records[support.record_ordinal].tag,
+                            [0x21, 0x45 | 0x72 | 0x9f]
+                        ) && support.pcurve.is_none()
+                    })
+                    .count()
+            })
+            .unwrap_or_default();
+        let losses = (unresolved_pcurves != 0)
+            .then(|| LossNote {
+                category: LossCategory::Topology,
+                severity: Severity::Blocking,
+                message: format!(
+                    "The zero-entity B-rep graph and face orientation are reconstructed; {unresolved_pcurves} referenced-pole pcurve occurrences remain unresolved."
+                ),
+                provenance: None,
+            })
+            .into_iter()
+            .collect();
         return Some((
             ir,
             DecodeReport {
                 format: "catia".to_string(),
                 container_only: false,
                 geometry_transferred: true,
-                losses: vec![LossNote {
-                    category: LossCategory::Topology,
-                    severity: Severity::Blocking,
-                    message: "The zero-entity B-rep graph and face orientation are reconstructed; pcurve geometry for odd support families remains unresolved."
-                        .to_string(),
-                    provenance: None,
-                }],
+                losses,
                 notes: container::summarize(scan).notes,
             },
         ));
@@ -358,6 +378,47 @@ fn transfer_zero_entity_topology(
             source_object: None,
         });
     }
+    for (support_index, support) in topology.supports.iter().enumerate() {
+        let Some(geometry) = support.pcurve.clone() else {
+            continue;
+        };
+        let parameter_range = match &geometry {
+            PcurveGeometry::Nurbs { degree, knots, .. } => {
+                let degree = usize::try_from(*degree).ok();
+                degree.and_then(|degree| {
+                    Some([
+                        *knots.get(degree)?,
+                        *knots.get(knots.len().checked_sub(degree + 1)?)?,
+                    ])
+                })
+            }
+            PcurveGeometry::Line { .. } => None,
+        };
+        let Some(parameter_range) = parameter_range else {
+            return false;
+        };
+        let id = PcurveId(format!("catia:zero-entity:pcurve#{support_index}"));
+        let record = &topology.records[support.record_ordinal];
+        annotate(
+            annotations,
+            &id,
+            "zero_entity_a9_03",
+            record.offset as u64,
+            "inline_support_pcurve",
+            Exactness::Derived,
+        );
+        annotations
+            .derived(&id, "geometry")
+            .derived(&id, "parameter_range");
+        ir.model.pcurves.push(Pcurve {
+            id,
+            geometry,
+            wrapper_reversed: None,
+            parameter_range: Some(parameter_range),
+            fit_tolerance: None,
+            native_tail_flags: None,
+        });
+    }
 
     for component in 0..component_count {
         let body_id = BodyId(format!("catia:zero-entity:body#{component}"));
@@ -533,6 +594,16 @@ fn transfer_zero_entity_topology(
             ] {
                 annotations.derived(&coedges[member], field);
             }
+            let pcurve =
+                topology.loops[loop_index].support_indices[member].and_then(|support_index| {
+                    topology.supports[support_index]
+                        .pcurve
+                        .as_ref()
+                        .map(|_| PcurveId(format!("catia:zero-entity:pcurve#{support_index}")))
+                });
+            if pcurve.is_some() {
+                annotations.derived(&coedges[member], "pcurve");
+            }
             ir.model.coedges.push(Coedge {
                 id: coedges[member].clone(),
                 owner_loop: id.clone(),
@@ -548,7 +619,7 @@ fn transfer_zero_entity_topology(
                 } else {
                     Sense::Forward
                 },
-                pcurve: None,
+                pcurve,
             });
         }
     }

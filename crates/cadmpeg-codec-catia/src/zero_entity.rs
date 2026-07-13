@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted topology records in the zero-entity `a9 03` stream family.
 
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::le::u32_at;
+use cadmpeg_ir::math::Point2;
 use std::collections::{BTreeMap, HashMap};
 
 /// Resolved zero-entity `a9 03` stream: records, faces, loops, carrier runs,
@@ -117,6 +118,9 @@ pub struct ZeroSupport {
     /// at the family-specific offsets in [`support_uv_endpoints`], or
     /// `None` for an unrecognized support-record tag.
     pub uv_endpoints: Option<[[f64; 2]; 2]>,
+    /// Complete inline pcurve geometry in the neutral parameterization of
+    /// the owning carrier, when the support family stores its poles inline.
+    pub pcurve: Option<PcurveGeometry>,
     /// `uv_endpoints` lifted to world-frame 3D points through the owning
     /// carrier's analytic parameterization, or `None` when `uv_endpoints`
     /// is `None` or the carrier's tag is not one of the four supported
@@ -617,6 +621,9 @@ fn parse_carrier_runs(
             let record = &records[position];
             let slot = token_u32(&record.bytes, 12)?;
             let uv_endpoints = support_uv_endpoints(record);
+            let pcurve = geometry
+                .as_ref()
+                .and_then(|geometry| support_pcurve(record, geometry));
             let lifted_endpoints = uv_endpoints
                 .and_then(|uv| geometry.as_ref().and_then(|value| lift_geometry(value, uv)));
             supports.push(ZeroSupport {
@@ -624,6 +631,7 @@ fn parse_carrier_runs(
                 owner_carrier_ordinal: records[carrier].ordinal,
                 slot,
                 uv_endpoints,
+                pcurve,
                 lifted_endpoints,
             });
             support_ordinals.push(record.ordinal);
@@ -682,6 +690,115 @@ fn support_uv_endpoints(record: &ZeroEntityRecord) -> Option<[[f64; 2]; 2]> {
         .iter()
         .all(|value| value.is_finite())
         .then_some([[values[0], values[1]], [values[2], values[3]]])
+}
+
+fn support_pcurve(record: &ZeroEntityRecord, carrier: &SurfaceGeometry) -> Option<PcurveGeometry> {
+    let (knot_offsets, multiplicity_offsets, pole_offset, rational) = match record.tag {
+        [0x21, 0x71] => (&[67, 75][..], &[83, 88][..], 93, false),
+        [0x21, 0x91] => (&[67, 75][..], &[83, 88][..], 93, false),
+        [0x21, 0x99] => (&[67, 75][..], &[83, 88][..], 93, true),
+        [0x21, 0xd6] => (&[67, 75, 83][..], &[91, 96, 101][..], 106, true),
+        [0x21, 0xe8] => (
+            &[67, 75, 83, 91, 99][..],
+            &[107, 112, 117, 122, 127][..],
+            132,
+            false,
+        ),
+        _ => return None,
+    };
+    let distinct_knots: Vec<f64> = knot_offsets
+        .iter()
+        .map(|offset| f64_at(&record.bytes, *offset))
+        .collect::<Option<_>>()?;
+    if distinct_knots.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return None;
+    }
+    let multiplicities: Vec<u32> = multiplicity_offsets
+        .iter()
+        .map(|offset| token_u32(&record.bytes, *offset))
+        .collect::<Option<_>>()?;
+    let degree = multiplicities.first()?.checked_sub(1)?;
+    let knot_count = multiplicities.iter().try_fold(0usize, |sum, value| {
+        sum.checked_add(usize::try_from(*value).ok()?)
+    })?;
+    let control_count = knot_count.checked_sub(usize::try_from(degree).ok()? + 1)?;
+    if control_count < usize::try_from(degree).ok()? + 1 {
+        return None;
+    }
+    let mut control_points = Vec::with_capacity(control_count);
+    for index in 0..control_count {
+        let offset = pole_offset + 16 * index;
+        let native = [
+            f64_at(&record.bytes, offset)?,
+            f64_at(&record.bytes, offset + 8)?,
+        ];
+        let [u, v] = neutral_uv(native, carrier)?;
+        control_points.push(Point2::new(u, v));
+    }
+    let endpoints = support_uv_endpoints(record)?
+        .map(|point| neutral_uv(point, carrier))
+        .into_iter()
+        .collect::<Option<Vec<_>>>()?;
+    let first = control_points.first()?;
+    let last = control_points.last()?;
+    if (first.u - endpoints[0][0])
+        .abs()
+        .max((first.v - endpoints[0][1]).abs())
+        > 1e-9
+        || (last.u - endpoints[1][0])
+            .abs()
+            .max((last.v - endpoints[1][1]).abs())
+            > 1e-9
+    {
+        return None;
+    }
+    let weights = if rational {
+        Some(
+            (0..control_count)
+                .map(|index| f64_at(&record.bytes, pole_offset + 16 * control_count + 8 * index))
+                .collect::<Option<Vec<_>>>()?,
+        )
+    } else {
+        None
+    };
+    if weights.as_ref().is_some_and(|values| {
+        values
+            .iter()
+            .any(|value| !value.is_finite() || *value <= 0.0)
+    }) {
+        return None;
+    }
+    let knots = distinct_knots
+        .into_iter()
+        .zip(multiplicities)
+        .flat_map(|(knot, count)| std::iter::repeat_n(knot, count as usize))
+        .collect();
+    Some(PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic: false,
+    })
+}
+
+fn neutral_uv(native: [f64; 2], carrier: &SurfaceGeometry) -> Option<[f64; 2]> {
+    Some(match carrier {
+        SurfaceGeometry::Cylinder { radius, .. } => [native[0] / radius, native[1]],
+        SurfaceGeometry::Cone { half_angle, .. } => [native[0], native[1] * half_angle.cos()],
+        SurfaceGeometry::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        } => [native[0] / major_radius, native[1] / minor_radius],
+        SurfaceGeometry::Plane { .. } | SurfaceGeometry::Nurbs(_) => native,
+        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Unknown { .. } => return None,
+    })
+}
+
+fn f64_at(bytes: &[u8], offset: usize) -> Option<f64> {
+    let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+    value.is_finite().then_some(value)
 }
 
 fn token_u32(bytes: &[u8], offset: usize) -> Option<u32> {
@@ -826,6 +943,7 @@ mod occurrence_tests {
             owner_carrier_ordinal: 0,
             slot: index as u32,
             uv_endpoints: None,
+            pcurve: None,
             lifted_endpoints: endpoints,
         }
     }
@@ -852,6 +970,52 @@ mod occurrence_tests {
             loop_indices: vec![loop_index],
             carrier_run: None,
         }
+    }
+
+    #[test]
+    fn rational_inline_support_expands_knots_poles_and_weights() {
+        let mut bytes = vec![0; 165];
+        bytes[..4].copy_from_slice(&[0xa9, 0x03, 0x21, 0x99]);
+        for (offset, value) in [(67, 0.0f64), (75, 1.0)] {
+            bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        for offset in [83, 88] {
+            bytes[offset] = 0x10;
+            bytes[offset + 1..offset + 5].copy_from_slice(&3u32.to_le_bytes());
+        }
+        for (index, value) in [0.0f64, 0.0, 0.5, 1.0, 1.0, 0.0, 1.0, 0.5, 1.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = 93 + 8 * index;
+            bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        let record = ZeroEntityRecord {
+            ordinal: 0,
+            offset: 0,
+            tag: [0x21, 0x99],
+            bytes,
+        };
+        let carrier = SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        };
+        let Some(PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        }) = support_pcurve(&record, &carrier)
+        else {
+            panic!("expected rational support pcurve");
+        };
+        assert_eq!(degree, 2);
+        assert_eq!(knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        assert_eq!(control_points.len(), 3);
+        assert_eq!(weights, Some(vec![1.0, 0.5, 1.0]));
+        assert!(!periodic);
     }
 
     #[test]

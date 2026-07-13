@@ -401,6 +401,18 @@ Record families: `5f 0c` face (24 B), `5e 1a` edge-stride (38 B), `62 xx` edge-l
 
 The `5e1a` edge-stride, `0638` coedge-twin, `2569` side-pair header, and `2171` support head have the layouts described above. The `2171` f64 tail stores `(u0,v0,u1,v1)` at `+93`, `+101`, `+109`, and `+117`.
 
+Inline support pcurves share a clamped NURBS grammar. Distinct f64 knots are followed by equally many tagged `u32` multiplicities; `degree = first_multiplicity - 1`, `control_count = sum(multiplicities) - degree - 1`, and the full knot vector repeats each distinct knot by its multiplicity. Pole pairs follow the final multiplicity token. The families are:
+
+| Tag | Distinct knots | Multiplicities | Pole start | Degree/control count | Weights |
+| --- | --- | --- | --- | --- | --- |
+| `2171` | `+67,+75` | `+83,+88` | `+93` | 1 / 2 | none |
+| `2191` | `+67,+75` | `+83,+88` | `+93` | 3 / 4 | none |
+| `2199` | `+67,+75` | `+83,+88` | `+93` | 2 / 3 | three f64 values after the poles |
+| `21d6` | `+67,+75,+83` | `+91,+96,+101` | `+106` | 2 / 5 | five f64 values after the poles |
+| `21e8` | `+67,+75,+83,+91,+99` | `+107,+112,+117,+122,+127` | `+132` | 3 / 7 | none |
+
+The pole coordinates use the carrier's native parameter units. Neutral IR conversion is `(u/r,v)` for cylinders, `(u,v cos α)` for cones, `(u/R,v/r)` for tori, and identity for planes and NURBS surfaces. The first and last neutral poles equal the support endpoint pair. `2118` is degenerate and has no pcurve payload. `2145`, `2172`, and `219f` carry referenced rather than inline poles.
+
 ---
 
 ## 9. E5 `0D 03` stream variant
