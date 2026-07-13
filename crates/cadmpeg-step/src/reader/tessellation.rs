@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::ids::{BodyId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::Tessellation;
 
@@ -33,6 +34,46 @@ pub(super) fn decode(
         .collect::<BTreeMap<_, _>>();
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
+    let mut item_bodies = BTreeMap::new();
+    for (&id, record) in &exchange.records {
+        let body = match record.simple_name() {
+            Some("TESSELLATED_SOLID") => record
+                .parameter(2)
+                .and_then(ValueExt::reference)
+                .map(|solid| BodyId(format!("step:data:body#{solid}")))
+                .filter(|body| {
+                    ir.model
+                        .bodies
+                        .iter()
+                        .any(|candidate| candidate.id == *body)
+                }),
+            Some("TESSELLATED_SHELL") => record
+                .parameter(2)
+                .and_then(ValueExt::reference)
+                .and_then(|shell| body_for_shell(shell, ir)),
+            _ => continue,
+        };
+        let Some(body) = body else {
+            if !matches!(record.parameter(2), None | Some(Value::Omitted)) {
+                warnings.push(format!(
+                    "{} #{id} has no decoded exact body link",
+                    record.simple_name().expect("matched tessellated body")
+                ));
+            }
+            continue;
+        };
+        let Some(items) = record.parameter(1).and_then(ValueExt::list) else {
+            warnings.push(format!(
+                "{} #{id} has no structured items",
+                record.simple_name().expect("matched tessellated body")
+            ));
+            continue;
+        };
+        for item in items.iter().filter_map(ValueExt::reference) {
+            item_bodies.insert(item, body.clone());
+        }
+        typed.insert(id);
+    }
     for (&id, record) in &exchange.records {
         if !matches!(
             record.simple_name(),
@@ -120,7 +161,7 @@ pub(super) fn decode(
         };
         ir.model.tessellations.push(Tessellation {
             id: format!("step:tessellation:mesh#{id}"),
-            body: None,
+            body: item_bodies.get(&id).cloned(),
             source_object: None,
             vertices: vertices.clone(),
             triangles: triangles
@@ -149,6 +190,19 @@ pub(super) fn decode(
         typed_records: typed,
         warnings,
     }
+}
+
+fn body_for_shell(shell_step: u64, ir: &CadIr) -> Option<BodyId> {
+    let shell = ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id == ShellId(format!("step:data:shell#{shell_step}")))?;
+    ir.model
+        .regions
+        .iter()
+        .find(|region| region.id == shell.region)
+        .map(|region| region.body.clone())
 }
 
 fn index_list(value: Option<&Value>) -> Option<Vec<u32>> {

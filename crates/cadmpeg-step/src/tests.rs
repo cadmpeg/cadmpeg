@@ -508,11 +508,16 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
         .expect("decode AP242 tessellation");
 
     assert_eq!(result.ir.model.tessellations.len(), 2);
+    assert_eq!(result.ir.model.bodies.len(), 1);
     let mesh = &result.ir.model.tessellations[0];
     assert_eq!(mesh.vertices.len(), 3);
     assert_eq!(mesh.vertices[1].x, 10.0);
     assert_eq!(mesh.triangles, [[0, 1, 2]]);
     assert_eq!(mesh.normals.len(), 3);
+    assert_eq!(
+        mesh.body.as_ref().map(|body| body.as_str()),
+        Some("step:data:body#38")
+    );
     let complex = result
         .ir
         .model
