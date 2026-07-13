@@ -3668,6 +3668,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             .find(|metadata| metadata.edge == tangent_edge)
             .expect("generated edge continuity");
         metadata.continuity = "tangent".into();
+        metadata.sense = cadmpeg_ir::topology::Sense::Reversed;
     }
     let mut encoded = Vec::new();
     F3dCodec
@@ -3699,6 +3700,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     let continuities = f3d_native(&round_trip.ir).edge_continuities;
     assert_eq!(continuities.len(), 3);
     assert_eq!(continuities[0].continuity, "tangent");
+    assert_eq!(continuities[0].sense, cadmpeg_ir::topology::Sense::Reversed);
     assert!(continuities[1..]
         .iter()
         .all(|metadata| metadata.continuity == "unknown"));
@@ -6721,13 +6723,17 @@ fn generated_f3d_rewrites_edge_parameter_range() {
 }
 
 #[test]
-fn generated_f3d_rewrites_edge_continuity() {
+fn generated_f3d_rewrites_edge_native_metadata() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let mut edited = decoded.ir;
-    f3d_native_mut(&mut edited).edge_continuities[0].continuity = "tangent".into();
+    {
+        let mut native = f3d_native_mut(&mut edited);
+        native.edge_continuities[0].continuity = "tangent".into();
+        native.edge_continuities[0].sense = cadmpeg_ir::topology::Sense::Reversed;
+    }
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -6739,6 +6745,10 @@ fn generated_f3d_rewrites_edge_continuity() {
     assert_eq!(
         f3d_native(&round_trip.ir).edge_continuities[0].continuity,
         "tangent"
+    );
+    assert_eq!(
+        f3d_native(&round_trip.ir).edge_continuities[0].sense,
+        cadmpeg_ir::topology::Sense::Reversed
     );
 }
 
@@ -7954,6 +7964,9 @@ fn decode_builds_valid_topology_and_geometry() {
     assert!(continuities
         .iter()
         .all(|metadata| metadata.continuity == "unknown"));
+    assert!(continuities
+        .iter()
+        .all(|metadata| metadata.sense == cadmpeg_ir::topology::Sense::Forward));
     assert_f3d_native_parity(&result.ir);
     assert!(result
         .ir

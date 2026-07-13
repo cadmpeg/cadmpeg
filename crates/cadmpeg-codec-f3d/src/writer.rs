@@ -1297,8 +1297,9 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         native_f64(&mut records, range[1]);
         native_ref(&mut records, -1);
         native_ref(&mut records, curve_ref);
-        records.push(0x0b);
-        native_string(&mut records, &edge_continuity(target, edge)?)?;
+        let (sense, continuity) = edge_record_metadata(target, edge)?;
+        records.push(native_bool(sense == Sense::Reversed));
+        native_string(&mut records, &continuity)?;
         records.push(0x11);
     }
 
@@ -3383,8 +3384,9 @@ fn encode_source_less_edges_vertices_points(
                 .unwrap_or(-1),
         );
         native_ref(records, curve_ref);
-        records.push(0x0b);
-        native_string(records, &edge_continuity(target, edge)?)?;
+        let (sense, continuity) = edge_record_metadata(target, edge)?;
+        records.push(native_bool(sense == Sense::Reversed));
+        native_string(records, &continuity)?;
         records.push(0x11);
     }
     for vertex in &model.vertices {
@@ -3432,25 +3434,27 @@ fn encode_source_less_edges_vertices_points(
     Ok(())
 }
 
-fn edge_continuity(
+fn edge_record_metadata(
     target: &CadIr,
     edge: &cadmpeg_ir::topology::Edge,
-) -> Result<String, CodecError> {
-    let continuity = f3d_native(target)?
-        .and_then(|native| {
-            native
-                .edge_continuities
-                .into_iter()
-                .find(|metadata| metadata.edge == edge.id)
-        })
-        .map_or_else(|| "unknown".to_owned(), |metadata| metadata.continuity);
+) -> Result<(Sense, String), CodecError> {
+    let metadata = f3d_native(target)?.and_then(|native| {
+        native
+            .edge_continuities
+            .into_iter()
+            .find(|metadata| metadata.edge == edge.id)
+    });
+    let sense = metadata
+        .as_ref()
+        .map_or(Sense::Forward, |metadata| metadata.sense);
+    let continuity = metadata.map_or_else(|| "unknown".to_owned(), |metadata| metadata.continuity);
     if continuity != "tangent" && continuity != "unknown" {
         return Err(CodecError::Malformed(format!(
             "F3D edge {} has unsupported continuity token {continuity}",
             edge.id
         )));
     }
-    Ok(continuity)
+    Ok((sense, continuity))
 }
 
 fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
@@ -8330,7 +8334,7 @@ fn validate_creation_timestamp_edits(
 fn validate_edge_continuity_edits(
     baseline: &CadIr,
     target: &CadIr,
-) -> Result<BTreeMap<usize, String>, CodecError> {
+) -> Result<BTreeMap<usize, (Sense, String)>, CodecError> {
     let baseline = f3d_native(baseline)?
         .map(|native| native.edge_continuities)
         .unwrap_or_default();
@@ -8354,13 +8358,14 @@ fn validate_edge_continuity_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
+        normalized.sense = before.sense;
         normalized.continuity.clone_from(&before.continuity);
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D edge-continuity edit changes structural fields: {id}"
             )));
         }
-        if after.continuity == before.continuity {
+        if after.continuity == before.continuity && after.sense == before.sense {
             continue;
         }
         if !matches!(after.continuity.as_str(), "tangent" | "unknown") {
@@ -8369,7 +8374,10 @@ fn validate_edge_continuity_edits(
                 after.continuity
             )));
         }
-        edits.insert(after.record_index as usize, after.continuity.clone());
+        edits.insert(
+            after.record_index as usize,
+            (after.sense, after.continuity.clone()),
+        );
     }
     Ok(edits)
 }
@@ -11749,7 +11757,7 @@ fn patch_geometry(
     procedural_curve_edits: &BTreeMap<String, ProceduralCurveEdit>,
     procedural_surface_fits: &BTreeMap<String, f64>,
     creation_timestamps: &BTreeMap<usize, f64>,
-    edge_continuities: &BTreeMap<usize, String>,
+    edge_continuities: &BTreeMap<usize, (Sense, String)>,
 ) -> Result<(), CodecError> {
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
@@ -11811,7 +11819,7 @@ fn patch_framed_geometry(
     procedural_curve_edits: &BTreeMap<String, ProceduralCurveEdit>,
     procedural_surface_fits: &BTreeMap<String, f64>,
     creation_timestamps: &BTreeMap<usize, f64>,
-    edge_continuities: &BTreeMap<usize, String>,
+    edge_continuities: &BTreeMap<usize, (Sense, String)>,
     header_scale: f64,
 ) -> Result<(), CodecError> {
     let records_by_index = records
@@ -11887,13 +11895,14 @@ fn patch_framed_geometry(
             patch_double_token(bytes, record, 0, *timestamp)?;
             continue;
         }
-        if let Some(continuity) = edge_continuities.get(&record.index) {
+        if let Some((sense, continuity)) = edge_continuities.get(&record.index) {
             if record.head != "edge" {
                 return Err(CodecError::Malformed(format!(
                     "F3D edge-continuity record {} is not an edge",
                     record.index
                 )));
             }
+            patch_sense_token(bytes, record, 0, *sense)?;
             patch_string_token(bytes, record, 0, continuity)?;
         }
         if let Some(color) = color_records.get(&record.index) {

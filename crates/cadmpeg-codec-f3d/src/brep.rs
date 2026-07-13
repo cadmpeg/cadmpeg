@@ -3752,6 +3752,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     id: format!("f3d:asm:edge-continuity#{i}"),
                     edge: EdgeId(id(i)),
                     record_index: r.index as u32,
+                    sense: sense_at(r, 9),
                     continuity: continuity.clone(),
                 });
             }

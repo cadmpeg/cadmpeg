@@ -71,6 +71,8 @@ pub struct EdgeContinuity {
     pub edge: EdgeId,
     /// Source SAB record index.
     pub record_index: u32,
+    /// Native curve-parameterization sense before IR carrier normalization.
+    pub sense: cadmpeg_ir::topology::Sense,
     /// Native continuity token, normally `tangent` or `unknown`.
     pub continuity: String,
 }
