@@ -18,7 +18,8 @@ use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveParameterRecord, CurvePrototype, CurvePrototypeTopology,
-    CurveTopologyRow, Fc05Circle, FcCurveControlPoints, PcurveEndpoints, PrototypePcurveEndpoints,
+    CurveTopologyRow, Fc05Circle, Fc05CylinderCapPair, FcCurveControlPoints, PcurveEndpoints,
+    PrototypePcurveEndpoints,
 };
 use crate::datum::{self, DatumPlane};
 use crate::feature::{
@@ -165,6 +166,9 @@ pub struct ContainerScan {
     pub fc_curve_control_points: Vec<FcCurveControlPoints>,
     /// FC05 records whose decoded points prove an exact circle.
     pub fc05_circles: Vec<Fc05Circle>,
+    /// Cylinder cap groups joined through typed curve-face topology. Their
+    /// model-space feature frame remains required before IR transfer.
+    pub fc05_cylinder_cap_pairs: Vec<Fc05CylinderCapPair>,
     /// Complete pcurve UV endpoints from labeled curve prototypes.
     pub prototype_pcurves: Vec<PrototypePcurveEndpoints>,
     /// Labeled face and next-edge references from curve prototypes.
@@ -928,6 +932,8 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
     let fc_curve_control_points = curve::fc_control_points(&curve_parameters);
     let fc05_circles = curve::fc05_circles(&curve_parameters);
+    let fc05_cylinder_cap_pairs =
+        curve::fc05_cylinder_cap_pairs(&fc05_circles, &curve_topology_rows, &surface_rows);
     let prototype_pcurves = prototype_pcurves(&data, &sections);
     let curve_prototype_topology = curve_prototype_topology(&data, &sections);
     let bound_prototype_pcurves =
@@ -970,6 +976,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         pcurves,
         fc_curve_control_points,
         fc05_circles,
+        fc05_cylinder_cap_pairs,
         prototype_pcurves,
         curve_prototype_topology,
         bound_prototype_pcurves,

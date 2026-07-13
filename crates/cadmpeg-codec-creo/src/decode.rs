@@ -863,6 +863,10 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         scan.fc05_circles.len().to_string(),
     );
     attributes.insert(
+        "decoded_fc05_cylinder_cap_pair_count".to_string(),
+        scan.fc05_cylinder_cap_pairs.len().to_string(),
+    );
+    attributes.insert(
         "decoded_prototype_pcurve_count".to_string(),
         scan.prototype_pcurves.len().to_string(),
     );

@@ -245,6 +245,13 @@ Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a bod
 
 `fc 05` records can store cap-circle control points in the order `X`, `Z`, `t`, `Y`, where `X` and `Y` use eight-byte world-coordinate tokens and `Z` and `t` use DICT or standalone-zero scalar tokens. `fc 13` stores a control polyline rather than an analytic circle.
 
+An `fc 05` cap pair belongs to one cylinder when each curve suffix binds one
+side to the same `geom_type = 24` face and the other side to a `geom_type = 22`
+face. The records must have equal radii and equal in-plane centers at distinct
+constant cap ordinates. This binding establishes the cylinder radius and its
+axis line in the owning feature's row frame. Model-space placement additionally
+requires that feature's row-frame transform.
+
 ## 5. Topology and section records
 
 Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. Multi-loop faces require parameter-space containment to distinguish outer from inner loops. Shells follow connected components of face references.

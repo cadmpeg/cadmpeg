@@ -142,6 +142,24 @@ pub struct Fc05Circle {
     pub offset: usize,
 }
 
+/// Two or more topology-bound `fc 05` cap circles that establish one native
+/// cylinder's radius and row-frame axis line, but not its model-space frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fc05CylinderCapPair {
+    /// Cylinder surface identifier shared by every cap edge.
+    pub surface_id: u32,
+    /// Curve identifiers of the agreeing cap circles in source order.
+    pub curve_ids: Vec<u32>,
+    /// Shared center in the owning feature's row frame.
+    pub center_row_frame: [f64; 2],
+    /// Shared exact radius in mm.
+    pub radius_mm: f64,
+    /// At least two distinct cap ordinates in the owning feature's row frame.
+    pub cap_ordinates_row_frame: Vec<f64>,
+    /// Byte offset of the first participating curve row.
+    pub offset: usize,
+}
+
 /// Complete eight-slot pcurve endpoints from a labeled curve prototype.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrototypePcurveEndpoints {
@@ -590,6 +608,82 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
     circles
 }
 
+/// Bind validated `fc 05` circles to typed cylinder/plane face pairs and retain
+/// only groups that agree on radius and center at two distinct cap ordinates.
+pub fn fc05_cylinder_cap_pairs(
+    circles: &[Fc05Circle],
+    topology: &[CurveTopologyRow],
+    surfaces: &[crate::surface::SurfaceRow],
+) -> Vec<Fc05CylinderCapPair> {
+    use std::collections::BTreeMap;
+
+    let kinds = surfaces
+        .iter()
+        .map(|surface| (surface.id, surface.kind))
+        .collect::<BTreeMap<_, _>>();
+    let faces = topology
+        .iter()
+        .map(|row| (row.id, row.faces))
+        .collect::<BTreeMap<_, _>>();
+    let mut groups = BTreeMap::<u32, Vec<&Fc05Circle>>::new();
+    for circle in circles {
+        let Some(adjacent) = faces.get(&circle.curve_id) else {
+            continue;
+        };
+        let cylinders = adjacent
+            .iter()
+            .filter(|face| kinds.get(face) == Some(&crate::surface::SurfaceKind::Cylinder))
+            .copied()
+            .collect::<Vec<_>>();
+        let plane_count = adjacent
+            .iter()
+            .filter(|face| kinds.get(face) == Some(&crate::surface::SurfaceKind::Plane))
+            .count();
+        if cylinders.len() == 1 && plane_count == 1 && circle.cap_ordinate_row_frame.is_some() {
+            groups.entry(cylinders[0]).or_default().push(circle);
+        }
+    }
+
+    let mut result = Vec::new();
+    for (surface_id, mut group) in groups {
+        group.sort_by_key(|circle| circle.offset);
+        let first = group[0];
+        let tolerance = 1e-9 * first.radius_mm.max(1.0);
+        if !group.iter().all(|circle| {
+            (circle.radius_mm - first.radius_mm).abs() <= tolerance
+                && (circle.center_row_frame[0] - first.center_row_frame[0]).abs() <= tolerance
+                && (circle.center_row_frame[1] - first.center_row_frame[1]).abs() <= tolerance
+        }) {
+            continue;
+        }
+        let mut ordinates = Vec::new();
+        for ordinate in group
+            .iter()
+            .filter_map(|circle| circle.cap_ordinate_row_frame)
+        {
+            if ordinates
+                .iter()
+                .all(|existing: &f64| (*existing - ordinate).abs() > tolerance)
+            {
+                ordinates.push(ordinate);
+            }
+        }
+        if ordinates.len() < 2 {
+            continue;
+        }
+        result.push(Fc05CylinderCapPair {
+            surface_id,
+            curve_ids: group.iter().map(|circle| circle.curve_id).collect(),
+            center_row_frame: first.center_row_frame,
+            radius_mm: first.radius_mm,
+            cap_ordinates_row_frame: ordinates,
+            offset: first.offset,
+        });
+    }
+    result.sort_by_key(|pair| pair.offset);
+    result
+}
+
 /// Decode labeled `crv_pnt_arr f9 02 04` prototype pcurve endpoints.
 pub fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoints> {
     let cache = scalar::ScalarCache::from_section(payload);
@@ -820,5 +914,73 @@ mod tests {
                 offset: 15,
             }]
         );
+    }
+
+    #[test]
+    fn binds_agreeing_fc05_caps_to_one_typed_cylinder() {
+        let circle = |curve_id, ordinate, offset| Fc05Circle {
+            curve_id,
+            center_row_frame: [3.0, 4.0],
+            radius_mm: 2.0,
+            cap_ordinate_row_frame: Some(ordinate),
+            point_count: 8,
+            max_residual: 0.0,
+            angle_parameter_consistent: true,
+            offset,
+        };
+        let topology = |curve_id, plane_id, offset| CurveTopologyRow {
+            id: curve_id,
+            type_byte: 5,
+            feature_id: 4,
+            directions: [1, 0xf6],
+            faces: [10, plane_id],
+            next_edges: [curve_id, curve_id],
+            offset,
+        };
+        let surface = |id, kind| crate::surface::SurfaceRow {
+            id,
+            kind,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: usize::try_from(id).expect("fixture id fits usize"),
+        };
+        let pairs = fc05_cylinder_cap_pairs(
+            &[circle(20, -5.0, 100), circle(21, 7.0, 200)],
+            &[topology(20, 11, 100), topology(21, 12, 200)],
+            &[
+                surface(10, crate::surface::SurfaceKind::Cylinder),
+                surface(11, crate::surface::SurfaceKind::Plane),
+                surface(12, crate::surface::SurfaceKind::Plane),
+            ],
+        );
+
+        assert_eq!(
+            pairs,
+            vec![Fc05CylinderCapPair {
+                surface_id: 10,
+                curve_ids: vec![20, 21],
+                center_row_frame: [3.0, 4.0],
+                radius_mm: 2.0,
+                cap_ordinates_row_frame: vec![-5.0, 7.0],
+                offset: 100,
+            }]
+        );
+    }
+
+    #[test]
+    fn withholds_fc05_caps_without_distinct_ordinates() {
+        let circles = [Fc05Circle {
+            curve_id: 20,
+            center_row_frame: [3.0, 4.0],
+            radius_mm: 2.0,
+            cap_ordinate_row_frame: Some(5.0),
+            point_count: 8,
+            max_residual: 0.0,
+            angle_parameter_consistent: true,
+            offset: 100,
+        }];
+        assert!(fc05_cylinder_cap_pairs(&circles, &[], &[]).is_empty());
     }
 }
