@@ -63,8 +63,11 @@ sign          = "+" | "-"
 ```
 
 `1.`, `0.E+000`, and Fortran `D` exponents are real values. A binary literal
-contains an even number of hexadecimal digits. Its first nibble states the
-number of unused high-order bits in the final data byte and is in `0..=3`.
+starts with one indicator nibble followed by hexadecimal payload digits. The
+indicator states the number of unused trailing bits in the final payload digit
+and is in `0..=3`; those low-order bits are zero. Payload digits pack
+most-significant nibble first. The decoded bit length is four times the payload
+digit count minus the indicator. An empty payload uses indicator zero.
 Comma, equals sign, parentheses, and semicolon are individual punctuation
 tokens. A lexer never assigns line-based meaning to a token.
 

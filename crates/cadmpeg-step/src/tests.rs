@@ -43,6 +43,29 @@ fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
 }
 
 #[test]
+fn lexer_decodes_binary_literals_and_rejects_invalid_bit_boundaries() {
+    use crate::lex::{lex, BinaryValue, TokenKind};
+
+    assert_eq!(
+        lex(b"\"0A1F\"").unwrap()[0].kind,
+        TokenKind::Binary(BinaryValue {
+            bit_len: 12,
+            data: vec![0xa1, 0xf0],
+        })
+    );
+    assert_eq!(
+        lex(b"\"17E\"").unwrap()[0].kind,
+        TokenKind::Binary(BinaryValue {
+            bit_len: 7,
+            data: vec![0x7e],
+        })
+    );
+    for invalid in [b"\"\"".as_slice(), b"\"4FF\"", b"\"17F\"", b"\"3A7\""] {
+        assert!(lex(invalid).is_err(), "accepted {invalid:?}");
+    }
+}
+
+#[test]
 fn codec_detects_and_inspects_ap242_exchange_structure() {
     let bytes = include_bytes!("../tests/fixtures/ap242_minimal.p21");
     let codec = StepCodec::default();

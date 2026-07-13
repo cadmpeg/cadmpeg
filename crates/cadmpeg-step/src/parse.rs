@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::ops::Range;
 
-use crate::lex::{lex, LexError, Token, TokenKind};
+use crate::lex::{lex, BinaryValue, LexError, Token, TokenKind};
 
 /// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
@@ -19,8 +19,8 @@ pub enum Value {
     Enumeration(String),
     /// Raw string-token bytes before Part 21 escape decoding.
     String(Vec<u8>),
-    /// Decoded binary-literal bytes.
-    Binary(Vec<u8>),
+    /// Decoded binary literal and final-byte significant-bit boundary.
+    Binary(BinaryValue),
     /// Edition-3 resource value.
     Resource(String),
     /// Omitted optional value `$`.

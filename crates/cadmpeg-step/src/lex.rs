@@ -29,8 +29,8 @@ pub enum TokenKind {
     Enumeration(String),
     /// Bytes between apostrophe delimiters, before escape decoding.
     String(Vec<u8>),
-    /// Bytes decoded from a quoted hexadecimal binary literal.
-    Binary(Vec<u8>),
+    /// Decoded quoted hexadecimal binary literal.
+    Binary(BinaryValue),
     /// Edition-3 resource token.
     Resource(String),
     /// Opening parenthesis.
@@ -47,6 +47,15 @@ pub enum TokenKind {
     Omitted,
     /// Derived-value marker `*`.
     Derived,
+}
+
+/// Binary literal payload packed most-significant nibble first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BinaryValue {
+    /// Number of significant payload bits.
+    pub bit_len: usize,
+    /// Packed bytes; unused low-order bits in the final byte are zero.
+    pub data: Vec<u8>,
 }
 
 /// Lexical failure with a stable byte position.
@@ -270,9 +279,40 @@ impl Lexer<'_> {
         if self.input.get(self.at) != Some(&b'"') {
             return Err(self.error(start, "invalid binary literal"));
         }
-        let bytes = self.input[content..self.at].to_vec();
+        let raw = &self.input[content..self.at];
+        let Some((&indicator, digits)) = raw.split_first() else {
+            return Err(self.error(start, "binary literal has no unused-bit indicator"));
+        };
+        let unused_bits = match indicator {
+            b'0'..=b'3' => indicator - b'0',
+            _ => return Err(self.error(start, "binary unused-bit indicator exceeds three")),
+        };
+        if digits.is_empty() && unused_bits != 0 {
+            return Err(self.error(start, "empty binary payload has unused bits"));
+        }
+        let nibbles = digits
+            .iter()
+            .map(|byte| match byte {
+                b'0'..=b'9' => byte - b'0',
+                b'a'..=b'f' => byte - b'a' + 10,
+                b'A'..=b'F' => byte - b'A' + 10,
+                _ => unreachable!("binary digits were validated as ASCII hexadecimal"),
+            })
+            .collect::<Vec<_>>();
+        if unused_bits != 0
+            && nibbles
+                .last()
+                .is_some_and(|nibble| nibble & ((1 << unused_bits) - 1) != 0)
+        {
+            return Err(self.error(start, "unused binary bits are not zero"));
+        }
+        let mut data = Vec::with_capacity(nibbles.len().div_ceil(2));
+        for chunk in nibbles.chunks(2) {
+            data.push((chunk[0] << 4) | chunk.get(1).copied().unwrap_or(0));
+        }
+        let bit_len = digits.len() * 4 - usize::from(unused_bits);
         self.at += 1;
-        Ok(TokenKind::Binary(bytes))
+        Ok(TokenKind::Binary(BinaryValue { bit_len, data }))
     }
 
     fn resource(&mut self) -> Result<TokenKind, LexError> {
