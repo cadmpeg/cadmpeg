@@ -2847,6 +2847,65 @@ fn decode_synthesizes_sparse_partition_configuration() {
 }
 
 #[test]
+fn semantic_writer_remaps_configuration_scoped_sections() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-3-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-3-ResolvedFeatures",
+        &resolved_features_payload(&[0]),
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.configurations[0].source_index, Some(3));
+
+    decoded.ir.model.configurations[0].source_index = Some(5);
+    let mut written = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut written)
+        .unwrap();
+    let scan = container::scan_bytes(&written);
+    assert!(scan
+        .blocks
+        .iter()
+        .any(|block| { block.section.as_deref() == Some("Contents/Config-5-Partition") }));
+    assert!(scan
+        .blocks
+        .iter()
+        .any(|block| { block.section.as_deref() == Some("Contents/Config-5-ResolvedFeatures") }));
+    let stale = scan
+        .blocks
+        .iter()
+        .filter_map(|block| block.section.as_deref())
+        .filter(|section| {
+            *section == "Contents/Config-3-Partition"
+                || *section == "Contents/Config-3-ResolvedFeatures"
+        })
+        .collect::<Vec<_>>();
+    assert!(stale.is_empty(), "stale sections: {stale:?}");
+    assert!(!scan.blocks.iter().any(|block| {
+        block.section.as_deref().is_some_and(|section| {
+            section == "Contents/Config-3-Partition"
+                || section == "Contents/Config-3-ResolvedFeatures"
+        })
+    }));
+    let round_trip = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir.model.configurations[0].source_index, Some(5));
+}
+
+#[test]
 fn semantic_writer_rejects_duplicate_configuration_source_indices() {
     let mut decoded = SldprtCodec
         .decode(

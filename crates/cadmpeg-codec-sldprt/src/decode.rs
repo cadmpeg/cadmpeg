@@ -286,12 +286,11 @@ fn build_geometry_ir(
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches);
     stamp_feature_baseline(&mut ir);
     let attributes = crate::metadata::attributes(scan, &mut ir.annotations);
-    let native = crate::native::SldprtNative {
+    let mut native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
         feature_input_lanes: lanes,
     };
-    native.store(ir.native.namespace_mut("sldprt"))?;
     ir.model.attributes = attributes;
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
@@ -310,6 +309,18 @@ fn build_geometry_ir(
     ir.model.curves = brep.curves;
     ir.model.pcurves = brep.pcurves;
     assign_configuration_bodies(&mut ir, configuration_bodies);
+    assign_native_configuration_indices(&ir, &mut native);
+    if let Some(source) = &mut ir.source {
+        source.attributes.insert(
+            "sldprt_native_configuration_sha256".into(),
+            crate::history::native_configuration_hash(&native.feature_histories),
+        );
+        source.attributes.insert(
+            "sldprt_native_history_sha256".into(),
+            crate::history::history_hash(&native.feature_histories),
+        );
+    }
+    native.store(ir.native.namespace_mut("sldprt"))?;
     stamp_configuration_baseline(&mut ir);
     let mut unknowns = brep.unknowns;
     for face_color in brep.face_colors {
@@ -517,6 +528,22 @@ fn build_geometry_ir(
     ir.set_native_unknowns("sldprt", &unknowns)?;
     set_semantic_hash(&mut ir);
     Ok(ir)
+}
+
+fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::SldprtNative) {
+    for configuration in &ir.model.configurations {
+        let Some(native_ref) = configuration.native_ref.as_deref() else {
+            continue;
+        };
+        if let Some(record) = native
+            .feature_histories
+            .iter_mut()
+            .flat_map(|history| &mut history.configurations)
+            .find(|record| record.id == native_ref)
+        {
+            record.source_index = configuration.source_index;
+        }
+    }
 }
 
 fn source_meta(scan: &ContainerScan, block: &Block, header: &StreamHeader) -> SourceMeta {
@@ -904,7 +931,7 @@ fn assign_configuration_bodies(
     }
 }
 
-fn configuration_index(section: &str) -> Option<usize> {
+pub(crate) fn configuration_index(section: &str) -> Option<usize> {
     let start = section.find("Config-")? + "Config-".len();
     let digits = section[start..]
         .chars()

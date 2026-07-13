@@ -129,22 +129,21 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         ));
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
-        let section = ir
-            .annotations
-            .provenance
-            .get(&lane.id)
-            .and_then(|provenance| {
+        let section = lane.configuration.as_ref().map_or_else(
+            || {
                 ir.annotations
-                    .streams
-                    .get(provenance.stream as usize)
-                    .cloned()
-            })
-            .unwrap_or_else(|| {
-                lane.configuration.as_ref().map_or_else(
-                    || "Contents/ResolvedFeatures".into(),
-                    |configuration| format!("Contents/Config-{configuration}-ResolvedFeatures"),
-                )
-            });
+                    .provenance
+                    .get(&lane.id)
+                    .and_then(|provenance| {
+                        ir.annotations
+                            .streams
+                            .get(provenance.stream as usize)
+                            .cloned()
+                    })
+                    .unwrap_or_else(|| "Contents/ResolvedFeatures".into())
+            },
+            |configuration| format!("Contents/Config-{configuration}-ResolvedFeatures"),
+        );
         sections.push((section, resolved_feature_payload(lane)?));
     }
     for (section, payload) in opaque_blocks(ir, &active_partition_section, retain_native_brep) {
@@ -256,13 +255,31 @@ fn retained_partition(ir: &CadIr) -> Option<(String, Vec<u8>)> {
     let source_image = source_image(ir)?;
     let scan = crate::container::scan_bytes(&source_image);
     let (block, _) = crate::container::select_active_parasolid(&scan)?;
-    Some((
-        block
-            .section
-            .clone()
-            .unwrap_or_else(|| format!("block@{}", block.offset)),
-        block.payload.clone(),
-    ))
+    let original_section = block
+        .section
+        .clone()
+        .unwrap_or_else(|| format!("block@{}", block.offset));
+    let section = remapped_partition_section(ir, &original_section).unwrap_or(original_section);
+    Some((section, block.payload.clone()))
+}
+
+fn remapped_partition_section(ir: &CadIr, section: &str) -> Option<String> {
+    let old_index = crate::decode::configuration_index(section)?;
+    let native = SldprtNative::load(ir.native.namespace("sldprt")?).ok()?;
+    let native_id = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.configurations)
+        .find(|configuration| configuration.source_index == u32::try_from(old_index).ok())?
+        .id
+        .as_str();
+    let new_index = ir
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.native_ref.as_deref() == Some(native_id))?
+        .source_index?;
+    Some(format!("Contents/Config-{new_index}-Partition"))
 }
 
 fn outer_header(ir: &CadIr) -> [u8; 8] {
@@ -588,6 +605,11 @@ fn opaque_blocks(
                 .as_str();
             let lower = section.to_ascii_lowercase();
             if section == active_partition {
+                return None;
+            }
+            if lower.ends_with("-partition")
+                && remapped_partition_section(ir, section).as_deref() == Some(active_partition)
+            {
                 return None;
             }
             if lower.contains("deltas") && !retain_native_brep {

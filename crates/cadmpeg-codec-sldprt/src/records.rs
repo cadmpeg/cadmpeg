@@ -16,6 +16,9 @@ pub struct Configuration {
     /// Position in the source configuration list.
     #[serde(default)]
     pub ordinal: u32,
+    /// Numeric key used by configuration-scoped container sections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_index: Option<u32>,
     /// Source configuration name.
     pub name: String,
     /// Material assigned in this configuration, when overridden; `None` when the

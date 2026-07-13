@@ -50,6 +50,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                         id,
                         parent: parent.clone(),
                         ordinal: ordinal as u32,
+                        source_index: None,
                         name: node.attribute("Name").unwrap_or("").into(),
                         material: node
                             .attribute("Material")
@@ -323,7 +324,7 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
                     .unwrap_or(&configuration.id)
             )),
             ordinal: configuration.ordinal,
-            source_index: None,
+            source_index: configuration.source_index,
             name: configuration.name.clone(),
             material: configuration.material.clone(),
             properties: configuration.properties.clone(),
@@ -1702,10 +1703,22 @@ fn sync_neutral_configurations(
             .flat_map(|history| &mut history.configurations)
             .find(|candidate| configuration.native_ref.as_deref() == Some(candidate.id.as_str()));
         if let Some(existing) = existing {
+            let previous_index = existing.source_index;
             existing.ordinal = configuration.ordinal;
+            existing.source_index = configuration.source_index;
             existing.name.clone_from(&configuration.name);
             existing.material.clone_from(&configuration.material);
             existing.properties.clone_from(&configuration.properties);
+            if previous_index != configuration.source_index {
+                for lane in &mut native.feature_input_lanes {
+                    if lane.configuration.as_deref()
+                        == previous_index.as_ref().map(ToString::to_string).as_deref()
+                    {
+                        lane.configuration =
+                            configuration.source_index.map(|index| index.to_string());
+                    }
+                }
+            }
         } else {
             let parent = native.feature_histories[0].id.clone();
             native.feature_histories[0]
@@ -1716,6 +1729,7 @@ fn sync_neutral_configurations(
                     }),
                     parent,
                     ordinal: configuration.ordinal,
+                    source_index: configuration.source_index,
                     name: configuration.name.clone(),
                     material: configuration.material.clone(),
                     properties: configuration.properties.clone(),
