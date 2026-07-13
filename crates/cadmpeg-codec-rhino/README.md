@@ -55,6 +55,7 @@ records, and noncanonical NURBS contracts are rejected before output.
 cadmpeg inspect model.3dm
 cadmpeg decode model.3dm -o model.cadir.json
 cadmpeg convert model.cadir.json -o model.3dm
+cadmpeg convert model.cadir.json -o model-v6.3dm --rhino-version 60
 ```
 
 Requires Rust 1.88 or later. Licensed under Apache-2.0.
