@@ -140,6 +140,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         assert_eq!(spans.last().map(|span| span.end), Some(entry.byte_len));
         assert!(spans.windows(2).all(|pair| pair[0].end == pair[1].start));
     }
+    let findings = crate::validate_native(&result.ir);
+    assert!(findings.is_empty(), "{findings:#?}");
 }
 
 #[test]

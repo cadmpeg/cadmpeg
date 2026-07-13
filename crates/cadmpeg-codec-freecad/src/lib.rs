@@ -6,6 +6,7 @@ mod native;
 mod persistence;
 
 use std::collections::BTreeMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
@@ -16,10 +17,192 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity};
 
 /// Input-only `FCStd` codec.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FcstdCodec;
+
+/// Validate FCStd-native identities, graph links, payloads, and byte ledgers.
+pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
+    let Some(namespace) = ir.native.namespace("fcstd") else {
+        return Vec::new();
+    };
+    if namespace.version != native::VERSION {
+        return vec![finding(
+            Check::Version,
+            format!(
+                "unsupported FCStd native namespace version {}",
+                namespace.version
+            ),
+            None,
+        )];
+    }
+    let objects = match namespace.arena_as::<native::ObjectRecord>("objects") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
+    let properties = match namespace.arena_as::<native::PropertyRecord>("properties") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
+    let entries = match namespace.arena_as::<native::EntryRecord>("entries") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
+    let physical = match namespace.arena_as::<native::ArchiveSpan>("physical_ledger") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
+    let logical = match namespace.arena_as::<native::LogicalSpan>("logical_ledger") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
+
+    let mut findings = Vec::new();
+    let object_ids = objects
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<HashSet<_>>();
+    let property_ids = properties
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<HashSet<_>>();
+    if object_ids.len() != objects.len() || property_ids.len() != properties.len() {
+        findings.push(finding(
+            Check::Identity,
+            "duplicate FCStd native identity",
+            None,
+        ));
+    }
+    for object in &objects {
+        for dependency in &object.dependencies {
+            if !object_ids.contains(dependency.as_str()) {
+                findings.push(finding(
+                    Check::ReferentialIntegrity,
+                    format!("{} has missing dependency {dependency}", object.id),
+                    Some(object.id.clone()),
+                ));
+            }
+        }
+    }
+    for property in &properties {
+        if property.owner != "fcstd:document#0" && !object_ids.contains(property.owner.as_str()) {
+            findings.push(finding(
+                Check::ReferentialIntegrity,
+                format!("{} has missing owner {}", property.id, property.owner),
+                Some(property.id.clone()),
+            ));
+        }
+        for target in property
+            .links
+            .iter()
+            .filter_map(|link| link.object.as_deref())
+        {
+            if target.starts_with("fcstd:object:") && !object_ids.contains(target) {
+                findings.push(finding(
+                    Check::ReferentialIntegrity,
+                    format!("{} has missing link target {target}", property.id),
+                    Some(property.id.clone()),
+                ));
+            }
+        }
+    }
+    let mut entry_lengths = HashMap::new();
+    for entry in &entries {
+        entry_lengths.insert(entry.name.as_str(), entry.byte_len);
+        if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
+            findings.push(finding(
+                Check::PayloadIntegrity,
+                format!("{} failed length or digest validation", entry.id),
+                Some(entry.id.clone()),
+            ));
+        }
+        for owner in &entry.referenced_by {
+            if !property_ids.contains(owner.as_str()) {
+                findings.push(finding(
+                    Check::ReferentialIntegrity,
+                    format!("{} has missing referencing property {owner}", entry.id),
+                    Some(entry.id.clone()),
+                ));
+            }
+        }
+    }
+    let physical_end = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("physical_archive_bytes"))
+        .and_then(|value| value.parse().ok());
+    validate_span_chain("physical archive", &physical, physical_end, &mut findings);
+    let mut logical_by_entry = BTreeMap::<&str, Vec<&native::LogicalSpan>>::new();
+    for span in &logical {
+        logical_by_entry.entry(&span.entry).or_default().push(span);
+        if !matches!(
+            span.classification.as_str(),
+            "structural" | "typed" | "named_opaque"
+        ) {
+            findings.push(finding(
+                Check::PayloadIntegrity,
+                format!("{} has invalid logical classification", span.id),
+                Some(span.id.clone()),
+            ));
+        }
+    }
+    for (name, mut spans) in logical_by_entry {
+        spans.sort_by_key(|span| span.start);
+        let expected = entry_lengths.get(name).copied();
+        validate_logical_chain(name, &spans, expected, &mut findings);
+    }
+    findings
+}
+
+fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> Finding {
+    Finding {
+        check,
+        severity: FindingSeverity::Error,
+        message: message.into(),
+        entity,
+    }
+}
+
+fn validate_span_chain(
+    label: &str,
+    spans: &[native::ArchiveSpan],
+    expected_end: Option<u64>,
+    findings: &mut Vec<Finding>,
+) {
+    let mut ordered = spans.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|span| span.start);
+    let valid = ordered.first().is_some_and(|span| span.start == 0)
+        && ordered.windows(2).all(|pair| pair[0].end == pair[1].start)
+        && expected_end.is_none_or(|end| ordered.last().is_some_and(|span| span.end == end));
+    if !valid {
+        findings.push(finding(
+            Check::PayloadIntegrity,
+            format!("{label} ledger has a gap, overlap, or invalid boundary"),
+            None,
+        ));
+    }
+}
+
+fn validate_logical_chain(
+    name: &str,
+    spans: &[&native::LogicalSpan],
+    expected_end: Option<u64>,
+    findings: &mut Vec<Finding>,
+) {
+    let valid = expected_end.is_some()
+        && spans.first().is_some_and(|span| span.start == 0)
+        && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
+        && expected_end.is_some_and(|end| spans.last().is_some_and(|span| span.end == end));
+    if !valid {
+        findings.push(finding(
+            Check::PayloadIntegrity,
+            format!("logical ledger for {name} has a gap, overlap, or invalid boundary"),
+            None,
+        ));
+    }
+}
 
 impl Codec for FcstdCodec {
     fn id(&self) -> &'static str {
@@ -76,6 +259,9 @@ impl Codec for FcstdCodec {
             "physical_ledger_spans".into(),
             scan.ledger.len().to_string(),
         );
+        if let Some(last) = scan.ledger.last() {
+            attributes.insert("physical_archive_bytes".into(), last.end.to_string());
+        }
         if let Some(value) = &scan.document.program_version {
             attributes.insert("program_version".into(), value.clone());
         }
