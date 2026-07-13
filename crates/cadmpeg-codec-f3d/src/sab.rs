@@ -766,6 +766,30 @@ mod tests {
         bytes
     }
 
+    fn generated_tvertex_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 7];
+        bytes.extend_from_slice(b"tvertex");
+        for (tag, value) in [
+            (0x0c, -1i64),
+            (0x04, -1),
+            (0x0c, -1),
+            (0x0c, 10),
+            (0x04, 1),
+            (0x0c, 11),
+        ] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x06);
+        bytes.extend_from_slice(&0.001f64.to_le_bytes());
+        for value in [2.0f32, 3.0] {
+            bytes.push(0x05);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
     #[test]
     fn generated_payload_subtype_lookup_uses_declared_integer_width() {
         for ref_width in [4, 8] {
@@ -970,6 +994,28 @@ mod tests {
                 .expect("edge continuity field");
             assert_eq!(edge[sense], 0x0b);
             assert_eq!(edge[continuity], 0x07);
+        }
+    }
+
+    #[test]
+    fn generated_tolerant_vertex_has_fixed_metadata_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_tvertex_record(ref_width);
+            let records =
+                frame(&bytes, 0, bytes.len(), ref_width).expect("generated tolerant vertex");
+            let record = &records[0];
+            for (index, tag) in [
+                (3usize, 0x0c),
+                (4, 0x04),
+                (5, 0x0c),
+                (6, 0x06),
+                (7, 0x05),
+                (8, 0x05),
+            ] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("tolerant vertex metadata field");
+                assert_eq!(bytes[offset], tag);
+            }
         }
     }
 }

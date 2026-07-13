@@ -14008,14 +14008,21 @@ fn patch_framed_geometry(
             patch_ascii_field(bytes, record, ref_width, 10, continuity)?;
         }
         if let Some((owning_edge, endpoint_index)) = vertex_ownerships.get(&record.index) {
-            if record.head != "vertex" {
+            if !matches!(record.head.as_str(), "vertex" | "tvertex") {
                 return Err(CodecError::Malformed(format!(
                     "F3D vertex-ownership record {} is not a vertex",
                     record.index
                 )));
             }
-            patch_integer_token(bytes, record, 0x0c, 2, *owning_edge)?;
-            patch_integer_token(bytes, record, 0x04, 1, i64::from(*endpoint_index))?;
+            let ref_width = active_ref_width(bytes);
+            for (index, tag, value) in [
+                (3usize, 0x0c, *owning_edge),
+                (4, 0x04, i64::from(*endpoint_index)),
+            ] {
+                let offset = required_payload_field(bytes, record, ref_width, index, tag)?;
+                bytes[offset + 1..offset + 1 + ref_width]
+                    .copy_from_slice(&value.to_le_bytes()[..ref_width]);
+            }
         }
         if let Some(containment) = face_sidedness.get(&record.index) {
             if record.head != "face" || !matches!(record.chunk(9), Some(sab::Token::True)) {
@@ -14037,9 +14044,14 @@ fn patch_framed_geometry(
                     record.index
                 )));
             }
-            patch_double_token(bytes, record, 0, *tolerance)?;
-            patch_float_token(bytes, record, 0, trailing[0])?;
-            patch_float_token(bytes, record, 1, trailing[1])?;
+            let ref_width = active_ref_width(bytes);
+            let tolerance_offset = required_payload_field(bytes, record, ref_width, 6, 0x06)?;
+            bytes[tolerance_offset + 1..tolerance_offset + 9]
+                .copy_from_slice(&tolerance.to_le_bytes());
+            for (index, value) in [(7usize, trailing[0]), (8, trailing[1])] {
+                let offset = required_payload_field(bytes, record, ref_width, index, 0x05)?;
+                bytes[offset + 1..offset + 5].copy_from_slice(&value.to_le_bytes());
+            }
         }
         if let Some(color) = color_records.get(&record.index) {
             patch_double_token(bytes, record, 0, f64::from(color.r))?;
@@ -14541,26 +14553,6 @@ fn patch_double_token(
             ))
         })?;
     bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
-    Ok(())
-}
-
-fn patch_float_token(
-    bytes: &mut [u8],
-    record: &sab::Record,
-    ordinal: usize,
-    value: f32,
-) -> Result<(), CodecError> {
-    let ref_width = active_ref_width(bytes);
-    let offset = *sab::payload_token_offsets(bytes, record, ref_width, 0x05)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .get(ordinal)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "{} record {} lacks float token [{ordinal}]",
-                record.head, record.index
-            ))
-        })?;
-    bytes[offset + 1..offset + 5].copy_from_slice(&value.to_le_bytes());
     Ok(())
 }
 
