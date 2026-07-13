@@ -1188,6 +1188,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::Fillet { edges, radius } => {
                 edge_selections.push(edges);
                 let valid = match radius {
+                    RadiusSpec::Unresolved { .. } => true,
                     RadiusSpec::Constant { radius } => positive_feature_length(*radius),
                     RadiusSpec::Variable { points } => {
                         points.len() >= 2
@@ -1208,6 +1209,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::Chamfer { edges, spec } => {
                 edge_selections.push(edges);
                 let valid = match spec {
+                    ChamferSpec::Unresolved { .. } => true,
                     ChamferSpec::Distance { distance } => positive_feature_length(*distance),
                     ChamferSpec::TwoDistances { first, second } => {
                         positive_feature_length(*first) && positive_feature_length(*second)

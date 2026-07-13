@@ -7,13 +7,14 @@ use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, His
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
-    Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, ConfigurationId,
-    DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent, FaceMotion,
-    FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole,
-    FlexMode, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind,
-    ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft,
-    RibSide, RuledSurfaceMode, ScaleCenter, SketchSpace, SurfaceContinuity, SurfaceExtension,
-    SweepMode, TrimRegion, VariableRadius, WrapMode,
+    Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
+    ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
+    FaceMotion, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
+    FeatureTreeNodeRole, FlexMode, HoleKind, Length, ParameterId, ParameterValue, PathRef,
+    PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter,
+    SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion, VariableRadius,
+    WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1120,9 +1121,9 @@ fn project_definition(
     if class == Some(FeatureClass::Extrude) {
         project_extrude(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Fillet) {
-        project_fillet(feature).unwrap_or_else(|| native_definition(feature))
+        project_fillet(feature)
     } else if class == Some(FeatureClass::Chamfer) {
-        project_chamfer(feature).unwrap_or_else(|| native_definition(feature))
+        project_chamfer(feature)
     } else if class == Some(FeatureClass::Shell) {
         project_shell(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Thicken) {
@@ -1604,7 +1605,7 @@ fn valid_scale_factors(factors: Vector3) -> bool {
         .all(|factor| factor.is_finite() && factor != 0.0)
 }
 
-fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
+fn project_fillet(feature: &Feature) -> FeatureDefinition {
     let radius = if let Some(radius) = feature
         .parameters
         .get("Radius")
@@ -1619,7 +1620,7 @@ fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
             radius: Length(radius),
         }
     } else {
-        let mut points = feature
+        let points = feature
             .parameters
             .iter()
             .filter_map(|(name, radius)| {
@@ -1642,28 +1643,45 @@ fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
                     },
                 ))
             })
-            .collect::<Option<Vec<_>>>()?;
-        points.sort_by_key(|(index, _)| *index);
-        if points.len() < 2
-            || points
-                .iter()
-                .enumerate()
-                .any(|(expected, (actual, _))| expected != *actual)
-        {
-            return None;
-        }
-        RadiusSpec::Variable {
-            points: points.into_iter().map(|(_, point)| point).collect(),
-        }
+            .collect::<Option<Vec<_>>>();
+        points
+            .and_then(|mut points| {
+                points.sort_by_key(|(index, _)| *index);
+                (points.len() >= 2
+                    && points
+                        .iter()
+                        .enumerate()
+                        .all(|(expected, (actual, _))| expected == *actual))
+                .then_some(points)
+            })
+            .map_or_else(
+                || RadiusSpec::Unresolved {
+                    form: feature
+                        .parameters
+                        .keys()
+                        .any(|name| indexed_name(name, "Radius"))
+                        .then_some(RadiusForm::Variable)
+                        .or_else(|| {
+                            feature
+                                .parameters
+                                .keys()
+                                .any(|name| matches!(name.as_str(), "Radius" | "D1"))
+                                .then_some(RadiusForm::Constant)
+                        }),
+                },
+                |points| RadiusSpec::Variable {
+                    points: points.into_iter().map(|(_, point)| point).collect(),
+                },
+            )
     };
-    Some(FeatureDefinition::Fillet {
+    FeatureDefinition::Fillet {
         edges: feature
             .properties
             .get("Edges")
             .cloned()
             .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
         radius,
-    })
+    }
 }
 
 fn project_rib(feature: &Feature, native_by_source: &HashMap<&str, &str>) -> FeatureDefinition {
@@ -2514,7 +2532,7 @@ fn project_scale(feature: &Feature) -> Option<FeatureDefinition> {
     })
 }
 
-fn project_chamfer(feature: &Feature) -> Option<FeatureDefinition> {
+fn project_chamfer(feature: &Feature) -> FeatureDefinition {
     let length = |name, positional| {
         feature
             .parameters
@@ -2532,28 +2550,47 @@ fn project_chamfer(feature: &Feature) -> Option<FeatureDefinition> {
         .parameters
         .get("D2")
         .filter(|value| parse_bounded_angle_rad(value).is_some());
-    let spec = if let Some(value) = feature.parameters.get("Angle").or(positional_angle) {
-        ChamferSpec::DistanceAngle {
-            distance: length("Distance", "D1")?,
-            angle: Angle(parse_bounded_angle_rad(value)?),
-        }
-    } else if let (Some(first), Some(second)) =
-        (length("Distance1", "D1"), length("Distance2", "D2"))
-    {
-        ChamferSpec::TwoDistances { first, second }
-    } else {
-        ChamferSpec::Distance {
-            distance: length("Distance", "D1")?,
-        }
-    };
-    Some(FeatureDefinition::Chamfer {
+    let spec = (|| {
+        Some(
+            if let Some(value) = feature.parameters.get("Angle").or(positional_angle) {
+                ChamferSpec::DistanceAngle {
+                    distance: length("Distance", "D1")?,
+                    angle: Angle(parse_bounded_angle_rad(value)?),
+                }
+            } else if let (Some(first), Some(second)) =
+                (length("Distance1", "D1"), length("Distance2", "D2"))
+            {
+                ChamferSpec::TwoDistances { first, second }
+            } else {
+                ChamferSpec::Distance {
+                    distance: length("Distance", "D1")?,
+                }
+            },
+        )
+    })()
+    .unwrap_or_else(|| ChamferSpec::Unresolved {
+        form: if feature.parameters.contains_key("Angle") {
+            Some(ChamferForm::DistanceAngle)
+        } else if feature.parameters.contains_key("Distance1")
+            || feature.parameters.contains_key("Distance2")
+        {
+            Some(ChamferForm::TwoDistances)
+        } else if feature.parameters.contains_key("Distance")
+            || (feature.parameters.contains_key("D1") && !feature.parameters.contains_key("D2"))
+        {
+            Some(ChamferForm::Distance)
+        } else {
+            None
+        },
+    });
+    FeatureDefinition::Chamfer {
         edges: feature
             .properties
             .get("Edges")
             .cloned()
             .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
         spec,
-    })
+    }
 }
 
 fn native_definition(feature: &Feature) -> FeatureDefinition {
@@ -4636,15 +4673,23 @@ pub fn sync_neutral_features(
                 let positional_radius = parameters.contains_key("D1")
                     && !parameters.contains_key("Radius")
                     && !parameters.keys().any(|name| indexed_name(name, "Radius"));
-                parameters.retain(|name, _| {
-                    name != "Radius"
-                        && !indexed_name(name, "Radius")
-                        && !indexed_name(name, "Position")
-                });
                 match radius {
+                    RadiusSpec::Unresolved { .. } => {
+                        if existing.is_none() {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has an unresolved fillet radius law",
+                                feature.id
+                            )));
+                        }
+                    }
                     RadiusSpec::Constant {
                         radius: Length(radius),
                     } => {
+                        parameters.retain(|name, _| {
+                            name != "Radius"
+                                && !indexed_name(name, "Radius")
+                                && !indexed_name(name, "Position")
+                        });
                         let key = if positional_radius { "D1" } else { "Radius" };
                         let value = format_length_like(
                             *radius,
@@ -4656,6 +4701,11 @@ pub fn sync_neutral_features(
                         parameters.insert(key.into(), value);
                     }
                     RadiusSpec::Variable { points } => {
+                        parameters.retain(|name, _| {
+                            name != "Radius"
+                                && !indexed_name(name, "Radius")
+                                && !indexed_name(name, "Position")
+                        });
                         if positional_radius {
                             return Err(CodecError::NotImplemented(format!(
                                 "SLDPRT feature {} changes positional fillet form",
@@ -4732,6 +4782,14 @@ pub fn sync_neutral_features(
                         .get("D2")
                         .is_some_and(|value| parse_bounded_angle_rad(value).is_some());
                 match spec {
+                    ChamferSpec::Unresolved { .. } => {
+                        if existing.is_none() {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has unresolved chamfer dimensions",
+                                feature.id
+                            )));
+                        }
+                    }
                     ChamferSpec::Distance { distance } => {
                         if existing.is_some()
                             && if positional {

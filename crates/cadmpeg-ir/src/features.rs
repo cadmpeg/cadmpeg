@@ -1101,6 +1101,12 @@ pub enum PathRef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RadiusSpec {
+    /// Radius law is retained but not fully resolved.
+    Unresolved {
+        /// Structural law form, when independently identified.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<RadiusForm>,
+    },
     /// Same radius along the whole edge chain.
     Constant {
         /// The fillet radius.
@@ -1111,6 +1117,16 @@ pub enum RadiusSpec {
         /// Radius samples along the edge chain, in chain-parameter order.
         points: Vec<VariableRadius>,
     },
+}
+
+/// Structural form of a fillet radius law.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RadiusForm {
+    /// One radius applies to the entire edge chain.
+    Constant,
+    /// Radius varies along the edge chain.
+    Variable,
 }
 
 /// Radius at a normalized position along a filleted edge chain.
@@ -1126,6 +1142,12 @@ pub struct VariableRadius {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChamferSpec {
+    /// Dimensional specification is retained but not fully resolved.
+    Unresolved {
+        /// Structural specification form, when independently identified.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<ChamferForm>,
+    },
     /// Equal setback distance on both faces meeting the edge.
     Distance {
         /// Setback distance from the edge.
@@ -1145,6 +1167,18 @@ pub enum ChamferSpec {
         /// Chamfer angle measured from the reference face.
         angle: Angle,
     },
+}
+
+/// Structural form of a chamfer dimensional specification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ChamferForm {
+    /// One equal setback distance.
+    Distance,
+    /// Independent setback distances on each adjacent face.
+    TwoDistances,
+    /// One setback distance and one angle.
+    DistanceAngle,
 }
 
 /// Shape at the entry of a hole.

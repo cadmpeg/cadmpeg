@@ -2600,9 +2600,21 @@ fn decode_retains_nonfinite_feature_dimensions_as_native() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.features.len(), 5);
-    assert!(decoded.ir.model.features[..4]
-        .iter()
-        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+    for index in [0, 2, 3] {
+        assert!(matches!(
+            decoded.ir.model.features[index].definition,
+            FeatureDefinition::Native { .. }
+        ));
+    }
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::Fillet {
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::RadiusForm::Constant),
+            },
+            ..
+        }
+    ));
     assert!(matches!(
         decoded.ir.model.features[4].definition,
         FeatureDefinition::Revolve {
@@ -2637,12 +2649,30 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.features.len(), 6);
-    assert!(decoded
-        .ir
-        .model
-        .features
-        .iter()
-        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+    for index in [0, 2, 3, 4] {
+        assert!(matches!(
+            decoded.ir.model.features[index].definition,
+            FeatureDefinition::Native { .. }
+        ));
+    }
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::Fillet {
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::RadiusForm::Constant),
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[5].definition,
+        FeatureDefinition::Chamfer {
+            spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::ChamferForm::Distance),
+            },
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -2700,7 +2730,16 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
             op: cadmpeg_ir::features::BooleanOp::Join,
         }
     ));
-    for index in [2, 3, 5] {
+    assert!(matches!(
+        decoded.ir.model.features[3].definition,
+        FeatureDefinition::Chamfer {
+            spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::ChamferForm::DistanceAngle),
+            },
+            ..
+        }
+    ));
+    for index in [2, 5] {
         assert!(matches!(
             decoded.ir.model.features[index].definition,
             FeatureDefinition::Native { .. }
@@ -7419,6 +7458,78 @@ fn semantic_writer_round_trips_extrusion_to_face() {
             ..
         } if face == "face:13"
     ));
+}
+
+#[test]
+fn semantic_writer_retains_unresolved_native_edge_treatments() {
+    use cadmpeg_ir::features::{
+        ChamferForm, ChamferSpec, FeatureDefinition, RadiusForm, RadiusSpec,
+    };
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Round" Type="Custom" id="10" Edges="edge:1"><Dimension Name="Radius">NaNmm</Dimension></Feature><Feature Name="Bevel" Type="Custom" id="11" Edges="edge:2"><Dimension Name="Distance">NaNmm</Dimension></Feature></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[
+            ("Fillet_c", "Round", 10),
+            ("Chamfer_c", "Bevel", 11),
+        ]),
+    ));
+
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Fillet {
+            radius: RadiusSpec::Unresolved {
+                form: Some(RadiusForm::Constant),
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::Chamfer {
+            spec: ChamferSpec::Unresolved {
+                form: Some(ChamferForm::Distance),
+            },
+            ..
+        }
+    ));
+
+    let mut detached = decoded.ir.clone();
+    detached.model.features[0].native_ref = None;
+    let error = SldprtCodec
+        .write_preserved(&detached, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("unresolved fillet radius law"));
+    detached.model.features[0] = decoded.ir.model.features[0].clone();
+    detached.model.features[1].native_ref = None;
+    let error = SldprtCodec
+        .write_preserved(&detached, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("unresolved chamfer dimensions"));
+
+    decoded.ir.model.features[0].name = Some("Renamed round".into());
+    decoded.ir.model.features[1].name = Some("Renamed bevel".into());
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native[0].parameters["Radius"], "NaNmm");
+    assert_eq!(native[1].parameters["Distance"], "NaNmm");
+    assert_eq!(native[0].properties["Edges"], "edge:1");
+    assert_eq!(native[1].properties["Edges"], "edge:2");
 }
 
 #[test]
