@@ -1242,6 +1242,13 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::DeleteFace { faces, .. } => {
                 face_selections.push(faces);
             }
+            FeatureDefinition::ReplaceFace {
+                targets,
+                replacements,
+            } => {
+                face_selections.push(targets);
+                face_selections.push(replacements);
+            }
             FeatureDefinition::MoveFace { faces, motion } => {
                 face_selections.push(faces);
                 let valid = match motion {

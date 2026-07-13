@@ -6850,6 +6850,56 @@ fn semantic_writer_round_trips_typed_delete_face() {
 }
 
 #[test]
+fn semantic_writer_round_trips_typed_replace_face() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><ReplaceFace Name="Patch" Type="ReplaceFace" id="21" Faces="face:4,face:5" ReplacementFaces="face:8"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::ReplaceFace {
+            targets: FaceSelection::Native(targets),
+            replacements: FaceSelection::Native(replacements),
+        } if targets == "face:4,face:5" && replacements == "face:8"
+    ));
+
+    let FeatureDefinition::ReplaceFace {
+        targets,
+        replacements,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed replace face");
+    };
+    *targets = FaceSelection::Native("face:6".into());
+    *replacements = FaceSelection::Native("face:9,face:10".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.properties["Faces"], "face:6");
+    assert_eq!(feature.properties["ReplacementFaces"], "face:9,face:10");
+    assert!(matches!(
+        &regenerated.ir.model.features[0].definition,
+        FeatureDefinition::ReplaceFace {
+            targets: FaceSelection::Native(targets),
+            replacements: FaceSelection::Native(replacements),
+        } if targets == "face:6" && replacements == "face:9,face:10"
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_all_move_face_forms() {
     use cadmpeg_ir::features::{Angle, FaceMotion, FaceSelection, FeatureDefinition, Length};
     use cadmpeg_ir::math::{Point3, Vector3};

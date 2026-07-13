@@ -732,6 +732,13 @@ pub fn bind_topology_selections(
             | FeatureDefinition::Dome { faces, .. } => {
                 resolve_face_selection(faces, &face_ids);
             }
+            FeatureDefinition::ReplaceFace {
+                targets,
+                replacements,
+            } => {
+                resolve_face_selection(targets, &face_ids);
+                resolve_face_selection(replacements, &face_ids);
+            }
             FeatureDefinition::Hole {
                 face: Some(face), ..
             } => {
@@ -910,6 +917,8 @@ fn project_definition(
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "DeleteFace") {
         project_delete_face(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature_family(feature, "ReplaceFace") {
+        project_replace_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "MoveFace") {
         project_move_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Dome") {
@@ -1547,6 +1556,13 @@ fn project_delete_face(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::DeleteFace {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
         heal: parse_bool(feature.properties.get("Heal")?)?,
+    })
+}
+
+fn project_replace_face(feature: &Feature) -> Option<FeatureDefinition> {
+    Some(FeatureDefinition::ReplaceFace {
+        targets: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
+        replacements: FaceSelection::Native(feature.properties.get("ReplacementFaces")?.clone()),
     })
 }
 
@@ -3210,6 +3226,40 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::ReplaceFace {
+                targets,
+                replacements,
+            } => {
+                let targets = face_selection_value(targets);
+                let replacements = face_selection_value(replacements);
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !feature_family(record, "ReplaceFace"))
+                    || targets.is_none()
+                    || replacements.is_none()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported replace-face semantics",
+                        feature.id
+                    )));
+                }
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Faces".into(), targets.expect("checked above"));
+                properties.insert(
+                    "ReplacementFaces".into(),
+                    replacements.expect("checked above"),
+                );
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "ReplaceFace".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
+            }
             FeatureDefinition::MoveFace { faces, motion } => {
                 let faces = face_selection_value(faces);
                 if existing
@@ -4315,6 +4365,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
         FeatureDefinition::DeleteFace { .. } => "DeleteFace",
+        FeatureDefinition::ReplaceFace { .. } => "ReplaceFace",
         FeatureDefinition::MoveFace { .. } => "MoveFace",
         FeatureDefinition::Dome { .. } => "Dome",
         FeatureDefinition::Flex { .. } => "Flex",

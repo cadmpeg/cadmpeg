@@ -350,6 +350,13 @@ pub enum FeatureDefinition {
         /// Whether adjacent faces extend to heal the resulting boundary.
         heal: bool,
     },
+    /// Replaces selected faces with another face set.
+    ReplaceFace {
+        /// Faces removed from the target body.
+        targets: FaceSelection,
+        /// Faces whose underlying geometry supplies the replacement.
+        replacements: FaceSelection,
+    },
     /// Direct motion of selected faces.
     MoveFace {
         /// Faces modified by the operation.
