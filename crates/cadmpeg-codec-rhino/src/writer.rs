@@ -201,7 +201,6 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
     let model = &ir.model;
     let unsupported = [
         ("subds", model.subds.len()),
-        ("pcurves", model.pcurves.len()),
         ("procedural_surfaces", model.procedural_surfaces.len()),
         ("procedural_curves", model.procedural_curves.len()),
         ("features", model.features.len()),
@@ -245,6 +244,11 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
             CodecError::NotImplemented("body topology is not a writable planar Brep".into())
         })?;
         return Ok(());
+    }
+    if !model.pcurves.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "pcurves without writable Brep coedge ownership are not writable".into(),
+        ));
     }
     free_vertex_groups(ir)?;
     for curve in &model.curves {
@@ -411,9 +415,9 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
                 .iter()
                 .find(|coedge| coedge.id == *id)
                 .ok_or_else(|| CodecError::Malformed(format!("coedge {} is missing", id.0)))?;
-            if coedge.owner_loop != loop_.id || coedge.pcurve.is_some() {
-                return Err(CodecError::NotImplemented(format!(
-                    "coedge {} ownership or attributed pcurve is not writable",
+            if coedge.owner_loop != loop_.id {
+                return Err(CodecError::Malformed(format!(
+                    "coedge {} ownership is inconsistent",
                     coedge.id.0
                 )));
             }
@@ -436,6 +440,7 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
         }
         loop_ranges.push(start..end);
     }
+    validate_brep_pcurve_ownership(model, &ordered_coedges)?;
 
     let mut ordered_edges = Vec::with_capacity(edge_count);
     let mut traversal_vertices = Vec::with_capacity(edge_count);
@@ -540,16 +545,16 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
     let mut payload = vec![0x32];
     let c2 = (0..edge_count)
         .map(|index| {
-            projected_brep_c2_curve(
+            brep_c2_curve(
                 model,
                 ordered_edges[index],
-                ordered_coedges[index].sense,
+                ordered_coedges[index],
                 origin,
                 u_axis,
                 v_axis,
             )
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     payload.extend(polymorphic_array(&c2));
     let c3 = ordered_edges
         .iter()
@@ -641,7 +646,11 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
                 .position(|range| range.contains(&index))
                 .expect("trim belongs to one loop");
             record.extend((loop_index as i32).to_le_bytes());
-            record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
+            record.extend(
+                [brep_pcurve_fit_tolerance(model, coedge), 0.0_f64]
+                    .into_iter()
+                    .flat_map(f64::to_le_bytes),
+            );
             record.extend([0_u8; 48]);
             record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
             record
@@ -900,13 +909,12 @@ fn planar_multi_face_brep_payload(
                 .ok_or_else(|| CodecError::Malformed(format!("coedge {} is missing", id.0)))?;
             if !owned_coedges.insert(id.0.clone())
                 || coedge.owner_loop != loop_.id
-                || coedge.pcurve.is_some()
                 || coedge.next != loop_.coedges[(offset + 1) % loop_.coedges.len()]
                 || coedge.previous
                     != loop_.coedges[(offset + loop_.coedges.len() - 1) % loop_.coedges.len()]
             {
                 return Err(CodecError::NotImplemented(format!(
-                    "coedge {} ownership, ring, or attributed pcurve is not writable",
+                    "coedge {} ownership or ring is not writable",
                     coedge.id.0
                 )));
             }
@@ -950,6 +958,7 @@ fn planar_multi_face_brep_payload(
             "multi-face planar sheet contains orphan coedges".into(),
         ));
     }
+    validate_brep_pcurve_ownership(model, &model.coedges.iter().collect::<Vec<_>>())?;
 
     let mut edge_uses = Vec::with_capacity(model.edges.len());
     let mut edge_faces = Vec::with_capacity(model.edges.len());
@@ -1103,9 +1112,9 @@ fn planar_multi_face_brep_payload(
             let face = *face_index.get(&loop_.face.0).expect("owned face") as usize;
             let (origin, _, u_axis, v_axis) = plane_frames[face];
             let edge = &model.edges[*edge_index.get(&coedge.edge.0).expect("owned edge") as usize];
-            projected_brep_c2_curve(model, edge, coedge.sense, origin, u_axis, v_axis)
+            brep_c2_curve(model, edge, coedge, origin, u_axis, v_axis)
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     payload.extend(polymorphic_array(&c2));
     let c3 = model
         .edges
@@ -1208,7 +1217,11 @@ fn planar_multi_face_brep_payload(
             );
             record.extend(0_i32.to_le_bytes());
             record.extend(loop_index[&coedge.owner_loop.0].to_le_bytes());
-            record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
+            record.extend(
+                [brep_pcurve_fit_tolerance(model, coedge), 0.0_f64]
+                    .into_iter()
+                    .flat_map(f64::to_le_bytes),
+            );
             record.extend([0_u8; 48]);
             record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
             record
@@ -1404,7 +1417,7 @@ fn brep_c3_curve(
     }
 }
 
-fn projected_brep_c2_curve(
+fn generated_projected_brep_c2_curve(
     model: &cadmpeg_ir::document::Model,
     edge: &cadmpeg_ir::topology::Edge,
     sense: cadmpeg_ir::topology::Sense,
@@ -1469,6 +1482,140 @@ fn projected_brep_c2_curve(
         }
         _ => unreachable!("validated writable Brep curve"),
     }
+}
+
+fn brep_c2_curve(
+    model: &cadmpeg_ir::document::Model,
+    edge: &cadmpeg_ir::topology::Edge,
+    coedge: &cadmpeg_ir::topology::Coedge,
+    origin: cadmpeg_ir::math::Point3,
+    u_axis: cadmpeg_ir::math::Vector3,
+    v_axis: cadmpeg_ir::math::Vector3,
+) -> Result<([u8; 16], Vec<u8>), CodecError> {
+    let generated =
+        generated_projected_brep_c2_curve(model, edge, coedge.sense, origin, u_axis, v_axis);
+    let Some(pcurve_id) = &coedge.pcurve else {
+        return Ok(generated);
+    };
+    let pcurve = model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id == *pcurve_id)
+        .ok_or_else(|| CodecError::Malformed(format!("pcurve {} is missing", pcurve_id.0)))?;
+    if pcurve.wrapper_reversed == Some(true)
+        || pcurve.native_tail_flags.is_some()
+        || pcurve
+            .parameter_range
+            .is_some_and(|range| Some(range) != edge.param_range)
+        || pcurve
+            .fit_tolerance
+            .is_some_and(|value| !value.is_finite() || value < 0.0)
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "pcurve {} has unsupported wrapper, tail, domain, or tolerance state",
+            pcurve.id.0
+        )));
+    }
+    let domain = edge.param_range.expect("validated edge domain");
+    let explicit = match &pcurve.geometry {
+        cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } => {
+            if !origin.u.is_finite()
+                || !origin.v.is_finite()
+                || !direction.u.is_finite()
+                || !direction.v.is_finite()
+                || direction.u == 0.0 && direction.v == 0.0
+            {
+                return Err(CodecError::Malformed(format!(
+                    "pcurve {} has invalid line geometry",
+                    pcurve.id.0
+                )));
+            }
+            let from = [
+                origin.u + direction.u * domain[0],
+                origin.v + direction.v * domain[0],
+                0.0,
+            ];
+            let to = [
+                origin.u + direction.u * domain[1],
+                origin.v + direction.v * domain[1],
+                0.0,
+            ];
+            (LINE_CLASS, bounded_line_payload(from, to, domain, 2))
+        }
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        } => {
+            let curve = cadmpeg_ir::geometry::NurbsCurve {
+                degree: *degree,
+                knots: knots.clone(),
+                control_points: control_points
+                    .iter()
+                    .map(|point| cadmpeg_ir::math::Point3::new(point.u, point.v, 0.0))
+                    .collect(),
+                weights: weights.clone(),
+                periodic: *periodic,
+            };
+            check_nurbs_curve(&pcurve.id.0, &curve)?;
+            let count = curve.control_points.len();
+            if curve.periodic || [curve.knots[curve.degree as usize], curve.knots[count]] != domain
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "pcurve {} is not a nonperiodic full-domain NURBS curve",
+                    pcurve.id.0
+                )));
+            }
+            (NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2))
+        }
+    };
+    if explicit != generated {
+        return Err(CodecError::Malformed(format!(
+            "pcurve {} does not exactly match its directed planar C3 projection",
+            pcurve.id.0
+        )));
+    }
+    Ok(explicit)
+}
+
+fn validate_brep_pcurve_ownership(
+    model: &cadmpeg_ir::document::Model,
+    coedges: &[&cadmpeg_ir::topology::Coedge],
+) -> Result<(), CodecError> {
+    let mut owned = std::collections::BTreeSet::new();
+    for coedge in coedges {
+        if let Some(id) = &coedge.pcurve {
+            if !owned.insert(id.0.clone()) {
+                return Err(CodecError::NotImplemented(format!(
+                    "pcurve {} is shared by multiple coedges",
+                    id.0
+                )));
+            }
+            if !model.pcurves.iter().any(|pcurve| pcurve.id == *id) {
+                return Err(CodecError::Malformed(format!("pcurve {} is missing", id.0)));
+            }
+        }
+    }
+    if owned.len() != model.pcurves.len() {
+        return Err(CodecError::NotImplemented(
+            "orphan Brep pcurves are not writable".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn brep_pcurve_fit_tolerance(
+    model: &cadmpeg_ir::document::Model,
+    coedge: &cadmpeg_ir::topology::Coedge,
+) -> f64 {
+    coedge
+        .pcurve
+        .as_ref()
+        .and_then(|id| model.pcurves.iter().find(|pcurve| pcurve.id == *id))
+        .and_then(|pcurve| pcurve.fit_tolerance)
+        .unwrap_or(0.0)
 }
 
 fn vertex_point(
@@ -2970,6 +3117,154 @@ mod tests {
                 ));
             }
             assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+        }
+    }
+
+    #[test]
+    fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
+        let mut ir = adjacent_quad_sheet();
+        ir.model.edges[1].param_range = Some([2.0, 5.0]);
+        ir.model.curves[1].geometry =
+            cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+                degree: 2,
+                knots: vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+                control_points: vec![
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.25, 0.5, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                weights: Some(vec![1.0, 0.75, 1.0]),
+                periodic: false,
+            });
+        for (coedge, reversed) in [(1_usize, false), (7, true)] {
+            let id: cadmpeg_ir::ids::PcurveId =
+                format!("cadir:model:pcurve#explicit.{coedge}").into();
+            let mut control_points = vec![
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                cadmpeg_ir::math::Point2::new(1.25, 0.5),
+                cadmpeg_ir::math::Point2::new(1.0, 1.0),
+            ];
+            if reversed {
+                control_points.reverse();
+            }
+            ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
+                id: id.clone(),
+                geometry: cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+                    degree: 2,
+                    knots: vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+                    control_points,
+                    weights: Some(vec![1.0, 0.75, 1.0]),
+                    periodic: false,
+                },
+                wrapper_reversed: Some(false),
+                native_tail_flags: None,
+                parameter_range: Some([2.0, 5.0]),
+                fit_tolerance: Some(0.001),
+            });
+            ir.model.coedges[coedge].pcurve = Some(id);
+        }
+        for version in [
+            RhinoArchiveVersion::V5,
+            RhinoArchiveVersion::V6,
+            RhinoArchiveVersion::V7,
+            RhinoArchiveVersion::V8,
+        ] {
+            let mut bytes = Vec::new();
+            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            let explicit = decoded
+                .ir
+                .model
+                .pcurves
+                .iter()
+                .filter(|pcurve| pcurve.fit_tolerance == Some(0.001))
+                .collect::<Vec<_>>();
+            assert_eq!(explicit.len(), 2, "{version:?}");
+            assert!(explicit.iter().all(|pcurve| {
+                pcurve.wrapper_reversed == Some(false)
+                    && pcurve.parameter_range == Some([2.0, 5.0])
+                    && matches!(
+                        pcurve.geometry,
+                        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
+                    )
+            }));
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+        }
+    }
+
+    #[test]
+    fn inconsistent_explicit_pcurve_is_rejected_before_output() {
+        let mut ir = polygon_sheet(&[
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+        ]);
+        let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#mismatch".into();
+        ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
+            id: id.clone(),
+            geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: ir.model.edges[0].param_range,
+            fit_tolerance: None,
+        });
+        ir.model.coedges[0].pcurve = Some(id);
+        let mut output = vec![0xaa];
+        let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&ir, &mut output)
+            .unwrap_err();
+        assert!(error.to_string().contains("does not exactly match"));
+        assert_eq!(output, [0xaa]);
+    }
+
+    #[test]
+    fn explicit_line_pcurve_round_trips_as_native_c2() {
+        let mut ir = polygon_sheet(&[
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+        ]);
+        let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#line".into();
+        ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
+            id: id.clone(),
+            geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: Some([0.0, 2.0]),
+            fit_tolerance: Some(0.002),
+        });
+        ir.model.coedges[0].pcurve = Some(id);
+        for version in [
+            RhinoArchiveVersion::V5,
+            RhinoArchiveVersion::V6,
+            RhinoArchiveVersion::V7,
+            RhinoArchiveVersion::V8,
+        ] {
+            let mut bytes = Vec::new();
+            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            let pcurve = decoded
+                .ir
+                .model
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.fit_tolerance == Some(0.002))
+                .expect("explicit line C2");
+            assert_eq!(pcurve.parameter_range, Some([0.0, 2.0]));
+            assert!(matches!(
+                pcurve.geometry,
+                cadmpeg_ir::geometry::PcurveGeometry::Nurbs { degree: 1, .. }
+            ));
         }
     }
 
