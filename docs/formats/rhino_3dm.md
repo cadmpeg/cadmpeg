@@ -944,12 +944,15 @@ the buffer immediately; no CRC, method, or body follows.
 
 ```
 method 0: stored bytes, exactly uncompressed size
-method 1: zlib/DEFLATE bytes
+method 1: one anonymous long chunk whose body is a complete zlib stream
 ```
 
-The CRC covers the uncompressed bytes. Inflated output has exactly the declared
-size. Unknown methods, zlib failure, truncation, and checksum failure make the
-buffer invalid.
+The outer CRC covers the uncompressed bytes. The anonymous method-1 chunk has
+its own chunk CRC after the compressed stream. The chunk declaration provides
+the compressed-input boundary; the zlib stream consumes its entire chunk body.
+Inflated output has exactly the declared size. Unknown methods, wrong method-1
+chunk type, zlib failure, truncation, trailing compressed bytes, and outer CRC
+failure make the buffer invalid.
 
 ## 11. Class UUID registry
 
