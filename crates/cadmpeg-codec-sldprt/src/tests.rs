@@ -3825,6 +3825,60 @@ fn closed_cylinder_gets_derived_seam() {
 }
 
 #[test]
+fn closed_cylinder_anchors_sentinel_vertices_to_the_surface_branch() {
+    let mut body = closed_cylinder_body();
+    for coedge_attr in [30u16, 31] {
+        let offset = body
+            .windows(4)
+            .position(|window| {
+                window[0..2] == [0x00, 0x11] && window[2..4] == coedge_attr.to_be_bytes()
+            })
+            .expect("coedge");
+        body[offset + 12..offset + 14].copy_from_slice(&1u16.to_be_bytes());
+    }
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let seam = decoded
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id.0.contains("#seam:"))
+        .expect("derived seam");
+    let positions = [&seam.start, &seam.end].map(|vertex_id| {
+        let vertex = decoded
+            .ir
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == *vertex_id)
+            .unwrap();
+        decoded
+            .ir
+            .model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .unwrap()
+            .position
+    });
+    assert_eq!(
+        positions[0],
+        cadmpeg_ir::math::Point3::new(-1000.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        positions[1],
+        cadmpeg_ir::math::Point3::new(-1000.0, 0.0, 1000.0)
+    );
+}
+
+#[test]
 fn closed_circle_edge_gets_a_derived_seam_vertex() {
     let mut body = Vec::new();
     body.extend(plane_carrier(

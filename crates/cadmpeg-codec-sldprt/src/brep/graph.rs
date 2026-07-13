@@ -1613,7 +1613,10 @@ fn synthesize_cylinder_seams(
         let Some(surface) = surfaces.get(&face.surface) else {
             continue;
         };
-        if !matches!(surface.geometry, SurfaceGeometry::Cylinder { .. }) || face.loops.len() != 2 {
+        let SurfaceGeometry::Cylinder { ref_direction, .. } = surface.geometry else {
+            continue;
+        };
+        if face.loops.len() != 2 {
             continue;
         }
         let Some(a) = loops.get(&face.loops[0]) else {
@@ -1637,15 +1640,21 @@ fn synthesize_cylinder_seams(
         let Some(eb) = edges.get(&cb.edge) else {
             continue;
         };
-        let circular = |edge: &Edge| {
-            edge.start == edge.end
-                && edge.curve.as_ref().is_some_and(|id| {
-                    curves
-                        .get(id)
-                        .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Circle { .. }))
-                })
+        let seam_point = |edge: &Edge| {
+            if edge.start != edge.end {
+                return None;
+            }
+            let curve = curves.get(edge.curve.as_ref()?)?;
+            let CurveGeometry::Circle { center, radius, .. } = curve.geometry else {
+                return None;
+            };
+            Some(cadmpeg_ir::math::Point3::new(
+                center.x - ref_direction.x * radius,
+                center.y - ref_direction.y * radius,
+                center.z - ref_direction.z * radius,
+            ))
         };
-        if circular(ea) && circular(eb) {
+        if let (Some(pa), Some(pb)) = (seam_point(ea), seam_point(eb)) {
             candidates.push((
                 face.id.clone(),
                 a.id.clone(),
@@ -1654,6 +1663,8 @@ fn synthesize_cylinder_seams(
                 cb.id.clone(),
                 ea.start.clone(),
                 eb.start.clone(),
+                pa,
+                pb,
             ));
         }
     }
@@ -1665,29 +1676,20 @@ fn synthesize_cylinder_seams(
         .enumerate()
         .map(|(index, coedge)| (coedge.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    for (face_id, loop_a, loop_b, circle_a, circle_b, vertex_a, vertex_b) in candidates {
-        let point_for = |vertex: &Vertex| {
-            out.points
+    for (face_id, loop_a, loop_b, circle_a, circle_b, vertex_a, vertex_b, pa, pb) in candidates {
+        for (vertex_id, position) in [(&vertex_a, pa), (&vertex_b, pb)] {
+            let Some(point_id) = out
+                .vertices
                 .iter()
-                .find(|point| point.id == vertex.point)
-                .map(|point| point.position)
-        };
-        let Some(pa) = out
-            .vertices
-            .iter()
-            .find(|vertex| vertex.id == vertex_a)
-            .and_then(point_for)
-        else {
-            continue;
-        };
-        let Some(pb) = out
-            .vertices
-            .iter()
-            .find(|vertex| vertex.id == vertex_b)
-            .and_then(point_for)
-        else {
-            continue;
-        };
+                .find(|vertex| vertex.id == *vertex_id)
+                .map(|vertex| vertex.point.clone())
+            else {
+                continue;
+            };
+            if let Some(point) = out.points.iter_mut().find(|point| point.id == point_id) {
+                point.position = position;
+            }
+        }
         let direction = cadmpeg_ir::math::Vector3::new(pb.x - pa.x, pb.y - pa.y, pb.z - pa.z);
         let norm = direction.norm();
         if norm == 0.0 {
