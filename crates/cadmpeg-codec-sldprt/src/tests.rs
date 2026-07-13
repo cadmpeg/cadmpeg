@@ -4421,6 +4421,23 @@ fn reused_carrier_attribute_resolves_by_geometry_kind() {
 }
 
 #[test]
+fn false_later_loop_candidate_does_not_replace_owned_loop() {
+    let mut body = triangle_body();
+    body.extend(loop_head(20, 30, 999));
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 3);
+    assert_eq!(result.ir.model.loops[0].id.0, "sldprt:brep:loop#20");
+}
+
+#[test]
 fn faces_decode_nurbs_surface() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 

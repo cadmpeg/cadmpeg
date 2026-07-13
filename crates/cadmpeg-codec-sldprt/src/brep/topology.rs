@@ -329,6 +329,7 @@ pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
 /// partition-base plus deltas-override merge order.
 pub fn scan(body: &[u8]) -> Tables {
     let mut t = Tables::default();
+    let mut loop_candidates = Vec::new();
     let mut i = 0usize;
     while i + 14 <= body.len() {
         if body[i] != 0x00 {
@@ -337,7 +338,12 @@ pub fn scan(body: &[u8]) -> Tables {
         }
         let (rec, table): (Option<Record>, Option<&mut HashMap<u16, Record>>) = match body[i + 1] {
             0x0e => (parse_bridge(body, i), Some(&mut t.bridges)),
-            0x0f => (parse_loop(body, i), Some(&mut t.loops)),
+            0x0f => {
+                if let Some(record) = parse_loop(body, i) {
+                    loop_candidates.push(record);
+                }
+                (None, None)
+            }
             0x10 => (parse_edge_use(body, i), Some(&mut t.edge_uses)),
             0x11 => (parse_coedge(body, i), Some(&mut t.coedges)),
             0x12 => (parse_vertex_use(body, i), Some(&mut t.vertex_uses)),
@@ -350,6 +356,17 @@ pub fn scan(body: &[u8]) -> Tables {
                 i += 1;
             }
             _ => i += 1,
+        }
+    }
+    for record in loop_candidates {
+        let owner = record.refs.get(2).copied().unwrap_or(0);
+        let first = record.refs.get(1).copied().unwrap_or(0);
+        if t.bridges.contains_key(&owner)
+            && t.coedges
+                .get(&first)
+                .is_some_and(|coedge| coedge.refs.get(1) == Some(&record.attr))
+        {
+            t.loops.insert(record.attr, record);
         }
     }
     t
