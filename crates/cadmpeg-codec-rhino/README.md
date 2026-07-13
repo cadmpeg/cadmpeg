@@ -48,8 +48,11 @@ free-vertex bodies, circles, canonical rational or non-rational NURBS curves,
 planes, canonical rational or non-rational NURBS surfaces, and standalone
 triangle meshes with normals and recognized native auxiliary channels. Archive
 60, 70, and 80 meshes preserve double vertices; archive 50 reports any vertex
-quantization. Unsupported topology, geometry, presentation state, native
-records, and noncanonical NURBS contracts are rejected before output.
+quantization. B-rep generation supports connected planar faces with holes,
+closed planar solids, and mixed planar and rectangular nonperiodic NURBS faces
+with exact line or NURBS edges and parameter-space trim curves. Unsupported
+topology, geometry, presentation state, native records, and noncanonical NURBS
+contracts are rejected before output.
 
 ```sh
 cadmpeg inspect model.3dm

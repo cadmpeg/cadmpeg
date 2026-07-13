@@ -324,7 +324,7 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
         return Ok(None);
     };
     if model.faces.len() > 1 || body.kind == BodyKind::Solid {
-        return planar_multi_face_brep_payload(ir, body).map(Some);
+        return multi_face_brep_payload(ir, body).map(Some);
     }
     let edge_count = model.coedges.len();
     if model.bodies.len() != 1
@@ -728,7 +728,18 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
     Ok(Some(payload))
 }
 
-fn planar_multi_face_brep_payload(
+#[derive(Clone, Copy)]
+enum WritableFaceSurface<'a> {
+    Plane {
+        origin: cadmpeg_ir::math::Point3,
+        normal: cadmpeg_ir::math::Vector3,
+        u_axis: cadmpeg_ir::math::Vector3,
+        v_axis: cadmpeg_ir::math::Vector3,
+    },
+    Nurbs(&'a cadmpeg_ir::geometry::NurbsSurface),
+}
+
+fn multi_face_brep_payload(
     ir: &CadIr,
     body: &cadmpeg_ir::topology::Body,
 ) -> Result<Vec<u8>, CodecError> {
@@ -868,7 +879,7 @@ fn planar_multi_face_brep_payload(
         ));
     }
 
-    let mut plane_frames = Vec::with_capacity(model.faces.len());
+    let mut face_surfaces = Vec::with_capacity(model.faces.len());
     let mut used_surfaces = BTreeSet::new();
     let mut owned_loops = BTreeSet::new();
     for face in &model.faces {
@@ -890,25 +901,43 @@ fn planar_multi_face_brep_payload(
             .ok_or_else(|| {
                 CodecError::Malformed(format!("surface {} is missing", face.surface.0))
             })?;
-        let SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } = surface.geometry
-        else {
-            return Err(CodecError::NotImplemented(format!(
-                "face {} surface is not planar",
-                face.id.0
-            )));
-        };
         if surface.source_object.is_some() {
             return Err(CodecError::NotImplemented(format!(
                 "surface {} source-object state is not writable",
                 surface.id.0
             )));
         }
-        check_frame(&surface.id.0, origin, normal, u_axis, "plane")?;
-        plane_frames.push((origin, normal, u_axis, cross(normal, u_axis)));
+        match &surface.geometry {
+            SurfaceGeometry::Plane {
+                origin,
+                normal,
+                u_axis,
+            } => {
+                check_frame(&surface.id.0, *origin, *normal, *u_axis, "plane")?;
+                face_surfaces.push(WritableFaceSurface::Plane {
+                    origin: *origin,
+                    normal: *normal,
+                    u_axis: *u_axis,
+                    v_axis: cross(*normal, *u_axis),
+                });
+            }
+            SurfaceGeometry::Nurbs(nurbs) => {
+                check_nurbs_surface(&surface.id.0, nurbs)?;
+                if nurbs.u_periodic || nurbs.v_periodic || face.loops.len() != 1 {
+                    return Err(CodecError::NotImplemented(format!(
+                        "face {} is not a nonperiodic single-loop NURBS patch",
+                        face.id.0
+                    )));
+                }
+                face_surfaces.push(WritableFaceSurface::Nurbs(nurbs));
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "face {} surface is not a plane or NURBS patch",
+                    face.id.0
+                )))
+            }
+        }
         for loop_id in &face.loops {
             if !owned_loops.insert(loop_id.0.clone()) {
                 return Err(CodecError::Malformed(format!(
@@ -1072,7 +1101,30 @@ fn planar_multi_face_brep_payload(
 
     for (loop_position, loop_) in model.loops.iter().enumerate() {
         let face_position = *face_index.get(&loop_.face.0).expect("owned face") as usize;
-        let (origin, normal, u_axis, v_axis) = plane_frames[face_position];
+        if let WritableFaceSurface::Nurbs(surface) = face_surfaces[face_position] {
+            let coedges = loop_
+                .coedges
+                .iter()
+                .map(|id| &model.coedges[*coedge_index.get(&id.0).expect("owned coedge") as usize])
+                .collect::<Vec<_>>();
+            let edges = coedges
+                .iter()
+                .map(|coedge| {
+                    &model.edges[*edge_index.get(&coedge.edge.0).expect("owned edge") as usize]
+                })
+                .collect::<Vec<_>>();
+            validate_nurbs_patch_boundaries(model, surface, &edges, &coedges)?;
+            continue;
+        }
+        let WritableFaceSurface::Plane {
+            origin,
+            normal,
+            u_axis,
+            v_axis,
+        } = face_surfaces[face_position]
+        else {
+            unreachable!("NURBS face continued")
+        };
         let tolerance = model.faces[face_position]
             .tolerance
             .unwrap_or(ir.tolerances.linear)
@@ -1146,9 +1198,16 @@ fn planar_multi_face_brep_payload(
             let loop_ =
                 &model.loops[*loop_index.get(&coedge.owner_loop.0).expect("owned loop") as usize];
             let face = *face_index.get(&loop_.face.0).expect("owned face") as usize;
-            let (origin, _, u_axis, v_axis) = plane_frames[face];
             let edge = &model.edges[*edge_index.get(&coedge.edge.0).expect("owned edge") as usize];
-            brep_c2_curve(model, edge, coedge, origin, u_axis, v_axis)
+            match face_surfaces[face] {
+                WritableFaceSurface::Plane {
+                    origin,
+                    u_axis,
+                    v_axis,
+                    ..
+                } => brep_c2_curve(model, edge, coedge, origin, u_axis, v_axis),
+                WritableFaceSurface::Nurbs(_) => explicit_brep_c2_curve(model, edge, coedge),
+            }
         })
         .collect::<Result<Vec<_>, _>>()?;
     payload.extend(polymorphic_array(&c2));
@@ -1161,19 +1220,17 @@ fn planar_multi_face_brep_payload(
     let surfaces = model
         .surfaces
         .iter()
-        .map(|surface| {
-            let SurfaceGeometry::Plane {
+        .map(|surface| match &surface.geometry {
+            SurfaceGeometry::Plane {
                 origin,
                 normal,
                 u_axis,
-            } = surface.geometry
-            else {
-                unreachable!("validated plane surface")
-            };
-            (
+            } => (
                 PLANE_SURFACE_CLASS,
-                plane_surface_payload(origin, normal, u_axis),
-            )
+                plane_surface_payload(*origin, *normal, *u_axis),
+            ),
+            SurfaceGeometry::Nurbs(nurbs) => (NURBS_SURFACE_CLASS, nurbs_surface_payload(nurbs)),
+            _ => unreachable!("validated writable face surface"),
         })
         .collect::<Vec<_>>();
     payload.extend(polymorphic_array(&surfaces));
@@ -3532,6 +3589,77 @@ mod tests {
     }
 
     #[test]
+    fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
+        let ir = mixed_plane_nurbs_sheet();
+        let expected_surface = ir.model.surfaces[0].geometry.clone();
+        for version in [
+            RhinoArchiveVersion::V5,
+            RhinoArchiveVersion::V6,
+            RhinoArchiveVersion::V7,
+            RhinoArchiveVersion::V8,
+        ] {
+            let mut bytes = Vec::new();
+            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
+            assert_eq!(
+                decoded.ir.model.bodies[0].kind,
+                cadmpeg_ir::topology::BodyKind::Sheet,
+                "{version:?}"
+            );
+            assert_eq!(decoded.ir.model.faces.len(), 2, "{version:?}");
+            assert_eq!(decoded.ir.model.surfaces[0].geometry, expected_surface);
+            assert_eq!(decoded.ir.model.edges[1].param_range, Some([30.0, 32.0]));
+            let shared_uses = decoded
+                .ir
+                .model
+                .coedges
+                .iter()
+                .enumerate()
+                .filter(|(_, coedge)| coedge.edge == decoded.ir.model.edges[1].id)
+                .collect::<Vec<_>>();
+            assert_eq!(shared_uses.len(), 2, "{version:?}");
+            assert_ne!(shared_uses[0].1.sense, shared_uses[1].1.sense);
+            assert_eq!(
+                shared_uses[0].1.radial_next, shared_uses[1].1.id,
+                "{version:?}"
+            );
+            assert_eq!(
+                shared_uses[1].1.radial_next, shared_uses[0].1.id,
+                "{version:?}"
+            );
+            assert_eq!(
+                decoded
+                    .ir
+                    .model
+                    .pcurves
+                    .iter()
+                    .filter(|pcurve| pcurve.fit_tolerance == Some(0.001))
+                    .count(),
+                4,
+                "{version:?}"
+            );
+            let planar_shared_pcurve = decoded
+                .ir
+                .model
+                .pcurves
+                .iter()
+                .find(|pcurve| {
+                    pcurve.parameter_range == Some([30.0, 32.0])
+                        && pcurve.fit_tolerance != Some(0.001)
+                })
+                .expect("generated planar shared-edge pcurve");
+            assert!(matches!(
+                planar_shared_pcurve.geometry,
+                cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
+            ));
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+        }
+    }
+
+    #[test]
     fn nurbs_surface_patch_without_boundary_pcurves_is_rejected_atomically() {
         let mut ir = rectangular_nurbs_patch();
         ir.model.pcurves.clear();
@@ -4269,6 +4397,86 @@ mod tests {
                 periodic: false,
             });
             let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#patch.{index}").into();
+            ir.model.pcurves.push(Pcurve {
+                id: id.clone(),
+                geometry: PcurveGeometry::Line { origin, direction },
+                wrapper_reversed: None,
+                native_tail_flags: None,
+                parameter_range: Some(domain),
+                fit_tolerance: Some(0.001),
+            });
+            ir.model.coedges[index].pcurve = Some(id);
+        }
+        ir.finalize();
+        ir
+    }
+
+    fn mixed_plane_nurbs_sheet() -> CadIr {
+        use cadmpeg_ir::geometry::{
+            CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, SurfaceGeometry,
+        };
+
+        let mut ir = adjacent_quad_sheet();
+        let points = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![2.0, 2.0, 5.0, 5.0],
+            v_knots: vec![7.0, 7.0, 11.0, 11.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![points[0], points[3], points[1], points[2]],
+            weights: Some(vec![1.0, 0.8, 1.2, 1.0]),
+            u_periodic: false,
+            v_periodic: false,
+        });
+        let edge_data = [
+            (
+                [20.0, 23.0],
+                vec![points[0], points[1]],
+                vec![1.0, 1.2],
+                cadmpeg_ir::math::Point2::new(-18.0, 7.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            ),
+            (
+                [30.0, 32.0],
+                vec![points[1], points[2]],
+                vec![1.2, 1.0],
+                cadmpeg_ir::math::Point2::new(5.0, -53.0),
+                cadmpeg_ir::math::Point2::new(0.0, 2.0),
+            ),
+            (
+                [40.0, 43.0],
+                vec![points[2], points[3]],
+                vec![1.0, 0.8],
+                cadmpeg_ir::math::Point2::new(45.0, 11.0),
+                cadmpeg_ir::math::Point2::new(-1.0, 0.0),
+            ),
+            (
+                [50.0, 52.0],
+                vec![points[3], points[0]],
+                vec![0.8, 1.0],
+                cadmpeg_ir::math::Point2::new(2.0, 111.0),
+                cadmpeg_ir::math::Point2::new(0.0, -2.0),
+            ),
+        ];
+        for (index, (domain, control_points, weights, origin, direction)) in
+            edge_data.into_iter().enumerate()
+        {
+            ir.model.edges[index].param_range = Some(domain);
+            ir.model.curves[index].geometry = CurveGeometry::Nurbs(NurbsCurve {
+                degree: 1,
+                knots: vec![domain[0], domain[0], domain[1], domain[1]],
+                control_points,
+                weights: Some(weights),
+                periodic: false,
+            });
+            let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#mixed.{index}").into();
             ir.model.pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry: PcurveGeometry::Line { origin, direction },
