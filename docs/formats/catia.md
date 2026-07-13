@@ -335,6 +335,8 @@ For `b5 03 2d`, surface U is the referenced `0e` line or `0f` arc profile parame
 
 **Object-stream topology:** `b5 03 5f` nodes are faces in native ordinal order. Distinct `b5 03 5e` identifiers referenced by loop nodes are physical edges. Each `b5 03 62` node defines one loop and stores its ordered edge occurrences. A paired pcurve lifted through its carrier defines the edge curve, and its endpoints coincide with `05 08 01` vertex loci. The fixed serialized loop sequence has exactly one head-to-tail endpoint-sense assignment when it represents a closed boundary. Pcurve degree and carrier identify lines, circles, and B-splines. An object-stream file contains one body. The 3D edge geometry uses f32 endpoint coordinates, and native pcurves have degree 1 or 2.
 
+Plane lifting is affine: every pcurve pole `(u,v)` maps to `origin + u·direction_u + v·direction_v`, preserving degree, knots, and weights. On a cylinder, constant U with varying V is an axis-parallel line; constant V with varying U is a circle centered at `origin + V·axis`, with cylinder axis, reference direction, and radius. Other pcurve/carrier compositions retain the pcurve-on-surface construction until an exact solved 3D carrier is available.
+
 Coincident `05 08 01` rows share an endpoint locus. For topology subsets whose
 allocation identity is otherwise unresolved, the locus binds to the lowest
 serialized matching row; a loop is emitted only when the resulting ordered edge

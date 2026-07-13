@@ -18,7 +18,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use crate::b5::{B5Graph, B5Loop, B5Profile, B5Surface};
+use crate::b5::{B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
 
 struct RevolutionPlan {
     directrix: NurbsCurve,
@@ -112,6 +112,7 @@ pub(crate) fn transfer(
     }
 
     let mut pcurve_plan = BTreeMap::new();
+    let mut edge_curve_plan = HashMap::<u32, CurveGeometry>::new();
     let mut loop_senses = BTreeMap::new();
     let mut edge_ids = HashSet::new();
     for loop_ in graph.loops.values() {
@@ -160,6 +161,9 @@ pub(crate) fn transfer(
                 .is_some()
             {
                 return false;
+            }
+            if let Some(geometry) = lifted_curve_geometry(pcurve, surface) {
+                edge_curve_plan.entry(edge_id).or_insert(geometry);
             }
             edge_ids.insert(edge_id);
         }
@@ -297,18 +301,28 @@ pub(crate) fn transfer(
         let id = EdgeId(format!("catia:b5:edge#{edge_id}"));
         let curve_id = CurveId(format!("catia:b5:curve#{edge_id}"));
         let endpoints = graph.edge_vertices[&edge_id];
+        let geometry = edge_curve_plan
+            .remove(&edge_id)
+            .unwrap_or_else(|| CurveGeometry::Unknown {
+                record: Some(payload.clone()),
+            });
         annotate(
             annotations,
             &curve_id,
             "object_stream_b5_03",
             "pcurve_lifted_3d_curve",
-            Exactness::Unknown,
+            if matches!(geometry, CurveGeometry::Unknown { .. }) {
+                Exactness::Unknown
+            } else {
+                Exactness::Derived
+            },
         );
+        if !matches!(geometry, CurveGeometry::Unknown { .. }) {
+            annotations.derived(&curve_id, "geometry");
+        }
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Unknown {
-                record: Some(payload.clone()),
-            },
+            geometry,
             source_object: None,
         });
         annotate(
@@ -503,6 +517,92 @@ fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
         B5Surface::Cylinder { radius, .. } => Point2::new(point[0] / radius, point[1]),
         _ => Point2::new(point[0], point[1]),
     }
+}
+
+fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<CurveGeometry> {
+    let knots = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities)?;
+    match surface {
+        B5Surface::Plane {
+            origin,
+            direction_u,
+            direction_v,
+        } => Some(CurveGeometry::Nurbs(NurbsCurve {
+            degree: pcurve.degree,
+            knots,
+            control_points: pcurve
+                .control_points
+                .iter()
+                .map(|uv| {
+                    point3(add(
+                        *origin,
+                        add(scale(*direction_u, uv[0]), scale(*direction_v, uv[1])),
+                    ))
+                })
+                .collect(),
+            weights: None,
+            periodic: false,
+        })),
+        B5Surface::Cylinder {
+            origin,
+            reference_x,
+            axis,
+            radius,
+        } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
+            let first = pcurve.control_points.first()?;
+            let line_origin = cylinder_point(*origin, *reference_x, *axis, *radius, *first);
+            Some(CurveGeometry::Line {
+                origin: point3(line_origin),
+                direction: vector(*axis),
+            })
+        }
+        B5Surface::Cylinder {
+            origin,
+            reference_x,
+            axis,
+            radius,
+        } => {
+            let v = constant_coordinate(&pcurve.control_points, 1)?;
+            Some(CurveGeometry::Circle {
+                center: point3(add(*origin, scale(*axis, v))),
+                axis: vector(*axis),
+                ref_direction: vector(*reference_x),
+                radius: *radius,
+            })
+        }
+        B5Surface::Revolution { .. } | B5Surface::Nurbs(_) => None,
+    }
+}
+
+fn constant_coordinate(points: &[[f64; 2]], dimension: usize) -> Option<f64> {
+    let value = points.first()?[dimension];
+    points
+        .iter()
+        .all(|point| (point[dimension] - value).abs() <= 1e-12 * (1.0 + value.abs()))
+        .then_some(value)
+}
+
+fn cylinder_point(
+    origin: [f64; 3],
+    reference_x: [f64; 3],
+    axis: [f64; 3],
+    radius: f64,
+    uv: [f64; 2],
+) -> [f64; 3] {
+    let reference_y = cross(axis, reference_x);
+    let angle = uv[0] / radius;
+    add(
+        origin,
+        add(
+            scale(
+                add(
+                    scale(reference_x, angle.cos()),
+                    scale(reference_y, angle.sin()),
+                ),
+                radius,
+            ),
+            scale(axis, uv[1]),
+        ),
+    )
 }
 
 fn neutral_surface(
@@ -963,10 +1063,11 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 
 #[cfg(test)]
 mod tests {
-    use super::{neutral_pcurve_point, revolution_surface};
-    use crate::b5::{B5Profile, B5Surface};
+    use super::{lifted_curve_geometry, neutral_pcurve_point, revolution_surface};
+    use crate::b5::{B5Pcurve, B5Profile, B5Surface};
     use cadmpeg_ir::eval::surface_point;
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::Point3;
 
     #[test]
     fn cylinder_pcurve_arc_length_normalizes_to_neutral_angle() {
@@ -1006,5 +1107,47 @@ mod tests {
         assert!(evaluated.x.abs() < 1e-12);
         assert!((evaluated.y - 2.0).abs() < 1e-12);
         assert!((evaluated.z - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
+        let pcurve = B5Pcurve {
+            object_id: 1,
+            surface: 2,
+            degree: 1,
+            distinct_knots: vec![0.0, 1.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[0.0, 2.0], [3.0, 2.0]],
+            lifted_endpoints: None,
+        };
+        let plane = B5Surface::Plane {
+            origin: [1.0, 2.0, 3.0],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+        };
+        let Some(CurveGeometry::Nurbs(curve)) = lifted_curve_geometry(&pcurve, &plane) else {
+            panic!("plane lift must be NURBS");
+        };
+        assert_eq!(curve.control_points[0], Point3::new(1.0, 4.0, 3.0));
+        assert_eq!(curve.control_points[1], Point3::new(4.0, 4.0, 3.0));
+
+        let cylinder = B5Surface::Cylinder {
+            origin: [0.0, 0.0, 0.0],
+            reference_x: [1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 2.0,
+        };
+        assert!(matches!(
+            lifted_curve_geometry(&pcurve, &cylinder),
+            Some(CurveGeometry::Circle { radius: 2.0, .. })
+        ));
+        let meridian = B5Pcurve {
+            control_points: vec![[1.0, -2.0], [1.0, 4.0]],
+            ..pcurve
+        };
+        assert!(matches!(
+            lifted_curve_geometry(&meridian, &cylinder),
+            Some(CurveGeometry::Line { .. })
+        ));
     }
 }
