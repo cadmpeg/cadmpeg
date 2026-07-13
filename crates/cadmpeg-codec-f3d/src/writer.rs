@@ -3332,7 +3332,12 @@ fn native_procedural_surface(
                         native_i64(bytes, *value);
                     }
                     native_f64(bytes, *second_parameter);
-                    native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+                    let curve = native_loft_curve_in_range(
+                        target,
+                        curve,
+                        Some([*first_parameter, *second_parameter]),
+                    )?;
+                    native_nurbs_curve(bytes, &curve)?;
                     for frame in frames.iter() {
                         for vector in frame.vectors {
                             native_vector(bytes, [vector.x, vector.y, vector.z]);
@@ -3372,7 +3377,12 @@ fn native_procedural_surface(
                     native_f64(bytes, *first_parameter);
                     native_i64(bytes, *selector);
                     native_f64(bytes, *second_parameter);
-                    native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+                    let curve = native_loft_curve_in_range(
+                        target,
+                        curve,
+                        Some([*first_parameter, *second_parameter]),
+                    )?;
+                    native_nurbs_curve(bytes, &curve)?;
                     for vector in vectors {
                         native_vector(bytes, [vector.x, vector.y, vector.z]);
                     }

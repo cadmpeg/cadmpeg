@@ -9554,7 +9554,10 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
     };
     let DeformableSurfaceData::SurfaceCurve {
         native_id,
+        first_parameter,
         selector,
+        second_parameter,
+        curve,
         parameter_triples,
         ..
     } = &construction.data
@@ -9563,9 +9566,21 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
     };
     assert_eq!((*native_id, *selector), (42, 3));
     assert_eq!(parameter_triples, &[[0.1, 0.2, 0.3]]);
+    let curve = curve.clone();
+    let range = [*first_parameter, *second_parameter];
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .model
+        .curves
+        .iter_mut()
+        .find(|candidate| candidate.id == curve)
+        .expect("surface-curve deformable curve")
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+        origin: cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0),
+        direction: cadmpeg_ir::math::Vector3::new(4.0, 2.0, -1.0),
+    };
     let mut encoded = Vec::new();
     F3dCodec.encode(&source_less, &mut encoded).unwrap();
     let round = F3dCodec
@@ -9575,6 +9590,12 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
         round.ir.model.procedural_surfaces[0].definition,
         ProceduralSurfaceDefinition::Deformable { .. }
     ));
+    assert!(round.ir.model.curves.iter().any(|curve| matches!(
+        &curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve)
+            if curve.degree == 1
+                && curve.knots == [range[0], range[0], range[1], range[1]]
+    )));
 }
 
 #[test]
@@ -9597,7 +9618,10 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
         let DeformableSurfaceData::Full {
             selector,
             native_id,
+            first_parameter,
             version_value,
+            second_parameter,
+            curve,
             frames,
             trailing_value,
             ..
@@ -9610,9 +9634,21 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
         assert_eq!(frames[0].parameter, 0.4);
         assert_eq!(frames[1].parameter, 0.5);
         assert_eq!(*trailing_value, 99);
+        let curve = curve.clone();
+        let range = [*first_parameter, *second_parameter];
         let mut source_less = decoded.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .model
+            .curves
+            .iter_mut()
+            .find(|candidate| candidate.id == curve)
+            .expect("full deformable curve")
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
+            direction: cadmpeg_ir::math::Vector3::new(3.0, -4.0, 2.0),
+        };
         let mut encoded = Vec::new();
         F3dCodec.encode(&source_less, &mut encoded).unwrap();
         let round = F3dCodec
@@ -9628,6 +9664,12 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
             DeformableSurfaceData::Full { version_value, .. }
                 if version_value == expected_version_value
         ));
+        assert!(round.ir.model.curves.iter().any(|curve| matches!(
+            &curve.geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve)
+                if curve.degree == 1
+                    && curve.knots == [range[0], range[0], range[1], range[1]]
+        )));
     }
 }
 
