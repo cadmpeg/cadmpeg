@@ -4,6 +4,9 @@
 detects 3DM input, inspects chunk and table structure, decodes document
 metadata, and transfers supported model data into CADIR version 3.
 
+Support level: [L6](../../docs/format-support.md#support-ladder) for archive
+versions 50, 60, 70, and 80.
+
 Archive versions 50, 60, 70, and 80 decode points, point clouds, line, arc,
 polyline, polycurve, curve-on-surface, persistent polyedge-reference, and NURBS
 curves; plane, clipping-plane, NURBS, revolution, and sum surfaces; meshes;

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reads Rhino `.3dm` files into [`cadmpeg_ir::document::CadIr`].
 //!
-//! The codec provides bounded 3DM container inspection and container-only
-//! decoding for the full-decode archive bands.
+//! Support level: L6 for archive versions 50, 60, 70, and 80 on the cadmpeg
+//! support ladder. The codec provides bounded 3DM container inspection and
+//! typed model and design decoding for those archive bands.
 
 use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
