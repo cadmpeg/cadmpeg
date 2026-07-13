@@ -224,13 +224,13 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         .iter()
         .filter(|record| record.class == 0x62)
         .filter_map(|record| {
-            parse_loop(record, &by_id, &pcurves).map(|loop_| (record.object_id, loop_))
+            parse_loop(record, &by_id, &pcurves, &surfaces).map(|loop_| (record.object_id, loop_))
         })
         .collect();
     let faces: Vec<B5Face> = records
         .iter()
         .filter(|record| record.class == 0x5f)
-        .filter_map(|record| parse_face(record, &by_id, &loops))
+        .filter_map(|record| parse_face(record, &loops, &surfaces))
         .collect();
     if faces.is_empty() || loops.is_empty() {
         return None;
@@ -677,7 +677,7 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         return None;
     }
     let mut position = 1;
-    let surface = reference(&record.payload, &mut position)?;
+    let surface = reference(&record.payload, &mut position, record.object_id)?;
     if record.payload.get(position) != Some(&0x01) {
         return None;
     }
@@ -767,7 +767,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         return None;
     }
     let mut position = 1;
-    let surface = reference(&record.payload, &mut position)?;
+    let surface = reference(&record.payload, &mut position, record.object_id)?;
     let mode = *record.payload.get(position)?;
     position += 1;
     let (start, end, control_points) = match mode {
@@ -788,6 +788,10 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         0x05 if record.payload.len() == position.checked_add(24)? => {
             let [constant, start, end] = line_values::<3>(&record.payload, position)?;
             (start, end, vec![[constant, start], [constant, end]])
+        }
+        0x09 if record.payload.len() == position.checked_add(24)? => {
+            let [constant, start, end] = line_values::<3>(&record.payload, position)?;
+            (start, end, vec![[start, constant], [end, constant]])
         }
         _ => return None,
     };
@@ -923,8 +927,8 @@ fn is_topology_class(class: u8) -> bool {
 
 fn parse_face(
     record: &B5Record,
-    by_id: &HashMap<u32, &B5Record>,
     loops: &BTreeMap<u32, B5Loop>,
+    surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Face> {
     let references = if let Some(count) = record
         .payload
@@ -933,17 +937,17 @@ fn parse_face(
     {
         let mut position = 1;
         let references = (0..count)
-            .map(|_| reference(&record.payload, &mut position))
+            .map(|_| reference(&record.payload, &mut position, record.object_id))
             .collect::<Option<Vec<_>>>()?;
         if position < record.payload.len() && record.payload[position] != 0x05 {
             return None;
         }
         references
     } else {
-        uncounted_references(&record.payload)?
+        uncounted_references(&record.payload, record.object_id)?
     };
     let surface = *references.first()?;
-    if !is_surface(by_id.get(&surface)?.class) {
+    if !surfaces.contains_key(&surface) {
         return None;
     }
     let loop_ids: Vec<u32> = references[1..]
@@ -965,6 +969,7 @@ fn parse_loop(
     record: &B5Record,
     by_id: &HashMap<u32, &B5Record>,
     parsed_pcurves: &BTreeMap<u32, B5Pcurve>,
+    surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Loop> {
     let count = usize::from(record.payload.first()?.checked_sub(0x80)?);
     if count < 3 || count % 2 == 0 {
@@ -973,7 +978,7 @@ fn parse_loop(
     let mut position = 1;
     let mut references = Vec::with_capacity(count);
     for _ in 0..count {
-        references.push(reference(&record.payload, &mut position)?);
+        references.push(reference(&record.payload, &mut position, record.object_id)?);
     }
     let edge_count = (count - 1) / 2;
     if position < record.payload.len()
@@ -982,7 +987,7 @@ fn parse_loop(
         return None;
     }
     let surface = *references.last()?;
-    if !is_surface(by_id.get(&surface)?.class) {
+    if !surfaces.contains_key(&surface) {
         return None;
     }
     let mut pcurves = Vec::with_capacity((count - 1) / 2);
@@ -1005,20 +1010,16 @@ fn parse_loop(
     })
 }
 
-fn is_surface(class: u8) -> bool {
-    matches!(class, 0x27 | 0x28 | 0x2d | 0x34)
-}
-
-fn uncounted_references(bytes: &[u8]) -> Option<Vec<u32>> {
+fn uncounted_references(bytes: &[u8], anchor: u32) -> Option<Vec<u32>> {
     let mut position = 0;
     let mut references = Vec::new();
     while position < bytes.len() {
-        references.push(reference(bytes, &mut position)?);
+        references.push(reference(bytes, &mut position, anchor)?);
     }
     Some(references)
 }
 
-fn reference(bytes: &[u8], position: &mut usize) -> Option<u32> {
+fn reference(bytes: &[u8], position: &mut usize, anchor: u32) -> Option<u32> {
     let lead = *bytes.get(*position)?;
     let (value, width) = match lead {
         0x38 => (
@@ -1037,6 +1038,14 @@ fn reference(bytes: &[u8], position: &mut usize) -> Option<u32> {
             ])) << 8,
             3,
         ),
+        0x28 => (
+            (anchor & 0xff_0000)
+                | u32::from(u16::from_le_bytes([
+                    *bytes.get(*position + 1)?,
+                    *bytes.get(*position + 2)?,
+                ])),
+            3,
+        ),
         0x18 => (
             u32::from(u16::from_le_bytes([
                 *bytes.get(*position + 1)?,
@@ -1050,4 +1059,19 @@ fn reference(bytes: &[u8], position: &mut usize) -> Option<u32> {
     };
     *position += width;
     Some(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reference;
+
+    #[test]
+    fn page_local_reference_inherits_anchor_high_byte() {
+        let mut position = 0;
+        assert_eq!(
+            reference(&[0x28, 0x34, 0x02], &mut position, 0x02_0033),
+            Some(0x02_0234)
+        );
+        assert_eq!(position, 3);
+    }
 }

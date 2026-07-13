@@ -2209,6 +2209,20 @@ fn b5_isoparametric_line_pcurve_payload(
     payload
 }
 
+fn b5_transverse_isoparametric_line_pcurve_payload(
+    surface: u16,
+    constant_v: f64,
+    interval_u: [f64; 2],
+) -> Vec<u8> {
+    let mut payload = vec![0x81, 0x18];
+    payload.extend_from_slice(&surface.to_le_bytes());
+    payload.push(0x09);
+    for value in [constant_v, interval_u[0], interval_u[1]] {
+        payload.extend_from_slice(&le_f64(value));
+    }
+    payload
+}
+
 fn b5_closed_triangle_stream() -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut plane = vec![0; 73];
@@ -2291,8 +2305,14 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
         601,
         &b5_isoparametric_line_pcurve_payload(100, 2.0, [-3.0, 5.0]),
     );
+    append_b5_record(
+        &mut bytes,
+        0x18,
+        602,
+        &b5_transverse_isoparametric_line_pcurve_payload(100, -4.0, [1.0, 7.0]),
+    );
     // Keep the appended record in a length-closed run.
-    append_b5_record(&mut bytes, 0x5e, 602, &[]);
+    append_b5_record(&mut bytes, 0x5e, 603, &[]);
     let graph = crate::b5::parse(&bytes).expect("length-closed B5 graph");
     let pcurve = graph.pcurves.get(&600).expect("analytic line pcurve");
     assert_eq!(pcurve.degree, 1);
@@ -2311,6 +2331,15 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
     assert_eq!(
         isoparametric.lifted_endpoints,
         Some([[2.0, -3.0, 0.0], [2.0, 5.0, 0.0]])
+    );
+    let transverse = graph.pcurves.get(&602).expect("transverse line pcurve");
+    assert_eq!(transverse.degree, 1);
+    assert_eq!(transverse.distinct_knots, vec![1.0, 7.0]);
+    assert_eq!(transverse.multiplicities, vec![2, 2]);
+    assert_eq!(transverse.control_points, vec![[1.0, -4.0], [7.0, -4.0]]);
+    assert_eq!(
+        transverse.lifted_endpoints,
+        Some([[1.0, -4.0, 0.0], [7.0, -4.0, 0.0]])
     );
 }
 
