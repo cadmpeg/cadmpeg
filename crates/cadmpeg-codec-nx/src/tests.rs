@@ -318,7 +318,7 @@ fn om_index_accepts_length_framed_root_version_text() {
 }
 
 #[test]
-fn om_offset_only_index_bounds_primary_entity_records() {
+fn om_offset_only_index_bounds_storage_blocks() {
     let bytes = offset_only_indexed_om_section();
     let sections = crate::om::indexed_sections(&bytes);
     assert_eq!(sections.len(), 1);
@@ -332,6 +332,25 @@ fn om_offset_only_index_bounds_primary_entity_records() {
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].name, "length");
     assert_eq!(expressions[0].value, Some(25.0));
+}
+
+#[test]
+fn native_catalog_separates_offset_only_blocks_from_object_records() {
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+    let container = container::scan_bytes(file).unwrap();
+
+    assert!(crate::native::object_records(&container).is_empty());
+    let blocks = crate::native::data_blocks(&container);
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks[0].block_ordinal, 0);
+    assert!(blocks[0].byte_len > 0);
+    assert!(crate::native::string_values(&container).is_empty());
+    assert!(crate::native::object_references(&container).is_empty());
+    let expressions = crate::native::expressions(&container);
+    assert_eq!(expressions.len(), 1);
+    assert_eq!(expressions[0].object_id, None);
+    assert_eq!(expressions[0].record, None);
 }
 
 #[test]
@@ -2907,7 +2926,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 6);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 7);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

@@ -148,6 +148,27 @@ pub struct ObjectRecord {
     pub source_offset: u64,
 }
 
+/// One externally bounded block in an NX OM offset-only column store.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlock {
+    /// Globally unique block identity.
+    pub id: String,
+    /// Zero-based indexed-section ordinal within the container.
+    pub section_ordinal: u32,
+    /// Zero-based block ordinal within the offset-only section.
+    pub block_ordinal: u32,
+    /// Absolute file offset of the containing OM section base.
+    pub section_offset: u64,
+    /// Exact serialized block length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact serialized block bytes.
+    pub sha256: String,
+    /// Directory entry containing the OM section.
+    pub source_entry: String,
+    /// Absolute file offset of the block start.
+    pub source_offset: u64,
+}
+
 /// Self-framed printable string carried by one NX OM record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StringValue {
@@ -547,6 +568,13 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
+            if section
+                .records
+                .first()
+                .is_none_or(|record| record.object_id.is_none())
+            {
+                return Vec::new();
+            }
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_offset = entry_offset + section.base_offset() as u64;
             let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
@@ -597,6 +625,42 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                         source_offset: entry_offset + record.offset as u64,
                     }
                 })
+                .collect()
+        })
+        .collect()
+}
+
+/// Catalog every externally bounded block in offset-only NX OM storage.
+pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            if section
+                .records
+                .first()
+                .is_none_or(|record| record.object_id.is_some())
+            {
+                return Vec::new();
+            }
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let section_offset = entry_offset + section.base_offset() as u64;
+            section
+                .records
+                .into_iter()
+                .enumerate()
+                .map(move |(block_ordinal, block)| DataBlock {
+                    id: format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
+                    section_ordinal: section_ordinal as u32,
+                    block_ordinal: block_ordinal as u32,
+                    section_offset,
+                    byte_len: block.bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(block.bytes),
+                    source_entry: entry.name.clone(),
+                    source_offset: entry_offset + block.offset as u64,
+                })
+                .collect()
         })
         .collect()
 }
@@ -608,9 +672,18 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
+            if section
+                .records
+                .first()
+                .is_none_or(|record| record.object_id.is_none())
+            {
+                return Vec::new();
+            }
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            section.string_values().into_iter().map(
-                move |(record_ordinal, value_ordinal, object_id, value)| {
+            section
+                .string_values()
+                .into_iter()
+                .map(move |(record_ordinal, value_ordinal, object_id, value)| {
                     let record =
                         format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
                     StringValue {
@@ -625,8 +698,8 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + value.offset as u64,
                     }
-                },
-            )
+                })
+                .collect()
         })
         .collect()
 }
@@ -638,42 +711,54 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
+            if section
+                .records
+                .first()
+                .is_none_or(|record| record.object_id.is_none())
+            {
+                return Vec::new();
+            }
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            section.references().into_iter().map(
-                move |(record_ordinal, reference_ordinal, object_id, reference)| {
-                    let record =
-                        format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
-                    ObjectReference {
-                        id: format!(
-                            "nx:om-references-{section_ordinal}-{record_ordinal}:reference#{}",
-                            reference.offset
-                        ),
-                        record,
-                        object_id,
-                        ordinal: reference_ordinal as u32,
-                        kind: match reference.kind {
-                            crate::om::ReferenceKind::PersistentHandle => {
-                                ObjectReferenceKind::PersistentHandle
-                            }
-                            crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
-                            crate::om::ReferenceKind::RecordOrdinal16 => {
-                                ObjectReferenceKind::RecordOrdinal16
-                            }
-                        },
-                        value: reference.value,
-                        target_record: (reference.kind
-                            == crate::om::ReferenceKind::RecordOrdinal16)
-                            .then(|| {
-                                format!(
-                                    "nx:om-record-directory-{section_ordinal}:entry#{}",
-                                    reference.value
-                                )
-                            }),
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset + reference.offset as u64,
-                    }
-                },
-            )
+            section
+                .references()
+                .into_iter()
+                .map(
+                    move |(record_ordinal, reference_ordinal, object_id, reference)| {
+                        let record = format!(
+                            "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
+                        );
+                        ObjectReference {
+                            id: format!(
+                                "nx:om-references-{section_ordinal}-{record_ordinal}:reference#{}",
+                                reference.offset
+                            ),
+                            record,
+                            object_id,
+                            ordinal: reference_ordinal as u32,
+                            kind: match reference.kind {
+                                crate::om::ReferenceKind::PersistentHandle => {
+                                    ObjectReferenceKind::PersistentHandle
+                                }
+                                crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
+                                crate::om::ReferenceKind::RecordOrdinal16 => {
+                                    ObjectReferenceKind::RecordOrdinal16
+                                }
+                            },
+                            value: reference.value,
+                            target_record: (reference.kind
+                                == crate::om::ReferenceKind::RecordOrdinal16)
+                                .then(|| {
+                                    format!(
+                                        "nx:om-record-directory-{section_ordinal}:entry#{}",
+                                        reference.value
+                                    )
+                                }),
+                            source_entry: entry.name.clone(),
+                            source_offset: entry_offset + reference.offset as u64,
+                        }
+                    },
+                )
+                .collect()
         })
         .collect()
 }
@@ -723,10 +808,13 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
         container.indexed_om_sections().into_iter().enumerate()
     {
         for (record_ordinal, expression) in section.numeric_expression_records() {
+            let Some(object_id) = expression.object_id else {
+                continue;
+            };
             indexed.insert(
                 (entry.name.clone(), expression.offset),
                 (
-                    expression.object_id,
+                    Some(object_id),
                     format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
                 ),
             );

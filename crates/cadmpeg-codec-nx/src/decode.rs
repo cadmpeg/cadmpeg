@@ -2688,6 +2688,7 @@ fn attach_native_object_model(
     let classes = crate::native::class_definitions(&scan.container);
     let fields = crate::native::field_definitions(&scan.container);
     let object_records = crate::native::object_records(&scan.container);
+    let data_blocks = crate::native::data_blocks(&scan.container);
     let string_values = crate::native::string_values(&scan.container);
     let object_references = crate::native::object_references(&scan.container);
     let configurations = crate::native::configurations(&scan.container);
@@ -2701,6 +2702,7 @@ fn attach_native_object_model(
         && classes.is_empty()
         && fields.is_empty()
         && object_records.is_empty()
+        && data_blocks.is_empty()
         && string_values.is_empty()
         && object_references.is_empty()
         && persistent_handles.is_empty()
@@ -2748,13 +2750,22 @@ fn attach_native_object_model(
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (record_index, record) in section.records.iter().enumerate() {
+            let kind = if record.object_id.is_some() {
+                "record"
+            } else {
+                "block"
+            };
             let id = UnknownId(format!(
-                "nx:om-section-{section_index}:record#{record_index}"
+                "nx:om-section-{section_index}:{kind}#{record_index}"
             ));
             let offset = entry_offset + record.offset as u64;
             annotations
                 .note(&id, annotation_stream, offset)
-                .tag("OM_ENTITY_RECORD");
+                .tag(if record.object_id.is_some() {
+                    "OM_ENTITY_RECORD"
+                } else {
+                    "OM_DATA_BLOCK"
+                });
             annotations.exactness(&id, Exactness::ByteExact);
             unknowns.push(UnknownRecord {
                 id,
@@ -2793,7 +2804,7 @@ fn attach_native_object_model(
     }
     attach_expression_parameters(ir, &expressions, annotations);
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(6);
+    namespace.version = namespace.version.max(7);
     if !expressions.is_empty() {
         namespace.set_arena("expressions", &expressions)?;
     }
@@ -2805,6 +2816,9 @@ fn attach_native_object_model(
     }
     if !object_records.is_empty() {
         namespace.set_arena("object_records", &object_records)?;
+    }
+    if !data_blocks.is_empty() {
+        namespace.set_arena("data_blocks", &data_blocks)?;
     }
     if !string_values.is_empty() {
         namespace.set_arena("string_values", &string_values)?;
@@ -3028,13 +3042,38 @@ pub fn summary_notes(scan: &Scan) -> Vec<String> {
     if !om_sections.is_empty() {
         let entities = om_sections
             .iter()
+            .filter(|(_, section)| {
+                section
+                    .records
+                    .first()
+                    .is_some_and(|record| record.object_id.is_some())
+            })
             .map(|(_, section)| section.records.len())
             .sum::<usize>();
-        notes.push(format!(
-            "NX object model: {} indexed section(s), {} bounded entity record(s)",
-            om_sections.len(),
-            entities
-        ));
+        let blocks = om_sections
+            .iter()
+            .filter(|(_, section)| {
+                section
+                    .records
+                    .first()
+                    .is_some_and(|record| record.object_id.is_none())
+            })
+            .map(|(_, section)| section.records.len())
+            .sum::<usize>();
+        if blocks == 0 {
+            notes.push(format!(
+                "NX object model: {} indexed section(s), {} bounded entity record(s)",
+                om_sections.len(),
+                entities
+            ));
+        } else {
+            notes.push(format!(
+                "NX object model: {} indexed section(s), {} ID-bounded entity record(s), {} offset-only data block(s)",
+                om_sections.len(),
+                entities,
+                blocks
+            ));
+        }
     }
     if !scan.has_parasolid()
         && c.entries

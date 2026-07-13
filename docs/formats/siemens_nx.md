@@ -110,6 +110,13 @@ The wrapper `00 ce` instance owns the stream BODY (`child`), attribute-definitio
 
 An indexed object-model section carries an entity-boundary array followed by an object count and object-ID array. Boundary slot zero is zero. Subsequent values are monotonic offsets relative to the section base. Object IDs in slots `1..count` pair with entity spans bounded by adjacent boundary values. The first entity begins with `04 01 0e "NX "`.
 
+An offset-only object-model store instead carries an absolute boundary array,
+then a record count. Boundary slot zero bounds the store root/control block;
+slots `1..count+1` bound column-storage blocks. These blocks have no individual
+object identity. A block may split a string, fixed array, or field lane across
+adjacent boundaries, so marker-shaped bytes inside one block do not define an
+entity string or reference.
+
 Class definitions before the boundary array use `declared_length:u8 + "UGS::" name bytes + trailing_code:u8`, where `declared_length` includes the trailing code. Declaration order supplies class identity.
 
 Class and member declaration ordinals are local to one OM section. The containing
