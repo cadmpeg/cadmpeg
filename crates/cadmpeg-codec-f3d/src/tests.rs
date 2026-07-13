@@ -7341,6 +7341,46 @@ fn validation_rejects_wrong_sketch_constraint_kind_with_equal_cardinality() {
 }
 
 #[test]
+fn validation_rejects_invalid_design_parameter_family_and_owner() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut ir = decoded.ir;
+    let parameter = crate::records::DesignParameter {
+        id: "generated:design-parameter#0".into(),
+        byte_offset: 100,
+        class_tag: "305".into(),
+        record_index: 900,
+        source_ordinal: 0,
+        owner_record_index: None,
+        expression: "60 mm".into(),
+        expression_offset: 136,
+        source_kind: "User Parameter".into(),
+        source_kind_offset: 166,
+        kind: crate::records::DesignParameterKind::User,
+        unit: Some("mm".into()),
+        unit_offset: Some(210),
+        name: "Width".into(),
+        name_offset: 220,
+        evaluated_value: 6.0,
+        evaluated_value_offset: 234,
+    };
+    f3d_native_mut(&mut ir).design_parameters.push(parameter);
+    assert!(crate::validate_native(&ir).is_empty());
+
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        native.design_parameters[0].kind = crate::records::DesignParameterKind::Feature;
+        native.design_parameters[0].owner_record_index = Some(1234);
+    }
+    assert!(crate::validate_native(&ir).iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::NativeLinks
+            && finding.entity.as_deref() == Some("generated:design-parameter#0")
+    }));
+}
+
+#[test]
 fn sketch_constraint_mask_decodes_equal_length_bit() {
     let (kinds, unknown) = crate::design::decode_constraint_kinds(0x0000_0008);
     assert_eq!(kinds, [crate::records::SketchConstraintKind::EqualLength]);

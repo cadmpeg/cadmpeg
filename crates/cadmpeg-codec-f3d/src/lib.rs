@@ -128,6 +128,59 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|record| record.record_index)
         .collect::<HashSet<_>>();
+    let mut parameter_indices = HashSet::new();
+    let mut parameter_ordinals = HashSet::new();
+    for parameter in &native.design_parameters {
+        let unique_index = parameter_indices.insert(parameter.record_index);
+        let unique_ordinal = parameter_ordinals.insert(parameter.source_ordinal);
+        let expected_kind = if parameter.source_kind == "User Parameter" {
+            records::DesignParameterKind::User
+        } else if parameter.source_kind.contains("Dimension") {
+            records::DesignParameterKind::Dimension
+        } else {
+            records::DesignParameterKind::Feature
+        };
+        let owner_shape_valid = match parameter.kind {
+            records::DesignParameterKind::User => parameter.owner_record_index.is_none(),
+            records::DesignParameterKind::Dimension | records::DesignParameterKind::Feature => {
+                parameter
+                    .owner_record_index
+                    .is_some_and(|owner| record_indices.contains(&owner))
+            }
+        };
+        let offsets_ordered = parameter.byte_offset < parameter.expression_offset
+            && parameter.expression_offset < parameter.source_kind_offset
+            && parameter.source_kind_offset
+                < parameter.unit_offset.unwrap_or(parameter.name_offset)
+            && parameter
+                .unit_offset
+                .is_none_or(|offset| offset < parameter.name_offset)
+            && parameter.name_offset < parameter.evaluated_value_offset;
+        let valid = parameter.class_tag.len() == 3
+            && parameter
+                .class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && !parameter.expression.is_empty()
+            && !parameter.source_kind.is_empty()
+            && !parameter.name.is_empty()
+            && parameter.unit.as_ref().is_none_or(|unit| !unit.is_empty())
+            && parameter.unit.is_some() == parameter.unit_offset.is_some()
+            && parameter.evaluated_value.is_finite()
+            && parameter.kind == expected_kind
+            && owner_shape_valid
+            && offsets_ordered
+            && unique_index
+            && unique_ordinal;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design parameter has an invalid frame, family, or owner".into(),
+                entity: Some(parameter.id.clone()),
+            });
+        }
+    }
     for header in &native.design_entity_headers {
         let count_matches = header
             .declared_reference_count

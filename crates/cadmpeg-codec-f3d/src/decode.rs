@@ -82,6 +82,7 @@ pub fn decode(
             native.design_material_assignments =
                 crate::materials::decode_design_assignments(reader, &scan)?;
             native.design_objects = crate::design::decode_objects(reader, &scan)?;
+            native.design_parameters = crate::design::decode_parameters(reader, &scan)?;
             native.design_entity_headers = crate::design::decode_entity_headers(reader, &scan)?;
             native.design_record_headers =
                 crate::design::decode_record_headers(reader, &scan, &native.design_entity_headers)?;
@@ -171,6 +172,7 @@ pub fn decode(
     native.design_material_assignments =
         crate::materials::decode_design_assignments(reader, &scan)?;
     native.design_objects = crate::design::decode_objects(reader, &scan)?;
+    native.design_parameters = crate::design::decode_parameters(reader, &scan)?;
     native.design_entity_headers = crate::design::decode_entity_headers(reader, &scan)?;
     native.design_record_headers =
         crate::design::decode_record_headers(reader, &scan, &native.design_entity_headers)?;
@@ -294,6 +296,9 @@ fn populate_annotations(
         for entity in &native.design_objects {
             note(&entity.id, "design_object");
         }
+        for entity in &native.design_parameters {
+            note(&entity.id, "design_parameter");
+        }
         for entity in &native.design_entity_headers {
             note(&entity.id, "design_entity_header");
         }
@@ -405,6 +410,12 @@ fn extend_related_design_records(
         .iter()
         .flat_map(|relation| relation.members.iter().chain(&relation.return_members))
         .copied()
+        .chain(
+            native
+                .design_parameters
+                .iter()
+                .filter_map(|parameter| parameter.owner_record_index),
+        )
         .collect::<Vec<_>>();
     let existing = native
         .design_record_headers

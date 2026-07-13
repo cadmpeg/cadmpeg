@@ -9,10 +9,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
-    DesignConfigurationKind, DesignEntityHeader, DesignObject, DesignObjectKind,
-    DesignRecordHeader, LostEdgeReference, PersistentReference, PersistentReferenceKind,
-    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-    SketchRelationOperand,
+    DesignConfigurationKind, DesignEntityHeader, DesignObject, DesignObjectKind, DesignParameter,
+    DesignParameterKind, DesignRecordHeader, LostEdgeReference, PersistentReference,
+    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -246,6 +246,116 @@ pub fn decode_recipes(
         decode_stream(bytes, &entry.name, &mut out);
     }
     Ok(out)
+}
+
+/// Decode every indexed parameter record in each Design `BulkStream`.
+pub fn decode_parameters(
+    _reader: &mut dyn ReadSeek,
+    scan: &ContainerScan,
+) -> Result<Vec<DesignParameter>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let mut position = 0usize;
+        while let Some(at) = next_indexed_record_offset(bytes, position) {
+            let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
+            if let Some(mut parameter) = parse_design_parameter(&bytes[at..end]) {
+                parameter.id = format!("f3d:{}:design-parameter#{at}", entry.name);
+                parameter.byte_offset = at as u64;
+                parameter.expression_offset += at as u64;
+                parameter.source_kind_offset += at as u64;
+                parameter.unit_offset = parameter.unit_offset.map(|offset| offset + at as u64);
+                parameter.name_offset += at as u64;
+                parameter.evaluated_value_offset += at as u64;
+                out.push(parameter);
+                position = end;
+            } else {
+                position = at + 1;
+            }
+        }
+    }
+    out.sort_by_key(|parameter| parameter.record_index);
+    Ok(out)
+}
+
+fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
+    let (class_tag, after_tag) = lp_ascii(payload, 0)?;
+    if class_tag.len() != 3
+        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || after_tag != 7
+        || payload.get(11..31) != Some(&[0; 20])
+    {
+        return None;
+    }
+    let record_index = u32_at(payload, 7)?;
+    let source_ordinal = u32_at(payload, 31)?;
+    let (owner_record_index, expression_at, expression_trailer) = match payload.get(35)? {
+        0 => (None, 36, [0, 0, 0, 0, 0, 0, 0, 0, 1]),
+        1 if payload.get(40..46) == Some(&[0; 6]) => (Some(u32_at(payload, 36)?), 46, [0; 9]),
+        _ => return None,
+    };
+    let (expression, expression_end) = lp_utf16(payload, expression_at)?;
+    if payload.get(expression_end..expression_end + 9) != Some(&expression_trailer) {
+        return None;
+    }
+    let source_kind_at = expression_end + 9;
+    let (source_kind, source_kind_end) = lp_utf16(payload, source_kind_at)?;
+    if u32_at(payload, source_kind_end) != Some(0) {
+        return None;
+    }
+    let first_at = source_kind_end + 4;
+    let (first, first_end) = lp_utf16(payload, first_at)?;
+    let (unit, unit_offset, name, name_at, name_end) =
+        if let Some((second, second_end)) = lp_utf16(payload, first_end) {
+            (
+                Some(first),
+                Some(first_at + 4),
+                second,
+                first_end,
+                second_end,
+            )
+        } else {
+            (None, None, first, first_at, first_end)
+        };
+    let evaluated_value = f64_at(payload, name_end)?;
+    if payload.get(name_end + 8..) != Some(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        || expression.is_empty()
+        || source_kind.is_empty()
+        || name.is_empty()
+        || !evaluated_value.is_finite()
+    {
+        return None;
+    }
+    let kind = if source_kind == "User Parameter" {
+        DesignParameterKind::User
+    } else if source_kind.contains("Dimension") {
+        DesignParameterKind::Dimension
+    } else {
+        DesignParameterKind::Feature
+    };
+    Some(DesignParameter {
+        id: String::new(),
+        byte_offset: 0,
+        class_tag,
+        record_index,
+        source_ordinal,
+        owner_record_index,
+        expression,
+        expression_offset: (expression_at + 4) as u64,
+        source_kind,
+        source_kind_offset: (source_kind_at + 4) as u64,
+        kind,
+        unit,
+        unit_offset: unit_offset.map(|offset| offset as u64),
+        name,
+        name_offset: (name_at + 4) as u64,
+        evaluated_value,
+        evaluated_value_offset: name_end as u64,
+    })
 }
 
 /// Decode the persistent u64 point and curve identity references
@@ -1825,8 +1935,112 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 
 #[cfg(test)]
 mod relation_tests {
-    use super::{next_indexed_record_offset, parse_sketch_relation};
+    use super::{next_indexed_record_offset, parse_design_parameter, parse_sketch_relation};
+    use crate::records::DesignParameterKind;
     use std::collections::HashSet;
+
+    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
+        let units = value.encode_utf16().collect::<Vec<_>>();
+        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
+        for unit in units {
+            out.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+
+    fn parameter_record(
+        owner: Option<u32>,
+        expression: &str,
+        source_kind: &str,
+        unit: Option<&str>,
+        name: &str,
+        evaluated_value: f64,
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(b"305");
+        out.extend_from_slice(&71u32.to_le_bytes());
+        out.extend_from_slice(&[0; 20]);
+        out.extend_from_slice(&9u32.to_le_bytes());
+        match owner {
+            Some(owner) => {
+                out.push(1);
+                out.extend_from_slice(&owner.to_le_bytes());
+                out.extend_from_slice(&[0; 6]);
+            }
+            None => out.push(0),
+        }
+        lp_utf16(&mut out, expression);
+        out.extend_from_slice(if owner.is_some() {
+            &[0; 9]
+        } else {
+            &[0, 0, 0, 0, 0, 0, 0, 0, 1]
+        });
+        lp_utf16(&mut out, source_kind);
+        out.extend_from_slice(&0u32.to_le_bytes());
+        if let Some(unit) = unit {
+            lp_utf16(&mut out, unit);
+        }
+        lp_utf16(&mut out, name);
+        out.extend_from_slice(&evaluated_value.to_le_bytes());
+        out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        out
+    }
+
+    #[test]
+    fn parameter_variants_have_exact_string_and_scalar_boundaries() {
+        let user = parse_design_parameter(&parameter_record(
+            None,
+            "60 mm",
+            "User Parameter",
+            Some("mm"),
+            "Width",
+            6.0,
+        ))
+        .unwrap();
+        assert_eq!(user.kind, DesignParameterKind::User);
+        assert_eq!(user.owner_record_index, None);
+        assert_eq!(user.unit.as_deref(), Some("mm"));
+        assert_eq!(user.evaluated_value, 6.0);
+
+        let feature = parse_design_parameter(&parameter_record(
+            Some(44),
+            "Width / 2",
+            "AlongDistance",
+            Some("mm"),
+            "d12",
+            3.0,
+        ))
+        .unwrap();
+        assert_eq!(feature.kind, DesignParameterKind::Feature);
+        assert_eq!(feature.owner_record_index, Some(44));
+        assert_eq!(feature.expression, "Width / 2");
+
+        let boolean = parse_design_parameter(&parameter_record(
+            None,
+            "1",
+            "User Parameter",
+            None,
+            "OnOff",
+            1.0,
+        ))
+        .unwrap();
+        assert_eq!(boolean.unit, None);
+        assert_eq!(boolean.name, "OnOff");
+    }
+
+    #[test]
+    fn parameter_record_rejects_noncanonical_tail() {
+        let mut record = parameter_record(
+            Some(44),
+            "45 deg",
+            "TaperAngle",
+            Some("deg"),
+            "d13",
+            std::f64::consts::FRAC_PI_4,
+        );
+        *record.last_mut().unwrap() = 1;
+        assert!(parse_design_parameter(&record).is_none());
+    }
 
     #[test]
     fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {

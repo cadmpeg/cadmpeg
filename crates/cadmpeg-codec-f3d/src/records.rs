@@ -255,6 +255,61 @@ pub struct ConstructionRecipe {
     pub record_index: i32,
 }
 
+/// Semantic family of one Design parameter record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignParameterKind {
+    /// A document-level named user parameter.
+    User,
+    /// A dimensional constraint parameter.
+    Dimension,
+    /// A parameter consumed by a construction feature.
+    Feature,
+}
+
+/// One indexed Design parameter or expression record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignParameter {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Byte offset of the indexed record header in its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: String,
+    /// Source indexed-record identity.
+    pub record_index: u32,
+    /// Source ordering value stored by the parameter record.
+    pub source_ordinal: u32,
+    /// Indexed owner record for feature and dimension parameters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_record_index: Option<u32>,
+    /// Literal or symbolic source expression.
+    pub expression: String,
+    /// Byte offset of the expression's UTF-16LE code units.
+    pub expression_offset: u64,
+    /// Source family label such as `User Parameter`, `AlongDistance`, or
+    /// `Linear Dimension-2`.
+    pub source_kind: String,
+    /// Byte offset of the source-family UTF-16LE code units.
+    pub source_kind_offset: u64,
+    /// Parameter family derived from `source_kind`.
+    pub kind: DesignParameterKind,
+    /// Declared unit token; absent for dimensionless and Boolean parameters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    /// Byte offset of the unit's UTF-16LE code units.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit_offset: Option<u64>,
+    /// Source parameter name or dimension identifier.
+    pub name: String,
+    /// Byte offset of the name's UTF-16LE code units.
+    pub name_offset: u64,
+    /// Evaluated scalar in the record's native unit convention.
+    pub evaluated_value: f64,
+    /// Byte offset of `evaluated_value`.
+    pub evaluated_value_offset: u64,
+}
+
 /// Persistent-reference channel in the Design construction stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
