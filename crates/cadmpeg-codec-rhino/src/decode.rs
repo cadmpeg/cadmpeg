@@ -425,6 +425,10 @@ impl<'a> DecodeContext<'a> {
                 self.decode_extrusion(source_order, object);
                 continue;
             }
+            if object.class_uuid == crate::hatch::CLASS {
+                self.decode_hatch(source_order, object);
+                continue;
+            }
             if !crate::curves::supported_class(object.class_uuid)
                 && !crate::mesh::supported_class(object.class_uuid)
             {
@@ -599,6 +603,154 @@ impl<'a> DecodeContext<'a> {
                 Err(error) => {
                     self.scan_warning(source_order, &format!("dimension retained: {error}"));
                 }
+            }
+        }
+    }
+
+    fn decode_hatch(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let Some(scale) = self.unit_scale() else {
+            self.scan_warning(
+                source_order,
+                "hatch retained because document units are unavailable",
+            );
+            return;
+        };
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "hatch retained because identity is unavailable",
+            );
+            return;
+        };
+        let mut hatch = match crate::hatch::decode(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            scale,
+            self.archive(),
+        ) {
+            Ok(hatch) => hatch,
+            Err(error) => {
+                let future = matches!(
+                    error,
+                    crate::curves::GeometryError::UnsupportedVersion { .. }
+                );
+                self.scan_warning(
+                    source_order,
+                    &format!(
+                        "hatch {}: {error}",
+                        if future { "retained" } else { "failed" }
+                    ),
+                );
+                if !future {
+                    self.mark_failed(source_order);
+                }
+                return;
+            }
+        };
+        let entity_count = hatch.loops.iter().fold(1_usize, |count, hatch_loop| {
+            count.saturating_add(decoded_curve_entity_count(&hatch_loop.curve))
+        });
+        if !self.charge_entities(source_order, entity_count) {
+            return;
+        }
+        let key = self.object_key(identity, source_order);
+        let association = self.source_association(identity);
+        let feature_id = FeatureId(format!("rhino:hatch:feature#{key}"));
+        let transform = hatch_plane_transform(&hatch.plane, scale);
+        for hatch_loop in &mut hatch.loops {
+            if let Err(error) = transform_decoded_curve(&mut hatch_loop.curve, transform) {
+                self.scan_warning(
+                    source_order,
+                    &format!("hatch loop placement failed: {error}"),
+                );
+                self.mark_failed(source_order);
+                return;
+            }
+        }
+        let loop_ids = hatch
+            .loops
+            .iter()
+            .enumerate()
+            .map(|(index, hatch_loop)| {
+                (
+                    hatch_loop.kind,
+                    format!("rhino:object:curve#{key}.hatch-loop-{index}"),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut parameters = BTreeMap::from([
+            ("pattern_index".to_string(), hatch.pattern_index.to_string()),
+            ("pattern_scale".to_string(), hatch.pattern_scale.to_string()),
+            (
+                "pattern_rotation".to_string(),
+                hatch.pattern_rotation.to_string(),
+            ),
+            (
+                "basepoint".to_string(),
+                format!("{},{}", hatch.basepoint[0], hatch.basepoint[1]),
+            ),
+        ]);
+        for (index, (kind, id)) in loop_ids.iter().enumerate() {
+            parameters.insert(
+                format!("loop_{index}"),
+                format!(
+                    "{}:{id}",
+                    match kind {
+                        crate::hatch::LoopKind::Outer => "outer",
+                        crate::hatch::LoopKind::Inner => "inner",
+                    }
+                ),
+            );
+        }
+        let feature = Feature {
+            id: feature_id.clone(),
+            ordinal: u64::try_from(hatch.source_range.start).expect("source offset fits u64"),
+            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("RhinoHatch".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "hatch".to_string(),
+                parameters,
+                properties: BTreeMap::new(),
+            },
+            native_ref: Some(self.unknowns[source_order].id.to_string()),
+        };
+        let hatch_loops = hatch.loops;
+        let result = self.validate_candidate(|candidate| {
+            for (index, hatch_loop) in hatch_loops.into_iter().enumerate() {
+                commit_curve_tree(
+                    candidate,
+                    hatch_loop.curve,
+                    &key,
+                    &association,
+                    None,
+                    &format!("hatch-loop-{index}"),
+                );
+            }
+            candidate.model.features.push(feature);
+        });
+        match result {
+            Ok(()) => {
+                for warning in hatch.warnings {
+                    self.scan_warning(source_order, &warning);
+                }
+                let mut links = loop_ids.into_iter().map(|(_, id)| id).collect::<Vec<_>>();
+                links.push(feature_id.to_string());
+                self.append_links(source_order, &links);
+                self.geometry_transferred = true;
+                self.mark_decoded(source_order);
+            }
+            Err(error) => {
+                self.scan_warning(source_order, &format!("hatch candidate rejected: {error}"));
+                self.mark_failed(source_order);
             }
         }
     }
@@ -3480,6 +3632,42 @@ fn compose_body_transform(body: &mut Body, transform: Transform) {
     });
 }
 
+fn hatch_plane_transform(plane: &crate::settings::Plane, scale: f64) -> Transform {
+    let origin = plane.origin.0;
+    let x = plane.xaxis.0;
+    let y = plane.yaxis.0;
+    let z = plane.zaxis.0;
+    Transform {
+        rows: [
+            [x[0] * scale, y[0] * scale, z[0] * scale, origin[0] * scale],
+            [x[1] * scale, y[1] * scale, z[1] * scale, origin[1] * scale],
+            [x[2] * scale, y[2] * scale, z[2] * scale, origin[2] * scale],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    }
+}
+
+fn transform_decoded_curve(
+    curve: &mut crate::curves::DecodedCurve,
+    transform: Transform,
+) -> Result<(), String> {
+    if let Some(compound) = &mut curve.compound {
+        for child in &mut compound.children {
+            transform_decoded_curve(child, transform)?;
+        }
+        return Ok(());
+    }
+    let geometry = std::mem::replace(&mut curve.geometry, CurveGeometry::Unknown { record: None });
+    let mut carrier = Curve {
+        id: "rhino:hatch:placement".into(),
+        geometry,
+        source_object: None,
+    };
+    transform_curve(&mut carrier, transform)?;
+    curve.geometry = carrier.geometry;
+    Ok(())
+}
+
 fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String> {
     let geometry = std::mem::replace(&mut curve.geometry, CurveGeometry::Unknown { record: None });
     curve.geometry = match geometry {
@@ -3845,6 +4033,24 @@ mod tests {
             compound: None,
             warnings: Vec::new(),
         }
+    }
+
+    #[test]
+    fn hatch_plane_places_and_scales_plane_space_loops_once() {
+        let plane = crate::settings::Plane {
+            origin: crate::settings::Point3([10.0, 20.0, 30.0]),
+            xaxis: crate::settings::Vector3([0.0, 1.0, 0.0]),
+            yaxis: crate::settings::Vector3([-1.0, 0.0, 0.0]),
+            zaxis: crate::settings::Vector3([0.0, 0.0, 1.0]),
+            equation: [0.0, 0.0, 1.0, -30.0],
+        };
+        let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
+        transform_decoded_curve(&mut curve, hatch_plane_transform(&plane, 10.0)).unwrap();
+        let CurveGeometry::Nurbs(curve) = curve.geometry else {
+            panic!("hatch loop must remain NURBS");
+        };
+        assert_eq!(curve.control_points[0], Point3::new(100.0, 200.0, 300.0));
+        assert_eq!(curve.control_points[1], Point3::new(100.0, 220.0, 300.0));
     }
 
     #[test]

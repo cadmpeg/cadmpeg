@@ -974,6 +974,7 @@ buffer invalid.
 | `ON_Point`               | `C3101A1D-F157-11D3-BFE7-0010830122F0` |
 | `ON_PointCloud`          | `2488F347-F8FA-11D3-BFEC-0010830122F0` |
 | `ON_PointGrid`           | `4ED7D4E5-E947-11D3-BFE5-0010830122F0` |
+| `ON_Hatch`               | `0559733B-5332-49D1-A936-0532AC76ADE5` |
 | `ON_Layer`               | `95809813-E985-11D3-BFE5-0010830122F0` |
 | `ON_InstanceDefinition`  | `26F8BFF6-2618-417F-A158-153D64A94989` |
 | `ON_InstanceRef`         | `F9CFB638-B9D4-4340-87E3-C56E7865D96A` |
@@ -1733,6 +1734,38 @@ and diameter multiplies that result by two.
 All points and distance-valued fields use document length conversion.
 Directions, angles, and distance scale are unscaled. Coordinates, scales, and
 computed measurements are finite; distance scale is positive.
+
+### 18.2 Hatches
+
+`ON_Hatch` uses packed version 1.1 before archive 60 and packed version 1.2 in
+archive 60 and later:
+
+```text
+packed version 1.minor
+ON_Plane hatch plane
+f64 pattern scale
+f64 pattern rotation
+i32 referenced hatch-pattern archive index
+i32 loop count
+loop count × hatch loop
+if minor >= 2: ON_2dPoint basepoint
+```
+
+Each hatch loop uses packed version 1.1:
+
+```text
+packed version 1.1
+i32 loop type
+class wrapper containing one plane-space curve
+```
+
+Loop type 0 is outer and type 1 is inner. The loop curve is a two-dimensional
+curve in hatch-plane coordinates. Model-space loop point `p=(x,y,0)` is
+`plane.origin + x*plane.xaxis + y*plane.yaxis`. Plane origin, loop coordinates,
+and basepoint coordinates use document length conversion. Plane axes, pattern
+scale, and pattern rotation are unscaled. Pattern scale is finite and positive;
+pattern rotation and every geometric coordinate are finite. Loop count is
+nonnegative and every loop object derives from the curve family.
 
 ## 19. Exact gates and invariants
 

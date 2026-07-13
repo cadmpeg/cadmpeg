@@ -15,6 +15,7 @@ pub(crate) mod curves;
 pub(crate) mod decode;
 pub(crate) mod dimensions;
 pub(crate) mod extrusion;
+pub(crate) mod hatch;
 pub(crate) mod history;
 pub(crate) mod instances;
 pub(crate) mod mesh;
