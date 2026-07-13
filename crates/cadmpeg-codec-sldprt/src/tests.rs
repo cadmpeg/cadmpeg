@@ -5432,7 +5432,7 @@ fn decode_projects_cut_extrude_with_canonical_length() {
 #[test]
 fn decode_resolves_feature_topology_selections() {
     use cadmpeg_ir::features::{
-        BodySelection, EdgeSelection, Extent, FaceSelection, FeatureDefinition,
+        BodySelection, EdgeSelection, Extent, FaceSelection, FeatureDefinition, PathRef, ProfileRef,
     };
 
     let body_bytes = triangle_body();
@@ -5450,8 +5450,9 @@ fn decode_resolves_feature_topology_selections() {
             <Fillet Name="Round" Type="Fillet" id="1" Edges="{edge}"><Dimension Name="Radius">1mm</Dimension></Fillet>
             <DeleteFace Name="Delete" Type="DeleteFace" id="2" Faces="{face}" Heal="true"/>
             <Combine Name="Union" Type="Combine" id="3" Target="{body}" Tools="{body}" Operation="Join"/>
-            <Extrusion Name="UpTo" Type="BossExtrude" id="4" EndCondition="ToFace" Face="{face}" Operation="Join"/>
+            <Extrusion Name="UpTo" Type="BossExtrude" id="4" Profile="{face}" EndCondition="ToFace" Face="{face}" Operation="Join"/>
             <Hole Name="Drill" Type="Hole" id="5" Face="{face}" EndCondition="ThroughAll"><Dimension Name="Diameter">2mm</Dimension></Hole>
+            <Sweep Name="Rail" Type="Sweep" id="6" Profile="{face}" Path="{edge}" Operation="NewBody"/>
         </Keywords>"#
     );
     let mut source = sldprt_with_body(&body_bytes);
@@ -5459,6 +5460,9 @@ fn decode_resolves_feature_topology_selections() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let edge_id = decoded.ir.model.edges[0].id.clone();
+    let face_id = decoded.ir.model.faces[0].id.clone();
+    let body_id = decoded.ir.model.bodies[0].id.clone();
 
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
@@ -5485,11 +5489,13 @@ fn decode_resolves_feature_topology_selections() {
     assert!(matches!(
         &decoded.ir.model.features[3].definition,
         FeatureDefinition::Extrude {
+            profile: ProfileRef::Faces(profile_faces),
             extent: Extent::ToFace {
                 face: FaceSelection::Resolved { faces, native },
             },
             ..
-        } if faces == &[base.ir.model.faces[0].id.clone()] && native == face
+        } if profile_faces == &[base.ir.model.faces[0].id.clone()]
+            && faces == &[base.ir.model.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
         &decoded.ir.model.features[4].definition,
@@ -5498,10 +5504,15 @@ fn decode_resolves_feature_topology_selections() {
             ..
         } if faces == &[base.ir.model.faces[0].id.clone()] && native == face
     ));
+    assert!(matches!(
+        &decoded.ir.model.features[5].definition,
+        FeatureDefinition::Sweep {
+            profile: ProfileRef::Faces(faces),
+            path: PathRef::Edges(edges),
+            ..
+        } if faces == &[face_id.clone()] && edges == &[edge_id.clone()]
+    ));
 
-    let edge_id = decoded.ir.model.edges[0].id.clone();
-    let face_id = decoded.ir.model.faces[0].id.clone();
-    let body_id = decoded.ir.model.bodies[0].id.clone();
     if let FeatureDefinition::Fillet { edges, .. } = &mut decoded.ir.model.features[0].definition {
         *edges = EdgeSelection::Edges(vec![edge_id.clone()]);
     }
@@ -5539,7 +5550,10 @@ fn decode_resolves_feature_topology_selections() {
     assert_eq!(records[2].properties["Target"], body_id.0);
     assert_eq!(records[2].properties["Tools"], body_id.0);
     assert_eq!(records[3].properties["Face"], face_id.0);
+    assert_eq!(records[3].properties["Profile"], face_id.0);
     assert_eq!(records[4].properties["Face"], face_id.0);
+    assert_eq!(records[5].properties["Profile"], face_id.0);
+    assert_eq!(records[5].properties["Path"], edge_id.0);
 }
 
 #[test]

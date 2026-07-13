@@ -11,6 +11,7 @@ use cadmpeg_ir::features::{
     FeatureId, FlexMode, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternKind,
     ProfileRef, RadiusSpec, VariableRadius,
 };
+use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Edge, Face};
 use cadmpeg_ir::Exactness;
@@ -448,6 +449,7 @@ pub fn bind_topology_selections(
     bodies: &[Body],
     faces: &[Face],
     edges: &[Edge],
+    curves: &[Curve],
 ) {
     let body_ids = selection_ids(
         bodies
@@ -463,6 +465,11 @@ pub fn bind_topology_selections(
         edges
             .iter()
             .map(|edge| (edge.id.0.as_str(), None, edge.id.clone())),
+    );
+    let curve_ids = selection_ids(
+        curves
+            .iter()
+            .map(|curve| (curve.id.0.as_str(), None, curve.id.clone())),
     );
     for feature in features {
         if let Some(scope) = feature
@@ -482,9 +489,30 @@ pub fn bind_topology_selections(
         }
         match &mut feature.definition {
             FeatureDefinition::Extrude {
-                extent: Extent::ToFace { face },
-                ..
-            } => resolve_face_selection(face, &face_ids),
+                profile, extent, ..
+            } => {
+                resolve_profile_ref(profile, &face_ids);
+                if let Extent::ToFace { face } = extent {
+                    resolve_face_selection(face, &face_ids);
+                }
+            }
+            FeatureDefinition::Revolve { profile, .. } | FeatureDefinition::Rib { profile, .. } => {
+                resolve_profile_ref(profile, &face_ids);
+            }
+            FeatureDefinition::Sweep { profile, path, .. } => {
+                resolve_profile_ref(profile, &face_ids);
+                resolve_path_ref(path, &edge_ids, &curve_ids);
+            }
+            FeatureDefinition::Loft {
+                profiles, guides, ..
+            } => {
+                for profile in profiles {
+                    resolve_profile_ref(profile, &face_ids);
+                }
+                for path in guides {
+                    resolve_path_ref(path, &edge_ids, &curve_ids);
+                }
+            }
             FeatureDefinition::Fillet { edges, .. } | FeatureDefinition::Chamfer { edges, .. } => {
                 resolve_edge_selection(edges, &edge_ids);
             }
@@ -514,6 +542,31 @@ pub fn bind_topology_selections(
                 resolve_face_selection(face, &face_ids);
             }
             _ => {}
+        }
+    }
+}
+
+fn resolve_profile_ref(
+    profile: &mut ProfileRef,
+    faces: &HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
+) {
+    if let ProfileRef::Native(native) = profile {
+        if let Some(ids) = resolve_ids(native, faces) {
+            *profile = ProfileRef::Faces(ids);
+        }
+    }
+}
+
+fn resolve_path_ref(
+    path: &mut PathRef,
+    edges: &HashMap<String, Option<cadmpeg_ir::ids::EdgeId>>,
+    curves: &HashMap<String, Option<cadmpeg_ir::ids::CurveId>>,
+) {
+    if let PathRef::Native(native) = path {
+        if let Some(ids) = resolve_ids(native, edges) {
+            *path = PathRef::Edges(ids);
+        } else if let Some(ids) = resolve_ids(native, curves) {
+            *path = PathRef::Curves(ids);
         }
     }
 }
@@ -743,9 +796,11 @@ fn project_extrude(
     let profile = feature.properties.get("Profile").map_or_else(
         || Some(feature.id.clone()),
         |source| {
-            native_by_source
-                .get(source.as_str())
-                .map(|id| (*id).to_string())
+            Some(
+                native_by_source
+                    .get(source.as_str())
+                    .map_or_else(|| source.clone(), |id| (*id).to_string()),
+            )
         },
     )?;
     Some(FeatureDefinition::Extrude {
@@ -856,7 +911,10 @@ fn project_rib(
     feature: &Feature,
     native_by_source: &HashMap<&str, &str>,
 ) -> Option<FeatureDefinition> {
-    let profile = *native_by_source.get(feature.properties.get("Profile")?.as_str())?;
+    let profile = feature.properties.get("Profile")?;
+    let profile = native_by_source
+        .get(profile.as_str())
+        .map_or_else(|| profile.clone(), |id| (*id).to_string());
     let direction = parse_vector3(feature.properties.get("Direction")?)?;
     if !valid_direction(direction) {
         return None;
@@ -866,7 +924,7 @@ fn project_rib(
         None => None,
     };
     Some(FeatureDefinition::Rib {
-        profile: ProfileRef::Native(profile.to_string()),
+        profile: ProfileRef::Native(profile),
         direction,
         thickness: Length(
             feature
@@ -908,7 +966,13 @@ fn resolve_native_refs(value: &str, native_by_source: &HashMap<&str, &str>) -> O
         .split(',')
         .map(str::trim)
         .filter(|source| !source.is_empty())
-        .map(|source| native_by_source.get(source).map(|id| (*id).to_string()))
+        .map(|source| {
+            Some(
+                native_by_source
+                    .get(source)
+                    .map_or_else(|| source.to_string(), |id| (*id).to_string()),
+            )
+        })
         .collect()
 }
 
@@ -916,8 +980,14 @@ fn project_sweep(
     feature: &Feature,
     native_by_source: &HashMap<&str, &str>,
 ) -> Option<FeatureDefinition> {
-    let profile = *native_by_source.get(feature.properties.get("Profile")?.as_str())?;
-    let path = *native_by_source.get(feature.properties.get("Path")?.as_str())?;
+    let profile = feature.properties.get("Profile")?;
+    let profile = native_by_source
+        .get(profile.as_str())
+        .map_or_else(|| profile.clone(), |id| (*id).to_string());
+    let path = feature.properties.get("Path")?;
+    let path = native_by_source
+        .get(path.as_str())
+        .map_or_else(|| path.clone(), |id| (*id).to_string());
     let op = parse_boolean_op(feature.properties.get("Operation")?)?;
     let twist = match feature.parameters.get("Twist") {
         Some(value) => Some(Angle(parse_angle_rad(value)?)),
@@ -934,8 +1004,8 @@ fn project_sweep(
         None => None,
     };
     Some(FeatureDefinition::Sweep {
-        profile: ProfileRef::Native(profile.to_string()),
-        path: PathRef::Native(path.to_string()),
+        profile: ProfileRef::Native(profile),
+        path: PathRef::Native(path),
         op,
         twist,
         scale,
@@ -3503,8 +3573,15 @@ fn profile_source(
     sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
 ) -> Option<String> {
     match profile {
-        ProfileRef::Native(id) => native.get(id).cloned(),
+        ProfileRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         ProfileRef::Sketch(id) => sketches.get(id).cloned(),
+        ProfileRef::Faces(faces) if !faces.is_empty() => Some(
+            faces
+                .iter()
+                .map(|face| face.0.as_str())
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
         ProfileRef::Faces(_) => None,
     }
 }
@@ -3515,8 +3592,22 @@ fn path_source(
     sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
 ) -> Option<String> {
     match path {
-        PathRef::Native(id) => native.get(id).cloned(),
+        PathRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         PathRef::Sketch(id) => sketches.get(id).cloned(),
+        PathRef::Edges(edges) if !edges.is_empty() => Some(
+            edges
+                .iter()
+                .map(|edge| edge.0.as_str())
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        PathRef::Curves(curves) if !curves.is_empty() => Some(
+            curves
+                .iter()
+                .map(|curve| curve.0.as_str())
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
         PathRef::Edges(_) | PathRef::Curves(_) => None,
     }
 }

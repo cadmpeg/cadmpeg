@@ -313,6 +313,7 @@ fn build_geometry_ir(
         &ir.model.bodies,
         &ir.model.faces,
         &ir.model.edges,
+        &ir.model.curves,
     );
     stamp_feature_baseline(&mut ir);
     assign_configuration_bodies(&mut ir, configuration_bodies);
