@@ -59,6 +59,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         validate_source_less_design_bindings(native)?;
         validate_source_less_design_ownership(native)?;
         validate_source_less_sketch_graph(native)?;
+        validate_source_less_recipes(native)?;
         validate_source_less_design_links(target, native)?;
     }
     let smbh = encode_planar_triangle_smbh(target)?;
@@ -168,6 +169,54 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         .map_err(|error| CodecError::Malformed(format!("cannot finish F3D archive: {error}")))?
         .into_inner();
     writer.write_all(&bytes)?;
+    Ok(())
+}
+
+fn validate_source_less_recipes(native: &F3dNative) -> Result<(), CodecError> {
+    if native
+        .construction_recipes
+        .windows(2)
+        .any(|pair| pair[0].record_index > pair[1].record_index)
+    {
+        return Err(CodecError::Malformed(
+            "F3D construction recipes must be ordered by record index".into(),
+        ));
+    }
+    let mut record_indices = BTreeSet::new();
+    let mut group_counts = HashMap::new();
+    for recipe in &native.construction_recipes {
+        if !record_indices.insert(recipe.record_index) {
+            return Err(CodecError::Malformed(format!(
+                "multiple F3D construction recipes use record index {}",
+                recipe.record_index
+            )));
+        }
+        let expected = group_counts
+            .entry((recipe.kind, recipe.design_id.as_deref()))
+            .or_insert(0u32);
+        if recipe.recipe_index != *expected {
+            return Err(CodecError::Malformed(format!(
+                "F3D construction recipe {} has noncontiguous group index {}",
+                recipe.id, recipe.recipe_index
+            )));
+        }
+        *expected += 1;
+        if recipe.design_id_binary_u32 {
+            let binary_id = recipe
+                .design_id
+                .as_deref()
+                .and_then(|id| id.parse::<u32>().ok());
+            if recipe.kind != ConstructionRecipeKind::BoundedFace
+                || binary_id.is_none_or(|id| !(100..100_000).contains(&id))
+                || binary_id.and_then(|id| i32::try_from(id).ok()) != Some(recipe.record_index)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D binary bounded-face recipe {} requires design id == record index in [100, 100000)",
+                    recipe.id
+                )));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -933,13 +982,16 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
         if let Some(design_id) = &recipe.design_id {
-            if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
+            if recipe.design_id_binary_u32 {
+                // The binary bounded-face layout aliases the record-index slot.
+            } else if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
                 return Err(CodecError::Malformed(format!(
                     "source-less Design recipe id must be three ASCII digits: {design_id}"
                 )));
+            } else {
+                prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
+                prefix[4..7].copy_from_slice(design_id.as_bytes());
             }
-            prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
-            prefix[4..7].copy_from_slice(design_id.as_bytes());
         }
         prefix[11..15].copy_from_slice(&recipe.record_index.to_le_bytes());
         prefix[23..27].copy_from_slice(

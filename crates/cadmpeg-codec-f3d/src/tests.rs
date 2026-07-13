@@ -5861,9 +5861,13 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         byte_offset: 0,
         record_index_offset: None,
         kind,
-        design_id: Some(format!("{}", 320 + ordinal)),
+        design_id: Some(if kind == ConstructionRecipeKind::BoundedFace {
+            "102".into()
+        } else {
+            format!("{}", 320 + ordinal)
+        }),
         design_id_offset: None,
-        design_id_binary_u32: false,
+        design_id_binary_u32: kind == ConstructionRecipeKind::BoundedFace,
         recipe_index: 0,
         record_index: 100 + i32::try_from(ordinal).unwrap(),
     })
@@ -5905,6 +5909,13 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less Design BulkStream encode");
+    f3d_native_mut(&mut source_less).construction_recipes[0].recipe_index = 1;
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("recipe group indices must not be renumbered");
+    assert!(error
+        .to_string()
+        .contains("has noncontiguous group index 1"));
     let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
     let mut bulkstream = Vec::new();
     archive
@@ -5982,6 +5993,14 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         .construction_recipes
         .iter()
         .any(|recipe| recipe.kind == ConstructionRecipeKind::BoundedFace));
+    let bounded = native
+        .construction_recipes
+        .iter()
+        .find(|recipe| recipe.kind == ConstructionRecipeKind::BoundedFace)
+        .expect("bounded-face recipe");
+    assert_eq!(bounded.design_id.as_deref(), Some("102"));
+    assert!(bounded.design_id_binary_u32);
+    assert_eq!(bounded.record_index, 102);
     assert_eq!(native.persistent_references.len(), 3);
     assert_eq!(
         native
