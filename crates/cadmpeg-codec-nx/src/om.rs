@@ -706,10 +706,7 @@ fn numeric_expression_at(
     }
     let value_text = value_tail.strip_suffix("; ")?;
     let (parameter_index, qualifier) = parameter_name(name);
-    let value = value_text
-        .parse::<f64>()
-        .ok()
-        .filter(|value| value.is_finite());
+    let value = evaluate_constant_expression(value_text);
     Some(NumericExpression {
         object_id,
         offset: base_offset + relative,
@@ -720,6 +717,133 @@ fn numeric_expression_at(
         expression: value_text,
         value,
     })
+}
+
+/// Evaluate the context-free arithmetic subset used by NX numeric formulas.
+/// Names and function calls deliberately fail here; their values require the
+/// owning parameter graph rather than local expression syntax.
+fn evaluate_constant_expression(text: &str) -> Option<f64> {
+    struct Parser<'a> {
+        bytes: &'a [u8],
+        at: usize,
+    }
+
+    impl Parser<'_> {
+        fn spaces(&mut self) {
+            while self.bytes.get(self.at).is_some_and(u8::is_ascii_whitespace) {
+                self.at += 1;
+            }
+        }
+
+        fn take(&mut self, byte: u8) -> bool {
+            self.spaces();
+            if self.bytes.get(self.at) == Some(&byte) {
+                self.at += 1;
+                true
+            } else {
+                false
+            }
+        }
+
+        fn sum(&mut self) -> Option<f64> {
+            let mut value = self.product()?;
+            loop {
+                if self.take(b'+') {
+                    value += self.product()?;
+                } else if self.take(b'-') {
+                    value -= self.product()?;
+                } else {
+                    return value.is_finite().then_some(value);
+                }
+            }
+        }
+
+        fn product(&mut self) -> Option<f64> {
+            let mut value = self.power()?;
+            loop {
+                if self.take(b'*') {
+                    value *= self.power()?;
+                } else if self.take(b'/') {
+                    value /= self.power()?;
+                } else {
+                    return value.is_finite().then_some(value);
+                }
+            }
+        }
+
+        fn power(&mut self) -> Option<f64> {
+            let value = self.unary()?;
+            if self.take(b'^') {
+                let result = value.powf(self.power()?);
+                result.is_finite().then_some(result)
+            } else {
+                Some(value)
+            }
+        }
+
+        fn unary(&mut self) -> Option<f64> {
+            if self.take(b'+') {
+                self.unary()
+            } else if self.take(b'-') {
+                Some(-self.unary()?)
+            } else {
+                self.primary()
+            }
+        }
+
+        fn primary(&mut self) -> Option<f64> {
+            if self.take(b'(') {
+                let value = self.sum()?;
+                self.take(b')').then_some(value)
+            } else {
+                self.number()
+            }
+        }
+
+        fn number(&mut self) -> Option<f64> {
+            self.spaces();
+            let start = self.at;
+            while self
+                .bytes
+                .get(self.at)
+                .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'.')
+            {
+                self.at += 1;
+            }
+            if self
+                .bytes
+                .get(self.at)
+                .is_some_and(|byte| matches!(byte, b'e' | b'E'))
+            {
+                self.at += 1;
+                if self
+                    .bytes
+                    .get(self.at)
+                    .is_some_and(|byte| matches!(byte, b'+' | b'-'))
+                {
+                    self.at += 1;
+                }
+                let exponent = self.at;
+                while self.bytes.get(self.at).is_some_and(u8::is_ascii_digit) {
+                    self.at += 1;
+                }
+                (self.at > exponent).then_some(())?;
+            }
+            (self.at > start).then_some(())?;
+            std::str::from_utf8(&self.bytes[start..self.at])
+                .ok()?
+                .parse()
+                .ok()
+        }
+    }
+
+    let mut parser = Parser {
+        bytes: text.as_bytes(),
+        at: 0,
+    };
+    let value = parser.sum()?;
+    parser.spaces();
+    (parser.at == parser.bytes.len() && value.is_finite()).then_some(value)
 }
 
 fn parameter_name(name: &str) -> (Option<u32>, Option<&str>) {

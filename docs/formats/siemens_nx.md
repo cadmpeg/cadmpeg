@@ -117,7 +117,7 @@ A numeric expression table contains a `hostglobalvariables` root entity. Each ex
 00
 ```
 
-`text_length` includes the leading marker byte and trailing zero, so it equals the ASCII text length plus two. Defined units are `mm` and `degrees`. Parameter names use `p<decimal-index>` or `p<decimal-index>_<qualifier>`. The qualifier remains part of the parameter name; equal decimal indices with distinct qualifiers are distinct parameters. A decimal expression supplies its evaluated value directly. Formula text retains ordered `p<decimal-index>` dependencies; repeated references denote one dependency at its first occurrence.
+`text_length` includes the leading marker byte and trailing zero, so it equals the ASCII text length plus two. Defined units are `mm` and `degrees`. Parameter names use `p<decimal-index>` or `p<decimal-index>_<qualifier>`. The qualifier remains part of the parameter name; equal decimal indices with distinct qualifiers are distinct parameters. A context-free arithmetic expression over finite decimal scalars, parentheses, unary signs, `^`, `*`, `/`, `+`, and `-` supplies its evaluated value. Powers associate right; multiplication and division precede addition and subtraction. Formula text retains ordered `p<decimal-index>` dependencies; repeated references denote one dependency at its first occurrence. Expressions containing names or calls require the parameter graph and retain no locally evaluated value.
 
 ---
 
@@ -458,4 +458,4 @@ Parasolid attribute definitions use a two-record catalog entry. `00 4f` contains
 handle:u8  04  length:u8  "(Number [units]) name: expression; "  00
 ```
 
-`length - 2` is the ASCII text length. `units` is `mm` or `degrees`; `name` contains ASCII alphanumerics and underscores. `expression` is either a finite decimal scalar or a formula. Formula parameter references use `p<decimal-index>` tokens. The record framing is independent of the OM entity-index and object-ID arrays. An enclosing indexed entity supplies persistent object identity when present; otherwise the record's entry-relative byte offset supplies identity.
+`length - 2` is the ASCII text length. `units` is `mm` or `degrees`; `name` contains ASCII alphanumerics and underscores. `expression` is a finite decimal scalar or formula. Context-free arithmetic uses parentheses, unary signs, `^`, `*`, `/`, `+`, and `-`. Formula parameter references use `p<decimal-index>` tokens. The record framing is independent of the OM entity-index and object-ID arrays. An enclosing indexed entity supplies persistent object identity when present; otherwise the record's entry-relative byte offset supplies identity.

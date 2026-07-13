@@ -329,6 +329,20 @@ fn om_numeric_expression_retains_formula_without_literal_value() {
 }
 
 #[test]
+fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
+    let text = b"(Number [mm]) p9: (193.94 - 6) / 2 + 1.5e1; ";
+    let mut bytes = b"hostglobalvariables".to_vec();
+    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(text);
+    bytes.push(0);
+
+    let expressions = crate::om::numeric_expressions(&bytes);
+    assert_eq!(expressions.len(), 1);
+    assert_eq!(expressions[0].expression, "(193.94 - 6) / 2 + 1.5e1");
+    assert_eq!(expressions[0].value, Some(108.97));
+}
+
+#[test]
 fn om_string_value_requires_marker_length_printability_and_terminator() {
     let bytes = b"\x66\x32\x03\x0cSKETCH_001\0\x66\x32\x03\x03A\0\x66\x32\x03\x03A\x01";
     let values = crate::om::string_values(bytes, 100);
