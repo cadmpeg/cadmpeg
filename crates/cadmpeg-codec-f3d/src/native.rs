@@ -8,7 +8,7 @@ use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, ConstructionRecipe, CreationTimestamp, DesignBodyMember,
     DesignConfiguration, DesignEntityHeader, DesignMaterialAssignment, DesignObject,
-    DesignRecordHeader, EdgeContinuity, LostEdgeReference, PersistentDesignLink,
+    DesignRecordHeader, EdgeContinuity, FaceSidedness, LostEdgeReference, PersistentDesignLink,
     PersistentReference, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
     VertexOwnership,
 };
@@ -34,6 +34,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_objects",
     "design_record_headers",
     "edge_continuities",
+    "face_sidedness",
     "lost_edge_references",
     "persistent_design_links",
     "persistent_references",
@@ -57,6 +58,7 @@ macro_rules! f3d_arenas {
             design_configurations: DesignConfiguration;
             design_material_assignments: DesignMaterialAssignment;
             edge_continuities: EdgeContinuity;
+            face_sidedness: FaceSidedness;
             construction_recipes: ConstructionRecipe;
             creation_timestamps: CreationTimestamp;
             persistent_design_links: PersistentDesignLink;
@@ -150,6 +152,9 @@ pub struct F3dNative {
     /// Kernel continuity classifications stored on solved ASM edges.
     #[serde(default)]
     pub edge_continuities: Vec<EdgeContinuity>,
+    /// Native single/double-sided classifications stored on ASM faces.
+    #[serde(default)]
+    pub face_sidedness: Vec<FaceSidedness>,
     /// Parametric regeneration recipes from the Design `BulkStream`.
     #[serde(default)]
     pub construction_recipes: Vec<ConstructionRecipe>,
@@ -199,6 +204,7 @@ impl Default for F3dNative {
             design_configurations: Vec::new(),
             design_material_assignments: Vec::new(),
             edge_continuities: Vec::new(),
+            face_sidedness: Vec::new(),
             construction_recipes: Vec::new(),
             creation_timestamps: Vec::new(),
             persistent_design_links: Vec::new(),

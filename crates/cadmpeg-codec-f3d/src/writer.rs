@@ -972,7 +972,7 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     native_ref(&mut records, -1);
     native_ref(&mut records, 6);
     records.push(native_bool(face.sense == Sense::Reversed));
-    records.push(0x0b);
+    native_face_sidedness(&mut records, target, face)?;
     records.push(0x11);
 
     native_ident(&mut records, "loop")?;
@@ -2153,7 +2153,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             native_record_index(surface_start, surface_position)?,
         );
         records.push(native_bool(face.sense == Sense::Reversed));
-        records.push(0x0b);
+        native_face_sidedness(&mut records, target, face)?;
         records.push(0x11);
     }
 
@@ -3470,6 +3470,28 @@ fn vertex_ownership(
             }
         })
         .ok_or_else(|| CodecError::Malformed(format!("vertex {} has no edge", vertex.id)))
+}
+
+fn native_face_sidedness(
+    records: &mut Vec<u8>,
+    target: &CadIr,
+    face: &cadmpeg_ir::topology::Face,
+) -> Result<(), CodecError> {
+    let containment = f3d_native(target)?.and_then(|native| {
+        native
+            .face_sidedness
+            .into_iter()
+            .find(|metadata| metadata.face == face.id)
+            .and_then(|metadata| metadata.containment)
+    });
+    records.push(native_bool(containment.is_some()));
+    if let Some(containment) = containment {
+        records.push(match containment {
+            crate::records::FaceContainment::In => 0x0a,
+            crate::records::FaceContainment::Out => 0x0b,
+        });
+    }
+    Ok(())
 }
 
 fn edge_record_metadata(
@@ -7936,6 +7958,7 @@ pub fn write_semantic(
     let creation_timestamp_edits = validate_creation_timestamp_edits(&baseline.ir, target)?;
     let edge_continuity_edits = validate_edge_continuity_edits(&baseline.ir, target)?;
     let vertex_ownership_edits = validate_vertex_ownership_edits(&baseline.ir, target)?;
+    let face_sidedness_edits = validate_face_sidedness_edits(&baseline.ir, target)?;
     let mut supported_target = baseline.ir.clone();
     supported_target
         .model
@@ -8041,6 +8064,9 @@ pub fn write_semantic(
         supported
             .vertex_ownerships
             .clone_from(&target_native.vertex_ownerships);
+        supported
+            .face_sidedness
+            .clone_from(&target_native.face_sidedness);
         supported.store(supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::semantic_hash(&supported_target) != decode::semantic_hash(target) {
@@ -8246,6 +8272,7 @@ pub fn write_semantic(
                 &creation_timestamp_edits,
                 &edge_continuity_edits,
                 &vertex_ownership_edits,
+                &face_sidedness_edits,
             )?;
             if let Some(edits) = history_state_edits.get(&name) {
                 patch_history_states(&mut bytes, edits)?;
@@ -8499,6 +8526,56 @@ fn validate_vertex_ownership_edits(
             after.record_index as usize,
             (edge_record, after.endpoint_index),
         );
+    }
+    Ok(edits)
+}
+
+fn validate_face_sidedness_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, crate::records::FaceContainment>, CodecError> {
+    let baseline = f3d_native(baseline)?
+        .map(|native| native.face_sidedness)
+        .unwrap_or_default();
+    let target = f3d_native(target)?
+        .map(|native| native.face_sidedness)
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|metadata| (metadata.id.as_str(), metadata))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target
+        .iter()
+        .map(|metadata| (metadata.id.as_str(), metadata))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D face-sidedness regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.containment = before.containment;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D face-sidedness edit changes structural fields: {id}"
+            )));
+        }
+        if after.containment == before.containment {
+            continue;
+        }
+        match (before.containment, after.containment) {
+            (Some(_), Some(containment)) => {
+                edits.insert(after.record_index as usize, containment);
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "F3D face sidedness {id} cannot change record width"
+                )));
+            }
+        }
     }
     Ok(edits)
 }
@@ -11880,6 +11957,7 @@ fn patch_geometry(
     creation_timestamps: &BTreeMap<usize, f64>,
     edge_continuities: &BTreeMap<usize, (Sense, String)>,
     vertex_ownerships: &BTreeMap<usize, (i64, u8)>,
+    face_sidedness: &BTreeMap<usize, crate::records::FaceContainment>,
 ) -> Result<(), CodecError> {
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
@@ -11914,6 +11992,7 @@ fn patch_geometry(
         creation_timestamps,
         edge_continuities,
         vertex_ownerships,
+        face_sidedness,
         header_scale,
     )
 }
@@ -11944,6 +12023,7 @@ fn patch_framed_geometry(
     creation_timestamps: &BTreeMap<usize, f64>,
     edge_continuities: &BTreeMap<usize, (Sense, String)>,
     vertex_ownerships: &BTreeMap<usize, (i64, u8)>,
+    face_sidedness: &BTreeMap<usize, crate::records::FaceContainment>,
     header_scale: f64,
 ) -> Result<(), CodecError> {
     let records_by_index = records
@@ -12038,6 +12118,19 @@ fn patch_framed_geometry(
             }
             patch_integer_token(bytes, record, 0x0c, 2, *owning_edge)?;
             patch_integer_token(bytes, record, 0x04, 1, i64::from(*endpoint_index))?;
+        }
+        if let Some(containment) = face_sidedness.get(&record.index) {
+            if record.head != "face" || !matches!(record.chunk(9), Some(sab::Token::True)) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D face-sidedness record {} is not double-sided",
+                    record.index
+                )));
+            }
+            let sense = match containment {
+                crate::records::FaceContainment::In => Sense::Reversed,
+                crate::records::FaceContainment::Out => Sense::Forward,
+            };
+            patch_sense_token(bytes, record, 2, sense)?;
         }
         if let Some(color) = color_records.get(&record.index) {
             patch_double_token(bytes, record, 0, f64::from(color.r))?;
@@ -14086,6 +14179,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated line edit");
@@ -14135,6 +14229,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &spheres,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -14207,6 +14302,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &tori,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -14299,6 +14395,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated cylinder edit");
@@ -14354,6 +14451,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &conics,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),

@@ -452,6 +452,7 @@ fn build_geometry_ir(
         persistent_design_links: brep.persistent_design_links,
         edge_continuities: brep.edge_continuities,
         vertex_ownerships: brep.vertex_ownerships,
+        face_sidedness: brep.face_sidedness,
         creation_timestamps: brep.creation_timestamps,
         ..F3dNative::default()
     };

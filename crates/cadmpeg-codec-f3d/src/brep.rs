@@ -18,7 +18,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::records::{
-    CreationTimestamp, EdgeContinuity, PersistentDesignLink, SketchCurveLink, VertexOwnership,
+    CreationTimestamp, EdgeContinuity, FaceContainment, FaceSidedness, PersistentDesignLink,
+    SketchCurveLink, VertexOwnership,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
@@ -98,6 +99,8 @@ pub struct Brep {
     pub edge_continuities: Vec<EdgeContinuity>,
     /// Native owner-edge and endpoint-slot fields stored on solved vertices.
     pub vertex_ownerships: Vec<VertexOwnership>,
+    /// Native sidedness fields stored on solved faces.
+    pub face_sidedness: Vec<FaceSidedness>,
     /// Native ASM body key by emitted body id, used by Design-side joins.
     pub body_keys: HashMap<BodyId, u64>,
     /// Linked source-native attributes.
@@ -3852,6 +3855,17 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 name: None,
                 color: attribute_color(r),
                 tolerance: None,
+            });
+            let containment = match (r.chunk(9), r.chunk(10)) {
+                (Some(Token::True), Some(Token::True)) => Some(FaceContainment::In),
+                (Some(Token::True), Some(Token::False)) => Some(FaceContainment::Out),
+                _ => None,
+            };
+            out.face_sidedness.push(FaceSidedness {
+                id: format!("f3d:asm:face-sidedness#{i}"),
+                face: FaceId(id(i)),
+                record_index: r.index as u32,
+                containment,
             });
         }
     }

@@ -3676,6 +3676,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             .expect("generated edge continuity");
         metadata.continuity = "tangent".into();
         metadata.sense = cadmpeg_ir::topology::Sense::Reversed;
+        native.face_sidedness[0].containment = Some(crate::records::FaceContainment::In);
     }
     let mut encoded = Vec::new();
     F3dCodec
@@ -3720,8 +3721,27 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert!(continuities[1..]
         .iter()
         .all(|metadata| metadata.continuity == "unknown"));
+    assert_eq!(
+        f3d_native(&round_trip.ir).face_sidedness[0].containment,
+        Some(crate::records::FaceContainment::In)
+    );
     assert_eq!(round_trip.ir.model.points, source_less.model.points);
     assert_eq!(round_trip.ir.model.surfaces, source_less.model.surfaces);
+
+    let mut edited = round_trip.ir;
+    f3d_native_mut(&mut edited).face_sidedness[0].containment =
+        Some(crate::records::FaceContainment::Out);
+    let mut retained = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut retained)
+        .expect("retained double-sided containment edit");
+    let retained = F3dCodec
+        .decode(&mut Cursor::new(retained), &DecodeOptions::default())
+        .expect("retained double-sided containment round trip");
+    assert_eq!(
+        f3d_native(&retained.ir).face_sidedness[0].containment,
+        Some(crate::records::FaceContainment::Out)
+    );
 }
 
 #[test]
@@ -8010,6 +8030,8 @@ fn decode_builds_valid_topology_and_geometry() {
     );
     assert_eq!(result.ir.model.points.len(), 3);
     assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert_eq!(f3d_native(&result.ir).face_sidedness.len(), 1);
+    assert_eq!(f3d_native(&result.ir).face_sidedness[0].containment, None);
     let continuities = f3d_native(&result.ir).edge_continuities;
     assert_eq!(continuities.len(), 3);
     assert!(continuities
