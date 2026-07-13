@@ -1163,12 +1163,10 @@ fn transfer_resolved_extrusion_breps(
                 )),
                 _ => None,
             });
-        let Some(Extent::Symmetric { length }) =
-            symmetric_extrusion_extent(transform.origin, transform.normal, cap_origins)
-        else {
+        let Some(span) = extrusion_span(transform.origin, transform.normal, cap_origins) else {
             continue;
         };
-        let half = length.0 / 2.0;
+        let length = span.upper - span.lower;
         let entities = ir
             .model
             .sketch_entities
@@ -1228,7 +1226,7 @@ fn transfer_resolved_extrusion_breps(
         let shell_id = ShellId(format!("{prefix}:shell"));
         let bottom_surface = SurfaceId(format!("{prefix}:surface:bottom"));
         let top_surface = SurfaceId(format!("{prefix}:surface:top"));
-        for (id, offset) in [(&bottom_surface, -half), (&top_surface, half)] {
+        for (id, offset) in [(&bottom_surface, span.lower), (&top_surface, span.upper)] {
             annotate(
                 annotations,
                 id,
@@ -1271,8 +1269,8 @@ fn transfer_resolved_extrusion_breps(
             let mut top_vertices = Vec::new();
             for (index, (_, _, start, _)) in profile.iter().enumerate() {
                 for (side, offset, arena) in [
-                    ("bottom", -half, &mut bottom_vertices),
-                    ("top", half, &mut top_vertices),
+                    ("bottom", span.lower, &mut bottom_vertices),
+                    ("top", span.upper, &mut top_vertices),
                 ] {
                     let position = section_point_in_model(transform, *start);
                     let point_id =
@@ -1302,8 +1300,8 @@ fn transfer_resolved_extrusion_breps(
             for (index, (geometry, reversed, start, end)) in profile.iter().enumerate() {
                 let next = (index + 1) % count;
                 for (side, offset, vertices, arena) in [
-                    ("bottom", -half, &bottom_vertices, &mut bottom_edges),
-                    ("top", half, &top_vertices, &mut top_edges),
+                    ("bottom", span.lower, &bottom_vertices, &mut bottom_edges),
+                    ("top", span.upper, &top_vertices, &mut top_edges),
                 ] {
                     let curve_id =
                         CurveId(format!("{prefix}:curve:{profile_index}:{index}:{side}"));
@@ -1384,9 +1382,9 @@ fn transfer_resolved_extrusion_breps(
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Line {
                         origin: Point3::new(
-                            origin[0] - half * transform.normal[0],
-                            origin[1] - half * transform.normal[1],
-                            origin[2] - half * transform.normal[2],
+                            origin[0] + span.lower * transform.normal[0],
+                            origin[1] + span.lower * transform.normal[1],
+                            origin[2] + span.lower * transform.normal[2],
                         ),
                         direction: Vector3::new(
                             transform.normal[0],
@@ -1401,7 +1399,7 @@ fn transfer_resolved_extrusion_breps(
                     curve: Some(curve_id),
                     start: bottom_vertices[index].clone(),
                     end: top_vertices[index].clone(),
-                    param_range: Some([0.0, length.0]),
+                    param_range: Some([0.0, length]),
                     tolerance: None,
                 });
                 vertical_edges.push(edge_id);
@@ -2352,16 +2350,12 @@ fn schema_feature_definition(
                         )),
                         _ => None,
                     });
-                if let Some(extent) =
-                    symmetric_extrusion_extent(transform.origin, transform.normal, cap_origins)
+                if let Some((extent, direction)) =
+                    extrusion_extent_and_direction(transform.origin, transform.normal, cap_origins)
                 {
                     return IrFeatureDefinition::Extrude {
                         profile,
-                        direction: Some(Vector3::new(
-                            transform.normal[0],
-                            transform.normal[1],
-                            transform.normal[2],
-                        )),
+                        direction: Some(Vector3::new(direction[0], direction[1], direction[2])),
                         extent,
                         op: if ir.model.bodies.iter().any(|body| {
                             body.id == BodyId(format!("creo:feature:extrusion#{feature_id}:body"))
@@ -2423,11 +2417,17 @@ fn retain_native_feature_parameters(
     }
 }
 
-fn symmetric_extrusion_extent(
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ExtrusionSpan {
+    lower: f64,
+    upper: f64,
+}
+
+fn extrusion_span(
     profile_origin: [f64; 3],
     direction: [f64; 3],
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
-) -> Option<Extent> {
+) -> Option<ExtrusionSpan> {
     let direction_length = direction
         .iter()
         .map(|value| value * value)
@@ -2466,15 +2466,53 @@ fn symmetric_extrusion_extent(
             offsets.push(offset);
         }
     }
-    if offsets.len() != 2 || offsets[0] * offsets[1] >= 0.0 {
-        return None;
+    match offsets.as_slice() {
+        [offset] if offset.abs() > 1e-12 => Some(ExtrusionSpan {
+            lower: offset.min(0.0),
+            upper: offset.max(0.0),
+        }),
+        [first, second] if first * second < 0.0 => Some(ExtrusionSpan {
+            lower: first.min(*second),
+            upper: first.max(*second),
+        }),
+        _ => None,
     }
-    let first = offsets[0].abs();
-    let second = offsets[1].abs();
+}
+
+fn extrusion_extent_and_direction(
+    profile_origin: [f64; 3],
+    direction: [f64; 3],
+    planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
+) -> Option<(Extent, [f64; 3])> {
+    let span = extrusion_span(profile_origin, direction, planes)?;
+    let direction = normalized(direction)?;
+    if span.lower == 0.0 || span.upper == 0.0 {
+        let signed_length = if span.upper == 0.0 {
+            span.lower
+        } else {
+            span.upper
+        };
+        return Some((
+            Extent::Blind {
+                length: Length(signed_length.abs()),
+            },
+            direction.map(|value| value * signed_length.signum()),
+        ));
+    }
+    let first = span.upper;
+    let second = -span.lower;
     let scale = first.max(second).max(1.0);
-    ((first - second).abs() <= 1e-9 * scale).then_some(Extent::Symmetric {
-        length: Length(first + second),
-    })
+    let extent = if (first - second).abs() <= 1e-9 * scale {
+        Extent::Symmetric {
+            length: Length(first + second),
+        }
+    } else {
+        Extent::TwoSided {
+            first: Length(first),
+            second: Length(second),
+        }
+    };
+    Some((extent, direction))
 }
 
 #[cfg(test)]
@@ -2501,7 +2539,7 @@ mod resolved_sketch_tests {
 
     #[test]
     fn equal_opposite_cap_planes_define_symmetric_extent() {
-        let extent = symmetric_extrusion_extent(
+        let extent = extrusion_extent_and_direction(
             [0.0, 0.0, 0.0],
             [0.0, -1.0, 0.0],
             [
@@ -2513,16 +2551,19 @@ mod resolved_sketch_tests {
 
         assert_eq!(
             extent,
-            Some(Extent::Symmetric {
-                length: Length(8.0)
-            })
+            Some((
+                Extent::Symmetric {
+                    length: Length(8.0)
+                },
+                [0.0, -1.0, 0.0]
+            ))
         );
     }
 
     #[test]
-    fn asymmetric_cap_planes_do_not_define_symmetric_extent() {
+    fn asymmetric_cap_planes_define_two_sided_extent() {
         assert_eq!(
-            symmetric_extrusion_extent(
+            extrusion_extent_and_direction(
                 [0.0; 3],
                 [0.0, 0.0, 1.0],
                 [
@@ -2530,7 +2571,30 @@ mod resolved_sketch_tests {
                     ([0.0, 0.0, 3.0], [0.0, 0.0, 1.0]),
                 ],
             ),
-            None
+            Some((
+                Extent::TwoSided {
+                    first: Length(3.0),
+                    second: Length(2.0),
+                },
+                [0.0, 0.0, 1.0],
+            ))
+        );
+    }
+
+    #[test]
+    fn one_negative_cap_offset_reverses_blind_direction() {
+        assert_eq!(
+            extrusion_extent_and_direction(
+                [0.0; 3],
+                [0.0, -1.0, 0.0],
+                [([0.0, 48.0, 0.0], [0.0, 1.0, 0.0])],
+            ),
+            Some((
+                Extent::Blind {
+                    length: Length(48.0),
+                },
+                [-0.0, 1.0, -0.0],
+            ))
         );
     }
 

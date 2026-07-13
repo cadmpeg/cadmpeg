@@ -382,7 +382,7 @@ A typed schema row that owns a materialized `srf_array` row is an active constru
 
 A class-923 feature with exactly one resolved plane carrier defines that datum plane by the carrier's model-space origin, normal, and in-plane reference direction.
 
-For a linear section sweep, generated plane carriers parallel to the section normal are cap planes. Let `d0` and `d1` be their signed offsets from the section origin along the section normal. Exactly two distinct cap offsets with opposite signs and equal magnitudes define a symmetric extrusion of total length `|d0| + |d1|`. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain.
+For a linear section sweep, generated plane carriers parallel to the section normal are cap planes. Their signed offsets are measured from the section origin along the section normal. One distinct nonzero offset defines a blind extrusion from offset zero to that offset; a negative offset reverses the sweep direction. Exactly two offsets with opposite signs define a two-sided extrusion. Equal magnitudes select the symmetric form with total length equal to the sum of the magnitudes. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain.
 
 Evaluating a closed linear section sweep produces one side face per oriented profile entity. A line produces a planar side face and an arc produces a cylindrical side face. Each profile vertex produces an edge parallel to the sweep direction. The two cap loops use the profile edges in opposite directions, and every cap or longitudinal edge has exactly two face uses.
 
