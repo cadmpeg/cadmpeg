@@ -28,6 +28,9 @@ const POINT_CLASS: [u8; 16] = [
 const ARC_CLASS: [u8; 16] = [
     0x2a, 0xbe, 0x33, 0xcf, 0xb4, 0x09, 0xd4, 0x11, 0xbf, 0xfb, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
+const NURBS_CURVE_CLASS: [u8; 16] = [
+    0xdd, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+];
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
     check_representable(ir)?;
@@ -46,20 +49,20 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
         })
         .collect::<Vec<_>>();
     for curve in &ir.model.curves {
-        let CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } = &curve.geometry
-        else {
-            unreachable!("representability checked before serialization")
+        let (class, payload) = match &curve.geometry {
+            CurveGeometry::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            } => (
+                ARC_CLASS,
+                circle_payload(*center, *axis, *ref_direction, *radius),
+            ),
+            CurveGeometry::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
+            _ => unreachable!("representability checked before serialization"),
         };
-        objects.push(object_record(
-            4,
-            ARC_CLASS,
-            &circle_payload(*center, *axis, *ref_direction, *radius),
-        ));
+        objects.push(object_record(4, class, &payload));
     }
 
     let mut bytes = header(version)?;
@@ -125,8 +128,12 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
             axis,
             ref_direction,
             radius,
-        } = curve.geometry
+        } = &curve.geometry
         else {
+            if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
+                check_nurbs_curve(&curve.id.0, nurbs)?;
+                continue;
+            }
             return Err(CodecError::NotImplemented(format!(
                 "Rhino writer cannot represent curve {} as a native object",
                 curve.id.0
@@ -139,7 +146,7 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
             || !center.y.is_finite()
             || !center.z.is_finite()
             || !radius.is_finite()
-            || radius <= 0.0
+            || *radius <= 0.0
             || !axis_norm.is_finite()
             || !reference_norm.is_finite()
             || (axis_norm - 1.0).abs() > 1.0e-10
@@ -156,6 +163,37 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
         return Err(CodecError::NotImplemented(
             "Rhino native records require explicit survival handling".into(),
         ));
+    }
+    Ok(())
+}
+
+fn check_nurbs_curve(id: &str, curve: &cadmpeg_ir::geometry::NurbsCurve) -> Result<(), CodecError> {
+    let order = curve.degree as usize + 1;
+    let count = curve.control_points.len();
+    if i32::try_from(order).is_err()
+        || i32::try_from(count).is_err()
+        || order < 2
+        || count < order
+        || curve.knots.len() != count + order
+    {
+        return Err(CodecError::Malformed(format!(
+            "curve {id} has inconsistent NURBS counts"
+        )));
+    }
+    if curve.knots.iter().any(|v| !v.is_finite())
+        || curve.knots.windows(2).any(|v| v[0] > v[1])
+        || curve
+            .control_points
+            .iter()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite() || !p.z.is_finite())
+        || curve
+            .weights
+            .as_ref()
+            .is_some_and(|w| w.len() != count || w.iter().any(|v| !v.is_finite() || *v == 0.0))
+    {
+        return Err(CodecError::Malformed(format!(
+            "curve {id} has invalid NURBS data"
+        )));
     }
     Ok(())
 }
@@ -258,6 +296,46 @@ fn circle_payload(
     payload
 }
 
+fn nurbs_curve_payload(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Vec<u8> {
+    let rational = i32::from(curve.weights.is_some());
+    let order = (curve.degree + 1) as i32;
+    let count = curve.control_points.len() as i32;
+    let mut payload = vec![0x10];
+    for value in [3, rational, order, count, 0, 0] {
+        payload.extend(value.to_le_bytes());
+    }
+    let min = curve
+        .control_points
+        .iter()
+        .fold([f64::INFINITY; 3], |a, p| {
+            [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
+        });
+    let max = curve
+        .control_points
+        .iter()
+        .fold([f64::NEG_INFINITY; 3], |a, p| {
+            [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
+        });
+    for value in min.into_iter().chain(max) {
+        payload.extend(value.to_le_bytes());
+    }
+    payload.extend(((curve.knots.len() - 2) as i32).to_le_bytes());
+    for knot in &curve.knots[1..curve.knots.len() - 1] {
+        payload.extend(knot.to_le_bytes());
+    }
+    payload.extend(count.to_le_bytes());
+    for (index, point) in curve.control_points.iter().enumerate() {
+        let weight = curve.weights.as_ref().map_or(1.0, |weights| weights[index]);
+        payload.extend((point.x * weight).to_le_bytes());
+        payload.extend((point.y * weight).to_le_bytes());
+        payload.extend((point.z * weight).to_le_bytes());
+        if rational != 0 {
+            payload.extend(weight.to_le_bytes());
+        }
+    }
+    payload
+}
+
 fn object_record(object_type: i64, class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
     let object_type = short_chunk(TCODE_OBJECT_RECORD_TYPE, object_type);
     let mut uuid_body = class_uuid.to_vec();
@@ -352,6 +430,39 @@ mod tests {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert_eq!(decoded.ir.model.curves.len(), 1);
+        assert_eq!(
+            decoded.ir.model.curves[0].geometry,
+            ir.model.curves[0].geometry
+        );
+    }
+
+    #[test]
+    fn rational_nurbs_curve_round_trips_homogeneous_poles() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+            id: cadmpeg_ir::ids::CurveId("curve:nurbs".into()),
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+                cadmpeg_ir::geometry::NurbsCurve {
+                    degree: 2,
+                    knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    control_points: vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(1.0, 2.0, 0.0),
+                        Point3::new(3.0, 0.0, 0.0),
+                    ],
+                    weights: Some(vec![1.0, 0.5, 1.0]),
+                    periodic: false,
+                },
+            ),
+            source_object: None,
+        });
+        let mut bytes = Vec::new();
+        RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&ir, &mut bytes)
+            .unwrap();
+        let decoded = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
         assert_eq!(
             decoded.ir.model.curves[0].geometry,
             ir.model.curves[0].geometry
