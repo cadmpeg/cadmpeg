@@ -3708,9 +3708,13 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     },
                     native_tail_flags: pcurve_inline_tail_flags(r),
                     parameter_range: pcurve_parameter_range(r),
-                    fit_tolerance: matches!(r.chunk(4), Some(Token::True | Token::False))
-                        .then(|| nurbs::decode_pcurve_fit_tolerance(record_slice(r, bytes)))
-                        .flatten(),
+                    fit_tolerance: match (r.chunk(3), r.chunk(4)) {
+                        (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
+                            crate::sab::payload_subtype_span(bytes, r, 5, ref_width, "exp_par_cur")
+                                .and_then(nurbs::decode_pcurve_fit_tolerance)
+                        }
+                        _ => None,
+                    },
                 });
             }
         }

@@ -628,7 +628,7 @@ fn synthetic_geometry_with_short_pcurve_tail_smbh() -> Vec<u8> {
 }
 
 fn synthetic_geometry_with_out_of_scope_pcurve_cache_smbh() -> Vec<u8> {
-    let mut bytes = synthetic_geometry_with_pcurve_smbh();
+    let mut bytes = synthetic_geometry_with_additional_out_of_scope_pcurve_cache_smbh();
     let subtype = bytes
         .windows(b"exp_par_cur".len())
         .position(|window| window == b"exp_par_cur")
@@ -639,6 +639,15 @@ fn synthetic_geometry_with_out_of_scope_pcurve_cache_smbh() -> Vec<u8> {
         .map(|offset| subtype + offset)
         .expect("generated inline pcurve cache");
     bytes[cache] = b'x';
+    bytes
+}
+
+fn synthetic_geometry_with_additional_out_of_scope_pcurve_cache_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_pcurve_smbh();
+    let subtype = bytes
+        .windows(b"exp_par_cur".len())
+        .position(|window| window == b"exp_par_cur")
+        .expect("generated inline pcurve subtype");
     let tail = bytes[subtype..]
         .windows([0x10, 0x0a, 0x0b, 0x0a, 0x0b].len())
         .position(|window| window == [0x10, 0x0a, 0x0b, 0x0a, 0x0b])
@@ -15420,6 +15429,19 @@ fn generated_inline_pcurve_tail_requires_four_adjacent_booleans() {
     let short = decode(synthetic_geometry_with_short_pcurve_tail_smbh());
     assert_eq!(short.native_tail_flags, None);
     assert_eq!(short.parameter_range, Some([-1.0, 2.0]));
+}
+
+#[test]
+fn generated_inline_pcurve_fit_tolerance_is_scoped() {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_additional_out_of_scope_pcurve_cache_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("generated inline pcurve decode");
+    assert_eq!(result.ir.model.pcurves[0].fit_tolerance, Some(0.001));
 }
 
 #[test]
