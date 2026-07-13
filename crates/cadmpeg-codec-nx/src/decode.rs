@@ -2386,10 +2386,11 @@ fn attach_native_object_model(
     let object_records = crate::native::object_records(&scan.container);
     let string_values = crate::native::string_values(&scan.container);
     let object_references = crate::native::object_references(&scan.container);
-    let persistent_handles = crate::native::persistent_handles(&object_references);
     let configurations = crate::native::configurations(&scan.container);
     let external_references = crate::native::external_references(&scan.container);
     let external_reference_records = crate::native::external_reference_records(&scan.container);
+    let persistent_handles =
+        crate::native::persistent_handles(&object_references, &external_reference_records);
     let object_sections = scan.container.indexed_om_sections();
     if expressions.is_empty()
         && classes.is_empty()

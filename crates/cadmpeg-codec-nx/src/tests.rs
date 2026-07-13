@@ -2873,6 +2873,7 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(handles[0].value, 0x1234_5678);
     assert_eq!(handles[0].records, vec![object_records[1].id.clone()]);
     assert_eq!(handles[0].occurrence_count, 1);
+    assert!(handles[0].external_records.is_empty());
     assert_eq!(result.ir.model.features.len(), 1);
     assert!(matches!(
         result.ir.model.features[0].definition,
@@ -4360,6 +4361,39 @@ fn external_reference_record_parser_requires_sorted_doubled_handle_set() {
         .expect("closing duplicate");
     payload[duplicate + 1] = 0x10;
     assert!(crate::container::parse_extref_records(&payload).is_empty());
+}
+
+#[test]
+fn persistent_handle_identity_bridges_om_and_external_records() {
+    let reference = crate::native::ObjectReference {
+        id: "nx:test:reference#0".into(),
+        record: "nx:test:om-record#0".into(),
+        object_id: Some(1),
+        ordinal: 0,
+        kind: crate::native::ObjectReferenceKind::PersistentHandle,
+        value: 0x1020_3040,
+        target_record: None,
+        source_entry: "om".into(),
+        source_offset: 0,
+    };
+    let external = crate::native::ExternalReferenceRecord {
+        id: "nx:test:external-record#6".into(),
+        record_id: 6,
+        declared_count: 1,
+        id_slots: [0; 4],
+        handles: vec![0x1020_3040],
+        closing_duplicate: false,
+        prefix_byte_len: 31,
+        tail_byte_len: 0,
+        source_entry: "external".into(),
+        source_offset: 10,
+    };
+
+    let handles = crate::native::persistent_handles(&[reference], &[external]);
+
+    assert_eq!(handles.len(), 1);
+    assert_eq!(handles[0].records, ["nx:test:om-record#0"]);
+    assert_eq!(handles[0].external_records, ["nx:test:external-record#6"]);
 }
 
 #[test]

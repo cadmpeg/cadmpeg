@@ -207,6 +207,9 @@ pub struct PersistentHandle {
     pub records: Vec<String>,
     /// Total number of serialized occurrences across those records.
     pub occurrence_count: u32,
+    /// Ordered distinct EXTREFSTREAM records containing the same handle.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub external_records: Vec<String>,
 }
 
 /// Named NX arrangement from `/Root/part/arrangements`.
@@ -578,26 +581,40 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
 }
 
 /// Group persistent-handle occurrences into cross-record identities.
-pub fn persistent_handles(references: &[ObjectReference]) -> Vec<PersistentHandle> {
-    let mut groups = BTreeMap::<u32, (Vec<String>, u32)>::new();
+pub fn persistent_handles(
+    references: &[ObjectReference],
+    external: &[ExternalReferenceRecord],
+) -> Vec<PersistentHandle> {
+    let mut groups = BTreeMap::<u32, (Vec<String>, u32, Vec<String>)>::new();
     for reference in references
         .iter()
         .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
     {
-        let (records, occurrence_count) = groups.entry(reference.value).or_default();
+        let (records, occurrence_count, _) = groups.entry(reference.value).or_default();
         *occurrence_count += 1;
         if records.last() != Some(&reference.record) && !records.contains(&reference.record) {
             records.push(reference.record.clone());
         }
     }
+    for record in external {
+        for handle in &record.handles {
+            let external_records = &mut groups.entry(*handle).or_default().2;
+            if !external_records.contains(&record.id) {
+                external_records.push(record.id.clone());
+            }
+        }
+    }
     groups
         .into_iter()
-        .map(|(value, (records, occurrence_count))| PersistentHandle {
-            id: format!("nx:om-persistent-handles:handle#{value:08x}"),
-            value,
-            records,
-            occurrence_count,
-        })
+        .map(
+            |(value, (records, occurrence_count, external_records))| PersistentHandle {
+                id: format!("nx:om-persistent-handles:handle#{value:08x}"),
+                value,
+                records,
+                occurrence_count,
+                external_records,
+            },
+        )
         .collect()
 }
 
