@@ -182,9 +182,11 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
 /// separate record layer, so curves remain unattached until that layer is
 /// decoded rather than being assigned speculatively.
 fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
-    let circles = geometry::e5_circles(&scan.data);
-    let surfaces = geometry::e5_surfaces(&scan.data);
-    let edges = geometry::e5_edges(&scan.data);
+    let stream_range = container::e5_record_stream(&scan.data)?;
+    let stream = &scan.data[stream_range];
+    let circles = geometry::e5_circles(stream);
+    let surfaces = geometry::e5_surfaces(stream);
+    let edges = geometry::e5_edges(stream);
     let points = geometry::vertices(&scan.data);
     if circles.is_empty() && surfaces.is_empty() && points.is_empty() {
         return None;
@@ -399,8 +401,38 @@ fn attach_e5_edges(
 }
 
 fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
-    let mut surfaces = geometry::a8_surfaces(&scan.data);
-    surfaces.extend(geometry::a5_surfaces(&scan.data));
+    let mut surfaces: Vec<(usize, u32, SurfaceGeometry, &str)> = geometry::a8_surfaces(&scan.data)
+        .into_iter()
+        .chain(geometry::a5_surfaces(&scan.data))
+        .map(|surface| (surface.pos, surface.object_id, surface.geometry, "freeform"))
+        .collect();
+    surfaces.extend(
+        geometry::b2_cylinders(&scan.data)
+            .into_iter()
+            .filter_map(|surface| {
+                surface
+                    .geometry
+                    .map(|geometry| (surface.pos, 0, geometry, "b2_03_28"))
+            }),
+    );
+    surfaces.extend(
+        geometry::b2_embedded_cylinders(&scan.data)
+            .into_iter()
+            .filter_map(|surface| {
+                surface
+                    .cylinder
+                    .geometry
+                    .map(|geometry| (surface.pos, surface.object_id, geometry, "b2_03_60"))
+            }),
+    );
+    surfaces.extend(geometry::b2_cones(&scan.data).into_iter().map(|surface| {
+        (
+            surface.pos,
+            0,
+            geometry::b2_cone_geometry(&surface),
+            "b2_03_29",
+        )
+    }));
     if surfaces.is_empty() {
         return None;
     }
@@ -414,19 +446,19 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
         "catia:payload:unknown#freeform",
     )
     .ok()?;
-    for (index, surface) in surfaces.iter().enumerate() {
+    for (index, (pos, object_id, geometry, kind)) in surfaces.iter().enumerate() {
         let id = SurfaceId(format!("catia:a8:surf#{index}"));
         annotate(
             &mut annotations,
             &id,
             "object_stream_a8_03",
-            surface.pos as u64,
-            format!("object_id:{:08x}", surface.object_id),
+            *pos as u64,
+            format!("{kind}:object_id:{object_id:08x}"),
             Exactness::ByteExact,
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: surface.geometry.clone(),
+            geometry: geometry.clone(),
             source_object: None,
         });
     }

@@ -52,6 +52,7 @@ pub mod container;
 pub mod decode;
 pub mod e5;
 pub mod geometry;
+pub mod object_graph;
 pub mod topology;
 pub mod variant;
 pub mod zero_entity;

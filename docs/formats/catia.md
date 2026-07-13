@@ -67,7 +67,7 @@ The inner sub-container stores fragmented named streams and a stream directory. 
 
 ### 3.3 FINJPL segments
 
-`FINJPL  ` (two trailing spaces) marks named stream blocks after the outer preamble. An E5 stream may live in a FINJPL segment; storage type `0x0000008e` is the E5-blob carrier when multiple candidate E5 walks exist.
+`FINJPL  ` (two trailing spaces) marks named stream blocks after the outer preamble. An E5 stream candidate is coherent when at least ten records walk by their declared strides. A coherent preamble wins; otherwise the segment with the largest valid walk wins, with storage type `0x0000008e` breaking equal-count ties.
 
 ### 3.4 Nested-container stream directory
 
@@ -240,13 +240,13 @@ The `00 33 30` byte is only the kind tag; geometry is a dedicated 174-byte `b2 0
 The object stream is a contiguous run of length-framed records in two width-prefixed families.
 
 ```text
-A-family (u32 length):  byte0 = 0xA4 + W  (a5/a6/a7 for W=1/2/3), byte1 low nibble 0x03
+A-family (u32 length):  byte0 = 0xA4 + W  (a5/a6/a7 for W=1/2/3), flag 0x03/0x13/0x83
   +2 class  +3 payload_len:u32le  +7 header_token (W bytes)  payload @ +7+W  next @ +7+W+payload_len
 B-family (u8 length):   byte0 = 0xB1 + W  (b2/b3/b4), flag bytes 0x03/0x13/0x83
   +2 class  +3 payload_len:u8  +4 header_token (W bytes)  payload @ +4+W  next @ +4+W+payload_len
 ```
 
-The header token is a small repeating type code, **not** a per-record object id. The frame is length-closed (walking lands exactly on each next record and on the cluster end). A literal marker scan (e.g. `find b"\xa5\x03\x20"`) is both lossy (misses wide-header `a6`/`a7` records, real geometry) and noisy (in-payload coincidences); census by the frame walk, not by marker hits. The compact integer code (shared by `4n+1` header ints and leading operands): read byte `F`: if `F ≡ 1 (mod 4)` value is `(F−1)/4`; if `F = 4·w`, value is the next `w` bytes LE.
+Header width and flag are independent; all three flags occur with width-1 records and wide records retain flag `0x03`. The header token is a small repeating type code, **not** a per-record object id. The frame is length-closed (walking lands exactly on each next record and on the cluster end). A literal marker scan (e.g. `find b"\xa5\x03\x20"`) is both lossy (misses wide-header `a6`/`a7` records, real geometry) and noisy (in-payload coincidences); census by the frame walk, not by marker hits. The compact integer code (shared by `4n+1` header ints and leading operands): read byte `F`: if `F ≡ 1 (mod 4)` value is `(F−1)/4`; if `F = 4·w`, value is the next `w` bytes LE.
 
 ### 6.1 `a5 03 34` freeform surface (consolidated class)
 
@@ -262,19 +262,33 @@ Frames an explicit 3D spline support (a swept band around a freeform curve). Hea
 
 A 2D spline in a support surface's parameter space. Its payload stores `degU`, `K` definition points, one global curve parameter, one `(U,V)` pair per point, and 2D tangent and second derivative values. The leading operand `op1` is an absolute persistent CGM object tag. The `mode/offset` byte encodes the leading-extrapolation count `q = (mode−1)/4`.
 
-### 6.4 `b2 03 28/31/30` analytic support / offset / construction records
+`b2 03 20` is the B-family form with the same support reference, degree, knot-site parameters, U/V values, first derivatives, second derivatives, and native range. Wide `a6/a7` and `b3/b4` records use identical payload grammars.
 
-- **`b2 03 28`** analytic cylinder support (90 B): origin, a frame token (`0x19` = stored 2-vector is the axis; `0x1c` = it is the ref direction, `axis = ±(vy,−vx,0)`), radius, u/v ranges. The HI-pool pcurves lift onto it by an **arc-length chart** `u = radius·angle(P about axis from ref), v = (P−origin)·axis`.
+### 6.4 Consolidated guide and topology metadata
+
+- **`a5 03 39`** stores `K`, degree, repeated `K`, distinct knots, three `K × 6 × f64le` blocks, and a 48-byte tail. Each position-site pair is two triples `(P,Q)` satisfying `|Q−P|=1`; `P` is a guide-curve point and `Q−P` is its unit reference direction. The next two blocks contain first and second derivatives of all six channels.
+- **`b2 03 18`** stores surface-chart data after a two-byte payload prefix. Length `0x12` is `(u,v)`, `0x1a` is `(station,u,v)`, and `0x2a` is five unsplit f64 values.
+- **`b2 03 37`** stores a compact-int persistent-tag reference list followed by f64 `1.0`; its payload length is `0x22`, `0x24`, or `0x26`.
+- **`b2 03 3b`** has payload length `0x20`: compact references followed by f64 angular scale and cone half-angle.
+- **`b2 03 23`** stores `[lo,hi,eps, lo,hi,1.0, lo,hi,eps]` as nine f64 values. The repeated range is the native parameter interval shared by the two preceding pcurves.
+
+### 6.5 `b2 03 19/28/29/31/30/60` support and construction records
+
+- **`b2 03 19`** stores a compact record id and five f64 values `(c1,c2,radius,arc_lo,arc_hi)`. The interval is arc length; a full circle satisfies `arc_hi−arc_lo=2πr`.
+- **`b2 03 28`** analytic cylinder support: layout `0x5a` stores origin, a frame token (`0x19` = stored 2-vector is the axis; `0x1c` = it is the ref direction and `axis=(vy,−vx,0)`), radius, u/v ranges, and terminator. Layout `0x52` implies `axis=+x`, `ref=+y`. Layout `0x62` adds a phase tail but does not determine a complete carrier frame. Resolved cylinders use the arc-length chart `u = radius·angle(P about axis from ref), v = (P−origin)·axis`.
+- **`b2 03 29`** stores apex, two transverse unit vectors, axis, half-angle, angular offset, slant range, and angular scale. Its chart is `P(U,V)=apex+V·(cos(half)·axis+sin(half)·(cos(U/scale)·T1+sin(U/scale)·T2))`.
 - **`b2 03 31`** constant-offset support: `(carrier ref, signed offset d, carrier UV sub-domain box)`, defining `O(u,v) = S(u,v) + d·n(u,v)` reconstructed from the carrier's analytic NURBS partials; the offset is part-characteristic (a constant wall thickness).
 - **`b2 03 30`** construction-use wrapper with a `kind` discriminant: `0x01` offset (byte-equal to `b2 03 31`), `0x19` offset-of-fillet (`R_eff = R_support + |d|`), `{0x05,0x15}` variable-radius domain wrappers.
+- **`b2 03 65`** is the constant group separator `81 03 05 0d`.
+- **`b2 03 60`** is a two-compact-integer typed group opener. The first integer is the group id; type `3` opens a cylinder chain. Following `<pre> 03 28 5a <compact id>` frames carry the same 90-byte cylinder payload as standalone layout `0x5a` and belong to the type-3 group until the next opener.
 
-### 6.5 `a8 03` common object-stream freeform class
+### 6.6 `a8 03` common object-stream freeform class
 
 Frame: `a8 03 <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>`. The family stores an inline `object_id` at `+7`, explicit multiplicity vectors, mixed degrees, and an inline rational weight grid after the poles. `a8 03 32` stores a 3D curve and `a8 03 20` stores a pcurve.
 
 **In-stream object-id resolver:** `a8 03` and `b5 03` records hold an inline `object_id`; references are compact tokens selecting an id width (`18`→u16, `38`→u24). Binding is an **in-stream walk** (index `object_id → record` while walking; resolve each ref), not a byte-offset directory. The `object_id` is a dense creation-order ordinal (monotonic with offset, with clean segment resets), so ids can equivalently be assigned by counting objects.
 
-### 6.6 Object-stream topology (`b5 03`)
+### 6.7 Object-stream topology (`b5 03`)
 
 - `b5 03 5f` (per-face node): first ref token names the surface (`b5 03 27` plane / `28` cylinder / `2d` revolution / `a8 03 34` bspline), resolved through the object-id map. The bspline subset binds injectively to `a8 03 34`. The `5f` stream rank is the native face ordinal.
 - `b5 03 62` (loop node): payload `<0x80 + n_refs> (pcurve_ref edge_ref)* surface_ref`, `n_refs` odd. Member ref tokens use the E5-style compact set (`18`/`38`/`10 <hi>`=hi<<8/`08 <lo>`/`30 <lo><hi>`=(u16le)<<8).
