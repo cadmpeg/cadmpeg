@@ -44,6 +44,24 @@ pub struct AnnotationDiff {
     pub exactness: ArenaDiff,
 }
 
+/// Changes to complete source-byte ownership.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct ByteLedgerDiff {
+    /// `(left, right)` source lengths, present only when they differ.
+    pub source_length_change: Option<(u64, u64)>,
+    /// Span changes keyed by decimal start offset.
+    pub spans: ArenaDiff,
+}
+
+impl ByteLedgerDiff {
+    fn is_empty(&self) -> bool {
+        self.source_length_change.is_none()
+            && self.spans.added.is_empty()
+            && self.spans.removed.is_empty()
+            && self.spans.modified.is_empty()
+    }
+}
+
 impl AnnotationDiff {
     fn is_empty(&self) -> bool {
         self.stream_change.is_none()
@@ -63,6 +81,8 @@ pub struct IrDiff {
     pub unit_change: Option<(crate::units::Units, crate::units::Units)>,
     /// `(left, right)` tolerances, present only when the two documents' tolerances differ.
     pub tolerance_change: Option<(crate::units::Tolerances, crate::units::Tolerances)>,
+    /// Changes to source-byte ownership.
+    pub byte_ledger: ByteLedgerDiff,
     /// Changes to annotation streams, provenance, and exactness.
     pub annotations: AnnotationDiff,
     /// Per-arena diffs, one entry per arena compared.
@@ -74,6 +94,7 @@ impl IrDiff {
     pub fn is_empty(&self) -> bool {
         self.unit_change.is_none()
             && self.tolerance_change.is_none()
+            && self.byte_ledger.is_empty()
             && self.annotations.is_empty()
             && self.per_arena.iter().all(|arena| {
                 arena.added.is_empty() && arena.removed.is_empty() && arena.modified.is_empty()
@@ -269,6 +290,20 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
     IrDiff {
         unit_change,
         tolerance_change,
+        byte_ledger: ByteLedgerDiff {
+            source_length_change: (left.byte_ledger.source_length
+                != right.byte_ledger.source_length)
+                .then_some((
+                    left.byte_ledger.source_length,
+                    right.byte_ledger.source_length,
+                )),
+            spans: arena(
+                "byte_ledger.spans",
+                &left.byte_ledger.spans,
+                &right.byte_ledger.spans,
+                |span| span.start.to_string(),
+            ),
+        },
         annotations: annotation_diff(left, right),
         per_arena,
     }
@@ -282,6 +317,28 @@ mod tests {
     use crate::examples::unit_cube;
     use crate::provenance::Exactness;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn reports_byte_ledger_changes_by_start_offset() {
+        let left = unit_cube();
+        let mut right = left.clone();
+        right.byte_ledger = crate::ByteLedger {
+            source_length: 2,
+            spans: vec![crate::ByteSpan {
+                start: 0,
+                end: 2,
+                class: crate::ByteSpanClass::Structural,
+                owner: "stream".into(),
+                meaning: "framing".into(),
+                retained_record: None,
+            }],
+        };
+
+        let result = diff(&left, &right);
+        assert_eq!(result.byte_ledger.source_length_change, Some((0, 2)));
+        assert_eq!(result.byte_ledger.spans.added, ["0"]);
+        assert!(!result.is_empty());
+    }
 
     #[test]
     fn detects_changes_in_all_document_dimensions() {

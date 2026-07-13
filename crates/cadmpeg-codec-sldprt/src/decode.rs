@@ -1060,6 +1060,7 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
     let mut normalized = CadIr {
         ir_version: ir.ir_version.clone(),
         source: None,
+        byte_ledger: cadmpeg_ir::ByteLedger::default(),
         units: ir.units.clone(),
         tolerances: ir.tolerances,
         model: ir.model.clone(),

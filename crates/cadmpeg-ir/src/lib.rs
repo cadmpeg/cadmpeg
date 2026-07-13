@@ -30,6 +30,7 @@ pub mod annotations;
 pub mod appearance;
 pub mod attributes;
 pub mod be;
+pub mod byte_ledger;
 pub mod bytes;
 pub mod codec;
 pub mod compression;
@@ -58,11 +59,12 @@ pub mod units;
 pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
+pub use byte_ledger::{ByteLedger, ByteSpan, ByteSpanClass};
 pub use codec::{
     CadirEncoder, Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions,
     DecodeResult, Encoder, ReadSeek,
 };
-pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
+pub use diff::{diff, ArenaDiff, ByteLedgerDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{
     BodyRetentionMode, BodySelection, ConfigurationId, DesignConfiguration, DesignParameter,

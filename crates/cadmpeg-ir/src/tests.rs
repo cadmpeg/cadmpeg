@@ -1229,7 +1229,7 @@ fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
 }
 
 #[test]
-fn schema_constrains_version_and_requires_subd_arena() {
+fn schema_constrains_version_and_requires_subd_arena_and_byte_ledger() {
     let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
     assert_eq!(
         schema.pointer("/properties/ir_version/const"),
@@ -1246,6 +1246,11 @@ fn schema_constrains_version_and_requires_subd_arena() {
         .and_then(serde_json::Value::as_array)
         .unwrap()
         .contains(&serde_json::json!("subds")));
+    assert!(schema
+        .pointer("/required")
+        .and_then(serde_json::Value::as_array)
+        .unwrap()
+        .contains(&serde_json::json!("byte_ledger")));
 
     let mut value = serde_json::to_value(unit_cube()).unwrap();
     value
@@ -1254,6 +1259,10 @@ fn schema_constrains_version_and_requires_subd_arena() {
         .as_object_mut()
         .unwrap()
         .remove("subds");
+    assert!(serde_json::from_value::<CadIr>(value).is_err());
+
+    let mut value = serde_json::to_value(unit_cube()).unwrap();
+    value.as_object_mut().unwrap().remove("byte_ledger");
     assert!(serde_json::from_value::<CadIr>(value).is_err());
 }
 
@@ -2425,4 +2434,68 @@ fn body_selections_round_trip_through_json() {
         serde_json::from_str::<Vec<BodySelection>>(&json).unwrap(),
         selections
     );
+}
+
+#[test]
+fn current_document_serializes_an_empty_byte_ledger() {
+    let ir = CadIr::empty(crate::units::Units::default());
+    let json = serde_json::to_value(&ir).unwrap();
+
+    assert_eq!(json["ir_version"], "4");
+    assert_eq!(json["byte_ledger"]["source_length"], 0);
+    assert_eq!(json["byte_ledger"]["spans"], serde_json::json!([]));
+}
+
+#[test]
+fn byte_ledger_validation_rejects_a_gap() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.byte_ledger = crate::ByteLedger {
+        source_length: 4,
+        spans: vec![crate::ByteSpan {
+            start: 1,
+            end: 4,
+            class: crate::ByteSpanClass::Structural,
+            owner: "stream".into(),
+            meaning: "payload".into(),
+            retained_record: None,
+        }],
+    };
+
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(findings.iter().any(|finding| {
+        finding.check == Check::ByteAccounting
+            && finding.message == "byte ledger has a gap before offset 1"
+    }));
+}
+
+#[test]
+fn finalize_coalesces_equivalent_adjacent_byte_spans() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.byte_ledger = crate::ByteLedger {
+        source_length: 4,
+        spans: vec![
+            crate::ByteSpan {
+                start: 0,
+                end: 2,
+                class: crate::ByteSpanClass::Typed,
+                owner: "card:1".into(),
+                meaning: "data".into(),
+                retained_record: None,
+            },
+            crate::ByteSpan {
+                start: 2,
+                end: 4,
+                class: crate::ByteSpanClass::Typed,
+                owner: "card:1".into(),
+                meaning: "data".into(),
+                retained_record: None,
+            },
+        ],
+    };
+
+    ir.finalize();
+
+    assert_eq!(ir.byte_ledger.spans.len(), 1);
+    assert_eq!(ir.byte_ledger.spans[0].start, 0);
+    assert_eq!(ir.byte_ledger.spans[0].end, 4);
 }

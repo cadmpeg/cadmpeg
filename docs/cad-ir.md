@@ -206,6 +206,7 @@ Validation uses reference lookup and in-IR arithmetic. It does not invoke a geom
 - tessellation channel and index bounds;
 - native record counts, IDs, links, and payload spans;
 - opaque payload length and SHA-256.
+- complete, nonoverlapping source-byte ownership and opaque retained-record links.
 
 Structural failures are errors. Same-sense two-member radial rings, unknown annotation field paths, and tolerances outside sane canonical ranges are warnings where the representation remains unambiguous. `ValidationReport::is_ok()` is true when no error or blocking finding exists. Decode and export loss notes are reported separately and do not change this predicate.
 
@@ -213,7 +214,7 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "3"`. The `model.subds` arena is required in version 3 JSON, including when it is empty. Version 3 requires the fields and invariants defined by this specification; removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version.
+Readers accept exactly `ir_version: "4"`. The `model.subds` arena and top-level `byte_ledger` are required in version 4 JSON, including when they are empty. Version 4 requires the fields and invariants defined by this specification; removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version. See [byte-accounting.md](byte-accounting.md) for ledger serialization, validation, canonicalization, diff, and migration rules.
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 
@@ -235,7 +236,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "3",
+  "ir_version": "4",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {
