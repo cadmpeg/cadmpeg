@@ -76,7 +76,7 @@ impl Format {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum InputFormat {
-    /// FreeCAD `.FCStd`.
+    /// `FreeCAD` `.FCStd`.
     Fcstd,
     /// Autodesk Fusion `.f3d`.
     F3d,

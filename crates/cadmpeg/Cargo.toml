@@ -37,6 +37,7 @@ tempfile.workspace = true
 assert_cmd.workspace = true
 crc32fast.workspace = true
 predicates.workspace = true
+zip.workspace = true
 
 [lints]
 workspace = true

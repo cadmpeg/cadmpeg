@@ -50,8 +50,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
     let mut entries = Vec::with_capacity(archive.len());
     let mut data = BTreeMap::new();
     let mut total = 0_u64;
-    let mut boundaries = BTreeSet::from([0_u64, source.len() as u64]);
-    let mut regions = Vec::new();
+    let mut raw_entries = Vec::new();
 
     for index in 0..archive.len() {
         let mut file = archive
@@ -110,15 +109,14 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
                     "ZIP offset outside archive for {name}"
                 )));
             }
-            boundaries.insert(point);
         }
-        regions.push((header_start, data_start, "local-header", Some(name.clone())));
-        regions.push((
+        raw_entries.push(RawEntry {
+            name: name.clone(),
+            header_start,
             data_start,
             data_end,
-            "compressed-payload",
-            Some(name.clone()),
-        ));
+            central_start,
+        });
 
         let mut bytes = Vec::with_capacity(file.size() as usize);
         file.read_to_end(&mut bytes)
@@ -143,7 +141,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
         .get("Document.xml")
         .ok_or_else(|| CodecError::WrongFormat("ZIP has no root Document.xml".into()))?;
     let document = parse_document(document_bytes)?;
-    let ledger = partition(source.len() as u64, boundaries, &regions);
+    let ledger = physical_ledger(&source, &raw_entries)?;
     Ok(Scan {
         entries,
         document,
@@ -227,6 +225,12 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::Malformed(format!("invalid Document.xml: {error}")))?;
     let root = xml.root_element();
+    if root.tag_name().name() != "Document" {
+        return Err(CodecError::WrongFormat(format!(
+            "Document.xml root is {}, expected Document",
+            root.tag_name().name()
+        )));
+    }
     let schema_version = attr(root, &["SchemaVersion", "schemaVersion"])
         .ok_or_else(|| CodecError::WrongFormat("Document.xml has no SchemaVersion".into()))?;
     let file_version = attr(root, &["FileVersion", "fileVersion"])
@@ -245,21 +249,270 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
     })
 }
 
-fn partition(
+#[derive(Debug)]
+struct RawEntry {
+    name: String,
+    header_start: u64,
+    data_start: u64,
+    data_end: u64,
+    central_start: u64,
+}
+
+#[derive(Debug)]
+struct Region {
+    start: u64,
+    end: u64,
+    role: &'static str,
+    entry: Option<String>,
+}
+
+fn u16_at(bytes: &[u8], offset: u64) -> Result<u16, CodecError> {
+    let start = usize::try_from(offset)
+        .map_err(|_| CodecError::Malformed("ZIP offset does not fit memory".into()))?;
+    let raw = bytes
+        .get(start..start + 2)
+        .ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))?;
+    Ok(u16::from_le_bytes([raw[0], raw[1]]))
+}
+
+fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
+    let start = usize::try_from(offset).ok()?;
+    bytes
+        .get(start..start + 4)
+        .map(|raw| [raw[0], raw[1], raw[2], raw[3]])
+}
+
+fn push_region(
+    regions: &mut Vec<Region>,
+    start: u64,
+    end: u64,
+    role: &'static str,
+    entry: Option<&str>,
+) {
+    if start < end {
+        regions.push(Region {
+            start,
+            end,
+            role,
+            entry: entry.map(str::to_owned),
+        });
+    }
+}
+
+fn physical_ledger(bytes: &[u8], entries: &[RawEntry]) -> Result<Vec<ArchiveSpan>, CodecError> {
+    let len = bytes.len() as u64;
+    let mut regions = Vec::new();
+    let mut local_order = entries.iter().collect::<Vec<_>>();
+    local_order.sort_by_key(|entry| entry.header_start);
+    let central_begin = entries
+        .iter()
+        .map(|entry| entry.central_start)
+        .min()
+        .unwrap_or(len);
+
+    for (index, entry) in local_order.iter().enumerate() {
+        if signature_at(bytes, entry.header_start) != Some(*b"PK\x03\x04") {
+            return Err(CodecError::Malformed(format!(
+                "invalid local header signature for {}",
+                entry.name
+            )));
+        }
+        let fixed_end = entry.header_start + 30;
+        let name_len = u64::from(u16_at(bytes, entry.header_start + 26)?);
+        let extra_len = u64::from(u16_at(bytes, entry.header_start + 28)?);
+        let name_end = fixed_end + name_len;
+        let extra_end = name_end + extra_len;
+        if extra_end != entry.data_start {
+            return Err(CodecError::Malformed(format!(
+                "local header lengths disagree for {}",
+                entry.name
+            )));
+        }
+        push_region(
+            &mut regions,
+            entry.header_start,
+            entry.header_start + 4,
+            "local-signature",
+            Some(&entry.name),
+        );
+        push_region(
+            &mut regions,
+            entry.header_start + 4,
+            fixed_end,
+            "local-fields",
+            Some(&entry.name),
+        );
+        push_region(
+            &mut regions,
+            fixed_end,
+            name_end,
+            "local-name",
+            Some(&entry.name),
+        );
+        push_region(
+            &mut regions,
+            name_end,
+            extra_end,
+            "local-extra",
+            Some(&entry.name),
+        );
+        push_region(
+            &mut regions,
+            entry.data_start,
+            entry.data_end,
+            "compressed-payload",
+            Some(&entry.name),
+        );
+
+        let next = local_order
+            .get(index + 1)
+            .map_or(central_begin, |next| next.header_start);
+        if entry.data_end > next {
+            return Err(CodecError::Malformed(format!(
+                "compressed payload overlaps following ZIP record for {}",
+                entry.name
+            )));
+        }
+        if entry.data_end < next {
+            let flags = u16_at(bytes, entry.header_start + 6)?;
+            let role = if flags & 0x0008 != 0 {
+                "data-descriptor"
+            } else {
+                "archive-padding"
+            };
+            push_region(&mut regions, entry.data_end, next, role, Some(&entry.name));
+        }
+    }
+
+    let mut central_order = entries.iter().collect::<Vec<_>>();
+    central_order.sort_by_key(|entry| entry.central_start);
+    let mut central_end = central_begin;
+    for entry in central_order {
+        if signature_at(bytes, entry.central_start) != Some(*b"PK\x01\x02") {
+            return Err(CodecError::Malformed(format!(
+                "invalid central header signature for {}",
+                entry.name
+            )));
+        }
+        let fixed_end = entry.central_start + 46;
+        let name_len = u64::from(u16_at(bytes, entry.central_start + 28)?);
+        let extra_len = u64::from(u16_at(bytes, entry.central_start + 30)?);
+        let comment_len = u64::from(u16_at(bytes, entry.central_start + 32)?);
+        let name_end = fixed_end + name_len;
+        let extra_end = name_end + extra_len;
+        let record_end = extra_end + comment_len;
+        if record_end > len {
+            return Err(CodecError::Malformed(format!(
+                "truncated central header for {}",
+                entry.name
+            )));
+        }
+        push_region(
+            &mut regions,
+            entry.central_start,
+            entry.central_start + 4,
+            "central-signature",
+            Some(&entry.name),
+        );
+        push_region(
+            &mut regions,
+            entry.central_start + 4,
+            fixed_end,
+            "central-fields",
+            Some(&entry.name),
+        );
+        push_region(
+            &mut regions,
+            fixed_end,
+            name_end,
+            "central-name",
+            Some(&entry.name),
+        );
+        push_region(
+            &mut regions,
+            name_end,
+            extra_end,
+            "central-extra",
+            Some(&entry.name),
+        );
+        push_region(
+            &mut regions,
+            extra_end,
+            record_end,
+            "central-comment",
+            Some(&entry.name),
+        );
+        central_end = central_end.max(record_end);
+    }
+
+    classify_end_records(bytes, central_end, len, &mut regions)?;
+    partition(len, &regions)
+}
+
+fn classify_end_records(
+    bytes: &[u8],
+    mut offset: u64,
     len: u64,
-    boundaries: BTreeSet<u64>,
-    regions: &[(u64, u64, &'static str, Option<String>)],
-) -> Vec<ArchiveSpan> {
+    regions: &mut Vec<Region>,
+) -> Result<(), CodecError> {
+    while offset < len {
+        let (role, size) = match signature_at(bytes, offset) {
+            Some(signature) if signature == *b"PK\x06\x06" => {
+                let start = usize::try_from(offset + 4)
+                    .map_err(|_| CodecError::Malformed("ZIP64 offset overflow".into()))?;
+                let raw = bytes
+                    .get(start..start + 8)
+                    .ok_or_else(|| CodecError::Malformed("truncated ZIP64 end record".into()))?;
+                let body = u64::from_le_bytes(raw.try_into().expect("eight-byte slice"));
+                (
+                    "zip64-end-record",
+                    12_u64
+                        .checked_add(body)
+                        .ok_or_else(|| CodecError::Malformed("ZIP64 end size overflow".into()))?,
+                )
+            }
+            Some(signature) if signature == *b"PK\x06\x07" => ("zip64-end-locator", 20),
+            Some(signature) if signature == *b"PK\x05\x06" => {
+                let comment = u64::from(u16_at(bytes, offset + 20)?);
+                ("end-record", 22_u64 + comment)
+            }
+            _ => ("archive-padding", len - offset),
+        };
+        let end = offset
+            .checked_add(size)
+            .ok_or_else(|| CodecError::Malformed("ZIP end-record range overflow".into()))?;
+        if end > len {
+            return Err(CodecError::Malformed(format!("truncated {role}")));
+        }
+        push_region(regions, offset, end, role, None);
+        offset = end;
+    }
+    Ok(())
+}
+
+fn partition(len: u64, regions: &[Region]) -> Result<Vec<ArchiveSpan>, CodecError> {
+    let mut boundaries = BTreeSet::from([0_u64, len]);
+    for region in regions {
+        if region.end > len || region.start > region.end {
+            return Err(CodecError::Malformed(
+                "invalid physical ledger region".into(),
+            ));
+        }
+        boundaries.insert(region.start);
+        boundaries.insert(region.end);
+    }
     let points = boundaries.into_iter().collect::<Vec<_>>();
-    points
+    let spans = points
         .windows(2)
         .enumerate()
         .filter_map(|(index, pair)| {
             let (start, end) = (pair[0], pair[1]);
             (start < end).then(|| {
-                let owner = regions.iter().find(|(a, b, _, _)| *a <= start && end <= *b);
-                let (role, entry) = owner.map_or(("zip-structure", None), |(_, _, role, entry)| {
-                    (*role, entry.clone())
+                let owner = regions
+                    .iter()
+                    .find(|region| region.start <= start && end <= region.end);
+                let (role, entry) = owner.map_or(("unclassified", None), |region| {
+                    (region.role, region.entry.clone())
                 });
                 ArchiveSpan {
                     id: format!("fcstd:archive-span#{index}"),
@@ -270,5 +523,18 @@ fn partition(
                 }
             })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    if spans.iter().any(|span| span.role == "unclassified") {
+        return Err(CodecError::Malformed(
+            "physical ZIP ledger contains an unclassified byte range".into(),
+        ));
+    }
+    for pair in spans.windows(2) {
+        if pair[0].end != pair[1].start {
+            return Err(CodecError::Malformed(
+                "physical ZIP ledger has a gap or overlap".into(),
+            ));
+        }
+    }
+    Ok(spans)
 }

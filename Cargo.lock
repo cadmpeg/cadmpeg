@@ -152,6 +152,7 @@ dependencies = [
  "predicates",
  "serde_json",
  "tempfile",
+ "zip",
 ]
 
 [[package]]

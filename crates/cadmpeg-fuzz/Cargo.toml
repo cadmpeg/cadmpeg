@@ -16,6 +16,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d" }
+cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad" }
 cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt" }
 cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia" }
 cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo" }
@@ -38,6 +39,13 @@ path = "src/bin/generate_comprehensive_seeds.rs"
 [[bin]]
 name = "f3d_container"
 path = "fuzz_targets/f3d_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_container"
+path = "fuzz_targets/fcstd_container.rs"
 test = false
 doc = false
 bench = false
