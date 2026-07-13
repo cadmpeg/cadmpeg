@@ -3470,6 +3470,76 @@ fn validate_generated_marker_constraint(
         }
         _ => {}
     }
+    let dimension_parameter = match &constraint.definition {
+        SketchConstraintDefinition::Distance { parameter, .. }
+        | SketchConstraintDefinition::DistanceLoci { parameter, .. }
+        | SketchConstraintDefinition::HorizontalDistance { parameter, .. }
+        | SketchConstraintDefinition::VerticalDistance { parameter, .. }
+        | SketchConstraintDefinition::Angle { parameter, .. }
+        | SketchConstraintDefinition::Radius { parameter, .. }
+        | SketchConstraintDefinition::Diameter { parameter, .. } => Some(parameter),
+        _ => None,
+    };
+    if let Some(parameter_id) = dimension_parameter {
+        let parameter = ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == *parameter_id)
+            .ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT dimension {} references missing parameter {}",
+                    constraint.id.0, parameter_id.0
+                ))
+            })?;
+        let compatible = match &constraint.definition {
+            SketchConstraintDefinition::Angle { .. } => {
+                matches!(
+                    parameter.value,
+                    Some(cadmpeg_ir::features::ParameterValue::Angle(_))
+                )
+            }
+            _ => matches!(
+                parameter.value,
+                Some(cadmpeg_ir::features::ParameterValue::Length(_))
+            ),
+        };
+        if !compatible {
+            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "source-less SLDPRT dimension parameter {} has no compatible evaluated value",
+                parameter.id.0
+            )));
+        }
+        let expected_display = match &constraint.definition {
+            SketchConstraintDefinition::Radius { .. } => {
+                Some(cadmpeg_ir::features::DimensionDisplay::Radius)
+            }
+            SketchConstraintDefinition::Diameter { .. } => {
+                Some(cadmpeg_ir::features::DimensionDisplay::Diameter)
+            }
+            _ => None,
+        };
+        if parameter.display != expected_display {
+            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "source-less SLDPRT dimension parameter {} has incompatible display semantics",
+                parameter.id.0
+            )));
+        }
+        let owner = ir.model.features.iter().find(|feature| {
+            matches!(
+                &feature.definition,
+                FeatureDefinition::Sketch { sketch: Some(sketch), .. }
+                    if sketch == &constraint.sketch
+            )
+        });
+        if owner.is_none_or(|owner| owner.id != parameter.owner) {
+            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "source-less SLDPRT dimension parameter {} is not owned by its sketch feature",
+                parameter.id.0
+            )));
+        }
+        return Ok(());
+    }
     if let Some((kind, first, second)) = binary_marker_relation(&constraint.definition) {
         let first = sketch_constraint_entity(ir, constraint, first)?;
         let second = sketch_constraint_entity(ir, constraint, second)?;
@@ -3896,7 +3966,11 @@ fn source_less_lanes(
             ));
     }
     for lane in &mut lanes {
+        lane.classes = class_declarations(&lane.native_payload, &lane.id);
         lane.names = object_names(&lane.native_payload, &lane.id);
+        lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names);
+        lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars);
+        lane.references = reference_cells(&lane.scalars);
         lane.sketch_entities = sketch_input_entities(&lane.native_payload, &lane.id);
     }
     bind_scalar_operands(&native.feature_histories, &mut lanes);
@@ -3908,6 +3982,40 @@ enum GeneratedMarkerRelation<'a> {
     Binary(SketchRelationKind, &'a SketchEntityId, &'a SketchEntityId),
     Loci(SketchRelationKind, &'a SketchLocus, &'a SketchLocus),
     Midpoint(&'a SketchLocus, &'a SketchEntityId),
+}
+
+enum GeneratedDimension<'a> {
+    PointPoint(
+        &'a SketchLocus,
+        &'a SketchLocus,
+        &'a cadmpeg_ir::features::ParameterId,
+    ),
+    PointLine(
+        &'a SketchLocus,
+        &'a SketchEntityId,
+        &'a cadmpeg_ir::features::ParameterId,
+    ),
+    LineLine(
+        &'a SketchEntityId,
+        &'a SketchEntityId,
+        &'a cadmpeg_ir::features::ParameterId,
+    ),
+    Horizontal(
+        &'a SketchLocus,
+        &'a SketchLocus,
+        &'a cadmpeg_ir::features::ParameterId,
+    ),
+    Vertical(
+        &'a SketchLocus,
+        &'a SketchLocus,
+        &'a cadmpeg_ir::features::ParameterId,
+    ),
+    Angle(
+        &'a SketchEntityId,
+        &'a SketchEntityId,
+        &'a cadmpeg_ir::features::ParameterId,
+    ),
+    Circle(&'a SketchEntityId, &'a cadmpeg_ir::features::ParameterId),
 }
 
 fn append_generated_sketch_markers(
@@ -3947,7 +4055,14 @@ fn append_generated_sketch_markers(
                 .map(|(kind, first, second)| GeneratedMarkerRelation::Binary(kind, first, second)),
         })
         .collect::<Vec<_>>();
-    if relations.is_empty() {
+    let dimensions = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| constraint.sketch == sketch.id)
+        .filter_map(|constraint| generated_dimension(ir, &constraint.definition))
+        .collect::<Result<Vec<_>, _>>()?;
+    if relations.is_empty() && dimensions.is_empty() {
         return Ok(());
     }
 
@@ -4033,6 +4148,250 @@ fn append_generated_sketch_markers(
                 "source-less SLDPRT marker-local id space is exhausted".into(),
             )
         })?;
+    }
+    for dimension in dimensions {
+        let (class, operands, parameter) = match dimension {
+            GeneratedDimension::PointPoint(first, second, parameter) => (
+                "sgPntPntDist",
+                vec![
+                    (
+                        FeatureInputOperandKind::D6,
+                        unique_generated_locus_marker(ir, sketch, &marker_loci, first)?,
+                    ),
+                    (
+                        FeatureInputOperandKind::D6,
+                        unique_generated_locus_marker(ir, sketch, &marker_loci, second)?,
+                    ),
+                ],
+                parameter,
+            ),
+            GeneratedDimension::PointLine(point, line, parameter) => (
+                "sgPntLineDist",
+                vec![
+                    (
+                        FeatureInputOperandKind::D6,
+                        unique_generated_locus_marker(ir, sketch, &marker_loci, point)?,
+                    ),
+                    (
+                        FeatureInputOperandKind::E1,
+                        unique_generated_entity_marker(ir, sketch, &marker_loci, line)?,
+                    ),
+                ],
+                parameter,
+            ),
+            GeneratedDimension::LineLine(first, second, parameter) => (
+                "sgLLDist",
+                vec![
+                    (
+                        FeatureInputOperandKind::E1,
+                        unique_generated_entity_marker(ir, sketch, &marker_loci, first)?,
+                    ),
+                    (
+                        FeatureInputOperandKind::E1,
+                        unique_generated_entity_marker(ir, sketch, &marker_loci, second)?,
+                    ),
+                ],
+                parameter,
+            ),
+            GeneratedDimension::Horizontal(first, second, parameter) => (
+                "sgPntPntHorDist",
+                vec![
+                    (
+                        FeatureInputOperandKind::Native(0x8dcb),
+                        unique_generated_locus_marker(ir, sketch, &marker_loci, first)?,
+                    ),
+                    (
+                        FeatureInputOperandKind::Native(0x8dcb),
+                        unique_generated_locus_marker(ir, sketch, &marker_loci, second)?,
+                    ),
+                ],
+                parameter,
+            ),
+            GeneratedDimension::Vertical(first, second, parameter) => (
+                "sgPntPntVertDist",
+                vec![
+                    (
+                        FeatureInputOperandKind::Native(0x8dcb),
+                        unique_generated_locus_marker(ir, sketch, &marker_loci, first)?,
+                    ),
+                    (
+                        FeatureInputOperandKind::Native(0x8dcb),
+                        unique_generated_locus_marker(ir, sketch, &marker_loci, second)?,
+                    ),
+                ],
+                parameter,
+            ),
+            GeneratedDimension::Angle(first, second, parameter) => (
+                "sgAnglDim",
+                vec![
+                    (
+                        FeatureInputOperandKind::Native(0x8dda),
+                        unique_generated_entity_marker(ir, sketch, &marker_loci, first)?,
+                    ),
+                    (
+                        FeatureInputOperandKind::Native(0x8dda),
+                        unique_generated_entity_marker(ir, sketch, &marker_loci, second)?,
+                    ),
+                ],
+                parameter,
+            ),
+            GeneratedDimension::Circle(entity, parameter) => (
+                "sgCircleDim",
+                vec![(
+                    FeatureInputOperandKind::Native(0x83fe),
+                    unique_generated_entity_marker(ir, sketch, &marker_loci, entity)?,
+                )],
+                parameter,
+            ),
+        };
+        let parameter = ir
+            .model
+            .parameters
+            .iter()
+            .find(|candidate| candidate.id == *parameter)
+            .ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT dimension references missing parameter {}",
+                    parameter.0
+                ))
+            })?;
+        let value = match (&parameter.value, class) {
+            (Some(cadmpeg_ir::features::ParameterValue::Length(_)), "sgAnglDim") => {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT angular dimension {} has a length value",
+                    parameter.id.0
+                )))
+            }
+            (Some(cadmpeg_ir::features::ParameterValue::Angle(value)), "sgAnglDim") => value.0,
+            (Some(cadmpeg_ir::features::ParameterValue::Length(value)), _) => value.0 * 0.001,
+            _ => {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT dimension parameter {} has no compatible evaluated value",
+                    parameter.id.0
+                )))
+            }
+        };
+        append_generated_scalar(payload, class, &parameter.name, value, next_id, &operands)?;
+        next_id = next_id.checked_add(1).ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::Malformed(
+                "source-less SLDPRT marker-local id space is exhausted".into(),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn generated_dimension<'a>(
+    ir: &cadmpeg_ir::CadIr,
+    definition: &'a SketchConstraintDefinition,
+) -> Option<Result<GeneratedDimension<'a>, cadmpeg_ir::codec::CodecError>> {
+    let unsupported = || {
+        cadmpeg_ir::codec::CodecError::NotImplemented(
+            "source-less SLDPRT distance dimensions require two entities or point/entity loci"
+                .into(),
+        )
+    };
+    match definition {
+        SketchConstraintDefinition::DistanceLoci {
+            first,
+            second,
+            parameter,
+        } => Some(match (first, second) {
+            (SketchLocus::Entity(first), SketchLocus::Entity(second))
+                if !generated_locus_is_point(ir, first)
+                    && !generated_locus_is_point(ir, second) =>
+            {
+                Ok(GeneratedDimension::LineLine(first, second, parameter))
+            }
+            (SketchLocus::Entity(line), point) if !generated_locus_is_point(ir, line) => {
+                Ok(GeneratedDimension::PointLine(point, line, parameter))
+            }
+            (point, SketchLocus::Entity(line)) if !generated_locus_is_point(ir, line) => {
+                Ok(GeneratedDimension::PointLine(point, line, parameter))
+            }
+            (first, second) => Ok(GeneratedDimension::PointPoint(first, second, parameter)),
+        }),
+        SketchConstraintDefinition::Distance {
+            entities,
+            parameter,
+        } => Some(match entities.as_slice() {
+            [first, second] => Ok(GeneratedDimension::LineLine(first, second, parameter)),
+            _ => Err(unsupported()),
+        }),
+        SketchConstraintDefinition::HorizontalDistance {
+            first,
+            second,
+            parameter,
+        } => Some(Ok(GeneratedDimension::Horizontal(first, second, parameter))),
+        SketchConstraintDefinition::VerticalDistance {
+            first,
+            second,
+            parameter,
+        } => Some(Ok(GeneratedDimension::Vertical(first, second, parameter))),
+        SketchConstraintDefinition::Angle {
+            first,
+            second,
+            parameter,
+        } => Some(Ok(GeneratedDimension::Angle(first, second, parameter))),
+        SketchConstraintDefinition::Radius { entity, parameter }
+        | SketchConstraintDefinition::Diameter { entity, parameter } => {
+            Some(Ok(GeneratedDimension::Circle(entity, parameter)))
+        }
+        _ => None,
+    }
+}
+
+fn generated_locus_is_point(ir: &cadmpeg_ir::CadIr, entity: &SketchEntityId) -> bool {
+    ir.model
+        .sketch_entities
+        .iter()
+        .find(|candidate| candidate.id == *entity)
+        .is_some_and(|candidate| matches!(candidate.geometry, SketchGeometry::Point { .. }))
+}
+
+fn append_generated_scalar(
+    payload: &mut Vec<u8>,
+    class: &str,
+    name: &str,
+    value: f64,
+    object_id: u32,
+    operands: &[(FeatureInputOperandKind, u16)],
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    let units = name.encode_utf16().collect::<Vec<_>>();
+    let length = u8::try_from(units.len()).map_err(|_| {
+        cadmpeg_ir::codec::CodecError::Malformed(
+            "SLDPRT generated parameter name exceeds 255 UTF-16 code units".into(),
+        )
+    })?;
+    if length == 0 || length > 128 {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(
+            "SLDPRT generated parameter name must contain 1 to 128 UTF-16 code units".into(),
+        ));
+    }
+    payload.extend_from_slice(CLASS_MARKER);
+    payload.extend_from_slice(&(class.len() as u16).to_le_bytes());
+    payload.extend_from_slice(class.as_bytes());
+    payload.extend_from_slice(NAME_MARKER);
+    payload.push(length);
+    for unit in units {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    payload.extend_from_slice(SCALAR_HEADER);
+    payload.extend_from_slice(&value.to_le_bytes());
+    let trailer = payload.len();
+    payload.resize(trailer + 35 + operands.len() * 12, 0);
+    payload[trailer + 3..trailer + 7].copy_from_slice(&object_id.to_le_bytes());
+    payload[trailer + 24..trailer + 29].copy_from_slice(&[0, 0, 0, 2, 0]);
+    for (index, (kind, entity)) in operands.iter().enumerate() {
+        let offset = trailer + 35 + index * 12;
+        let tag = match kind {
+            FeatureInputOperandKind::D6 => 0x80d6,
+            FeatureInputOperandKind::E1 => 0x80e1,
+            FeatureInputOperandKind::Native(tag) => *tag,
+        };
+        payload[offset..offset + 2].copy_from_slice(&tag.to_le_bytes());
+        payload[offset + 2..offset + 4].copy_from_slice(&entity.to_le_bytes());
+        payload[offset + 4..offset + 8].fill(0xff);
     }
     Ok(())
 }

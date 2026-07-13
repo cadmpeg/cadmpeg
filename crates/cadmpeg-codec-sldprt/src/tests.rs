@@ -2246,7 +2246,10 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
 
 #[test]
 fn encoder_writes_source_less_curved_sketches() {
-    use cadmpeg_ir::features::{Angle, Feature, FeatureDefinition, FeatureId, Length, SketchSpace};
+    use cadmpeg_ir::features::{
+        Angle, DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
+        ParameterId, ParameterValue, SketchSpace,
+    };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
@@ -2398,8 +2401,9 @@ fn encoder_writes_source_less_curved_sketches() {
         ],
         native_ref: None,
     });
+    let feature_id = FeatureId("synthetic:test:feature#curves".into());
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#curves".into()),
+        id: feature_id.clone(),
         ordinal: 0,
         name: Some("Curves".into()),
         suppressed: false,
@@ -2416,6 +2420,40 @@ fn encoder_writes_source_less_curved_sketches() {
         },
         native_ref: None,
     });
+    let distance_parameter = ParameterId("synthetic:test:parameter#distance".into());
+    let radius_parameter = ParameterId("synthetic:test:parameter#radius".into());
+    for (id, ordinal, name, expression, display, value) in [
+        (
+            distance_parameter.clone(),
+            0,
+            "D10",
+            "4mm",
+            None,
+            ParameterValue::Length(Length(4.0)),
+        ),
+        (
+            radius_parameter.clone(),
+            1,
+            "R1",
+            "R2mm",
+            Some(DimensionDisplay::Radius),
+            ParameterValue::Length(Length(2.0)),
+        ),
+    ] {
+        ir.model.parameters.push(DesignParameter {
+            id,
+            owner: feature_id.clone(),
+            ordinal,
+            name: name.into(),
+            expression: expression.into(),
+            display,
+            value: Some(value),
+            dependencies: Vec::new(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+    }
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId("synthetic:test:constraint#arc-angle".into()),
         sketch: sketch_id.clone(),
@@ -2438,6 +2476,14 @@ fn encoder_writes_source_less_curved_sketches() {
             SketchConstraintDefinition::Concentric {
                 first: entity_ids[1].clone(),
                 second: entity_ids[9].clone(),
+            },
+        ),
+        (
+            "distance",
+            SketchConstraintDefinition::DistanceLoci {
+                first: SketchLocus::Entity(entity_ids[13].clone()),
+                second: SketchLocus::Entity(entity_ids[14].clone()),
+                parameter: distance_parameter,
             },
         ),
         (
@@ -2483,6 +2529,13 @@ fn encoder_writes_source_less_curved_sketches() {
             },
         ),
         (
+            "radius",
+            SketchConstraintDefinition::Radius {
+                entity: entity_ids[0].clone(),
+                parameter: radius_parameter,
+            },
+        ),
+        (
             "tangent",
             SketchConstraintDefinition::Tangent {
                 first: entity_ids[5].clone(),
@@ -2512,6 +2565,30 @@ fn encoder_writes_source_less_curved_sketches() {
         .unwrap();
     assert_eq!(decoded.ir.model.sketches.len(), 1);
     assert_eq!(decoded.ir.model.sketch_entities.len(), 18);
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::DistanceLoci { .. }
+        )));
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::Radius { .. }
+        )));
+    assert!(decoded.ir.model.parameters.iter().any(|parameter| {
+        parameter.name == "D10" && parameter.value == Some(ParameterValue::Length(Length(4.0)))
+    }));
+    assert!(decoded.ir.model.parameters.iter().any(|parameter| {
+        parameter.name == "R1" && parameter.display == Some(DimensionDisplay::Radius)
+    }));
     assert!(decoded
         .ir
         .model
