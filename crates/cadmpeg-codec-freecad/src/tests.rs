@@ -89,7 +89,10 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     let bytes = archive_entries(&[
         ("Document.xml", document.as_bytes()),
         ("Payload.bin", b"payload"),
-        ("Shape.brp", b"DBRep_DrawableShape\n"),
+        (
+            "Shape.brp",
+            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*",
+        ),
     ]);
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -155,6 +158,17 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("shape");
     assert_eq!(shape.family, crate::native::PropertyFamily::Geometry);
     assert_eq!(shape.side_entries, vec!["Shape.brp"]);
+    let shape_payloads = namespace
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .expect("shape payloads");
+    assert_eq!(shape_payloads.len(), 1);
+    assert_eq!(
+        shape_payloads[0]
+            .text
+            .as_ref()
+            .map(|facts| facts.topology_version),
+        Some(1)
+    );
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");

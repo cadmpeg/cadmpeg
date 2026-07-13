@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Read ZIP-packaged `FreeCAD` `.FCStd` documents.
 
+mod brep;
 mod container;
 mod native;
 mod persistence;
@@ -367,11 +368,13 @@ impl Codec for FcstdCodec {
                 })
                 .collect::<Result<Vec<_>, CodecError>>()?;
             let logical_ledger = logical_ledger(&entry_records, &graph.properties)?;
+            let shape_payloads = brep::parse_payloads(&graph.properties, &entry_records)?;
             namespace.set_arena("objects", &graph.objects)?;
             namespace.set_arena("extensions", &graph.extensions)?;
             namespace.set_arena("properties", &graph.properties)?;
             namespace.set_arena("entries", &entry_records)?;
             namespace.set_arena("logical_ledger", &logical_ledger)?;
+            namespace.set_arena("shape_payloads", &shape_payloads)?;
         }
         let losses = if options.container_only {
             Vec::new()
