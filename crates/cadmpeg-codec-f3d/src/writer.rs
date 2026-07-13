@@ -3612,33 +3612,10 @@ fn native_procedural_surface(
                 .iter()
                 .find(|curve| curve.id == *reference)
                 .ok_or_else(|| CodecError::Malformed("taper reference curve is missing".into()))?;
-            let reference = match &reference.geometry {
-                CurveGeometry::Nurbs(reference) => reference.clone(),
-                CurveGeometry::Line { .. } => {
-                    let range = match pcurve {
-                        Some(PcurveGeometry::Nurbs { knots, .. }) => [
-                            knots.first().copied().ok_or_else(|| {
-                                CodecError::Malformed("taper pcurve has no knot domain".into())
-                            })?,
-                            knots.last().copied().ok_or_else(|| {
-                                CodecError::Malformed("taper pcurve has no knot domain".into())
-                            })?,
-                        ],
-                        _ => {
-                            return Err(CodecError::NotImplemented(
-                                "source-less F3D taper line requires a bounded NURBS pcurve".into(),
-                            ));
-                        }
-                    };
-                    native_interval_curve(&reference.geometry, range)?
-                }
-                _ => {
-                    return Err(CodecError::NotImplemented(
-                        "source-less F3D taper requires a NURBS or bounded line reference curve"
-                            .into(),
-                    ));
-                }
-            };
+            let reference = native_spline_field_curve(
+                &reference.geometry,
+                native_pcurve_knot_domain(pcurve.as_ref())?,
+            )?;
             let subtype = match taper {
                 cadmpeg_ir::geometry::TaperSurfaceKind::Standard => "taper_spl_sur",
                 cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. } => "ortho_spl_sur",
@@ -4054,40 +4031,12 @@ fn native_g2_side(
         .iter()
         .find(|curve| curve.id == side.curve)
         .ok_or_else(|| CodecError::Malformed(format!("G2 side curve {} is missing", side.curve)))?;
-    let curve = match &curve.geometry {
-        CurveGeometry::Nurbs(curve) => curve.clone(),
-        CurveGeometry::Line { .. } => {
-            let knots = side
-                .pcurves
-                .iter()
-                .flatten()
-                .find_map(|pcurve| match pcurve {
-                    PcurveGeometry::Nurbs { knots, .. } => Some(knots),
-                    PcurveGeometry::Line { .. } => None,
-                })
-                .ok_or_else(|| {
-                    CodecError::NotImplemented(
-                        "source-less F3D G2 line side requires a bounded NURBS pcurve".into(),
-                    )
-                })?;
-            native_interval_curve(
-                &curve.geometry,
-                [
-                    knots.first().copied().ok_or_else(|| {
-                        CodecError::Malformed("G2 side pcurve has no knot domain".into())
-                    })?,
-                    knots.last().copied().ok_or_else(|| {
-                        CodecError::Malformed("G2 side pcurve has no knot domain".into())
-                    })?,
-                ],
-            )?
-        }
-        _ => {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D G2 side requires a NURBS or bounded line curve".into(),
-            ));
-        }
-    };
+    let pcurve = side
+        .pcurves
+        .iter()
+        .flatten()
+        .find(|pcurve| matches!(pcurve, PcurveGeometry::Nurbs { .. }));
+    let curve = native_spline_field_curve(&curve.geometry, native_pcurve_knot_domain(pcurve)?)?;
     native_nurbs_curve(bytes, &curve)?;
     native_g2_pcurve(bytes, side.pcurves[0].as_ref())?;
     native_vector(
@@ -4211,15 +4160,11 @@ fn native_loft_curve(
         .iter()
         .find(|curve| curve.id == *id)
         .ok_or_else(|| CodecError::Malformed(format!("loft references missing curve {id}")))?;
-    match &curve.geometry {
-        CurveGeometry::Nurbs(curve) => Ok(curve.clone()),
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
-            native_interval_curve(&curve.geometry, [0.0, std::f64::consts::TAU])
-        }
-        _ => Err(CodecError::NotImplemented(format!(
+    native_spline_field_curve(&curve.geometry, None).map_err(|_| {
+        CodecError::NotImplemented(format!(
             "source-less F3D loft requires a NURBS, circle, or ellipse curve {id}"
-        ))),
-    }
+        ))
+    })
 }
 
 fn native_loft_subdata(
@@ -4335,13 +4280,11 @@ fn native_loft_curve_in_range(
         .iter()
         .find(|curve| curve.id == *id)
         .ok_or_else(|| CodecError::Malformed(format!("loft references missing curve {id}")))?;
-    match (&curve.geometry, parameter_range) {
-        (CurveGeometry::Nurbs(curve), _) => Ok(curve.clone()),
-        (_, Some(range)) => native_interval_curve(&curve.geometry, range),
-        _ => Err(CodecError::NotImplemented(format!(
+    native_spline_field_curve(&curve.geometry, parameter_range).map_err(|_| {
+        CodecError::NotImplemented(format!(
             "source-less F3D loft requires NURBS curve {id} without a section domain"
-        ))),
-    }
+        ))
+    })
 }
 
 fn native_compound_loft_scale(
@@ -4368,38 +4311,10 @@ fn native_compound_loft_scale(
                     member.curve
                 ))
             })?;
-        let curve = match (&curve.geometry, &member.data.pcurve) {
-            (CurveGeometry::Nurbs(curve), _) => curve.clone(),
-            (CurveGeometry::Line { .. }, Some(PcurveGeometry::Nurbs { knots, .. })) => {
-                native_interval_curve(
-                    &curve.geometry,
-                    [
-                        knots.first().copied().ok_or_else(|| {
-                            CodecError::Malformed(
-                                "compound-loft member pcurve has no knot domain".into(),
-                            )
-                        })?,
-                        knots.last().copied().ok_or_else(|| {
-                            CodecError::Malformed(
-                                "compound-loft member pcurve has no knot domain".into(),
-                            )
-                        })?,
-                    ],
-                )?
-            }
-            (CurveGeometry::Line { .. }, _) => {
-                return Err(CodecError::NotImplemented(
-                    "source-less F3D compound-loft member line requires a bounded NURBS pcurve"
-                        .into(),
-                ));
-            }
-            _ => {
-                return Err(CodecError::NotImplemented(
-                    "source-less F3D compound-loft member requires a NURBS or bounded line curve"
-                        .into(),
-                ));
-            }
-        };
+        let curve = native_spline_field_curve(
+            &curve.geometry,
+            native_pcurve_knot_domain(member.data.pcurve.as_ref())?,
+        )?;
         native_nurbs_curve(bytes, &curve)?;
         let surface = target
             .model
@@ -4962,38 +4877,10 @@ fn encode_native_skin_surface(
                             profile.curve
                         ))
                     })?;
-                let curve = match (&curve.geometry, &profile.data.pcurve) {
-                    (CurveGeometry::Nurbs(curve), _) => curve.clone(),
-                    (CurveGeometry::Line { .. }, Some(PcurveGeometry::Nurbs { knots, .. })) => {
-                        native_interval_curve(
-                            &curve.geometry,
-                            [
-                                knots.first().copied().ok_or_else(|| {
-                                    CodecError::Malformed(
-                                        "skin profile pcurve has no knot domain".into(),
-                                    )
-                                })?,
-                                knots.last().copied().ok_or_else(|| {
-                                    CodecError::Malformed(
-                                        "skin profile pcurve has no knot domain".into(),
-                                    )
-                                })?,
-                            ],
-                        )?
-                    }
-                    (CurveGeometry::Line { .. }, _) => {
-                        return Err(CodecError::NotImplemented(
-                            "source-less F3D skin profile line requires a bounded NURBS pcurve"
-                                .into(),
-                        ));
-                    }
-                    _ => {
-                        return Err(CodecError::NotImplemented(
-                            "source-less F3D skin profile requires a NURBS or bounded line curve"
-                                .into(),
-                        ));
-                    }
-                };
+                let curve = native_spline_field_curve(
+                    &curve.geometry,
+                    native_pcurve_knot_domain(profile.data.pcurve.as_ref())?,
+                )?;
                 native_nurbs_curve(bytes, &curve)?;
                 native_skin_profile_data(bytes, target, &profile.data)?;
             }
@@ -5742,32 +5629,10 @@ fn native_variable_blend_side(
         .ok_or_else(|| {
             CodecError::Malformed(format!("variable side curve {} is missing", side.curve))
         })?;
-    let curve = match (&curve.geometry, &side.pcurve) {
-        (CurveGeometry::Nurbs(curve), _) => curve.clone(),
-        (CurveGeometry::Line { .. }, Some(PcurveGeometry::Nurbs { knots, .. })) => {
-            native_interval_curve(
-                &curve.geometry,
-                [
-                    knots.first().copied().ok_or_else(|| {
-                        CodecError::Malformed("variable side pcurve has no knot domain".into())
-                    })?,
-                    knots.last().copied().ok_or_else(|| {
-                        CodecError::Malformed("variable side pcurve has no knot domain".into())
-                    })?,
-                ],
-            )?
-        }
-        (CurveGeometry::Line { .. }, _) => {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D variable side line requires a bounded NURBS pcurve".into(),
-            ));
-        }
-        _ => {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D variable side requires a NURBS or bounded line curve".into(),
-            ));
-        }
-    };
+    let curve = native_spline_field_curve(
+        &curve.geometry,
+        native_pcurve_knot_domain(side.pcurve.as_ref())?,
+    )?;
     native_nurbs_curve(bytes, &curve)?;
     native_optional_pcurve(bytes, side.pcurve.as_ref())?;
     native_point(
@@ -5903,32 +5768,10 @@ fn native_rolling_ball_side(
         .ok_or_else(|| {
             CodecError::Malformed(format!("rolling-ball side curve {} is missing", side.curve))
         })?;
-    let curve = match (&curve.geometry, &side.pcurve) {
-        (CurveGeometry::Nurbs(curve), _) => curve.clone(),
-        (CurveGeometry::Line { .. }, Some(PcurveGeometry::Nurbs { knots, .. })) => {
-            native_interval_curve(
-                &curve.geometry,
-                [
-                    knots.first().copied().ok_or_else(|| {
-                        CodecError::Malformed("rolling-ball side pcurve has no knot domain".into())
-                    })?,
-                    knots.last().copied().ok_or_else(|| {
-                        CodecError::Malformed("rolling-ball side pcurve has no knot domain".into())
-                    })?,
-                ],
-            )?
-        }
-        (CurveGeometry::Line { .. }, _) => {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D rolling-ball side line requires a bounded NURBS pcurve".into(),
-            ));
-        }
-        _ => {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D rolling-ball side requires a NURBS or bounded line curve".into(),
-            ));
-        }
-    };
+    let curve = native_spline_field_curve(
+        &curve.geometry,
+        native_pcurve_knot_domain(side.pcurve.as_ref())?,
+    )?;
     native_nurbs_curve(bytes, &curve)?;
     native_optional_pcurve(bytes, side.pcurve.as_ref())?;
     native_point(
@@ -5991,49 +5834,15 @@ fn native_rolling_ball_third_side(
                 side.curve
             ))
         })?;
-    let curve = match &curve.geometry {
-        CurveGeometry::Nurbs(curve) => curve.clone(),
-        CurveGeometry::Line { .. } => {
-            let knots = [
-                side.pcurve.as_ref(),
-                side.secondary_pcurve.as_ref(),
-                side.tertiary_pcurve.as_ref(),
-            ]
-            .into_iter()
-            .flatten()
-            .find_map(|pcurve| match pcurve {
-                PcurveGeometry::Nurbs { knots, .. } => Some(knots),
-                PcurveGeometry::Line { .. } => None,
-            })
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "source-less F3D rolling-ball third-side line requires a bounded NURBS pcurve"
-                        .into(),
-                )
-            })?;
-            native_interval_curve(
-                &curve.geometry,
-                [
-                    knots.first().copied().ok_or_else(|| {
-                        CodecError::Malformed(
-                            "rolling-ball third-side pcurve has no knot domain".into(),
-                        )
-                    })?,
-                    knots.last().copied().ok_or_else(|| {
-                        CodecError::Malformed(
-                            "rolling-ball third-side pcurve has no knot domain".into(),
-                        )
-                    })?,
-                ],
-            )?
-        }
-        _ => {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D rolling-ball third side requires a NURBS or bounded line curve"
-                    .into(),
-            ));
-        }
-    };
+    let pcurve = [
+        side.pcurve.as_ref(),
+        side.secondary_pcurve.as_ref(),
+        side.tertiary_pcurve.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|pcurve| matches!(pcurve, PcurveGeometry::Nurbs { .. }));
+    let curve = native_spline_field_curve(&curve.geometry, native_pcurve_knot_domain(pcurve)?)?;
     native_nurbs_curve(bytes, &curve)?;
     native_optional_pcurve(bytes, side.pcurve.as_ref())?;
     native_vector(
@@ -6223,6 +6032,38 @@ fn native_nurbs_curve(bytes: &mut Vec<u8>, curve: &NurbsCurve) -> Result<(), Cod
         }
     }
     Ok(())
+}
+
+fn native_spline_field_curve(
+    geometry: &CurveGeometry,
+    parameter_range: Option<[f64; 2]>,
+) -> Result<NurbsCurve, CodecError> {
+    match (geometry, parameter_range) {
+        (CurveGeometry::Nurbs(curve), _) => Ok(curve.clone()),
+        (_, Some(range)) => native_interval_curve(geometry, range),
+        (CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }, None) => {
+            native_interval_curve(geometry, [0.0, std::f64::consts::TAU])
+        }
+        _ => Err(CodecError::NotImplemented(
+            "source-less F3D spline field lacks a finite curve domain".into(),
+        )),
+    }
+}
+
+fn native_pcurve_knot_domain(
+    pcurve: Option<&PcurveGeometry>,
+) -> Result<Option<[f64; 2]>, CodecError> {
+    let Some(PcurveGeometry::Nurbs { knots, .. }) = pcurve else {
+        return Ok(None);
+    };
+    Ok(Some([
+        *knots
+            .first()
+            .ok_or_else(|| CodecError::Malformed("pcurve has no knot domain".into()))?,
+        *knots
+            .last()
+            .ok_or_else(|| CodecError::Malformed("pcurve has no knot domain".into()))?,
+    ]))
 }
 
 fn native_interval_curve(
@@ -6448,6 +6289,31 @@ mod native_interval_curve_tests {
                 std::f64::consts::FRAC_PI_2,
             ]
         );
+    }
+
+    #[test]
+    fn generated_domainless_circle_uses_its_full_natural_domain() {
+        let geometry = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 3.0,
+        };
+        let curve = native_spline_field_curve(&geometry, None)
+            .expect("generated domainless circle spline field");
+        assert_eq!(curve.knots.first().copied(), Some(0.0));
+        assert_eq!(curve.knots.last().copied(), Some(std::f64::consts::TAU));
+        assert_eq!(curve.control_points.len(), 9);
+        assert_eq!(curve.weights.as_ref().map(Vec::len), Some(9));
+    }
+
+    #[test]
+    fn generated_domainless_line_remains_rejected() {
+        let geometry = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        };
+        assert!(native_spline_field_curve(&geometry, None).is_err());
     }
 }
 
