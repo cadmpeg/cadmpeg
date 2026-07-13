@@ -67,6 +67,21 @@ pub struct Feature {
     /// Text content of a native leaf feature element.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// Source order of dimensions, nested feature nodes, and text content.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub content: Vec<FeatureContent>,
+}
+
+/// One ordered item inside a native feature XML element.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum FeatureContent {
+    /// Named dimension child.
+    Dimension(String),
+    /// Native record id of a nested feature child.
+    Feature(String),
+    /// Non-whitespace text content.
+    Text(String),
 }
 
 /// The full parametric construction-history timeline for a part.

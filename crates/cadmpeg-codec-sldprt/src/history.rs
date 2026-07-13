@@ -2,7 +2,7 @@
 //! `SolidWorks` Keywords XML feature history.
 
 use crate::container::ContainerScan;
-use crate::records::{Configuration, Feature, FeatureHistory};
+use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
@@ -146,6 +146,28 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                         text: (!node.children().any(|child| child.is_element()))
                             .then(|| node.text().map(str::trim).unwrap_or_default().to_string())
                             .filter(|value| !value.is_empty()),
+                        content: node
+                            .children()
+                            .filter_map(|child| {
+                                if child.is_text() {
+                                    let value = child.text()?.trim();
+                                    return (!value.is_empty())
+                                        .then(|| FeatureContent::Text(value.into()));
+                                }
+                                if !child.is_element() {
+                                    return None;
+                                }
+                                if child.tag_name().name() == "Dimension" {
+                                    return child
+                                        .attribute("Name")
+                                        .map(|name| FeatureContent::Dimension(name.into()));
+                                }
+                                feature_ids
+                                    .get(&child.range().start)
+                                    .cloned()
+                                    .map(FeatureContent::Feature)
+                            })
+                            .collect(),
                     }
                 })
                 .collect();
@@ -1411,6 +1433,11 @@ fn sync_neutral_configurations(
     native: &mut Option<crate::native::SldprtNative>,
 ) {
     if configurations.is_empty() {
+        if let Some(native) = native {
+            for history in &mut native.feature_histories {
+                history.configurations.clear();
+            }
+        }
         return;
     }
     if native.is_none() {
@@ -1424,6 +1451,20 @@ fn sync_neutral_configurations(
             configurations: Vec::new(),
             features: Vec::new(),
         });
+    }
+    let desired_ids = configurations
+        .iter()
+        .map(|configuration| {
+            configuration
+                .native_ref
+                .clone()
+                .unwrap_or_else(|| format!("sldprt:generated:configuration#{}", configuration.id.0))
+        })
+        .collect::<std::collections::HashSet<_>>();
+    for history in &mut native.feature_histories {
+        history
+            .configurations
+            .retain(|configuration| desired_ids.contains(&configuration.id));
     }
     for configuration in configurations {
         let existing = native
@@ -1458,6 +1499,11 @@ pub fn sync_neutral_features(
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
     if features.is_empty() {
+        if let Some(native) = native {
+            for history in &mut native.feature_histories {
+                history.features.clear();
+            }
+        }
         return Ok(());
     }
     if native.is_none() {
@@ -1518,6 +1564,15 @@ pub fn sync_neutral_features(
             (feature.id.clone(), record_id)
         })
         .collect::<HashMap<_, _>>();
+    let desired_record_ids = record_ids
+        .values()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    for history in &mut native.feature_histories {
+        history
+            .features
+            .retain(|feature| desired_record_ids.contains(&feature.id));
+    }
     let record_sources = native
         .feature_histories
         .iter()
@@ -2741,6 +2796,7 @@ pub fn sync_neutral_features(
                 parameters,
                 properties,
                 text: None,
+                content: Vec::new(),
             });
         }
     }

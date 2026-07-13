@@ -2166,11 +2166,13 @@ fn semantic_writer_round_trips_unknown_feature_properties() {
 
 #[test]
 fn semantic_writer_preserves_native_feature_leaf_text() {
+    use crate::records::FeatureContent;
+
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><MacroFeature Name="Custom" Type="Macro" id="70"><Definition Name="Payload" Type="Definition" Language="expr">a &amp; b &lt; c</Definition></MacroFeature></Keywords>"#,
+        br#"<Keywords><MacroFeature Name="Custom" Type="Macro" id="70">prefix<Dimension Name="A">1</Dimension><Definition Name="Payload" Type="Definition" Language="expr">a &amp; b &lt; c</Definition>suffix<Dimension Name="B">2</Dimension></MacroFeature></Keywords>"#,
     ));
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -2184,6 +2186,21 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
     assert_eq!(definition.text.as_deref(), Some("a & b < c"));
     assert_eq!(definition.properties["Language"], "expr");
     assert!(definition.tree_parent.is_some());
+    let macro_feature = native.feature_histories[0]
+        .features
+        .iter()
+        .find(|feature| feature.xml_tag == "MacroFeature")
+        .unwrap();
+    assert_eq!(
+        macro_feature.content,
+        [
+            FeatureContent::Text("prefix".into()),
+            FeatureContent::Dimension("A".into()),
+            FeatureContent::Feature(definition.id.clone()),
+            FeatureContent::Text("suffix".into()),
+            FeatureContent::Dimension("B".into()),
+        ]
+    );
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -2201,6 +2218,59 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
     assert_eq!(definition.text.as_deref(), Some("a & b < c"));
     assert_eq!(definition.properties["Language"], "expr");
     assert!(definition.tree_parent.is_some());
+    let macro_feature = native.feature_histories[0]
+        .features
+        .iter()
+        .find(|feature| feature.xml_tag == "MacroFeature")
+        .unwrap();
+    assert_eq!(
+        macro_feature.content,
+        [
+            FeatureContent::Text("prefix".into()),
+            FeatureContent::Dimension("A".into()),
+            FeatureContent::Feature(definition.id.clone()),
+            FeatureContent::Text("suffix".into()),
+            FeatureContent::Dimension("B".into()),
+        ]
+    );
+}
+
+#[test]
+fn semantic_writer_removes_deleted_history_records() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Keep"/><Configuration Name="Delete"/><Feature Name="Keep" Type="Custom" id="80"/><Feature Name="Delete" Type="Custom" id="81"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    decoded
+        .ir
+        .model
+        .features
+        .retain(|feature| feature.name.as_deref() == Some("Keep"));
+    decoded
+        .ir
+        .model
+        .configurations
+        .retain(|configuration| configuration.name == "Keep");
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(regenerated.ir.model.features.len(), 1);
+    assert_eq!(
+        regenerated.ir.model.features[0].name.as_deref(),
+        Some("Keep")
+    );
+    assert_eq!(regenerated.ir.model.configurations.len(), 1);
+    assert_eq!(regenerated.ir.model.configurations[0].name, "Keep");
 }
 
 #[test]

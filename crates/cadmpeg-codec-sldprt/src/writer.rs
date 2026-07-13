@@ -838,16 +838,13 @@ fn write_feature_xml(
         xml_attribute(out, name, value);
     }
     out.push('>');
-    for (name, value) in &feature.parameters {
+    let write_dimension = |out: &mut String, name: &str, value: &str| {
         out.push_str("<Dimension");
         xml_attribute(out, "Name", name);
         out.push('>');
         xml_text(out, value);
         out.push_str("</Dimension>");
-    }
-    if let Some(text) = &feature.text {
-        xml_text(out, text);
-    }
+    };
     let mut children = features
         .iter()
         .filter(|child| {
@@ -858,7 +855,44 @@ fn write_feature_xml(
         })
         .collect::<Vec<_>>();
     children.sort_by_key(|child| child.ordinal);
+    let mut emitted_dimensions = HashSet::new();
+    let mut emitted_children = HashSet::new();
+    if feature.content.is_empty() {
+        for (name, value) in &feature.parameters {
+            write_dimension(out, name, value);
+            emitted_dimensions.insert(name.as_str());
+        }
+        if let Some(text) = &feature.text {
+            xml_text(out, text);
+        }
+    } else {
+        for item in &feature.content {
+            match item {
+                crate::records::FeatureContent::Dimension(name) => {
+                    if let Some(value) = feature.parameters.get(name) {
+                        write_dimension(out, name, value);
+                        emitted_dimensions.insert(name.as_str());
+                    }
+                }
+                crate::records::FeatureContent::Feature(id) => {
+                    if let Some(child) = children.iter().find(|child| child.id == *id) {
+                        write_feature_xml(out, child, features);
+                        emitted_children.insert(child.id.as_str());
+                    }
+                }
+                crate::records::FeatureContent::Text(text) => xml_text(out, text),
+            }
+        }
+    }
+    for (name, value) in &feature.parameters {
+        if emitted_dimensions.insert(name) {
+            write_dimension(out, name, value);
+        }
+    }
     for child in children {
+        if !emitted_children.insert(child.id.as_str()) {
+            continue;
+        }
         write_feature_xml(out, child, features);
     }
     out.push_str("</");
