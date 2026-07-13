@@ -5456,7 +5456,7 @@ fn decode_resolves_feature_topology_selections() {
     );
     let mut source = sldprt_with_body(&body_bytes);
     source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
-    let decoded = SldprtCodec
+    let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
@@ -5498,6 +5498,48 @@ fn decode_resolves_feature_topology_selections() {
             ..
         } if faces == &[base.ir.model.faces[0].id.clone()] && native == face
     ));
+
+    let edge_id = decoded.ir.model.edges[0].id.clone();
+    let face_id = decoded.ir.model.faces[0].id.clone();
+    let body_id = decoded.ir.model.bodies[0].id.clone();
+    if let FeatureDefinition::Fillet { edges, .. } = &mut decoded.ir.model.features[0].definition {
+        *edges = EdgeSelection::Edges(vec![edge_id.clone()]);
+    }
+    if let FeatureDefinition::DeleteFace { faces, .. } =
+        &mut decoded.ir.model.features[1].definition
+    {
+        *faces = FaceSelection::Faces(vec![face_id.clone()]);
+    }
+    if let FeatureDefinition::Combine { target, tools, .. } =
+        &mut decoded.ir.model.features[2].definition
+    {
+        *target = BodySelection::Bodies(vec![body_id.clone()]);
+        *tools = BodySelection::Bodies(vec![body_id.clone()]);
+    }
+    if let FeatureDefinition::Extrude {
+        extent: Extent::ToFace { face },
+        ..
+    } = &mut decoded.ir.model.features[3].definition
+    {
+        *face = FaceSelection::Faces(vec![face_id.clone()]);
+    }
+    if let FeatureDefinition::Hole { face, .. } = &mut decoded.ir.model.features[4].definition {
+        *face = Some(FaceSelection::Faces(vec![face_id.clone()]));
+    }
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let records = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(records[0].properties["Edges"], edge_id.0);
+    assert_eq!(records[1].properties["Faces"], face_id.0);
+    assert_eq!(records[2].properties["Target"], body_id.0);
+    assert_eq!(records[2].properties["Tools"], body_id.0);
+    assert_eq!(records[3].properties["Face"], face_id.0);
+    assert_eq!(records[4].properties["Face"], face_id.0);
 }
 
 #[test]
