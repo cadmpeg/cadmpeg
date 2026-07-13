@@ -24,7 +24,7 @@ use crate::datum::{self, DatumPlane};
 use crate::feature::{
     self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition,
     FeatureDirectionByte, FeatureEntity, FeatureEntityReference, FeatureEntityTable,
-    FeatureGeometryTable, FeatureReplayAffectedIds, FeatureRow,
+    FeatureGeometryTable, FeatureOperation, FeatureReplayAffectedIds, FeatureRow,
 };
 use crate::psb;
 use crate::surface::{
@@ -205,6 +205,8 @@ pub struct ContainerScan {
     pub feature_direction_bytes: Vec<FeatureDirectionByte>,
     /// Byte-bounded `FeatDefs` records and definition-space parameter frames.
     pub feature_definitions: Vec<FeatureDefinition>,
+    /// Ordered feature-operation names from `MdlStatus`.
+    pub feature_operations: Vec<FeatureOperation>,
     /// Named records in the implicit `AllFeatur` walker-order entity table.
     pub feature_entities: Vec<FeatureEntity>,
     /// Canonical `f7` references between implicit `AllFeatur` entities.
@@ -820,6 +822,12 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
                             row.offset += section.offset;
                         }
                     }
+                    if let Some(relations) = &mut definition.relations {
+                        relations.offset += section.offset;
+                        for row in &mut relations.rows {
+                            row.offset += section.offset;
+                        }
+                    }
                     if let Some(saved) = &mut definition.saved_section {
                         saved.offset += section.offset;
                         for entity in &mut saved.entities {
@@ -845,6 +853,26 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
     }
     definitions.sort_by_key(|definition| definition.offset);
     definitions
+}
+
+fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "MdlStatus")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            feature::operations(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
 }
 
 fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u32> {
@@ -917,6 +945,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
     let feature_direction_bytes = feature::direction_bytes(&feature_rows);
     let feature_definitions = feature_definitions(&data, &sections);
+    let feature_operations = feature_operations(&data, &sections);
     let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections);
     let feature_entity_tables =
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
@@ -960,6 +989,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         feature_replay_affected_ids,
         feature_direction_bytes,
         feature_definitions,
+        feature_operations,
         feature_entities,
         feature_entity_references,
         feature_entity_tables,
@@ -1029,9 +1059,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     }
 
     notes.push(
-        "container-level enumeration; `decode` performs an honest structural decode only: PSB \
-         geometry is preserved as unknown records with counted loss notes, no geometry is \
-         transferred (per-instance model-space geometry is gated behind undecoded PSB layers)"
+        "container-level enumeration; `decode` preserves PSB geometry sections as unknown records \
+         and transfers only carriers whose model-space placement is complete"
             .to_string(),
     );
 

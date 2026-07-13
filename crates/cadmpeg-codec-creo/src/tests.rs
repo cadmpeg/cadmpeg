@@ -48,6 +48,54 @@ fn visibgeom_payload(srf: u8, crv: u8) -> Vec<u8> {
     p
 }
 
+fn push_generated_scalar(bytes: &mut Vec<u8>, value: f64) {
+    match value {
+        0.0 => bytes.push(0x0f),
+        1.0 => bytes.push(0xe4),
+        -1.0 => bytes.extend_from_slice(&[0x43, 0xf0, 0x00]),
+        2.0 => bytes.extend_from_slice(&[0x2f, 0x00, 0x00]),
+        -2.0 => bytes.extend_from_slice(&[0x48, 0x00, 0x00]),
+        0.5 => {
+            bytes.push(0x71);
+            bytes.extend_from_slice(&value.to_be_bytes()[1..]);
+        }
+        _ => panic!("generated fixture scalar is not encoded"),
+    }
+}
+
+fn push_generated_plane_row(
+    payload: &mut Vec<u8>,
+    surface_id: u8,
+    u_axis: [f64; 3],
+    v_axis: [f64; 3],
+    origin: [f64; 3],
+) {
+    payload.extend_from_slice(&[surface_id, 0x22, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[0x0f; 10]);
+    payload.push(0xe3);
+    for value in u_axis
+        .into_iter()
+        .chain([0.0; 3])
+        .chain(v_axis)
+        .chain(origin)
+    {
+        push_generated_scalar(payload, value);
+    }
+    payload.push(0xe3);
+}
+
+fn push_generated_topology_row(
+    payload: &mut Vec<u8>,
+    curve_id: u8,
+    faces: [u8; 2],
+    next_edges: [u8; 2],
+) {
+    payload.extend_from_slice(&[curve_id, 0x08, 0x04, 0x01, 0xf6]);
+    payload.extend_from_slice(&faces);
+    payload.extend_from_slice(&next_edges);
+    payload.extend_from_slice(&[0, 0, 0xe3, 0xe1, 0xf5, 0x05, 0xf6, 0xe3]);
+}
+
 fn jpeg_payload() -> Vec<u8> {
     vec![0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]
 }
@@ -64,8 +112,12 @@ fn assert_annotation(
     assert_eq!(ir.annotations.streams[provenance.stream as usize], stream);
     assert_eq!(provenance.offset, offset);
     assert_eq!(provenance.tag.as_deref(), Some(tag));
-    assert_eq!(ir.annotations.exactness[id].entity, exactness);
-    assert!(ir.annotations.exactness[id].fields.is_empty());
+    if exactness == Exactness::ByteExact {
+        assert!(!ir.annotations.exactness.contains_key(id));
+    } else {
+        assert_eq!(ir.annotations.exactness[id].entity, exactness);
+        assert!(ir.annotations.exactness[id].fields.is_empty());
+    }
 }
 
 #[test]
@@ -157,6 +209,17 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
 }
 
 #[test]
+fn scan_ignores_surface_header_candidates_inside_a_preceding_header() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0x24]);
+    payload.extend_from_slice(&[0x22, 4, 0x01, 0, 0, 0xe3]);
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert_eq!(scan.surface_parameters.len(), 1);
+    assert_eq!(scan.surface_parameters[0].surface_id, 7);
+}
+
+#[test]
 fn scan_decodes_plane_local_system_support_frame() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
@@ -176,11 +239,59 @@ fn scan_decodes_plane_local_system_support_frame() {
     assert_eq!(frame.surface_id, 7);
     assert_eq!(frame.slots.len(), 12);
     assert_eq!(frame.origin, Some([3.0, 0.0, 1.0]));
+    assert_eq!(frame.u_axis, Some([0.0, 1.0, 0.0]));
     assert_eq!(frame.normal, Some([0.0, 0.0, -1.0]));
     assert_eq!(
         frame.classification,
         crate::surface::LocalSystemClassification::Simple
     );
+}
+
+#[test]
+fn scan_resolves_section_scalar_cache_in_surface_rows() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0, 0x18, 0x00, 0xe3]);
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert_eq!(scan.surface_parameters.len(), 1);
+    assert_eq!(scan.surface_parameters[0].surface_id, 7);
+    assert_eq!(scan.surface_parameters[0].scalar_values, vec![3.0]);
+}
+
+#[test]
+fn decode_transfers_complete_plane_local_system() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[0x0f; 10]);
+    payload.push(0xe3);
+    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f]);
+    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
+    payload.push(0xe3);
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let expected_offset = container::scan_bytes(data.clone()).plane_local_systems[0].offset as u64;
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    let surface = &result.ir.model.surfaces[0];
+    assert_eq!(surface.id.as_str(), "creo:visibgeom:surface#7");
+    assert_eq!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(3.0, 0.0, 1.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        }
+    );
+    assert_annotation(
+        &result.ir,
+        surface.id.as_str(),
+        "creo:VisibGeom",
+        expected_offset,
+        "plane_local_system",
+        Exactness::Derived,
+    );
+    assert!(result.report.geometry_transferred);
 }
 
 #[test]
@@ -583,6 +694,38 @@ fn scan_decodes_featdefs_var_arr_section_points() {
 }
 
 #[test]
+fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
+    let mut payload =
+        b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+    payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
+    payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let offset = container::scan_bytes(data.clone()).feature_definitions[0].offset as u64;
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+
+    let namespace = result.ir.native.namespace("creo").expect("creo namespace");
+    assert_eq!(namespace.version, 1);
+    let sketches = &namespace.arenas["sketches"];
+    assert_eq!(sketches.len(), 1);
+    assert_eq!(sketches[0].id, "creo:featdefs:sketch#40");
+    let variables = sketches[0].fields["variables"]
+        .as_array()
+        .expect("variables array");
+    assert_eq!(variables.len(), 2);
+    assert_eq!(variables[0]["key"], 7);
+    assert_eq!(variables[0]["value"], 1.0);
+    assert_eq!(variables[1]["value"], 3.0);
+    assert_annotation(
+        &result.ir,
+        "creo:featdefs:sketch#40",
+        "creo:FeatDefs",
+        offset,
+        "feature_sketch",
+        Exactness::Derived,
+    );
+}
+
+#[test]
 fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     let mut payload =
         b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
@@ -782,6 +925,28 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
 }
 
 #[test]
+fn scan_decodes_counted_featdefs_constraint_relations() {
+    let payload = b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x04\xf7\x6a\xfb\xe2\
+        \xe0\x01id\0\xe0\x01used\0\xe0\x01type\0\xf1\xf7\x6a\xe2\
+        \x34\x00\x05\x01\xe2\x35\x01\x07\x02\xe2"
+        .to_vec();
+    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+
+    let relations = scan.feature_definitions[0]
+        .relations
+        .as_ref()
+        .expect("relat_ptr");
+    assert_eq!(relations.declared_count, 4);
+    assert_eq!(relations.entity_ref, Some(106));
+    assert_eq!(relations.rows.len(), 2);
+    assert_eq!(relations.rows[0].relation_id, 52);
+    assert_eq!(relations.rows[0].used, 0);
+    assert_eq!(relations.rows[0].body, [0x34, 0x00, 0x05, 0x01]);
+    assert_eq!(relations.rows[1].relation_id, 53);
+    assert_eq!(relations.rows[1].used, 1);
+}
+
+#[test]
 fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
     let mut payload = b"feat_defs_40\0\xe0\x00gsec3d_ptr\0\
         \xe0\x00p_saved_result\0\xe3\
@@ -912,6 +1077,23 @@ fn scan_discovers_curve_halfedge_topology() {
 }
 
 #[test]
+fn scan_decodes_long_terminated_rows_in_each_curve_namespace() {
+    let mut payload = b"crv_array\0topol_ref_data\0".to_vec();
+    payload.extend_from_slice(b"\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3");
+    payload.extend_from_slice(b"\xe1\xf5\x05\xf6\xe3");
+    payload.extend_from_slice(b"crv_array\0topol_ref_data\0");
+    payload.extend_from_slice(b"\x08\x08\x05\x01\xf6\x0c\x0d\x08\x08\0\0\xe3");
+    payload.extend_from_slice(b"\xe1\xf5\x05\xf6\xe3");
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert_eq!(scan.curve_topology_rows.len(), 2);
+    assert_eq!(scan.curve_topology_rows[0].id, 7);
+    assert_eq!(scan.curve_topology_rows[0].faces, [10, 11]);
+    assert_eq!(scan.curve_topology_rows[1].id, 8);
+    assert_eq!(scan.curve_topology_rows[1].faces, [12, 13]);
+}
+
+#[test]
 fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6");
@@ -928,6 +1110,19 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(parameters.skipped_references, vec![256]);
     assert_eq!(parameters.suffix, crate::curve::CurveSuffixStatus::Unique);
     assert_eq!(parameters.body.last(), Some(&0xff));
+}
+
+#[test]
+fn scan_resolves_section_scalar_cache_in_curve_rows() {
+    let mut payload = visibgeom_payload(0, 1);
+    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6");
+    payload.extend_from_slice(&[0x18, 0x00, 0xff]);
+    payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert_eq!(scan.curve_parameters.len(), 1);
+    assert_eq!(scan.curve_parameters[0].scalar_values, vec![3.0]);
 }
 
 #[test]
@@ -1106,6 +1301,72 @@ fn scan_builds_topological_vertex_orbits_and_incidence() {
 }
 
 #[test]
+fn decode_transfers_closed_plane_intersection_brep() {
+    let mut payload = b"srf_array\0\xf8\x04".to_vec();
+    push_generated_plane_row(
+        &mut payload,
+        1,
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0],
+    );
+    push_generated_plane_row(
+        &mut payload,
+        2,
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+    );
+    push_generated_plane_row(
+        &mut payload,
+        3,
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0],
+    );
+    push_generated_plane_row(
+        &mut payload,
+        4,
+        [-2.0, -1.0, 2.0],
+        [2.0, -2.0, 1.0],
+        [1.0, 0.0, 0.0],
+    );
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\x06topol_ref_data\0");
+    for (curve, faces, next) in [
+        (10, [1, 2], [12, 13]),
+        (11, [1, 3], [10, 15]),
+        (12, [1, 4], [11, 14]),
+        (13, [2, 3], [14, 11]),
+        (14, [2, 4], [10, 15]),
+        (15, [3, 4], [13, 12]),
+    ] {
+        push_generated_topology_row(&mut payload, curve, faces, next);
+    }
+
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
+    assert_eq!(scan.plane_local_systems.len(), 4);
+    assert_eq!(scan.curve_topology_rows.len(), 6);
+    assert_eq!(scan.loops.len(), 4);
+    assert_eq!(scan.topological_vertices.len(), 4);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let model = &result.ir.model;
+
+    assert_eq!(model.points.len(), 4);
+    assert_eq!(model.vertices.len(), 4);
+    assert_eq!(model.edges.len(), 6);
+    assert_eq!(model.faces.len(), 4);
+    assert_eq!(model.loops.len(), 4);
+    assert_eq!(model.coedges.len(), 12);
+    assert_eq!(model.shells.len(), 1);
+    assert_eq!(model.regions.len(), 1);
+    assert_eq!(model.bodies.len(), 1);
+    assert_eq!(model.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Solid);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn scan_discovers_model_space_datum_planes() {
     let mut datum = vec![4, 0x22, 1, 1, 0, 0];
     datum.extend([0x0f; 4]);
@@ -1210,6 +1471,48 @@ fn scan_decodes_active_principal_unit() {
     let scan = container::scan_bytes(data);
 
     assert_eq!(scan.principal_unit.as_deref(), Some("mmNs"));
+}
+
+#[test]
+fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
+    let data = build_prt(
+        "c",
+        &[(
+            "MdlStatus",
+            b"noise\0Extrude id 40\0Round id 41\0future id 42\0".to_vec(),
+        )],
+    );
+    let scan = container::scan_bytes(data.clone());
+    assert_eq!(scan.feature_operations.len(), 2);
+    assert_eq!(scan.feature_operations[0].feature_id, 40);
+    assert_eq!(scan.feature_operations[0].kind, "Extrude");
+    assert_eq!(scan.feature_operations[1].feature_id, 41);
+    assert_eq!(scan.feature_operations[1].kind, "Round");
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    assert_eq!(result.ir.model.features.len(), 2);
+    assert_eq!(
+        result.ir.model.features[0].id.as_str(),
+        "creo:mdlstatus:feature#40"
+    );
+    assert_eq!(result.ir.model.features[0].ordinal, 0);
+    assert_eq!(
+        result.ir.model.features[1].id.as_str(),
+        "creo:mdlstatus:feature#41"
+    );
+    assert_eq!(result.ir.model.features[1].ordinal, 1);
+    assert!(matches!(
+        &result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "Extrude"
+    ));
+    assert_annotation(
+        &result.ir,
+        "creo:mdlstatus:feature#40",
+        "creo:MdlStatus",
+        scan.feature_operations[0].offset as u64,
+        "feature_operation_name",
+        Exactness::ByteExact,
+    );
 }
 
 #[test]

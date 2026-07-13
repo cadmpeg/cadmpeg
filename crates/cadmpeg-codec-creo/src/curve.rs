@@ -227,25 +227,88 @@ pub fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
 /// possible boundary. Rows with ambiguous or malformed suffixes are not
 /// returned; callers must preserve their enclosing section as unknown data.
 pub fn topology_rows(payload: &[u8]) -> Vec<CurveTopologyRow> {
-    let Some(label) = find(payload, b"topol_ref_data\0", 0) else {
-        return Vec::new();
-    };
-    let mut cursor = label + b"topol_ref_data\0".len();
-    let mut rows = Vec::new();
-    while cursor < payload.len() {
-        let Some(relative_term) = find(payload, b"\xe1\xe3", cursor) else {
-            break;
-        };
-        let term = relative_term;
-        let next = term + 2;
-        let Some(row) = parse_topology_row(&payload[cursor..term], cursor) else {
-            cursor = next;
+    let mut rows = framed_rows(payload)
+        .into_iter()
+        .filter_map(|row| parse_topology_row(&payload[row.start..row.end], row.start))
+        .collect::<Vec<_>>();
+    rows.sort_by_key(|row| row.offset);
+    rows.dedup_by_key(|row| row.offset);
+    rows
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FramedRow {
+    start: usize,
+    end: usize,
+}
+
+fn row_terminator(payload: &[u8], start: usize, end: usize) -> Option<(usize, usize)> {
+    let short = find_in(payload, b"\xe1\xe3", start, end).map(|offset| (offset, 2));
+    let long = find_in(payload, b"\xe1\xf5\x05\xf6\xe3", start, end).map(|offset| (offset, 5));
+    match (short, long) {
+        (Some(left), Some(right)) => Some(if left.0 < right.0 { left } else { right }),
+        (Some(value), None) | (None, Some(value)) => Some(value),
+        (None, None) => None,
+    }
+}
+
+fn framed_segment(payload: &[u8], start: usize, end: usize) -> Option<FramedRow> {
+    let segment = payload.get(start..end)?;
+    let mut closes = segment
+        .windows(3)
+        .enumerate()
+        .filter(|(_, bytes)| *bytes == [0, 0, 0xe3])
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    closes.reverse();
+    for close in closes {
+        let row_end = close + 3;
+        let mut candidates = Vec::new();
+        for row_start in 0..close {
+            if parse_topology_row(&segment[row_start..row_end], start + row_start).is_some() {
+                candidates.push(row_start);
+            }
+        }
+        if candidates.len() == 1 {
+            return Some(FramedRow {
+                start: start + candidates[0],
+                end: start + row_end,
+            });
+        }
+    }
+    None
+}
+
+fn framed_rows(payload: &[u8]) -> Vec<FramedRow> {
+    let mut result = Vec::new();
+    let mut arrays = Vec::new();
+    let mut search = 0;
+    while let Some(array) = find(payload, b"crv_array\0", search) {
+        arrays.push(array + b"crv_array\0".len());
+        search = array + b"crv_array\0".len();
+    }
+    if arrays.is_empty() {
+        arrays.push(0);
+    }
+    for (index, &namespace_start) in arrays.iter().enumerate() {
+        let namespace_end = arrays
+            .get(index + 1)
+            .map_or(payload.len(), |next| next - b"crv_array\0".len());
+        let Some(label) = find_in(payload, b"topol_ref_data\0", namespace_start, namespace_end)
+        else {
             continue;
         };
-        rows.push(row);
-        cursor = next;
+        let mut cursor = label + b"topol_ref_data\0".len();
+        while let Some((terminator, length)) = row_terminator(payload, cursor, namespace_end) {
+            if let Some(row) = framed_segment(payload, cursor, terminator) {
+                result.push(row);
+            }
+            cursor = terminator + length;
+        }
     }
-    rows
+    result.sort_by_key(|row| row.start);
+    result.dedup_by_key(|row| row.start);
+    result
 }
 
 fn suffix_candidates(row: &[u8], body_start: usize, close: usize) -> Vec<usize> {
@@ -276,7 +339,11 @@ fn suffix_candidates(row: &[u8], body_start: usize, close: usize) -> Vec<usize> 
     candidates
 }
 
-fn curve_scalar_lane(body: &[u8], type_byte: u8) -> (Vec<f64>, Vec<u32>) {
+fn curve_scalar_lane(
+    body: &[u8],
+    type_byte: u8,
+    cache: &scalar::ScalarCache,
+) -> (Vec<f64>, Vec<u32>) {
     let mut values = Vec::new();
     let mut references = Vec::new();
     let mut cursor = 0;
@@ -289,16 +356,15 @@ fn curve_scalar_lane(body: &[u8], type_byte: u8) -> (Vec<f64>, Vec<u32>) {
             }
         }
         if body[cursor] == 0x18
-            && (scalar::decode(body, cursor + 1).is_some()
-                || (cursor + 1 == body.len()
-                    && matches!(type_byte, 0x00 | 0x01 | 0x06 | 0x08)
-                    && values.len() < 8))
+            && cursor + 1 == body.len()
+            && matches!(type_byte, 0x00 | 0x01 | 0x06 | 0x08)
+            && values.len() < 8
         {
             values.push(0.0);
             cursor += 1;
             continue;
         }
-        if let Some((value, next)) = scalar::decode(body, cursor) {
+        if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) {
             values.push(value);
             cursor = next;
         } else {
@@ -311,38 +377,28 @@ fn curve_scalar_lane(body: &[u8], type_byte: u8) -> (Vec<f64>, Vec<u32>) {
 /// Decode analytic bodies from positional curve rows, retaining ambiguous
 /// suffix boundaries without asserting topology connectivity.
 pub fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
-    let Some(label) = find(payload, b"topol_ref_data\0", 0) else {
-        return Vec::new();
-    };
-    let mut cursor = label + b"topol_ref_data\0".len();
+    let cache = scalar::ScalarCache::from_section(payload);
     let mut records = Vec::new();
-    while cursor < payload.len() {
-        let Some(term) = find(payload, b"\xe1\xe3", cursor) else {
-            break;
-        };
-        let row = &payload[cursor..term];
+    for framed in framed_rows(payload) {
+        let row = &payload[framed.start..framed.end];
         let (curve_id, after_id) = compact_int(row, 0);
         let Some(&type_byte) = row.get(after_id) else {
-            cursor = term + 2;
             continue;
         };
         let (_, after_feature) = compact_int(row, after_id + 1);
         let body_start = after_feature + 2;
         let Some(close) = row.len().checked_sub(3) else {
-            cursor = term + 2;
             continue;
         };
         if row.get(close..) != Some(&[0, 0, 0xe3]) || body_start > close {
-            cursor = term + 2;
             continue;
         }
         let candidates = suffix_candidates(row, body_start, close);
         let Some(&suffix_start) = candidates.first() else {
-            cursor = term + 2;
             continue;
         };
         let body = row[body_start..suffix_start].to_vec();
-        let (scalar_values, skipped_references) = curve_scalar_lane(&body, type_byte);
+        let (scalar_values, skipped_references) = curve_scalar_lane(&body, type_byte, &cache);
         records.push(CurveParameterRecord {
             curve_id,
             type_byte,
@@ -356,11 +412,10 @@ pub fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
                     candidate_count: candidates.len(),
                 }
             },
-            offset: cursor,
-            body_offset: cursor + body_start,
-            suffix_offset: cursor + suffix_start,
+            offset: framed.start,
+            body_offset: framed.start + body_start,
+            suffix_offset: framed.start + suffix_start,
         });
-        cursor = term + 2;
     }
     records
 }
@@ -537,6 +592,7 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
 
 /// Decode labeled `crv_pnt_arr f9 02 04` prototype pcurve endpoints.
 pub fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoints> {
+    let cache = scalar::ScalarCache::from_section(payload);
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(namespace) = find(payload, b"crv_array\0", search) {
@@ -567,12 +623,7 @@ pub fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoint
         let mut values = Vec::with_capacity(8);
         let mut cursor = header + 3;
         while cursor < prototype_end && values.len() < 8 {
-            if payload[cursor] == 0x18 && scalar::decode(payload, cursor + 1).is_some() {
-                values.push(0.0);
-                cursor += 1;
-                continue;
-            }
-            if let Some((value, next)) = scalar::decode(payload, cursor) {
+            if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, &cache) {
                 values.push(value);
                 cursor = next;
             } else {
@@ -664,6 +715,10 @@ fn parse_topology_row(row: &[u8], absolute_offset: usize) -> Option<CurveTopolog
     let type_byte = *row.get(after_id)?;
     let (feature_id, after_feature) = compact_int(row, after_id + 1);
     let directions = [*row.get(after_feature)?, *row.get(after_feature + 1)?];
+    directions
+        .iter()
+        .all(|direction| matches!(direction, 0x01 | 0xf6))
+        .then_some(())?;
     let close = row.len().checked_sub(3)?;
     (row.get(close..)? == [0, 0, 0xe3]).then_some(())?;
     let mut candidates = Vec::new();

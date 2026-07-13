@@ -233,6 +233,8 @@ pub struct PlaneLocalSystem {
     pub slots: Vec<Option<f64>>,
     /// Slots 9 through 11 when all three decode.
     pub origin: Option<[f64; 3]>,
+    /// Normalized first in-plane direction from slots 0 through 2.
+    pub u_axis: Option<[f64; 3]>,
     /// Normalized cross product of valid equal-scale in-plane directions.
     pub normal: Option<[f64; 3]>,
     /// Compact versus raw-preserved chunk classification.
@@ -382,7 +384,7 @@ const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
     "frst_cntr_crv_hdr_ptr",
 ];
 
-fn named_surface_value(body: &[u8]) -> SurfaceNamedValue {
+fn named_surface_value(body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamedValue {
     if body.first() == Some(&psb::token::ARRAY_OPEN) {
         let (count, mut cursor) = compact_int(body, 1);
         if cursor > 1 {
@@ -419,7 +421,7 @@ fn named_surface_value(body: &[u8]) -> SurfaceNamedValue {
         return SurfaceNamedValue::ScalarArray {
             dimensions,
             count,
-            values: scalar_slots(&body[3..], slot_count),
+            values: scalar_slots(&body[3..], slot_count, cache),
         };
     }
     let mut values = Vec::new();
@@ -428,12 +430,7 @@ fn named_surface_value(body: &[u8]) -> SurfaceNamedValue {
         if matches!(body[cursor], 0xe0..=0xe3 | 0xf1 | 0xf7 | 0xfb) {
             break;
         }
-        if body[cursor] == 0x18 && scalar::decode(body, cursor + 1).is_some() {
-            values.push(0.0);
-            cursor += 1;
-            continue;
-        }
-        let Some((value, next)) = scalar::decode(body, cursor) else {
+        let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) else {
             values.clear();
             break;
         };
@@ -453,6 +450,7 @@ fn named_surface_value(body: &[u8]) -> SurfaceNamedValue {
 
 /// Decode bounded named surface-prototype parameter records.
 pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
+    let cache = scalar::ScalarCache::from_section(payload);
     let mut records = Vec::new();
     let mut search = 0;
     while let Some(record_start) = find(payload, b"srf_prim_ptr(", search) {
@@ -489,7 +487,7 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
             let body = payload[value_offset..value_end].to_vec();
             parameters.push(SurfaceNamedParameter {
                 name: name.into_owned(),
-                value: named_surface_value(&body),
+                value: named_surface_value(&body, &cache),
                 body,
                 offset: token_offset,
                 value_offset,
@@ -525,16 +523,11 @@ fn positional_body_start(payload: &[u8], row: &SurfaceRow) -> Option<usize> {
     (next > cursor).then_some(next)
 }
 
-fn scalar_values(body: &[u8]) -> Vec<f64> {
+fn scalar_values(body: &[u8], cache: &scalar::ScalarCache) -> Vec<f64> {
     let mut values = Vec::new();
     let mut cursor = 0;
     while cursor < body.len() {
-        if body[cursor] == 0x18 && scalar::decode(body, cursor + 1).is_some() {
-            values.push(0.0);
-            cursor += 1;
-            continue;
-        }
-        if let Some((value, next)) = scalar::decode(body, cursor) {
+        if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) {
             values.push(value);
             cursor = next;
         } else {
@@ -546,10 +539,20 @@ fn scalar_values(body: &[u8]) -> Vec<f64> {
 
 /// Decode bounded parameter bodies for positional `srf_array` rows.
 pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
-    let headers = rows(payload)
-        .into_iter()
-        .filter_map(|row| positional_body_start(payload, &row).map(|body_start| (row, body_start)))
-        .collect::<Vec<_>>();
+    let cache = scalar::ScalarCache::from_section(payload);
+    let mut headers = Vec::<(SurfaceRow, usize)>::new();
+    for row in rows(payload) {
+        let Some(body_start) = positional_body_start(payload, &row) else {
+            continue;
+        };
+        if headers
+            .last()
+            .is_some_and(|(_, previous_body_start)| row.offset < *previous_body_start)
+        {
+            continue;
+        }
+        headers.push((row, body_start));
+    }
     let mut records = Vec::new();
     for (index, (row, body_start)) in headers.iter().enumerate() {
         let next_row = headers
@@ -584,7 +587,7 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
         let body = payload[*body_start..body_end].to_vec();
         records.push(SurfaceParameterRecord {
             surface_id: row.id,
-            scalar_values: scalar_values(&body),
+            scalar_values: scalar_values(&body, &cache),
             body,
             boundary,
             offset: row.offset,
@@ -605,21 +608,11 @@ fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usiz
     None
 }
 
-fn scalar_slots(body: &[u8], count: usize) -> Vec<Option<f64>> {
+fn scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<Option<f64>> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
-        if body[cursor] == 0x18 {
-            if scalar::decode(body, cursor + 1).is_some() {
-                slots.push(Some(0.0));
-                cursor += 1;
-            } else {
-                slots.push(None);
-                cursor = (cursor + 2).min(body.len());
-            }
-            continue;
-        }
-        if let Some((value, next)) = scalar::decode(body, cursor) {
+        if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) {
             slots.push(Some(value));
             cursor = next;
         } else {
@@ -630,7 +623,13 @@ fn scalar_slots(body: &[u8], count: usize) -> Vec<Option<f64>> {
     slots
 }
 
-fn plane_frame(slots: &[Option<f64>]) -> (Option<[f64; 3]>, Option<[f64; 3]>) {
+struct PlaneFrame {
+    origin: Option<[f64; 3]>,
+    u_axis: Option<[f64; 3]>,
+    normal: Option<[f64; 3]>,
+}
+
+fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
     let triple = |indices: [usize; 3]| {
         Some([
             slots.get(indices[0]).copied()??,
@@ -640,14 +639,29 @@ fn plane_frame(slots: &[Option<f64>]) -> (Option<[f64; 3]>, Option<[f64; 3]>) {
     };
     let origin = triple([9, 10, 11]);
     let (Some(first), Some(second)) = (triple([0, 1, 2]), triple([6, 7, 8])) else {
-        return (origin, None);
+        return PlaneFrame {
+            origin,
+            u_axis: None,
+            normal: None,
+        };
     };
     let first_magnitude = first.iter().map(|value| value * value).sum::<f64>().sqrt();
     let second_magnitude = second.iter().map(|value| value * value).sum::<f64>().sqrt();
     let scale = first_magnitude.max(second_magnitude);
-    if scale > 1.5 || (first_magnitude - second_magnitude).abs() > 0.05 * scale.max(1e-9) {
-        return (origin, None);
+    if (first_magnitude - second_magnitude).abs() > 0.05 * scale.max(1e-9) {
+        return PlaneFrame {
+            origin,
+            u_axis: None,
+            normal: None,
+        };
     }
+    let u_axis = (first_magnitude > 1e-6).then(|| {
+        [
+            first[0] / first_magnitude,
+            first[1] / first_magnitude,
+            first[2] / first_magnitude,
+        ]
+    });
     let cross = [
         first[1].mul_add(second[2], -(first[2] * second[1])),
         first[2].mul_add(second[0], -(first[0] * second[2])),
@@ -661,11 +675,16 @@ fn plane_frame(slots: &[Option<f64>]) -> (Option<[f64; 3]>, Option<[f64; 3]>) {
             cross[2] / magnitude,
         ]
     });
-    (origin, normal)
+    PlaneFrame {
+        origin,
+        u_axis,
+        normal,
+    }
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
 pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
+    let cache = scalar::ScalarCache::from_section(payload);
     let headers = rows(payload)
         .into_iter()
         .filter(|row| row.kind == SurfaceKind::Plane && row.boundary_type == 0)
@@ -687,8 +706,8 @@ pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
             continue;
         }
         let body = payload[chunk_start..chunk_end].to_vec();
-        let slots = scalar_slots(&body, 12);
-        let (origin, normal) = plane_frame(&slots);
+        let slots = scalar_slots(&body, 12, &cache);
+        let frame = plane_frame(&slots);
         let simple = matches!(body.first(), Some(0x0f | 0x10 | 0x18))
             && body.len() <= 24
             && !body
@@ -698,8 +717,9 @@ pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
             surface_id: row.id,
             body,
             slots,
-            origin,
-            normal,
+            origin: frame.origin,
+            u_axis: frame.u_axis,
+            normal: frame.normal,
             classification: if simple {
                 LocalSystemClassification::Simple
             } else {
@@ -714,6 +734,7 @@ pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
 
 /// Decode plane positional envelope bodies into their two defined layouts.
 pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
+    let cache = scalar::ScalarCache::from_section(payload);
     let headers = rows(payload)
         .into_iter()
         .filter(|row| row.kind == SurfaceKind::Plane && row.boundary_type == 0)
@@ -729,7 +750,7 @@ pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
         };
         let body = payload[*body_start..body_end].to_vec();
         let envelope = if body.first() == Some(&0x0e) {
-            let slots = scalar_slots(&body[1..], 9);
+            let slots = scalar_slots(&body[1..], 9, &cache);
             PlaneEnvelope::Compact {
                 prefix: [slots[0], slots[1], slots[2]],
                 corners_3d: [
@@ -738,7 +759,7 @@ pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
                 ],
             }
         } else {
-            let slots = scalar_slots(&body, 10);
+            let slots = scalar_slots(&body, 10, &cache);
             PlaneEnvelope::Standard {
                 bounds_2d: [[slots[0], slots[1]], [slots[2], slots[3]]],
                 corners_3d: [

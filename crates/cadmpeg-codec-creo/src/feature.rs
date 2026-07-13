@@ -11,6 +11,61 @@ use std::collections::BTreeSet;
 use crate::psb;
 use crate::scalar;
 
+/// Feature-operation family named by an `MdlStatus` record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureOperation {
+    /// Numeric feature identifier following `id` in the stored name.
+    pub feature_id: u32,
+    /// Stored operation-family name.
+    pub kind: String,
+    /// Byte offset of the operation name in the original stream.
+    pub offset: usize,
+}
+
+/// Decode `<Kind> id <N>\0` operation names from one `MdlStatus` payload.
+pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
+    const KINDS: &[&[u8]] = &[
+        b"Round",
+        b"Chamfer",
+        b"Protrusion",
+        b"Extrude",
+        b"Revolve",
+        b"Hole",
+        b"Cut",
+    ];
+    let mut result = Vec::new();
+    for offset in 0..payload.len() {
+        for kind in KINDS {
+            let Some(rest) = payload
+                .get(offset..)
+                .and_then(|bytes| bytes.strip_prefix(*kind))
+            else {
+                continue;
+            };
+            let Some(digits) = rest.strip_prefix(b" id ") else {
+                continue;
+            };
+            let Some(end) = digits.iter().position(|byte| *byte == 0) else {
+                continue;
+            };
+            if end == 0 || !digits[..end].iter().all(u8::is_ascii_digit) {
+                continue;
+            }
+            let Ok(feature_id) = String::from_utf8_lossy(&digits[..end]).parse::<u32>() else {
+                continue;
+            };
+            result.push(FeatureOperation {
+                feature_id,
+                kind: String::from_utf8_lossy(kind).into_owned(),
+                offset,
+            });
+        }
+    }
+    result.sort_by_key(|operation| operation.offset);
+    result.dedup_by_key(|operation| operation.feature_id);
+    result
+}
+
 /// One `AllFeatur` mixed generated-entity table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureEntityTable {
@@ -542,6 +597,33 @@ pub struct FeatureDimensionTable {
     pub offset: usize,
 }
 
+/// One positional constraint-relation row from `relat_ptr`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureRelation {
+    /// Relation identifier from the first positional field.
+    pub relation_id: u32,
+    /// Stored `used` field from the second positional field.
+    pub used: u32,
+    /// Complete positional fields before the `e2` row terminator.
+    pub body: Vec<u8>,
+    /// Byte offset of the positional row in the original stream.
+    pub offset: usize,
+}
+
+/// Counted `relat_ptr` constraint-relation table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureRelationTable {
+    /// Allocation count declared by the table's `f8` opener. Two entries are
+    /// structural; positional row count is `declared_count - 2`.
+    pub declared_count: u32,
+    /// Relation entity-class reference following the opener.
+    pub entity_ref: Option<u32>,
+    /// Complete positional relation rows in stored order.
+    pub rows: Vec<FeatureRelation>,
+    /// Byte offset of the `relat_ptr` label in the original stream.
+    pub offset: usize,
+}
+
 /// One solved line retained in feature-definition section coordinates.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureSavedLine {
@@ -643,6 +725,8 @@ pub struct FeatureDefinition {
     pub section_3d: Option<FeatureSection3d>,
     /// gsec2d dimension table, when present and structurally valid.
     pub dimensions: Option<FeatureDimensionTable>,
+    /// gsec2d constraint-relation table, when present and structurally valid.
+    pub relations: Option<FeatureRelationTable>,
     /// Solved saved-section entities, when present and structurally valid.
     pub saved_section: Option<FeatureSavedSection>,
     /// Byte offset of the record name in the original stream.
@@ -778,21 +862,30 @@ pub fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
     result
 }
 
-fn decode_exact_scalars(payload: &[u8], slot_count: usize) -> Option<Vec<f64>> {
+fn decode_exact_scalars(
+    payload: &[u8],
+    slot_count: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<f64>> {
     let mut cursor = 0;
     let mut values = Vec::with_capacity(slot_count);
     for _ in 0..slot_count {
-        let (value, next) = scalar::decode(payload, cursor)?;
+        let (value, next) = scalar::decode_in_lane(payload, cursor, cache)?;
         values.push(value);
         cursor = next;
     }
     (cursor == payload.len()).then_some(values)
 }
 
-fn decode_optional_scalars(payload: &[u8], mut cursor: usize, count: usize) -> Vec<Option<f64>> {
+fn decode_optional_scalars(
+    payload: &[u8],
+    mut cursor: usize,
+    count: usize,
+    cache: &scalar::ScalarCache,
+) -> Vec<Option<f64>> {
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
-        if let Some((value, next)) = scalar::decode(payload, cursor) {
+        if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, cache) {
             values.push(Some(value));
             cursor = next;
         } else if cursor < payload.len() {
@@ -813,8 +906,15 @@ fn find_bytes(payload: &[u8], needle: &[u8], start: usize, end: usize) -> Option
         .map(|relative| start + relative)
 }
 
-fn decode_parameter_scalar(payload: &[u8], offset: usize, end: usize) -> Option<(f64, usize)> {
-    if let Some((value, next)) = scalar::decode(payload, offset).filter(|(_, next)| *next <= end) {
+fn decode_parameter_scalar(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<(f64, usize)> {
+    if let Some((value, next)) =
+        scalar::decode_in_lane(payload, offset, cache).filter(|(_, next)| *next <= end)
+    {
         return Some((value, next));
     }
     let (first, second) = match payload.get(offset)? {
@@ -833,7 +933,12 @@ fn decode_parameter_scalar(payload: &[u8], offset: usize, end: usize) -> Option<
     Some((f64::from_be_bytes(raw), offset + 7))
 }
 
-fn decode_variable_scalar(payload: &[u8], offset: usize, end: usize) -> (Option<f64>, usize, bool) {
+fn decode_variable_scalar(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> (Option<f64>, usize, bool) {
     let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
         return (None, offset, false);
     };
@@ -857,13 +962,18 @@ fn decode_variable_scalar(payload: &[u8], offset: usize, end: usize) -> (Option<
     if prefix == 0xed && offset + 9 <= end {
         return (None, offset + 9, true);
     }
-    decode_parameter_scalar(payload, offset, end)
+    decode_parameter_scalar(payload, offset, end, cache)
         .map_or((None, offset + 1, false), |(value, next)| {
             (Some(value), next, false)
         })
 }
 
-fn variable_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureVariableTable> {
+fn variable_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<FeatureVariableTable> {
     let table = find_bytes(payload, b"var_arr\0", start, end)?;
     let mut cursor = table + b"var_arr\0".len();
     (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
@@ -903,9 +1013,9 @@ fn variable_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureVar
         }
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
-        let (value, next, dimension_driven) = decode_variable_scalar(payload, cursor, end);
+        let (value, next, dimension_driven) = decode_variable_scalar(payload, cursor, end, cache);
         cursor = next;
-        let (guess, next, _) = decode_variable_scalar(payload, cursor, end);
+        let (guess, next, _) = decode_variable_scalar(payload, cursor, end, cache);
         cursor = next;
         let mut trailing = Vec::new();
         while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
@@ -1419,18 +1529,23 @@ fn dimension_unit(dimension_type: u32) -> DimensionUnit {
     }
 }
 
-fn labeled_dimension(payload: &[u8], start: usize, end: usize) -> Option<FeatureDimension> {
+fn labeled_dimension(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<FeatureDimension> {
     let type_label = find_bytes(payload, b"type\0", start, end)?;
     let (dimension_type, after_type) = segment_int(payload, type_label + b"type\0".len());
     let dimension_type = dimension_type?;
     let value_label = find_bytes(payload, b"value\0", after_type, end)?;
     let (value, after_value, _) =
-        decode_variable_scalar(payload, value_label + b"value\0".len(), end);
+        decode_variable_scalar(payload, value_label + b"value\0".len(), end, cache);
     let direction_label = find_bytes(payload, b"direct\0", after_value, end)?;
     let direction_byte = *payload.get(direction_label + b"direct\0".len())?;
     let auxiliary_label = find_bytes(payload, b"aux_value\0", direction_label, end)?;
     let (auxiliary_value, after_auxiliary, _) =
-        decode_variable_scalar(payload, auxiliary_label + b"aux_value\0".len(), end);
+        decode_variable_scalar(payload, auxiliary_label + b"aux_value\0".len(), end, cache);
     let external_label = find_bytes(payload, b"ext_id\0", after_auxiliary, end)?;
     let (external_id, _) = segment_int(payload, external_label + b"ext_id\0".len());
     Some(FeatureDimension {
@@ -1444,12 +1559,17 @@ fn labeled_dimension(payload: &[u8], start: usize, end: usize) -> Option<Feature
     })
 }
 
-fn positional_dimension(payload: &[u8], start: usize, end: usize) -> Option<FeatureDimension> {
+fn positional_dimension(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<FeatureDimension> {
     let (dimension_type, cursor) = segment_int(payload, start);
     let dimension_type = dimension_type?;
-    let (value, cursor, _) = decode_variable_scalar(payload, cursor, end);
+    let (value, cursor, _) = decode_variable_scalar(payload, cursor, end, cache);
     let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
-    let (auxiliary_value, cursor, _) = decode_variable_scalar(payload, cursor + 1, end);
+    let (auxiliary_value, cursor, _) = decode_variable_scalar(payload, cursor + 1, end, cache);
     let (external_id, _) = segment_int(payload, cursor);
     Some(FeatureDimension {
         dimension_type,
@@ -1462,7 +1582,12 @@ fn positional_dimension(payload: &[u8], start: usize, end: usize) -> Option<Feat
     })
 }
 
-fn dimension_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureDimensionTable> {
+fn dimension_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<FeatureDimensionTable> {
     let table = find_bytes(payload, b"dimtab_ptr\0", start, end)?;
     let mut cursor = table + b"dimtab_ptr\0".len();
     while payload
@@ -1496,7 +1621,7 @@ fn dimension_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureDi
         region_end
     };
     let mut rows = Vec::new();
-    if let Some(row) = labeled_dimension(payload, cursor, first_end) {
+    if let Some(row) = labeled_dimension(payload, cursor, first_end, cache) {
         rows.push(row);
     }
     if reference_bytes.is_some() {
@@ -1510,7 +1635,7 @@ fn dimension_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureDi
             replay += separator.len();
             let next_separator =
                 find_bytes(payload, &separator, replay, region_end).unwrap_or(region_end);
-            let Some(row) = positional_dimension(payload, replay, next_separator) else {
+            let Some(row) = positional_dimension(payload, replay, next_separator, cache) else {
                 break;
             };
             rows.push(row);
@@ -1525,7 +1650,62 @@ fn dimension_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureDi
     })
 }
 
-fn saved_section_scalar(payload: &[u8], offset: usize, end: usize) -> (Option<f64>, usize) {
+fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRelationTable> {
+    let table = find_bytes(payload, b"relat_ptr\0", start, end)?;
+    let mut cursor = table + b"relat_ptr\0".len();
+    if payload.get(cursor..cursor + 2) == Some(&[0xf4, 0x04]) {
+        cursor += 2;
+    }
+    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    let (declared_count, next) = psb::compact_int(payload, cursor + 1);
+    cursor = next;
+    let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
+        let (value, next) = psb::reference_id(payload, cursor + 1).ok()?;
+        cursor = next;
+        Some(value)
+    } else {
+        None
+    };
+    if payload.get(cursor) == Some(&psb::token::ARRAY_CLOSE) {
+        cursor += 1;
+    }
+    if payload.get(cursor) == Some(&0xe2) {
+        cursor += 1;
+    }
+    let close = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end)?;
+    let (_, after_ref) = psb::reference_id(payload, close + 2).ok()?;
+    (payload.get(after_ref) == Some(&0xe2)).then_some(())?;
+    cursor = after_ref + 1;
+
+    let mut rows = Vec::new();
+    for _ in 0..declared_count.saturating_sub(2) {
+        let row_end = payload[cursor..end].iter().position(|byte| *byte == 0xe2)? + cursor;
+        let (relation_id, after_id) = psb::compact_int(payload, cursor);
+        (after_id > cursor && after_id < row_end).then_some(())?;
+        let (used, after_used) = psb::compact_int(payload, after_id);
+        (after_used > after_id && after_used <= row_end).then_some(())?;
+        rows.push(FeatureRelation {
+            relation_id,
+            used,
+            body: payload[cursor..row_end].to_vec(),
+            offset: cursor,
+        });
+        cursor = row_end + 1;
+    }
+    Some(FeatureRelationTable {
+        declared_count,
+        entity_ref,
+        rows,
+        offset: table,
+    })
+}
+
+fn saved_section_scalar(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> (Option<f64>, usize) {
     let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
         return (None, offset);
     };
@@ -1544,12 +1724,17 @@ fn saved_section_scalar(payload: &[u8], offset: usize, end: usize) -> (Option<f6
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
         return (Some(f64::from_be_bytes(raw)), offset + 7);
     }
-    scalar::decode(payload, offset)
+    scalar::decode_in_lane(payload, offset, cache)
         .filter(|(_, next)| *next <= end)
         .map_or((None, offset + 1), |(value, next)| (Some(value), next))
 }
 
-fn saved_line_entities(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSavedEntity> {
+fn saved_line_entities(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Vec<FeatureSavedEntity> {
     let Some(label) = find_bytes(payload, b"\xe0\x00entity(line)\0", start, end) else {
         return Vec::new();
     };
@@ -1638,7 +1823,7 @@ fn saved_line_entities(payload: &[u8], start: usize, end: usize) -> Vec<FeatureS
                 cursor += 1;
                 continue;
             }
-            let (value, next) = saved_section_scalar(payload, cursor, segment_end);
+            let (value, next) = saved_section_scalar(payload, cursor, segment_end, cache);
             if next <= cursor {
                 break;
             }
@@ -1668,6 +1853,7 @@ fn saved_named_scalars<const N: usize>(
     field: &[u8],
     start: usize,
     end: usize,
+    cache: &scalar::ScalarCache,
 ) -> Option<[Option<f64>; N]> {
     let mut label = vec![0xe0, 0x02];
     label.extend_from_slice(field);
@@ -1686,7 +1872,7 @@ fn saved_named_scalars<const N: usize>(
     }
     let mut values = [None; N];
     for value in &mut values {
-        let (decoded, next) = saved_section_scalar(payload, cursor, end);
+        let (decoded, next) = saved_section_scalar(payload, cursor, end, cache);
         (next > cursor).then_some(())?;
         *value = decoded;
         cursor = next;
@@ -1698,7 +1884,12 @@ fn saved_entity_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
     named_compact_int(payload, b"\xe0\x01id\0", start, end)
 }
 
-fn saved_circular_entities(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSavedEntity> {
+fn saved_circular_entities(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Vec<FeatureSavedEntity> {
     let mut entities = Vec::new();
     for (kind, label) in [
         ("arc", b"\xe0\x00entity(arc)\0".as_slice()),
@@ -1712,35 +1903,39 @@ fn saved_circular_entities(payload: &[u8], start: usize, end: usize) -> Vec<Feat
                 search = body_end;
                 continue;
             };
-            let Some(center) = saved_named_scalars::<3>(payload, b"center", body_start, body_end)
+            let Some(center) =
+                saved_named_scalars::<3>(payload, b"center", body_start, body_end, cache)
             else {
                 search = body_end;
                 continue;
             };
-            let Some([radius]) = saved_named_scalars::<1>(payload, b"radius", body_start, body_end)
+            let Some([radius]) =
+                saved_named_scalars::<1>(payload, b"radius", body_start, body_end, cache)
             else {
                 search = body_end;
                 continue;
             };
             if kind == "arc" {
-                let Some(first) = saved_named_scalars::<3>(payload, b"end1", body_start, body_end)
+                let Some(first) =
+                    saved_named_scalars::<3>(payload, b"end1", body_start, body_end, cache)
                 else {
                     search = body_end;
                     continue;
                 };
-                let Some(second) = saved_named_scalars::<3>(payload, b"end2", body_start, body_end)
+                let Some(second) =
+                    saved_named_scalars::<3>(payload, b"end2", body_start, body_end, cache)
                 else {
                     search = body_end;
                     continue;
                 };
                 let Some([start_parameter]) =
-                    saved_named_scalars::<1>(payload, b"t0", body_start, body_end)
+                    saved_named_scalars::<1>(payload, b"t0", body_start, body_end, cache)
                 else {
                     search = body_end;
                     continue;
                 };
                 let Some([end_parameter]) =
-                    saved_named_scalars::<1>(payload, b"t1", body_start, body_end)
+                    saved_named_scalars::<1>(payload, b"t1", body_start, body_end, cache)
                 else {
                     search = body_end;
                     continue;
@@ -1792,13 +1987,18 @@ fn saved_entity_offset(entity: &FeatureSavedEntity) -> usize {
     }
 }
 
-fn saved_section(payload: &[u8], start: usize, end: usize) -> Option<FeatureSavedSection> {
+fn saved_section(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<FeatureSavedSection> {
     let table = find_bytes(payload, b"\xe0\x00p_saved_result\0", start, end)?;
     let table_end = find_bytes(payload, b"\xe0\x02local_sys\0", table, end)
         .or_else(|| find_bytes(payload, b"\xe0\x00rigid_data\0", table, end))
         .unwrap_or(end);
-    let mut entities = saved_line_entities(payload, table, table_end);
-    entities.extend(saved_circular_entities(payload, table, table_end));
+    let mut entities = saved_line_entities(payload, table, table_end, cache);
+    entities.extend(saved_circular_entities(payload, table, table_end, cache));
     entities.extend(saved_dummy_entities(payload, table, table_end));
     entities.sort_by_key(saved_entity_offset);
     (!entities.is_empty()).then_some(FeatureSavedSection {
@@ -1813,8 +2013,9 @@ fn field_value(payload: &[u8]) -> FeatureFieldValue {
     }
     if payload[0] == psb::token::SCALAR_BODY && payload.len() >= 3 {
         let slot_count = usize::from(payload[1]).checked_mul(usize::from(payload[2]));
+        let cache = scalar::ScalarCache::from_section(payload);
         let decoded_values =
-            slot_count.and_then(|slots| decode_exact_scalars(&payload[3..], slots));
+            slot_count.and_then(|slots| decode_exact_scalars(&payload[3..], slots, &cache));
         return FeatureFieldValue::ScalarArray {
             dimensions: payload[1],
             count: payload[2],
@@ -2118,6 +2319,7 @@ pub fn direction_bytes(rows: &[FeatureRow]) -> Vec<FeatureDirectionByte> {
 /// definition-space parameter frames.
 pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
     const PREFIX: &[u8] = b"feat_defs_";
+    let cache = scalar::ScalarCache::from_section(payload);
     let mut starts = Vec::new();
     for offset in 0..payload.len() {
         if payload.get(offset..offset + PREFIX.len()) != Some(PREFIX) {
@@ -2164,7 +2366,7 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
                 let body = payload[body_start..body_end].to_vec();
                 parameter_frames.push(FeatureParameterFrame {
                     kind,
-                    decoded_values: decode_exact_scalars(&body, 12),
+                    decoded_values: decode_exact_scalars(&body, 12, &cache),
                     body,
                     offset: field_offset,
                 });
@@ -2178,7 +2380,7 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
                 let scalar_start = label + b"outline\0\xf9\x02\x03".len();
                 outlines.push(FeatureOutline {
                     phase: OutlinePhase::PreRollback,
-                    local_values: decode_optional_scalars(payload, scalar_start, 6),
+                    local_values: decode_optional_scalars(payload, scalar_start, 6, &cache),
                     offset: label,
                 });
             }
@@ -2206,13 +2408,13 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
                 }
                 outlines.push(FeatureOutline {
                     phase,
-                    local_values: decode_optional_scalars(payload, after_ref + 4, 6),
+                    local_values: decode_optional_scalars(payload, after_ref + 4, 6, &cache),
                     offset: label_offset,
                 });
             }
         }
         outlines.sort_by_key(|outline| outline.offset);
-        let variables = variable_table(payload, start, end);
+        let variables = variable_table(payload, start, end, &cache);
         let segments = segment_table(payload, start, end);
         let trim_entities = trim_entity_table(payload, start, end);
         let trim_vertices = trim_vertex_table(
@@ -2225,8 +2427,9 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         );
         let order_table = order_table(payload, start, end);
         let section_3d = section_3d(payload, start, end);
-        let dimensions = dimension_table(payload, start, end);
-        let saved_section = saved_section(payload, start, end);
+        let dimensions = dimension_table(payload, start, end, &cache);
+        let relations = relation_table(payload, start, end);
+        let saved_section = saved_section(payload, start, end, &cache);
         result.push(FeatureDefinition {
             id,
             body: payload[start..end].to_vec(),
@@ -2239,6 +2442,7 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
             order_table,
             section_3d,
             dimensions,
+            relations,
             saved_section,
             offset: start,
         });
