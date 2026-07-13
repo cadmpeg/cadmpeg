@@ -456,6 +456,15 @@ pub enum ProceduralSurfaceDefinition {
         /// Ordered conditional ASM extension flags.
         extension_flags: Vec<bool>,
     },
+    /// Parallel offset from a support surface.
+    ParallelOffset {
+        /// Surface being offset.
+        support: SurfaceId,
+        /// Signed offset distance.
+        distance: f64,
+        /// Whether the source classifies the result as self-intersecting.
+        self_intersect: Option<bool>,
+    },
     /// Ruled surface joining two directrices.
     Ruled {
         /// First bounding curve of the ruled surface.
@@ -2149,6 +2158,17 @@ pub enum ProceduralCurveDefinition {
         /// to a support surface; `None` for a free-space offset.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         support: Option<SurfaceId>,
+    },
+    /// Free-space 3D offset using a reference direction.
+    SpatialOffset {
+        /// Curve being offset.
+        source: CurveId,
+        /// Signed offset distance.
+        distance: f64,
+        /// Reference direction controlling the offset frame.
+        reference_direction: Vector3,
+        /// Whether the source classifies the result as self-intersecting.
+        self_intersect: Option<bool>,
     },
     /// Intersection of two surfaces after applying independent signed offsets.
     TwoSidedOffset {

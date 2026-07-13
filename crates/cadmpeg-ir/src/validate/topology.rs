@@ -678,6 +678,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ref_error(findings, &procedural.id.0, "surface", &support.0);
                 }
             }
+            ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
+                if !ids.surfaces.contains(&support.0) {
+                    ref_error(findings, &procedural.id.0, "surface", &support.0);
+                }
+            }
             ProceduralSurfaceDefinition::Ruled { first, second } => {
                 for curve in [first, second] {
                     if !ids.curves.contains(&curve.0) {
@@ -921,6 +926,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     if !ids.surfaces.contains(&support.0) {
                         ref_error(findings, &procedural.id.0, "surface", &support.0);
                     }
+                }
+            }
+            ProceduralCurveDefinition::SpatialOffset { source, .. } => {
+                if !ids.curves.contains(&source.0) {
+                    ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
             }
             ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {

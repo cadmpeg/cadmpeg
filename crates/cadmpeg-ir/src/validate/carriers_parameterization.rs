@@ -325,6 +325,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::Offset { support, .. } => {
                 surfaces.insert(&support.0);
             }
+            ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
+                surfaces.insert(&support.0);
+            }
             ProceduralSurfaceDefinition::Ruled { first, second } => {
                 curves.extend([first.0.as_str(), second.0.as_str()]);
             }
@@ -488,6 +491,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 if let Some(support) = support {
                     surfaces.insert(&support.0);
                 }
+            }
+            ProceduralCurveDefinition::SpatialOffset { source, .. } => {
+                curves.insert(&source.0);
             }
             ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
                 for side in &context.sides {
