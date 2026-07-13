@@ -304,6 +304,12 @@ fn le_f64(v: f64) -> [u8; 8] {
 /// edge-table delimiter, and three `05 08 01` vertex records.
 fn main_stream() -> Vec<u8> {
     let mut b = Vec::new();
+    // Planar trim packet: one triangle and a byte-stored +Z plane normal.
+    b.extend_from_slice(&[0x01, 0x49, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00]);
+    for value in [0.0f32, 0.0, 1.0] {
+        b.extend_from_slice(&le_f32(value));
+    }
+    b.extend_from_slice(&[0, 0, 0, 1, 0, 2]);
     // Two stride-8 FBB rows (`30 04 04 ff` + 4 constant bytes).
     for _ in 0..2 {
         b.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
@@ -334,8 +340,8 @@ fn surf_stream() -> Vec<u8> {
     }
     b.resize(73, 0);
     b[72] = 0x01; // cylinder face sense
-                  // Tag-bridged plane: the plane marker and parameter record share the same
-                  // u24le tag.  The normal is perpendicular to the stored yz diagonal.
+                  // Tag-bridged plane: the plane marker and bounds record share the same
+                  // u24le tag. The paired trim packet stores the normal.
     b.extend_from_slice(&[0x11, 0x22, 0x33]);
     b.push(0x00);
     b.push(0x02);
@@ -1568,9 +1574,8 @@ fn decode_standard_transfers_vertices_and_cylinder() {
                 && normal.x.abs() < 1e-6
                 && normal.y.abs() < 1e-6
                 && (normal.z.abs() - 1.0).abs() < 1e-6
-                && u_axis.x.abs() < 1e-6
-                && (u_axis.y - 1.0).abs() < 1e-6
-                && u_axis.z.abs() < 1e-6
+                && (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z - 1.0).abs() < 1e-6
+                && (u_axis.x * normal.x + u_axis.y * normal.y + u_axis.z * normal.z).abs() < 1e-6
     )));
 
     // Complete FBB face records with stored carrier senses bind the analytic

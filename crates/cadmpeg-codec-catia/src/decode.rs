@@ -879,7 +879,8 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let brep = scan.brep.as_ref()?;
     let points = geometry::vertices(brep);
     let prefixes = geometry::surface_prefixes(brep);
-    let planes: HashMap<u32, geometry::PlaneParams> = geometry::plane_params(brep)
+    let plane_normals = topology::standard_plane_normals(brep);
+    let planes: HashMap<u32, geometry::PlaneParams> = geometry::plane_params(brep, &plane_normals)
         .into_iter()
         .map(|plane| (plane.target, plane))
         .collect();

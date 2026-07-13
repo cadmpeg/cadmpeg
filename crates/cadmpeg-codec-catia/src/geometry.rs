@@ -19,18 +19,18 @@ use cadmpeg_ir::geometry::{CurveGeometry, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::le::{f64_at, u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-/// The standard-nested plane parameter record.  Its three-byte tag is the
-/// bridge to the matching `SurfacicReps` plane marker.
+/// The standard-nested plane bounds record. Its three-byte tag is the bridge to
+/// the matching `SurfacicReps` plane marker.
 #[derive(Debug, Clone)]
 pub struct PlaneParams {
     /// The little-endian u24 carrier tag.
     pub target: u32,
     /// Offset of the `00 02 00 33 32` marker in the BREP stream.
     pub pos: usize,
-    /// A point on the plane.
+    /// Bounding-sphere center, which lies on the plane.
     pub origin: Point3,
-    /// A stored in-plane diagonal.  Its y/z components determine the normal.
-    pub diagonal: Vector3,
+    /// Unit plane normal from the positionally paired trim packet.
+    pub normal: Vector3,
 }
 
 /// The `00 33 <kind>` surface kinds and their required strict-template prebyte
@@ -127,10 +127,9 @@ pub fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
     out
 }
 
-/// Locate plane parameter records and decode the stored point and in-plane
-/// diagonal.  The record's cached diagonal length is validated before it is
-/// returned, which rejects incidental marker matches.
-pub fn plane_params(brep: &[u8]) -> Vec<PlaneParams> {
+/// Locate plane bounds records and bind them positionally to framed planar trim
+/// packet normals.
+pub fn plane_params(brep: &[u8], normals: &[[f64; 3]]) -> Vec<PlaneParams> {
     const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
 
     let mut out = Vec::new();
@@ -150,40 +149,37 @@ pub fn plane_params(brep: &[u8]) -> Vec<PlaneParams> {
         if !all_finite(&values) {
             continue;
         }
-        let diagonal = Vector3::new(values[3] as f64, values[4] as f64, values[5] as f64);
-        let length =
-            (diagonal.x * diagonal.x + diagonal.y * diagonal.y + diagonal.z * diagonal.z).sqrt();
-        if length <= 0.0 || (length - values[9] as f64).abs() > 1e-4 * length.max(1.0) {
+        let half = [values[3].abs(), values[4].abs(), values[5].abs()];
+        let sphere = [values[6], values[7], values[8]];
+        let radius = values[9];
+        if radius <= 0.0
+            || (0..3).any(|axis| (values[axis] - sphere[axis]).abs() + half[axis] > radius)
+        {
             continue;
         }
-        // The standard record stores profile planes with the first diagonal
-        // component as the profile coordinate.  The perpendicular in the yz
-        // plane is a valid normal; its sign is carrier-equivalent.
-        let normal_length = (diagonal.y * diagonal.y + diagonal.z * diagonal.z).sqrt();
-        if normal_length <= f64::EPSILON {
+        let Some(normal) = normals.get(out.len()).copied() else {
             continue;
-        }
+        };
         out.push(PlaneParams {
             target: u24_le(brep, pos - 3),
             pos,
-            origin: Point3::new(values[0] as f64, values[1] as f64, values[2] as f64),
-            diagonal,
+            origin: Point3::new(
+                f64::from(sphere[0]),
+                f64::from(sphere[1]),
+                f64::from(sphere[2]),
+            ),
+            normal: Vector3::new(normal[0], normal[1], normal[2]),
         });
     }
     out
 }
 
-/// Decode a plane carrier from its bridged parameter record.  Reversing the
-/// normal represents the same untrimmed plane, so the record's unresolved
-/// orientation bit is not needed for the carrier geometry.
+/// Decode a plane carrier from its bridged bounds and trim-frame records.
 pub fn decode_plane(params: &PlaneParams) -> SurfaceGeometry {
-    let normal = Vector3::new(0.0, params.diagonal.z, -params.diagonal.y);
-    let length = (normal.y * normal.y + normal.z * normal.z).sqrt();
     SurfaceGeometry::Plane {
         origin: params.origin,
-        normal: Vector3::new(normal.x / length, normal.y / length, normal.z / length),
-        u_axis: unit(params.diagonal)
-            .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal)),
+        normal: params.normal,
+        u_axis: cadmpeg_ir::geometry::derive_reference_direction(params.normal),
     }
 }
 

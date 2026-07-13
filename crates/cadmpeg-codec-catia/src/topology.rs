@@ -215,7 +215,22 @@ pub struct CoedgeUse {
 #[derive(Debug)]
 struct TrimRecord {
     triangles: Vec<[u32; 3]>,
+    frame_vector: Option<[f64; 3]>,
+    kind: u8,
     end: usize,
+}
+
+/// Unit frame vectors carried by framed standard trim packets, in packet order.
+///
+/// Only the planar packet kinds are returned. Their positional order binds them
+/// to the standard plane bounds records.
+#[must_use]
+pub fn standard_plane_normals(bytes: &[u8]) -> Vec<[f64; 3]> {
+    parse_trim_records(bytes)
+        .into_iter()
+        .filter(|record| matches!(record.kind, 0x49 | 0x4a | 0x4b | 0x4c | 0x4e | 0x4f))
+        .filter_map(|record| record.frame_vector)
+        .collect()
 }
 
 /// Parses the counted standard spine, positional trim packets, mesh boundary
@@ -493,10 +508,25 @@ fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRec
     if !(1..=500_000).contains(&handle_count) {
         return None;
     }
-    if mask & 8 != 0 {
-        position = position.checked_add(12)?;
-        bytes.get(..position)?;
-    }
+    let frame_vector = if mask & 8 != 0 {
+        let components = [
+            f64::from(f32::from_le_bytes(
+                bytes.get(position..position + 4)?.try_into().ok()?,
+            )),
+            f64::from(f32::from_le_bytes(
+                bytes.get(position + 4..position + 8)?.try_into().ok()?,
+            )),
+            f64::from(f32::from_le_bytes(
+                bytes.get(position + 8..position + 12)?.try_into().ok()?,
+            )),
+        ];
+        position += 12;
+        let norm2 = components.iter().map(|value| value * value).sum::<f64>();
+        (components.iter().all(|value| value.is_finite()) && (norm2 - 1.0).abs() < 2e-4)
+            .then_some(components)
+    } else {
+        None
+    };
 
     let legacy_42 = kind == 0x42 && b == 2 && width == 2;
     let mut lengths = Vec::with_capacity(b + c);
@@ -538,6 +568,8 @@ fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRec
     let triangles = packet_triangles(a, b, c, &lengths, &handles)?;
     Some(TrimRecord {
         triangles,
+        frame_vector,
+        kind,
         end: position,
     })
 }

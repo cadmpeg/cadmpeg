@@ -175,6 +175,8 @@ Invariant `N == 3*A + sum(K)`. Handle **width is family-dependent** and is the o
 
 The trim handle lane is ordered as the `A` independent-triangle triples, then the `B` triangle-strip lists in `K[0:B]` order, then the `C` triangle-fan lists in `K[B:B+C]` order.
 
+For kinds `49`, `4a`, `4b`, `4c`, `4e`, and `4f`, the optional vector is the plane normal. The planar trim packets and `00 33 32` plane bounds records bind positionally in their respective record orders. The plane origin is the bounds record's bounding-sphere center.
+
 Triangle expansion: independent `(H[3i],H[3i+1],H[3i+2])`; strips alternate winding by parity; fans pivot on `q[0]`. Boundary extraction emits directed edges per oriented triangle. A directed edge whose reverse is absent is a boundary segment; multiplicity-one segments form the exact ordered closed boundary cycles. **Loop count = boundary-cycle count**, with one outer cycle and one cycle per hole. Inner-hole loops require edge-row endpoint ports at their native width: FBB-spline `u24be`, standard `u16be`.
 
 **`0x42 B=2` packed strip lengths:** a `0x42` packet with plain `B`=2 packs its two strip lengths as two `u8` bytes `K0,K1` (`K0+K1==N`) in place of the usual `count()` list. At `u24be` a naive read of those two bytes as a handle over-consumes one byte and desyncs; read them as two `u8`.
