@@ -1609,6 +1609,41 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
     plane_row(&mut payload, 12, 0, -2.0);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\x02topol_ref_data\0");
     circle_row(&mut payload, 20, 11, 2.0);
+    let one_cap = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload.clone())])),
+        &DecodeOptions::default(),
+    )
+    .expect("one-cap decode");
+    assert!(one_cap
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#10"));
+    let one_cap_circle = one_cap
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "creo:visibgeom:curve#20")
+        .expect("placed one-cap circle");
+    assert!(matches!(
+        one_cap_circle.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Circle {
+            center: cadmpeg_ir::math::Point3 {
+                x: 2.0,
+                y: 5.0,
+                z: 3.0
+            },
+            axis: cadmpeg_ir::math::Vector3 {
+                x: -1.0,
+                y: 0.0,
+                z: 0.0
+            },
+            radius: 1.0,
+            ..
+        }
+    ));
     circle_row(&mut payload, 21, 12, -2.0);
     let result = decode::decode(
         &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),

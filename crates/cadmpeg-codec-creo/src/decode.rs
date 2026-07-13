@@ -2020,6 +2020,103 @@ fn transfer_cap_pair_cylinders(
     }
 }
 
+fn transfer_fc05_cap_circles(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) {
+    let planes = scan
+        .outline_planes
+        .iter()
+        .map(|plane| (plane.surface_id, plane))
+        .collect::<BTreeMap<_, _>>();
+    let kinds = scan
+        .surface_rows
+        .iter()
+        .map(|surface| (surface.id, surface.kind))
+        .collect::<BTreeMap<_, _>>();
+    for circle in &scan.fc05_circles {
+        let topology = scan
+            .curve_topology_rows
+            .iter()
+            .filter(|row| row.id == circle.curve_id)
+            .collect::<Vec<_>>();
+        let [topology] = topology.as_slice() else {
+            continue;
+        };
+        let cap_planes = topology
+            .faces
+            .iter()
+            .filter(|face| kinds.get(face) == Some(&crate::surface::SurfaceKind::Plane))
+            .filter_map(|face| planes.get(face).copied())
+            .collect::<Vec<_>>();
+        let cylinders = topology
+            .faces
+            .iter()
+            .filter(|face| kinds.get(face) == Some(&crate::surface::SurfaceKind::Cylinder))
+            .count();
+        let ([cap], 1, Some(reference), Some(parameter_sign)) = (
+            cap_planes.as_slice(),
+            cylinders,
+            circle.reference_direction_row_frame,
+            circle.parameter_sign,
+        ) else {
+            continue;
+        };
+        let Some(axis_index) = (0..3).find(|axis| cap.normal[*axis].abs() == 1.0) else {
+            continue;
+        };
+        if axis_index == 2 {
+            continue;
+        }
+        let [first, second] = circle.center_row_frame;
+        let axis_sign = -f64::from(parameter_sign);
+        let (center, axis, ref_direction) = if axis_index == 0 {
+            (
+                [cap.origin[0], second, first],
+                [axis_sign, 0.0, 0.0],
+                [0.0, reference[1], reference[0]],
+            )
+        } else {
+            (
+                [first, cap.origin[1], second],
+                [0.0, axis_sign, 0.0],
+                [reference[0], 0.0, reference[1]],
+            )
+        };
+        let id = CurveId(format!("creo:visibgeom:curve#{}", circle.curve_id));
+        if ir.model.curves.iter().any(|curve| curve.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            circle.offset as u64,
+            "fc05_cap_circle",
+            Exactness::Derived,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Circle {
+                center: Point3::new(center[0], center[1], center[2]),
+                axis: Vector3::new(axis[0], axis[1], axis[2]),
+                ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                radius: circle.radius_mm,
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", circle.curve_id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+    }
+}
+
 fn transfer_plane_intersection_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -2279,6 +2376,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             }),
         });
     }
+    transfer_fc05_cap_circles(scan, &mut ir, &mut annotations);
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
     transfer_plane_intersection_curves(scan, &mut ir, &mut annotations);
     transfer_plane_intersection_vertices(scan, &mut ir, &mut annotations);

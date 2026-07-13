@@ -282,6 +282,8 @@ Each participating `fc 05` curve is a circle centered at the shared in-plane
 center and its own transformed cap ordinate, with the cylinder axis and radius.
 The curve identifier remains the `crv_array.crv_id`.
 
+One `fc 05` curve bound to one cylinder face and one resolved model-X or model-Y cap plane independently defines its model-space circle. A second agreeing cap is required only to define the cylinder carrier.
+
 ## 5. Topology and section records
 
 Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. Multi-loop faces require parameter-space containment to distinguish outer from inner loops. Shells follow connected components of face references.
