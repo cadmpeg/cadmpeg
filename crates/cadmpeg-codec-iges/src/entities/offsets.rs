@@ -1,0 +1,283 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Offset curve entity projection.
+
+use super::geometry::{entity_loss, source_object};
+use crate::directory::DirectoryEntry;
+use crate::global::Global;
+use crate::parameter::ParameterRecord;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, VertexId};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::topology::{Edge, Point, Vertex};
+use cadmpeg_ir::CadIr;
+use std::collections::{BTreeMap, BTreeSet};
+
+fn cross(left: Vector3, right: Vector3) -> Vector3 {
+    Vector3::new(
+        left.y * right.z - left.z * right.y,
+        left.z * right.x - left.x * right.z,
+        left.x * right.y - left.y * right.x,
+    )
+}
+
+fn dot(left: Vector3, right: Vector3) -> f64 {
+    left.x * right.x + left.y * right.y + left.z * right.z
+}
+
+fn normalized(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.norm();
+    (norm.is_finite() && norm > 0.0)
+        .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
+}
+
+fn add(point: Point3, vector: Vector3, scale: f64) -> Point3 {
+    Point3::new(
+        point.x + vector.x * scale,
+        point.y + vector.y * scale,
+        point.z + vector.z * scale,
+    )
+}
+
+pub(super) struct OffsetProjection {
+    pub(super) handled: BTreeSet<u32>,
+    pub(super) decoded: BTreeSet<u32>,
+    pub(super) losses: Vec<LossNote>,
+    pub(super) wire_edges: Vec<EdgeId>,
+}
+
+pub(super) fn project(
+    ir: &mut CadIr,
+    directory: &[DirectoryEntry],
+    parameters: &[ParameterRecord],
+    global: &Global,
+) -> OffsetProjection {
+    let records = parameters
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect::<BTreeMap<_, _>>();
+    let mut handled = BTreeSet::new();
+    let mut decoded = BTreeSet::new();
+    let mut losses = Vec::new();
+    let mut wire_edges = Vec::new();
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 130 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(factor) = global.length_factor_mm() else {
+            losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(source_sequence) = record
+            .integer(1)
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            losses.push(entity_loss(entry, "offset source pointer is invalid"));
+            continue;
+        };
+        if record.integer(2) != Some(1) {
+            losses.push(entity_loss(
+                entry,
+                "variable-distance offset law is not projected",
+            ));
+            continue;
+        }
+        if record.integer(3) != Some(0)
+            || record.integer(4) != Some(0)
+            || record.integer(5) != Some(0)
+            || record.number(7) != Some(0.0)
+            || record.number(8) != Some(0.0)
+            || record.number(9) != Some(0.0)
+        {
+            losses.push(entity_loss(
+                entry,
+                "uniform offset has a nonzero unused field",
+            ));
+            continue;
+        }
+        let Some(distance) = record.number(6).filter(|value| value.is_finite()) else {
+            losses.push(entity_loss(entry, "uniform offset distance is not finite"));
+            continue;
+        };
+        let components = [record.number(10), record.number(11), record.number(12)];
+        let [Some(x), Some(y), Some(z)] = components else {
+            losses.push(entity_loss(entry, "offset plane normal is not numeric"));
+            continue;
+        };
+        let Some(normal) = normalized(Vector3::new(x, y, z)) else {
+            losses.push(entity_loss(
+                entry,
+                "offset plane normal is zero or non-finite",
+            ));
+            continue;
+        };
+        if (Vector3::new(x, y, z).norm() - 1.0).abs() > 1.0e-10 {
+            losses.push(entity_loss(
+                entry,
+                "offset plane normal is not a unit vector",
+            ));
+            continue;
+        }
+        let bounds = [record.number(13), record.number(14)];
+        let [Some(start), Some(end)] = bounds else {
+            losses.push(entity_loss(
+                entry,
+                "offset parameter interval is not numeric",
+            ));
+            continue;
+        };
+        if !start.is_finite() || !end.is_finite() || start >= end {
+            losses.push(entity_loss(
+                entry,
+                "offset parameter interval is not increasing",
+            ));
+            continue;
+        }
+        if entry.transform != 0 {
+            losses.push(entity_loss(
+                entry,
+                "placed offset curves require composed source projection",
+            ));
+            continue;
+        }
+        let source_id = CurveId(format!("iges:model:curve#D{source_sequence}"));
+        let Some(source) = ir.model.curves.iter().find(|curve| curve.id == source_id) else {
+            losses.push(entity_loss(entry, "offset source curve is missing"));
+            continue;
+        };
+        let within_source_domain = ir.model.edges.iter().any(|edge| {
+            edge.curve.as_ref() == Some(&source_id)
+                && edge
+                    .param_range
+                    .is_some_and(|range| start >= range[0] && end <= range[1])
+        });
+        if !within_source_domain {
+            losses.push(entity_loss(
+                entry,
+                "offset parameter interval lies outside the source curve domain",
+            ));
+            continue;
+        }
+        let distance = distance * factor;
+        let geometry = match &source.geometry {
+            CurveGeometry::Line { origin, direction }
+                if dot(normal, *direction).abs() <= 1.0e-10 =>
+            {
+                let offset = cross(normal, *direction);
+                CurveGeometry::Line {
+                    origin: add(*origin, offset, distance),
+                    direction: *direction,
+                }
+            }
+            CurveGeometry::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            } if dot(normal, *axis).abs() >= 1.0 - 1.0e-10 => {
+                let signed_distance = distance * dot(normal, *axis).signum();
+                let offset_radius = radius - signed_distance;
+                if offset_radius <= 0.0 {
+                    losses.push(entity_loss(
+                        entry,
+                        "offset collapses or reverses the circle",
+                    ));
+                    continue;
+                }
+                CurveGeometry::Circle {
+                    center: *center,
+                    axis: *axis,
+                    ref_direction: *ref_direction,
+                    radius: offset_radius,
+                }
+            }
+            _ => {
+                losses.push(entity_loss(
+                    entry,
+                    "source curve has no exact uniform offset carrier",
+                ));
+                continue;
+            }
+        };
+        let Some(start_position) = cadmpeg_ir::eval::curve_point(&geometry, start) else {
+            losses.push(entity_loss(
+                entry,
+                "offset start parameter cannot be evaluated",
+            ));
+            continue;
+        };
+        let Some(end_position) = cadmpeg_ir::eval::curve_point(&geometry, end) else {
+            losses.push(entity_loss(
+                entry,
+                "offset end parameter cannot be evaluated",
+            ));
+            continue;
+        };
+        let curve_id = CurveId(format!("iges:model:curve#D{}", entry.sequence));
+        let start_point = PointId(format!("iges:model:point#D{}:start", entry.sequence));
+        let end_point = PointId(format!("iges:model:point#D{}:end", entry.sequence));
+        let start_vertex = VertexId(format!("iges:model:vertex#D{}:start", entry.sequence));
+        let end_vertex = VertexId(format!("iges:model:vertex#D{}:end", entry.sequence));
+        let edge_id = EdgeId(format!("iges:model:edge#D{}", entry.sequence));
+        ir.model.points.extend([
+            Point {
+                id: start_point.clone(),
+                position: start_position,
+            },
+            Point {
+                id: end_point.clone(),
+                position: end_position,
+            },
+        ]);
+        ir.model.vertices.extend([
+            Vertex {
+                id: start_vertex.clone(),
+                point: start_point,
+                tolerance: None,
+            },
+            Vertex {
+                id: end_vertex.clone(),
+                point: end_point,
+                tolerance: None,
+            },
+        ]);
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry,
+            source_object: Some(source_object(entry)),
+        });
+        ir.model.edges.push(Edge {
+            id: edge_id.clone(),
+            curve: Some(curve_id.clone()),
+            start: start_vertex,
+            end: end_vertex,
+            param_range: Some([start, end]),
+            tolerance: None,
+        });
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: ProceduralCurveId(format!("iges:model:procedural-curve#D{}", entry.sequence)),
+            curve: curve_id,
+            definition: ProceduralCurveDefinition::Offset {
+                source: source_id,
+                distance,
+                support: None,
+            },
+            cache_fit_tolerance: None,
+        });
+        wire_edges.push(edge_id);
+        decoded.insert(entry.sequence);
+    }
+
+    OffsetProjection {
+        handled,
+        decoded,
+        losses,
+        wire_edges,
+    }
+}

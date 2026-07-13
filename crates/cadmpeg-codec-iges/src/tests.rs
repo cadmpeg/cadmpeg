@@ -253,6 +253,41 @@ fn circular_arc_file() -> Vec<u8> {
     bytes
 }
 
+fn uniform_offset_circle_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["100", "1", "0", "0", "0", "0", "0", "0", "00010000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        ["100", "0", "0", "1", "0", "", "", "ARC", "0"],
+        2,
+    ));
+    bytes.extend(directory_card(
+        ["130", "2", "0", "0", "0", "0", "0", "0", "00000000"],
+        3,
+    ));
+    bytes.extend(directory_card(
+        ["130", "0", "0", "1", "0", "", "", "OFFSET", "0"],
+        4,
+    ));
+    bytes.extend(parameter_card(b"100,0,0,0,2,0,0,2;", 1, 1));
+    bytes.extend(parameter_card(
+        b"130,1,1,0,0,0,0.5,0,0,0,0,0,1,0,1.5707963267948966;",
+        3,
+        2,
+    ));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
 fn composite_curve_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
@@ -1184,6 +1219,40 @@ fn decode_projects_a_counterclockwise_circular_arc() {
         .points
         .iter()
         .any(|point| point.position == cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0)));
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_solves_a_uniform_planar_curve_offset() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(uniform_offset_circle_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let offset = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .unwrap();
+    let cadmpeg_ir::geometry::CurveGeometry::Circle { radius, .. } = offset.geometry else {
+        panic!("expected an exact circular offset carrier");
+    };
+    assert_eq!(radius, 1.5);
+    let edge = result
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id.0 == "iges:model:edge#D3")
+        .unwrap();
+    assert_eq!(edge.param_range, Some([0.0, std::f64::consts::FRAC_PI_2]));
+    assert_eq!(result.ir.model.procedural_curves.len(), 1);
     assert!(result.report.losses.is_empty());
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
