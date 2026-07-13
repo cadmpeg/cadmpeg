@@ -287,6 +287,27 @@ bench = false
 
 # IR and STEP targets
 [[bin]]
+name = "step_lexer"
+path = "fuzz_targets/step_lexer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "step_parser"
+path = "fuzz_targets/step_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "step_reader"
+path = "fuzz_targets/step_reader.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "ir_diff"
 path = "fuzz_targets/ir_diff.rs"
 test = false

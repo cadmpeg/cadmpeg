@@ -76,6 +76,10 @@ format-independent:
 - `step_writer` parses IR and writes STEP with default options.
 - `step_writer_custom` derives STEP header fields from an eight-byte prefix,
   then parses the remaining bytes as IR.
+- `step_lexer` tokenizes arbitrary Part 21 bytes.
+- `step_parser` parses arbitrary Part 21 exchange structures and resolves
+  instance references.
+- `step_reader` exercises public STEP inspection on arbitrary bytes.
 - `step_geometry_degenerate` parses IR and exercises STEP export with any
   degenerate geometry present in the document.
 - `ir_validate_mutated` uses the first byte to select a semantic mutation,
