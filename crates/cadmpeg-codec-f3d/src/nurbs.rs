@@ -4807,6 +4807,47 @@ pub(crate) struct RollingBallPatchLayout {
     pub(crate) radii: [usize; 2],
 }
 
+/// Writable leading fields in a translational-extrusion surface subtype.
+pub(crate) struct ExtrusionPatchLayout {
+    pub(crate) parameter_interval: [usize; 2],
+    pub(crate) direction: usize,
+    pub(crate) native_position: usize,
+}
+
+/// Locate extrusion fields from the `cyl_spl_sur` subtype header.
+pub(crate) fn extrusion_patch_layout(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<ExtrusionPatchLayout> {
+    let names: [&[u8]; 2] = [b"cyl_spl_sur", b"cylsur"];
+    let (start, name_len) = names.into_iter().find_map(|name| {
+        bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len()))
+    })?;
+    subtype_span(bytes, start, int_width)?;
+    let mut position = start + name_len + 3;
+    let parameter_interval = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    let direction = position + 1;
+    take_native_vec3(bytes, &mut position, 0x14)?;
+    let native_position = position + 1;
+    take_native_vec3(bytes, &mut position, 0x13)?;
+    Some(ExtrusionPatchLayout {
+        parameter_interval,
+        direction,
+        native_position,
+    })
+}
+
 /// Locate the rolling-ball radius pair by walking both supports and the slice curve.
 pub(crate) fn rolling_ball_patch_layout(
     bytes: &[u8],
@@ -6439,6 +6480,13 @@ mod width_tests {
         }
     }
 
+    fn push_vector(out: &mut Vec<u8>, values: [f64; 3]) {
+        out.push(0x14);
+        for value in values {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
     /// A degree-1 two-pole 3D `nubs` curve block over `[0, 1]`.
     fn curve_block(int_width: usize) -> Vec<u8> {
         let mut b = NUBS_MARKER.to_vec();
@@ -6544,6 +6592,50 @@ mod width_tests {
                 .radii
                 .map(|offset| f64::from_le_bytes(compact[offset..offset + 8].try_into().unwrap()));
             assert_eq!(values, [-1.5, -2.5]);
+        }
+    }
+
+    #[test]
+    fn extrusion_layout_walks_modern_and_legacy_names_at_both_widths() {
+        for int_width in [4usize, 8] {
+            for name in ["cyl_spl_sur", "cylsur"] {
+                let mut bytes = Vec::new();
+                push_f64(&mut bytes, 99.0);
+                push_vector(&mut bytes, [90.0, 91.0, 92.0]);
+                push_position(&mut bytes, [93.0, 94.0, 95.0]);
+                bytes.push(0x0f);
+                push_ident(&mut bytes, name);
+                push_f64(&mut bytes, -2.0);
+                push_f64(&mut bytes, 3.0);
+                push_vector(&mut bytes, [4.0, 5.0, 6.0]);
+                push_position(&mut bytes, [7.0, 8.0, 9.0]);
+                bytes.extend_from_slice(&curve_block(int_width));
+                bytes.extend_from_slice(&surface_block(int_width));
+                bytes.push(0x10);
+
+                let layout = extrusion_patch_layout(&bytes, int_width)
+                    .unwrap_or_else(|| panic!("extrusion layout {name} at width {int_width}"));
+                let interval = layout.parameter_interval.map(|offset| {
+                    f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap())
+                });
+                assert_eq!(interval, [-2.0, 3.0]);
+                assert_eq!(
+                    f64::from_le_bytes(
+                        bytes[layout.direction..layout.direction + 8]
+                            .try_into()
+                            .unwrap()
+                    ),
+                    4.0
+                );
+                assert_eq!(
+                    f64::from_le_bytes(
+                        bytes[layout.native_position..layout.native_position + 8]
+                            .try_into()
+                            .unwrap()
+                    ),
+                    7.0
+                );
+            }
         }
     }
 

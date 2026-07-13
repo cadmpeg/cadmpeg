@@ -14142,25 +14142,12 @@ fn patch_framed_geometry(
                     direction,
                     native_position,
                 } => {
-                    patch_double_token(bytes, record, 0, parameter_interval[0])?;
-                    patch_double_token(bytes, record, 1, parameter_interval[1])?;
-                    patch_vec3_token(
+                    patch_extrusion_definition(
                         bytes,
                         record,
-                        0x14,
-                        0,
-                        [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
-                    )?;
-                    patch_vec3_token(
-                        bytes,
-                        record,
-                        0x13,
-                        0,
-                        [
-                            native_position.x / 10.0,
-                            native_position.y / 10.0,
-                            native_position.z / 10.0,
-                        ],
+                        *parameter_interval,
+                        *direction,
+                        *native_position,
                     )?;
                 }
                 ProceduralSurfaceEdit::BlendRadii(radii) => {
@@ -14338,6 +14325,56 @@ fn patch_framed_geometry(
                 patch_double_token(bytes, record, 2, cosine_sign * half_angle.cos())?;
                 patch_double_token(bytes, record, 3, scaled_radius)?;
             }
+        }
+    }
+    Ok(())
+}
+
+fn patch_extrusion_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    parameter_interval: [f64; 2],
+    direction: Vector3,
+    native_position: cadmpeg_ir::math::Point3,
+) -> Result<(), CodecError> {
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("extrusion record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("extrusion record is truncated".into()))?;
+    let layout = crate::nurbs::extrusion_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "spline record {} lacks writable extrusion fields",
+                record.index
+            ))
+        })?;
+    for (offset, value) in layout
+        .parameter_interval
+        .into_iter()
+        .zip(parameter_interval)
+    {
+        let at = record.offset + offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    for (base, values) in [
+        (
+            layout.direction,
+            [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
+        ),
+        (
+            layout.native_position,
+            [
+                native_position.x / 10.0,
+                native_position.y / 10.0,
+                native_position.z / 10.0,
+            ],
+        ),
+    ] {
+        for (component, value) in values.into_iter().enumerate() {
+            let at = record.offset + base + component * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
     }
     Ok(())
