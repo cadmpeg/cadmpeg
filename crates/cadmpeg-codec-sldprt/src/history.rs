@@ -1419,12 +1419,26 @@ pub fn parameter_hash(parameters: &[DesignParameter]) -> String {
     hash_debug(&parameters)
 }
 
-/// Stable hash of native feature parameter maps.
+/// Stable hash of native feature parameters, properties, and ordering.
 pub fn native_parameter_hash(histories: &[FeatureHistory]) -> String {
     let mut parameters = histories
         .iter()
         .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.clone(), feature.parameters.clone()))
+        .map(|feature| {
+            (
+                feature.id.clone(),
+                feature.parameters.clone(),
+                feature.dimension_properties.clone(),
+                feature
+                    .content
+                    .iter()
+                    .filter_map(|item| match item {
+                        FeatureContent::Dimension(name) => Some(name.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })
         .collect::<Vec<_>>();
     parameters.sort_by(|left, right| left.0.cmp(&right.0));
     hash_debug(&parameters)

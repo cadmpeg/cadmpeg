@@ -5376,6 +5376,36 @@ fn semantic_writer_rejects_conflicting_parameter_edits() {
 }
 
 #[test]
+fn semantic_writer_rejects_conflicting_dimension_property_edits() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Equation" Type="EquationDriven" id="41"><Dimension Name="Depth" Driven="false">12mm</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    decoded.ir.model.parameters[0]
+        .properties
+        .insert("Driven".into(), "neutral".into());
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_histories[0].features[0]
+            .dimension_properties
+            .get_mut("Depth")
+            .unwrap()
+            .insert("Driven".into(), "native".into());
+    });
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("conflicting neutral and native SLDPRT parameter edits"));
+}
+
+#[test]
 fn decode_projects_cut_extrude_with_canonical_length() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
