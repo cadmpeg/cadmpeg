@@ -4643,12 +4643,14 @@ fn decode_partitions_interleaved_schema_33103_faces_by_adjacency() {
 fn decode_partitions_disc14_faces_by_native_shell_rings() {
     let mut body = Vec::new();
     body.extend(entity51(1, 900, 0x001a, &[500, 501, 0, 0, 0, 0]));
-    body.extend(entity51(1, 500, 0x0016, &[600, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 500, 0x0016, &[550, 0, 0, 0, 0, 0]));
     body.extend(entity51(1, 501, 0x0016, &[602, 0, 0, 0, 0, 0]));
-    body.extend(entity51(1, 600, 0x0020, &[0, 0, 610, 601, 0, 0]));
-    body.extend(entity51(1, 601, 0x0020, &[0, 0, 611, 600, 0, 0]));
+    body.extend(entity51(1, 550, 0x0012, &[600, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 600, 0x0020, &[0, 0, 609, 601, 0, 0]));
+    body.extend(entity51(1, 601, 0x0020, &[0, 0, 701, 600, 0, 0]));
     body.extend(entity51(1, 602, 0x0020, &[0, 0, 612, 603, 0, 0]));
     body.extend(entity51(1, 603, 0x0020, &[0, 0, 613, 602, 0, 0]));
+    body.extend(entity51(1, 609, 0x001e, &[0, 0, 610, 0, 0, 0]));
     for (geometry, face) in [(610, 700), (611, 701), (612, 800), (613, 801)] {
         body.extend(entity51(1, geometry, 0x0018, &[0, 0, face, 0, 0, 0]));
         body.extend(entity51(1, face, 0x0014, &[0, 0, 0, 0, 0, 0]));

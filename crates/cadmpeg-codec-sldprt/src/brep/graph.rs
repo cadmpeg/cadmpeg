@@ -349,7 +349,6 @@ fn decode_graph(
     };
     let mut annotations = AnnotationBuilder::new();
     let source_stream = annotations.stream(stream);
-    out.stats.synthetic_body_grouping = body_records.is_empty();
     if t.bridges.is_empty() {
         return out;
     }
@@ -759,6 +758,7 @@ fn decode_graph(
     if out.faces.is_empty() {
         return Brep::default();
     }
+    out.stats.synthetic_body_grouping = body_records.is_empty();
 
     let group_count = body_records.len().max(1);
     for group in 0..group_count {
@@ -1908,5 +1908,16 @@ fn emit_curve(out: &mut Brep, carrier: &Carrier) {
             source_object: None,
             geometry: geo.clone(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn geometry_free_stream_does_not_report_synthetic_body_grouping() {
+        let decoded = super::decode_body(&[], "empty");
+
+        assert!(decoded.faces.is_empty());
+        assert!(!decoded.stats.synthetic_body_grouping);
     }
 }

@@ -433,6 +433,43 @@ fn disc14_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
         return Vec::new();
     }
 
+    let canonical_faces = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x0014)
+        .map(|record| record.attr)
+        .collect::<HashSet<_>>();
+    let face_use_faces = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x0020)
+        .filter_map(|face_use| face_from_face_use(by_attr, face_use))
+        .collect::<HashSet<_>>();
+    if regions.len() == 1 {
+        let shells = reachable_records(by_attr, regions[0], 0x0016);
+        if let [shell] = shells.as_slice() {
+            if !canonical_faces.is_empty() && face_use_faces == canonical_faces {
+                let mut refs = canonical_faces.into_iter().collect::<Vec<_>>();
+                refs.sort_unstable();
+                return vec![BodyRecord {
+                    attr: regions[0].attr,
+                    kind: BodyKind::Solid,
+                    refs: refs.clone(),
+                    offset: regions[0].offset,
+                    regions: vec![RegionRecord {
+                        attr: regions[0].attr,
+                        offset: regions[0].offset,
+                        shells: vec![ShellRecord {
+                            attr: shell.attr,
+                            offset: shell.offset,
+                            refs,
+                        }],
+                    }],
+                }];
+            }
+        }
+    }
+
     let mut region_records = Vec::new();
     let mut body_refs = HashSet::new();
     for region in regions {
@@ -499,11 +536,9 @@ fn shell_face_ring(
     by_attr: &HashMap<u16, &EntityRecord>,
     shell: &EntityRecord,
 ) -> Option<Vec<u16>> {
-    let first = shell
-        .refs
-        .iter()
-        .filter_map(|reference| by_attr.get(reference))
-        .find(|record| record.disc == 0x0020)?;
+    let first = reachable_records(by_attr, shell, 0x0020)
+        .into_iter()
+        .next()?;
     let mut current = first.attr;
     let mut seen = HashSet::new();
     let mut faces = Vec::new();
@@ -512,15 +547,7 @@ fn shell_face_ring(
         if face_use.disc != 0x0020 {
             return None;
         }
-        let geometry = by_attr.get(face_use.refs.get(2)?)?;
-        if geometry.disc != 0x0018 {
-            return None;
-        }
-        let face = by_attr.get(geometry.refs.get(2)?)?;
-        if face.disc != 0x0014 {
-            return None;
-        }
-        faces.push(face.attr);
+        faces.push(face_from_face_use(by_attr, face_use)?);
         let next = *face_use.refs.get(3)?;
         if next == first.attr {
             break;
@@ -528,6 +555,21 @@ fn shell_face_ring(
         current = next;
     }
     (!faces.is_empty()).then_some(faces)
+}
+
+fn face_from_face_use(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    face_use: &EntityRecord,
+) -> Option<u16> {
+    let mut current = *by_attr.get(face_use.refs.get(2)?)?;
+    for _ in 0..3 {
+        match current.disc {
+            0x0014 => return Some(current.attr),
+            0x0018 | 0x001e => current = *by_attr.get(current.refs.get(2)?)?,
+            _ => return None,
+        }
+    }
+    None
 }
 
 fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord]) {
