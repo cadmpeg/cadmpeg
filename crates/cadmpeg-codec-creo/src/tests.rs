@@ -1537,9 +1537,9 @@ fn scan_validates_fc05_circle_from_record_points() {
     payload.extend_from_slice(b"topol_ref_data\0\x07\x09\x04\x01\xf6\xfc\x05");
     for [x, z, t, y] in [
         [4.0, 3.0, 2.0, 2.0],
-        [3.0, 4.0, 3.0, 2.0],
-        [2.0, 3.0, 4.0, 2.0],
-        [3.0, 2.0, 3.0, 2.0],
+        [3.0, 4.0, 2.0 + std::f64::consts::FRAC_PI_2, 2.0],
+        [2.0, 3.0, 2.0 + std::f64::consts::PI, 2.0],
+        [3.0, 2.0, 2.0 + 3.0 * std::f64::consts::FRAC_PI_2, 2.0],
     ] {
         world(&mut payload, x);
         world(&mut payload, z);
@@ -1558,7 +1558,13 @@ fn scan_validates_fc05_circle_from_record_points() {
     assert_eq!(circle.cap_ordinate_row_frame, Some(2.0));
     assert_eq!(circle.point_count, 4);
     assert_eq!(circle.max_residual, 0.0);
-    assert!(!circle.angle_parameter_consistent);
+    assert!(circle.angle_parameter_consistent);
+    assert_eq!(circle.parameter_sign, Some(1));
+    let direction = circle
+        .reference_direction_row_frame
+        .expect("unique parameter-zero direction");
+    assert!((direction[0] - (-2.0_f64).cos()).abs() < 1e-12);
+    assert!((direction[1] - (-2.0_f64).sin()).abs() < 1e-12);
 }
 
 #[test]
@@ -1583,9 +1589,9 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         payload.extend_from_slice(&[curve, 0x09, 4, 0x01, 0xf6, 0xfc, 0x05]);
         for [a, b, parameter] in [
             [4.0, 5.0, 2.0],
-            [3.0, 6.0, 3.0],
-            [2.0, 5.0, 4.0],
-            [3.0, 4.0, 3.0],
+            [3.0, 6.0, 2.0 + std::f64::consts::FRAC_PI_2],
+            [2.0, 5.0, 2.0 + std::f64::consts::PI],
+            [3.0, 4.0, 2.0 + 3.0 * std::f64::consts::FRAC_PI_2],
         ] {
             world(payload, a);
             world(payload, b);
@@ -1620,8 +1626,8 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         cylinder.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
             origin: cadmpeg_ir::math::Point3::new(2.0, 5.0, 3.0),
-            axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            axis: cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(0.0, (-2.0_f64).sin(), (-2.0_f64).cos(),),
             radius: 1.0,
         }
     );
@@ -1630,7 +1636,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Circle {
             axis: cadmpeg_ir::math::Vector3 {
-                x: 1.0,
+                x: -1.0,
                 y: 0.0,
                 z: 0.0
             },

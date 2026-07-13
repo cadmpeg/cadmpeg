@@ -1922,17 +1922,19 @@ fn transfer_cap_pair_cylinders(
         }
         let axis_origin = first_ordinate + translations[0];
         let [first, second] = pair.center_row_frame;
+        let [reference_x, reference_z] = pair.reference_direction_row_frame;
+        let axis_sign = -f64::from(pair.parameter_sign);
         let (origin, axis, ref_direction) = if axis_index == 0 {
             (
                 [axis_origin, second, first],
-                [1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
+                [axis_sign, 0.0, 0.0],
+                [0.0, reference_z, reference_x],
             )
         } else {
             (
                 [first, axis_origin, second],
-                [0.0, 1.0, 0.0],
-                [1.0, 0.0, 0.0],
+                [0.0, axis_sign, 0.0],
+                [reference_x, 0.0, reference_z],
             )
         };
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", pair.surface_id));

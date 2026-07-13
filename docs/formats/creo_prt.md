@@ -265,7 +265,7 @@ Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a bod
 | `fc 08` | World-coordinate control-polyline family |
 | `fc 13` | Held-cap-ordinate control polyline       |
 
-`fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and `C` use eight-byte world-coordinate tokens and `B` and `t` use DICT or standalone-zero scalar tokens. `C` is the cap ordinate along the owning cylinder axis. For a model-X axis, `(A, B, C)` maps to `(Z, Y, X)`; for a model-Y axis it maps to `(X, Z, Y)`. `fc 13` stores a control polyline rather than an analytic circle.
+`fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and `C` use eight-byte world-coordinate tokens and `B` and `t` use DICT or standalone-zero scalar tokens. `C` is the cap ordinate along the owning cylinder axis. `t` is the angular curve parameter in radians. The signed relation between successive polar angles and `t` determines curve sense; subtracting the signed stored parameter from a point's polar angle determines the parameter-zero radial direction. For a model-X axis, `(A, B, C)` maps to `(Z, Y, X)`; for a model-Y axis it maps to `(X, Z, Y)`. `fc 13` stores a control polyline rather than an analytic circle.
 
 An `fc 05` cap pair belongs to one cylinder when each curve suffix binds one
 side to the same `geom_type = 24` face and the other side to a `geom_type = 22`

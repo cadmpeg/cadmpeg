@@ -203,6 +203,12 @@ pub struct Fc05Circle {
     pub center_row_frame: [f64; 2],
     /// Exact radius in mm.
     pub radius_mm: f64,
+    /// Unit radial direction at stored curve parameter zero in the row's
+    /// `(x, z)` frame.
+    pub reference_direction_row_frame: Option<[f64; 2]>,
+    /// Signed relation from stored parameter to row-frame polar angle.
+    /// `1` increases polar angle and `-1` decreases it.
+    pub parameter_sign: Option<i8>,
     /// Constant cap-plane ordinate when present in every point.
     pub cap_ordinate_row_frame: Option<f64>,
     /// Number of points participating in validation.
@@ -231,6 +237,10 @@ pub struct Fc05CylinderCapPair {
     pub center_row_frame: [f64; 2],
     /// Shared exact radius in mm.
     pub radius_mm: f64,
+    /// Unit radial direction at parameter zero in the row's `(x, z)` frame.
+    pub reference_direction_row_frame: [f64; 2],
+    /// Shared signed parameter-to-polar-angle relation.
+    pub parameter_sign: i8,
     /// At least two distinct cap ordinates in the owning feature's row frame.
     pub cap_ordinates_row_frame: Vec<f64>,
     /// Byte offset of the first participating curve row.
@@ -1003,20 +1013,41 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
         }
         let angle_0 = (first.1 - center_z).atan2(first.0 - center_x);
         let parameter_0 = first.2;
-        let angle_parameter_consistent = points.iter().all(|point| {
-            let mut angle = (point.1 - center_z).atan2(point.0 - center_x) - angle_0;
-            while angle > std::f64::consts::PI {
-                angle -= std::f64::consts::TAU;
+        let wrapped_distance = |left: f64, right: f64| {
+            let mut difference = left - right;
+            while difference > std::f64::consts::PI {
+                difference -= std::f64::consts::TAU;
             }
-            while angle < -std::f64::consts::PI {
-                angle += std::f64::consts::TAU;
+            while difference < -std::f64::consts::PI {
+                difference += std::f64::consts::TAU;
             }
-            (angle.abs() - (point.2 - parameter_0).abs() % std::f64::consts::TAU).abs() <= 1e-6
+            difference.abs()
+        };
+        let sign_matches = |sign: f64| {
+            points.iter().all(|point| {
+                let angle = (point.1 - center_z).atan2(point.0 - center_x);
+                let expected = angle_0 + sign * (point.2 - parameter_0);
+                wrapped_distance(angle, expected) <= 1e-6
+            })
+        };
+        let positive = sign_matches(1.0);
+        let negative = sign_matches(-1.0);
+        let angle_parameter_consistent = positive ^ negative;
+        let parameter_sign = match (positive, negative) {
+            (true, false) => Some(1),
+            (false, true) => Some(-1),
+            _ => None,
+        };
+        let reference_direction_row_frame = parameter_sign.map(|sign| {
+            let reference_angle = angle_0 - f64::from(sign) * parameter_0;
+            [reference_angle.cos(), reference_angle.sin()]
         });
         circles.push(Fc05Circle {
             curve_id: record.curve_id,
             center_row_frame: [center_x, center_z],
             radius_mm: radius,
+            reference_direction_row_frame,
+            parameter_sign,
             cap_ordinate_row_frame: Some(ordinate),
             point_count: points.len(),
             max_residual,
@@ -1072,11 +1103,24 @@ pub fn fc05_cylinder_cap_pairs(
     for (surface_id, mut group) in groups {
         group.sort_by_key(|(circle, _)| circle.offset);
         let first = group[0].0;
+        let (Some(reference_direction_row_frame), Some(parameter_sign)) =
+            (first.reference_direction_row_frame, first.parameter_sign)
+        else {
+            continue;
+        };
         let tolerance = 1e-9 * first.radius_mm.max(1.0);
         if !group.iter().all(|(circle, _)| {
             (circle.radius_mm - first.radius_mm).abs() <= tolerance
                 && (circle.center_row_frame[0] - first.center_row_frame[0]).abs() <= tolerance
                 && (circle.center_row_frame[1] - first.center_row_frame[1]).abs() <= tolerance
+                && circle.parameter_sign == first.parameter_sign
+                && circle
+                    .reference_direction_row_frame
+                    .is_some_and(|direction| {
+                        (direction[0] - reference_direction_row_frame[0]).abs() <= tolerance
+                            && (direction[1] - reference_direction_row_frame[1]).abs() <= tolerance
+                    })
+                && circle.angle_parameter_consistent
         }) {
             continue;
         }
@@ -1105,6 +1149,8 @@ pub fn fc05_cylinder_cap_pairs(
                 .collect(),
             center_row_frame: first.center_row_frame,
             radius_mm: first.radius_mm,
+            reference_direction_row_frame,
+            parameter_sign,
             cap_ordinates_row_frame: ordinates,
             offset: first.offset,
         });
@@ -1407,6 +1453,8 @@ mod tests {
             curve_id,
             center_row_frame: [3.0, 4.0],
             radius_mm: 2.0,
+            reference_direction_row_frame: Some([1.0, 0.0]),
+            parameter_sign: Some(1),
             cap_ordinate_row_frame: Some(ordinate),
             point_count: 8,
             max_residual: 0.0,
@@ -1450,6 +1498,8 @@ mod tests {
                 curve_cap_ordinates_row_frame: vec![-5.0, 7.0],
                 center_row_frame: [3.0, 4.0],
                 radius_mm: 2.0,
+                reference_direction_row_frame: [1.0, 0.0],
+                parameter_sign: 1,
                 cap_ordinates_row_frame: vec![-5.0, 7.0],
                 offset: 100,
             }]
@@ -1462,6 +1512,8 @@ mod tests {
             curve_id: 20,
             center_row_frame: [3.0, 4.0],
             radius_mm: 2.0,
+            reference_direction_row_frame: Some([1.0, 0.0]),
+            parameter_sign: Some(1),
             cap_ordinate_row_frame: Some(5.0),
             point_count: 8,
             max_residual: 0.0,
