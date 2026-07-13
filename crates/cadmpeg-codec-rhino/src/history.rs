@@ -909,6 +909,7 @@ fn object_reference_properties(
 fn structured_value_properties(
     key: &str,
     value: &Value,
+    geometry_context: Option<(&[u8], ArchiveVersion, f64)>,
     properties: &mut BTreeMap<String, String>,
 ) {
     match value {
@@ -925,6 +926,38 @@ fn structured_value_properties(
                     format!("{key}.{index}.class_id"),
                     value.class_id.to_string(),
                 );
+                if let Some((data, archive, scale)) = geometry_context {
+                    if let Ok(decoded) = crate::curves::decode(
+                        data,
+                        value.class_id,
+                        value.class_data_range.clone(),
+                        scale,
+                        archive,
+                    ) {
+                        let semantic = match decoded {
+                            crate::curves::DecodedGeometry::Point { position, .. } => {
+                                serde_json::to_string(&position)
+                            }
+                            crate::curves::DecodedGeometry::PointCloud(cloud) => {
+                                serde_json::to_string(&cloud.points)
+                            }
+                            crate::curves::DecodedGeometry::Curve { curve } => {
+                                serde_json::to_string(&curve.geometry)
+                            }
+                            crate::curves::DecodedGeometry::Surface { surface } => match surface {
+                                crate::surfaces::DecodedSurface::Typed { geometry, .. } => {
+                                    serde_json::to_string(&geometry)
+                                }
+                                crate::surfaces::DecodedSurface::Procedural {
+                                    geometry, ..
+                                } => serde_json::to_string(&geometry),
+                            },
+                        };
+                        if let Ok(semantic) = semantic {
+                            properties.insert(format!("{key}.{index}.geometry"), semantic);
+                        }
+                    }
+                }
             }
         }
         Value::PolyEdges(values) => {
@@ -989,7 +1022,11 @@ fn structured_value_properties(
 }
 
 /// Projects source history into ordered neutral native operations.
-pub(crate) fn project(records: &[HistoryRecord], ir: &mut cadmpeg_ir::document::CadIr) {
+pub(crate) fn project(
+    records: &[HistoryRecord],
+    geometry_context: Option<(&[u8], ArchiveVersion, f64)>,
+    ir: &mut cadmpeg_ir::document::CadIr,
+) {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
     let mut ids = Vec::with_capacity(records.len());
@@ -1028,7 +1065,7 @@ pub(crate) fn project(records: &[HistoryRecord], ir: &mut cadmpeg_ir::document::
         let mut properties = BTreeMap::new();
         for value in &record.values {
             let key = format!("value_{}", value.id);
-            structured_value_properties(&key, &value.value, &mut properties);
+            structured_value_properties(&key, &value.value, geometry_context, &mut properties);
             if let Some(text) = value_text(&value.value) {
                 parameters.insert(key, text);
             } else if let Value::Opaque { type_code, range } = &value.value {
@@ -1121,7 +1158,7 @@ mod tests {
     fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
         let records = [record(1, 11, &[], &[40]), record(2, 12, &[40], &[41])];
         let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-        project(&records, &mut ir);
+        project(&records, None, &mut ir);
 
         assert_eq!(ir.model.features.len(), 2);
         assert_eq!(
@@ -1149,7 +1186,7 @@ mod tests {
     fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
         let geometry = crate::archive_test_support::class_wrapper(
             crate::archive_test_support::POINT_CLASS,
-            &[0x10, 0, 0, 0],
+            &crate::archive_test_support::point_payload([1.0, 2.0, 3.0]),
         );
         let mut geometry_payload = 1_i32.to_le_bytes().to_vec();
         geometry_payload.extend(geometry);
@@ -1158,9 +1195,20 @@ mod tests {
             parse_value(&geometry_value, 0, geometry_value.len(), ArchiveVersion::V8)
                 .expect("embedded geometry");
         assert_eq!(next, geometry_value.len());
-        assert!(matches!(parsed.value, Value::Geometries(values)
+        assert!(matches!(&parsed.value, Value::Geometries(values)
             if values.len() == 1
                 && values[0].class_id == Uuid::from_wire(crate::archive_test_support::POINT_CLASS)));
+        let mut properties = BTreeMap::new();
+        structured_value_properties(
+            "value_7",
+            &parsed.value,
+            Some((&geometry_value, ArchiveVersion::V8, 2.0)),
+            &mut properties,
+        );
+        assert_eq!(
+            properties["value_7.0.geometry"],
+            r#"{"x":2.0,"y":4.0,"z":6.0}"#
+        );
 
         let mut polyedge = 0_i32.to_le_bytes().to_vec();
         polyedge.extend(2_i32.to_le_bytes());

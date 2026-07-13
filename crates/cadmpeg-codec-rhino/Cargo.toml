@@ -22,8 +22,6 @@ cadmpeg-ir.workspace = true
 flate2.workspace = true
 crc32fast.workspace = true
 sha2.workspace = true
-
-[dev-dependencies]
 serde_json.workspace = true
 
 [lints]
