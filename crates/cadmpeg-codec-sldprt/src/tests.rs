@@ -8013,3 +8013,14 @@ fn compact_carrier_shapes_decode() {
     bad[2 + 2 + 4 + 10] = 0x00; // clobber the marker byte
     assert!(parse_carrier(&bad, 0).is_none());
 }
+
+#[test]
+fn compact_carriers_reject_zero_direction_frames() {
+    use crate::brep::parse_carrier;
+
+    let line = line_carrier(5, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]);
+    assert!(parse_carrier(&line, 0).is_none());
+
+    let cylinder = cylinder_carrier(6, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 1.0);
+    assert!(parse_carrier(&cylinder, 0).is_none());
+}

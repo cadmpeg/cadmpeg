@@ -84,6 +84,24 @@ fn analytic_value_count(tt: u8) -> Option<usize> {
     })
 }
 
+fn valid_direction(values: &[f64]) -> bool {
+    norm3(values) > f64::EPSILON
+}
+
+fn valid_carrier_frame(tt: u8, values: &[f64]) -> bool {
+    match tt {
+        tag::LINE => valid_direction(&values[3..6]),
+        tag::CIRCLE | tag::ELLIPSE | tag::PLANE => {
+            valid_direction(&values[3..6]) && valid_direction(&values[6..9])
+        }
+        tag::CYLINDER => valid_direction(&values[3..6]) && valid_direction(&values[7..10]),
+        tag::CONE => valid_direction(&values[3..6]) && valid_direction(&values[9..12]),
+        tag::SPHERE => valid_direction(&values[4..7]) && valid_direction(&values[7..10]),
+        tag::TORUS => valid_direction(&values[3..6]) && valid_direction(&values[8..11]),
+        _ => false,
+    }
+}
+
 /// A parsed compact analytic carrier: its attribute id, byte extent, and decoded
 /// geometry (either a surface or a curve).
 #[derive(Debug, Clone)]
@@ -138,6 +156,9 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
     // dimensionless components sit well under 1e6, so anything past that (or
     // non-finite) means this is not actually a carrier here.
     if vals.iter().any(|v| !v.is_finite() || v.abs() > 1e6) {
+        return None;
+    }
+    if !valid_carrier_frame(tt, &vals) {
         return None;
     }
     let end = values_at + n * 8;
