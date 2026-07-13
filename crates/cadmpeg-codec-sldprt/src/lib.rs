@@ -110,13 +110,16 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             entity: None,
         }];
     }
-    let Ok(native) = native::SldprtNative::load(namespace) else {
-        return vec![Finding {
-            check: Check::NativeLinks,
-            severity: Severity::Error,
-            message: "SolidWorks native namespace does not match schema version 1".into(),
-            entity: None,
-        }];
+    let native = match native::SldprtNative::load(namespace) {
+        Ok(native) => native,
+        Err(error) => {
+            return vec![Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: format!("invalid SolidWorks native namespace: {error}"),
+                entity: None,
+            }]
+        }
     };
     let mut findings = Vec::new();
     for history in &native.feature_histories {

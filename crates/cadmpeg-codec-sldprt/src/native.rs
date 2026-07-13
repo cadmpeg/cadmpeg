@@ -54,6 +54,43 @@ impl SldprtNative {
         let features: Vec<crate::records::Feature> = namespace.arena_as("features")?;
         let entities: Vec<crate::records::SketchInputEntity> =
             namespace.arena_as("sketch_input_entities")?;
+        let history_ids = native
+            .feature_histories
+            .iter()
+            .map(|history| history.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        if let Some(record) = configurations
+            .iter()
+            .find(|record| !history_ids.contains(record.parent.as_str()))
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "configuration {} references {}",
+                record.id, record.parent
+            )));
+        }
+        if let Some(record) = features
+            .iter()
+            .find(|record| !history_ids.contains(record.parent.as_str()))
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "feature {} references {}",
+                record.id, record.parent
+            )));
+        }
+        let lane_ids = native
+            .feature_input_lanes
+            .iter()
+            .map(|lane| lane.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        if let Some(record) = entities
+            .iter()
+            .find(|record| !lane_ids.contains(record.parent.as_str()))
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "sketch input entity {} references {}",
+                record.id, record.parent
+            )));
+        }
         for history in &mut native.feature_histories {
             history.configurations = configurations
                 .iter()

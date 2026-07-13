@@ -4240,6 +4240,31 @@ fn native_validation_rejects_broken_feature_graph() {
 }
 
 #[test]
+fn native_validation_rejects_orphan_history_records() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded
+        .ir
+        .native
+        .namespace_mut("sldprt")
+        .arenas
+        .get_mut("features")
+        .unwrap()[0]
+        .fields
+        .insert(
+            "parent".into(),
+            serde_json::Value::String("missing-history".into()),
+        );
+    assert!(crate::validate_native(&decoded.ir).iter().any(|finding| {
+        finding.message.contains("invalid owner") && finding.message.contains("missing-history")
+    }));
+}
+
+#[test]
 fn semantic_writer_preserves_idless_feature_tree_nodes() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
