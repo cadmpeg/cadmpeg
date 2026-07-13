@@ -3537,6 +3537,9 @@ fn binary_marker_relation(
         SketchConstraintDefinition::Concentric { first, second } => {
             (SketchRelationKind::Concentric, first, second)
         }
+        SketchConstraintDefinition::Tangent { first, second } => {
+            (SketchRelationKind::Tangent, first, second)
+        }
         _ => return None,
     })
 }
@@ -3564,7 +3567,7 @@ fn validate_solved_binary_relation(
     first: &SketchEntity,
     second: &SketchEntity,
 ) -> Result<(), cadmpeg_ir::codec::CodecError> {
-    use SketchRelationKind::{Collinear, Concentric, Equal, Parallel, Perpendicular};
+    use SketchRelationKind::{Collinear, Concentric, Equal, Parallel, Perpendicular, Tangent};
     let solved = match kind {
         Parallel | Perpendicular | Collinear => {
             let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
@@ -3630,6 +3633,12 @@ fn validate_solved_binary_relation(
                 constraint.id.0
             ))
         })?,
+        Tangent => solved_tangent(&first.geometry, &second.geometry).ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "source-less SLDPRT tangent constraint {} uses unsupported entity families",
+                constraint.id.0
+            ))
+        })?,
         _ => unreachable!("only generated binary relation kinds are passed"),
     };
     if !solved {
@@ -3639,6 +3648,45 @@ fn validate_solved_binary_relation(
         )));
     }
     Ok(())
+}
+
+fn solved_tangent(first: &SketchGeometry, second: &SketchGeometry) -> Option<bool> {
+    match (first, second) {
+        (SketchGeometry::Line { start, end }, SketchGeometry::Circle { center, radius })
+        | (SketchGeometry::Circle { center, radius }, SketchGeometry::Line { start, end }) => {
+            let direction = [end.u - start.u, end.v - start.v];
+            let length = vector2_length(direction);
+            if length <= SKETCH_POINT_TOLERANCE {
+                return Some(false);
+            }
+            let distance =
+                cross2([center.u - start.u, center.v - start.v], direction).abs() / length;
+            Some((distance - radius.0).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + radius.0.abs()))
+        }
+        (
+            SketchGeometry::Circle {
+                center: first_center,
+                radius: first_radius,
+            },
+            SketchGeometry::Circle {
+                center: second_center,
+                radius: second_radius,
+            },
+        ) => {
+            let distance = vector2_length([
+                second_center.u - first_center.u,
+                second_center.v - first_center.v,
+            ]);
+            let external = first_radius.0 + second_radius.0;
+            let internal = (first_radius.0 - second_radius.0).abs();
+            let tolerance = SKETCH_POINT_TOLERANCE * (1.0 + distance.max(external).max(internal));
+            Some(
+                (distance - external).abs() <= tolerance
+                    || (distance - internal).abs() <= tolerance,
+            )
+        }
+        _ => None,
+    }
 }
 
 fn sketch_line(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {

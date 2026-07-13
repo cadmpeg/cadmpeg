@@ -2347,6 +2347,10 @@ fn encoder_writes_source_less_curved_sketches() {
         SketchGeometry::Point {
             position: Point2::new(41.0, 1.0),
         },
+        SketchGeometry::Circle {
+            center: Point2::new(8.0, 2.0),
+            radius: Length(2.0),
+        },
     ];
     let entity_ids = geometries
         .into_iter()
@@ -2388,6 +2392,7 @@ fn encoder_writes_source_less_curved_sketches() {
             profile(&[7, 8]),
             profile(&[9, 10]),
             profile(&[11, 12]),
+            profile(&[17]),
             profile(&[3]),
             profile(&[4]),
         ],
@@ -2478,6 +2483,13 @@ fn encoder_writes_source_less_curved_sketches() {
             },
         ),
         (
+            "tangent",
+            SketchConstraintDefinition::Tangent {
+                first: entity_ids[5].clone(),
+                second: entity_ids[17].clone(),
+            },
+        ),
+        (
             "vertical-points",
             SketchConstraintDefinition::VerticalPoints {
                 first: SketchLocus::Entity(entity_ids[13].clone()),
@@ -2499,7 +2511,7 @@ fn encoder_writes_source_less_curved_sketches() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketch_entities.len(), 17);
+    assert_eq!(decoded.ir.model.sketch_entities.len(), 18);
     assert!(decoded
         .ir
         .model
@@ -2523,6 +2535,7 @@ fn encoder_writes_source_less_curved_sketches() {
         crate::records::SketchRelationKind::HorizontalPoints,
         crate::records::SketchRelationKind::VerticalPoints,
         crate::records::SketchRelationKind::Midpoint,
+        crate::records::SketchRelationKind::Tangent,
     ] {
         assert!(sldprt_native(&decoded.ir)
             .feature_input_lanes
@@ -2579,7 +2592,12 @@ fn encoder_writes_source_less_curved_sketches() {
             .count()
             >= 2
     );
-    for definition in ["horizontal_points", "vertical_points", "midpoint"] {
+    for definition in [
+        "horizontal_points",
+        "vertical_points",
+        "midpoint",
+        "tangent",
+    ] {
         assert!(decoded
             .ir
             .model
@@ -2595,6 +2613,7 @@ fn encoder_writes_source_less_curved_sketches() {
                         SketchConstraintDefinition::VerticalPoints { .. },
                         "vertical_points"
                     ) | (SketchConstraintDefinition::Midpoint { .. }, "midpoint")
+                        | (SketchConstraintDefinition::Tangent { .. }, "tangent")
                 )
             }));
     }
@@ -2606,7 +2625,7 @@ fn encoder_writes_source_less_curved_sketches() {
             .iter()
             .filter(|entity| matches!(entity.geometry, SketchGeometry::Circle { .. }))
             .count(),
-        1
+        2
     );
     assert_eq!(
         decoded
