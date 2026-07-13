@@ -6169,6 +6169,15 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     assert_eq!(native.feature_input_lanes.len(), 1);
     let lane = &native.feature_input_lanes[0];
     assert_eq!(lane.configuration.as_deref(), Some("0"));
+    assert!(lane
+        .sketch_entities
+        .windows(2)
+        .all(|entities| entities[0].offset < entities[1].offset));
+    assert!(lane
+        .sketch_entities
+        .iter()
+        .enumerate()
+        .all(|(ordinal, entity)| entity.ordinal == ordinal as u32));
     let by_ordinal = |ordinal| {
         lane.sketch_entities
             .iter()

@@ -34,7 +34,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 return None;
             }
             let parent = format!("sldprt:feature-input:resolved-features#{}", block.offset);
-            let mut sketch_entities = block
+            let sketch_entities = block
                 .payload
                 .windows(SKETCH_MARKER.len())
                 .enumerate()
@@ -72,7 +72,6 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                     }
                 })
                 .collect::<Vec<_>>();
-            sketch_entities.sort_by(|a, b| a.id.cmp(&b.id));
             let id = parent;
             crate::annotations::note(
                 annotations,

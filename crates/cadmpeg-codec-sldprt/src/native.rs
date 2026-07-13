@@ -65,6 +65,7 @@ impl SldprtNative {
                 .filter(|record| record.parent == history.id)
                 .cloned()
                 .collect();
+            history.features.sort_by_key(|record| record.ordinal);
         }
         for lane in &mut native.feature_input_lanes {
             lane.sketch_entities = entities
@@ -72,6 +73,7 @@ impl SldprtNative {
                 .filter(|record| record.parent == lane.id)
                 .cloned()
                 .collect();
+            lane.sketch_entities.sort_by_key(|record| record.ordinal);
         }
         Ok(native)
     }
