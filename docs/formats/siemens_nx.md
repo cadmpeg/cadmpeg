@@ -194,12 +194,12 @@ Topology node layouts (logical offsets, pre-shift):
 | POINT (29)  | `attributes +8`, `owner +10`, `next +12`, `prev +14`, `xyz:3×f64 +16` (meters)                                                                                                                                                   |
 | REGION (19) | `node_id +4`; referenced by SHELL                                                                                                                                                                                                |
 
-A **body-shape SHELL** requires the four sentinel slots `= 1` and `body_ref`/`first_face`/`region_ref` to resolve in the ownership domain. FACE and EDGE `tolerance` decode as the sentinel `-3.14158e13` (`c2 bc 92 8f 99 6e 00 00`) or a finite model-scale value, giving an 8-byte alignment check. `FIN.curve` is non-null only on tolerant edges (tolerant-edge trims use TRIMMED_CURVE→SP_CURVE).
+A **body-shape SHELL** requires the four sentinel slots `= 1`, a non-null `body_ref`, and `first_face`/`region_ref` to resolve. The `body_ref` is the body ownership identity even when the stream omits the corresponding BODY record. FACE and EDGE `tolerance` decode as the sentinel `-3.14158e13` (`c2 bc 92 8f 99 6e 00 00`) or a finite model-scale value, giving an 8-byte alignment check. `FIN.curve` is non-null only on tolerant edges (tolerant-edge trims use TRIMMED_CURVE→SP_CURVE).
 
 ### 5.2 Reference domains
 
 - Ordinary BREP references (`FACE.surface`, `EDGE.curve`, `FIN.curve`, `VERTEX.point`, BLEND_SURF/INTERSECTION support refs) resolve within the same stream.
-- Only BODY (12), SHELL (13), REGION (19) may resolve in the ownership domain `{partition, paired_deltas}`.
+- SHELL and REGION ownership records may resolve in `{partition, paired_deltas}`. A SHELL's non-null BODY reference remains an ownership identity when no BODY record is serialized.
 
 ### 5.3 Topology assembly
 
@@ -211,7 +211,7 @@ A **body-shape SHELL** requires the four sentinel slots `= 1` and `body_ref`/`fi
 | faces    | one per FACE node, with resolved surface when available               |
 | bodies   | one per validated body-shape SHELL                                    |
 
-Body-shape SHELL validation: sentinel/ref predicate passes; `body_ref`→BODY in ownership domain; `first_face`→FACE in the SHELL's stream; the `FACE.next` walk closes at null with visited faces back-referencing the SHELL.
+Body-shape SHELL validation: sentinel/ref predicate passes; `body_ref` is non-null; `region_ref`→REGION in the ownership domain; `first_face`→FACE in the SHELL's stream; the `FACE.next` walk closes at null with visited faces back-referencing the SHELL.
 
 **Periodic faces / closed edges.** Parasolid stores a periodic surface as one face. A full-circle/ellipse edge stores no trim interval or wrap-count field and references the bare CIRCLE/ELLIPSE. Its one-FIN loop has `forward_fin == backward_fin == self`. The FIN vertex is either a VERTEX shared by both edge ends or the null reference; the null form's canonical topological point is the analytic curve point at parameter zero. The full revolution has parameter identity `[0, 2π]`. An EDGE with `curve == 1` has no curve record and is the surface-intersection locus of its incident faces.
 

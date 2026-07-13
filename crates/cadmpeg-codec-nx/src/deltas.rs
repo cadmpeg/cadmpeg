@@ -357,9 +357,17 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         merged
     };
     let merged = build(true);
-    if graph.has_complete_body_topology()
-        && !crate::topology::Graph::parse(&merged).has_complete_body_topology()
-    {
+    let merged_graph = crate::topology::Graph::parse(&merged);
+    let base_complete = graph.has_complete_body_topology();
+    let merged_complete = merged_graph.has_complete_body_topology();
+    let deletes_owner = deletions.keys().any(|(kind, _)| matches!(kind, 12 | 13));
+    let deleted_faces = deletions.keys().filter(|(kind, _)| *kind == 14).count();
+    let unaccounted_face_loss = !deletes_owner
+        && merged_graph
+            .body_shape_face_count()
+            .saturating_add(deleted_faces)
+            < graph.body_shape_face_count();
+    if base_complete && (!merged_complete || unaccounted_face_loss) {
         build(false)
     } else {
         merged

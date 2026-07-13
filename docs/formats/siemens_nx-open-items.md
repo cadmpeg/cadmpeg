@@ -16,7 +16,7 @@ This document records unresolved NX `.prt` byte semantics.
 - Per-class NX OM field-value serialization is unspecified, including field offsets for feature history, constraints, attributes, and material bindings.
 - The feature-history Boolean operand bindings and composition order across partition and deltas body pairs are unspecified.
 - The relationship between plain cached-body streams and their owning features is unspecified.
-- The relation between `RMFastLoad` object IDs, active-body selection, and Parasolid kernel node IDs is unspecified. The associated per-class entity record layout is also unspecified.
+- The associated `RMFastLoad` per-class entity record layout outside its object-id membership table is unspecified.
 
 ## Assembly and material data
 

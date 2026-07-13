@@ -636,7 +636,12 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
     ir.annotations = annotations.build();
     retain_live_annotations(&mut ir);
-    let report = build_geometry_report(scan, &counts, !ir.model.faces.is_empty());
+    let report = build_geometry_report(
+        scan,
+        &counts,
+        !ir.model.faces.is_empty(),
+        ir.model.bodies.len() > 1,
+    );
     Some((ir, report))
 }
 
@@ -722,15 +727,20 @@ fn retain_live_annotations(ir: &mut CadIr) {
 
 fn topology_body_node_ids(stream_index: usize, graph: &Graph) -> BTreeMap<BodyId, BTreeSet<u32>> {
     let prefix = format!("nx:s{stream_index}");
-    graph
-        .of_kind(12)
-        .map(|body| {
+    let body_xmts: BTreeSet<_> = graph
+        .body_shape_shells()
+        .into_iter()
+        .filter_map(|shell| shell.shell_fields().map(|fields| fields.body))
+        .collect();
+    body_xmts
+        .into_iter()
+        .map(|body_xmt| {
             let shells: BTreeSet<_> = graph
                 .of_kind(13)
                 .filter(|shell| {
                     shell
                         .shell_fields()
-                        .is_some_and(|fields| fields.body == body.xmt)
+                        .is_some_and(|fields| fields.body == body_xmt)
                 })
                 .map(|shell| shell.xmt)
                 .collect();
@@ -782,7 +792,7 @@ fn topology_body_node_ids(stream_index: usize, graph: &Graph) -> BTreeMap<BodyId
                         .filter_map(|vertex| vertex.u32_at(4)),
                 )
                 .collect();
-            (BodyId(format!("{prefix}:body#{}", body.xmt)), ids)
+            (BodyId(format!("{prefix}:body#{body_xmt}")), ids)
         })
         .collect()
 }
@@ -1075,13 +1085,21 @@ fn emit_topology(
         .filter_map(|shell| shell.shell_fields().map(|fields| fields.body))
         .collect();
     let mut bodies = BTreeMap::new();
-    for node in graph
-        .of_kind(12)
-        .filter(|node| body_xmts.contains(&node.xmt))
-    {
-        let id = BodyId(format!("{prefix}:body#{}", node.xmt));
-        annotate_node(annotations, &id, source_stream, node, "BODY");
-        bodies.insert(node.xmt, id.clone());
+    for body_xmt in body_xmts {
+        let id = BodyId(format!("{prefix}:body#{body_xmt}"));
+        if let Some(node) = graph.get(12, body_xmt) {
+            annotate_node(annotations, &id, source_stream, node, "BODY");
+        } else if let Some(shell) = body_shape_shells.iter().find(|shell| {
+            shell
+                .shell_fields()
+                .is_some_and(|fields| fields.body == body_xmt)
+        }) {
+            annotations
+                .note(&id, source_stream, shell.pos as u64)
+                .tag("UNRESOLVED_BODY_REFERENCE");
+            annotations.exactness(&id, Exactness::Unknown);
+        }
+        bodies.insert(body_xmt, id.clone());
         ir.model.bodies.push(Body {
             id,
             kind: cadmpeg_ir::topology::BodyKind::Solid,
@@ -1741,7 +1759,12 @@ fn source_meta(scan: &Scan) -> SourceMeta {
     }
 }
 
-fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> DecodeReport {
+fn build_geometry_report(
+    scan: &Scan,
+    counts: &Counts,
+    has_topology: bool,
+    has_unresolved_sub_bodies: bool,
+) -> DecodeReport {
     let mut losses = Vec::new();
 
     losses.push(LossNote {
@@ -1809,7 +1832,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
         });
     }
 
-    if scan.count(StreamKind::Partition) > 1 {
+    if has_unresolved_sub_bodies {
         losses.push(LossNote {
             category: LossCategory::Topology,
             severity: Severity::Warning,

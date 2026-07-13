@@ -309,6 +309,29 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
 }
 
 #[test]
+fn topology_retains_shell_body_identity_without_body_record() {
+    let mut stream = topology_partition_stream();
+    let body = stream
+        .windows(4)
+        .position(|window| window == [0, 12, 0, 2])
+        .expect("body record");
+    stream[body..body + 24].fill(0xff);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.get(12, 2).is_none());
+    assert_eq!(graph.body_shape_shells().len(), 1);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.bodies[0].id.0, "nx:s0:body#2");
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn topology_rejects_nonreciprocal_fin_ring() {
     let mut stream = topology_partition_stream();
     let fin = stream
@@ -1992,6 +2015,47 @@ fn prt_with_two_bodies_and_rmfastload() -> Vec<u8> {
     file
 }
 
+fn prt_with_missing_active_body_record() -> Vec<u8> {
+    let mut active_stream = many_face_partition_stream(1_000);
+    let body = active_stream
+        .windows(4)
+        .position(|window| window == [0, 12, 0, 2])
+        .expect("body record");
+    active_stream[body..body + 24].fill(0xff);
+    let mut part_payload = zlib_compress(&active_stream);
+    part_payload.extend(zlib_compress(&many_face_partition_stream(2_000)));
+    let mut rm_payload = b"UGS::Solid::Topol".to_vec();
+    rm_payload.extend_from_slice(&50u32.to_le_bytes());
+    for id in 1_000..1_050u32 {
+        rm_payload.extend_from_slice(&id.to_le_bytes());
+    }
+
+    let mut file = Vec::new();
+    file.extend_from_slice(MAGIC);
+    file.push(6);
+    file.extend_from_slice(&[0; 3 + 4 + 1 + 6 + 2]);
+    file.extend_from_slice(b"HEADER");
+    let part_name = b"/Root/UG_PART/UG_PART";
+    file.extend_from_slice(&(part_name.len() as u32).to_le_bytes());
+    file.extend_from_slice(part_name);
+    let part_span = file.len();
+    file.extend_from_slice(&[0; 16]);
+    let rm_name = b"/Root/FastLoad/RMFastLoad";
+    file.extend_from_slice(&(rm_name.len() as u32).to_le_bytes());
+    file.extend_from_slice(rm_name);
+    let rm_span = file.len();
+    file.extend_from_slice(&[0; 16]);
+    let part_offset = file.len();
+    file.extend_from_slice(&part_payload);
+    let rm_offset = file.len();
+    file.extend_from_slice(&rm_payload);
+    file[part_span..part_span + 8].copy_from_slice(&(part_offset as u64).to_le_bytes());
+    file[part_span + 8..part_span + 16].copy_from_slice(&(part_payload.len() as u64).to_le_bytes());
+    file[rm_span..rm_span + 8].copy_from_slice(&(rm_offset as u64).to_le_bytes());
+    file[rm_span + 8..rm_span + 16].copy_from_slice(&(rm_payload.len() as u64).to_le_bytes());
+    file
+}
+
 fn prt_with_weak_rmfastload_overlap() -> Vec<u8> {
     let mut file = prt_with_two_bodies_and_rmfastload();
     let marker = b"UGS::Solid::Topol";
@@ -3309,6 +3373,22 @@ fn decode_selects_dominant_rmfastload_body() {
     );
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_selects_active_shell_when_body_record_is_absent() {
+    let mut cur = Cursor::new(prt_with_missing_active_body_record());
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert!(result.ir.model.bodies[0].id.0.starts_with("nx:s0:"));
+    assert_eq!(result.ir.model.faces.len(), 50);
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("sub-body partition")));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]

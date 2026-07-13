@@ -664,6 +664,26 @@ impl Graph {
         })
     }
 
+    /// Count faces in validated body-shape shell ownership chains.
+    pub fn body_shape_face_count(&self) -> usize {
+        self.body_shape_shells()
+            .into_iter()
+            .map(|shell| {
+                let mut count = 0usize;
+                let mut face_xmt = shell.shell_fields().map_or(1, |fields| fields.first_face);
+                let mut seen = BTreeSet::new();
+                while face_xmt != 1 && seen.insert(face_xmt) {
+                    let Some(face) = self.get(14, face_xmt).and_then(Node::face_fields) else {
+                        break;
+                    };
+                    count += 1;
+                    face_xmt = face.next_face;
+                }
+                count
+            })
+            .sum()
+    }
+
     /// Return the validated loop-to-FIN rings owned by a face.
     ///
     /// The face's loop chain must terminate at the null reference. Each loop
@@ -738,7 +758,7 @@ impl Graph {
             || fields.sentinel_0 != 1
             || fields.sentinel_1 != 1
             || fields.sentinel_2 != 1
-            || self.get(12, fields.body).is_none()
+            || fields.body <= 1
             || self.get(19, fields.region).is_none()
         {
             return false;
