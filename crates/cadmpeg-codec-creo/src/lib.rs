@@ -54,6 +54,7 @@ pub mod container;
 pub mod curve;
 pub mod datum;
 pub mod decode;
+pub mod feature;
 pub mod psb;
 pub mod scalar;
 pub mod surface;
