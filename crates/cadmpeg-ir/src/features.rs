@@ -607,12 +607,15 @@ pub enum FeatureDefinition {
     Dome {
         /// Faces that bound the dome base.
         faces: FaceSelection,
-        /// Dome height measured normal to the base.
-        height: Length,
-        /// Whether the profile is elliptical rather than spherical.
-        elliptical: bool,
-        /// Whether growth opposes the selected-face normal.
-        reverse: bool,
+        /// Dome height measured normal to the base, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        height: Option<Length>,
+        /// Whether the profile is elliptical rather than spherical, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        elliptical: Option<bool>,
+        /// Whether growth opposes the selected-face normal, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reverse: Option<bool>,
     },
     /// Deformation of existing geometry about a feature axis.
     Flex {

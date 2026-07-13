@@ -1374,7 +1374,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             FeatureDefinition::Dome { faces, height, .. } => {
                 face_selections.push(faces);
-                if !positive_feature_length(*height) {
+                if height.is_some_and(|value| !positive_feature_length(value)) {
                     feature_geometry_error(findings, feature, "dome height is invalid");
                 }
             }

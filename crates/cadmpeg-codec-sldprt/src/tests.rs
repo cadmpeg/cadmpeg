@@ -2277,9 +2277,9 @@ fn encoder_writes_source_less_native_features() {
         },
         FeatureDefinition::Dome {
             faces: FaceSelection::Native("face-f".into()),
-            height: Length(4.0),
-            elliptical: true,
-            reverse: false,
+            height: Some(Length(4.0)),
+            elliptical: Some(true),
+            reverse: Some(false),
         },
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Native("face-g".into())),
@@ -2600,12 +2600,10 @@ fn decode_retains_nonfinite_feature_dimensions_as_native() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.features.len(), 5);
-    for index in [0, 3] {
-        assert!(matches!(
-            decoded.ir.model.features[index].definition,
-            FeatureDefinition::Native { .. }
-        ));
-    }
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Native { .. }
+    ));
     assert!(matches!(
         decoded.ir.model.features[1].definition,
         FeatureDefinition::Fillet {
@@ -2621,6 +2619,15 @@ fn decode_retains_nonfinite_feature_dimensions_as_native() {
             removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             thickness: None,
             outward: Some(false),
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[3].definition,
+        FeatureDefinition::Dome {
+            faces: cadmpeg_ir::features::FaceSelection::Native(_),
+            height: None,
+            elliptical: Some(false),
+            reverse: Some(false),
         }
     ));
     assert!(matches!(
@@ -2657,12 +2664,10 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.features.len(), 6);
-    for index in [0, 3] {
-        assert!(matches!(
-            decoded.ir.model.features[index].definition,
-            FeatureDefinition::Native { .. }
-        ));
-    }
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Native { .. }
+    ));
     assert!(matches!(
         decoded.ir.model.features[1].definition,
         FeatureDefinition::Fillet {
@@ -2678,6 +2683,15 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
             removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             thickness: None,
             outward: Some(false),
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[3].definition,
+        FeatureDefinition::Dome {
+            faces: cadmpeg_ir::features::FaceSelection::Native(_),
+            height: None,
+            elliptical: Some(false),
+            reverse: Some(false),
         }
     ));
     assert!(matches!(
@@ -8800,9 +8814,9 @@ fn semantic_writer_round_trips_typed_dome() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Dome {
             faces: FaceSelection::Native(faces),
-            height: Length(value),
-            elliptical: false,
-            reverse: false,
+            height: Some(Length(value)),
+            elliptical: Some(false),
+            reverse: Some(false),
         } if faces == "face:9" && (*value - 6.35).abs() < 1e-12
     ));
 
@@ -8816,9 +8830,9 @@ fn semantic_writer_round_trips_typed_dome() {
         panic!("typed dome");
     };
     *faces = FaceSelection::Native("face:10,face:11".into());
-    *height = Length(8.0);
-    *elliptical = true;
-    *reverse = true;
+    *height = Some(Length(8.0));
+    *elliptical = Some(true);
+    *reverse = Some(true);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -8836,11 +8850,55 @@ fn semantic_writer_round_trips_typed_dome() {
         &regenerated.ir.model.features[0].definition,
         FeatureDefinition::Dome {
             faces: FaceSelection::Native(faces),
-            height: Length(8.0),
-            elliptical: true,
-            reverse: true,
+            height: Some(Length(8.0)),
+            elliptical: Some(true),
+            reverse: Some(true),
         } if faces == "face:10,face:11"
     ));
+}
+
+#[test]
+fn semantic_writer_retains_partial_native_dome_construction() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Dome Name="Partial dome" Type="Dome" id="25" Faces="face:12" Elliptical="true" Reverse="invalid"><Dimension Name="Height">NaNmm</Dimension></Dome></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Dome {
+            faces: FaceSelection::Native(faces),
+            height: None,
+            elliptical: Some(true),
+            reverse: None,
+        } if faces == "face:12"
+    ));
+
+    let mut detached = decoded.ir.clone();
+    detached.model.features[0].native_ref = None;
+    let error = SldprtCodec
+        .write_preserved(&detached, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("unresolved dome construction"));
+
+    decoded.ir.model.features[0].name = Some("Renamed dome".into());
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.parameters["Height"], "NaNmm");
+    assert_eq!(native.properties["Reverse"], "invalid");
+    assert_eq!(native.properties["Elliptical"], "true");
 }
 
 #[test]

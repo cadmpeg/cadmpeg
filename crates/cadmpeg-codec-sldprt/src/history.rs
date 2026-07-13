@@ -1158,7 +1158,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::MoveBody) {
         project_move_body(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Dome) {
-        project_dome(feature).unwrap_or_else(|| native_definition(feature))
+        project_dome(feature)
     } else if class == Some(FeatureClass::Flex) {
         project_flex(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Scale) {
@@ -2441,18 +2441,27 @@ fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> {
     })
 }
 
-fn project_dome(feature: &Feature) -> Option<FeatureDefinition> {
-    Some(FeatureDefinition::Dome {
-        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        height: Length(
-            feature
-                .parameters
-                .get("Height")
-                .and_then(|value| parse_positive_length_mm(value))?,
-        ),
-        elliptical: parse_bool(feature.properties.get("Elliptical")?)?,
-        reverse: parse_bool(feature.properties.get("Reverse")?)?,
-    })
+fn project_dome(feature: &Feature) -> FeatureDefinition {
+    FeatureDefinition::Dome {
+        faces: feature
+            .properties
+            .get("Faces")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+        height: feature
+            .parameters
+            .get("Height")
+            .and_then(|value| parse_positive_length_mm(value))
+            .map(Length),
+        elliptical: feature
+            .properties
+            .get("Elliptical")
+            .and_then(|value| parse_bool(value)),
+        reverse: feature
+            .properties
+            .get("Reverse")
+            .and_then(|value| parse_bool(value)),
+    }
 }
 
 fn project_flex(feature: &Feature) -> Option<FeatureDefinition> {
@@ -5622,14 +5631,24 @@ pub fn sync_neutral_features(
                 if existing
                     .as_deref()
                     .is_some_and(|record| !feature_family(record, "Dome"))
-                    || faces.is_none()
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported dome semantics",
                         feature.id
                     )));
                 }
-                if !height.0.is_finite() {
+                if existing.is_none()
+                    && (faces.is_none()
+                        || height.is_none()
+                        || elliptical.is_none()
+                        || reverse.is_none())
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved dome construction",
+                        feature.id
+                    )));
+                }
+                if height.is_some_and(|height| !height.0.is_finite()) {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has a non-finite dome height",
                         feature.id
@@ -5639,11 +5658,19 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                parameters.insert("Height".into(), format_length_mm(height.0));
+                if let Some(height) = height {
+                    parameters.insert("Height".into(), format_length_mm(height.0));
+                }
                 let mut properties = feature.source_properties.clone();
-                properties.insert("Faces".into(), faces.expect("checked above"));
-                properties.insert("Elliptical".into(), elliptical.to_string());
-                properties.insert("Reverse".into(), reverse.to_string());
+                if let Some(faces) = faces {
+                    properties.insert("Faces".into(), faces);
+                }
+                if let Some(elliptical) = elliptical {
+                    properties.insert("Elliptical".into(), elliptical.to_string());
+                }
+                if let Some(reverse) = reverse {
+                    properties.insert("Reverse".into(), reverse.to_string());
+                }
                 (
                     existing
                         .as_deref()
