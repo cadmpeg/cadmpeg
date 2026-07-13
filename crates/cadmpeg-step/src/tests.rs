@@ -446,6 +446,28 @@ fn decode_builds_a_valid_connected_sheet_brep() {
 }
 
 #[test]
+fn decode_builds_a_valid_ap203_sheet_brep() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let bytes = include_bytes!("../tests/fixtures/ap203_sheet.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode AP203 sheet");
+
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes["schema"],
+        "CONFIG_CONTROL_DESIGN"
+    );
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 3);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn reader_recovers_a_valid_solid_from_writer_output() {
     use cadmpeg_ir::topology::BodyKind;
 
