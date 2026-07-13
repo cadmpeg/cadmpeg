@@ -471,6 +471,7 @@ fn build_geometry_ir(
         face_sidedness: brep.face_sidedness,
         tolerant_vertex_tails: brep.tolerant_vertex_tails,
         tolerant_coedge_parameters: brep.tolerant_coedge_parameters,
+        mesh_surface_sentinels: brep.mesh_surface_sentinels,
         wire_topologies: brep.wire_topologies,
         transform_hints: brep.transform_hints,
         creation_timestamps: brep.creation_timestamps,
@@ -566,6 +567,17 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
                  surface linking to the preserved record bytes. Topology is transferred; the \
                  underlying surface shape is not.",
                 s.unknown_surface_faces
+            ),
+            provenance: None,
+        });
+    }
+    if s.mesh_surface_faces > 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "{} face(s) use zero-payload mesh_surface sentinels. Their exact surfaces are absent by definition; the emitted unknown surface preserves that distinction from tessellation attributes.",
+                s.mesh_surface_faces
             ),
             provenance: None,
         });

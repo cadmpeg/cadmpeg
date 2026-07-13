@@ -9,9 +9,9 @@ use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
     CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignEntityHeader,
     DesignMaterialAssignment, DesignObject, DesignRecordHeader, EdgeContinuity, EdgeOwnership,
-    FaceSidedness, LostEdgeReference, PersistentDesignLink, PersistentReference,
-    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters,
-    TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
+    FaceSidedness, LostEdgeReference, MeshSurfaceSentinel, PersistentDesignLink,
+    PersistentReference, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
+    TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -40,6 +40,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "edge_ownerships",
     "face_sidedness",
     "lost_edge_references",
+    "mesh_surface_sentinels",
     "persistent_design_links",
     "persistent_references",
     "sketch_curve_identities",
@@ -79,6 +80,7 @@ macro_rules! f3d_arenas {
             sketch_points: SketchPoint;
             sketch_curve_identities: SketchCurveIdentity;
             lost_edge_references: LostEdgeReference;
+            mesh_surface_sentinels: MeshSurfaceSentinel;
             vertex_ownerships: VertexOwnership;
             tolerant_coedge_parameters: TolerantCoedgeParameters;
             tolerant_vertex_tails: TolerantVertexTail;
@@ -206,6 +208,9 @@ pub struct F3dNative {
     /// Construction-history edge selections that Fusion could not re-resolve.
     #[serde(default)]
     pub lost_edge_references: Vec<LostEdgeReference>,
+    /// Zero-payload ASM mesh-surface sentinels linked to unknown exact surfaces.
+    #[serde(default)]
+    pub mesh_surface_sentinels: Vec<MeshSurfaceSentinel>,
     /// Native owner-edge and endpoint-slot fields stored on ASM vertices.
     #[serde(default)]
     pub vertex_ownerships: Vec<VertexOwnership>,
@@ -253,6 +258,7 @@ impl Default for F3dNative {
             sketch_points: Vec::new(),
             sketch_curve_identities: Vec::new(),
             lost_edge_references: Vec::new(),
+            mesh_surface_sentinels: Vec::new(),
             vertex_ownerships: Vec::new(),
             tolerant_coedge_parameters: Vec::new(),
             tolerant_vertex_tails: Vec::new(),

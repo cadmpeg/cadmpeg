@@ -19,8 +19,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::records::{
     BodyNativeKey, CreationTimestamp, EdgeContinuity, EdgeOwnership, FaceContainment,
-    FaceSidedness, PersistentDesignLink, SketchCurveLink, TolerantCoedgeParameters,
-    TolerantVertexTail, TransformHints, VertexOwnership, WireSide, WireTopology,
+    FaceSidedness, MeshSurfaceSentinel, PersistentDesignLink, SketchCurveLink,
+    TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership, WireSide,
+    WireTopology,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
@@ -108,6 +109,8 @@ pub struct Brep {
     pub tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
     /// Native trailing fields stored on tolerant vertices.
     pub tolerant_vertex_tails: Vec<TolerantVertexTail>,
+    /// Zero-payload mesh-surface records used by emitted faces.
+    pub mesh_surface_sentinels: Vec<MeshSurfaceSentinel>,
     /// Native rotation/reflection/shear classifications stored on transforms.
     pub transform_hints: Vec<TransformHints>,
     /// Native ASM body key by emitted body id, used by Design-side joins.
@@ -144,6 +147,8 @@ pub struct Stats {
     /// Faces resting on a spline/procedural surface whose shape was not decoded
     /// into a typed carrier; emitted with an unknown-geometry surface.
     pub unknown_surface_faces: usize,
+    /// Faces whose surface record explicitly delegates shape to mesh attributes.
+    pub mesh_surface_faces: usize,
     /// Spline surface records whose cached B-spline block was decoded into a
     /// NURBS carrier.
     pub nurbs_surfaces: usize,
@@ -747,7 +752,22 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         } else {
             unknown_surface_records.insert(surf_ref);
             undecoded_carriers.insert(surf_ref);
-            out.stats.unknown_surface_faces += 1;
+            if surf_rec.head == "mesh_surface" && surf_rec.tokens.is_empty() {
+                if !out
+                    .mesh_surface_sentinels
+                    .iter()
+                    .any(|sentinel| sentinel.record_index == surf_rec.index as u32)
+                {
+                    out.mesh_surface_sentinels.push(MeshSurfaceSentinel {
+                        id: format!("f3d:asm:mesh-surface-sentinel#{}", surf_rec.index),
+                        surface: SurfaceId(id(surf_ref)),
+                        record_index: surf_rec.index as u32,
+                    });
+                }
+                out.stats.mesh_surface_faces += 1;
+            } else {
+                out.stats.unknown_surface_faces += 1;
+            }
         }
     }
 

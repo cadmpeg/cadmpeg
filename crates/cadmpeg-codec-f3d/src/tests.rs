@@ -610,6 +610,22 @@ fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_geometry_with_mesh_surface_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let limit = crate::asm_header::first_delta_state_offset(&bytes).expect("history boundary");
+    let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let plane = records
+        .iter()
+        .find(|record| record.head == "plane")
+        .expect("generated plane surface");
+    let mut sentinel = Vec::new();
+    t_ident(&mut sentinel, "mesh_surface");
+    t_end(&mut sentinel);
+    bytes.splice(plane.offset..plane.offset + plane.len, sentinel);
+    bytes
+}
+
 /// Add a generated inline 2D `nubs` pcurve to the first coedge of the base
 /// topology fixture. The new record is appended at `RecordTable` index 19.
 fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
@@ -9846,6 +9862,62 @@ fn decode_keeps_face_on_unknown_surface() {
     // The decoded document still validates.
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
+}
+
+#[test]
+fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_mesh_surface_smbh());
+    let result = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("mesh-surface decode");
+
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert!(matches!(
+        result.ir.model.surfaces[0].geometry,
+        SurfaceGeometry::Unknown { .. }
+    ));
+    let native = f3d_native(&result.ir);
+    assert_eq!(native.mesh_surface_sentinels.len(), 1);
+    assert_eq!(
+        native.mesh_surface_sentinels[0].surface,
+        result.ir.model.surfaces[0].id
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.severity == cadmpeg_ir::report::Severity::Info
+            && loss.message.contains("zero-payload mesh_surface")
+    }));
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("spline/procedural surfaces")));
+
+    let mut replay = Vec::new();
+    F3dCodec
+        .encode(&result.ir, &mut replay)
+        .expect("mesh-surface native replay");
+    assert_eq!(replay, source);
+
+    let mut edited = result.ir.clone();
+    f3d_native_mut(&mut edited).mesh_surface_sentinels[0].id =
+        "f3d:asm:mesh-surface-sentinel#edited".into();
+    let error = F3dCodec
+        .encode(&edited, &mut Vec::new())
+        .expect_err("mesh-surface structural metadata is immutable");
+    assert!(error.to_string().contains("edits beyond supported"));
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.model.surfaces[0].geometry = SurfaceGeometry::Unknown { record: None };
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("mesh-surface sentinel requires retained ASM bytes");
+    assert!(error
+        .to_string()
+        .contains("cannot serialize mesh-surface sentinel"));
 }
 
 #[test]

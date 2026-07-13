@@ -444,6 +444,8 @@ Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus
 
 **`VBL_SURF` / `vertexblendsur`**: a counted sequence of boundary records followed by a grid-size integer and model-space fit tolerance. Every boundary begins with a type name, cross enum, model-space magic location, U/V smoothing enums, and fullness scalar. `circle` adds a curve, form enum, form-selected twist locations (zero for circle, one for ellipse, two for unknown), two parameters, and sense enum. `deg` adds a location and two normals. `pcurve` adds a support surface, nullable BS2 pcurve, sense enum, and parameter-space fit tolerance. `plane` adds a normal, two parameters, and curve. Unknown boundary names and unsupported circle forms are invalid. Native generation uses `VBL_SURF`.
 
+**`mesh_surface`**: the record has no payload tokens. It is a sentinel stating that no exact surface carrier is stored in the B-rep record. Display triangles belong to tessellation attributes on the owning face or body and do not become exact face geometry. A face referencing this record therefore retains an unknown exact surface and a typed native sentinel; it does not infer a surface from the display mesh.
+
 ### 7.4 Pcurves (2D UV trimming curves)
 
 A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at record-relative **+37**:

@@ -686,6 +686,12 @@ fn validate_source_less_history_graph(
 }
 
 fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Result<(), CodecError> {
+    if let Some(sentinel) = native.mesh_surface_sentinels.first() {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize mesh-surface sentinel {} without its retained ASM record",
+            sentinel.id
+        )));
+    }
     let coedges = target
         .model
         .coedges

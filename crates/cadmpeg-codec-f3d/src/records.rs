@@ -160,6 +160,17 @@ pub struct TolerantCoedgeParameters {
     pub parameter_range: [f64; 2],
 }
 
+/// Zero-payload ASM surface sentinel whose shape is supplied only by tessellation attributes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct MeshSurfaceSentinel {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Unknown exact-surface placeholder emitted for the sentinel record.
+    pub surface: cadmpeg_ir::ids::SurfaceId,
+    /// Source SAB record index.
+    pub record_index: u32,
+}
+
 /// Native side classification stored on an ASM wire record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
