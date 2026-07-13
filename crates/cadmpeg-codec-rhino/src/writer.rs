@@ -26,6 +26,9 @@ const TCODE_CLASS_END: u32 = 0x0002_7fff;
 const POINT_CLASS: [u8; 16] = [
     0x1d, 0x1a, 0x10, 0xc3, 0x57, 0xf1, 0xd3, 0x11, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
+const POINT_CLOUD_CLASS: [u8; 16] = [
+    0x47, 0xf3, 0x88, 0x24, 0xfa, 0xf8, 0xd3, 0x11, 0xbf, 0xec, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+];
 const ARC_CLASS: [u8; 16] = [
     0x2a, 0xbe, 0x33, 0xcf, 0xb4, 0x09, 0xd4, 0x11, 0xbf, 0xfb, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
@@ -48,11 +51,13 @@ const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
     check_representable(ir)?;
+    let (topology_points, point_groups) = free_vertex_groups(ir)?;
 
     let mut objects = ir
         .model
         .points
         .iter()
+        .filter(|point| !topology_points.contains(&point.id.0))
         .map(|point| {
             let position = point.position;
             let mut payload = vec![0x10];
@@ -62,6 +67,22 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             object_record(1, POINT_CLASS, &payload)
         })
         .collect::<Vec<_>>();
+    for points in point_groups {
+        if points.len() == 1 {
+            let point = points[0];
+            let mut payload = vec![0x10];
+            payload.extend(point.x.to_le_bytes());
+            payload.extend(point.y.to_le_bytes());
+            payload.extend(point.z.to_le_bytes());
+            objects.push(object_record(1, POINT_CLASS, &payload));
+        } else {
+            objects.push(object_record(
+                2,
+                POINT_CLOUD_CLASS,
+                &point_cloud_payload(&points),
+            ));
+        }
+    }
     for curve in &ir.model.curves {
         let (class, payload) = match &curve.geometry {
             CurveGeometry::Circle {
@@ -124,14 +145,10 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
 fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
     let model = &ir.model;
     let unsupported = [
-        ("bodies", model.bodies.len()),
-        ("regions", model.regions.len()),
-        ("shells", model.shells.len()),
         ("faces", model.faces.len()),
         ("loops", model.loops.len()),
         ("coedges", model.coedges.len()),
         ("edges", model.edges.len()),
-        ("vertices", model.vertices.len()),
         ("subds", model.subds.len()),
         ("pcurves", model.pcurves.len()),
         ("procedural_surfaces", model.procedural_surfaces.len()),
@@ -156,6 +173,18 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
             unsupported.join(", ")
         )));
     }
+    if model.points.len() > i32::MAX as usize
+        || model.points.iter().any(|point| {
+            !point.position.x.is_finite()
+                || !point.position.y.is_finite()
+                || !point.position.z.is_finite()
+        })
+    {
+        return Err(CodecError::Malformed(
+            "point arena exceeds native counts or contains non-finite coordinates".into(),
+        ));
+    }
+    free_vertex_groups(ir)?;
     for curve in &model.curves {
         let CurveGeometry::Circle {
             center,
@@ -299,6 +328,108 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
         }
     }
     Ok(())
+}
+
+type PointGroups = (
+    std::collections::BTreeSet<String>,
+    Vec<Vec<cadmpeg_ir::math::Point3>>,
+);
+
+fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let model = &ir.model;
+    let mut regions = std::collections::BTreeSet::new();
+    let mut shells = std::collections::BTreeSet::new();
+    let mut vertices = std::collections::BTreeSet::new();
+    let mut points = std::collections::BTreeSet::new();
+    let mut groups = Vec::with_capacity(model.bodies.len());
+    for body in &model.bodies {
+        if body.kind != BodyKind::General
+            || body.regions.len() != 1
+            || body.transform.is_some()
+            || body.name.is_some()
+            || body.color.is_some()
+            || body.visible.is_some()
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "body {} is not a plain free-vertex body",
+                body.id.0
+            )));
+        }
+        let region = model
+            .regions
+            .iter()
+            .find(|region| region.id == body.regions[0])
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("body {} region is missing", body.id.0))
+            })?;
+        if region.body != body.id
+            || region.shells.len() != 1
+            || !regions.insert(region.id.0.clone())
+        {
+            return Err(CodecError::Malformed(format!(
+                "body {} region graph is invalid",
+                body.id.0
+            )));
+        }
+        let shell = model
+            .shells
+            .iter()
+            .find(|shell| shell.id == region.shells[0])
+            .ok_or_else(|| CodecError::Malformed(format!("body {} shell is missing", body.id.0)))?;
+        if shell.region != region.id
+            || !shell.faces.is_empty()
+            || !shell.wire_edges.is_empty()
+            || shell.free_vertices.is_empty()
+            || !shells.insert(shell.id.0.clone())
+        {
+            return Err(CodecError::Malformed(format!(
+                "body {} shell graph is invalid",
+                body.id.0
+            )));
+        }
+        let mut group = Vec::with_capacity(shell.free_vertices.len());
+        for vertex_id in &shell.free_vertices {
+            let vertex = model
+                .vertices
+                .iter()
+                .find(|vertex| vertex.id == *vertex_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("vertex {} is missing", vertex_id.0))
+                })?;
+            if vertex.tolerance.is_some() || !vertices.insert(vertex.id.0.clone()) {
+                return Err(CodecError::NotImplemented(format!(
+                    "vertex {} has tolerance or multiple ownership",
+                    vertex.id.0
+                )));
+            }
+            let point = model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("point {} is missing", vertex.point.0))
+                })?;
+            if !points.insert(point.id.0.clone()) {
+                return Err(CodecError::NotImplemented(format!(
+                    "point {} is shared by multiple free vertices",
+                    point.id.0
+                )));
+            }
+            group.push(point.position);
+        }
+        groups.push(group);
+    }
+    if regions.len() != model.regions.len()
+        || shells.len() != model.shells.len()
+        || vertices.len() != model.vertices.len()
+    {
+        return Err(CodecError::NotImplemented(
+            "orphan region, shell, or vertex topology is not writable".into(),
+        ));
+    }
+    Ok((points, groups))
 }
 
 fn check_frame(
@@ -449,6 +580,32 @@ fn units_record(linear: f64, angular: f64) -> Vec<u8> {
     body.extend(angular.to_le_bytes());
     body.extend(linear.to_le_bytes());
     crc_chunk(TCODE_UNITS_AND_TOLERANCES, &body)
+}
+
+fn point_cloud_payload(points: &[cadmpeg_ir::math::Point3]) -> Vec<u8> {
+    let mut payload = vec![0x10];
+    payload.extend((points.len() as i32).to_le_bytes());
+    for point in points {
+        payload.extend(point.x.to_le_bytes());
+        payload.extend(point.y.to_le_bytes());
+        payload.extend(point.z.to_le_bytes());
+    }
+    for value in [
+        0.0_f64, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+    ] {
+        payload.extend(value.to_le_bytes());
+    }
+    let min = points.iter().fold([f64::INFINITY; 3], |a, p| {
+        [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
+    });
+    let max = points.iter().fold([f64::NEG_INFINITY; 3], |a, p| {
+        [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
+    });
+    for value in min.into_iter().chain(max) {
+        payload.extend(value.to_le_bytes());
+    }
+    payload.extend(0_i32.to_le_bytes());
+    payload
 }
 
 fn circle_payload(
@@ -1045,5 +1202,63 @@ mod tests {
                 Some(&expected)
             );
         }
+    }
+
+    #[test]
+    fn free_vertex_body_preserves_point_cloud_grouping() {
+        let mut ir = CadIr::empty(Units::default());
+        let body_id: cadmpeg_ir::ids::BodyId = "cadir:model:body#cloud".into();
+        let region_id: cadmpeg_ir::ids::RegionId = "cadir:model:region#cloud".into();
+        let shell_id: cadmpeg_ir::ids::ShellId = "cadir:model:shell#cloud".into();
+        let vertex_ids = [
+            cadmpeg_ir::ids::VertexId("cadir:model:vertex#cloud.0".into()),
+            cadmpeg_ir::ids::VertexId("cadir:model:vertex#cloud.1".into()),
+        ];
+        let point_ids = [
+            cadmpeg_ir::ids::PointId("cadir:model:point#cloud.0".into()),
+            cadmpeg_ir::ids::PointId("cadir:model:point#cloud.1".into()),
+        ];
+        ir.model.bodies.push(cadmpeg_ir::topology::Body {
+            id: body_id.clone(),
+            kind: cadmpeg_ir::topology::BodyKind::General,
+            regions: vec![region_id.clone()],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        ir.model.regions.push(cadmpeg_ir::topology::Region {
+            id: region_id.clone(),
+            body: body_id,
+            shells: vec![shell_id.clone()],
+        });
+        ir.model.shells.push(cadmpeg_ir::topology::Shell {
+            id: shell_id,
+            region: region_id,
+            faces: Vec::new(),
+            wire_edges: Vec::new(),
+            free_vertices: vertex_ids.to_vec(),
+        });
+        for (index, (vertex, point)) in vertex_ids.into_iter().zip(point_ids).enumerate() {
+            ir.model.vertices.push(cadmpeg_ir::topology::Vertex {
+                id: vertex,
+                point: point.clone(),
+                tolerance: None,
+            });
+            ir.model.points.push(cadmpeg_ir::topology::Point {
+                id: point,
+                position: Point3::new(index as f64, index as f64 + 2.0, 3.0),
+            });
+        }
+        let mut bytes = Vec::new();
+        RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&ir, &mut bytes)
+            .unwrap();
+        let decoded = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(decoded.ir.model.bodies.len(), 1);
+        assert_eq!(decoded.ir.model.vertices.len(), 2);
+        assert_eq!(decoded.ir.model.points.len(), 2);
     }
 }
