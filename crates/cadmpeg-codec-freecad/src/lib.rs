@@ -3,6 +3,7 @@
 
 mod container;
 mod native;
+mod persistence;
 
 use std::collections::BTreeMap;
 
@@ -112,6 +113,52 @@ impl Codec for FcstdCodec {
         namespace.version = native::VERSION;
         namespace.set_arena("document", std::slice::from_ref(&scan.document))?;
         namespace.set_arena("physical_ledger", &scan.ledger)?;
+        if !options.container_only {
+            let document_bytes = scan.data.get("Document.xml").ok_or_else(|| {
+                CodecError::Malformed("Document.xml disappeared after scan".into())
+            })?;
+            let graph = persistence::parse(document_bytes)?;
+            for property in &graph.properties {
+                for side_entry in &property.side_entries {
+                    if !scan.data.contains_key(side_entry) {
+                        return Err(CodecError::Malformed(format!(
+                            "property {} references missing side entry {side_entry}",
+                            property.id
+                        )));
+                    }
+                }
+            }
+            let entry_records = scan
+                .entries
+                .iter()
+                .map(|entry| {
+                    let bytes = scan.data.get(&entry.name).ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "entry {} disappeared after scan",
+                            entry.name
+                        ))
+                    })?;
+                    let referenced_by = graph
+                        .properties
+                        .iter()
+                        .filter(|property| property.side_entries.contains(&entry.name))
+                        .map(|property| property.id.clone())
+                        .collect();
+                    Ok(native::EntryRecord {
+                        id: format!("fcstd:entry:{}", entry.name),
+                        name: entry.name.clone(),
+                        role: entry.role.clone(),
+                        byte_len: bytes.len() as u64,
+                        sha256: sha256_hex(bytes),
+                        referenced_by,
+                        data: bytes.clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>, CodecError>>()?;
+            namespace.set_arena("objects", &graph.objects)?;
+            namespace.set_arena("properties", &graph.properties)?;
+            namespace.set_arena("entries", &entry_records)?;
+        }
         let losses = if options.container_only {
             Vec::new()
         } else {

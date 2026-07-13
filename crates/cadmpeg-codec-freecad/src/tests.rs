@@ -67,6 +67,69 @@ fn thumbnail_bytes_are_retained_with_digest() {
 }
 
 #[test]
+fn recovers_objects_dynamic_properties_links_and_side_entries() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="Demo"/></Property></Properties>
+<Objects Count="2" Dependencies="1">
+<ObjectDeps Name="Body" Count="1"><Dep Name="Sketch"/></ObjectDeps>
+<ObjectDeps Name="Sketch" Count="0"/>
+<Object type="PartDesign::Body" name="Body" id="1" Touched="1"/>
+<Object type="PartDesign::Feature" name="Sketch" id="2"/>
+</Objects>
+<ObjectData Count="2">
+<Object name="Body"><Properties Count="2">
+<Property name="Support" type="App::PropertyLinkSub" status="4" group="Attachment" doc="Support object" attr="2" ro="1" hide="0"><Link object="Sketch" sub="Face1"/></Property>
+<Property name="Payload" type="App::PropertyFileIncluded"><File file="Payload.bin"/></Property>
+</Properties></Object>
+<Object name="Sketch"><Properties Count="0"></Properties></Object>
+</ObjectData></Document>"#;
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("Payload.bin", b"payload"),
+    ]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode graph");
+    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    assert_eq!(objects.len(), 2);
+    assert_eq!(objects[0].dependencies, vec!["fcstd:object:Sketch"]);
+    let support = properties
+        .iter()
+        .find(|property| property.name == "Support")
+        .expect("support");
+    assert_eq!(support.owner, "fcstd:object:Body");
+    assert_eq!(
+        support.links[0].object.as_deref(),
+        Some("fcstd:object:Sketch")
+    );
+    assert_eq!(support.links[0].subelements, vec!["Face1"]);
+    assert_eq!(
+        support.dynamic.as_ref().and_then(|meta| meta.read_only),
+        Some(true)
+    );
+    let payload = properties
+        .iter()
+        .find(|property| property.name == "Payload")
+        .expect("payload");
+    assert_eq!(payload.side_entries, vec!["Payload.bin"]);
+    let entries = namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .expect("entries");
+    let payload_entry = entries
+        .iter()
+        .find(|entry| entry.name == "Payload.bin")
+        .expect("payload entry");
+    assert_eq!(payload_entry.referenced_by, vec![payload.id.clone()]);
+    assert_eq!(payload_entry.data, b"payload");
+}
+
+#[test]
 fn detects_marker_but_not_arbitrary_zip() {
     assert_eq!(
         FcstdCodec.detect(&archive(
