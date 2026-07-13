@@ -988,9 +988,9 @@ fn project_definition(
     }
     if is_extrude(feature) {
         project_extrude(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Fillet") {
+    } else if is_fillet(feature) {
         project_fillet(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Chamfer") {
+    } else if is_chamfer(feature) {
         project_chamfer(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Shell") {
         project_shell(feature).unwrap_or_else(|| native_definition(feature))
@@ -1050,6 +1050,14 @@ fn project_definition(
 
 fn feature_family(feature: &Feature, family: &str) -> bool {
     feature.kind.eq_ignore_ascii_case(family) || feature.xml_tag.eq_ignore_ascii_case(family)
+}
+
+fn is_fillet(feature: &Feature) -> bool {
+    feature_family(feature, "Fillet") || feature_family(feature, "Redondeo")
+}
+
+fn is_chamfer(feature: &Feature) -> bool {
+    feature_family(feature, "Chamfer") || feature_family(feature, "Chafl\u{00e1}n")
 }
 
 fn is_extrude(feature: &Feature) -> bool {
@@ -1381,7 +1389,12 @@ fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
         .parameters
         .get("Radius")
         .and_then(|value| parse_positive_length_mm(value))
-    {
+        .or_else(|| {
+            feature
+                .parameters
+                .get("D1")
+                .and_then(|value| parse_positive_dimension_length_mm(value))
+        }) {
         RadiusSpec::Constant {
             radius: Length(radius),
         }
@@ -2190,23 +2203,35 @@ fn project_scale(feature: &Feature) -> Option<FeatureDefinition> {
 }
 
 fn project_chamfer(feature: &Feature) -> Option<FeatureDefinition> {
-    let length = |name| {
+    let length = |name, positional| {
         feature
             .parameters
             .get(name)
             .and_then(|value| parse_positive_length_mm(value))
+            .or_else(|| {
+                feature
+                    .parameters
+                    .get(positional)
+                    .and_then(|value| parse_positive_dimension_length_mm(value))
+            })
             .map(Length)
     };
-    let spec = if let Some(value) = feature.parameters.get("Angle") {
+    let positional_angle = feature
+        .parameters
+        .get("D2")
+        .filter(|value| parse_bounded_angle_rad(value).is_some());
+    let spec = if let Some(value) = feature.parameters.get("Angle").or(positional_angle) {
         ChamferSpec::DistanceAngle {
-            distance: length("Distance")?,
+            distance: length("Distance", "D1")?,
             angle: Angle(parse_bounded_angle_rad(value)?),
         }
-    } else if let (Some(first), Some(second)) = (length("Distance1"), length("Distance2")) {
+    } else if let (Some(first), Some(second)) =
+        (length("Distance1", "D1"), length("Distance2", "D2"))
+    {
         ChamferSpec::TwoDistances { first, second }
     } else {
         ChamferSpec::Distance {
-            distance: length("Distance")?,
+            distance: length("Distance", "D1")?,
         }
     };
     Some(FeatureDefinition::Chamfer {
@@ -2250,6 +2275,47 @@ fn parse_length_mm(value: &str) -> Option<f64> {
 
 fn parse_positive_length_mm(value: &str) -> Option<f64> {
     parse_length_mm(value).filter(|value| *value > 0.0)
+}
+
+fn parse_positive_dimension_length_mm(value: &str) -> Option<f64> {
+    parse_positive_length_mm(value).or_else(|| {
+        value
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite() && *value > 0.0)
+    })
+}
+
+fn format_length_like(value: f64, previous: Option<&str>) -> String {
+    let previous = previous.map(str::trim).unwrap_or_default();
+    if previous.starts_with(['R', 'r']) {
+        format!("R{value}")
+    } else if previous.starts_with(['\u{2300}', '\u{00d8}']) {
+        format!("\u{2300}{value}")
+    } else if previous.parse::<f64>().is_ok() {
+        value.to_string()
+    } else {
+        format_length_mm(value)
+    }
+}
+
+fn format_angle_like(value: f64, previous: Option<&str>) -> String {
+    if previous
+        .map(str::trim)
+        .is_some_and(|value| value.ends_with('\u{00b0}'))
+    {
+        let degrees = value.to_degrees();
+        let rounded = degrees.round();
+        let degrees = if (degrees - rounded).abs() <= 1.0e-12 {
+            rounded
+        } else {
+            degrees
+        };
+        format!("{degrees}\u{00b0}")
+    } else {
+        format_angle_rad(value)
+    }
 }
 
 fn format_length_mm(value: f64) -> String {
@@ -3801,10 +3867,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Fillet"))
-                {
+                if existing.as_deref().is_some_and(|record| !is_fillet(record)) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported fillet semantics",
                         feature.id
@@ -3814,6 +3877,9 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
+                let positional_radius = parameters.contains_key("D1")
+                    && !parameters.contains_key("Radius")
+                    && !parameters.keys().any(|name| indexed_name(name, "Radius"));
                 parameters.retain(|name, _| {
                     name != "Radius"
                         && !indexed_name(name, "Radius")
@@ -3823,9 +3889,23 @@ pub fn sync_neutral_features(
                     RadiusSpec::Constant {
                         radius: Length(radius),
                     } => {
-                        parameters.insert("Radius".into(), format_length_mm(*radius));
+                        let key = if positional_radius { "D1" } else { "Radius" };
+                        let value = format_length_like(
+                            *radius,
+                            existing
+                                .as_deref()
+                                .and_then(|record| record.parameters.get(key))
+                                .map(String::as_str),
+                        );
+                        parameters.insert(key.into(), value);
                     }
                     RadiusSpec::Variable { points } => {
+                        if positional_radius {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} changes positional fillet form",
+                                feature.id
+                            )));
+                        }
                         if points.len() < 2
                             || points.iter().any(|point| {
                                 !point.parameter.is_finite()
@@ -3877,7 +3957,7 @@ pub fn sync_neutral_features(
                 }
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Chamfer"))
+                    .is_some_and(|record| !is_chamfer(record))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported chamfer semantics",
@@ -3888,48 +3968,121 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
+                let positional = parameters.contains_key("D1")
+                    && !parameters.contains_key("Distance")
+                    && !parameters.contains_key("Distance1");
+                let positional_angle = positional
+                    && parameters
+                        .get("D2")
+                        .is_some_and(|value| parse_bounded_angle_rad(value).is_some());
                 match spec {
                     ChamferSpec::Distance { distance } => {
                         if existing.is_some()
-                            && (parameters.contains_key("Distance1")
-                                || parameters.contains_key("Distance2")
-                                || parameters.contains_key("Angle"))
+                            && if positional {
+                                parameters.contains_key("D2")
+                            } else {
+                                parameters.contains_key("Distance1")
+                                    || parameters.contains_key("Distance2")
+                                    || parameters.contains_key("Angle")
+                            }
                         {
                             return Err(CodecError::NotImplemented(format!(
                                 "SLDPRT feature {} changes chamfer form",
                                 feature.id
                             )));
                         }
-                        parameters.insert("Distance".into(), format_length_mm(distance.0));
+                        let key = if positional { "D1" } else { "Distance" };
+                        let value = format_length_like(
+                            distance.0,
+                            existing
+                                .as_deref()
+                                .and_then(|record| record.parameters.get(key))
+                                .map(String::as_str),
+                        );
+                        parameters.insert(key.into(), value);
                     }
                     ChamferSpec::TwoDistances { first, second } => {
                         if existing.is_some()
-                            && (!parameters.contains_key("Distance1")
-                                || !parameters.contains_key("Distance2")
-                                || parameters.contains_key("Angle"))
+                            && if positional {
+                                !parameters.contains_key("D2") || positional_angle
+                            } else {
+                                !parameters.contains_key("Distance1")
+                                    || !parameters.contains_key("Distance2")
+                                    || parameters.contains_key("Angle")
+                            }
                         {
                             return Err(CodecError::NotImplemented(format!(
                                 "SLDPRT feature {} changes chamfer form",
                                 feature.id
                             )));
                         }
-                        parameters.insert("Distance1".into(), format_length_mm(first.0));
-                        parameters.insert("Distance2".into(), format_length_mm(second.0));
+                        let (first_key, second_key) = if positional {
+                            ("D1", "D2")
+                        } else {
+                            ("Distance1", "Distance2")
+                        };
+                        parameters.insert(
+                            first_key.into(),
+                            format_length_like(
+                                first.0,
+                                existing
+                                    .as_deref()
+                                    .and_then(|record| record.parameters.get(first_key))
+                                    .map(String::as_str),
+                            ),
+                        );
+                        parameters.insert(
+                            second_key.into(),
+                            format_length_like(
+                                second.0,
+                                existing
+                                    .as_deref()
+                                    .and_then(|record| record.parameters.get(second_key))
+                                    .map(String::as_str),
+                            ),
+                        );
                     }
                     ChamferSpec::DistanceAngle { distance, angle } => {
                         if existing.is_some()
-                            && (!parameters.contains_key("Distance")
-                                || !parameters.contains_key("Angle")
-                                || parameters.contains_key("Distance1")
-                                || parameters.contains_key("Distance2"))
+                            && if positional {
+                                !positional_angle
+                            } else {
+                                !parameters.contains_key("Distance")
+                                    || !parameters.contains_key("Angle")
+                                    || parameters.contains_key("Distance1")
+                                    || parameters.contains_key("Distance2")
+                            }
                         {
                             return Err(CodecError::NotImplemented(format!(
                                 "SLDPRT feature {} changes chamfer form",
                                 feature.id
                             )));
                         }
-                        parameters.insert("Distance".into(), format_length_mm(distance.0));
-                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                        let (distance_key, angle_key) = if positional {
+                            ("D1", "D2")
+                        } else {
+                            ("Distance", "Angle")
+                        };
+                        parameters.insert(
+                            distance_key.into(),
+                            format_length_like(
+                                distance.0,
+                                existing
+                                    .as_deref()
+                                    .and_then(|record| record.parameters.get(distance_key))
+                                    .map(String::as_str),
+                            ),
+                        );
+                        parameters.insert(
+                            angle_key.into(),
+                            format_angle_like(
+                                angle.0,
+                                existing
+                                    .as_deref()
+                                    .and_then(|record| record.parameters.get(angle_key))
+                                    .map(String::as_str),
+                            ),
+                        );
                     }
                 }
                 let mut properties = feature.source_properties.clone();

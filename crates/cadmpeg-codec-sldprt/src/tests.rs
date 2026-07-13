@@ -6269,6 +6269,97 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
 }
 
 #[test]
+fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimensions() {
+    use cadmpeg_ir::features::{
+        Angle, ChamferSpec, EdgeSelection, FeatureDefinition, Length, RadiusSpec,
+    };
+
+    let keywords = format!(
+        r#"<Keywords>
+            <Feature Name="Round" Type="Fillet" id="10"><Dimension Name="D1">R1</Dimension></Feature>
+            <Feature Name="Bevel" Type="Chafl{acute}n" id="11"><Dimension Name="D1">0.3</Dimension><Dimension Name="D2">45.00{degree}</Dimension></Feature>
+        </Keywords>"#,
+        acute = '\u{00e1}',
+        degree = '\u{00b0}',
+    );
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Fillet {
+            edges: EdgeSelection::Unresolved,
+            radius: RadiusSpec::Constant {
+                radius: Length(1.0)
+            }
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::Chamfer {
+            edges: EdgeSelection::Unresolved,
+            spec: ChamferSpec::DistanceAngle {
+                distance: Length(0.3),
+                angle: Angle(angle),
+            }
+        } if (angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12
+    ));
+
+    let FeatureDefinition::Fillet { radius, .. } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed positional fillet");
+    };
+    *radius = RadiusSpec::Constant {
+        radius: Length(2.5),
+    };
+    let FeatureDefinition::Chamfer { spec, .. } = &mut decoded.ir.model.features[1].definition
+    else {
+        panic!("typed positional chamfer");
+    };
+    *spec = ChamferSpec::DistanceAngle {
+        distance: Length(0.6),
+        angle: Angle(30.0_f64.to_radians()),
+    };
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native[0].parameters["D1"], "R2.5");
+    assert!(!native[0].parameters.contains_key("Radius"));
+    assert_eq!(native[1].kind, format!("Chafl{}n", '\u{00e1}'));
+    assert_eq!(native[1].parameters["D1"], "0.6");
+    assert_eq!(native[1].parameters["D2"], format!("30{}", '\u{00b0}'));
+    assert!(!native[1].parameters.contains_key("Distance"));
+    assert!(!native[1].parameters.contains_key("Angle"));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Fillet {
+            radius: RadiusSpec::Constant {
+                radius: Length(2.5)
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        regenerated.ir.model.features[1].definition,
+        FeatureDefinition::Chamfer {
+            spec: ChamferSpec::DistanceAngle {
+                distance: Length(0.6),
+                angle: Angle(angle),
+            },
+            ..
+        } if (angle - 30.0_f64.to_radians()).abs() < 1e-12
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_variable_radius_fillet() {
     use cadmpeg_ir::features::{
         EdgeSelection, FeatureDefinition, Length, RadiusSpec, VariableRadius,
