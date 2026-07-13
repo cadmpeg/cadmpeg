@@ -161,6 +161,16 @@ pub(super) fn check_native_links(
                 });
             }
         }
+        if let Some(semantic) = &parameter.pmi {
+            if !native_ids.contains(semantic.native_ref.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("PMI native_ref `{}` does not resolve", semantic.native_ref),
+                    entity: Some(parameter.id.0.clone()),
+                });
+            }
+        }
     }
     for configuration in &ir.model.configurations {
         if let Some(target) = &configuration.native_ref {

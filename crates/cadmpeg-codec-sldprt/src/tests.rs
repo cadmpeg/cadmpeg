@@ -960,7 +960,7 @@ fn pmi_semantic_payload() -> Vec<u8> {
     payload.push(3);
     string(&mut payload, "value");
     payload.push(0xcb);
-    payload.extend_from_slice(&25.0f64.to_be_bytes());
+    payload.extend_from_slice(&0.025f64.to_be_bytes());
     string(&mut payload, "dimText");
     string(&mut payload, "25.000 mm");
     string(&mut payload, "dimType");
@@ -3353,6 +3353,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         value: None,
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
+        pmi: None,
         native_ref: None,
     });
 
@@ -11290,6 +11291,11 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
 fn decode_extracts_pmi_semantic_dimension() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source.extend(make_block(
         0x49,
         "Contents/PMISemanticDataDB",
         &pmi_semantic_payload(),
@@ -11305,7 +11311,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert_eq!(dimension.guid, "01234567-89ab-cdef-0123-456789abcdef");
     assert_eq!(dimension.cad_text, "D1@Sketch1");
     assert_eq!(dimension.subtype, "Linear");
-    assert_eq!(dimension.value, 25.0);
+    assert_eq!(dimension.value, 0.025);
     assert_eq!(dimension.precision, 3);
     assert_eq!(dimension.display_text.as_deref(), Some("25.000 mm"));
     assert!(dimension.basic);
@@ -11315,6 +11321,29 @@ fn decode_extracts_pmi_semantic_dimension() {
         decoded.ir.annotations.provenance[&dimension.id].offset,
         dimension.offset
     );
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D1")
+        .expect("PMI-backed parameter");
+    assert_eq!(parameter.expression, "25mm");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(25.0)
+        ))
+    );
+    let semantic = parameter.pmi.as_ref().expect("PMI semantics");
+    assert_eq!(
+        semantic.subtype,
+        cadmpeg_ir::features::PmiDimensionSubtype::Linear
+    );
+    assert_eq!(semantic.native_ref, dimension.id);
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap();
 }
 
 #[test]

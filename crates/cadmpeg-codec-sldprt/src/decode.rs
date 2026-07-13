@@ -285,6 +285,12 @@ fn build_geometry_ir(
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut ir.annotations);
     project_design_history(&mut ir, &histories, &lanes);
+    crate::pmi::apply_to_parameters(
+        &mut ir.model.parameters,
+        &ir.model.features,
+        &pmi_dimensions,
+    );
+    stamp_parameter_baseline(&mut ir);
     let (mut sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);
     crate::resolved_features::bind_sketch_profiles(
@@ -833,6 +839,12 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         attributes,
     });
     project_design_history(&mut ir, &histories, &lanes);
+    crate::pmi::apply_to_parameters(
+        &mut ir.model.parameters,
+        &ir.model.features,
+        &pmi_dimensions,
+    );
+    stamp_parameter_baseline(&mut ir);
     crate::resolved_features::bind_sketch_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -899,6 +911,15 @@ fn project_design_history(
             "sldprt_native_parameter_sha256".into(),
             crate::history::native_parameter_hash(histories),
         );
+    }
+}
+
+fn stamp_parameter_baseline(ir: &mut CadIr) {
+    let hash = crate::history::parameter_hash(&ir.model.parameters);
+    if let Some(source) = &mut ir.source {
+        source
+            .attributes
+            .insert("sldprt_neutral_parameter_sha256".into(), hash);
     }
 }
 

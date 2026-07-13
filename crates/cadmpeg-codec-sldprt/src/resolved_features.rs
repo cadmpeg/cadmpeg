@@ -216,6 +216,37 @@ pub(crate) fn named_scalars(
         .collect()
 }
 
+pub(crate) fn scalar_indices_match(
+    actual: &[FeatureInputScalar],
+    expected: &[FeatureInputScalar],
+) -> bool {
+    actual.len() == expected.len()
+        && actual.iter().zip(expected).all(|(actual, expected)| {
+            actual.id == expected.id
+                && actual.parent == expected.parent
+                && actual.ordinal == expected.ordinal
+                && actual.offset == expected.offset
+                && actual.object_id == expected.object_id
+                && actual.name == expected.name
+                && ulp_distance(actual.value, expected.value) <= 4
+                && actual.role == expected.role
+                && actual.entity_indices == expected.entity_indices
+                && actual.operands == expected.operands
+        })
+}
+
+fn ulp_distance(left: f64, right: f64) -> u64 {
+    fn ordered(value: f64) -> u64 {
+        let bits = value.to_bits();
+        if bits & (1 << 63) == 0 {
+            bits | (1 << 63)
+        } else {
+            !bits
+        }
+    }
+    ordered(left).abs_diff(ordered(right))
+}
+
 fn scalar_operands(payload: &[u8], name_offset: usize, parent: &str) -> Vec<FeatureInputOperand> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     [75usize, 87]

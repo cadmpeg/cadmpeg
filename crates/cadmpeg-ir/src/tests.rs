@@ -699,6 +699,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
             value: None,
             dependencies: Vec::new(),
             properties: BTreeMap::new(),
+            pmi: None,
             native_ref: None,
         });
     }
@@ -760,6 +761,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
             value: None,
             dependencies,
             properties: BTreeMap::new(),
+            pmi: None,
             native_ref: None,
         });
     }
@@ -1628,10 +1630,24 @@ fn parameter_native_ref_must_resolve() {
         value: None,
         dependencies: Vec::new(),
         properties: std::collections::BTreeMap::new(),
+        pmi: Some(crate::features::ParameterPmi {
+            subtype: crate::features::PmiDimensionSubtype::Linear,
+            precision: 2,
+            display_text: None,
+            basic: false,
+            inspection: false,
+            reference_only: false,
+            native_ref: "native:pmi-missing#0".into(),
+        }),
         native_ref: Some("native:missing#0".into()),
     });
     assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
         finding.check == Check::NativeLinks && finding.entity.as_deref() == Some(id.0.as_str())
+    }));
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::NativeLinks
+            && finding.message.contains("PMI native_ref")
+            && finding.entity.as_deref() == Some(id.0.as_str())
     }));
 }
 

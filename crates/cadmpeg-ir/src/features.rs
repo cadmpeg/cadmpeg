@@ -104,9 +104,46 @@ pub struct DesignParameter {
     /// Source dimension properties not represented by another field.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
+    /// Product-manufacturing dimension semantics, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pmi: Option<ParameterPmi>,
     /// Identifier of the full-fidelity source parameter record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+/// Product-manufacturing semantics attached to a design parameter.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ParameterPmi {
+    /// Semantic dimension family.
+    pub subtype: PmiDimensionSubtype,
+    /// Display precision carried by the semantic annotation.
+    pub precision: i64,
+    /// Native formatted dimension text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_text: Option<String>,
+    /// Basic-dimension flag.
+    pub basic: bool,
+    /// Inspection-dimension flag.
+    pub inspection: bool,
+    /// Reference-only flag.
+    pub reference_only: bool,
+    /// Identifier of the full-fidelity semantic record.
+    pub native_ref: String,
+}
+
+/// Semantic PMI dimension family.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "native_kind", rename_all = "snake_case")]
+pub enum PmiDimensionSubtype {
+    /// Linear distance.
+    Linear,
+    /// Diameter.
+    Diameter,
+    /// Radius.
+    Radial,
+    /// Source-native family without a neutral equivalent.
+    Native(String),
 }
 
 /// Geometric interpretation requested by a dimension display modifier.

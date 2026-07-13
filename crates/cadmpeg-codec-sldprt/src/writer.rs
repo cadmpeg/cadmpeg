@@ -756,7 +756,7 @@ fn resolved_feature_payload(
         histories,
         std::slice::from_mut(&mut expected_lane),
     );
-    if lane.scalars != expected_lane.scalars {
+    if !crate::resolved_features::scalar_indices_match(&lane.scalars, &expected_lane.scalars) {
         return Err(CodecError::NotImplemented(format!(
             "feature-input lane {} has edited named scalars",
             lane.id

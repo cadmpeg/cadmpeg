@@ -9,6 +9,95 @@ use cadmpeg_ir::Exactness;
 use crate::container::ContainerScan;
 use crate::records::PmiDimension;
 
+pub(crate) fn apply_to_parameters(
+    parameters: &mut Vec<cadmpeg_ir::features::DesignParameter>,
+    features: &[cadmpeg_ir::features::Feature],
+    records: &[PmiDimension],
+) {
+    use cadmpeg_ir::features::{
+        DesignParameter, DimensionDisplay, Length, ParameterId, ParameterPmi, ParameterValue,
+        PmiDimensionSubtype,
+    };
+
+    let mut feature_names = BTreeMap::<&str, Vec<&cadmpeg_ir::features::Feature>>::new();
+    for feature in features {
+        if let Some(name) = feature.name.as_deref() {
+            feature_names.entry(name).or_default().push(feature);
+        }
+    }
+    for record in records {
+        let Some((name, owner_name)) = record.cad_text.split_once('@') else {
+            continue;
+        };
+        let Some([owner]) = feature_names.get(owner_name).map(Vec::as_slice) else {
+            continue;
+        };
+        let subtype = match record.subtype.as_str() {
+            "Linear" => PmiDimensionSubtype::Linear,
+            "Diameter" => PmiDimensionSubtype::Diameter,
+            "Radial" => PmiDimensionSubtype::Radial,
+            other => PmiDimensionSubtype::Native(other.to_string()),
+        };
+        let millimetres = record.value * 1000.0;
+        let (expression, display, value) = match subtype {
+            PmiDimensionSubtype::Linear => (
+                format!("{millimetres}mm"),
+                None,
+                Some(ParameterValue::Length(Length(millimetres))),
+            ),
+            PmiDimensionSubtype::Diameter => (
+                format!("<MOD-DIAM>{millimetres}mm"),
+                Some(DimensionDisplay::Diameter),
+                Some(ParameterValue::Length(Length(millimetres))),
+            ),
+            PmiDimensionSubtype::Radial => (
+                format!("R{millimetres}mm"),
+                Some(DimensionDisplay::Radius),
+                Some(ParameterValue::Length(Length(millimetres))),
+            ),
+            PmiDimensionSubtype::Native(_) => (record.value.to_string(), None, None),
+        };
+        let semantic = ParameterPmi {
+            subtype,
+            precision: record.precision,
+            display_text: record.display_text.clone(),
+            basic: record.basic,
+            inspection: record.inspection,
+            reference_only: record.reference_only,
+            native_ref: record.id.clone(),
+        };
+        if let Some(parameter) = parameters
+            .iter_mut()
+            .find(|parameter| parameter.owner == owner.id && parameter.name == name)
+        {
+            parameter.expression = expression;
+            parameter.display = display;
+            parameter.value = value;
+            parameter.pmi = Some(semantic);
+            continue;
+        }
+        let ordinal = parameters
+            .iter()
+            .filter(|parameter| parameter.owner == owner.id)
+            .map(|parameter| parameter.ordinal)
+            .max()
+            .map_or(0, |ordinal| ordinal.saturating_add(1));
+        parameters.push(DesignParameter {
+            id: ParameterId(format!("sldprt:model:parameter#pmi:{}", record.guid)),
+            owner: owner.id.clone(),
+            ordinal,
+            name: name.to_string(),
+            expression,
+            display,
+            value,
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: Some(semantic),
+            native_ref: None,
+        });
+    }
+}
+
 #[derive(Debug, Clone)]
 enum Value {
     Bool(bool),

@@ -481,6 +481,7 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                         value,
                         dependencies: Vec::new(),
                         native_ref: None,
+                        pmi: None,
                     }
                 })
         })

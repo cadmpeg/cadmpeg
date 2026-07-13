@@ -261,14 +261,52 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 entity: Some(lane.id.clone()),
             });
         }
-        if lane.scalars
-            != crate::resolved_features::named_scalars(&lane.native_payload, &lane.id, &lane.names)
-        {
+        let mut expected_lane = lane.clone();
+        expected_lane.scalars =
+            crate::resolved_features::named_scalars(&lane.native_payload, &lane.id, &lane.names);
+        expected_lane.references =
+            crate::resolved_features::reference_cells(&lane.native_payload, &lane.id);
+        crate::resolved_features::bind_scalar_operands(
+            &native.feature_histories,
+            std::slice::from_mut(&mut expected_lane),
+        );
+        if !crate::resolved_features::scalar_indices_match(&lane.scalars, &expected_lane.scalars) {
+            let detail = lane
+                .scalars
+                .iter()
+                .zip(&expected_lane.scalars)
+                .find(|(actual, expected)| {
+                    !crate::resolved_features::scalar_indices_match(
+                        std::slice::from_ref(actual),
+                        std::slice::from_ref(expected),
+                    )
+                })
+                .map_or_else(
+                    || {
+                        format!(
+                            "count {} != {}",
+                            lane.scalars.len(),
+                            expected_lane.scalars.len()
+                        )
+                    },
+                    |(actual, expected)| format!("{actual:?} != {expected:?}"),
+                );
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: "SolidWorks feature-input scalar index does not match its native payload"
-                    .into(),
+                message: format!(
+                    "SolidWorks feature-input scalar index does not match its native payload: {detail}"
+                ),
+                entity: Some(lane.id.clone()),
+            });
+        }
+        if lane.references != expected_lane.references {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message:
+                    "SolidWorks feature-input reference index does not match its native payload"
+                        .into(),
                 entity: Some(lane.id.clone()),
             });
         }
