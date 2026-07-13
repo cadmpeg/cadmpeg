@@ -34,7 +34,7 @@ The following small entries are STORED:
 | `.../DesignConfigurationTable.<uuid>.dsgcfg`    | JSON object             | configuration table, including parameter and suppression overrides |
 | `.../DesignConfigurationRule.<uuid>.dsgcfgrule` | JSON object             | configuration activation rules                 |
 
-Configuration tables and rules are complete JSON objects. Table objects carry named configurations, parameter overrides, suppression sets, and the active configuration. Rule objects carry activation conditions and targets. Unknown object members remain part of the configuration document. ZIP entry name and extension select table versus rule; duplicate entry names are invalid.
+Configuration tables and rules are complete JSON objects. A table's `configurations` member is an object keyed by variant name. Each variant value is an object; its `parameters` member is an object, `suppressed` is an array of strings, and `material` is a string. The table's `active` string equals one key in `configurations`. Rule objects carry activation conditions and targets. Unknown object members remain part of the configuration document. ZIP entry name and extension select table versus rule; duplicate entry names are invalid.
 
 ### 1.3 `Manifest.dat` grammar
 

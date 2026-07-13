@@ -3827,6 +3827,39 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         Err(cadmpeg_ir::codec::CodecError::Malformed(message))
             if message.contains("configuration JSON must be an object")
     ));
+
+    for (payload, expected) in [
+        (
+            br#"{"configurations":{"wide":{}},"active":"missing"}"#.as_slice(),
+            "is not a named variant",
+        ),
+        (
+            br#"{"configurations":{"wide":{"parameters":[]}}}"#.as_slice(),
+            "parameters must be an object",
+        ),
+        (
+            br#"{"configurations":{"wide":{"suppressed":[7]}}}"#.as_slice(),
+            "suppressed list must contain strings",
+        ),
+        (
+            br#"{"configurations":{"wide":{"material":7}}}"#.as_slice(),
+            "material must be a string",
+        ),
+    ] {
+        let invalid = F3dCodec.decode(
+            &mut Cursor::new(f3d_with_configuration(
+                &synthetic_geometry_smbh(),
+                name,
+                payload,
+            )),
+            &DecodeOptions::default(),
+        );
+        assert!(matches!(
+            invalid,
+            Err(cadmpeg_ir::codec::CodecError::Malformed(message))
+                if message.contains(expected)
+        ));
+    }
 }
 
 #[test]

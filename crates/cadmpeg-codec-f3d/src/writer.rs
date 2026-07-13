@@ -163,6 +163,13 @@ fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<(), CodecEr
 }
 
 fn validate_configuration_projection(target: &CadIr, native: &F3dNative) -> Result<(), CodecError> {
+    for configuration in &native.design_configurations {
+        crate::design::validate_configuration_payload(
+            &configuration.entry_name,
+            configuration.kind,
+            &configuration.payload,
+        )?;
+    }
     let projected = crate::design::project_configurations(&native.design_configurations);
     if target.model.configurations != projected {
         return Err(CodecError::Malformed(
@@ -225,12 +232,11 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
                     configuration.entry_name
                 )));
             }
-            if !configuration.payload.is_object() {
-                return Err(CodecError::Malformed(format!(
-                    "F3D configuration JSON must be an object: {}",
-                    configuration.entry_name
-                )));
-            }
+            crate::design::validate_configuration_payload(
+                &configuration.entry_name,
+                configuration.kind,
+                &configuration.payload,
+            )?;
             let valid_name = match configuration.kind {
                 crate::records::DesignConfigurationKind::Table => {
                     configuration.entry_name.ends_with(".dsgcfg")

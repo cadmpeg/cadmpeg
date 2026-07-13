@@ -52,14 +52,16 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
                     entry.name
                 )));
             }
+            let kind = if entry.name.ends_with(".dsgcfgrule") {
+                DesignConfigurationKind::Rule
+            } else {
+                DesignConfigurationKind::Table
+            };
+            validate_configuration_payload(&entry.name, kind, &payload)?;
             Ok(DesignConfiguration {
                 id: format!("f3d:configuration:{}", entry.name),
                 entry_name: entry.name.clone(),
-                kind: if entry.name.ends_with(".dsgcfgrule") {
-                    DesignConfigurationKind::Rule
-                } else {
-                    DesignConfigurationKind::Table
-                },
+                kind,
                 payload,
             })
         })
@@ -77,6 +79,77 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
         }
     }
     Ok(configurations)
+}
+
+/// Validate the typed fields of one configuration document while permitting
+/// unrecognized object members for forward-compatible native retention.
+pub(crate) fn validate_configuration_payload(
+    entry_name: &str,
+    kind: DesignConfigurationKind,
+    payload: &serde_json::Value,
+) -> Result<(), CodecError> {
+    let object = payload.as_object().ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "F3D configuration JSON must be an object: {entry_name}"
+        ))
+    })?;
+    if kind == DesignConfigurationKind::Rule {
+        return Ok(());
+    }
+    let configurations = match object.get("configurations") {
+        Some(value) => Some(value.as_object().ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "F3D configuration table `configurations` must be an object: {entry_name}"
+            ))
+        })?),
+        None => None,
+    };
+    if let Some(active) = object.get("active") {
+        let active = active.as_str().ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "F3D configuration table `active` must be a string: {entry_name}"
+            ))
+        })?;
+        if !configurations.is_some_and(|variants| variants.contains_key(active)) {
+            return Err(CodecError::Malformed(format!(
+                "F3D active configuration `{active}` is not a named variant: {entry_name}"
+            )));
+        }
+    }
+    for (name, value) in configurations.into_iter().flatten() {
+        let definition = value.as_object().ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "F3D configuration variant `{name}` must be an object: {entry_name}"
+            ))
+        })?;
+        if definition
+            .get("parameters")
+            .is_some_and(|value| !value.is_object())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D configuration variant `{name}` parameters must be an object: {entry_name}"
+            )));
+        }
+        if let Some(suppressed) = definition.get("suppressed") {
+            let valid = suppressed
+                .as_array()
+                .is_some_and(|values| values.iter().all(serde_json::Value::is_string));
+            if !valid {
+                return Err(CodecError::Malformed(format!(
+                    "F3D configuration variant `{name}` suppressed list must contain strings: {entry_name}"
+                )));
+            }
+        }
+        if definition
+            .get("material")
+            .is_some_and(|value| !value.is_string())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D configuration variant `{name}` material must be a string: {entry_name}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Project named variants from configuration-table JSON into the neutral
