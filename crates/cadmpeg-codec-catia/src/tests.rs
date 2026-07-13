@@ -1951,9 +1951,10 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         0x87, 0x18, 154, 1, 0x08, 100, 0x18, 156, 1, 0x08, 102, 0x18, 155, 1, 0x08, 101, 0x18, 245,
         1, 0x83,
     ];
-    for _ in 0..13 {
+    for _ in 0..12 {
         reverse_loop_payload.extend_from_slice(&1i16.to_le_bytes());
     }
+    reverse_loop_payload.extend_from_slice(&0i16.to_le_bytes());
     append_e5_record(&mut bytes, 0x09, 301, &reverse_loop_payload);
     append_e5_record(&mut bytes, 0xcc, 500, &[]);
     append_e5_record(&mut bytes, 0xcc, 501, &[]);

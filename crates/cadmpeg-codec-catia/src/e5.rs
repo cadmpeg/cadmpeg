@@ -818,7 +818,7 @@ fn parse_loop_role(trailing: &[u8], edge_count: usize) -> LoopRole {
         .chunks_exact(2)
         .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
         .collect();
-    if signs.iter().any(|sign| !matches!(sign, -1 | 1)) {
+    if signs.iter().any(|sign| !matches!(sign, -1..=1)) || !matches!(signs[1], -1 | 1) {
         return LoopRole::Malformed;
     }
     LoopRole::Present(signs[1] == 1)
@@ -911,5 +911,54 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
             solutions.push(senses);
         }
     }
-    (solutions.len() == 1).then(|| solutions.remove(0))
+    if solutions.len() == 1 {
+        return solutions.pop();
+    }
+    if edge_ids.len() == 2
+        && solutions.len() == 2
+        && solutions[0]
+            .iter()
+            .zip(&solutions[1])
+            .all(|(left, right)| left != right)
+    {
+        return solutions.into_iter().find(|solution| !solution[0]);
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{solve_loop_chain, E5Edge};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn digon_uses_forward_first_edge_as_relative_gauge() {
+        let edges = BTreeMap::from([
+            (
+                1,
+                E5Edge {
+                    record_id: 1,
+                    support: 0,
+                    start_vertex: 10,
+                    end_vertex: 20,
+                    parameter_start: 0,
+                    parameter_end: 0,
+                    tail: Vec::new(),
+                },
+            ),
+            (
+                2,
+                E5Edge {
+                    record_id: 2,
+                    support: 0,
+                    start_vertex: 20,
+                    end_vertex: 10,
+                    parameter_start: 0,
+                    parameter_end: 0,
+                    tail: Vec::new(),
+                },
+            ),
+        ]);
+        assert_eq!(solve_loop_chain(&[1, 2], &edges), Some(vec![false, false]));
+    }
 }
