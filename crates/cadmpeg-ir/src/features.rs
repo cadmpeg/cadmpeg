@@ -323,6 +323,13 @@ pub enum FeatureDefinition {
         /// Whether growth opposes the selected-face normal.
         reverse: bool,
     },
+    /// Deformation of existing geometry about a feature axis.
+    Flex {
+        /// Flex axis direction in model space.
+        axis: Vector3,
+        /// Applied deformation mode and magnitude.
+        mode: FlexMode,
+    },
     /// Drilled or machined hole.
     Hole {
         /// Face the hole is placed on, when known.
@@ -601,6 +608,32 @@ pub enum HoleKind {
         diameter: Length,
         /// Countersink included angle.
         angle: Angle,
+    },
+}
+
+/// Deformation applied by a flex feature.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FlexMode {
+    /// Bend through a signed angle.
+    Bending {
+        /// Total bend angle.
+        angle: Angle,
+    },
+    /// Twist through a signed angle.
+    Twisting {
+        /// Total twist angle.
+        angle: Angle,
+    },
+    /// Scale transverse sections by a dimensionless factor.
+    Tapering {
+        /// End-to-start transverse scale ratio.
+        factor: f64,
+    },
+    /// Extend or contract along the flex axis.
+    Stretching {
+        /// Signed change in length.
+        distance: Length,
     },
 }
 

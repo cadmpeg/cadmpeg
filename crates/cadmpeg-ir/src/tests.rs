@@ -1777,6 +1777,44 @@ fn feature_extents_round_trip_through_json() {
 }
 
 #[test]
+fn flex_modes_round_trip_and_validate() {
+    use crate::features::{Angle, Feature, FeatureDefinition, FeatureId, FlexMode, Length};
+
+    let modes = vec![
+        FlexMode::Bending { angle: Angle(0.5) },
+        FlexMode::Twisting { angle: Angle(1.0) },
+        FlexMode::Tapering { factor: 1.5 },
+        FlexMode::Stretching {
+            distance: Length(12.0),
+        },
+    ];
+    let json = serde_json::to_string(&modes).unwrap();
+    assert_eq!(serde_json::from_str::<Vec<FlexMode>>(&json).unwrap(), modes);
+
+    let mut ir = unit_cube();
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#flex".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: false,
+        parent: None,
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Flex {
+            axis: Vector3::new(0.0, 0.0, 0.0),
+            mode: FlexMode::Tapering { factor: 0.0 },
+        },
+        native_ref: None,
+    });
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message == "flex axis is degenerate"));
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message == "flex magnitude is invalid"));
+}
+
+#[test]
 fn edge_selections_round_trip_through_json() {
     use crate::features::EdgeSelection;
     use crate::ids::EdgeId;

@@ -3,6 +3,7 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
+use crate::features::FlexMode;
 use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
 /// Presence sets for every arena, keyed by the string id.
@@ -1011,6 +1012,31 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             FeatureDefinition::Dome { faces, .. } => {
                 face_selections.push(faces);
+            }
+            FeatureDefinition::Flex { axis, mode } => {
+                if !axis.norm().is_finite() || axis.norm() <= 0.0 {
+                    findings.push(Finding {
+                        check: Check::GeometricConsistency,
+                        severity: Severity::Error,
+                        message: "flex axis is degenerate".into(),
+                        entity: Some(feature.id.0.clone()),
+                    });
+                }
+                let valid = match mode {
+                    FlexMode::Bending { angle } | FlexMode::Twisting { angle } => {
+                        angle.0.is_finite()
+                    }
+                    FlexMode::Tapering { factor } => factor.is_finite() && *factor > 0.0,
+                    FlexMode::Stretching { distance } => distance.0.is_finite(),
+                };
+                if !valid {
+                    findings.push(Finding {
+                        check: Check::GeometricConsistency,
+                        severity: Severity::Error,
+                        message: "flex magnitude is invalid".into(),
+                        entity: Some(feature.id.0.clone()),
+                    });
+                }
             }
             FeatureDefinition::Combine { target, tools, .. } => {
                 body_selections.push(target);

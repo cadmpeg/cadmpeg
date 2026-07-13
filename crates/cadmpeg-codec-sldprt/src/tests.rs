@@ -2118,8 +2118,8 @@ fn encoder_writes_source_less_native_features() {
 }
 
 #[test]
-fn semantic_writer_round_trips_unknown_feature_properties() {
-    use cadmpeg_ir::features::FeatureDefinition;
+fn semantic_writer_round_trips_flex_operations() {
+    use cadmpeg_ir::features::{Angle, FeatureDefinition, FlexMode};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -2130,20 +2130,17 @@ fn semantic_writer_round_trips_unknown_feature_properties() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let FeatureDefinition::Native {
-        kind,
-        parameters,
-        properties,
-    } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Flex { axis, mode } = &mut decoded.ir.model.features[0].definition
     else {
-        panic!("native flex feature");
+        panic!("typed flex feature");
     };
-    assert_eq!(kind, "Flex");
-    assert_eq!(parameters["Angle"], "30deg");
-    assert_eq!(properties["Mode"], "Bending");
-    assert_eq!(properties["Axis"], "0,1,0");
-    properties.insert("Mode".into(), "Twisting".into());
-    properties.insert("NeutralPlane".into(), "face:12".into());
+    assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0));
+    assert!(matches!(
+        mode,
+        FlexMode::Bending { angle }
+            if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12
+    ));
+    *mode = FlexMode::Twisting { angle: Angle(0.75) };
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -2158,16 +2155,74 @@ fn semantic_writer_round_trips_unknown_feature_properties() {
     );
     assert!(matches!(
         &regenerated.ir.model.features[0].definition,
-        FeatureDefinition::Native {
-            kind,
-            parameters,
-            properties,
-        } if kind == "Flex"
-            && parameters.get("Angle").map(String::as_str) == Some("30deg")
-            && properties.get("Mode").map(String::as_str) == Some("Twisting")
-            && properties.get("Axis").map(String::as_str) == Some("0,1,0")
-            && properties.get("NeutralPlane").map(String::as_str) == Some("face:12")
+        FeatureDefinition::Flex {
+            axis,
+            mode: FlexMode::Twisting { angle },
+        } if *axis == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+            && (angle.0 - 0.75).abs() < 1e-12
     ));
+}
+
+#[test]
+fn semantic_writer_round_trips_all_flex_modes() {
+    use cadmpeg_ir::features::{Angle, FeatureDefinition, FlexMode, Length};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Flex Name="Bend" Type="Flex" id="1" Mode="Bending" Axis="1,0,0"><Dimension Name="Angle">10deg</Dimension></Flex>
+            <Flex Name="Twist" Type="Flex" id="2" Mode="Twisting" Axis="0,1,0"><Dimension Name="Angle">20deg</Dimension></Flex>
+            <Flex Name="Taper" Type="Flex" id="3" Mode="Tapering" Axis="0,0,1"><Dimension Name="Factor">1.5</Dimension></Flex>
+            <Flex Name="Stretch" Type="Flex" id="4" Mode="Stretching" Axis="1,1,0"><Dimension Name="Distance">8mm</Dimension></Flex>
+        </Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    for feature in &mut decoded.ir.model.features {
+        if let FeatureDefinition::Flex { mode, .. } = &mut feature.definition {
+            *mode = match feature.name.as_deref().unwrap() {
+                "Bend" => FlexMode::Bending { angle: Angle(0.1) },
+                "Twist" => FlexMode::Twisting { angle: Angle(0.2) },
+                "Taper" => FlexMode::Tapering { factor: 2.0 },
+                "Stretch" => FlexMode::Stretching {
+                    distance: Length(12.0),
+                },
+                name => panic!("unexpected flex {name}"),
+            };
+        } else {
+            panic!("untyped flex feature");
+        }
+    }
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let modes = regenerated
+        .ir
+        .model
+        .features
+        .iter()
+        .map(|feature| &feature.definition)
+        .collect::<Vec<_>>();
+    assert!(
+        matches!(modes[0], FeatureDefinition::Flex { mode: FlexMode::Bending { angle }, .. } if (angle.0 - 0.1).abs() < 1e-12)
+    );
+    assert!(
+        matches!(modes[1], FeatureDefinition::Flex { mode: FlexMode::Twisting { angle }, .. } if (angle.0 - 0.2).abs() < 1e-12)
+    );
+    assert!(
+        matches!(modes[2], FeatureDefinition::Flex { mode: FlexMode::Tapering { factor }, .. } if (*factor - 2.0).abs() < 1e-12)
+    );
+    assert!(
+        matches!(modes[3], FeatureDefinition::Flex { mode: FlexMode::Stretching { distance }, .. } if (distance.0 - 12.0).abs() < 1e-12)
+    );
 }
 
 #[test]

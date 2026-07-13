@@ -8,8 +8,8 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, BodySelection, BooleanOp, ChamferSpec, ConfigurationId, DesignConfiguration,
     DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection, FeatureDefinition,
-    FeatureId, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef,
-    RadiusSpec, VariableRadius,
+    FeatureId, FlexMode, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternKind,
+    ProfileRef, RadiusSpec, VariableRadius,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::Exactness;
@@ -497,6 +497,8 @@ fn project_definition(
         project_move_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Dome") {
         project_dome(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature_family(feature, "Flex") {
+        project_flex(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Hole") {
         project_hole(feature).unwrap_or_else(|| native_definition(feature))
     } else if is_revolve(feature) {
@@ -1103,6 +1105,54 @@ fn project_dome(feature: &Feature) -> Option<FeatureDefinition> {
         elliptical: parse_bool(feature.properties.get("Elliptical")?)?,
         reverse: parse_bool(feature.properties.get("Reverse")?)?,
     })
+}
+
+fn project_flex(feature: &Feature) -> Option<FeatureDefinition> {
+    let axis = parse_vector3(
+        feature
+            .properties
+            .get("Axis")
+            .or_else(|| feature.properties.get("AxisDirection"))?,
+    )?;
+    if !(axis.norm().is_finite() && axis.norm() > 0.0) {
+        return None;
+    }
+    let mode = match feature
+        .properties
+        .get("Mode")?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "bending" | "bend" => FlexMode::Bending {
+            angle: Angle(
+                feature
+                    .parameters
+                    .get("Angle")
+                    .and_then(|value| parse_angle_rad(value))?,
+            ),
+        },
+        "twisting" | "twist" => FlexMode::Twisting {
+            angle: Angle(
+                feature
+                    .parameters
+                    .get("Angle")
+                    .and_then(|value| parse_angle_rad(value))?,
+            ),
+        },
+        "tapering" | "taper" => FlexMode::Tapering {
+            factor: feature.parameters.get("Factor")?.trim().parse().ok()?,
+        },
+        "stretching" | "stretch" => FlexMode::Stretching {
+            distance: Length(
+                feature
+                    .parameters
+                    .get("Distance")
+                    .and_then(|value| parse_length_mm(value))?,
+            ),
+        },
+        _ => return None,
+    };
+    Some(FeatureDefinition::Flex { axis, mode })
 }
 
 fn project_chamfer(feature: &Feature) -> Option<FeatureDefinition> {
@@ -2483,6 +2533,80 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::Flex { axis, mode } => {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !feature_family(record, "Flex"))
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported flex semantics",
+                        feature.id
+                    )));
+                }
+                require_direction(*axis, &feature.id, "flex axis")?;
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                parameters.remove("Angle");
+                parameters.remove("Factor");
+                parameters.remove("Distance");
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
+                properties.insert("Axis".into(), format_vector3(*axis));
+                properties.remove("AxisDirection");
+                match mode {
+                    FlexMode::Bending { angle } => {
+                        if !angle.0.is_finite() {
+                            return Err(CodecError::Malformed(format!(
+                                "SLDPRT feature {} has a non-finite flex angle",
+                                feature.id
+                            )));
+                        }
+                        properties.insert("Mode".into(), "Bending".into());
+                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    }
+                    FlexMode::Twisting { angle } => {
+                        if !angle.0.is_finite() {
+                            return Err(CodecError::Malformed(format!(
+                                "SLDPRT feature {} has a non-finite flex angle",
+                                feature.id
+                            )));
+                        }
+                        properties.insert("Mode".into(), "Twisting".into());
+                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    }
+                    FlexMode::Tapering { factor } => {
+                        if !factor.is_finite() || *factor <= 0.0 {
+                            return Err(CodecError::Malformed(format!(
+                                "SLDPRT feature {} has an invalid flex taper factor",
+                                feature.id
+                            )));
+                        }
+                        properties.insert("Mode".into(), "Tapering".into());
+                        parameters.insert("Factor".into(), factor.to_string());
+                    }
+                    FlexMode::Stretching { distance } => {
+                        if !distance.0.is_finite() {
+                            return Err(CodecError::Malformed(format!(
+                                "SLDPRT feature {} has a non-finite flex distance",
+                                feature.id
+                            )));
+                        }
+                        properties.insert("Mode".into(), "Stretching".into());
+                        parameters.insert("Distance".into(), format_length_mm(distance.0));
+                    }
+                }
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Flex".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
+            }
             FeatureDefinition::Hole {
                 face,
                 position,
@@ -3181,6 +3305,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::DeleteFace { .. } => "DeleteFace",
         FeatureDefinition::MoveFace { .. } => "MoveFace",
         FeatureDefinition::Dome { .. } => "Dome",
+        FeatureDefinition::Flex { .. } => "Flex",
         FeatureDefinition::Hole { .. } => "Hole",
         FeatureDefinition::Pattern {
             pattern: PatternKind::Mirror { .. },
