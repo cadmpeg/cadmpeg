@@ -505,55 +505,55 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
     for edge in &ordered_edges {
         validate_planar_edge(model, edge, ir.tolerances.linear)?;
     }
+    let plane_tolerance = face.tolerance.unwrap_or(ir.tolerances.linear).max(1.0e-10);
+    for point in &ordered_points {
+        let distance = (point.x - origin.x) * normal.x
+            + (point.y - origin.y) * normal.y
+            + (point.z - origin.z) * normal.z;
+        if distance.abs() > plane_tolerance {
+            return Err(CodecError::Malformed(
+                "planar loop vertex is outside its face plane tolerance".into(),
+            ));
+        }
+    }
+    for edge in &ordered_edges {
+        let curve = model
+            .curves
+            .iter()
+            .find(|curve| edge.curve.as_ref() == Some(&curve.id))
+            .expect("validated edge curve");
+        if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
+            for point in &nurbs.control_points {
+                let distance = (point.x - origin.x) * normal.x
+                    + (point.y - origin.y) * normal.y
+                    + (point.z - origin.z) * normal.z;
+                if distance.abs() > plane_tolerance {
+                    return Err(CodecError::Malformed(format!(
+                        "edge curve {} is outside its face plane tolerance",
+                        curve.id.0
+                    )));
+                }
+            }
+        }
+    }
 
     let mut payload = vec![0x32];
     let c2 = (0..edge_count)
         .map(|index| {
-            let edge = ordered_edges[index];
-            let (from, to) = if ordered_coedges[index].sense == Sense::Forward {
-                (&edge.start, &edge.end)
-            } else {
-                (&edge.end, &edge.start)
-            };
-            let from = plane_uv(
-                vertex_point(model, from).expect("validated trim start"),
+            projected_brep_c2_curve(
+                model,
+                ordered_edges[index],
+                ordered_coedges[index].sense,
                 origin,
                 u_axis,
                 v_axis,
-            );
-            let to = plane_uv(
-                vertex_point(model, to).expect("validated trim end"),
-                origin,
-                u_axis,
-                v_axis,
-            );
-            (
-                LINE_CLASS,
-                bounded_line_payload(
-                    from,
-                    to,
-                    edge.param_range.expect("validated edge domain"),
-                    2,
-                ),
             )
         })
         .collect::<Vec<_>>();
     payload.extend(polymorphic_array(&c2));
     let c3 = ordered_edges
         .iter()
-        .map(|edge| {
-            let from = vertex_point(model, &edge.start).expect("validated edge start");
-            let to = vertex_point(model, &edge.end).expect("validated edge end");
-            (
-                LINE_CLASS,
-                bounded_line_payload(
-                    [from.x, from.y, from.z],
-                    [to.x, to.y, to.z],
-                    edge.param_range.expect("validated edge domain"),
-                    3,
-                ),
-            )
-        })
+        .map(|edge| brep_c3_curve(model, edge))
         .collect::<Vec<_>>();
     payload.extend(polymorphic_array(&c3));
     payload.extend(polymorphic_array(&[(
@@ -1037,6 +1037,24 @@ fn planar_multi_face_brep_payload(
             let coedge =
                 &model.coedges[*coedge_index.get(&coedge_id.0).expect("owned coedge") as usize];
             let edge = &model.edges[*edge_index.get(&coedge.edge.0).expect("owned edge") as usize];
+            let curve = model
+                .curves
+                .iter()
+                .find(|curve| edge.curve.as_ref() == Some(&curve.id))
+                .expect("validated edge curve");
+            if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
+                for point in &nurbs.control_points {
+                    let distance = (point.x - origin.x) * normal.x
+                        + (point.y - origin.y) * normal.y
+                        + (point.z - origin.z) * normal.z;
+                    if distance.abs() > tolerance {
+                        return Err(CodecError::Malformed(format!(
+                            "edge curve {} is outside its face plane tolerance",
+                            curve.id.0
+                        )));
+                    }
+                }
+            }
             let start = if coedge.sense == Sense::Forward {
                 &edge.start
             } else {
@@ -1085,42 +1103,14 @@ fn planar_multi_face_brep_payload(
             let face = *face_index.get(&loop_.face.0).expect("owned face") as usize;
             let (origin, _, u_axis, v_axis) = plane_frames[face];
             let edge = &model.edges[*edge_index.get(&coedge.edge.0).expect("owned edge") as usize];
-            let (from, to) = if coedge.sense == Sense::Forward {
-                (&edge.start, &edge.end)
-            } else {
-                (&edge.end, &edge.start)
-            };
-            let from = points[*vertex_index.get(&from.0).expect("owned vertex") as usize];
-            let to = points[*vertex_index.get(&to.0).expect("owned vertex") as usize];
-            let domain = edge.param_range.expect("validated edge domain");
-            (
-                LINE_CLASS,
-                bounded_line_payload(
-                    plane_uv(from, origin, u_axis, v_axis),
-                    plane_uv(to, origin, u_axis, v_axis),
-                    domain,
-                    2,
-                ),
-            )
+            projected_brep_c2_curve(model, edge, coedge.sense, origin, u_axis, v_axis)
         })
         .collect::<Vec<_>>();
     payload.extend(polymorphic_array(&c2));
     let c3 = model
         .edges
         .iter()
-        .map(|edge| {
-            let from = points[*vertex_index.get(&edge.start.0).expect("owned vertex") as usize];
-            let to = points[*vertex_index.get(&edge.end.0).expect("owned vertex") as usize];
-            (
-                LINE_CLASS,
-                bounded_line_payload(
-                    [from.x, from.y, from.z],
-                    [to.x, to.y, to.z],
-                    edge.param_range.expect("validated edge domain"),
-                    3,
-                ),
-            )
-        })
+        .map(|edge| brep_c3_curve(model, edge))
         .collect::<Vec<_>>();
     payload.extend(polymorphic_array(&c3));
     let surfaces = model
@@ -1306,35 +1296,61 @@ fn validate_planar_edge(
             curve.id.0
         )));
     }
-    let CurveGeometry::Line { origin, direction } = curve.geometry else {
-        return Err(CodecError::NotImplemented(format!(
-            "edge curve {} is not a line",
-            curve.id.0
-        )));
-    };
     let [start_parameter, end_parameter] = edge.param_range.ok_or_else(|| {
         CodecError::NotImplemented(format!("edge {} has no parameter range", edge.id.0))
     })?;
     if !start_parameter.is_finite()
         || !end_parameter.is_finite()
         || start_parameter >= end_parameter
-        || (direction.norm() - 1.0).abs() > 1.0e-10
     {
         return Err(CodecError::Malformed(format!(
-            "edge {} has an invalid line parameterization",
+            "edge {} has an invalid parameter range",
             edge.id.0
         )));
     }
-    let expected_start = cadmpeg_ir::math::Point3::new(
-        origin.x + direction.x * start_parameter,
-        origin.y + direction.y * start_parameter,
-        origin.z + direction.z * start_parameter,
-    );
-    let expected_end = cadmpeg_ir::math::Point3::new(
-        origin.x + direction.x * end_parameter,
-        origin.y + direction.y * end_parameter,
-        origin.z + direction.z * end_parameter,
-    );
+    let (expected_start, expected_end) = match &curve.geometry {
+        CurveGeometry::Line { origin, direction } => {
+            if (direction.norm() - 1.0).abs() > 1.0e-10 {
+                return Err(CodecError::Malformed(format!(
+                    "edge {} has an invalid line parameterization",
+                    edge.id.0
+                )));
+            }
+            (
+                cadmpeg_ir::math::Point3::new(
+                    origin.x + direction.x * start_parameter,
+                    origin.y + direction.y * start_parameter,
+                    origin.z + direction.z * start_parameter,
+                ),
+                cadmpeg_ir::math::Point3::new(
+                    origin.x + direction.x * end_parameter,
+                    origin.y + direction.y * end_parameter,
+                    origin.z + direction.z * end_parameter,
+                ),
+            )
+        }
+        CurveGeometry::Nurbs(nurbs) => {
+            check_nurbs_curve(&curve.id.0, nurbs)?;
+            let count = nurbs.control_points.len();
+            let domain = [nurbs.knots[nurbs.degree as usize], nurbs.knots[count]];
+            if nurbs.periodic || domain != [start_parameter, end_parameter] {
+                return Err(CodecError::NotImplemented(format!(
+                    "edge {} requires a nonperiodic full-domain NURBS curve",
+                    edge.id.0
+                )));
+            }
+            (
+                *nurbs.control_points.first().expect("validated NURBS poles"),
+                *nurbs.control_points.last().expect("validated NURBS poles"),
+            )
+        }
+        _ => {
+            return Err(CodecError::NotImplemented(format!(
+                "edge curve {} is not a line or NURBS curve",
+                curve.id.0
+            )))
+        }
+    };
     let start = vertex_point(model, &edge.start)
         .ok_or_else(|| CodecError::Malformed(format!("edge {} start is missing", edge.id.0)))?;
     let end = vertex_point(model, &edge.end)
@@ -1358,6 +1374,101 @@ fn close_point(
     (left.x - right.x).abs() <= tolerance
         && (left.y - right.y).abs() <= tolerance
         && (left.z - right.z).abs() <= tolerance
+}
+
+fn brep_c3_curve(
+    model: &cadmpeg_ir::document::Model,
+    edge: &cadmpeg_ir::topology::Edge,
+) -> ([u8; 16], Vec<u8>) {
+    let curve = model
+        .curves
+        .iter()
+        .find(|curve| edge.curve.as_ref() == Some(&curve.id))
+        .expect("validated edge curve");
+    match &curve.geometry {
+        CurveGeometry::Line { .. } => {
+            let from = vertex_point(model, &edge.start).expect("validated edge start");
+            let to = vertex_point(model, &edge.end).expect("validated edge end");
+            (
+                LINE_CLASS,
+                bounded_line_payload(
+                    [from.x, from.y, from.z],
+                    [to.x, to.y, to.z],
+                    edge.param_range.expect("validated edge domain"),
+                    3,
+                ),
+            )
+        }
+        CurveGeometry::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
+        _ => unreachable!("validated writable Brep curve"),
+    }
+}
+
+fn projected_brep_c2_curve(
+    model: &cadmpeg_ir::document::Model,
+    edge: &cadmpeg_ir::topology::Edge,
+    sense: cadmpeg_ir::topology::Sense,
+    origin: cadmpeg_ir::math::Point3,
+    u_axis: cadmpeg_ir::math::Vector3,
+    v_axis: cadmpeg_ir::math::Vector3,
+) -> ([u8; 16], Vec<u8>) {
+    use cadmpeg_ir::topology::Sense;
+
+    let curve = model
+        .curves
+        .iter()
+        .find(|curve| edge.curve.as_ref() == Some(&curve.id))
+        .expect("validated edge curve");
+    match &curve.geometry {
+        CurveGeometry::Line { .. } => {
+            let (from, to) = if sense == Sense::Forward {
+                (&edge.start, &edge.end)
+            } else {
+                (&edge.end, &edge.start)
+            };
+            let from = vertex_point(model, from).expect("validated trim start");
+            let to = vertex_point(model, to).expect("validated trim end");
+            (
+                LINE_CLASS,
+                bounded_line_payload(
+                    plane_uv(from, origin, u_axis, v_axis),
+                    plane_uv(to, origin, u_axis, v_axis),
+                    edge.param_range.expect("validated edge domain"),
+                    2,
+                ),
+            )
+        }
+        CurveGeometry::Nurbs(nurbs) => {
+            let mut projected = nurbs.clone();
+            projected.control_points = nurbs
+                .control_points
+                .iter()
+                .map(|point| {
+                    let uv = plane_uv(*point, origin, u_axis, v_axis);
+                    cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0)
+                })
+                .collect();
+            if sense == Sense::Reversed {
+                projected.control_points.reverse();
+                if let Some(weights) = &mut projected.weights {
+                    weights.reverse();
+                }
+                let sum = projected.knots[projected.degree as usize]
+                    + projected.knots[projected.control_points.len()];
+                projected.knots = projected
+                    .knots
+                    .iter()
+                    .rev()
+                    .map(|knot| sum - knot)
+                    .collect();
+            }
+            (
+                NURBS_CURVE_CLASS,
+                nurbs_curve_payload_dimension(&projected, 2),
+            )
+        }
+        _ => unreachable!("validated writable Brep curve"),
+    }
 }
 
 fn vertex_point(
@@ -1887,11 +1998,18 @@ fn circle_payload(
 }
 
 fn nurbs_curve_payload(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Vec<u8> {
+    nurbs_curve_payload_dimension(curve, 3)
+}
+
+fn nurbs_curve_payload_dimension(
+    curve: &cadmpeg_ir::geometry::NurbsCurve,
+    dimension: i32,
+) -> Vec<u8> {
     let rational = i32::from(curve.weights.is_some());
     let order = (curve.degree + 1) as i32;
     let count = curve.control_points.len() as i32;
     let mut payload = vec![0x10];
-    for value in [3, rational, order, count, 0, 0] {
+    for value in [dimension, rational, order, count, 0, 0] {
         payload.extend(value.to_le_bytes());
     }
     let min = curve
@@ -1918,7 +2036,9 @@ fn nurbs_curve_payload(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Vec<u8> {
         let weight = curve.weights.as_ref().map_or(1.0, |weights| weights[index]);
         payload.extend((point.x * weight).to_le_bytes());
         payload.extend((point.y * weight).to_le_bytes());
-        payload.extend((point.z * weight).to_le_bytes());
+        if dimension == 3 {
+            payload.extend((point.z * weight).to_le_bytes());
+        }
         if rational != 0 {
             payload.extend(weight.to_le_bytes());
         }
@@ -2779,6 +2899,76 @@ mod tests {
             assert_ne!(uses[0].sense, uses[1].sense);
             assert_eq!(uses[0].radial_next, uses[1].id);
             assert_eq!(uses[1].radial_next, uses[0].id);
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+        }
+    }
+
+    #[test]
+    fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
+        let mut ir = adjacent_quad_sheet();
+        let edge = &mut ir.model.edges[1];
+        edge.param_range = Some([2.0, 5.0]);
+        ir.model.curves[1].geometry =
+            cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+                degree: 2,
+                knots: vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+                control_points: vec![
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.25, 0.5, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                weights: Some(vec![1.0, 0.75, 1.0]),
+                periodic: false,
+            });
+        let expected = ir.model.curves[1].geometry.clone();
+        for version in [
+            RhinoArchiveVersion::V5,
+            RhinoArchiveVersion::V6,
+            RhinoArchiveVersion::V7,
+            RhinoArchiveVersion::V8,
+        ] {
+            let mut bytes = Vec::new();
+            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            let shared = decoded
+                .ir
+                .model
+                .edges
+                .iter()
+                .find(|edge| edge.param_range == Some([2.0, 5.0]))
+                .expect("NURBS edge domain");
+            let curve = decoded
+                .ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| shared.curve.as_ref() == Some(&curve.id))
+                .expect("NURBS C3");
+            assert_eq!(curve.geometry, expected, "{version:?}");
+            let uses = decoded
+                .ir
+                .model
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.edge == shared.id)
+                .collect::<Vec<_>>();
+            assert_eq!(uses.len(), 2, "{version:?}");
+            assert_ne!(uses[0].sense, uses[1].sense, "{version:?}");
+            for use_ in uses {
+                let pcurve = decoded
+                    .ir
+                    .model
+                    .pcurves
+                    .iter()
+                    .find(|pcurve| use_.pcurve.as_ref() == Some(&pcurve.id))
+                    .expect("projected NURBS C2");
+                assert!(matches!(
+                    pcurve.geometry,
+                    cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
+                ));
+            }
             assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
         }
     }
