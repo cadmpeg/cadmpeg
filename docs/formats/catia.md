@@ -187,6 +187,15 @@ Each spine edge row is a handle sequence `E = [p0, interior…, p1]` with endpoi
 
 The FBB-spline edge-table handles share the mesh-boundary handle namespace used by the trim packets. Endpoint ports form a larger namespace than the vertex table; a port handle is not a vertex index.
 
+Resolved physical-edge endpoint pairs constrain the port namespace. For every
+port handle, intersect the unordered vertex pairs of all resolved edge rows
+carrying that handle; a singleton intersection binds the port to that vertex.
+On a resolved row, either bound port binds the other port to the other member
+of the pair. A row with two distinctly bound ports acquires their unordered
+endpoint pair. Repeat these two operations to a fixpoint. The collapse is valid
+only when every row having two bound ports agrees with its independently
+resolved endpoint pair; any contradiction invalidates the entire propagation.
+
 #### 5.4.1 Regular trim-motif vertex allocation
 
 Regular-motif bodies serialize vertex allocation as a walk over the ordered trim packets. A column is `(H[0],H[1])` or `(H[N-2],H[N-1])`. Emitting a handle assigns the next `05 08 01` row on its first occurrence and reuses that row thereafter.

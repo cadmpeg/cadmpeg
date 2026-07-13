@@ -337,6 +337,100 @@ pub fn parse_standard_endpoints(
     )
 }
 
+/// Return the endpoint-port handles for the standard edge table, in physical
+/// edge-row order.
+#[must_use]
+pub fn standard_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
+    edge_rows
+        .iter()
+        .map(|row| Some([*row.handles.first()?, *row.handles.last()?]))
+        .collect()
+}
+
+/// Propagate byte-level endpoint ports through independently resolved physical
+/// edge endpoint pairs. The result is rejected atomically when any port mapping
+/// contradicts a resolved pair.
+#[must_use]
+pub fn propagate_edge_port_points(
+    edge_ports: &[[u32; 2]],
+    endpoint_pairs: &[Option<[usize; 2]>],
+) -> Option<Vec<Option<[usize; 2]>>> {
+    if edge_ports.len() != endpoint_pairs.len() {
+        return None;
+    }
+    let mut resolved = endpoint_pairs.to_vec();
+    let mut port_points = HashMap::<u32, usize>::new();
+
+    for port in edge_ports.iter().flatten().copied().collect::<HashSet<_>>() {
+        let mut intersection: Option<HashSet<usize>> = None;
+        for (ports, pair) in edge_ports.iter().zip(&resolved) {
+            let Some(pair) = pair else { continue };
+            if ports.contains(&port) {
+                let points = HashSet::from(*pair);
+                intersection = Some(match intersection {
+                    Some(current) => current.intersection(&points).copied().collect(),
+                    None => points,
+                });
+            }
+        }
+        if let Some(points) = intersection {
+            if points.len() == 1 {
+                port_points.insert(port, *points.iter().next()?);
+            }
+        }
+    }
+
+    loop {
+        let before = (port_points.len(), resolved.iter().flatten().count());
+        for (ports, pair) in edge_ports.iter().zip(&resolved) {
+            let Some([left, right]) = *pair else {
+                continue;
+            };
+            match (port_points.get(&ports[0]), port_points.get(&ports[1])) {
+                (Some(&point), None) if point == left => {
+                    port_points.insert(ports[1], right);
+                }
+                (Some(&point), None) if point == right => {
+                    port_points.insert(ports[1], left);
+                }
+                (None, Some(&point)) if point == left => {
+                    port_points.insert(ports[0], right);
+                }
+                (None, Some(&point)) if point == right => {
+                    port_points.insert(ports[0], left);
+                }
+                (Some(&left_point), Some(&right_point))
+                    if !same_unordered_pair([left_point, right_point], [left, right]) =>
+                {
+                    return None;
+                }
+                _ => {}
+            }
+        }
+        for (ports, pair) in edge_ports.iter().zip(&mut resolved) {
+            if pair.is_none() {
+                if let (Some(&left), Some(&right)) =
+                    (port_points.get(&ports[0]), port_points.get(&ports[1]))
+                {
+                    if left != right {
+                        *pair = Some([left, right]);
+                    }
+                }
+            }
+        }
+        if before == (port_points.len(), resolved.iter().flatten().count()) {
+            break;
+        }
+    }
+    Some(resolved)
+}
+
+fn same_unordered_pair(left: [usize; 2], right: [usize; 2]) -> bool {
+    left == right || left == [right[1], right[0]]
+}
+
 fn motif_port_points(trims: &[TrimRecord], vertex_count: usize) -> Option<HashMap<u32, usize>> {
     fn columns(record: &TrimRecord) -> Option<([u32; 2], [u32; 2])> {
         Some((
@@ -1127,7 +1221,9 @@ impl UnionFind {
 
 #[cfg(test)]
 mod motif_tests {
-    use super::{motif_port_points, reconstruct_incidence, EdgeRow, TrimRecord};
+    use super::{
+        motif_port_points, propagate_edge_port_points, reconstruct_incidence, EdgeRow, TrimRecord,
+    };
 
     fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
         TrimRecord {
@@ -1191,5 +1287,22 @@ mod motif_tests {
         assert!(uses
             .iter()
             .all(|senses| senses == &[false, true] || senses == &[true, false]));
+    }
+
+    #[test]
+    fn endpoint_ports_propagate_resolved_pairs_to_unresolved_edges() {
+        let ports = [[10, 11], [11, 12], [12, 13], [13, 10]];
+        let pairs = [Some([0, 1]), Some([1, 2]), None, Some([3, 0])];
+        assert_eq!(
+            propagate_edge_port_points(&ports, &pairs),
+            Some(vec![Some([0, 1]), Some([1, 2]), Some([2, 3]), Some([3, 0]),])
+        );
+    }
+
+    #[test]
+    fn endpoint_ports_reject_contradictory_pair_constraints() {
+        let ports = [[10, 11], [11, 12], [12, 10]];
+        let pairs = [Some([0, 1]), Some([1, 2]), Some([0, 3])];
+        assert_eq!(propagate_edge_port_points(&ports, &pairs), None);
     }
 }

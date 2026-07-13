@@ -1190,6 +1190,10 @@ fn attach_standard_topology(
         &supports,
         &endpoint_candidates,
     );
+    let resolved_endpoint_pairs = resolved_endpoint_pairs
+        .zip(topology::standard_edge_ports(brep))
+        .and_then(|(pairs, ports)| topology::propagate_edge_port_points(&ports, &pairs))
+        .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<[usize; 2]>>>());
     let (topology, point_assignment) = if let Some(topology) = topology::parse_standard(brep) {
         let endpoint_pairs: Option<Vec<[usize; 2]>> = endpoint_candidates
             .iter()
@@ -1379,7 +1383,7 @@ fn resolve_standard_endpoint_pairs(
     surface_indices: &HashMap<SurfaceId, usize>,
     supports: &[geometry::StandardCurveSupport],
     candidates: &[Vec<usize>],
-) -> Option<Vec<[usize; 2]>> {
+) -> Option<Vec<Option<[usize; 2]>>> {
     let mut resolved: Vec<Option<[usize; 2]>> = candidates
         .iter()
         .map(|points| <[usize; 2]>::try_from(points.as_slice()).ok())
@@ -1433,7 +1437,7 @@ fn resolve_standard_endpoint_pairs(
             resolved[edge] = Some(pair);
         }
     }
-    resolved.into_iter().collect()
+    Some(resolved)
 }
 
 fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) -> Option<Vector3> {
