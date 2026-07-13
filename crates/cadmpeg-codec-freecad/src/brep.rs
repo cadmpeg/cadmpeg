@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
 
@@ -47,10 +47,77 @@ pub struct TextFacts {
     pub shape_types: BTreeMap<String, usize>,
     /// Ordered location table with resolved transforms.
     pub locations: Vec<TextLocation>,
+    /// Ordered parameter-space curve table.
+    pub curve2ds: Vec<TextCurve2d>,
     /// Ordered 3D curve table.
     pub curves: Vec<TextCurve>,
     /// Ordered surface table.
     pub surfaces: Vec<TextSurface>,
+}
+
+/// A rational or non-rational 2D B-spline curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NurbsCurve2d {
+    /// Curve degree.
+    pub degree: u32,
+    /// Full knot vector.
+    pub knots: Vec<f64>,
+    /// Ordered parameter-space poles.
+    pub control_points: Vec<Point2>,
+    /// Optional rational weights.
+    pub weights: Option<Vec<f64>>,
+    /// Periodicity flag.
+    pub periodic: bool,
+}
+
+/// One exact parameter-space curve record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TextCurve2d {
+    /// Infinite line.
+    Line { origin: Point2, direction: Point2 },
+    /// Full circle with its oriented parameter frame.
+    Circle {
+        center: Point2,
+        x_axis: Point2,
+        y_axis: Point2,
+        radius: f64,
+    },
+    /// Full ellipse.
+    Ellipse {
+        center: Point2,
+        x_axis: Point2,
+        y_axis: Point2,
+        major_radius: f64,
+        minor_radius: f64,
+    },
+    /// Parabola.
+    Parabola {
+        vertex: Point2,
+        x_axis: Point2,
+        y_axis: Point2,
+        focal_distance: f64,
+    },
+    /// Hyperbola.
+    Hyperbola {
+        center: Point2,
+        x_axis: Point2,
+        y_axis: Point2,
+        major_radius: f64,
+        minor_radius: f64,
+    },
+    /// Rational or non-rational B-spline.
+    Nurbs(NurbsCurve2d),
+    /// Parameter restriction of an inline basis curve.
+    Trimmed {
+        parameter_range: [f64; 2],
+        basis: Box<TextCurve2d>,
+    },
+    /// Signed planar offset of an inline basis curve.
+    Offset {
+        distance: f64,
+        basis: Box<TextCurve2d>,
+    },
 }
 
 /// One factor in a compound location.
@@ -298,6 +365,7 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
         )));
     }
     let locations = parse_locations(&tokens, &section_counts)?;
+    let curve2ds = parse_curve2ds(&tokens, &section_counts)?;
     let curves = parse_curves(&tokens, &section_counts)?;
     let surfaces = parse_surfaces(&tokens, &section_counts)?;
     Ok(TextFacts {
@@ -305,6 +373,7 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
         section_counts,
         shape_types,
         locations,
+        curve2ds,
         curves,
         surfaces,
     })
@@ -389,6 +458,146 @@ fn parse_locations(
         ));
     }
     Ok(locations)
+}
+
+fn parse_curve2ds(
+    tokens: &[&str],
+    section_counts: &BTreeMap<String, usize>,
+) -> Result<Vec<TextCurve2d>, CodecError> {
+    let start = tokens
+        .iter()
+        .position(|token| *token == "Curve2ds")
+        .ok_or_else(|| CodecError::Malformed("text B-rep has no Curve2ds table".into()))?
+        + 2;
+    let end = tokens
+        .iter()
+        .position(|token| *token == "Curves")
+        .ok_or_else(|| CodecError::Malformed("text B-rep has no Curves table".into()))?;
+    let count = section_counts.get("Curve2ds").copied().unwrap_or(0);
+    let mut cursor = TokenCursor::new(&tokens[start..end]);
+    let mut curves = Vec::with_capacity(count);
+    for index in 0..count {
+        curves.push(parse_curve2d(&mut cursor, 0, index + 1)?);
+    }
+    if !cursor.is_empty() {
+        return Err(CodecError::Malformed(
+            "text B-rep Curve2ds table contains trailing tokens".into(),
+        ));
+    }
+    Ok(curves)
+}
+
+fn parse_curve2d(
+    cursor: &mut TokenCursor<'_>,
+    depth: usize,
+    table_index: usize,
+) -> Result<TextCurve2d, CodecError> {
+    if depth > 64 {
+        return Err(CodecError::Malformed(
+            "text B-rep 2D curve recursion limit exceeded".into(),
+        ));
+    }
+    let kind = cursor.integer("2D curve type")?;
+    Ok(match kind {
+        1 => TextCurve2d::Line {
+            origin: cursor.point2("2D line origin")?,
+            direction: cursor.point2("2D line direction")?,
+        },
+        2 => TextCurve2d::Circle {
+            center: cursor.point2("2D circle center")?,
+            x_axis: cursor.point2("2D circle x axis")?,
+            y_axis: cursor.point2("2D circle y axis")?,
+            radius: cursor.real("2D circle radius")?,
+        },
+        3 => TextCurve2d::Ellipse {
+            center: cursor.point2("2D ellipse center")?,
+            x_axis: cursor.point2("2D ellipse x axis")?,
+            y_axis: cursor.point2("2D ellipse y axis")?,
+            major_radius: cursor.real("2D ellipse major radius")?,
+            minor_radius: cursor.real("2D ellipse minor radius")?,
+        },
+        4 => TextCurve2d::Parabola {
+            vertex: cursor.point2("2D parabola vertex")?,
+            x_axis: cursor.point2("2D parabola x axis")?,
+            y_axis: cursor.point2("2D parabola y axis")?,
+            focal_distance: cursor.real("2D parabola focal distance")?,
+        },
+        5 => TextCurve2d::Hyperbola {
+            center: cursor.point2("2D hyperbola center")?,
+            x_axis: cursor.point2("2D hyperbola x axis")?,
+            y_axis: cursor.point2("2D hyperbola y axis")?,
+            major_radius: cursor.real("2D hyperbola major radius")?,
+            minor_radius: cursor.real("2D hyperbola minor radius")?,
+        },
+        6 => TextCurve2d::Nurbs(parse_bezier_curve2d(cursor)?),
+        7 => TextCurve2d::Nurbs(parse_nurbs_curve2d(cursor)?),
+        8 => {
+            let first = cursor.real("trimmed 2D curve first parameter")?;
+            let last = cursor.real("trimmed 2D curve last parameter")?;
+            if first > last {
+                return Err(CodecError::Malformed(
+                    "trimmed 2D curve parameter range is reversed".into(),
+                ));
+            }
+            TextCurve2d::Trimmed {
+                parameter_range: [first, last],
+                basis: Box::new(parse_curve2d(cursor, depth + 1, table_index)?),
+            }
+        }
+        9 => TextCurve2d::Offset {
+            distance: cursor.real("offset 2D curve distance")?,
+            basis: Box::new(parse_curve2d(cursor, depth + 1, table_index)?),
+        },
+        other => {
+            return Err(CodecError::NotImplemented(format!(
+                "text B-rep 2D curve family {other} at table index {table_index}"
+            )))
+        }
+    })
+}
+
+fn parse_bezier_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, CodecError> {
+    let rational = cursor.boolean("2D Bezier rational flag")?;
+    let degree = cursor.count("2D Bezier degree", 64)?;
+    let pole_count = degree + 1;
+    let mut control_points = Vec::with_capacity(pole_count);
+    let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+    for _ in 0..pole_count {
+        control_points.push(cursor.point2("2D Bezier pole")?);
+        if let Some(weights) = &mut weights {
+            weights.push(cursor.real("2D Bezier weight")?);
+        }
+    }
+    Ok(NurbsCurve2d {
+        degree: degree as u32,
+        knots: clamped_bezier_knots(degree),
+        control_points,
+        weights,
+        periodic: false,
+    })
+}
+
+fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, CodecError> {
+    let rational = cursor.boolean("2D B-spline rational flag")?;
+    let periodic = cursor.boolean("2D B-spline periodic flag")?;
+    let degree = cursor.count("2D B-spline degree", 64)?;
+    let pole_count = cursor.count("2D B-spline pole count", 1_000_000)?;
+    let knot_count = cursor.count("2D B-spline knot count", 1_000_000)?;
+    let mut control_points = Vec::with_capacity(pole_count);
+    let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+    for _ in 0..pole_count {
+        control_points.push(cursor.point2("2D B-spline pole")?);
+        if let Some(weights) = &mut weights {
+            weights.push(cursor.real("2D B-spline weight")?);
+        }
+    }
+    Ok(NurbsCurve2d {
+        degree: degree as u32,
+        knots: parse_knots(cursor, knot_count, degree, "2D B-spline")?,
+        control_points,
+        weights,
+        periodic,
+    })
 }
 
 fn multiply_transform(left: Transform, right: Transform) -> Transform {
@@ -943,6 +1152,10 @@ impl<'a> TokenCursor<'a> {
         ))
     }
 
+    fn point2(&mut self, label: &str) -> Result<Point2, CodecError> {
+        Ok(Point2::new(self.real(label)?, self.real(label)?))
+    }
+
     fn vector(&mut self, label: &str) -> Result<Vector3, CodecError> {
         Ok(Vector3::new(
             self.real(label)?,
@@ -1051,5 +1264,27 @@ mod tests {
         assert_eq!(facts.locations[1].transform.rows[0][3], 10.0);
         assert_eq!(facts.locations[2].transform.rows[0][3], 5.0);
         assert_eq!(facts.locations[2].factors[0].power, -1);
+    }
+
+    #[test]
+    fn parses_analytic_spline_and_recursive_parameter_curves() {
+        let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 3\n1 0 0 1 0\n6 1 2 0 0 1 5 0 2 10 0 1\n8 0 6.28 9 2 2 0 0 1 0 0 1 3\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        let facts = parse_text(input.as_bytes()).expect("2D curve table");
+        assert!(matches!(facts.curve2ds[0], TextCurve2d::Line { .. }));
+        let TextCurve2d::Nurbs(nurbs) = &facts.curve2ds[1] else {
+            panic!("expected normalized 2D Bezier")
+        };
+        assert_eq!(nurbs.degree, 2);
+        assert_eq!(nurbs.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        assert_eq!(nurbs.weights.as_deref(), Some(&[1.0, 2.0, 1.0][..]));
+        let TextCurve2d::Trimmed {
+            parameter_range,
+            basis,
+        } = &facts.curve2ds[2]
+        else {
+            panic!("expected trimmed 2D curve")
+        };
+        assert_eq!(*parameter_range, [0.0, 6.28]);
+        assert!(matches!(basis.as_ref(), TextCurve2d::Offset { .. }));
     }
 }
