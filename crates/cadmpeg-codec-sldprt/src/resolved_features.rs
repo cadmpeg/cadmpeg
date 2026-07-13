@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed views over `SolidWorks` `ResolvedFeatures` sketch records.
 
-use crate::records::{FeatureInputClass, FeatureInputLane, SketchInputEntity, SketchInputKind};
+use crate::records::{
+    FeatureInputClass, FeatureInputClassRole, FeatureInputLane, SketchInputEntity, SketchInputKind,
+};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -119,14 +121,74 @@ pub(crate) fn class_declarations(payload: &[u8], parent: &str) -> Vec<FeatureInp
             Some((offset, std::str::from_utf8(bytes).ok()?.to_string()))
         })
         .enumerate()
-        .map(|(ordinal, (offset, name))| FeatureInputClass {
-            id: format!("sldprt:feature-input:class#{lane_key}:{offset}"),
-            parent: parent.to_string(),
-            ordinal: ordinal as u32,
-            offset: offset as u64,
-            name,
+        .map(|(ordinal, (offset, name))| {
+            let role = class_role(&name);
+            FeatureInputClass {
+                id: format!("sldprt:feature-input:class#{lane_key}:{offset}"),
+                parent: parent.to_string(),
+                ordinal: ordinal as u32,
+                offset: offset as u64,
+                name,
+                role,
+            }
         })
         .collect()
+}
+
+fn class_role(name: &str) -> FeatureInputClassRole {
+    use FeatureInputClassRole::{
+        Auxiliary, Dimension, Feature, Native, Parameter, Reference, Sketch, SketchConstraint,
+        SketchEntity,
+    };
+
+    match name {
+        "moExtrusion_c" | "Fillet_c" | "moOriginProfileFeature_c" | "moProfileFeature_c" => Feature,
+        "sgSketch" => Sketch,
+        "sgArcHandle" | "sgEntHandle" | "sgLineHandle" | "sgPointHandle" => SketchEntity,
+        "sgLLDist" | "sgPntPntDist" => SketchConstraint,
+        "ParallelPlaneDistanceDim_c"
+        | "ThreeDRadiusDim_c"
+        | "faceRadiusObject_c"
+        | "moDisplayDistanceDim_c"
+        | "moDisplayRadialDim_c"
+        | "moFeatureDimHandle_c"
+        | "moSkDimHandleRadial_c"
+        | "moSkDimHandleValG2_c"
+        | "sgCircleDim" => Dimension,
+        "moLengthParameter_c" => Parameter,
+        "moCompEdge_c"
+        | "moCompFace_c"
+        | "moCompFeature_c"
+        | "moCompRefPlane_c"
+        | "moCompSketchEntHandle_c"
+        | "moCompSolidBody_c"
+        | "moCompVertex_c"
+        | "moEdgeRef_c"
+        | "moFaceRef_c"
+        | "moRefPlane_c"
+        | "moVertexRef_c" => Reference,
+        "moBBoxCenterData_c"
+        | "moDefaultRefPlnData_c"
+        | "moEndFace3IntSurfIdRep_c"
+        | "moEndFaceSurfIdRep_c"
+        | "moEndSpec_c"
+        | "moExtObject_c"
+        | "moFavoriteHandle_c"
+        | "moFilletSurfIdRep_c"
+        | "moFR_c"
+        | "moFromEndSpec_c"
+        | "moFromSktEnt3IntSurfIdRep_c"
+        | "moFromSktEntSurfIdRep_c"
+        | "moLineBackedUpData_c"
+        | "moPerBodyChooserData_c"
+        | "moPointBackedUpData_c"
+        | "moSketchChain_c"
+        | "moSketchExtRef_w"
+        | "moSketchRegion_c"
+        | "moSurfaceIdRep_c"
+        | "sgExtEnt_c" => Auxiliary,
+        _ => Native,
+    }
 }
 
 fn configuration(section: &str) -> Option<String> {

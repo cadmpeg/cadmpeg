@@ -10666,7 +10666,7 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
 
 #[test]
 fn semantic_writer_patches_resolved_feature_sketch_types() {
-    use crate::records::SketchInputKind;
+    use crate::records::{FeatureInputClassRole, SketchInputKind};
 
     assert_eq!(
         serde_json::from_str::<SketchInputKind>(r#""curve""#).unwrap(),
@@ -10692,6 +10692,10 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .collect::<Vec<_>>(),
         ["sgPointHandle", "sgLineHandle", "sgArcHandle"]
     );
+    assert!(lane
+        .classes
+        .iter()
+        .all(|class| class.role == FeatureInputClassRole::SketchEntity));
     assert!(lane
         .classes
         .iter()

@@ -162,6 +162,34 @@ pub struct FeatureInputClass {
     pub offset: u64,
     /// Declared native class name.
     pub name: String,
+    /// Design-intent role of this class.
+    #[serde(default)]
+    pub role: FeatureInputClassRole,
+}
+
+/// Design-intent role declared by a feature-input class.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureInputClassRole {
+    /// Modeling operation or construction feature.
+    Feature,
+    /// Sketch container.
+    Sketch,
+    /// Sketch geometry handle.
+    SketchEntity,
+    /// Geometric sketch relation.
+    SketchConstraint,
+    /// Driving or driven dimension.
+    Dimension,
+    /// Scalar feature parameter.
+    Parameter,
+    /// Reference to another model object.
+    Reference,
+    /// Supporting serialization object.
+    Auxiliary,
+    /// Class with no typed role.
+    #[default]
+    Native,
 }
 
 /// One typed sketch-entity marker inside a native feature-input stream.
