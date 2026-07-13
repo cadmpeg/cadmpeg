@@ -118,6 +118,8 @@ pub struct PropertyRecord {
     pub family: PropertyFamily,
     /// Native status bits.
     pub status: Option<u64>,
+    /// Whether this is a status-only transient property declaration.
+    pub transient: bool,
     /// Dynamic-property metadata, when carried.
     pub dynamic: Option<DynamicPropertyMeta>,
     /// Source-order index within the owner.

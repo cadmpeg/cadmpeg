@@ -77,8 +77,10 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
 <Object type="PartDesign::Feature" name="Sketch" id="2"/>
 </Objects>
 <ObjectData Count="2">
-<Object name="Body"><Properties Count="2">
+<Object name="Body"><Properties Count="3" TransientCount="1">
+<_Property name="TransientState" type="App::PropertyInteger" status="8"/>
 <Property name="Support" type="App::PropertyLinkSub" status="4" group="Attachment" doc="Support object" attr="2" ro="1" hide="0"><Link object="Sketch" sub="Face1"/></Property>
+<Property name="Members" type="App::PropertyLinkList"><LinkList count="2"><Link value="Sketch"/><Link value=""/></LinkList></Property>
 <Property name="Payload" type="App::PropertyFileIncluded"><File file="Payload.bin"/></Property>
 </Properties></Object>
 <Object name="Sketch"><Properties Count="0"></Properties></Object>
@@ -114,6 +116,22 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         support.dynamic.as_ref().and_then(|meta| meta.read_only),
         Some(true)
     );
+    let members = properties
+        .iter()
+        .find(|property| property.name == "Members")
+        .expect("members");
+    assert_eq!(members.links.len(), 2);
+    assert_eq!(
+        members.links[0].object.as_deref(),
+        Some("fcstd:object:Sketch")
+    );
+    assert_eq!(members.links[1].object.as_deref(), Some(""));
+    let transient = properties
+        .iter()
+        .find(|property| property.name == "TransientState")
+        .expect("transient");
+    assert!(transient.transient);
+    assert_eq!(transient.status, Some(8));
     let payload = properties
         .iter()
         .find(|property| property.name == "Payload")
@@ -132,10 +150,11 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .arena_as::<crate::native::LogicalSpan>("logical_ledger")
         .expect("logical ledger");
     for entry in &entries {
-        let spans = ledger
+        let mut spans = ledger
             .iter()
             .filter(|span| span.entry == entry.name)
             .collect::<Vec<_>>();
+        spans.sort_by_key(|span| span.start);
         assert_eq!(spans.first().map(|span| span.start), Some(0));
         assert_eq!(spans.last().map(|span| span.end), Some(entry.byte_len));
         assert!(spans.windows(2).all(|pair| pair[0].end == pair[1].start));

@@ -161,6 +161,10 @@ fn parse_properties(
         .children()
         .filter(|node| node.has_tag_name("Property"))
         .collect::<Vec<_>>();
+    let transient_nodes = container
+        .children()
+        .filter(|node| node.has_tag_name("_Property"))
+        .collect::<Vec<_>>();
     let declared = container
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -171,12 +175,49 @@ fn parse_properties(
             nodes.len()
         )));
     }
+    let declared_transient =
+        container
+            .attribute("TransientCount")
+            .map_or(Ok(0_usize), |value| {
+                value.parse::<usize>().map_err(|_| {
+                    CodecError::Malformed("Properties TransientCount is invalid".into())
+                })
+            })?;
+    if declared_transient != transient_nodes.len() {
+        return Err(CodecError::Malformed(format!(
+            "Properties TransientCount={declared_transient} but {} transient properties were found for {owner}",
+            transient_nodes.len()
+        )));
+    }
+    for (order, node) in transient_nodes.into_iter().enumerate() {
+        let name = required_attr(node, "name")?;
+        let type_name = required_attr(node, "type")?;
+        output.push(PropertyRecord {
+            id: format!("{owner}:property:{name}"),
+            owner: owner.to_owned(),
+            name,
+            family: classify_property(&type_name),
+            type_name,
+            status: node
+                .attribute("status")
+                .and_then(|value| value.parse().ok()),
+            transient: true,
+            dynamic: None,
+            order,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: Vec::new(),
+            raw_xml: text[node.range()].to_owned(),
+            byte_start: node.range().start as u64,
+            byte_end: node.range().end as u64,
+        });
+    }
     for (order, node) in nodes.into_iter().enumerate() {
         let name = required_attr(node, "name")?;
         let type_name = required_attr(node, "type")?;
         let values = node
-            .children()
-            .filter(roxmltree::Node::is_element)
+            .descendants()
+            .filter(|value| value.is_element() && *value != node)
             .enumerate()
             .map(|(value_order, value)| ValueRecord {
                 tag: value.tag_name().name().to_owned(),
@@ -219,6 +260,7 @@ fn parse_properties(
             status: node
                 .attribute("status")
                 .and_then(|value| value.parse().ok()),
+            transient: false,
             dynamic: node.attribute("group").map(|group| DynamicPropertyMeta {
                 group: group.to_owned(),
                 documentation: node.attribute("doc").map(str::to_owned),
@@ -290,7 +332,9 @@ fn classify_property(type_name: &str) -> PropertyFamily {
 fn link_targets(value: &ValueRecord) -> Vec<LinkTarget> {
     let object = attribute_any(
         &value.attributes,
-        &["value", "Value", "object", "Object", "name", "Name"],
+        &[
+            "value", "Value", "object", "Object", "obj", "Obj", "name", "Name",
+        ],
     );
     let document = attribute_any(&value.attributes, &["document", "Document", "doc", "Doc"]);
     let subelements = value
