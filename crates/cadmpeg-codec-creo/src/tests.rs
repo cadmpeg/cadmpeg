@@ -1087,7 +1087,7 @@ fn scan_solves_featdefs_trim_vertex_line_intersection() {
 fn scan_decodes_featdefs_generated_entity_order_table() {
     let payload = b"feat_defs_40\0gsec3d_ptr\0order_table\0\xf8\x02\xf7\x81\x02\xfb\xe2\
         \xe0\x01ext_id\0\xe0\x01int_id\0\xe0\x01bitmask\0\
-        \xf1\xf7\x81\x02\xe2\x81\x1b\x08\x00\xe2\x81\x36\x0c\x01\xe2"
+        \xf1\xf7\x81\x02\xe2\x81\x1b\x08\x00\xe2\x81\x36\x0c\x01\xe0\x01next_field\0"
         .to_vec();
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
 

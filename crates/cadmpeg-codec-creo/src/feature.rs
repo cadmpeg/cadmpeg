@@ -1595,7 +1595,12 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
         else {
             break;
         };
-        if payload.get(next) != Some(&0xe2)
+        let row_separator = payload.get(next) == Some(&0xe2);
+        let table_boundary = next == end
+            || payload
+                .get(next)
+                .is_some_and(|byte| matches!(byte, 0xe0 | 0xf1 | 0xf3));
+        if (!row_separator && !table_boundary)
             || !external_ids.insert(external_id)
             || !internal_ids.insert(internal_id)
         {
@@ -1607,6 +1612,9 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
             bitmask,
             offset: row_offset,
         });
+        if !row_separator {
+            break;
+        }
         cursor = next + 1;
     }
     (!rows.is_empty()).then_some(FeatureOrderTable {
