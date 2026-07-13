@@ -11419,6 +11419,76 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
 }
 
 #[test]
+fn decode_projects_owned_native_sketch_relation() {
+    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+
+    let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .expect("projected sketch feature");
+    let cadmpeg_ir::features::FeatureDefinition::Sketch {
+        sketch: Some(sketch),
+        ..
+    } = &feature.definition
+    else {
+        panic!("bound sketch feature");
+    };
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .expect("projected relation parameter");
+    let constraint = decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .find(|constraint| constraint.native_ref.is_some())
+        .expect("projected native relation");
+    assert_eq!(&constraint.sketch, sketch);
+    assert!(constraint
+        .native_ref
+        .as_deref()
+        .is_some_and(|id| id.starts_with("sldprt:feature-input:relation-binding#")));
+    assert!(matches!(
+        &constraint.definition,
+        SketchConstraintDefinition::Native {
+            native_kind,
+            entities,
+            parameter: Some(relation_parameter),
+            operands,
+        } if native_kind == "sgPntPntDist"
+            && entities.is_empty()
+            && relation_parameter == &parameter.id
+            && operands.len() == 2
+            && operands[0].native_kind == "d6"
+            && operands[0].object_index == 0
+            && operands[1].native_kind == "d6"
+            && operands[1].object_index == 2
+    ));
+    let findings = cadmpeg_ir::validate(&decoded.ir, Vec::new()).findings;
+    assert!(findings.is_empty(), "{findings:#?}");
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap();
+}
+
+#[test]
 fn decode_extracts_pmi_semantic_dimension() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

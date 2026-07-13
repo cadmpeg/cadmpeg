@@ -183,6 +183,15 @@ pub enum SketchLocus {
     Center(SketchEntityId),
 }
 
+/// One unresolved operand retained from a native sketch relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchNativeOperand {
+    /// Source-native operand family.
+    pub native_kind: String,
+    /// Source-native object index.
+    pub object_index: u32,
+}
+
 /// Neutral geometric and dimensional sketch relations.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -333,5 +342,11 @@ pub enum SketchConstraintDefinition {
         native_kind: String,
         /// Referenced entities.
         entities: Vec<SketchEntityId>,
+        /// Driving or driven parameter attached to the relation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter: Option<ParameterId>,
+        /// Native operands whose neutral loci are unresolved.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        operands: Vec<SketchNativeOperand>,
     },
 }

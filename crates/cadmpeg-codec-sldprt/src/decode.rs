@@ -291,7 +291,7 @@ fn build_geometry_ir(
         &pmi_dimensions,
     );
     stamp_parameter_baseline(&mut ir);
-    let (mut sketches, sketch_entities, sketch_constraints) =
+    let (mut sketches, sketch_entities, mut sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);
     crate::resolved_features::bind_sketch_profiles(
         &mut ir.model.features,
@@ -301,6 +301,12 @@ fn build_geometry_ir(
         &ir.annotations,
     );
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches);
+    crate::resolved_features::project_relation_bindings(
+        &mut sketch_constraints,
+        &ir.model.features,
+        &ir.model.parameters,
+        &lanes,
+    );
     stamp_feature_baseline(&mut ir);
     let attributes = crate::metadata::attributes(scan, &mut ir.annotations);
     let mut native = crate::native::SldprtNative {
@@ -853,6 +859,12 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &ir.annotations,
     );
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &ir.model.sketches);
+    crate::resolved_features::project_relation_bindings(
+        &mut ir.model.sketch_constraints,
+        &ir.model.features,
+        &ir.model.parameters,
+        &lanes,
+    );
     stamp_feature_baseline(&mut ir);
     let native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,

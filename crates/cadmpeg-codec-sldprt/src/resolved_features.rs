@@ -16,7 +16,7 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -624,6 +624,88 @@ pub(crate) fn bind_parameter_scalars(
                     parameter.native_ref = Some(scalar.id.clone());
                 }
             }
+        }
+    }
+}
+
+/// Project owned native relation bindings into their neutral sketches.
+pub(crate) fn project_relation_bindings(
+    constraints: &mut Vec<SketchConstraint>,
+    features: &[cadmpeg_ir::features::Feature],
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+    lanes: &[FeatureInputLane],
+) {
+    let sketches_by_feature = features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } = &feature.definition
+            else {
+                return None;
+            };
+            Some((feature.native_ref.as_deref()?, sketch))
+        })
+        .collect::<HashMap<_, _>>();
+    let parameters_by_scalar = parameters
+        .iter()
+        .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, &parameter.id)))
+        .collect::<HashMap<_, _>>();
+
+    for lane in lanes {
+        let lane_key = lane
+            .id
+            .rsplit_once('#')
+            .map_or(lane.id.as_str(), |(_, key)| key);
+        let scalars = lane
+            .scalars
+            .iter()
+            .map(|scalar| (scalar.id.as_str(), scalar))
+            .collect::<HashMap<_, _>>();
+        for binding in &lane.relation_bindings {
+            let Some(scalar) = scalars.get(binding.scalar_ref.as_str()) else {
+                continue;
+            };
+            let Some(sketch) = scalar
+                .feature_ref
+                .as_deref()
+                .and_then(|feature| sketches_by_feature.get(feature))
+            else {
+                continue;
+            };
+            let parameter = parameters_by_scalar
+                .get(scalar.id.as_str())
+                .map(|parameter| (*parameter).clone());
+            let native_kind = match binding.family {
+                FeatureInputRelationFamily::LineLineDistance => "sgLLDist",
+                FeatureInputRelationFamily::PointPointDistance => "sgPntPntDist",
+            };
+            constraints.push(SketchConstraint {
+                id: SketchConstraintId(format!(
+                    "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
+                    binding.offset
+                )),
+                sketch: (*sketch).clone(),
+                definition: SketchConstraintDefinition::Native {
+                    native_kind: native_kind.into(),
+                    entities: Vec::new(),
+                    parameter,
+                    operands: scalar
+                        .operands
+                        .iter()
+                        .map(|operand| SketchNativeOperand {
+                            native_kind: match operand.kind {
+                                FeatureInputOperandKind::D6 => "d6",
+                                FeatureInputOperandKind::E1 => "e1",
+                            }
+                            .into(),
+                            object_index: u32::from(operand.entity_index),
+                        })
+                        .collect(),
+                },
+                native_ref: Some(binding.id.clone()),
+            });
         }
     }
 }

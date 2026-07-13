@@ -851,7 +851,16 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 entities,
                 parameter: _,
             }
-            | Definition::Native { entities, .. } => (entities.clone(), None),
+            | Definition::Native {
+                entities,
+                parameter: None,
+                ..
+            } => (entities.clone(), None),
+            Definition::Native {
+                entities,
+                parameter: Some(parameter),
+                ..
+            } => (entities.clone(), Some(parameter.0.as_str())),
             Definition::Horizontal { entity }
             | Definition::Vertical { entity }
             | Definition::Fixed { entity } => (vec![entity.clone()], None),

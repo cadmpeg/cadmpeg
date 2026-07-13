@@ -1667,6 +1667,11 @@ fn sketch_constraint_native_ref_must_resolve() {
             definition: crate::sketches::SketchConstraintDefinition::Native {
                 native_kind: "test".into(),
                 entities: Vec::new(),
+                parameter: None,
+                operands: vec![crate::sketches::SketchNativeOperand {
+                    native_kind: "test".into(),
+                    object_index: 0,
+                }],
             },
             native_ref: Some("native:missing-relation#0".into()),
         });

@@ -205,7 +205,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             Constraint::Native {
                 native_kind,
                 entities,
-            } => !native_kind.is_empty() && !entities.is_empty(),
+                operands,
+                ..
+            } => !native_kind.is_empty() && (!entities.is_empty() || !operands.is_empty()),
             _ => true,
         };
         if !valid {

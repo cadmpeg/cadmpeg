@@ -78,7 +78,7 @@ pub use report::{
 };
 pub use sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
 };
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
