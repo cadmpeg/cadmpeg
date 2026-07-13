@@ -14086,6 +14086,30 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     );
     let component_ids = components.clone();
 
+    let mut edited = result.ir.clone();
+    let ProceduralCurveDefinition::Compound {
+        parameters,
+        component_parameters,
+        ..
+    } = &mut edited.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    *parameters = vec![-0.25, 0.75, 1.25];
+    *component_parameters = vec![-3.0, 5.0];
+    let expected_edit = edited.model.procedural_curves[0].definition.clone();
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("compound intcurve regeneration");
+    let regenerated = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated compound intcurve decode");
+    assert_eq!(
+        regenerated.ir.model.procedural_curves[0].definition,
+        expected_edit
+    );
+
     let mut source_less = result.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();

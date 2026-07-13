@@ -15024,50 +15024,34 @@ fn patch_compound_definition(
             "compound patch received another definition".into(),
         ));
     };
-    let end = record.offset + record.len;
-    let (mut position, int_width) = {
-        let record_bytes = bytes
-            .get(record.offset..end)
-            .ok_or_else(|| CodecError::Malformed("compound record is truncated".into()))?;
-        let name = b"comp_int_cur";
-        let marker = record_bytes
-            .windows(name.len())
-            .position(|window| window == name)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "procedural curve record {} is not compound",
-                    record.index
-                ))
-            })?;
-        let mut position = marker + name.len();
-        let int_width = [8usize, 4]
-            .into_iter()
-            .find(|width| {
-                record_bytes.get(position) == Some(&0x04)
-                    && record_bytes
-                        .get(position + 1..position + 1 + width)
-                        .and_then(|raw| match width {
-                            8 => raw.try_into().ok().map(i64::from_le_bytes),
-                            4 => raw.try_into().ok().map(i32::from_le_bytes).map(i64::from),
-                            _ => None,
-                        })
-                        == i64::try_from(parameters.len()).ok()
-            })
-            .ok_or_else(|| CodecError::Malformed("compound parameter count is malformed".into()))?;
-        position += 1 + int_width;
-        (position, int_width)
-    };
-    for value in parameters {
-        patch_compound_double(bytes, record, &mut position, *value)?;
-    }
-    if bytes.get(record.offset + position) != Some(&0x04) {
-        return Err(CodecError::Malformed(
-            "compound component count is malformed".into(),
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("compound record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("compound record is truncated".into()))?;
+    let layout = crate::nurbs::compound_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "compound record {} lacks writable parameter arrays",
+                record.index
+            ))
+        })?;
+    if layout.parameters.len() != parameters.len()
+        || layout.component_parameters.len() != component_parameters.len()
+    {
+        return Err(CodecError::NotImplemented(
+            "compound edit changes native parameter cardinality".into(),
         ));
     }
-    position += 1 + int_width;
-    for value in component_parameters {
-        patch_compound_double(bytes, record, &mut position, *value)?;
+    for (offset, value) in layout
+        .parameters
+        .into_iter()
+        .chain(layout.component_parameters)
+        .zip(parameters.iter().chain(component_parameters))
+    {
+        let at = record.offset + offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
 }
@@ -15632,24 +15616,6 @@ fn patch_silhouette_definition(
         let draft_offset = record.offset + draft_offset;
         bytes[draft_offset..draft_offset + 8].copy_from_slice(&draft_factor.to_le_bytes());
     }
-    Ok(())
-}
-
-fn patch_compound_double(
-    bytes: &mut [u8],
-    record: &sab::Record,
-    position: &mut usize,
-    value: f64,
-) -> Result<(), CodecError> {
-    let tag = record.offset + *position;
-    if bytes.get(tag) != Some(&0x06) {
-        return Err(CodecError::Malformed(format!(
-            "compound record {} parameter payload is malformed",
-            record.index
-        )));
-    }
-    bytes[tag + 1..tag + 9].copy_from_slice(&value.to_le_bytes());
-    *position += 9;
     Ok(())
 }
 

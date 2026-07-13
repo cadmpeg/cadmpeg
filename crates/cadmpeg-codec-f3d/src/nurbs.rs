@@ -4833,6 +4833,39 @@ pub(crate) struct SubsetPatchLayout {
     pub(crate) parameter_range: [usize; 2],
 }
 
+/// Writable parameter arrays in a `comp_int_cur` subtype.
+pub(crate) struct CompoundPatchLayout {
+    pub(crate) parameters: Vec<usize>,
+    pub(crate) component_parameters: Vec<usize>,
+}
+
+/// Locate both compound parameter arrays from their native counts.
+pub(crate) fn compound_patch_layout(bytes: &[u8], int_width: usize) -> Option<CompoundPatchLayout> {
+    let name = b"comp_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    subtype_span(bytes, marker, int_width)?;
+    let mut position = marker + name.len() + 3;
+    let parameters = take_float_array_payloads(bytes, &mut position, int_width)?;
+    let component_count =
+        usize::try_from(take_tagged_int(bytes, &mut position, 0x04, int_width)?).ok()?;
+    if component_count == 0 {
+        return None;
+    }
+    let mut component_parameters = Vec::with_capacity(component_count);
+    for _ in 0..component_count {
+        component_parameters.push(take_double_payload(bytes, &mut position)?);
+    }
+    Some(CompoundPatchLayout {
+        parameters,
+        component_parameters,
+    })
+}
+
 /// Locate the subset range by consuming the subtype-owned parent curve.
 pub(crate) fn subset_patch_layout(bytes: &[u8], int_width: usize) -> Option<SubsetPatchLayout> {
     let name = b"subset_int_cur";
@@ -6848,6 +6881,45 @@ mod width_tests {
                 .parameter_range
                 .map(|offset| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()));
             assert_eq!(range, [-1.5, 3.5]);
+        }
+    }
+
+    #[test]
+    fn compound_layout_requires_framed_subtype_at_both_widths() {
+        for int_width in [4usize, 8] {
+            let mut bytes = Vec::new();
+            push_string(&mut bytes, "comp_int_cur");
+            push_int(&mut bytes, 0x04, 1, int_width);
+            push_f64(&mut bytes, 99.0);
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "comp_int_cur");
+            push_int(&mut bytes, 0x04, 3, int_width);
+            for value in [0.0, 0.5, 1.0] {
+                push_f64(&mut bytes, value);
+            }
+            push_int(&mut bytes, 0x04, 2, int_width);
+            for value in [-2.0, 4.0] {
+                push_f64(&mut bytes, value);
+            }
+            bytes.push(0x0b);
+            bytes.extend_from_slice(&curve_block(int_width));
+            bytes.extend_from_slice(&curve_block(int_width));
+            bytes.push(0x10);
+
+            let layout = compound_patch_layout(&bytes, int_width)
+                .unwrap_or_else(|| panic!("compound layout at width {int_width}"));
+            let parameters = layout
+                .parameters
+                .iter()
+                .map(|offset| f64::from_le_bytes(bytes[*offset..*offset + 8].try_into().unwrap()))
+                .collect::<Vec<_>>();
+            let component_parameters = layout
+                .component_parameters
+                .iter()
+                .map(|offset| f64::from_le_bytes(bytes[*offset..*offset + 8].try_into().unwrap()))
+                .collect::<Vec<_>>();
+            assert_eq!(parameters, [0.0, 0.5, 1.0]);
+            assert_eq!(component_parameters, [-2.0, 4.0]);
         }
     }
 
