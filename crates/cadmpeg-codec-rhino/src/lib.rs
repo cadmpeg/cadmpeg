@@ -34,6 +34,7 @@ pub(crate) mod product;
 pub(crate) mod settings;
 pub(crate) mod subd;
 pub(crate) mod surfaces;
+pub(crate) mod views;
 pub(crate) mod wire;
 
 #[cfg(feature = "fuzzing")]
