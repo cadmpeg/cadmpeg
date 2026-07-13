@@ -750,6 +750,7 @@ fn decode_graph(
     derive_cylindrical_pcurves(&mut out, &mut annotations, source_stream);
     derive_spherical_pcurves(&mut out, &mut annotations, source_stream);
     derive_nurbs_boundary_pcurves(&mut out, &mut annotations, source_stream);
+    prune_rejected_topology(&mut out);
 
     if out.faces.is_empty() {
         return Brep::default();
@@ -894,6 +895,49 @@ fn decode_graph(
         .exactness
         .retain(|id, _| retained_ids.contains(id.as_str()));
     out
+}
+
+fn prune_rejected_topology(out: &mut Brep) {
+    let kept_edges = out
+        .coedges
+        .iter()
+        .map(|coedge| coedge.edge.clone())
+        .collect::<HashSet<_>>();
+    out.edges.retain(|edge| kept_edges.contains(&edge.id));
+
+    let kept_vertices = out
+        .edges
+        .iter()
+        .flat_map(|edge| [&edge.start, &edge.end])
+        .cloned()
+        .collect::<HashSet<_>>();
+    out.vertices
+        .retain(|vertex| kept_vertices.contains(&vertex.id));
+
+    let kept_points = out
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.clone())
+        .collect::<HashSet<_>>();
+    out.points.retain(|point| kept_points.contains(&point.id));
+
+    let kept_curves = out
+        .edges
+        .iter()
+        .filter_map(|edge| edge.curve.clone())
+        .collect::<HashSet<_>>();
+    out.curves.retain(|curve| kept_curves.contains(&curve.id));
+    out.stats.unknown_curve_edges = out
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.curve.as_ref().is_some_and(|curve_id| {
+                out.curves.iter().any(|curve| {
+                    curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Unknown { .. })
+                })
+            })
+        })
+        .count();
 }
 
 fn fold_surface_frame(

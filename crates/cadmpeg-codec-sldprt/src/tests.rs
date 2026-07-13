@@ -4844,6 +4844,43 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
 }
 
 #[test]
+fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
+    let mut body = triangle_body();
+    body.extend(plane_carrier(
+        200,
+        [2.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    body.extend(bridge(110, 120, 200));
+    body.extend(loop_head(120, 130, 110));
+    body.extend(coedge(130, 120, 131, 150, 0, 140, false));
+    body.extend(coedge(131, 120, 132, 151, 0, 141, false));
+    body.extend(coedge(132, 120, 130, 152, 0, 142, false));
+    body.extend(edge_use(140, 0));
+    body.extend(edge_use(141, 0));
+    body.extend(edge_use(142, 0));
+    body.extend(vertex_use(150, 160));
+    body.extend(vertex_use(151, 161));
+    body.extend(vertex_use(152, 162));
+    body.extend(world_point(160, [2.0, 0.0, 0.0]));
+    body.extend(world_point(161, [3.0, 0.0, 0.0]));
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 3);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir.model.points.len(), 3);
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+}
+
+#[test]
 fn semantic_writer_preserves_face_appearance() {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
