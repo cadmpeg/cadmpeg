@@ -769,6 +769,52 @@ fn resolved_trim_vertex_coordinates(
         .flat_map(|table| &table.rows)
         .filter_map(|vertex| Some((vertex.vertex_id, vertex.section_coordinates?)))
         .collect::<BTreeMap<_, _>>();
+    for trim in definition
+        .trim_entities
+        .iter()
+        .flat_map(|table| &table.rows)
+    {
+        let Some(external_id) = trim_segment_id(definition, trim) else {
+            continue;
+        };
+        let Some(segment) = segments
+            .rows
+            .iter()
+            .find(|segment| segment.external_id == external_id)
+        else {
+            continue;
+        };
+        if saved_section_arc_geometry(definition, segment).is_none() {
+            continue;
+        }
+        let Some(arc) = saved_section_arc_record(definition, segment) else {
+            continue;
+        };
+        let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
+            arc.endpoints
+        else {
+            continue;
+        };
+        let pairs = [
+            (trim.vertices[0], [first_u, first_v]),
+            (trim.vertices[1], [second_u, second_v]),
+        ];
+        let compatible = pairs.iter().all(|(vertex, candidate)| {
+            coordinates.get(vertex).is_none_or(|stored| {
+                let scale = stored
+                    .iter()
+                    .chain(candidate)
+                    .map(|value| value.abs())
+                    .fold(1.0, f64::max);
+                (stored[0] - candidate[0]).hypot(stored[1] - candidate[1]) <= 1e-9 * scale
+            })
+        });
+        if compatible {
+            for (vertex, coordinate) in pairs {
+                coordinates.entry(vertex).or_insert(coordinate);
+            }
+        }
+    }
     let mut incident = BTreeMap::<u32, Vec<u32>>::new();
     for entity in definition
         .trim_entities
@@ -2913,6 +2959,30 @@ mod resolved_sketch_tests {
                 start_angle: Angle(std::f64::consts::PI),
                 end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
             })
+        );
+
+        let mut trimmed = definition;
+        trimmed.segments = Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![segment],
+            offset: 38,
+        });
+        trimmed.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
+            rows: vec![crate::feature::FeatureTrimEntity {
+                external_id: 42,
+                mode: Some(0),
+                vertices: [1, 2],
+                center_vertex: None,
+                kind: crate::feature::TrimEntityKind::Arc,
+                offset: 30,
+            }],
+            solved_external_ids: vec![42],
+            offset: 28,
+        });
+        assert_eq!(
+            resolved_trim_vertex_coordinates(&trimmed, &BTreeMap::new()),
+            BTreeMap::from([(1, [0.0, -2.0]), (2, [-2.0, 0.0])])
         );
     }
 

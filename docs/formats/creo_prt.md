@@ -517,6 +517,9 @@ equal. A complete saved entity supplies section-space geometry when its
 radius fields, `ent_tab` start and end trim vertices supply the arc endpoints
 when both vertices lie on that circle. `arcorient = 0` orders the second trim
 vertex before the first in increasing angular parameter.
+When the saved arc also stores both endpoints, `end1` binds
+`ent_tab.start_vtx` and `end2` binds `ent_tab.end_vtx`; these coordinates seed
+the solved trim-vertex graph.
 
 When an `order_table` omission lies between adjacent stored `segtab` rows whose internal identifiers differ by two, the omitted row has the intervening internal identifier if a saved entity of the same family carries that identifier. For an evaluated saved line, if one `ent_tab` trim endpoint equals exactly one saved endpoint, the other saved endpoint determines the opposite trim endpoint. A line without an inline carrier is then determined by its two trim endpoints only when they satisfy its stored horizontal or vertical selector.
 
