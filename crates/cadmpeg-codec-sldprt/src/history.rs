@@ -135,6 +135,26 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                                 ))
                             })
                             .collect::<BTreeMap<_, _>>(),
+                        dimension_properties: node
+                            .children()
+                            .filter(|child| {
+                                child.is_element() && child.tag_name().name() == "Dimension"
+                            })
+                            .filter_map(|dimension| {
+                                let name = dimension.attribute("Name")?;
+                                let properties = dimension
+                                    .attributes()
+                                    .filter(|attribute| attribute.name() != "Name")
+                                    .map(|attribute| {
+                                        (
+                                            attribute.name().to_string(),
+                                            attribute.value().to_string(),
+                                        )
+                                    })
+                                    .collect::<BTreeMap<_, _>>();
+                                (!properties.is_empty()).then(|| (name.into(), properties))
+                            })
+                            .collect(),
                         properties: node
                             .attributes()
                             .filter(|attribute| {
@@ -1487,6 +1507,9 @@ fn sync_neutral_parameters(
             .iter()
             .map(|parameter| (parameter.name.clone(), parameter.expression.clone()))
             .collect();
+        record
+            .dimension_properties
+            .retain(|name, _| record.parameters.contains_key(name));
         let mut names = parameters
             .iter()
             .map(|parameter| parameter.name.clone())
@@ -2921,6 +2944,7 @@ pub fn sync_neutral_features(
                 kind,
                 suppressed: feature.suppressed,
                 parameters,
+                dimension_properties: BTreeMap::new(),
                 properties,
                 text: None,
                 content: Vec::new(),

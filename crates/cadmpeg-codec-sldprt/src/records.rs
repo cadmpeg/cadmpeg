@@ -64,6 +64,9 @@ pub struct Feature {
     /// Source parametric input values keyed by parameter name.
     #[serde(default)]
     pub parameters: BTreeMap<String, String>,
+    /// Source attributes on each named dimension, excluding its `Name` key.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub dimension_properties: BTreeMap<String, BTreeMap<String, String>>,
     /// Source custom-property name/value pairs local to this feature.
     #[serde(default)]
     pub properties: BTreeMap<String, String>,

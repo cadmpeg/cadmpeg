@@ -867,6 +867,11 @@ fn write_feature_xml(
     let write_dimension = |out: &mut String, name: &str, value: &str| {
         out.push_str("<Dimension");
         xml_attribute(out, "Name", name);
+        if let Some(properties) = feature.dimension_properties.get(name) {
+            for (property, value) in properties {
+                xml_attribute(out, property, value);
+            }
+        }
         out.push('>');
         xml_text(out, value);
         out.push_str("</Dimension>");

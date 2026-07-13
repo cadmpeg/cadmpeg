@@ -4627,6 +4627,39 @@ fn semantic_writer_applies_neutral_parameter_edits() {
 }
 
 #[test]
+fn semantic_writer_preserves_dimension_attributes() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss" Type="BossExtrude" id="7"><Dimension Name="Depth" Driven="true" EquationId="D1@Boss">12mm</Dimension></Extrusion></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let parameter = &mut decoded.ir.model.parameters[0];
+    parameter.expression = "20mm".into();
+    parameter.value = Some(ParameterValue::Length(Length(20.0)));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.parameters["Depth"], "20mm");
+    assert_eq!(feature.dimension_properties["Depth"]["Driven"], "true");
+    assert_eq!(
+        feature.dimension_properties["Depth"]["EquationId"],
+        "D1@Boss"
+    );
+}
+
+#[test]
 fn semantic_writer_applies_neutral_parameter_order() {
     use crate::records::FeatureContent;
 
