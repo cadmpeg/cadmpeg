@@ -68,7 +68,7 @@ pub(crate) fn decode(
             losses: Vec::new(),
         }
     } else {
-        entities::geometry::project_points(&mut ir, &directory, &parameters, &global)
+        entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global)
     };
 
     let geometry_transferred = !projection.decoded.is_empty();

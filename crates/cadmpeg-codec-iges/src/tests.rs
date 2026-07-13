@@ -137,6 +137,60 @@ fn point_file() -> Vec<u8> {
     bytes
 }
 
+fn line_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["110", "1", "0", "0", "4", "0", "0", "0", "00000000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        ["110", "0", "0", "1", "0", "", "", "LINE", "0"],
+        2,
+    ));
+    bytes.extend(parameter_card(b"110,1,2,3,4,6,3;", 1, 1));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
+    let result = IgesCodec
+        .decode(&mut Cursor::new(line_file()), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.curves.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(result.ir.model.points.len(), 2);
+    let cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } =
+        &result.ir.model.curves[0].geometry
+    else {
+        panic!("expected a line carrier");
+    };
+    assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
+    assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.6, 0.8, 0.0));
+    assert_eq!(result.ir.model.edges[0].param_range, Some([0.0, 5.0]));
+    assert_eq!(result.ir.model.shells[0].wire_edges.len(), 1);
+    assert!(result.ir.model.shells[0].free_vertices.is_empty());
+    assert_eq!(
+        result.ir.model.curves[0]
+            .source_object
+            .as_ref()
+            .unwrap()
+            .object_id,
+        "D1"
+    );
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 fn nested_transformed_point_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,0.5,10,2HCM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);

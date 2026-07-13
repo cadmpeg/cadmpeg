@@ -4,11 +4,12 @@
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
-use cadmpeg_ir::ids::{BodyId, PointId, RegionId, ShellId, VertexId};
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
-use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
+use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TRANSFORM_DEPTH: usize = 64;
@@ -132,7 +133,7 @@ pub(crate) struct Projection {
     pub(crate) losses: Vec<LossNote>,
 }
 
-fn point_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
+fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
     LossNote {
         category: LossCategory::Geometry,
         severity: Severity::Warning,
@@ -146,7 +147,7 @@ fn point_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
     }
 }
 
-pub(crate) fn project_points(
+pub(crate) fn project_geometry(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
@@ -169,22 +170,24 @@ pub(crate) fn project_points(
             .filter(|entry| entry.entity_type == 124 && entry.form == 0)
             .map(|entry| entry.sequence),
     );
+    let mut free_vertices = Vec::new();
+    let mut wire_edges = Vec::new();
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 116 && entry.form == 0)
     {
         handled.insert(entry.sequence);
         let Some(factor) = global.length_factor_mm() else {
-            losses.push(point_loss(entry, "units or model scale are unsupported"));
+            losses.push(entity_loss(entry, "units or model scale are unsupported"));
             continue;
         };
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(point_loss(entry, "Parameter Data record is missing"));
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
         let coordinates = [record.number(1), record.number(2), record.number(3)];
         let [Some(x), Some(y), Some(z)] = coordinates else {
-            losses.push(point_loss(entry, "X, Y, or Z is not numeric"));
+            losses.push(entity_loss(entry, "X, Y, or Z is not numeric"));
             continue;
         };
         let transform = match resolve_transform(
@@ -196,13 +199,13 @@ pub(crate) fn project_points(
         ) {
             Ok(transform) => transform,
             Err(message) => {
-                losses.push(point_loss(entry, message));
+                losses.push(entity_loss(entry, message));
                 continue;
             }
         };
         let position = transform.point(Point3::new(x * factor, y * factor, z * factor));
         if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
-            losses.push(point_loss(entry, "scaled coordinates are not finite"));
+            losses.push(entity_loss(entry, "scaled coordinates are not finite"));
             continue;
         }
         let point = PointId(format!("iges:model:point#D{}", entry.sequence));
@@ -212,10 +215,123 @@ pub(crate) fn project_points(
             position,
         });
         ir.model.vertices.push(Vertex {
-            id: vertex,
+            id: vertex.clone(),
             point,
             tolerance: None,
         });
+        free_vertices.push(vertex);
+        decoded.insert(entry.sequence);
+    }
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 110 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(factor) = global.length_factor_mm() else {
+            losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let mut coordinates = [0.0; 6];
+        let mut malformed = None;
+        for (index, coordinate) in coordinates.iter_mut().enumerate() {
+            match record.number(index + 1) {
+                Some(value) if value.is_finite() => *coordinate = value * factor,
+                _ => malformed = Some(index + 1),
+            }
+        }
+        if let Some(index) = malformed {
+            losses.push(entity_loss(
+                entry,
+                format!("endpoint coordinate {index} is not a finite number"),
+            ));
+            continue;
+        }
+        let transform = match resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            factor,
+            &mut BTreeSet::new(),
+        ) {
+            Ok(transform) => transform,
+            Err(message) => {
+                losses.push(entity_loss(entry, message));
+                continue;
+            }
+        };
+        let start = transform.point(Point3::new(coordinates[0], coordinates[1], coordinates[2]));
+        let end = transform.point(Point3::new(coordinates[3], coordinates[4], coordinates[5]));
+        let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
+        let length = delta.norm();
+        if !length.is_finite() || length <= 0.0 {
+            losses.push(entity_loss(
+                entry,
+                "transformed endpoints are coincident or non-finite",
+            ));
+            continue;
+        }
+        let stem = format!("D{}", entry.sequence);
+        let start_point = PointId(format!("iges:model:point#{stem}-start"));
+        let end_point = PointId(format!("iges:model:point#{stem}-end"));
+        let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
+        let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
+        let curve = CurveId(format!("iges:model:curve#{stem}"));
+        let edge = EdgeId(format!("iges:model:edge#{stem}"));
+        ir.model.points.extend([
+            Point {
+                id: start_point.clone(),
+                position: start,
+            },
+            Point {
+                id: end_point.clone(),
+                position: end,
+            },
+        ]);
+        ir.model.vertices.extend([
+            Vertex {
+                id: start_vertex.clone(),
+                point: start_point,
+                tolerance: None,
+            },
+            Vertex {
+                id: end_vertex.clone(),
+                point: end_point,
+                tolerance: None,
+            },
+        ]);
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Line {
+                origin: start,
+                direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "iges".into(),
+                object_id: format!("D{}", entry.sequence),
+                name: std::str::from_utf8(&entry.label)
+                    .ok()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned),
+                color: None,
+                visible: Some(entry.status.blank == 0),
+                layer: Some(entry.level.to_string()),
+                instance_path: Vec::new(),
+            }),
+        });
+        ir.model.edges.push(Edge {
+            id: edge.clone(),
+            curve: Some(curve),
+            start: start_vertex,
+            end: end_vertex,
+            param_range: Some([0.0, length]),
+            tolerance: None,
+        });
+        wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }
     if !decoded.is_empty() {
@@ -227,7 +343,7 @@ pub(crate) fn project_points(
             kind: BodyKind::Wire,
             regions: vec![region.clone()],
             transform: None,
-            name: Some("IGES points".into()),
+            name: Some("IGES free geometry".into()),
             color: None,
             visible: None,
         });
@@ -240,11 +356,8 @@ pub(crate) fn project_points(
             id: shell,
             region,
             faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: decoded
-                .iter()
-                .map(|sequence| VertexId(format!("iges:model:vertex#D{sequence}")))
-                .collect(),
+            wire_edges,
+            free_vertices,
         });
     }
     Projection {
