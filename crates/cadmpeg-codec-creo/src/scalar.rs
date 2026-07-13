@@ -87,6 +87,18 @@ pub fn decode_in_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option
     }
 }
 
+/// Decode one scalar in a positional surface or curve row lane.
+///
+/// Positional rows store `0x71` as a seven-byte sub-one IEEE form with an
+/// implicit zero low byte. Named scalar fields use the eight-byte `0x71`
+/// form handled by [`decode_in_lane`].
+pub fn decode_in_row_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x71) {
+        return ieee7(data, offset, 0x3f);
+    }
+    decode_in_lane(data, offset, cache)
+}
+
 /// Decode one scalar with a defined byte-to-IEEE mapping.
 ///
 /// Returns the value and first unread offset. Returns `None` when the prefix
@@ -163,6 +175,18 @@ mod tests {
         assert_eq!(
             decode_in_lane(&[0xa3, 1, 2, 3, 4, 5, 6], 0, &cache),
             Some((expected, 7))
+        );
+    }
+
+    #[test]
+    fn row_lane_uses_seven_byte_0x71_without_consuming_the_next_scalar() {
+        let cache = ScalarCache::default();
+        let data = [0x71, 0xf0, 0, 0, 0, 0, 0, 0xe4];
+        assert_eq!(decode_in_row_lane(&data, 0, &cache), Some((1.0, 7)));
+        assert_eq!(decode_in_row_lane(&data, 7, &cache), Some((1.0, 8)));
+        assert_eq!(
+            decode_in_lane(&data, 0, &cache).map(|(_, end)| end),
+            Some(8)
         );
     }
 }

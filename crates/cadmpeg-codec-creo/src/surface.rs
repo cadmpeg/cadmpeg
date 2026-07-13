@@ -599,7 +599,7 @@ fn scalar_values(body: &[u8], cache: &scalar::ScalarCache) -> Vec<f64> {
     let mut values = Vec::new();
     let mut cursor = 0;
     while cursor < body.len() {
-        if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) {
+        if let Some((value, next)) = scalar::decode_in_row_lane(body, cursor, cache) {
             values.push(value);
             cursor = next;
         } else {
@@ -695,6 +695,21 @@ fn scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<O
     slots
 }
 
+fn row_scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<Option<f64>> {
+    let mut slots = Vec::with_capacity(count);
+    let mut cursor = 0;
+    while cursor < body.len() && slots.len() < count {
+        if let Some((value, next)) = scalar::decode_in_row_lane(body, cursor, cache) {
+            slots.push(Some(value));
+            cursor = next;
+        } else {
+            cursor += 1;
+        }
+    }
+    slots.resize(count, None);
+    slots
+}
+
 struct PlaneFrame {
     origin: Option<[f64; 3]>,
     u_axis: Option<[f64; 3]>,
@@ -778,7 +793,7 @@ pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
             continue;
         }
         let body = payload[chunk_start..chunk_end].to_vec();
-        let slots = scalar_slots(&body, 12, &cache);
+        let slots = row_scalar_slots(&body, 12, &cache);
         let frame = plane_frame(&slots);
         let simple = matches!(body.first(), Some(0x0f | 0x10 | 0x18))
             && body.len() <= 24

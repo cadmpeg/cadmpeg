@@ -386,7 +386,7 @@ fn curve_scalar_lane(
             cursor += 1;
             continue;
         }
-        if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) {
+        if let Some((value, next)) = scalar::decode_in_row_lane(body, cursor, cache) {
             values.push(value);
             cursor = next;
         } else {

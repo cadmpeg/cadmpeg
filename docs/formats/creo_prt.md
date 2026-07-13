@@ -121,6 +121,10 @@ Known prefixes include `71→3F E6`, `74→3F E9`, `81→3F F6`, `8b→40 00`, `
 
 Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leading byte `40` and implicit trailing `00`; `a3 <tail6>` for the negative form paired with the section-local `46` cache; `b9`, `d3`, and `df` for negative sub-unit forms with leading byte `BF`; and `41`, `4b`, `66`, `67`, `68`, `77`, and `82..8f` for positive sub-unit forms with leading byte `3F`.
 
+In positional surface and curve row lanes, `71 <tail6>` is a seven-byte
+sub-unit form reconstructed as `3F <tail6> 00`. In named scalar lanes, `71`
+occupies eight source bytes and reconstructs as `3F <tail7>`.
+
 Each record grammar defines the DICT lane for its scalar slots. A decoder must not apply DICT sign rules across unrelated record grammars.
 
 #### World-coordinate tokens
