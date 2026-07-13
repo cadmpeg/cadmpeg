@@ -1295,6 +1295,31 @@ fn document_table_record_budget_rejects_compact_record_amplification() {
 }
 
 #[test]
+fn scan_retains_history_record_source_boundaries() {
+    let archive = ArchiveVersion::V5;
+    let history_record = crc_chunk(archive, 0x2000_807b, &[1, 2, 3, 4]);
+    let bytes = minimal_document(
+        "50",
+        &[
+            crc_table(archive, 0x1000_0014, &[]),
+            crc_table(archive, 0x1000_0015, &[]),
+            crc_table(archive, 0x1000_0013, &[]),
+            crc_table(archive, 0x1000_0026, &[history_record]),
+        ],
+    );
+
+    let scan = super::container::scan(bytes).expect("history table");
+    let history = scan
+        .tables
+        .iter()
+        .find(|table| table.typecode & !TCODE_CRC == 0x1000_0026)
+        .expect("history table descriptor");
+    assert_eq!(history.records.len(), 1);
+    assert_eq!(history.records[0].typecode, 0x2000_807b);
+    assert_eq!(&scan.data[history.records[0].body.clone()], &[1, 2, 3, 4]);
+}
+
+#[test]
 fn near_budget_user_table_keeps_count_without_record_descriptors() {
     let archive = ArchiveVersion::V5;
     let records = (0..127)
