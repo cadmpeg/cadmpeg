@@ -195,6 +195,32 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             }
             counts.points += 1;
         }
+        for node in graph.of_kind(29) {
+            if points_by_xmt.contains_key(&node.xmt) {
+                continue;
+            }
+            let Some(position) = node.point_position() else {
+                continue;
+            };
+            let pi = points_by_xmt.len();
+            let pid = PointId(format!("nx:s{si}:pt#{pi}"));
+            let vid = VertexId(format!("nx:s{si}:v#{pi}"));
+            annotate_node(&mut annotations, &pid, source_stream, node, "POINT");
+            annotations.derived(&pid, "position");
+            annotate_node(&mut annotations, &vid, source_stream, node, "POINT");
+            annotations.exactness(&vid, Exactness::Inferred);
+            ir.model.points.push(Point {
+                id: pid.clone(),
+                position,
+            });
+            ir.model.vertices.push(Vertex {
+                id: vid.clone(),
+                point: pid.clone(),
+                tolerance: None,
+            });
+            points_by_xmt.insert(node.xmt, (pid, vid));
+            counts.points += 1;
+        }
 
         for (fi, surf) in geometry::surfaces(semantic).into_iter().enumerate() {
             match &surf.geometry {

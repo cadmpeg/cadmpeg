@@ -8,6 +8,7 @@
 //! from the graph.
 
 use cadmpeg_ir::be;
+use cadmpeg_ir::math::Point3;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A supported fixed-record node with its XMT identifier and source offset.
@@ -276,6 +277,21 @@ impl Node {
             point: refs[4],
             tolerance,
         })
+    }
+
+    /// Decode a fully framed POINT position into model millimeters.
+    pub fn point_position(&self) -> Option<Point3> {
+        (self.kind == 29).then_some(())?;
+        let mut at = 8 + self.shift;
+        read_sequence_at(&self.bytes, &mut at, 4)?;
+        let xyz = be::vec3_at(&self.bytes, at)?;
+        xyz.iter()
+            .all(|value| {
+                value.is_finite()
+                    && value.abs() < 1.0e3
+                    && (*value == 0.0 || value.abs() >= 1.0e-100)
+            })
+            .then(|| Point3::new(xyz[0] * 1000.0, xyz[1] * 1000.0, xyz[2] * 1000.0))
     }
 }
 
@@ -705,6 +721,7 @@ impl Node {
             18 => self
                 .vertex_fields()
                 .is_some_and(|fields| fields.tolerance.is_finite()),
+            29 => self.point_position().is_some(),
             _ => true,
         }
     }

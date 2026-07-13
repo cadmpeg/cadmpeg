@@ -338,6 +338,35 @@ fn topology_invalid_candidate_cannot_shadow_later_valid_record() {
 }
 
 #[test]
+fn decode_retains_topology_owned_point_at_origin() {
+    let mut stream = topology_partition_stream();
+    let point = stream
+        .windows(4)
+        .position(|window| window == [0, 29, 0, 11])
+        .expect("point record");
+    put_vec3(&mut stream, point + 16, [0.0, 0.0, 0.0]);
+
+    assert!(crate::geometry::points(&stream).is_empty());
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(
+        graph
+            .get(29, 11)
+            .and_then(crate::topology::Node::point_position),
+        Some(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
+    );
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.model.vertices.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(
+        result.ir.model.points[0].position,
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
+    );
+}
+
+#[test]
 fn decode_retains_connected_topology_with_unknown_surface_carrier() {
     let mut stream = topology_partition_stream();
     let face = stream
