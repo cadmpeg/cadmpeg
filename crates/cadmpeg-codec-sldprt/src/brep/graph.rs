@@ -588,13 +588,18 @@ fn decode_graph(
     for (group, body_record) in body_records.iter().enumerate() {
         for face in &faces {
             let owner = t.bridges.get(&face.bridge_attr).and_then(|r| r.owner);
-            if owner.is_some_and(|owner| body_record.refs.contains(&owner)) {
+            if body_record.refs.contains(&face.bridge_attr)
+                || owner.is_some_and(|owner| body_record.refs.contains(&owner))
+            {
                 bridge_group.insert(face.bridge_attr, group);
                 if let Some(shell) = body_record
                     .regions
                     .iter()
                     .flat_map(|region| &region.shells)
-                    .find(|shell| owner.is_some_and(|owner| shell.refs.contains(&owner)))
+                    .find(|shell| {
+                        shell.refs.contains(&face.bridge_attr)
+                            || owner.is_some_and(|owner| shell.refs.contains(&owner))
+                    })
                 {
                     bridge_shell.insert(face.bridge_attr, shell.attr);
                 }

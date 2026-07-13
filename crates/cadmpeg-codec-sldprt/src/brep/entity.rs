@@ -302,12 +302,125 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
             regions,
         });
     }
+    bind_schema_32001_faces(entities, &mut out);
     bind_schema_33103_faces(entities, &mut out);
     if out.is_empty() {
         out.extend(disc14_bodies(&by_attr));
     }
     out.sort_by_key(|record| record.attr);
     out
+}
+
+fn bind_schema_32001_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord]) {
+    let mut primary_heads = entities
+        .iter()
+        .filter(|record| record.disc == 0x0015 && record.flo() == 2)
+        .collect::<Vec<_>>();
+    let secondary_heads = entities
+        .iter()
+        .filter(|record| record.disc == 0x000f && record.flo() == 1)
+        .map(|record| (record.attr, record))
+        .collect::<HashMap<_, _>>();
+    let faces = entities
+        .iter()
+        .filter(|record| record.disc == 0x001f && record.flo() == 1)
+        .collect::<Vec<_>>();
+    if primary_heads.is_empty() || faces.is_empty() || bodies.is_empty() {
+        return;
+    }
+    primary_heads.sort_by_key(|record| record.offset);
+    let mut all_heads = primary_heads.clone();
+    all_heads.extend(secondary_heads.values().copied());
+    all_heads.sort_by_key(|record| record.offset);
+
+    let mut interval_faces = HashMap::<u16, Vec<u16>>::new();
+    for (index, head) in all_heads.iter().enumerate() {
+        let end = all_heads
+            .get(index + 1)
+            .map_or(usize::MAX, |record| record.offset);
+        interval_faces.insert(
+            head.attr,
+            faces
+                .iter()
+                .filter(|face| face.offset >= head.offset && face.offset < end)
+                .map(|face| face.attr)
+                .collect(),
+        );
+    }
+
+    let primary_by_attr = primary_heads
+        .into_iter()
+        .map(|record| (record.attr, record))
+        .collect::<HashMap<_, _>>();
+    let roots = entities
+        .iter()
+        .filter(|record| record.disc == 0x0017 && record.flo() == 2)
+        .map(|record| (record.attr, record))
+        .collect::<HashMap<_, _>>();
+    if roots.len() != bodies.len() {
+        return;
+    }
+    let faces_by_attr = faces
+        .iter()
+        .map(|face| (face.attr, *face))
+        .collect::<HashMap<_, _>>();
+
+    let mut assignments = HashMap::<u16, Vec<u16>>::new();
+    let mut assigned_faces = HashSet::new();
+    for body in bodies.iter() {
+        let Some(root) = roots.get(&body.attr) else {
+            return;
+        };
+        let Some(head) = root.refs.get(2).and_then(|attr| primary_by_attr.get(attr)) else {
+            return;
+        };
+        if head.refs.get(1) != Some(&body.attr) {
+            return;
+        }
+        let active_head = head
+            .refs
+            .get(2)
+            .and_then(|attr| secondary_heads.get(attr))
+            .copied()
+            .unwrap_or(head);
+        let Some(face_attrs) = interval_faces.get(&active_head.attr) else {
+            return;
+        };
+        if face_attrs
+            .iter()
+            .any(|face_attr| !assigned_faces.insert(*face_attr))
+        {
+            return;
+        }
+        let mut membership = face_attrs.clone();
+        membership.extend(face_attrs.iter().filter_map(|face_attr| {
+            faces_by_attr
+                .get(face_attr)
+                .and_then(|face| face.refs.first())
+                .copied()
+                .filter(|reference| *reference > 1)
+        }));
+        assignments.insert(body.attr, membership);
+    }
+    if assigned_faces.len() != faces.len() {
+        return;
+    }
+
+    for body in bodies {
+        let face_attrs = &assignments[&body.attr];
+        body.refs.extend(face_attrs.iter().copied());
+        body.refs.sort_unstable();
+        body.refs.dedup();
+        for shell in body
+            .regions
+            .iter_mut()
+            .flat_map(|region| &mut region.shells)
+        {
+            shell.refs.extend(face_attrs.iter().copied());
+            shell.refs.sort_unstable();
+            shell.refs.dedup();
+        }
+    }
 }
 
 fn disc14_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {

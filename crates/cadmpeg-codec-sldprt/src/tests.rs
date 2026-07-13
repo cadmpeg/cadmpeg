@@ -3972,6 +3972,31 @@ fn decode_follows_connector_region_lump_and_shell_chain() {
 }
 
 #[test]
+fn decode_binds_schema_32001_face_intervals_through_bridge_ids() {
+    let mut body = Vec::new();
+    body.extend(entity51(2, 500, 0x0017, &[0, 510, 600, 0, 0, 0]));
+    body.extend(entity51(2, 510, 0x001b, &[520, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 520, 0x001f, &[530, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 530, 0x0021, &[540, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 540, 0x0023, &[0, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 600, 0x0015, &[0, 500, 0, 0, 0, 0]));
+    body.extend(entity51(1, 700, 0x001f, &[10, 0, 0, 0, 0, 0]));
+    body.extend(owned_triangle(0, 900, 0.0));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(decoded.report.geometry_transferred);
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    assert_eq!(decoded.ir.model.shells[0].faces[0].0, "sldprt:brep:face#10");
+}
+
+#[test]
 fn decode_partitions_interleaved_schema_33103_faces_by_adjacency() {
     let mut body = Vec::new();
     body.extend(entity51(2, 500, 0x0017, &[90, 510, 0, 0, 0, 0]));
