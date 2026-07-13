@@ -2633,7 +2633,7 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
 
 #[test]
 fn decode_retains_invalid_feature_directions_and_angles_as_native() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, PatternForm, PatternKind};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -2653,15 +2653,18 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.features.len(), 7);
-    let typed = decoded
-        .ir
-        .model
-        .features
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::Pattern {
+            pattern: PatternKind::Unresolved {
+                form: Some(PatternForm::Linear),
+            },
+            ..
+        }
+    ));
+    assert!(decoded.ir.model.features[2..]
         .iter()
-        .filter(|feature| !matches!(feature.definition, FeatureDefinition::Native { .. }))
-        .map(|feature| (feature.name.as_deref(), &feature.definition))
-        .collect::<Vec<_>>();
-    assert!(typed.is_empty(), "unexpected typed features: {typed:?}");
+        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
 }
 
 #[test]
@@ -10732,6 +10735,60 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
                 direction: None,
                 spacing: Length(3.5),
                 count: 12,
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn semantic_writer_retains_unresolved_native_pattern_construction() {
+    use cadmpeg_ir::features::{FeatureDefinition, PatternForm, PatternKind};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Unknown pattern" Type="Custom" id="132"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("moLPattern_c", "Unknown pattern", 132)]),
+    ));
+
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Pattern {
+            seeds,
+            pattern: PatternKind::Unresolved {
+                form: Some(PatternForm::Linear),
+            },
+        } if seeds.is_empty()
+    ));
+    decoded.ir.model.features[0].name = Some("Renamed pattern".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.name, "Renamed pattern");
+    assert!(!native.properties.contains_key("Seeds"));
+    assert!(!native.properties.contains_key("Direction"));
+    assert!(!native.parameters.contains_key("Count"));
+    assert!(!native.parameters.contains_key("Spacing"));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Pattern {
+            pattern: PatternKind::Unresolved {
+                form: Some(PatternForm::Linear),
             },
             ..
         }

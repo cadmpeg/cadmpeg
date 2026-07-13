@@ -1149,6 +1149,12 @@ pub enum FlexMode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PatternKind {
+    /// Pattern construction whose form or required operands are unresolved.
+    Unresolved {
+        /// Native pattern form, when identified independently of its operands.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<PatternForm>,
+    },
     /// Repeats seeds evenly along a straight direction.
     Linear {
         /// Repetition direction, when resolved.
@@ -1187,4 +1193,18 @@ pub enum PatternKind {
         /// Unit normal of the mirror plane.
         plane_normal: Vector3,
     },
+}
+
+/// Structural form of a repeated or reflected feature operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PatternForm {
+    /// Translation along a straight direction.
+    Linear,
+    /// Rotation around an axis.
+    Circular,
+    /// Translation along a curve.
+    CurveDriven,
+    /// Reflection across a plane.
+    Mirror,
 }

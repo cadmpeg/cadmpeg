@@ -10,9 +10,9 @@ use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, ConfigurationId,
     DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent, FaceMotion,
     FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole,
-    FlexMode, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef,
-    RadiusSpec, RuledSurfaceMode, ScaleCenter, SketchSpace, SurfaceContinuity, SurfaceExtension,
-    SweepMode, TrimRegion, VariableRadius, WrapMode,
+    FlexMode, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind,
+    ProfileRef, RadiusSpec, RuledSurfaceMode, ScaleCenter, SketchSpace, SurfaceContinuity,
+    SurfaceExtension, SweepMode, TrimRegion, VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1155,7 +1155,6 @@ fn project_definition(
         project_revolve(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Pattern) {
         project_pattern(feature, by_source, native_by_source)
-            .unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Sweep) {
         project_sweep(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Loft) {
@@ -1786,14 +1785,6 @@ fn project_sweep(
     })
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PatternForm {
-    Linear,
-    Circular,
-    CurveDriven,
-    Mirror,
-}
-
 fn pattern_form(feature: &Feature) -> Option<PatternForm> {
     let parse = |form: &str| match form.to_ascii_lowercase().as_str() {
         "linear" | "linearpattern" => Some(PatternForm::Linear),
@@ -1826,77 +1817,80 @@ fn project_pattern(
     feature: &Feature,
     by_source: &HashMap<&str, FeatureId>,
     native_by_source: &HashMap<&str, &str>,
-) -> Option<FeatureDefinition> {
-    let form = pattern_form(feature)?;
+) -> FeatureDefinition {
+    let form = pattern_form(feature);
     let seeds = match feature.properties.get("Seeds") {
         Some(seeds) => seeds
             .split(',')
             .map(str::trim)
             .map(|source| by_source.get(source).cloned())
-            .collect::<Option<Vec<_>>>()?,
-        None if matches!(form, PatternForm::Linear | PatternForm::CurveDriven) => Vec::new(),
-        None => return None,
+            .collect::<Option<Vec<_>>>()
+            .unwrap_or_default(),
+        None => Vec::new(),
     };
-    if seeds.is_empty() && !matches!(form, PatternForm::Linear | PatternForm::CurveDriven) {
-        return None;
-    }
-    let pattern = match form {
-        PatternForm::Linear => PatternKind::Linear {
-            direction: match feature.properties.get("Direction") {
-                Some(value) => Some(parse_valid_direction(value)?),
-                None => None,
+    let resolved = form.and_then(|form| {
+        Some(match form {
+            PatternForm::Linear => PatternKind::Linear {
+                direction: match feature.properties.get("Direction") {
+                    Some(value) => Some(parse_valid_direction(value)?),
+                    None => None,
+                },
+                spacing: Length(parse_positive_dimension_length_mm(
+                    feature
+                        .parameters
+                        .get("Spacing")
+                        .or_else(|| feature.parameters.get("D3"))?,
+                )?),
+                count: parse_count(
+                    feature
+                        .parameters
+                        .get("Count")
+                        .or_else(|| feature.parameters.get("D1"))?,
+                )?,
             },
-            spacing: Length(parse_positive_dimension_length_mm(
-                feature
-                    .parameters
-                    .get("Spacing")
-                    .or_else(|| feature.parameters.get("D3"))?,
-            )?),
-            count: parse_count(
-                feature
-                    .parameters
-                    .get("Count")
-                    .or_else(|| feature.parameters.get("D1"))?,
-            )?,
-        },
-        PatternForm::Circular => PatternKind::Circular {
-            axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
-            axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
-            angle: Angle(
-                feature
-                    .parameters
-                    .get("Angle")
-                    .and_then(|value| parse_positive_angle_rad(value))?,
-            ),
-            count: parse_count(feature.parameters.get("Count")?)?,
-        },
-        PatternForm::CurveDriven => PatternKind::CurveDriven {
-            path: feature.properties.get("Path").map(|source| {
-                PathRef::Native(
-                    native_by_source
-                        .get(source.as_str())
-                        .map_or_else(|| source.clone(), |id| (*id).to_string()),
-                )
-            }),
-            spacing: Length(parse_positive_dimension_length_mm(
-                feature
-                    .parameters
-                    .get("Spacing")
-                    .or_else(|| feature.parameters.get("D3"))?,
-            )?),
-            count: parse_count(
-                feature
-                    .parameters
-                    .get("Count")
-                    .or_else(|| feature.parameters.get("D1"))?,
-            )?,
-        },
-        PatternForm::Mirror => PatternKind::Mirror {
-            plane_origin: parse_point3_mm(feature.properties.get("PlaneOrigin")?)?,
-            plane_normal: parse_valid_direction(feature.properties.get("PlaneNormal")?)?,
-        },
-    };
-    Some(FeatureDefinition::Pattern { seeds, pattern })
+            PatternForm::Circular => PatternKind::Circular {
+                axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
+                axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
+                angle: Angle(
+                    feature
+                        .parameters
+                        .get("Angle")
+                        .and_then(|value| parse_positive_angle_rad(value))?,
+                ),
+                count: parse_count(feature.parameters.get("Count")?)?,
+            },
+            PatternForm::CurveDriven => PatternKind::CurveDriven {
+                path: feature.properties.get("Path").map(|source| {
+                    PathRef::Native(
+                        native_by_source
+                            .get(source.as_str())
+                            .map_or_else(|| source.clone(), |id| (*id).to_string()),
+                    )
+                }),
+                spacing: Length(parse_positive_dimension_length_mm(
+                    feature
+                        .parameters
+                        .get("Spacing")
+                        .or_else(|| feature.parameters.get("D3"))?,
+                )?),
+                count: parse_count(
+                    feature
+                        .parameters
+                        .get("Count")
+                        .or_else(|| feature.parameters.get("D1"))?,
+                )?,
+            },
+            PatternForm::Mirror => PatternKind::Mirror {
+                plane_origin: parse_point3_mm(feature.properties.get("PlaneOrigin")?)?,
+                plane_normal: parse_valid_direction(feature.properties.get("PlaneNormal")?)?,
+            },
+        })
+    });
+    let seeds_required = !matches!(form, Some(PatternForm::Linear | PatternForm::CurveDriven));
+    let pattern = resolved
+        .filter(|_| !seeds_required || !seeds.is_empty())
+        .unwrap_or(PatternKind::Unresolved { form });
+    FeatureDefinition::Pattern { seeds, pattern }
 }
 
 fn parse_count(value: &str) -> Option<u32> {
@@ -6096,15 +6090,15 @@ pub fn sync_neutral_features(
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
                 let expected_form = match pattern {
-                    PatternKind::Linear { .. } => PatternForm::Linear,
-                    PatternKind::Circular { .. } => PatternForm::Circular,
-                    PatternKind::CurveDriven { .. } => PatternForm::CurveDriven,
-                    PatternKind::Mirror { .. } => PatternForm::Mirror,
+                    PatternKind::Unresolved { form } => *form,
+                    PatternKind::Linear { .. } => Some(PatternForm::Linear),
+                    PatternKind::Circular { .. } => Some(PatternForm::Circular),
+                    PatternKind::CurveDriven { .. } => Some(PatternForm::CurveDriven),
+                    PatternKind::Mirror { .. } => Some(PatternForm::Mirror),
                 };
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| pattern_form(record) != Some(expected_form))
-                {
+                if existing.as_deref().is_some_and(|record| {
+                    expected_form.is_some_and(|form| pattern_form(record) != Some(form))
+                }) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes pattern form",
                         feature.id
@@ -6123,8 +6117,9 @@ pub fn sync_neutral_features(
                 if seed_sources.is_empty()
                     && (!matches!(
                         expected_form,
-                        PatternForm::Linear | PatternForm::CurveDriven
+                        Some(PatternForm::Linear | PatternForm::CurveDriven)
                     ) || existing.is_none())
+                    && !matches!(pattern, PatternKind::Unresolved { .. })
                 {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has no pattern seeds",
@@ -6140,6 +6135,14 @@ pub fn sync_neutral_features(
                     properties.insert("Seeds".into(), seed_sources.join(","));
                 }
                 match pattern {
+                    PatternKind::Unresolved { .. } => {
+                        if existing.is_none() {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has unresolved pattern construction",
+                                feature.id
+                            )));
+                        }
+                    }
                     PatternKind::Linear {
                         direction,
                         spacing,
@@ -6270,10 +6273,11 @@ pub fn sync_neutral_features(
                 }
                 let kind = existing.as_deref().map_or_else(
                     || match expected_form {
-                        PatternForm::Linear => "LinearPattern".into(),
-                        PatternForm::Circular => "CircularPattern".into(),
-                        PatternForm::CurveDriven => "CrvPattern".into(),
-                        PatternForm::Mirror => "Mirror".into(),
+                        Some(PatternForm::Linear) => "LinearPattern".into(),
+                        Some(PatternForm::Circular) => "CircularPattern".into(),
+                        Some(PatternForm::CurveDriven) => "CrvPattern".into(),
+                        Some(PatternForm::Mirror) => "Mirror".into(),
+                        None => "Pattern".into(),
                     },
                     |record| record.kind.clone(),
                 );

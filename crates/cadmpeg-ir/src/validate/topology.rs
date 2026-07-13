@@ -1483,6 +1483,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                 }
                 let valid = match pattern {
+                    PatternKind::Unresolved { .. } => true,
                     PatternKind::Linear {
                         direction,
                         spacing,
