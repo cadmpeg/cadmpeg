@@ -1039,7 +1039,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         .is_some_and(|(dependency_owner, parameter_owner)| {
                             dependency_owner < parameter_owner
                         }),
-                    (Some(_), None) | (None, None) => false,
+                    (Some(_) | None, None) => false,
                 }
             };
             if !precedes {
