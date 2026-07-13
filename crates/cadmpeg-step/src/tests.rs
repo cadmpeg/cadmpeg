@@ -4,6 +4,7 @@
 //! depends on an external STEP consumer.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::{Codec, Confidence};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
@@ -12,8 +13,36 @@ use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
+use std::io::Cursor;
 
-use crate::{write_step, StepWriteOptions};
+use crate::{write_step, StepCodec, StepWriteOptions};
+
+#[test]
+fn codec_detects_and_inspects_ap242_exchange_structure() {
+    let bytes = include_bytes!("../tests/fixtures/ap242_minimal.p21");
+    let codec = StepCodec::default();
+
+    assert_eq!(codec.detect(bytes), Confidence::High);
+    assert_eq!(codec.detect(b"PK\x03\x04"), Confidence::No);
+
+    let summary = codec
+        .inspect(&mut Cursor::new(bytes))
+        .expect("inspect minimal AP242");
+    assert_eq!(summary.format, "step");
+    assert_eq!(summary.container_kind, "iso-10303-21-clear-text");
+    assert_eq!(summary.entries.len(), 2);
+    assert_eq!(summary.entries[0].name, "HEADER");
+    assert_eq!(summary.entries[1].name, "DATA[0]");
+    assert_eq!(summary.entries[1].attributes["entity_count"], "2");
+    assert_eq!(
+        summary.entries[1].attributes["unknown_entities"],
+        "EXAMPLE_RECORD:1,OPAQUE_TARGET:1"
+    );
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note.contains("AP242") && note.contains("edition 3")));
+}
 
 fn export(ir: &CadIr) -> String {
     let mut buf = Vec::new();

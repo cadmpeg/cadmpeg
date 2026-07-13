@@ -47,12 +47,17 @@
 //! header and DATA section, such a failure can leave partial output.
 
 mod geometry;
+pub mod lex;
+pub mod parse;
 mod writer;
 
 use std::collections::{BTreeSet, HashMap};
 use std::io::Write;
 
-use cadmpeg_ir::codec::{CodecError, Encoder};
+use cadmpeg_ir::codec::{
+    Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions, DecodeResult,
+    Encoder, ReadSeek,
+};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
@@ -1090,6 +1095,110 @@ impl Encoder for StepCodec {
 
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
         write_step(ir, writer, &self.options).map_err(CodecError::from)
+    }
+}
+
+impl Codec for StepCodec {
+    fn id(&self) -> &'static str {
+        "step"
+    }
+
+    fn detect(&self, prefix: &[u8]) -> Confidence {
+        if prefix.starts_with(b"ISO-10303-21;") {
+            Confidence::High
+        } else {
+            Confidence::No
+        }
+    }
+
+    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes)?;
+        if self.detect(&bytes) == Confidence::No {
+            return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
+        }
+        let exchange =
+            parse::parse(&bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
+        let mut entries = vec![ContainerEntry {
+            name: "HEADER".into(),
+            role: "metadata".into(),
+            compression: "none".into(),
+            compressed_size: 0,
+            uncompressed_size: 0,
+            attributes: Default::default(),
+        }];
+        for (index, section) in exchange.data.iter().enumerate() {
+            let mut counts = std::collections::BTreeMap::<String, usize>::new();
+            for id in &section.records {
+                for partial in &exchange.records[id].partials {
+                    *counts.entry(partial.name.clone()).or_default() += 1;
+                }
+            }
+            let unknown = counts
+                .iter()
+                .map(|(name, count)| format!("{name}:{count}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            let mut attributes = std::collections::BTreeMap::new();
+            attributes.insert("entity_count".into(), section.records.len().to_string());
+            attributes.insert("unknown_entities".into(), unknown);
+            entries.push(ContainerEntry {
+                name: format!("DATA[{index}]"),
+                role: "entity_records".into(),
+                compression: "none".into(),
+                compressed_size: 0,
+                uncompressed_size: 0,
+                attributes,
+            });
+        }
+        let schema = exchange
+            .header
+            .iter()
+            .find(|record| record.name == "FILE_SCHEMA")
+            .map(|record| {
+                fn strings(value: &parse::Value, out: &mut Vec<String>) {
+                    match value {
+                        parse::Value::String(bytes) => {
+                            out.push(String::from_utf8_lossy(bytes).into_owned())
+                        }
+                        parse::Value::List(values) => {
+                            values.iter().for_each(|value| strings(value, out));
+                        }
+                        parse::Value::Typed(_, value) => strings(value, out),
+                        _ => {}
+                    }
+                }
+                let mut names = Vec::new();
+                record
+                    .parameters
+                    .iter()
+                    .for_each(|value| strings(value, &mut names));
+                names.join(",")
+            })
+            .unwrap_or_else(|| "unspecified".into());
+        let edition = if schema.contains("442 3") {
+            "edition 3"
+        } else if schema.contains("442 2") {
+            "edition 2"
+        } else {
+            "edition unspecified"
+        };
+        Ok(ContainerSummary {
+            format: "step".into(),
+            container_kind: "iso-10303-21-clear-text".into(),
+            entries,
+            notes: vec![format!("schema {schema}; {edition}")],
+        })
+    }
+
+    fn decode(
+        &self,
+        _reader: &mut dyn ReadSeek,
+        _options: &DecodeOptions,
+    ) -> Result<DecodeResult, CodecError> {
+        Err(CodecError::NotImplemented(
+            "STEP entity decoding is not implemented".into(),
+        ))
     }
 }
 
