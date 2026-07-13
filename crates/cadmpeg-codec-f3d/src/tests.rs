@@ -4777,6 +4777,22 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
+    let directrix_id = match &expected.definition {
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { directrix, .. } => {
+            directrix.clone()
+        }
+        _ => unreachable!(),
+    };
+    source_less
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == directrix_id)
+        .expect("extrusion directrix")
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+        origin: cadmpeg_ir::math::Point3::new(5.0, 10.0, -5.0),
+        direction: cadmpeg_ir::math::Vector3::new(2.0, -4.0, 1.0),
+    };
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -4804,6 +4820,22 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .curves
         .iter()
         .any(|curve| curve.id == *directrix));
+    assert!(matches!(
+        round_trip
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *directrix)
+            .map(|curve| &curve.geometry),
+        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            if curve.degree == 1
+                && curve.knots == [0.25, 0.25, 0.75, 0.75]
+                && curve.control_points == [
+                    cadmpeg_ir::math::Point3::new(5.5, 9.0, -4.75),
+                    cadmpeg_ir::math::Point3::new(6.5, 7.0, -4.25),
+                ]
+    ));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
     assert_eq!(*parameter_interval, Some([0.25, 0.75]));
     assert_eq!(

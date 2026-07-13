@@ -5139,11 +5139,7 @@ fn encode_native_extrusion(
                 procedural.id
             ))
         })?;
-    let CurveGeometry::Nurbs(directrix_cache) = &directrix.geometry else {
-        return Err(CodecError::NotImplemented(
-            "source-less cyl_spl_sur requires a NURBS directrix cache".into(),
-        ));
-    };
+    let directrix_cache = native_interval_curve(&directrix.geometry, parameter_interval)?;
     if [
         parameter_interval[0],
         parameter_interval[1],
@@ -5178,7 +5174,7 @@ fn encode_native_extrusion(
             native_position.z / 10.0,
         ],
     );
-    native_nurbs_curve(bytes, directrix_cache)?;
+    native_nurbs_curve(bytes, &directrix_cache)?;
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
     bytes.push(0x10);
@@ -6014,17 +6010,13 @@ fn native_procedural_curve(
             .iter()
             .find(|curve| curve.id == *source)
             .ok_or_else(|| CodecError::Malformed("projection source curve is missing".into()))?;
-        let CurveGeometry::Nurbs(source) = &source.geometry else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D projection requires a NURBS source curve".into(),
-            ));
-        };
+        let source = native_interval_curve(&source.geometry, context.parameter_range)?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "proj_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
         bytes.push(native_bool(*discontinuity_flag));
-        native_nurbs_curve(bytes, source)?;
+        native_nurbs_curve(bytes, &source)?;
         match tail {
             cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag } => {
                 bytes.push(native_bool(*flag));
@@ -6188,11 +6180,7 @@ fn native_procedural_curve(
             .iter()
             .find(|curve| curve.id == *base)
             .ok_or_else(|| CodecError::Malformed("surface-offset base curve is missing".into()))?;
-        let CurveGeometry::Nurbs(base) = &base.geometry else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D off_surf_int_cur requires a NURBS base curve".into(),
-            ));
-        };
+        let base = native_interval_curve(&base.geometry, *base_range)?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "off_surf_int_cur")?;
@@ -6203,7 +6191,7 @@ fn native_procedural_curve(
                 native_f64(bytes, value);
             }
         }
-        native_nurbs_curve(bytes, base)?;
+        native_nurbs_curve(bytes, &base)?;
         for value in base_range {
             native_f64(bytes, *value);
         }
