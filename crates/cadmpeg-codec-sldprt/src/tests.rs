@@ -10753,6 +10753,14 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     assert_eq!(lane.scalars[0].operands.len(), 2);
     assert_eq!(lane.scalars[0].operands[0].entity_index, 0);
     assert_eq!(lane.scalars[0].operands[1].entity_index, 2);
+    assert_eq!(
+        lane.scalars[0].operands[0].reference_ref,
+        lane.references[0].id
+    );
+    assert_eq!(
+        lane.scalars[0].operands[1].reference_ref,
+        lane.references[1].id
+    );
     assert!(lane.scalars[0]
         .operands
         .iter()

@@ -180,7 +180,7 @@ pub(crate) fn named_scalars(
                     .ok()?,
             );
             let role = scalar_role(payload, name_offset);
-            let operands = scalar_operands(payload, name_offset);
+            let operands = scalar_operands(payload, name_offset, parent);
             let entity_indices = operands
                 .iter()
                 .filter(|operand| operand.kind == FeatureInputOperandKind::D6)
@@ -216,7 +216,8 @@ pub(crate) fn named_scalars(
         .collect()
 }
 
-fn scalar_operands(payload: &[u8], name_offset: usize) -> Vec<FeatureInputOperand> {
+fn scalar_operands(payload: &[u8], name_offset: usize, parent: &str) -> Vec<FeatureInputOperand> {
+    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     [75usize, 87]
         .into_iter()
         .filter_map(|relative| {
@@ -232,6 +233,7 @@ fn scalar_operands(payload: &[u8], name_offset: usize) -> Vec<FeatureInputOperan
             };
             Some(FeatureInputOperand {
                 offset: offset as u64,
+                reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
                 kind,
                 entity_index: u16::from_le_bytes([cell[2], cell[3]]),
                 entity_ref: None,

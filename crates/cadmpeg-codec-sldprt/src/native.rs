@@ -152,6 +152,29 @@ impl SldprtNative {
                 record.id, record.name
             )));
         }
+        let references_by_id = references
+            .iter()
+            .map(|record| (record.id.as_str(), record))
+            .collect::<std::collections::HashMap<_, _>>();
+        for scalar in &scalars {
+            for operand in &scalar.operands {
+                let Some(reference) = references_by_id.get(operand.reference_ref.as_str()) else {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "feature-input scalar {} references missing cell {}",
+                        scalar.id, operand.reference_ref
+                    )));
+                };
+                if reference.offset != operand.offset
+                    || reference.kind != operand.kind
+                    || reference.object_index != operand.entity_index
+                {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "feature-input scalar {} has inconsistent cell {}",
+                        scalar.id, operand.reference_ref
+                    )));
+                }
+            }
+        }
         for history in &mut native.feature_histories {
             history.configurations = configurations
                 .iter()
@@ -233,6 +256,11 @@ impl SldprtNative {
                 .iter()
                 .map(|record| record.id.as_str())
                 .collect::<std::collections::HashSet<_>>();
+            let references_by_id = lane
+                .references
+                .iter()
+                .map(|record| (record.id.as_str(), record))
+                .collect::<std::collections::HashMap<_, _>>();
             if let Some(record) = lane.classes.iter().find(|record| record.parent != lane.id) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input class {} references {} instead of {}",
@@ -270,6 +298,26 @@ impl SldprtNative {
                     "feature-input scalar {} references name {}",
                     record.id, record.name
                 )));
+            }
+            for scalar in &lane.scalars {
+                for operand in &scalar.operands {
+                    let Some(reference) = references_by_id.get(operand.reference_ref.as_str())
+                    else {
+                        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                            "feature-input scalar {} references missing cell {}",
+                            scalar.id, operand.reference_ref
+                        )));
+                    };
+                    if reference.offset != operand.offset
+                        || reference.kind != operand.kind
+                        || reference.object_index != operand.entity_index
+                    {
+                        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                            "feature-input scalar {} has inconsistent cell {}",
+                            scalar.id, operand.reference_ref
+                        )));
+                    }
+                }
             }
             if let Some(record) = lane
                 .sketch_entities

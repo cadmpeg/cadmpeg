@@ -225,6 +225,8 @@ pub struct FeatureInputScalar {
 pub struct FeatureInputOperand {
     /// Byte offset of the reference cell within the feature-input stream.
     pub offset: u64,
+    /// Reference-cell record at this byte offset.
+    pub reference_ref: String,
     /// Native reference-cell family.
     pub kind: FeatureInputOperandKind,
     /// Local entity index carried by the cell.
