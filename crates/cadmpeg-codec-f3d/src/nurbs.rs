@@ -4814,6 +4814,51 @@ pub(crate) struct ExtrusionPatchLayout {
     pub(crate) native_position: usize,
 }
 
+/// Writable construction fields in a `helix_int_cur` subtype.
+pub(crate) struct HelixPatchLayout {
+    pub(crate) angle_range: [usize; 2],
+    pub(crate) frame_vectors: [usize; 4],
+    pub(crate) apex_factor: usize,
+    pub(crate) axis: usize,
+}
+
+/// Locate helix fields by consuming the subtype prefix grammar.
+pub(crate) fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<HelixPatchLayout> {
+    let name = b"helix_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    subtype_span(bytes, marker, int_width)?;
+    let mut position = marker + name.len() + 3;
+    let take_range_payload = |position: &mut usize| {
+        if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
+            *position += 1;
+        }
+        take_double_payload(bytes, position)
+    };
+    let angle_range = [
+        take_range_payload(&mut position)?,
+        take_range_payload(&mut position)?,
+    ];
+    let mut frame_vectors = [0usize; 4];
+    for offset in &mut frame_vectors {
+        *offset = position + 1;
+        take_native_vec3(bytes, &mut position, 0x13)?;
+    }
+    let apex_factor = take_double_payload(bytes, &mut position)?;
+    let axis = position + 1;
+    take_native_vec3(bytes, &mut position, 0x14)?;
+    Some(HelixPatchLayout {
+        angle_range,
+        frame_vectors,
+        apex_factor,
+        axis,
+    })
+}
+
 /// Locate extrusion fields from the `cyl_spl_sur` subtype header.
 pub(crate) fn extrusion_patch_layout(
     bytes: &[u8],
@@ -6636,6 +6681,60 @@ mod width_tests {
                     7.0
                 );
             }
+        }
+    }
+
+    #[test]
+    fn helix_layout_walks_optional_range_flags_at_both_widths() {
+        for int_width in [4usize, 8] {
+            let mut bytes = Vec::new();
+            push_f64(&mut bytes, 99.0);
+            push_position(&mut bytes, [90.0, 91.0, 92.0]);
+            push_vector(&mut bytes, [93.0, 94.0, 95.0]);
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "helix_int_cur");
+            bytes.push(0x0b);
+            push_f64(&mut bytes, -1.0);
+            push_f64(&mut bytes, 2.0);
+            for values in [
+                [3.0, 4.0, 5.0],
+                [6.0, 7.0, 8.0],
+                [9.0, 10.0, 11.0],
+                [12.0, 13.0, 14.0],
+            ] {
+                push_position(&mut bytes, values);
+            }
+            push_f64(&mut bytes, 15.0);
+            push_vector(&mut bytes, [16.0, 17.0, 18.0]);
+            bytes.extend_from_slice(&curve_block(int_width));
+            bytes.push(0x10);
+
+            let layout = helix_patch_layout(&bytes, int_width)
+                .unwrap_or_else(|| panic!("helix layout at width {int_width}"));
+            let range = layout
+                .angle_range
+                .map(|offset| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()));
+            assert_eq!(range, [-1.0, 2.0]);
+            assert_eq!(
+                f64::from_le_bytes(
+                    bytes[layout.frame_vectors[0]..layout.frame_vectors[0] + 8]
+                        .try_into()
+                        .unwrap()
+                ),
+                3.0
+            );
+            assert_eq!(
+                f64::from_le_bytes(
+                    bytes[layout.apex_factor..layout.apex_factor + 8]
+                        .try_into()
+                        .unwrap()
+                ),
+                15.0
+            );
+            assert_eq!(
+                f64::from_le_bytes(bytes[layout.axis..layout.axis + 8].try_into().unwrap()),
+                16.0
+            );
         }
     }
 

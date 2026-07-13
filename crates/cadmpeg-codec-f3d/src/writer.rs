@@ -14901,32 +14901,40 @@ fn patch_helix_definition(
             "helix patch received a non-helix definition".into(),
         ));
     };
-    let end = record.offset + record.len;
-    if !bytes[record.offset..end]
-        .windows(b"helix_int_cur".len())
-        .any(|window| window == b"helix_int_cur")
-    {
-        return Err(CodecError::Malformed(format!(
-            "procedural curve record {} is not a helix",
-            record.index
-        )));
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("helix record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("helix record is truncated".into()))?;
+    let layout = crate::nurbs::helix_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "procedural curve record {} lacks writable helix fields",
+                record.index
+            ))
+        })?;
+    for (offset, value) in layout.angle_range.into_iter().zip(*angle_range) {
+        let at = record.offset + offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
-    for (ordinal, value) in angle_range.iter().copied().enumerate() {
-        patch_double_token(bytes, record, ordinal, value)?;
-    }
-    for (ordinal, value) in [
+    for (offset, value) in layout.frame_vectors.into_iter().zip([
         [center.x / 10.0, center.y / 10.0, center.z / 10.0],
         [major.x / 10.0, major.y / 10.0, major.z / 10.0],
         [minor.x / 10.0, minor.y / 10.0, minor.z / 10.0],
         [pitch.x / 10.0, pitch.y / 10.0, pitch.z / 10.0],
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        patch_vec3_token(bytes, record, 0x13, ordinal, value)?;
+    ]) {
+        for (component, value) in value.into_iter().enumerate() {
+            let at = record.offset + offset + component * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
     }
-    patch_double_token(bytes, record, 2, *apex_factor)?;
-    patch_vec3_token(bytes, record, 0x14, 0, [axis.x, axis.y, axis.z])?;
+    let apex_at = record.offset + layout.apex_factor;
+    bytes[apex_at..apex_at + 8].copy_from_slice(&apex_factor.to_le_bytes());
+    for (component, value) in [axis.x, axis.y, axis.z].into_iter().enumerate() {
+        let at = record.offset + layout.axis + component * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
     Ok(())
 }
 
