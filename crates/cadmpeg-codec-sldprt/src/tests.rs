@@ -8489,7 +8489,7 @@ fn semantic_writer_round_trips_principal_reference_planes() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Feature Name="Alzado" Type="Plano" id="2"/><Feature Name="Planta" Type="Plano" id="3"/><Feature Name="Vista lateral" Type="Plano" id="4"/><Feature Name="Plane2" Type="Plane" id="39"/></Keywords>"#,
+        br#"<Keywords><Feature Name="Vorne" Type="Ebene" id="2"/><Feature Name="Oben" Type="Ebene" id="3"/><Feature Name="Rechts" Type="Ebene" id="4"/><Feature Name="Plane2" Type="Plane" id="39"/><Feature Name="Reserved-shaped custom record" Type="Ebene" id="2" NativeRole="custom"/></Keywords>"#,
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -8507,6 +8507,10 @@ fn semantic_writer_round_trips_principal_reference_planes() {
     assert!(matches!(
         &decoded.ir.model.features[3].definition,
         FeatureDefinition::Native { kind, .. } if kind == "Plane"
+    ));
+    assert!(matches!(
+        &decoded.ir.model.features[4].definition,
+        FeatureDefinition::Native { kind, .. } if kind == "Ebene"
     ));
 
     let mut encoded = Vec::new();
@@ -8535,7 +8539,7 @@ fn semantic_writer_round_trips_principal_reference_planes() {
     );
     assert_eq!(
         sldprt_native(&regenerated.ir).feature_histories[0].features[0].kind,
-        "Plano"
+        "Ebene"
     );
 
     decoded.ir.model.features[0].definition = FeatureDefinition::DatumPrincipalPlane {

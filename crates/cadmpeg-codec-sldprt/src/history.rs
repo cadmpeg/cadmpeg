@@ -1279,10 +1279,7 @@ fn is_offset_plane(feature: &Feature) -> bool {
 fn principal_plane(feature: &Feature) -> Option<cadmpeg_ir::features::PrincipalPlane> {
     use cadmpeg_ir::features::PrincipalPlane;
 
-    if !(feature_family(feature, "Plane") || feature_family(feature, "Plano"))
-        || !feature.parameters.is_empty()
-        || !feature.properties.is_empty()
-    {
+    if !feature.parameters.is_empty() || !feature.properties.is_empty() {
         return None;
     }
     match feature.source_id.as_deref()? {
