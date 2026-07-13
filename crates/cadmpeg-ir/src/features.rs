@@ -151,6 +151,12 @@ pub struct Feature {
     /// Source operation attributes not consumed by the neutral definition.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub source_properties: BTreeMap<String, String>,
+    /// Source XML element name for the operation record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_tag: Option<String>,
+    /// Text payload of a source leaf operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_text: Option<String>,
     /// Bodies produced or modified by the feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outputs: Vec<BodyId>,

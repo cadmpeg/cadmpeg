@@ -306,6 +306,8 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                         }),
                     dependencies: project_feature_dependencies(feature, &by_source),
                     source_properties: feature.properties.clone(),
+                    source_tag: Some(feature.xml_tag.clone()),
+                    source_text: feature.text.clone(),
                     outputs: Vec::new(),
                     definition: project_definition(feature, &by_source, &native_by_source),
                     native_ref: Some(feature.id.clone()),
@@ -2413,6 +2415,16 @@ pub fn sync_neutral_features(
         .collect::<HashMap<_, _>>();
 
     for feature in features {
+        if feature
+            .source_tag
+            .as_deref()
+            .is_some_and(|tag| !valid_xml_name(tag))
+        {
+            return Err(CodecError::Malformed(format!(
+                "SLDPRT feature {} has an invalid source tag",
+                feature.id
+            )));
+        }
         let mut existing = native
             .feature_histories
             .iter_mut()
@@ -3630,6 +3642,9 @@ pub fn sync_neutral_features(
             .as_ref()
             .and_then(|parent| record_ids.get(parent).cloned());
         if let Some(existing) = existing.as_mut() {
+            if let Some(tag) = &feature.source_tag {
+                existing.xml_tag.clone_from(tag);
+            }
             existing.ordinal = ordinal;
             existing.name = feature.name.clone().unwrap_or_default();
             existing.kind = kind;
@@ -3638,6 +3653,19 @@ pub fn sync_neutral_features(
             existing.tree_parent = tree_parent;
             existing.parameters = parameters;
             existing.properties = properties;
+            if existing
+                .content
+                .iter()
+                .all(|item| matches!(item, FeatureContent::Text(_)))
+            {
+                existing.content = feature
+                    .source_text
+                    .iter()
+                    .cloned()
+                    .map(FeatureContent::Text)
+                    .collect();
+            }
+            existing.text.clone_from(&feature.source_text);
         } else {
             let history = &mut native.feature_histories[0];
             history.features.push(Feature {
@@ -3654,8 +3682,13 @@ pub fn sync_neutral_features(
                 parameters,
                 dimension_properties: BTreeMap::new(),
                 properties,
-                text: None,
-                content: Vec::new(),
+                text: feature.source_text.clone(),
+                content: feature
+                    .source_text
+                    .iter()
+                    .cloned()
+                    .map(FeatureContent::Text)
+                    .collect(),
             });
         }
     }
@@ -3915,6 +3948,13 @@ fn indexed_name(name: &str, prefix: &str) -> bool {
 }
 
 fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
+    if let Some(tag) = feature
+        .source_tag
+        .as_ref()
+        .filter(|tag| valid_xml_name(tag))
+    {
+        return tag.clone();
+    }
     let tag = match &feature.definition {
         FeatureDefinition::DatumPlane { .. } => "ReferencePlane",
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",

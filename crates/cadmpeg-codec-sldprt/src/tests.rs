@@ -1487,6 +1487,8 @@ fn encoder_writes_source_less_line_sketches() {
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: Some(sketch_id.clone()),
@@ -1534,6 +1536,8 @@ fn encoder_writes_source_less_line_sketches() {
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -1547,6 +1551,8 @@ fn encoder_writes_source_less_line_sketches() {
         parent: Some(sketch_feature_id),
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id),
@@ -1849,6 +1855,8 @@ fn encoder_binds_multiple_source_less_sketches_by_name() {
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
                 sketch: Some(sketch_id),
@@ -1915,6 +1923,8 @@ fn encoder_writes_source_less_native_features() {
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "BossExtrude".into(),
@@ -2004,6 +2014,8 @@ fn encoder_writes_source_less_native_features() {
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -2035,6 +2047,8 @@ fn encoder_writes_source_less_native_features() {
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: vec![seed_id.clone()],
@@ -2374,7 +2388,7 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
         "Contents/Keywords",
         br#"<Keywords><MacroFeature Name="Custom" Type="Macro" id="70">prefix<Dimension Name="A">1</Dimension><Definition Name="Payload" Type="Definition" Language="expr">a &amp; b &lt; c</Definition>suffix<Dimension Name="B">2</Dimension></MacroFeature></Keywords>"#,
     ));
-    let decoded = SldprtCodec
+    let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let native = sldprt_native(&decoded.ir);
@@ -2401,6 +2415,16 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
             FeatureContent::Dimension("B".into()),
         ]
     );
+    let neutral_definition = decoded
+        .ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.source_tag.as_deref() == Some("Definition"))
+        .unwrap();
+    assert_eq!(neutral_definition.source_text.as_deref(), Some("a & b < c"));
+    neutral_definition.source_tag = Some("FormulaPayload".into());
+    neutral_definition.source_text = Some("x > 1 & y < 2".into());
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -2413,11 +2437,22 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
     let definition = native.feature_histories[0]
         .features
         .iter()
-        .find(|feature| feature.xml_tag == "Definition")
+        .find(|feature| feature.xml_tag == "FormulaPayload")
         .unwrap();
-    assert_eq!(definition.text.as_deref(), Some("a & b < c"));
+    assert_eq!(definition.text.as_deref(), Some("x > 1 & y < 2"));
     assert_eq!(definition.properties["Language"], "expr");
     assert!(definition.tree_parent.is_some());
+    let neutral_definition = regenerated
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.source_tag.as_deref() == Some("FormulaPayload"))
+        .unwrap();
+    assert_eq!(
+        neutral_definition.source_text.as_deref(),
+        Some("x > 1 & y < 2")
+    );
     let macro_feature = native.feature_histories[0]
         .features
         .iter()
@@ -2566,6 +2601,8 @@ fn encoder_writes_source_less_datum_features() {
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -3063,6 +3100,8 @@ fn encoder_writes_source_less_neutral_parameters() {
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "EquationDriven".into(),
