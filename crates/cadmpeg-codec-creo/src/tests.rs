@@ -984,7 +984,7 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
 
 #[test]
 fn decode_transfers_feature_dimensions_as_owned_parameters() {
-    let payload = b"feat_defs_40\0\xe0\x01feat_id\0\x28\xe0\x00gsec2d_ptr\0\
+    let payload = b"feat_defs_917\0\xe0\x01feat_id\0\x28\xe0\x00gsec2d_ptr\0\
         dimtab_ptr\0\xf8\x01\xf7\x81\x02\xfb\xe2\
         \xe0\x01type\0\x0a\xe0\x01value\0\xe4\
         \xe0\x01direct\0\x01\xe0\x01aux_value\0\x0f\
@@ -998,7 +998,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         ],
     );
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.feature_definitions[0].id, 40);
+    assert_eq!(scan.feature_definitions[0].id, 917);
     assert_eq!(scan.feature_definitions[0].owner_feature_id, Some(40));
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
 
@@ -1013,6 +1013,11 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             cadmpeg_ir::features::Angle(1.0)
         ))
     );
+    assert!(matches!(
+        &result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. }
+            if parameters.get("dimension_count").map(String::as_str) == Some("1")
+    ));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }

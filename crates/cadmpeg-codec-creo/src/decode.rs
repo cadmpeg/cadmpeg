@@ -1514,7 +1514,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         if let Some(definition) = scan
             .feature_definitions
             .iter()
-            .find(|definition| definition.id == operation.feature_id)
+            .find(|definition| definition.owner_feature_id == Some(operation.feature_id))
         {
             parameters.insert(
                 "sketch_segment_count".to_string(),
