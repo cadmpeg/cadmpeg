@@ -4592,6 +4592,10 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     assert_eq!(round_trip.ir.model.curves[0].geometry, expected);
     assert_eq!(round_trip.ir.model.edges[0].param_range, Some([0.25, 1.75]));
     assert!(round_trip.ir.model.edges[0].curve.is_some());
+    assert!(!cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == cadmpeg_ir::Check::Annotations));
     round_trip.ir.model.curves[0].geometry = CurveGeometry::Line {
         origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -4641,6 +4645,10 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         .expect("source-less ellipse-carrier round trip");
     assert_eq!(round_trip.ir.model.curves[0].geometry, expected);
     assert_eq!(round_trip.ir.model.edges[0].param_range, Some([0.5, 2.0]));
+    assert!(!cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == cadmpeg_ir::Check::Annotations));
 }
 
 #[test]

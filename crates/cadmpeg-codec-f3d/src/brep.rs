@@ -4299,6 +4299,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         }
     }
 
+    let curve_geometries = out
+        .curves
+        .iter()
+        .map(|curve| (curve.id.0.as_str(), &curve.geometry))
+        .collect::<HashMap<_, _>>();
     let emitted_ids = out
         .bodies
         .iter()
@@ -4333,9 +4338,15 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
                 }
                 "straight" => derived_fields.push("geometry.direction"),
-                "ellipse" => {
-                    derived_fields.extend(["geometry.axis", "geometry.major_direction"]);
-                }
+                "ellipse" => match curve_geometries.get(entity_id.as_str()) {
+                    Some(CurveGeometry::Circle { .. }) => {
+                        derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                    }
+                    Some(CurveGeometry::Ellipse { .. }) => {
+                        derived_fields.extend(["geometry.axis", "geometry.major_direction"]);
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
             if is_edge_record(record) {
