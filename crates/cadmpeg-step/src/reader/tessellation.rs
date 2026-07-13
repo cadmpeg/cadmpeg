@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::Tessellation;
 
 use crate::parse::{Exchange, RawRecord, Value};
@@ -39,34 +39,41 @@ pub(super) fn decode(
             Some("TRIANGULATED_FACE")
                 | Some("COMPLEX_TRIANGULATED_FACE")
                 | Some("TRIANGULATED_SURFACE_SET")
+                | Some("COMPLEX_TRIANGULATED_SURFACE_SET")
         ) {
             continue;
         }
-        let Some((coordinate_id, vertices)) = record
-            .parameters()
-            .iter()
-            .filter_map(ValueExt::reference)
-            .find_map(|reference| {
-                coordinates
-                    .get(&reference)
-                    .map(|vertices| (reference, vertices))
-            })
-        else {
+        let Some(coordinate_id) = record.parameter(1).and_then(ValueExt::reference) else {
+            warnings.push(format!(
+                "{} #{id} has no COORDINATES_LIST reference",
+                record.simple_name().expect("matched simple name")
+            ));
+            continue;
+        };
+        let Some(vertices) = coordinates.get(&coordinate_id) else {
             warnings.push(format!(
                 "{} #{id} has no resolved COORDINATES_LIST",
                 record.simple_name().unwrap()
             ));
             continue;
         };
-        let Some(triangles) = record
-            .parameters()
-            .iter()
-            .filter_map(triangle_rows)
-            .find(|triangles| !triangles.is_empty())
-        else {
+        let (triangles, strip_lengths) = match record.simple_name() {
+            Some("TRIANGULATED_FACE") => (record.parameter(6).and_then(triangle_rows), Vec::new()),
+            Some("TRIANGULATED_SURFACE_SET") => {
+                (record.parameter(5).and_then(triangle_rows), Vec::new())
+            }
+            Some("COMPLEX_TRIANGULATED_FACE") => {
+                complex_triangles(record.parameter(6), record.parameter(7))
+            }
+            Some("COMPLEX_TRIANGULATED_SURFACE_SET") => {
+                complex_triangles(record.parameter(5), record.parameter(6))
+            }
+            _ => (None, Vec::new()),
+        };
+        let Some(triangles) = triangles.filter(|triangles| !triangles.is_empty()) else {
             warnings.push(format!(
                 "{} #{id} has no triangle indices",
-                record.simple_name().unwrap()
+                record.simple_name().expect("matched simple name")
             ));
             continue;
         };
@@ -77,10 +84,40 @@ pub(super) fn decode(
         {
             warnings.push(format!(
                 "{} #{id} has an out-of-range one-based coordinate index",
-                record.simple_name().unwrap()
+                record.simple_name().expect("matched simple name")
             ));
             continue;
         }
+        let source_normals = normal_rows(record.parameter(3)).unwrap_or_default();
+        let pnindex_parameter = match record.simple_name() {
+            Some("TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE") => 5,
+            _ => 4,
+        };
+        let pnindex = index_list(record.parameter(pnindex_parameter)).unwrap_or_default();
+        let normals = match source_normals.len() {
+            0 => Vec::new(),
+            1 => vec![source_normals[0]; vertices.len()],
+            count if pnindex.is_empty() && count == vertices.len() => source_normals,
+            _ if pnindex.len() == vertices.len()
+                && pnindex.iter().all(|index| {
+                    *index > 0
+                        && usize::try_from(*index).is_ok_and(|index| index <= source_normals.len())
+                }) =>
+            {
+                pnindex
+                    .iter()
+                    .map(|index| source_normals[*index as usize - 1])
+                    .collect()
+            }
+            count => {
+                warnings.push(format!(
+                    "{} #{id} carries {count} normals for {} coordinates",
+                    record.simple_name().expect("matched simple name"),
+                    vertices.len()
+                ));
+                Vec::new()
+            }
+        };
         ir.model.tessellations.push(Tessellation {
             id: format!("step:tessellation:mesh#{id}"),
             body: None,
@@ -90,8 +127,8 @@ pub(super) fn decode(
                 .into_iter()
                 .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
                 .collect(),
-            strip_lengths: Vec::new(),
-            normals: Vec::new(),
+            strip_lengths,
+            normals,
             channels: Vec::new(),
         });
         typed.extend([id, coordinate_id]);
@@ -112,6 +149,14 @@ pub(super) fn decode(
         typed_records: typed,
         warnings,
     }
+}
+
+fn index_list(value: Option<&Value>) -> Option<Vec<u32>> {
+    value?
+        .list()?
+        .iter()
+        .map(|value| u32::try_from(value.integer()?).ok())
+        .collect()
 }
 
 fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Point3>> {
@@ -152,9 +197,70 @@ fn triangle_rows(value: &Value) -> Option<Vec<[u32; 3]>> {
         })
         .collect::<Option<Vec<_>>>()
 }
+
+fn complex_triangles(
+    strips: Option<&Value>,
+    fans: Option<&Value>,
+) -> (Option<Vec<[u32; 3]>>, Vec<u32>) {
+    let strips = index_rows(strips).unwrap_or_default();
+    let fans = index_rows(fans).unwrap_or_default();
+    let mut triangles = Vec::new();
+    for strip in strips {
+        for index in 0..strip.len().saturating_sub(2) {
+            triangles.push(if index % 2 == 0 {
+                [strip[index], strip[index + 1], strip[index + 2]]
+            } else {
+                [strip[index + 1], strip[index], strip[index + 2]]
+            });
+        }
+    }
+    for fan in fans {
+        for index in 1..fan.len().saturating_sub(1) {
+            triangles.push([fan[0], fan[index], fan[index + 1]]);
+        }
+    }
+    ((!triangles.is_empty()).then_some(triangles), Vec::new())
+}
+
+fn index_rows(value: Option<&Value>) -> Option<Vec<Vec<u32>>> {
+    value?
+        .list()?
+        .iter()
+        .map(|row| {
+            let indices = row
+                .list()?
+                .iter()
+                .map(|value| u32::try_from(value.integer()?).ok())
+                .collect::<Option<Vec<_>>>()?;
+            (indices.len() >= 3).then_some(indices)
+        })
+        .collect()
+}
+
+fn normal_rows(value: Option<&Value>) -> Option<Vec<Vector3>> {
+    value?
+        .list()?
+        .iter()
+        .map(|row| {
+            let values = row.list()?;
+            if values.len() != 3 {
+                return None;
+            }
+            let normal = Vector3::new(
+                values[0].number()?,
+                values[1].number()?,
+                values[2].number()?,
+            );
+            let length = normal.norm();
+            (length.is_finite() && length > 0.0)
+                .then(|| Vector3::new(normal.x / length, normal.y / length, normal.z / length))
+        })
+        .collect()
+}
 trait RecordExt {
     fn simple_name(&self) -> Option<&str>;
     fn parameters(&self) -> &[Value];
+    fn parameter(&self, index: usize) -> Option<&Value>;
 }
 impl RecordExt for RawRecord {
     fn simple_name(&self) -> Option<&str> {
@@ -162,6 +268,9 @@ impl RecordExt for RawRecord {
     }
     fn parameters(&self) -> &[Value] {
         &self.partials[0].parameters
+    }
+    fn parameter(&self, index: usize) -> Option<&Value> {
+        self.parameters().get(index)
     }
 }
 trait ValueExt {

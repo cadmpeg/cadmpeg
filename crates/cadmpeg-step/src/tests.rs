@@ -399,11 +399,22 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode AP242 tessellation");
 
-    assert_eq!(result.ir.model.tessellations.len(), 1);
+    assert_eq!(result.ir.model.tessellations.len(), 2);
     let mesh = &result.ir.model.tessellations[0];
     assert_eq!(mesh.vertices.len(), 3);
     assert_eq!(mesh.vertices[1].x, 10.0);
     assert_eq!(mesh.triangles, [[0, 1, 2]]);
+    assert_eq!(mesh.normals.len(), 3);
+    let complex = result
+        .ir
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id.ends_with("#7"))
+        .unwrap();
+    assert_eq!(complex.triangles, [[0, 1, 2], [2, 1, 3], [0, 1, 3]]);
+    assert_eq!(complex.normals.len(), 4);
+    assert_eq!(complex.normals[0].z, -1.0);
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
