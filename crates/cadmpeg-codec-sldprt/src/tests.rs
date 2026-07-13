@@ -2746,6 +2746,32 @@ fn encoder_writes_source_less_curved_sketches() {
             "missing regenerated {expected} dimension"
         );
     }
+    let native = sldprt_native(&decoded.ir);
+    let circle_relation = native.feature_input_lanes[0]
+        .relation_instances
+        .iter()
+        .find(|relation| {
+            relation.family == crate::records::FeatureInputRelationFamily::CircleDiameter
+                && relation.parameter_scalar_ref.as_deref()
+                    == decoded
+                        .ir
+                        .model
+                        .parameters
+                        .iter()
+                        .find(|parameter| parameter.name == "DIA1")
+                        .and_then(|parameter| parameter.native_ref.as_deref())
+        })
+        .expect("diameter relation instance");
+    let [operand] = circle_relation.operands.as_slice() else {
+        panic!("one diameter operand");
+    };
+    let marker = native.feature_input_lanes[0]
+        .sketch_entities
+        .iter()
+        .find(|marker| Some(marker.id.as_str()) == operand.entity_ref.as_deref())
+        .expect("resolved diameter marker");
+    assert_eq!(marker.kind, crate::records::SketchInputKind::LineOrCircle);
+    assert_ne!(marker.local_id, Some(u32::from(operand.entity_index)));
     assert!(decoded
         .ir
         .model

@@ -618,16 +618,12 @@ pub(crate) fn bind_scalar_operands(
                     ) {
                         continue;
                     }
-                    let mut matches = entities
-                        .iter()
-                        .filter(|entity| entity.local_id == Some(u32::from(operand.entity_index)))
-                        .filter(|entity| operand_accepts_marker(operand.kind, entity.kind));
-                    let Some(entity) = matches.next() else {
-                        continue;
-                    };
-                    if matches.next().is_none() {
-                        operand.entity_ref = Some(entity.id.clone());
-                    }
+                    operand.entity_ref = resolve_operand_marker(
+                        entities.iter().copied(),
+                        operand.kind,
+                        operand.entity_index,
+                    )
+                    .map(|entity| entity.id.clone());
                 }
             }
         }
@@ -682,6 +678,26 @@ pub(crate) fn bind_scalar_operands(
         lane.relation_instances = relation_instances(histories, lane);
         lane.body_selections = compact_body_selections(histories, lane);
     }
+}
+
+pub(crate) fn resolve_operand_marker<'a>(
+    entities: impl IntoIterator<Item = &'a SketchInputEntity>,
+    kind: FeatureInputOperandKind,
+    address: u16,
+) -> Option<&'a SketchInputEntity> {
+    let mut compatible = entities
+        .into_iter()
+        .filter(|entity| operand_accepts_marker(kind, entity.kind))
+        .collect::<Vec<_>>();
+    compatible.sort_unstable_by_key(|entity| entity.offset);
+    if kind == FeatureInputOperandKind::Native(0x83fe) {
+        return compatible.get(usize::from(address)).copied();
+    }
+    let mut matches = compatible
+        .into_iter()
+        .filter(|entity| entity.local_id == Some(u32::from(address)));
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
 }
 
 fn compact_body_selections(
@@ -4722,7 +4738,7 @@ fn append_generated_sketch_markers(
                 "sgCircleDim",
                 vec![(
                     FeatureInputOperandKind::Native(0x83fe),
-                    unique_generated_entity_marker(ir, sketch, &marker_loci, entity)?,
+                    generated_circle_operand(ir, sketch, &marker_loci, entity)?,
                 )],
                 parameter,
             ),
@@ -4909,6 +4925,31 @@ fn unique_generated_entity_marker(
         "source-less SLDPRT binary relation cannot identify entity {} with one unambiguous marker locus",
         entity.0
     )))
+}
+
+fn generated_circle_operand(
+    ir: &cadmpeg_ir::CadIr,
+    sketch: &Sketch,
+    markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
+    entity: &SketchEntityId,
+) -> Result<u16, cadmpeg_ir::codec::CodecError> {
+    let local_id = unique_generated_entity_marker(ir, sketch, markers, entity)?;
+    let ordinal = markers
+        .iter()
+        .filter(|(_, _, kind, _)| *kind == SketchInputKind::LineOrCircle)
+        .position(|(_, _, _, candidate)| *candidate == local_id)
+        .ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "source-less SLDPRT circular dimension cannot address entity {} as a line-or-circle handle",
+                entity.0
+            ))
+        })?;
+    u16::try_from(ordinal).map_err(|_| {
+        cadmpeg_ir::codec::CodecError::Malformed(format!(
+            "source-less SLDPRT sketch {} exceeds the circular-dimension operand space",
+            sketch.id.0
+        ))
+    })
 }
 
 fn unique_generated_locus_marker(
