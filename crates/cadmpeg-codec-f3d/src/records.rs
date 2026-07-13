@@ -506,6 +506,8 @@ pub enum SketchConstraintKind {
     Colinear,
     /// Circular entities share a center.
     Concentric,
+    /// Line-bearing entities have equal length.
+    EqualLength,
     /// Line-bearing entities have parallel directions.
     Parallel,
     /// Line-bearing entities meet at a right angle.

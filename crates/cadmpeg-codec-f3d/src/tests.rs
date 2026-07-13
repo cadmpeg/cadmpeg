@@ -7079,6 +7079,13 @@ fn validation_rejects_wrong_sketch_constraint_kind_with_equal_cardinality() {
 }
 
 #[test]
+fn sketch_constraint_mask_decodes_equal_length_bit() {
+    let (kinds, unknown) = crate::design::decode_constraint_kinds(0x0000_0008);
+    assert_eq!(kinds, [crate::records::SketchConstraintKind::EqualLength]);
+    assert_eq!(unknown, 0);
+}
+
+#[test]
 fn generated_f3d_rewrites_native_sketch_nurbs_values() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec

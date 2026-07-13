@@ -611,13 +611,14 @@ pub fn decode_sketch_relations(
     Ok(out)
 }
 
-pub(crate) const SKETCH_CONSTRAINT_MASK: u32 = 0x3000_3ff7;
+pub(crate) const SKETCH_CONSTRAINT_MASK: u32 = 0x3000_3fff;
 
 pub(crate) fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>, u32) {
     let definitions = [
         (0x0000_0001, SketchConstraintKind::Coincident),
         (0x0000_0002, SketchConstraintKind::Colinear),
         (0x0000_0004, SketchConstraintKind::Concentric),
+        (0x0000_0008, SketchConstraintKind::EqualLength),
         (0x0000_0010, SketchConstraintKind::Parallel),
         (0x0000_0020, SketchConstraintKind::Perpendicular),
         (0x0000_0040, SketchConstraintKind::Horizontal),
