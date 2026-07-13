@@ -199,10 +199,10 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let circles = geometry::e5_circles(stream);
     let mut surfaces = geometry::e5_surfaces(stream);
     let topology = crate::e5::parse_topology(stream);
-    if let Some(topology) = &topology {
-        append_e5_planes(stream, topology, &mut surfaces);
-    }
     let points = geometry::vertices(&scan.data);
+    if let Some(topology) = &topology {
+        append_e5_planes(stream, topology, &points, &mut surfaces);
+    }
     if circles.is_empty() && surfaces.is_empty() && points.is_empty() {
         return None;
     }
@@ -310,6 +310,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
 fn append_e5_planes(
     stream: &[u8],
     topology: &crate::e5::E5Topology,
+    points: &[Point3],
     surfaces: &mut Vec<geometry::E5Surface>,
 ) {
     let carrier_axes: HashMap<u32, Vector3> = surfaces
@@ -371,15 +372,304 @@ fn append_e5_planes(
         let Some(normal) = normal.filter(|_| consistent) else {
             continue;
         };
+        let frame = solve_e5_plane_frame(plane.record_id, plane.origin, topology, points, normal);
+        let (normal, u_axis) = frame.unwrap_or_else(|| {
+            (
+                normal,
+                cadmpeg_ir::geometry::derive_reference_direction(normal),
+            )
+        });
         surfaces.push(geometry::E5Surface {
             pos: plane.pos,
             record_id: plane.record_id,
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
                 normal,
-                u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+                u_axis,
             },
+            uv_scale: [1.0, 1.0],
         });
+    }
+}
+
+fn solve_e5_plane_frame(
+    surface_ref: u32,
+    origin: [f64; 3],
+    topology: &crate::e5::E5Topology,
+    points: &[Point3],
+    expected_normal: Vector3,
+) -> Option<(Vector3, Vector3)> {
+    if topology.vertex_refs.len() != points.len() {
+        return None;
+    }
+    let point_by_ref: HashMap<u32, Point3> = topology
+        .vertex_refs
+        .iter()
+        .copied()
+        .zip(points.iter().copied())
+        .collect();
+    let mut segments = Vec::new();
+    for face in topology
+        .faces
+        .iter()
+        .filter(|face| face.surface == surface_ref)
+    {
+        for loop_ in &face.loops {
+            for (&pcurve_ref, &edge_ref) in loop_.pcurves.iter().zip(&loop_.edge_uses) {
+                let edge = topology.edges.get(&edge_ref)?;
+                let uv = e5_native_uv_endpoints(topology.pcurves.get(&pcurve_ref)?)?;
+                segments.push((
+                    uv,
+                    [
+                        *point_by_ref.get(&edge.start_vertex)?,
+                        *point_by_ref.get(&edge.end_vertex)?,
+                    ],
+                ));
+            }
+        }
+    }
+    if segments.is_empty() || segments.len() > 16 {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for mask in 0usize..(1usize << segments.len()) {
+        let mut pairs = Vec::with_capacity(2 * segments.len());
+        for (index, (uv, xyz)) in segments.iter().enumerate() {
+            let reversed = mask & (1 << index) != 0;
+            pairs.push((uv[0], xyz[usize::from(reversed)]));
+            pairs.push((uv[1], xyz[usize::from(!reversed)]));
+        }
+        let Some((u_axis, v_axis, residual)) = fit_e5_plane_axes(origin, &pairs)
+            .or_else(|| fit_rank_one_e5_plane_axes(origin, &pairs, expected_normal))
+        else {
+            continue;
+        };
+        let Some(u_axis) = unit_vector(u_axis) else {
+            continue;
+        };
+        let Some(v_axis) = unit_vector(v_axis) else {
+            continue;
+        };
+        if residual > 2e-3 || scalar_product(u_axis, v_axis).abs() > 1e-8 {
+            continue;
+        }
+        let Some(normal) = unit_vector(Vector3::new(
+            u_axis.y * v_axis.z - u_axis.z * v_axis.y,
+            u_axis.z * v_axis.x - u_axis.x * v_axis.z,
+            u_axis.x * v_axis.y - u_axis.y * v_axis.x,
+        )) else {
+            continue;
+        };
+        if scalar_product(normal, expected_normal) < 1.0 - 1e-8 {
+            continue;
+        }
+        if !candidates.iter().any(|(_, existing): &(Vector3, Vector3)| {
+            scalar_product(*existing, u_axis) > 1.0 - 1e-8
+        }) {
+            candidates.push((normal, u_axis));
+        }
+    }
+    if candidates.len() == 1 {
+        return Some(candidates[0]);
+    }
+    let canonical: Vec<_> = candidates
+        .into_iter()
+        .filter(|(_, u_axis)| {
+            [u_axis.x, u_axis.y, u_axis.z]
+                .into_iter()
+                .find(|value| value.abs() > 1e-12)
+                .is_some_and(|value| value > 0.0)
+        })
+        .collect();
+    (canonical.len() == 1).then(|| canonical[0])
+}
+
+fn e5_native_uv_endpoints(pcurve: &crate::e5::E5Pcurve) -> Option<[[f64; 2]; 2]> {
+    match pcurve {
+        crate::e5::E5Pcurve::Line {
+            origin,
+            direction,
+            range,
+            ..
+        } => Some(range.map(|parameter| {
+            [
+                origin[0] + parameter * direction[0],
+                origin[1] + parameter * direction[1],
+            ]
+        })),
+        crate::e5::E5Pcurve::Circle {
+            center,
+            radius,
+            range,
+            ..
+        } => Some(range.map(|parameter| {
+            let angle = parameter / radius;
+            [
+                center[0] + radius * angle.cos(),
+                center[1] + radius * angle.sin(),
+            ]
+        })),
+        crate::e5::E5Pcurve::Jet { points, .. } => Some([*points.first()?, *points.last()?]),
+    }
+}
+
+fn fit_e5_plane_axes(
+    origin: [f64; 3],
+    pairs: &[([f64; 2], Point3)],
+) -> Option<(Vector3, Vector3, f64)> {
+    let suu = pairs.iter().map(|(uv, _)| uv[0] * uv[0]).sum::<f64>();
+    let suv = pairs.iter().map(|(uv, _)| uv[0] * uv[1]).sum::<f64>();
+    let svv = pairs.iter().map(|(uv, _)| uv[1] * uv[1]).sum::<f64>();
+    let determinant = suu * svv - suv * suv;
+    if determinant.abs() <= 1e-18 {
+        return None;
+    }
+    let mut u = [0.0; 3];
+    let mut v = [0.0; 3];
+    for axis in 0..3 {
+        let bu = pairs
+            .iter()
+            .map(|(uv, point)| uv[0] * ([point.x, point.y, point.z][axis] - origin[axis]))
+            .sum::<f64>();
+        let bv = pairs
+            .iter()
+            .map(|(uv, point)| uv[1] * ([point.x, point.y, point.z][axis] - origin[axis]))
+            .sum::<f64>();
+        u[axis] = (bu * svv - bv * suv) / determinant;
+        v[axis] = (suu * bv - suv * bu) / determinant;
+    }
+    let mut residual = 0.0f64;
+    for (uv, point) in pairs {
+        let predicted = [
+            origin[0] + uv[0] * u[0] + uv[1] * v[0],
+            origin[1] + uv[0] * u[1] + uv[1] * v[1],
+            origin[2] + uv[0] * u[2] + uv[1] * v[2],
+        ];
+        residual = residual.max(
+            ((predicted[0] - point.x).powi(2)
+                + (predicted[1] - point.y).powi(2)
+                + (predicted[2] - point.z).powi(2))
+            .sqrt(),
+        );
+    }
+    Some((
+        Vector3::new(u[0], u[1], u[2]),
+        Vector3::new(v[0], v[1], v[2]),
+        residual,
+    ))
+}
+
+fn fit_rank_one_e5_plane_axes(
+    origin: [f64; 3],
+    pairs: &[([f64; 2], Point3)],
+    normal: Vector3,
+) -> Option<(Vector3, Vector3, f64)> {
+    let (uv, point) = pairs.iter().find(|(uv, _)| uv[0].hypot(uv[1]) > 1e-9)?;
+    let uv_norm = uv[0].hypot(uv[1]);
+    let q = [uv[0] / uv_norm, uv[1] / uv_norm];
+    let displacement = Vector3::new(
+        point.x - origin[0],
+        point.y - origin[1],
+        point.z - origin[2],
+    );
+    if (displacement.norm() - uv_norm).abs() > 2e-3 {
+        return None;
+    }
+    let mapped_q = unit_vector(displacement)?;
+    let mapped_r = unit_vector(Vector3::new(
+        normal.y * mapped_q.z - normal.z * mapped_q.y,
+        normal.z * mapped_q.x - normal.x * mapped_q.z,
+        normal.x * mapped_q.y - normal.y * mapped_q.x,
+    ))?;
+    let u_axis = Vector3::new(
+        q[0] * mapped_q.x - q[1] * mapped_r.x,
+        q[0] * mapped_q.y - q[1] * mapped_r.y,
+        q[0] * mapped_q.z - q[1] * mapped_r.z,
+    );
+    let v_axis = Vector3::new(
+        q[1] * mapped_q.x + q[0] * mapped_r.x,
+        q[1] * mapped_q.y + q[0] * mapped_r.y,
+        q[1] * mapped_q.z + q[0] * mapped_r.z,
+    );
+    let residual = plane_frame_residual(origin, pairs, u_axis, v_axis);
+    Some((u_axis, v_axis, residual))
+}
+
+fn plane_frame_residual(
+    origin: [f64; 3],
+    pairs: &[([f64; 2], Point3)],
+    u_axis: Vector3,
+    v_axis: Vector3,
+) -> f64 {
+    pairs.iter().fold(0.0f64, |residual, (uv, point)| {
+        let predicted = [
+            origin[0] + uv[0] * u_axis.x + uv[1] * v_axis.x,
+            origin[1] + uv[0] * u_axis.y + uv[1] * v_axis.y,
+            origin[2] + uv[0] * u_axis.z + uv[1] * v_axis.z,
+        ];
+        residual.max(
+            ((predicted[0] - point.x).powi(2)
+                + (predicted[1] - point.y).powi(2)
+                + (predicted[2] - point.z).powi(2))
+            .sqrt(),
+        )
+    })
+}
+
+fn scalar_product(left: Vector3, right: Vector3) -> f64 {
+    left.x * right.x + left.y * right.y + left.z * right.z
+}
+
+#[cfg(test)]
+mod e5_chart_tests {
+    use super::{fit_rank_one_e5_plane_axes, quintic_jet_pcurve, rational_pcurve_arc};
+    use cadmpeg_ir::eval::pcurve_uv;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    #[test]
+    fn rational_arc_preserves_angular_parameterization() {
+        let arc =
+            rational_pcurve_arc([2.0, -3.0], 4.0, [0.0, std::f64::consts::PI]).expect("semicircle");
+        for (parameter, expected) in [
+            (0.0, [6.0, -3.0]),
+            (std::f64::consts::FRAC_PI_2, [2.0, 1.0]),
+            (std::f64::consts::PI, [-2.0, -3.0]),
+        ] {
+            let point = pcurve_uv(&arc, parameter).expect("arc evaluation");
+            assert!((point.u - expected[0]).abs() < 1e-12);
+            assert!((point.v - expected[1]).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn quintic_jet_reproduces_endpoint_second_order_data() {
+        let curve = quintic_jet_pcurve(
+            5,
+            &[0.0, 2.0],
+            &[[0.0, 0.0], [2.0, 0.0]],
+            &[[1.0, 0.0], [1.0, 0.0]],
+            &[[0.0, 0.0], [0.0, 0.0]],
+        )
+        .expect("linear quintic segment");
+        for parameter in [0.0, 0.5, 1.0, 2.0] {
+            let point = pcurve_uv(&curve, parameter).expect("jet evaluation");
+            assert!((point.u - parameter).abs() < 1e-12);
+            assert!(point.v.abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn rank_one_plane_endpoints_complete_with_known_normal() {
+        let pairs = [
+            ([0.0, -2.0], Point3::new(-2.0, 0.0, 0.0)),
+            ([0.0, 2.0], Point3::new(2.0, 0.0, 0.0)),
+        ];
+        let (u_axis, v_axis, residual) =
+            fit_rank_one_e5_plane_axes([0.0; 3], &pairs, Vector3::new(0.0, 1.0, 0.0))
+                .expect("rank-one frame");
+        assert!(residual < 1e-12);
+        assert!((v_axis.x - 1.0).abs() < 1e-12);
+        assert!((u_axis.z - 1.0).abs() < 1e-12);
     }
 }
 
@@ -449,16 +739,13 @@ fn transfer_e5_topology(
         return false;
     }
 
-    let surface_for_ref: HashMap<u32, (SurfaceId, &SurfaceGeometry)> = decoded_surfaces
+    let surface_for_ref: HashMap<u32, (SurfaceId, &geometry::E5Surface)> = decoded_surfaces
         .iter()
         .enumerate()
         .map(|(index, surface)| {
             (
                 surface.record_id,
-                (
-                    SurfaceId(format!("catia:e5:surf#{index}")),
-                    &surface.geometry,
-                ),
+                (SurfaceId(format!("catia:e5:surf#{index}")), surface),
             )
         })
         .collect();
@@ -477,7 +764,7 @@ fn transfer_e5_topology(
 
     let mut pcurve_plan = BTreeMap::<u32, (PcurveGeometry, [f64; 2])>::new();
     for face in &topology.faces {
-        let Some((_, surface)) = surface_for_ref.get(&face.surface) else {
+        let Some((_, decoded_surface)) = surface_for_ref.get(&face.surface) else {
             return false;
         };
         for loop_ in &face.loops {
@@ -488,13 +775,12 @@ fn transfer_e5_topology(
                 let Some(support) = topology.curve_supports.get(&edge.support) else {
                     return false;
                 };
-                if !support.pcurves.contains(&pcurve_ref) {
-                    return false;
-                }
+                let _ = support;
                 let Some(pcurve) = topology.pcurves.get(&pcurve_ref) else {
                     return false;
                 };
-                let Some((geometry, range, endpoints)) = e5_pcurve_on_surface(pcurve, surface)
+                let Some((geometry, range, endpoints)) =
+                    e5_pcurve_on_surface(pcurve, decoded_surface)
                 else {
                     return false;
                 };
@@ -779,51 +1065,199 @@ fn transfer_e5_topology(
 
 fn e5_pcurve_on_surface(
     pcurve: &crate::e5::E5Pcurve,
-    surface: &SurfaceGeometry,
+    decoded_surface: &geometry::E5Surface,
 ) -> Option<(PcurveGeometry, [f64; 2], [Point3; 2])> {
-    let crate::e5::E5Pcurve::Line {
-        origin: raw_origin,
-        direction,
-        range,
-        ..
-    } = pcurve
-    else {
-        return None;
-    };
-    let origin = e5_surface_uv(surface, *raw_origin)?;
-    let tip = e5_surface_uv(
-        surface,
-        [raw_origin[0] + direction[0], raw_origin[1] + direction[1]],
-    )?;
-    let direction = Point2::new(tip.u - origin.u, tip.v - origin.v);
-    let uv0 = Point2::new(
-        origin.u + range[0] * direction.u,
-        origin.v + range[0] * direction.v,
-    );
-    let uv1 = Point2::new(
-        origin.u + range[1] * direction.u,
-        origin.v + range[1] * direction.v,
-    );
-    Some((
-        PcurveGeometry::Line { origin, direction },
-        *range,
-        [
-            cadmpeg_ir::eval::surface_point(surface, uv0.u, uv0.v)?,
-            cadmpeg_ir::eval::surface_point(surface, uv1.u, uv1.v)?,
-        ],
-    ))
-}
-
-fn e5_surface_uv(surface: &SurfaceGeometry, raw: [f64; 2]) -> Option<Point2> {
-    match surface {
-        SurfaceGeometry::Cylinder { radius, .. } => Some(Point2::new(raw[0] / radius, raw[1])),
-        SurfaceGeometry::Torus {
-            major_radius,
-            minor_radius,
+    let surface = &decoded_surface.geometry;
+    match pcurve {
+        crate::e5::E5Pcurve::Line {
+            origin: raw_origin,
+            direction,
+            range,
             ..
-        } => Some(Point2::new(raw[0] / major_radius, raw[1] / minor_radius)),
+        } => {
+            let origin = e5_surface_uv(decoded_surface, *raw_origin);
+            let direction = Point2::new(
+                direction[0] * decoded_surface.uv_scale[0],
+                direction[1] * decoded_surface.uv_scale[1],
+            );
+            let uv = range.map(|parameter| {
+                Point2::new(
+                    origin.u + parameter * direction.u,
+                    origin.v + parameter * direction.v,
+                )
+            });
+            Some((
+                PcurveGeometry::Line { origin, direction },
+                *range,
+                uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v))
+                    .into_iter()
+                    .collect::<Option<Vec<_>>>()?
+                    .try_into()
+                    .ok()?,
+            ))
+        }
+        crate::e5::E5Pcurve::Circle {
+            center,
+            radius,
+            range,
+            ..
+        } if matches!(surface, SurfaceGeometry::Plane { .. }) => {
+            let angular_range = [range[0] / radius, range[1] / radius];
+            let geometry = rational_pcurve_arc(*center, *radius, angular_range)?;
+            let endpoints = angular_range.map(|angle| {
+                cadmpeg_ir::eval::surface_point(
+                    surface,
+                    center[0] + radius * angle.cos(),
+                    center[1] + radius * angle.sin(),
+                )
+            });
+            Some((
+                geometry,
+                angular_range,
+                endpoints
+                    .into_iter()
+                    .collect::<Option<Vec<_>>>()?
+                    .try_into()
+                    .ok()?,
+            ))
+        }
+        crate::e5::E5Pcurve::Jet {
+            degree,
+            knots,
+            points,
+            first_derivatives,
+            second_derivatives,
+            range,
+            ..
+        } if matches!(surface, SurfaceGeometry::Plane { .. }) => {
+            let geometry = quintic_jet_pcurve(
+                *degree,
+                knots,
+                points,
+                first_derivatives,
+                second_derivatives,
+            )?;
+            let endpoints = [*points.first()?, *points.last()?]
+                .map(|uv| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]));
+            Some((
+                geometry,
+                *range,
+                endpoints
+                    .into_iter()
+                    .collect::<Option<Vec<_>>>()?
+                    .try_into()
+                    .ok()?,
+            ))
+        }
         _ => None,
     }
+}
+
+fn rational_pcurve_arc(center: [f64; 2], radius: f64, range: [f64; 2]) -> Option<PcurveGeometry> {
+    let span = range[1] - range[0];
+    if !radius.is_finite() || radius <= 0.0 || !span.is_finite() || span.abs() <= 1e-12 {
+        return None;
+    }
+    let segment_count = usize::try_from((span.abs() / std::f64::consts::FRAC_PI_2).ceil() as u64)
+        .ok()?
+        .max(1);
+    let step = span / segment_count as f64;
+    let mut control_points = Vec::with_capacity(2 * segment_count + 1);
+    let mut weights = Vec::with_capacity(2 * segment_count + 1);
+    let mut knots = vec![range[0]; 3];
+    for index in 0..segment_count {
+        let start = range[0] + index as f64 * step;
+        let end = start + step;
+        let middle = (start + end) * 0.5;
+        let middle_weight = (step * 0.5).cos();
+        if middle_weight.abs() <= 1e-12 {
+            return None;
+        }
+        if index == 0 {
+            control_points.push(Point2::new(
+                center[0] + radius * start.cos(),
+                center[1] + radius * start.sin(),
+            ));
+            weights.push(1.0);
+        }
+        control_points.push(Point2::new(
+            center[0] + radius / middle_weight * middle.cos(),
+            center[1] + radius / middle_weight * middle.sin(),
+        ));
+        control_points.push(Point2::new(
+            center[0] + radius * end.cos(),
+            center[1] + radius * end.sin(),
+        ));
+        weights.extend([middle_weight, 1.0]);
+        if index + 1 < segment_count {
+            knots.extend([end; 2]);
+        }
+    }
+    knots.extend([range[1]; 3]);
+    Some(PcurveGeometry::Nurbs {
+        degree: 2,
+        knots,
+        control_points,
+        weights: Some(weights),
+        periodic: false,
+    })
+}
+
+fn quintic_jet_pcurve(
+    degree: u32,
+    knots: &[f64],
+    points: &[[f64; 2]],
+    first: &[[f64; 2]],
+    second: &[[f64; 2]],
+) -> Option<PcurveGeometry> {
+    if degree != 5
+        || knots.len() < 2
+        || points.len() != knots.len()
+        || first.len() != knots.len()
+        || second.len() != knots.len()
+    {
+        return None;
+    }
+    let mut controls = Vec::with_capacity(6 * (knots.len() - 1));
+    let mut full_knots = vec![knots[0]; 6];
+    for index in 0..knots.len() - 1 {
+        let h = knots[index + 1] - knots[index];
+        if !h.is_finite() || h <= 0.0 {
+            return None;
+        }
+        let p0 = points[index];
+        let p1 = points[index + 1];
+        let d0 = first[index];
+        let d1 = first[index + 1];
+        let dd0 = second[index];
+        let dd1 = second[index + 1];
+        controls.extend([
+            Point2::new(p0[0], p0[1]),
+            Point2::new(p0[0] + h * d0[0] / 5.0, p0[1] + h * d0[1] / 5.0),
+            Point2::new(
+                p0[0] + 2.0 * h * d0[0] / 5.0 + h * h * dd0[0] / 20.0,
+                p0[1] + 2.0 * h * d0[1] / 5.0 + h * h * dd0[1] / 20.0,
+            ),
+            Point2::new(
+                p1[0] - 2.0 * h * d1[0] / 5.0 + h * h * dd1[0] / 20.0,
+                p1[1] - 2.0 * h * d1[1] / 5.0 + h * h * dd1[1] / 20.0,
+            ),
+            Point2::new(p1[0] - h * d1[0] / 5.0, p1[1] - h * d1[1] / 5.0),
+            Point2::new(p1[0], p1[1]),
+        ]);
+        full_knots.extend([knots[index + 1]; 6]);
+    }
+    Some(PcurveGeometry::Nurbs {
+        degree,
+        knots: full_knots,
+        control_points: controls,
+        weights: None,
+        periodic: false,
+    })
+}
+
+fn e5_surface_uv(surface: &geometry::E5Surface, raw: [f64; 2]) -> Point2 {
+    Point2::new(raw[0] * surface.uv_scale[0], raw[1] * surface.uv_scale[1])
 }
 
 fn e5_body_kind(topology: &crate::e5::E5Topology, faces: &[u32]) -> BodyKind {

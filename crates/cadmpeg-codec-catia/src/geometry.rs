@@ -227,6 +227,8 @@ pub struct E5Surface {
     pub record_id: u32,
     /// The complete analytic surface carrier.
     pub geometry: SurfaceGeometry,
+    /// Component-wise scale from native E5 UV coordinates to neutral UV.
+    pub uv_scale: [f64; 2],
 }
 
 #[derive(Clone, Copy)]
@@ -386,17 +388,44 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
-        let geometry = match record.class {
-            0xc9 => e5_cylinder(data, pos),
-            0xca => e5_cone(data, pos),
-            0xcc => e5_torus(data, pos),
+        let decoded = match record.class {
+            0xc9 => e5_cylinder(data, pos).map(|geometry| {
+                let SurfaceGeometry::Cylinder { radius, .. } = geometry else {
+                    unreachable!()
+                };
+                (geometry, [1.0 / radius, 1.0])
+            }),
+            0xca => e5_cone(data, pos).and_then(|geometry| {
+                let SurfaceGeometry::Cone { half_angle, .. } = geometry else {
+                    unreachable!()
+                };
+                let u_scale = f64_le(data, pos + 158)?;
+                let v_scale = f64_le(data, pos + 166)?;
+                (u_scale.is_finite()
+                    && u_scale.abs() > 1e-12
+                    && v_scale.is_finite()
+                    && v_scale.abs() > 1e-12)
+                    .then_some((geometry, [1.0 / u_scale, half_angle.cos() / v_scale]))
+            }),
+            0xcc => e5_torus(data, pos).map(|geometry| {
+                let SurfaceGeometry::Torus {
+                    major_radius,
+                    minor_radius,
+                    ..
+                } = geometry
+                else {
+                    unreachable!()
+                };
+                (geometry, [1.0 / major_radius, 1.0 / minor_radius])
+            }),
             _ => None,
         };
-        if let Some(geometry) = geometry {
+        if let Some((geometry, uv_scale)) = decoded {
             out.push(E5Surface {
                 pos,
                 record_id: u32_le(data, pos + 9).unwrap_or(0),
                 geometry,
+                uv_scale,
             });
         }
     }
