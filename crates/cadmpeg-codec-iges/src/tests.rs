@@ -213,3 +213,59 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
 
     assert!(summary.notes.contains(&"references.cyclic=2".into()));
 }
+
+#[test]
+fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
+    let mut compressed = vec![b' '; 80];
+    compressed[72] = b'C';
+    compressed.push(b'\n');
+    compressed.extend(card(b"compressed fixture", b'S', 1));
+    assert_eq!(IgesCodec.detect(&compressed), Confidence::High);
+    let summary = IgesCodec
+        .inspect(&mut Cursor::new(compressed.clone()))
+        .unwrap();
+    assert_eq!(summary.container_kind, "compressed-ascii");
+    assert_eq!(
+        IgesCodec
+            .decode(&mut Cursor::new(compressed), &DecodeOptions::default())
+            .unwrap_err()
+            .to_string(),
+        "not implemented yet: IGES Compressed ASCII representation decode"
+    );
+
+    let mut binary = vec![0_u8; 80];
+    binary[0] = b'B';
+    binary[1..5].copy_from_slice(&75_u32.to_be_bytes());
+    binary[72] = b'B';
+    binary[79] = b'1';
+    assert_eq!(IgesCodec.detect(&binary), Confidence::High);
+    let summary = IgesCodec.inspect(&mut Cursor::new(binary.clone())).unwrap();
+    assert_eq!(summary.container_kind, "binary");
+    assert_eq!(
+        IgesCodec
+            .decode(&mut Cursor::new(binary), &DecodeOptions::default())
+            .unwrap_err()
+            .to_string(),
+        "not implemented yet: IGES Binary representation decode"
+    );
+}
+
+#[test]
+fn legacy_fixed_ascii_is_reported_but_not_decoded_as_iges_5_3() {
+    let mut bytes = point_file();
+    let version = bytes
+        .windows(b",11,0,".len())
+        .position(|window| window == b",11,0,")
+        .unwrap();
+    bytes[version + 1..version + 3].copy_from_slice(b"10");
+
+    let summary = IgesCodec.inspect(&mut Cursor::new(bytes.clone())).unwrap();
+    assert!(summary.notes.contains(&"iges_version=5.2".into()));
+    assert_eq!(
+        IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_err()
+            .to_string(),
+        "not implemented yet: IGES Fixed ASCII version 5.2 decode; target envelope is 5.3"
+    );
+}

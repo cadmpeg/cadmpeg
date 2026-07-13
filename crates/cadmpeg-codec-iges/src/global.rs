@@ -186,7 +186,7 @@ impl Global {
     }
 
     pub(crate) fn version_flag(&self) -> Option<i64> {
-        self.values.get(22).and_then(Value::integer)
+        self.values.get(22).and_then(Value::integer).or(Some(3))
     }
 
     pub(crate) fn version(&self) -> Option<&'static str> {

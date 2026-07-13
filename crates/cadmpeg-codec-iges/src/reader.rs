@@ -46,6 +46,12 @@ pub(crate) fn decode(
 ) -> Result<DecodeResult, CodecError> {
     let scan = card::scan(reader)?;
     let global = global::parse(&scan)?;
+    if global.version() != Some("5.3") {
+        return Err(CodecError::NotImplemented(format!(
+            "IGES Fixed ASCII version {} decode; target envelope is 5.3",
+            global.version().unwrap_or("unrecognized")
+        )));
+    }
     let directory = directory::parse(&scan)?;
     let parameters = parameter::assemble(&scan, &directory, &global)?;
     let references = graph::build(&directory);

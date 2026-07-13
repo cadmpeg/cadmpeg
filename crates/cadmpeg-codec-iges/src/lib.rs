@@ -5,6 +5,7 @@ mod card;
 mod directory;
 mod global;
 mod graph;
+mod layout;
 mod native;
 mod parameter;
 mod reader;
@@ -23,10 +24,22 @@ impl Codec for IgesCodec {
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {
-        card::detect_fixed_ascii(prefix)
+        layout::confidence(prefix)
     }
 
     fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
+        match layout::classify(reader)? {
+            representation @ (layout::Representation::CompressedAscii
+            | layout::Representation::Binary) => {
+                return Ok(layout::unsupported_summary(representation));
+            }
+            layout::Representation::Unknown => {
+                return Err(CodecError::WrongFormat(
+                    "unrecognized IGES representation".into(),
+                ));
+            }
+            layout::Representation::FixedAscii => {}
+        }
         let scan = card::scan(reader)?;
         let global = global::parse(&scan)?;
         let directory = directory::parse(&scan)?;
@@ -45,7 +58,14 @@ impl Codec for IgesCodec {
         reader: &mut dyn ReadSeek,
         options: &DecodeOptions,
     ) -> Result<DecodeResult, CodecError> {
-        reader::decode(reader, *options)
+        match layout::classify(reader)? {
+            layout::Representation::FixedAscii => reader::decode(reader, *options),
+            representation @ (layout::Representation::CompressedAscii
+            | layout::Representation::Binary) => Err(layout::unsupported_error(representation)),
+            layout::Representation::Unknown => Err(CodecError::WrongFormat(
+                "unrecognized IGES representation".into(),
+            )),
+        }
     }
 }
 
