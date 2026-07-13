@@ -122,7 +122,8 @@ Known prefixes include `71→3F E6`, `74→3F E9`, `81→3F F6`, `8b→40 00`, `
 
 The `var_arr` coordinate lane also defines the sign pairs
 `80→3F F5`/`c8→BF F5` and `97→40 0C`/`dd→C0 0C`. Each prefix is followed by
-the remaining six IEEE bytes.
+the remaining six IEEE bytes. Its negative sub-unit form `d5 <tail6>`
+reconstructs `BF <tail6> 00`.
 
 Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leading byte `40` and implicit trailing `00`; `a3 <tail6>` for the negative form paired with the section-local `46` cache; `b9`, `d3`, and `df` for negative sub-unit forms with leading byte `BF`; and `41`, `4b`, `66`, `67`, `68`, `77`, and `82..8f` for positive sub-unit forms with leading byte `3F`.
 

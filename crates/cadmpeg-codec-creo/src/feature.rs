@@ -1030,6 +1030,12 @@ fn decode_variable_scalar(
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
         return (Some(f64::from_be_bytes(raw)), offset + 7, false);
     }
+    if prefix == 0xd5 && offset + 7 <= end {
+        let mut raw = [0; 8];
+        raw[0] = 0xbf;
+        raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
+        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+    }
     let variable_dict = match prefix {
         0x80 => Some([0x3f, 0xf5]),
         0x97 => Some([0x40, 0x0c]),
@@ -2776,6 +2782,17 @@ mod tests {
             assert_eq!(next, bytes.len());
             assert!(!dimension_driven);
         }
+    }
+
+    #[test]
+    fn decodes_var_arr_negative_subunit_form() {
+        let bytes = [0xd5, 0xd9, 0x52, 0xa4, 0x85, 0x40, 0x39];
+        let (value, next, dimension_driven) =
+            decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
+
+        assert_eq!(value, Some(-0.395_669_107_559_015_74));
+        assert_eq!(next, bytes.len());
+        assert!(!dimension_driven);
     }
 
     #[test]
