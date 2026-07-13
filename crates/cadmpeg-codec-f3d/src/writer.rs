@@ -14282,11 +14282,36 @@ fn patch_framed_geometry(
             }
         } else if record.head == "cone" {
             if let Some((origin, axis, ref_direction, radius, ratio, half_angle)) = cones.get(&id) {
-                let doubles =
-                    sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
-                        .map_err(|error| CodecError::Malformed(error.to_string()))?;
-                let old_sine = read_double_token(bytes, &doubles, 1, record)?;
-                let old_cosine = read_double_token(bytes, &doubles, 2, record)?;
+                let ref_width = active_ref_width(bytes);
+                let field_indices = match record.name.as_str() {
+                    "cone" => [0, 1, 2, 3, 4, 5, 6],
+                    "cone-surface" => [3, 4, 5, 6, 9, 10, 11],
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "cone record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let fields = [
+                    required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[2], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[3], 0x06)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[4], 0x06)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[5], 0x06)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[6], 0x06)?,
+                ];
+                let old_sine = f64::from_le_bytes(
+                    bytes[fields[4] + 1..fields[4] + 9]
+                        .try_into()
+                        .expect("framed cone sine has eight payload bytes"),
+                );
+                let old_cosine = f64::from_le_bytes(
+                    bytes[fields[5] + 1..fields[5] + 9]
+                        .try_into()
+                        .expect("framed cone cosine has eight payload bytes"),
+                );
                 let sine_sign = if old_sine < 0.0 { -1.0 } else { 1.0 };
                 let cosine_sign = if old_cosine < 0.0 { -1.0 } else { 1.0 };
                 let native_axis = if *half_angle > 0.0 && sine_sign * cosine_sign < 0.0 {
@@ -14294,40 +14319,55 @@ fn patch_framed_geometry(
                 } else {
                     *axis
                 };
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
-                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
-                )?;
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x14,
-                    0,
-                    [native_axis.x, native_axis.y, native_axis.z],
-                )?;
                 let scaled_radius = radius / 10.0;
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x14,
-                    1,
+                for (offset, values) in fields[..3].iter().zip([
+                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                    [native_axis.x, native_axis.y, native_axis.z],
                     [
                         ref_direction.x * scaled_radius,
                         ref_direction.y * scaled_radius,
                         ref_direction.z * scaled_radius,
                     ],
-                )?;
-                patch_double_token(bytes, record, 0, *ratio)?;
-                patch_double_token(bytes, record, 1, sine_sign * half_angle.sin())?;
-                patch_double_token(bytes, record, 2, cosine_sign * half_angle.cos())?;
-                patch_double_token(bytes, record, 3, scaled_radius)?;
+                ]) {
+                    for (component, value) in values.into_iter().enumerate() {
+                        let at = offset + 1 + component * 8;
+                        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
+                for (offset, value) in fields[3..].iter().zip([
+                    *ratio,
+                    sine_sign * half_angle.sin(),
+                    cosine_sign * half_angle.cos(),
+                    scaled_radius,
+                ]) {
+                    bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+                }
             }
         }
     }
     Ok(())
+}
+
+fn required_payload_field(
+    bytes: &[u8],
+    record: &sab::Record,
+    ref_width: usize,
+    index: usize,
+    tag: u8,
+) -> Result<usize, CodecError> {
+    let offset = sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "{} record {} lacks payload field {index}",
+            record.head, record.index
+        ))
+    })?;
+    if bytes.get(offset) != Some(&tag) {
+        return Err(CodecError::Malformed(format!(
+            "{} record {} payload field {index} is not tag {tag:#04x}",
+            record.head, record.index
+        )));
+    }
+    Ok(offset)
 }
 
 fn patch_extrusion_definition(
@@ -14474,26 +14514,6 @@ fn patch_integer_token(
     }
     bytes[offset + 1..offset + 1 + ref_width].copy_from_slice(&value.to_le_bytes()[..ref_width]);
     Ok(())
-}
-
-fn read_double_token(
-    bytes: &[u8],
-    offsets: &[usize],
-    ordinal: usize,
-    record: &sab::Record,
-) -> Result<f64, CodecError> {
-    let offset = offsets.get(ordinal).copied().ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "{} record {} lacks double token [{ordinal}]",
-            record.head, record.index
-        ))
-    })?;
-    let value = bytes
-        .get(offset + 1..offset + 9)
-        .and_then(|value| value.try_into().ok())
-        .map(f64::from_le_bytes)
-        .ok_or_else(|| CodecError::Malformed("truncated F3D double token".into()))?;
-    Ok(value)
 }
 
 fn patch_signed_ratio_token(
