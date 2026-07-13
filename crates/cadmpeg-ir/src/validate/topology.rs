@@ -1273,6 +1273,31 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "face motion is invalid");
                 }
             }
+            FeatureDefinition::MoveBody {
+                bodies,
+                translation,
+                rotation,
+                ..
+            } => {
+                body_selections.push(bodies);
+                let valid_translation = [translation.x, translation.y, translation.z]
+                    .into_iter()
+                    .all(f64::is_finite);
+                let valid_rotation = rotation.as_ref().is_none_or(|rotation| {
+                    [
+                        rotation.origin.x,
+                        rotation.origin.y,
+                        rotation.origin.z,
+                        rotation.angle.0,
+                    ]
+                    .into_iter()
+                    .all(f64::is_finite)
+                        && valid_feature_direction(rotation.direction)
+                });
+                if !valid_translation || !valid_rotation {
+                    feature_geometry_error(findings, feature, "body motion is invalid");
+                }
+            }
             FeatureDefinition::Dome { faces, height, .. } => {
                 face_selections.push(faces);
                 if !positive_feature_length(*height) {

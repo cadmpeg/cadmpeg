@@ -6,7 +6,7 @@ use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, His
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
-    Angle, BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, ConfigurationId,
+    Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, ConfigurationId,
     DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterId,
     ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, ScaleCenter, VariableRadius,
@@ -731,6 +731,9 @@ pub fn bind_topology_selections(
             FeatureDefinition::Scale { bodies, .. } => {
                 resolve_body_selection(bodies, &body_ids);
             }
+            FeatureDefinition::MoveBody { bodies, .. } => {
+                resolve_body_selection(bodies, &body_ids);
+            }
             FeatureDefinition::DeleteFace { faces, .. }
             | FeatureDefinition::MoveFace { faces, .. }
             | FeatureDefinition::Dome { faces, .. } => {
@@ -948,6 +951,8 @@ fn project_definition(
         project_replace_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "MoveFace") {
         project_move_face(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature_family(feature, "MoveBody") || feature_family(feature, "MoveCopyBody") {
+        project_move_body(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Dome") {
         project_dome(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Flex") {
@@ -1789,6 +1794,30 @@ fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::MoveFace {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
         motion,
+    })
+}
+
+fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> {
+    let bodies = BodySelection::Native(feature.properties.get("Bodies")?.clone());
+    let translation = parse_point3_mm(feature.properties.get("Translation")?)?;
+    let translation = Vector3::new(translation.x, translation.y, translation.z);
+    let rotation = match feature.parameters.get("Rotation") {
+        Some(angle) => Some(AxisAngle {
+            origin: parse_point3_mm(feature.properties.get("RotationOrigin")?)?,
+            direction: parse_valid_direction(feature.properties.get("RotationAxis")?)?,
+            angle: Angle(parse_angle_rad(angle)?),
+        }),
+        None => None,
+    };
+    let copies = feature
+        .properties
+        .get("Copies")
+        .map_or(Some(0), |value| value.trim().parse::<u32>().ok())?;
+    Some(FeatureDefinition::MoveBody {
+        bodies,
+        translation,
+        rotation,
+        copies,
     })
 }
 
@@ -3753,6 +3782,79 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::MoveBody {
+                bodies,
+                translation,
+                rotation,
+                copies,
+            } => {
+                let bodies = body_selection_value(bodies).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no body-motion selection",
+                        feature.id
+                    ))
+                })?;
+                if existing.as_deref().is_some_and(|record| {
+                    !feature_family(record, "MoveBody") && !feature_family(record, "MoveCopyBody")
+                }) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                if ![translation.x, translation.y, translation.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has a non-finite body translation",
+                        feature.id
+                    )));
+                }
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Bodies".into(), bodies);
+                properties.insert(
+                    "Translation".into(),
+                    format_point3_mm(Point3::new(translation.x, translation.y, translation.z)),
+                );
+                properties.insert("Copies".into(), copies.to_string());
+                match rotation {
+                    Some(rotation) => {
+                        require_direction(rotation.direction, &feature.id, "body rotation axis")?;
+                        if !rotation.angle.0.is_finite()
+                            || ![rotation.origin.x, rotation.origin.y, rotation.origin.z]
+                                .into_iter()
+                                .all(f64::is_finite)
+                        {
+                            return Err(CodecError::Malformed(format!(
+                                "SLDPRT feature {} has invalid body rotation",
+                                feature.id
+                            )));
+                        }
+                        properties
+                            .insert("RotationOrigin".into(), format_point3_mm(rotation.origin));
+                        properties
+                            .insert("RotationAxis".into(), format_vector3(rotation.direction));
+                        parameters.insert("Rotation".into(), format_angle_rad(rotation.angle.0));
+                    }
+                    None => {
+                        properties.remove("RotationOrigin");
+                        properties.remove("RotationAxis");
+                        parameters.remove("Rotation");
+                    }
+                }
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "MoveBody".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
+            }
             FeatureDefinition::Dome {
                 faces,
                 height,
@@ -4809,6 +4911,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::DeleteFace { .. } => "DeleteFace",
         FeatureDefinition::ReplaceFace { .. } => "ReplaceFace",
         FeatureDefinition::MoveFace { .. } => "MoveFace",
+        FeatureDefinition::MoveBody { .. } => "MoveBody",
         FeatureDefinition::Dome { .. } => "Dome",
         FeatureDefinition::Flex { .. } => "Flex",
         FeatureDefinition::Scale { .. } => "Scale",

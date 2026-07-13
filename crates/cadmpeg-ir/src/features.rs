@@ -424,6 +424,19 @@ pub enum FeatureDefinition {
         /// Motion applied to the selected faces.
         motion: FaceMotion,
     },
+    /// Rigid translation or rotation of selected bodies, optionally creating copies.
+    MoveBody {
+        /// Bodies transformed by the operation.
+        bodies: BodySelection,
+        /// Model-space translation vector in canonical millimeters.
+        translation: Vector3,
+        /// Axis-angle rotation applied with the translation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rotation: Option<AxisAngle>,
+        /// Number of transformed copies; zero moves the selected bodies.
+        #[serde(default)]
+        copies: u32,
+    },
     /// Dome grown from selected planar faces.
     Dome {
         /// Faces that bound the dome base.
@@ -619,6 +632,17 @@ pub enum FaceMotion {
         /// Signed rotation angle.
         angle: Angle,
     },
+}
+
+/// Model-space axis-angle rotation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AxisAngle {
+    /// Point on the rotation axis.
+    pub origin: Point3,
+    /// Rotation-axis direction.
+    pub direction: Vector3,
+    /// Signed rotation angle.
+    pub angle: Angle,
 }
 
 /// Termination of a linear or angular feature.

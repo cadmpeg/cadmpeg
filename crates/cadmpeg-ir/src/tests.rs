@@ -2064,6 +2064,16 @@ fn feature_operation_geometry_is_validated() {
             mode: crate::features::WrapMode::Emboss,
             depth: None,
         },
+        FeatureDefinition::MoveBody {
+            bodies: crate::features::BodySelection::Unresolved,
+            translation: Vector3::new(f64::NAN, 0.0, 0.0),
+            rotation: Some(crate::features::AxisAngle {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 0.0),
+                angle: crate::features::Angle(0.5),
+            }),
+            copies: 0,
+        },
         FeatureDefinition::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::Linear {
@@ -2083,6 +2093,7 @@ fn feature_operation_geometry_is_validated() {
         "equation curve is invalid",
         "helix geometry is invalid",
         "wrap depth is invalid",
+        "body motion is invalid",
         "pattern geometry is invalid",
     ];
     let mut ir = unit_cube();

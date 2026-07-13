@@ -7658,6 +7658,108 @@ fn semantic_writer_round_trips_wrap() {
 }
 
 #[test]
+fn semantic_writer_round_trips_move_copy_body() {
+    use cadmpeg_ir::features::{Angle, AxisAngle, BodySelection, FeatureDefinition};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let base_bytes = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(base_bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let body = base.ir.model.bodies[0].id.0.clone();
+    let xml = format!(
+        r#"<Keywords><MoveBody Name="Copy" Type="MoveCopyBody" id="32" Bodies="{body}" Translation="1mm,2mm,3mm" RotationOrigin="4mm,5mm,6mm" RotationAxis="0,0,1" Copies="2" Frame="model"><Dimension Name="Rotation">90deg</Dimension></MoveBody></Keywords>"#
+    );
+    let mut source = base_bytes;
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let body_id = decoded.ir.model.bodies[0].id.clone();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::MoveBody {
+            bodies: BodySelection::Resolved { bodies, native },
+            translation: Vector3 { x: 1.0, y: 2.0, z: 3.0 },
+            rotation: Some(AxisAngle {
+                origin: Point3 { x: 4.0, y: 5.0, z: 6.0 },
+                direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+                angle: Angle(angle),
+            }),
+            copies: 2,
+        } if bodies == &[body_id.clone()] && native == &body
+            && (*angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+    ));
+
+    let FeatureDefinition::MoveBody {
+        bodies,
+        translation,
+        rotation,
+        copies,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed body motion");
+    };
+    *bodies = BodySelection::Bodies(vec![body_id.clone()]);
+    *translation = Vector3::new(-7.0, 8.0, 9.0);
+    *rotation = Some(AxisAngle {
+        origin: Point3::new(10.0, 11.0, 12.0),
+        direction: Vector3::new(0.0, 1.0, 0.0),
+        angle: Angle(0.25),
+    });
+    *copies = 3;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.properties["Bodies"], body_id.0);
+    assert_eq!(native.properties["Translation"], "-7mm,8mm,9mm");
+    assert_eq!(native.properties["RotationOrigin"], "10mm,11mm,12mm");
+    assert_eq!(native.properties["RotationAxis"], "0,1,0");
+    assert_eq!(native.properties["Copies"], "3");
+    assert_eq!(native.properties["Frame"], "model");
+    assert_eq!(native.parameters["Rotation"], "0.25rad");
+
+    let mut translated = regenerated;
+    let FeatureDefinition::MoveBody {
+        rotation, copies, ..
+    } = &mut translated.ir.model.features[0].definition
+    else {
+        panic!("typed body motion");
+    };
+    *rotation = None;
+    *copies = 0;
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&translated.ir, &mut encoded)
+        .unwrap();
+    let translated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&translated.ir).feature_histories[0].features[0];
+    assert_eq!(native.properties["Copies"], "0");
+    assert!(!native.properties.contains_key("RotationOrigin"));
+    assert!(!native.properties.contains_key("RotationAxis"));
+    assert!(!native.parameters.contains_key("Rotation"));
+    assert!(matches!(
+        translated.ir.model.features[0].definition,
+        FeatureDefinition::MoveBody {
+            rotation: None,
+            copies: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 
