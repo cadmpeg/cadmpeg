@@ -845,6 +845,9 @@ fn write_feature_xml(
         xml_text(out, value);
         out.push_str("</Dimension>");
     }
+    if let Some(text) = &feature.text {
+        xml_text(out, text);
+    }
     let mut children = features
         .iter()
         .filter(|child| {

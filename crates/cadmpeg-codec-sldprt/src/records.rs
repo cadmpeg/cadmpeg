@@ -64,6 +64,9 @@ pub struct Feature {
     /// Source custom-property name/value pairs local to this feature.
     #[serde(default)]
     pub properties: BTreeMap<String, String>,
+    /// Text content of a native leaf feature element.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 /// The full parametric construction-history timeline for a part.

@@ -2165,6 +2165,45 @@ fn semantic_writer_round_trips_unknown_feature_properties() {
 }
 
 #[test]
+fn semantic_writer_preserves_native_feature_leaf_text() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><MacroFeature Name="Custom" Type="Macro" id="70"><Definition Name="Payload" Type="Definition" Language="expr">a &amp; b &lt; c</Definition></MacroFeature></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    let definition = native.feature_histories[0]
+        .features
+        .iter()
+        .find(|feature| feature.xml_tag == "Definition")
+        .unwrap();
+    assert_eq!(definition.text.as_deref(), Some("a & b < c"));
+    assert_eq!(definition.properties["Language"], "expr");
+    assert!(definition.tree_parent.is_some());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&regenerated.ir);
+    let definition = native.feature_histories[0]
+        .features
+        .iter()
+        .find(|feature| feature.xml_tag == "Definition")
+        .unwrap();
+    assert_eq!(definition.text.as_deref(), Some("a & b < c"));
+    assert_eq!(definition.properties["Language"], "expr");
+    assert!(definition.tree_parent.is_some());
+}
+
+#[test]
 fn encoder_writes_source_less_datum_features() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::math::{Point3, Vector3};

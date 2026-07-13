@@ -143,6 +143,9 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                                 (attribute.name().to_string(), attribute.value().to_string())
                             })
                             .collect(),
+                        text: (!node.children().any(|child| child.is_element()))
+                            .then(|| node.text().map(str::trim).unwrap_or_default().to_string())
+                            .filter(|value| !value.is_empty()),
                     }
                 })
                 .collect();
@@ -2737,6 +2740,7 @@ pub fn sync_neutral_features(
                 suppressed: feature.suppressed,
                 parameters,
                 properties,
+                text: None,
             });
         }
     }
