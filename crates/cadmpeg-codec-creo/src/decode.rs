@@ -1051,6 +1051,170 @@ fn insert_feature_parameter(parameters: &mut BTreeMap<String, String>, base: &st
     }
 }
 
+fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String, String> {
+    let mut parameters = BTreeMap::new();
+    for field in scan
+        .feature_choice_fields
+        .iter()
+        .filter(|field| field.feature_id == feature_id)
+    {
+        let Some(value) = feature_field_text(&field.value) else {
+            continue;
+        };
+        insert_feature_parameter(
+            &mut parameters,
+            &format!("choice.{}.{}", field.choice_label, field.name),
+            value,
+        );
+    }
+    for affected in scan
+        .feature_affected_ids
+        .iter()
+        .filter(|record| record.feature_id == feature_id)
+    {
+        let name = match affected.kind {
+            crate::feature::AffectedIdKind::Geometry => "affected_geometry_ids",
+            crate::feature::AffectedIdKind::Edges => "affected_edge_ids",
+            crate::feature::AffectedIdKind::StrongParents => "strong_parent_feature_ids",
+            crate::feature::AffectedIdKind::Parents => "parent_feature_ids",
+            crate::feature::AffectedIdKind::Contours => "contour_ids",
+        };
+        parameters.insert(
+            name.to_string(),
+            affected
+                .ids
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+    }
+    for affected in scan
+        .feature_replay_affected_ids
+        .iter()
+        .filter(|record| record.feature_id == feature_id)
+    {
+        insert_feature_parameter(
+            &mut parameters,
+            "replay_affected_ids",
+            affected
+                .ids
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+        insert_feature_parameter(
+            &mut parameters,
+            "replay_affected_counted",
+            affected.has_count_opener.to_string(),
+        );
+    }
+    for direction in scan
+        .feature_direction_bytes
+        .iter()
+        .filter(|record| record.feature_id == feature_id)
+    {
+        let name = match direction.lane {
+            crate::feature::DirectionLane::Primary => "direction",
+            crate::feature::DirectionLane::Secondary => "direction2",
+        };
+        let value = match direction.value {
+            crate::feature::DirectionValue::SideFlag(value) => value.to_string(),
+            crate::feature::DirectionValue::Raw(value) => value.to_string(),
+        };
+        parameters.insert(name.to_string(), value);
+    }
+    if let Some(definition) = scan
+        .feature_definitions
+        .iter()
+        .find(|definition| definition.owner_feature_id == Some(feature_id))
+    {
+        parameters.insert(
+            "sketch_segment_count".to_string(),
+            definition
+                .segments
+                .as_ref()
+                .map_or(0, |segments| segments.rows.len())
+                .to_string(),
+        );
+        parameters.insert(
+            "dimension_count".to_string(),
+            definition
+                .dimensions
+                .as_ref()
+                .map_or(0, |dimensions| dimensions.rows.len())
+                .to_string(),
+        );
+    }
+    parameters
+}
+
+fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
+    match schema_class {
+        911 => Some("Hole"),
+        913 | 1104 => Some("Round"),
+        914 => Some("Chamfer"),
+        916 | 917 => Some("Protrusion"),
+        923 => Some("Datum Plane"),
+        _ => None,
+    }
+}
+
+fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String, String> {
+    let mut properties = BTreeMap::new();
+    if let Some(recipe) = feature_recipe(scan, feature_id) {
+        properties.insert(
+            "recipe".to_string(),
+            match recipe {
+                crate::feature::FeatureRecipeKind::Extrude => "protextrude",
+                crate::feature::FeatureRecipeKind::Revolve => "protrevolve",
+            }
+            .to_string(),
+        );
+    }
+    if let Some(schema_class) = scan
+        .feature_rows
+        .iter()
+        .find(|row| row.feature_id == feature_id)
+        .and_then(|row| row.root_schema_class)
+    {
+        properties.insert(
+            "featdefs_schema_class".to_string(),
+            schema_class.to_string(),
+        );
+    }
+    properties
+}
+
+fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<IrFeatureId> {
+    scan.feature_affected_ids
+        .iter()
+        .filter(|record| {
+            record.feature_id == feature_id
+                && matches!(
+                    record.kind,
+                    crate::feature::AffectedIdKind::StrongParents
+                        | crate::feature::AffectedIdKind::Parents
+                )
+        })
+        .flat_map(|record| &record.ids)
+        .filter_map(|dependency| {
+            let id = IrFeatureId(format!("creo:model:feature#{dependency}"));
+            ir.model
+                .features
+                .iter()
+                .any(|feature| feature.id == id)
+                .then_some(id)
+        })
+        .fold(Vec::new(), |mut dependencies, dependency| {
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+            dependencies
+        })
+}
+
 #[cfg(test)]
 mod resolved_sketch_tests {
     use super::*;
@@ -2131,153 +2295,15 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     for (operation_index, operation) in scan.feature_operations.iter().enumerate() {
         let id = IrFeatureId(format!("creo:model:feature#{}", operation.feature_id));
         let outputs = feature_output_bodies(scan, &ir, operation.feature_id);
-        let mut source_properties = BTreeMap::new();
+        let mut source_properties = feature_source_properties(scan, operation.feature_id);
         if let Some(prefix) = operation.status_prefix {
             source_properties.insert(
                 "mdl_status_prefix".to_string(),
                 char::from(prefix).to_string(),
             );
         }
-        if let Some(recipe) = feature_recipe(scan, operation.feature_id) {
-            source_properties.insert(
-                "recipe".to_string(),
-                match recipe {
-                    crate::feature::FeatureRecipeKind::Extrude => "protextrude",
-                    crate::feature::FeatureRecipeKind::Revolve => "protrevolve",
-                }
-                .to_string(),
-            );
-        }
-        if let Some(schema_class) = scan
-            .feature_rows
-            .iter()
-            .find(|row| row.feature_id == operation.feature_id)
-            .and_then(|row| row.root_schema_class)
-        {
-            source_properties.insert(
-                "featdefs_schema_class".to_string(),
-                schema_class.to_string(),
-            );
-        }
-        let mut parameters = BTreeMap::new();
-        for field in scan
-            .feature_choice_fields
-            .iter()
-            .filter(|field| field.feature_id == operation.feature_id)
-        {
-            let Some(value) = feature_field_text(&field.value) else {
-                continue;
-            };
-            insert_feature_parameter(
-                &mut parameters,
-                &format!("choice.{}.{}", field.choice_label, field.name),
-                value,
-            );
-        }
-        for affected in scan
-            .feature_affected_ids
-            .iter()
-            .filter(|record| record.feature_id == operation.feature_id)
-        {
-            let name = match affected.kind {
-                crate::feature::AffectedIdKind::Geometry => "affected_geometry_ids",
-                crate::feature::AffectedIdKind::Edges => "affected_edge_ids",
-                crate::feature::AffectedIdKind::StrongParents => "strong_parent_feature_ids",
-                crate::feature::AffectedIdKind::Parents => "parent_feature_ids",
-                crate::feature::AffectedIdKind::Contours => "contour_ids",
-            };
-            parameters.insert(
-                name.to_string(),
-                affected
-                    .ids
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-        }
-        for affected in scan
-            .feature_replay_affected_ids
-            .iter()
-            .filter(|record| record.feature_id == operation.feature_id)
-        {
-            insert_feature_parameter(
-                &mut parameters,
-                "replay_affected_ids",
-                affected
-                    .ids
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-            insert_feature_parameter(
-                &mut parameters,
-                "replay_affected_counted",
-                affected.has_count_opener.to_string(),
-            );
-        }
-        for direction in scan
-            .feature_direction_bytes
-            .iter()
-            .filter(|record| record.feature_id == operation.feature_id)
-        {
-            let name = match direction.lane {
-                crate::feature::DirectionLane::Primary => "direction",
-                crate::feature::DirectionLane::Secondary => "direction2",
-            };
-            let value = match direction.value {
-                crate::feature::DirectionValue::SideFlag(value) => value.to_string(),
-                crate::feature::DirectionValue::Raw(value) => value.to_string(),
-            };
-            parameters.insert(name.to_string(), value);
-        }
-        if let Some(definition) = scan
-            .feature_definitions
-            .iter()
-            .find(|definition| definition.owner_feature_id == Some(operation.feature_id))
-        {
-            parameters.insert(
-                "sketch_segment_count".to_string(),
-                definition
-                    .segments
-                    .as_ref()
-                    .map_or(0, |segments| segments.rows.len())
-                    .to_string(),
-            );
-            parameters.insert(
-                "dimension_count".to_string(),
-                definition
-                    .dimensions
-                    .as_ref()
-                    .map_or(0, |dimensions| dimensions.rows.len())
-                    .to_string(),
-            );
-        }
-        let dependencies = scan
-            .feature_affected_ids
-            .iter()
-            .filter(|record| {
-                record.feature_id == operation.feature_id
-                    && matches!(
-                        record.kind,
-                        crate::feature::AffectedIdKind::StrongParents
-                            | crate::feature::AffectedIdKind::Parents
-                    )
-            })
-            .flat_map(|record| &record.ids)
-            .filter(|dependency| {
-                ir.model.features.iter().any(|feature| {
-                    feature.id.as_str() == format!("creo:model:feature#{dependency}")
-                })
-            })
-            .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
-            .fold(Vec::new(), |mut dependencies, dependency| {
-                if !dependencies.contains(&dependency) {
-                    dependencies.push(dependency);
-                }
-                dependencies
-            });
+        let parameters = feature_parameters(scan, operation.feature_id);
+        let dependencies = feature_dependencies(scan, &ir, operation.feature_id);
         annotate(
             &mut annotations,
             &id,
@@ -2301,6 +2327,50 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             definition: IrFeatureDefinition::Native {
                 kind: operation.kind.clone(),
                 parameters,
+                properties: BTreeMap::new(),
+            },
+            native_ref: None,
+        });
+    }
+    for row in &scan.feature_rows {
+        let id = IrFeatureId(format!("creo:model:feature#{}", row.feature_id));
+        if ir.model.features.iter().any(|feature| feature.id == id)
+            || !scan
+                .surface_rows
+                .iter()
+                .any(|surface| surface.feature_id == row.feature_id)
+        {
+            continue;
+        }
+        let Some(schema_class) = row.root_schema_class else {
+            continue;
+        };
+        let Some(kind) = schema_operation_kind(schema_class) else {
+            continue;
+        };
+        annotate(
+            &mut annotations,
+            &id,
+            "AllFeatur",
+            row.offset as u64,
+            "schema_feature_operation",
+            Exactness::ByteExact,
+        );
+        ir.model.features.push(Feature {
+            id,
+            ordinal: ir.model.features.len() as u64,
+            name: Some(format!("{kind} id {}", row.feature_id)),
+            suppressed: false,
+            parent: None,
+            dependencies: feature_dependencies(scan, &ir, row.feature_id),
+            source_properties: feature_source_properties(scan, row.feature_id),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: feature_output_bodies(scan, &ir, row.feature_id),
+            definition: IrFeatureDefinition::Native {
+                kind: kind.to_string(),
+                parameters: feature_parameters(scan, row.feature_id),
                 properties: BTreeMap::new(),
             },
             native_ref: None,

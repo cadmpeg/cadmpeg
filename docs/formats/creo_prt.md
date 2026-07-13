@@ -363,6 +363,8 @@ An unlabeled positional affected-ID replay retains its compact identifiers as on
 
 The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are linear protrusion/extrusion definitions, class 913 is a round definition, class 911 is a hole definition, and class 923 is a datum-plane definition.
 
+A typed schema row that owns a materialized `srf_array` row is an active construction feature. The root schema class supplies its operation family independently of an `MdlStatus` operation name.
+
 A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
 
 `strong_parents` is the ordered set of earlier modeling features consumed to

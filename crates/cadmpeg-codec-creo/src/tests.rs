@@ -516,6 +516,40 @@ fn scan_decodes_allfeatur_root_featdefs_schema_class() {
 }
 
 #[test]
+fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 9, 0xeb,
+        0x04, 0, 0x10, 1, 0, 0xe5, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
+    ];
+    let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+
+    assert_eq!(result.ir.model.features.len(), 1);
+    let feature = &result.ir.model.features[0];
+    assert_eq!(feature.id.as_str(), "creo:model:feature#4");
+    assert_eq!(feature.name.as_deref(), Some("Protrusion id 4"));
+    assert!(matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "Protrusion"
+    ));
+    assert_eq!(
+        feature
+            .source_properties
+            .get("featdefs_schema_class")
+            .map(String::as_str),
+        Some("917")
+    );
+    assert!(result
+        .ir
+        .model
+        .features
+        .iter()
+        .all(|feature| feature.id.as_str() != "creo:model:feature#9"));
+}
+
+#[test]
 fn scan_resolves_allfeatur_walker_order_entity_references() {
     let allfeatur = b"\xe0\x22first\0\xf7\x01\xe3\xe0\x24second\0\xf7\x00\xe3".to_vec();
     let scan = container::scan_bytes(build_prt("c", &[("AllFeatur", allfeatur)]));
