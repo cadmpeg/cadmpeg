@@ -17,7 +17,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::records::{CreationTimestamp, EdgeContinuity, PersistentDesignLink, SketchCurveLink};
+use crate::records::{
+    CreationTimestamp, EdgeContinuity, PersistentDesignLink, SketchCurveLink, VertexOwnership,
+};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
 use cadmpeg_ir::geometry::{
@@ -94,6 +96,8 @@ pub struct Brep {
     pub creation_timestamps: Vec<CreationTimestamp>,
     /// Kernel continuity classifications stored on solved edges.
     pub edge_continuities: Vec<EdgeContinuity>,
+    /// Native owner-edge and endpoint-slot fields stored on solved vertices.
+    pub vertex_ownerships: Vec<VertexOwnership>,
     /// Native ASM body key by emitted body id, used by Design-side joins.
     pub body_keys: HashMap<BodyId, u64>,
     /// Linked source-native attributes.
@@ -3682,6 +3686,17 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         point: PointId(id(pi)),
                         tolerance: None,
                     });
+                    if let (Some(owning_edge), Some(Token::Long(endpoint_index @ 0..=1))) =
+                        (r.ref_at(3), r.chunk(4))
+                    {
+                        out.vertex_ownerships.push(VertexOwnership {
+                            id: format!("f3d:asm:vertex-ownership#{i}"),
+                            vertex: VertexId(id(i)),
+                            record_index: r.index as u32,
+                            owning_edge: EdgeId(id(owning_edge)),
+                            endpoint_index: *endpoint_index as u8,
+                        });
+                    }
                 }
             }
         }

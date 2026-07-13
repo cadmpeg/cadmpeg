@@ -451,6 +451,7 @@ fn build_geometry_ir(
         sketch_curve_links: brep.sketch_curve_links,
         persistent_design_links: brep.persistent_design_links,
         edge_continuities: brep.edge_continuities,
+        vertex_ownerships: brep.vertex_ownerships,
         creation_timestamps: brep.creation_timestamps,
         ..F3dNative::default()
     };

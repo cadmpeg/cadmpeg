@@ -365,14 +365,14 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
     }
 
     // 13/14/15: vertices (owning_edge, index_flag, point)
-    let verts = [(13i64, 10, 16), (14, 11, 17), (15, 12, 18)];
-    for (_id, edge, point) in verts {
+    let verts = [(13i64, 10, 0, 16), (14, 10, 1, 17), (15, 12, 0, 18)];
+    for (_id, edge, index_flag, point) in verts {
         t_ident(&mut r, "vertex");
         t_ref(&mut r, -1); // 0 attrib
         t_long(&mut r, -1); // 1 history
         t_ref(&mut r, -1); // 2 null
         t_ref(&mut r, edge); // 3 owning_edge
-        t_long(&mut r, 0); // 4 index_flag
+        t_long(&mut r, index_flag); // 4 index_flag
         t_ref(&mut r, point); // 5 point
         t_end(&mut r);
     }
@@ -1616,6 +1616,13 @@ fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
         .expect("generated edge reference offsets");
     bytes[offsets[3] + 1..offsets[3] + 9].copy_from_slice(&13i64.to_le_bytes());
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+    let vertex = &records[14];
+    let owner = crate::sab::payload_token_offsets(&bytes, vertex, 8, 0x0c)
+        .expect("generated vertex reference offsets")[2];
+    bytes[owner + 1..owner + 9].copy_from_slice(&11i64.to_le_bytes());
+    let endpoint = crate::sab::payload_token_offsets(&bytes, vertex, 8, 0x04)
+        .expect("generated vertex integer offsets")[1];
+    bytes[endpoint + 1..endpoint + 9].copy_from_slice(&0i64.to_le_bytes());
 
     let delta = bytes
         .windows(b"delta_state".len())
@@ -3441,20 +3448,20 @@ fn synthetic_mixed_smbh() -> Vec<u8> {
     edge(&mut r, 24, 22); // 20 D->B
 
     // Vertex builder: owning_edge, point.
-    let vert = |r: &mut Vec<u8>, owning_edge: i64, point: i64| {
+    let vert = |r: &mut Vec<u8>, owning_edge: i64, index_flag: i64, point: i64| {
         t_ident(r, "vertex");
         t_ref(r, -1);
         t_long(r, -1);
         t_ref(r, -1);
         t_ref(r, owning_edge);
-        t_long(r, 0);
+        t_long(r, index_flag);
         t_ref(r, point);
         t_end(r);
     };
-    vert(&mut r, 16, 25); // 21 A
-    vert(&mut r, 16, 26); // 22 B
-    vert(&mut r, 17, 27); // 23 C
-    vert(&mut r, 19, 28); // 24 D
+    vert(&mut r, 16, 0, 25); // 21 A
+    vert(&mut r, 16, 1, 26); // 22 B
+    vert(&mut r, 17, 1, 27); // 23 C
+    vert(&mut r, 19, 1, 28); // 24 D
 
     // Points.
     for p in [
@@ -3697,6 +3704,15 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(round_trip.ir.model.coedges.len(), 3);
     assert_eq!(round_trip.ir.model.edges.len(), 3);
     assert_eq!(round_trip.ir.model.vertices.len(), 3);
+    let ownerships = f3d_native(&round_trip.ir).vertex_ownerships;
+    assert_eq!(ownerships.len(), 3);
+    assert_eq!(
+        ownerships
+            .iter()
+            .map(|metadata| metadata.endpoint_index)
+            .collect::<Vec<_>>(),
+        [0, 1, 0]
+    );
     let continuities = f3d_native(&round_trip.ir).edge_continuities;
     assert_eq!(continuities.len(), 3);
     assert_eq!(continuities[0].continuity, "tangent");
@@ -6753,6 +6769,32 @@ fn generated_f3d_rewrites_edge_native_metadata() {
 }
 
 #[test]
+fn generated_f3d_rewrites_vertex_ownership() {
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut edited = decoded.ir;
+    let replacement = edited.model.edges[1].id.clone();
+    {
+        let mut native = f3d_native_mut(&mut edited);
+        native.vertex_ownerships[1].owning_edge = replacement.clone();
+        native.vertex_ownerships[1].endpoint_index = 0;
+    }
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("vertex-ownership regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    let ownership = &f3d_native(&round_trip.ir).vertex_ownerships[1];
+    assert_eq!(ownership.owning_edge, replacement);
+    assert_eq!(ownership.endpoint_index, 0);
+}
+
+#[test]
 fn generated_f3d_rewrites_face_and_coedge_sense() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
@@ -7957,6 +7999,15 @@ fn decode_builds_valid_topology_and_geometry() {
     assert_eq!(result.ir.model.coedges.len(), 3);
     assert_eq!(result.ir.model.edges.len(), 3);
     assert_eq!(result.ir.model.vertices.len(), 3);
+    let ownerships = f3d_native(&result.ir).vertex_ownerships;
+    assert_eq!(ownerships.len(), 3);
+    assert_eq!(
+        ownerships
+            .iter()
+            .map(|metadata| metadata.endpoint_index)
+            .collect::<Vec<_>>(),
+        [0, 1, 0]
+    );
     assert_eq!(result.ir.model.points.len(), 3);
     assert_eq!(result.ir.model.surfaces.len(), 1);
     let continuities = f3d_native(&result.ir).edge_continuities;

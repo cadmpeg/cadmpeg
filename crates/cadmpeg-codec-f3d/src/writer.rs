@@ -1303,7 +1303,7 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         records.push(0x11);
     }
 
-    for (vertex_index, vertex) in model.vertices.iter().enumerate() {
+    for vertex in &model.vertices {
         let point = model
             .points
             .iter()
@@ -1311,21 +1311,13 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .ok_or_else(|| {
                 CodecError::Malformed(format!("vertex references missing point {}", vertex.point))
             })?;
-        let owning_edge = model
-            .edges
-            .iter()
-            .position(|edge| edge.start == vertex.id || edge.end == vertex.id)
-            .ok_or_else(|| CodecError::Malformed(format!("vertex {} has no edge", vertex.id)))?;
+        let (owning_edge, endpoint_index) = vertex_ownership(target, vertex)?;
         native_ident(&mut records, "vertex")?;
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
         native_ref(&mut records, native_record_index(edge_start, owning_edge)?);
-        native_i64(
-            &mut records,
-            i64::try_from(vertex_index)
-                .map_err(|_| CodecError::NotImplemented("F3D vertex ordinal exceeds i64".into()))?,
-        );
+        native_i64(&mut records, i64::from(endpoint_index));
         native_ref(&mut records, native_record_index(point_start, point)?);
         records.push(0x11);
     }
@@ -3314,11 +3306,6 @@ fn encode_source_less_edges_vertices_points(
         .enumerate()
         .map(|(ordinal, point)| (&point.id, ordinal))
         .collect();
-    let mut vertex_edges = HashMap::new();
-    for (ordinal, edge) in model.edges.iter().enumerate() {
-        vertex_edges.entry(&edge.start).or_insert(ordinal);
-        vertex_edges.entry(&edge.end).or_insert(ordinal);
-    }
     for (edge_ordinal, edge) in model.edges.iter().enumerate() {
         let start = vertex_ordinals.get(&edge.start).copied();
         let end = vertex_ordinals.get(&edge.end).copied();
@@ -3391,13 +3378,13 @@ fn encode_source_less_edges_vertices_points(
     }
     for vertex in &model.vertices {
         let point = point_ordinals.get(&vertex.point).copied();
-        let edge = vertex_edges.get(&vertex.id).copied();
-        let (Some(point), Some(edge)) = (point, edge) else {
+        let Some(point) = point else {
             return Err(CodecError::Malformed(format!(
                 "vertex {} has an unresolved carrier",
                 vertex.id
             )));
         };
+        let (edge, endpoint_index) = vertex_ownership(target, vertex)?;
         native_ident(records, "vertex")?;
         native_ref(
             records,
@@ -3411,7 +3398,7 @@ fn encode_source_less_edges_vertices_points(
         native_i64(records, -1);
         native_ref(records, -1);
         native_ref(records, native_record_index(edge_start, edge)?);
-        native_i64(records, 0);
+        native_i64(records, i64::from(endpoint_index));
         native_ref(records, native_record_index(point_start, point)?);
         records.push(0x11);
     }
@@ -3432,6 +3419,57 @@ fn encode_source_less_edges_vertices_points(
         records.push(0x11);
     }
     Ok(())
+}
+
+fn vertex_ownership(
+    target: &CadIr,
+    vertex: &cadmpeg_ir::topology::Vertex,
+) -> Result<(usize, u8), CodecError> {
+    let model = &target.model;
+    if let Some(metadata) = f3d_native(target)?.and_then(|native| {
+        native
+            .vertex_ownerships
+            .into_iter()
+            .find(|metadata| metadata.vertex == vertex.id)
+    }) {
+        let ordinal = model
+            .edges
+            .iter()
+            .position(|edge| edge.id == metadata.owning_edge)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "vertex {} references missing owning edge {}",
+                    vertex.id, metadata.owning_edge
+                ))
+            })?;
+        let edge = &model.edges[ordinal];
+        let valid = match metadata.endpoint_index {
+            0 => edge.start == vertex.id,
+            1 => edge.end == vertex.id,
+            _ => false,
+        };
+        if !valid {
+            return Err(CodecError::Malformed(format!(
+                "vertex {} endpoint slot {} conflicts with owning edge {}",
+                vertex.id, metadata.endpoint_index, metadata.owning_edge
+            )));
+        }
+        return Ok((ordinal, metadata.endpoint_index));
+    }
+    model
+        .edges
+        .iter()
+        .enumerate()
+        .find_map(|(ordinal, edge)| {
+            if edge.start == vertex.id {
+                Some((ordinal, 0))
+            } else if edge.end == vertex.id {
+                Some((ordinal, 1))
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| CodecError::Malformed(format!("vertex {} has no edge", vertex.id)))
 }
 
 fn edge_record_metadata(
@@ -7897,6 +7935,7 @@ pub fn write_semantic(
     let history_state_edits = validate_history_state_edits(&baseline.ir, target)?;
     let creation_timestamp_edits = validate_creation_timestamp_edits(&baseline.ir, target)?;
     let edge_continuity_edits = validate_edge_continuity_edits(&baseline.ir, target)?;
+    let vertex_ownership_edits = validate_vertex_ownership_edits(&baseline.ir, target)?;
     let mut supported_target = baseline.ir.clone();
     supported_target
         .model
@@ -7999,6 +8038,9 @@ pub fn write_semantic(
         supported
             .edge_continuities
             .clone_from(&target_native.edge_continuities);
+        supported
+            .vertex_ownerships
+            .clone_from(&target_native.vertex_ownerships);
         supported.store(supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::semantic_hash(&supported_target) != decode::semantic_hash(target) {
@@ -8203,6 +8245,7 @@ pub fn write_semantic(
                 &procedural_surface_fit_edits,
                 &creation_timestamp_edits,
                 &edge_continuity_edits,
+                &vertex_ownership_edits,
             )?;
             if let Some(edits) = history_state_edits.get(&name) {
                 patch_history_states(&mut bytes, edits)?;
@@ -8377,6 +8420,84 @@ fn validate_edge_continuity_edits(
         edits.insert(
             after.record_index as usize,
             (after.sense, after.continuity.clone()),
+        );
+    }
+    Ok(edits)
+}
+
+fn validate_vertex_ownership_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, (i64, u8)>, CodecError> {
+    let baseline = f3d_native(baseline)?
+        .map(|native| native.vertex_ownerships)
+        .unwrap_or_default();
+    let target_native = f3d_native(target)?
+        .map(|native| native.vertex_ownerships)
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|metadata| (metadata.id.as_str(), metadata))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target_native
+        .iter()
+        .map(|metadata| (metadata.id.as_str(), metadata))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D vertex-ownership regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.owning_edge.clone_from(&before.owning_edge);
+        normalized.endpoint_index = before.endpoint_index;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D vertex-ownership edit changes structural fields: {id}"
+            )));
+        }
+        if after.owning_edge == before.owning_edge && after.endpoint_index == before.endpoint_index
+        {
+            continue;
+        }
+        let edge = target
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.id == after.owning_edge)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D vertex ownership {id} references missing edge {}",
+                    after.owning_edge
+                ))
+            })?;
+        let valid = match after.endpoint_index {
+            0 => edge.start == after.vertex,
+            1 => edge.end == after.vertex,
+            _ => false,
+        };
+        if !valid {
+            return Err(CodecError::Malformed(format!(
+                "F3D vertex ownership {id} has an inconsistent endpoint slot"
+            )));
+        }
+        let edge_record = after
+            .owning_edge
+            .as_str()
+            .rsplit_once('#')
+            .and_then(|(_, index)| index.parse::<i64>().ok())
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D owning edge {} has no native record index",
+                    after.owning_edge
+                ))
+            })?;
+        edits.insert(
+            after.record_index as usize,
+            (edge_record, after.endpoint_index),
         );
     }
     Ok(edits)
@@ -11758,6 +11879,7 @@ fn patch_geometry(
     procedural_surface_fits: &BTreeMap<String, f64>,
     creation_timestamps: &BTreeMap<usize, f64>,
     edge_continuities: &BTreeMap<usize, (Sense, String)>,
+    vertex_ownerships: &BTreeMap<usize, (i64, u8)>,
 ) -> Result<(), CodecError> {
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
@@ -11791,6 +11913,7 @@ fn patch_geometry(
         procedural_surface_fits,
         creation_timestamps,
         edge_continuities,
+        vertex_ownerships,
         header_scale,
     )
 }
@@ -11820,6 +11943,7 @@ fn patch_framed_geometry(
     procedural_surface_fits: &BTreeMap<String, f64>,
     creation_timestamps: &BTreeMap<usize, f64>,
     edge_continuities: &BTreeMap<usize, (Sense, String)>,
+    vertex_ownerships: &BTreeMap<usize, (i64, u8)>,
     header_scale: f64,
 ) -> Result<(), CodecError> {
     let records_by_index = records
@@ -11904,6 +12028,16 @@ fn patch_framed_geometry(
             }
             patch_sense_token(bytes, record, 0, *sense)?;
             patch_string_token(bytes, record, 0, continuity)?;
+        }
+        if let Some((owning_edge, endpoint_index)) = vertex_ownerships.get(&record.index) {
+            if record.head != "vertex" {
+                return Err(CodecError::Malformed(format!(
+                    "F3D vertex-ownership record {} is not a vertex",
+                    record.index
+                )));
+            }
+            patch_integer_token(bytes, record, 0x0c, 2, *owning_edge)?;
+            patch_integer_token(bytes, record, 0x04, 1, i64::from(*endpoint_index))?;
         }
         if let Some(color) = color_records.get(&record.index) {
             patch_double_token(bytes, record, 0, f64::from(color.r))?;
@@ -12253,6 +12387,26 @@ fn patch_string_token(
         )));
     }
     bytes[offset + 2..offset + 2 + encoded_length].copy_from_slice(value.as_bytes());
+    Ok(())
+}
+
+fn patch_integer_token(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    tag: u8,
+    ordinal: usize,
+    value: i64,
+) -> Result<(), CodecError> {
+    let offset = *sab::payload_token_offsets(bytes, record, 8, tag)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?
+        .get(ordinal)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "{} record {} lacks integer token {tag:#04x}[{ordinal}]",
+                record.head, record.index
+            ))
+        })?;
+    bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
     Ok(())
 }
 
@@ -13931,6 +14085,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated line edit");
@@ -13980,6 +14135,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &spheres,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -14051,6 +14207,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &tori,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -14141,6 +14298,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated cylinder edit");
@@ -14196,6 +14354,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &conics,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),

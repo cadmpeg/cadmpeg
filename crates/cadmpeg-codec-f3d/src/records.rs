@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::ids::{CoedgeId, EdgeId};
+use cadmpeg_ir::ids::{CoedgeId, EdgeId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 /// Provenance link from a solved B-rep coedge to its source sketch curve.
@@ -75,6 +75,21 @@ pub struct EdgeContinuity {
     pub sense: cadmpeg_ir::topology::Sense,
     /// Native continuity token, normally `tangent` or `unknown`.
     pub continuity: String,
+}
+
+/// Native owner-edge and endpoint-slot fields stored on one ASM vertex.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VertexOwnership {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep vertex carrying the fields.
+    pub vertex: VertexId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Edge selected as this vertex record's native owner.
+    pub owning_edge: EdgeId,
+    /// Endpoint slot on `owning_edge`: `0` for start, `1` for end.
+    pub endpoint_index: u8,
 }
 
 /// Design `BulkStream` regeneration-recipe family.
