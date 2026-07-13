@@ -128,4 +128,6 @@ fn inspect_reports_directory_entity_and_form_census() {
 
     assert!(summary.notes.contains(&"entities=1".into()));
     assert!(summary.notes.contains(&"entity.116.form.0=1".into()));
+    assert!(summary.notes.contains(&"parameter_records=1".into()));
+    assert!(summary.notes.contains(&"parameter_tokens=4".into()));
 }
