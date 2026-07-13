@@ -138,12 +138,56 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         scan.surface_rows.len().to_string(),
     );
     attributes.insert(
+        "decoded_surface_parameter_record_count".to_string(),
+        scan.surface_parameters.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_plane_local_system_count".to_string(),
+        scan.plane_local_systems.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_plane_envelope_count".to_string(),
+        scan.plane_envelopes.len().to_string(),
+    );
+    attributes.insert(
         "decoded_surface_prototype_count".to_string(),
         scan.surface_prototypes.len().to_string(),
     );
     attributes.insert(
+        "decoded_named_surface_prototype_count".to_string(),
+        scan.surface_prototype_records.len().to_string(),
+    );
+    attributes.insert(
         "decoded_curve_prototype_count".to_string(),
         scan.curve_prototypes.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_curve_parameter_record_count".to_string(),
+        scan.curve_parameters.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_pcurve_count".to_string(),
+        scan.pcurves.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_fc_curve_control_point_record_count".to_string(),
+        scan.fc_curve_control_points.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_fc05_circle_count".to_string(),
+        scan.fc05_circles.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_prototype_pcurve_count".to_string(),
+        scan.prototype_pcurves.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_curve_prototype_topology_count".to_string(),
+        scan.curve_prototype_topology.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_bound_prototype_pcurve_count".to_string(),
+        scan.bound_prototype_pcurves.len().to_string(),
     );
     attributes.insert(
         "decoded_curve_topology_row_count".to_string(),
@@ -154,8 +198,16 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         scan.half_edges.len().to_string(),
     );
     attributes.insert(
+        "decoded_topological_vertex_count".to_string(),
+        scan.topological_vertices.len().to_string(),
+    );
+    attributes.insert(
         "decoded_loop_count".to_string(),
         scan.loops.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_face_component_count".to_string(),
+        scan.face_components.len().to_string(),
     );
     attributes.insert(
         "decoded_datum_plane_count".to_string(),
@@ -165,6 +217,127 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         "decoded_feature_count".to_string(),
         scan.feature_ids.len().to_string(),
     );
+    attributes.insert(
+        "decoded_feature_row_count".to_string(),
+        scan.feature_rows.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_choice_count".to_string(),
+        scan.feature_choices.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_choice_field_count".to_string(),
+        scan.feature_choice_fields.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_geometry_table_count".to_string(),
+        scan.feature_geometry_tables.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_affected_id_array_count".to_string(),
+        scan.feature_affected_ids.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_replay_affected_id_count".to_string(),
+        scan.feature_replay_affected_ids.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_direction_byte_count".to_string(),
+        scan.feature_direction_bytes.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_definition_count".to_string(),
+        scan.feature_definitions.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_outline_count".to_string(),
+        scan.feature_definitions
+            .iter()
+            .map(|definition| definition.outlines.len())
+            .sum::<usize>()
+            .to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_section_point_count".to_string(),
+        scan.feature_definitions
+            .iter()
+            .filter_map(|definition| definition.variables.as_ref())
+            .map(|variables| variables.points.len())
+            .sum::<usize>()
+            .to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_segment_count".to_string(),
+        scan.feature_definitions
+            .iter()
+            .filter_map(|definition| definition.segments.as_ref())
+            .map(|segments| segments.rows.len())
+            .sum::<usize>()
+            .to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_trim_entity_count".to_string(),
+        scan.feature_definitions
+            .iter()
+            .filter_map(|definition| definition.trim_entities.as_ref())
+            .map(|entities| entities.rows.len())
+            .sum::<usize>()
+            .to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_trim_vertex_count".to_string(),
+        scan.feature_definitions
+            .iter()
+            .filter_map(|definition| definition.trim_vertices.as_ref())
+            .map(|vertices| vertices.rows.len())
+            .sum::<usize>()
+            .to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_order_entry_count".to_string(),
+        scan.feature_definitions
+            .iter()
+            .filter_map(|definition| definition.order_table.as_ref())
+            .map(|order| order.rows.len())
+            .sum::<usize>()
+            .to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_dimension_count".to_string(),
+        scan.feature_definitions
+            .iter()
+            .filter_map(|definition| definition.dimensions.as_ref())
+            .map(|dimensions| dimensions.rows.len())
+            .sum::<usize>()
+            .to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_saved_entity_count".to_string(),
+        scan.feature_definitions
+            .iter()
+            .filter_map(|definition| definition.saved_section.as_ref())
+            .map(|saved| saved.entities.len())
+            .sum::<usize>()
+            .to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_entity_count".to_string(),
+        scan.feature_entities.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_entity_reference_count".to_string(),
+        scan.feature_entity_references.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_entity_table_count".to_string(),
+        scan.feature_entity_tables.len().to_string(),
+    );
+    if let Some(count) = scan.declared_body_count {
+        attributes.insert("declared_body_count".to_string(), count.to_string());
+    }
+    if let Some(value) = scan.first_quilt_ptr {
+        attributes.insert("first_quilt_ptr".to_string(), value.to_string());
+    }
     SourceMeta {
         format: "creo".to_string(),
         attributes,
