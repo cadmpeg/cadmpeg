@@ -5489,6 +5489,68 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
 }
 
 #[test]
+fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="D1">2mm</Dimension></Feature><Feature Name="Sketch2" Type="Sketch" id="11"><Dimension Name="D1">3mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="12"><Dimension Name="Result">D1@Sketch1 * 2</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let sketch1 = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .unwrap();
+    let sketch1_parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner == sketch1.id && parameter.name == "D1")
+        .unwrap()
+        .id
+        .clone();
+    let result = decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "Result")
+        .unwrap();
+    assert_eq!(result.dependencies, vec![sketch1_parameter.clone()]);
+
+    decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == sketch1_parameter)
+        .unwrap()
+        .name = "Width".into();
+    let mut renamed = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut renamed)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
+        .unwrap();
+    let result = regenerated
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Result")
+        .unwrap();
+    assert_eq!(result.expression, "Width@Sketch1 * 2");
+    assert_eq!(result.dependencies.len(), 1);
+}
+
+#[test]
 fn semantic_writer_preserves_empty_dimensions() {
     use cadmpeg_ir::features::{Length, ParameterValue};
 

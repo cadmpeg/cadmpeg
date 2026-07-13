@@ -436,6 +436,12 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
 
 /// Project every native feature dimension into the neutral parameter arena.
 pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> {
+    let feature_names = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| !feature.name.is_empty())
+        .map(|feature| (neutral_feature_id(&feature.id), feature.name.clone()))
+        .collect::<HashMap<_, _>>();
     let mut parameters = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -476,7 +482,7 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                 })
         })
         .collect::<Vec<_>>();
-    populate_parameter_dependencies(&mut parameters);
+    populate_parameter_dependencies(&mut parameters, &feature_names);
     parameters
 }
 
@@ -512,15 +518,25 @@ fn parse_native_parameter_literal(
     parse_parameter_literal(expression)
 }
 
-fn populate_parameter_dependencies(parameters: &mut [DesignParameter]) {
+fn populate_parameter_dependencies(
+    parameters: &mut [DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+) {
     let mut aliases = HashMap::<String, Option<ParameterId>>::new();
     for parameter in parameters.iter() {
-        for alias in std::iter::once(parameter.id.0.as_str())
-            .chain(std::iter::once(parameter.name.as_str()))
-            .chain(parameter.properties.get("EquationId").map(String::as_str))
-        {
+        let mut parameter_aliases = vec![parameter.id.0.clone(), parameter.name.clone()];
+        if let Some(equation_id) = parameter.properties.get("EquationId") {
+            parameter_aliases.push(equation_id.clone());
+        }
+        if let Some(owner_name) = feature_names.get(&parameter.owner) {
+            parameter_aliases.push(format!("{}@{owner_name}", parameter.name));
+            if let Some(equation_id) = parameter.properties.get("EquationId") {
+                parameter_aliases.push(format!("{equation_id}@{owner_name}"));
+            }
+        }
+        for alias in parameter_aliases {
             aliases
-                .entry(alias.to_string())
+                .entry(alias)
                 .and_modify(|candidate| *candidate = None)
                 .or_insert_with(|| Some(parameter.id.clone()));
         }
@@ -2996,12 +3012,23 @@ fn sync_neutral_parameters(
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
     let mut parameters = ir.model.parameters.clone();
+    let feature_names = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            feature
+                .name
+                .as_ref()
+                .map(|name| (feature.id.clone(), name.clone()))
+        })
+        .collect::<HashMap<_, _>>();
     if let Some(native) = native.as_ref() {
         let original = project_parameters(&native.feature_histories);
-        rewrite_renamed_parameter_references(&mut parameters, &original);
+        rewrite_renamed_parameter_references(&mut parameters, &original, &feature_names);
     }
     let mut projected_dependencies = parameters.clone();
-    populate_parameter_dependencies(&mut projected_dependencies);
+    populate_parameter_dependencies(&mut projected_dependencies, &feature_names);
     if ir
         .model
         .parameters
@@ -3123,6 +3150,7 @@ fn sync_neutral_parameters(
 fn rewrite_renamed_parameter_references(
     parameters: &mut [DesignParameter],
     original: &[DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
 ) {
     let original = original
         .iter()
@@ -3140,6 +3168,12 @@ fn rewrite_renamed_parameter_references(
         let mut aliases = HashMap::new();
         if previous.name != parameter.name {
             aliases.insert(previous.name.clone(), parameter.name.clone());
+            if let Some(owner_name) = feature_names.get(&parameter.owner) {
+                aliases.insert(
+                    format!("{}@{owner_name}", previous.name),
+                    format!("{}@{owner_name}", parameter.name),
+                );
+            }
         }
         if let Some(previous_id) = previous.properties.get("EquationId") {
             let replacement = parameter
