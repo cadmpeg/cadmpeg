@@ -1447,6 +1447,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     bounds_err(findings, &c.id.0, "degenerate curve point is not finite");
                 }
             }
+            CurveGeometry::Composite { segments, .. } => {
+                if segments.is_empty() {
+                    bounds_err(findings, &c.id.0, "composite curve has no segments");
+                }
+            }
             CurveGeometry::Nurbs(n) => {
                 if n.control_points.len() < (n.degree as usize + 1) {
                     bounds_err(

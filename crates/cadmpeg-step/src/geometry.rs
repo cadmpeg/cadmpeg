@@ -176,6 +176,9 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
             e.emit("POLYLINE", &format!("'',({point},{point})"))
         }
         CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
+        CurveGeometry::Composite { .. } => {
+            unreachable!("composite curves are emitted from their child graph")
+        }
         CurveGeometry::Unknown { .. } => {
             unreachable!("unknown curves are filtered before emission")
         }

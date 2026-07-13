@@ -253,13 +253,22 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         }
     }
     for curve in &ir.model.curves {
-        if let CurveGeometry::Unknown {
-            record: Some(unknown),
-        } = &curve.geometry
-        {
-            if !ids.unknowns.contains(&unknown.0) {
-                ref_error(findings, &curve.id.0, "unknown record", &unknown.0);
+        match &curve.geometry {
+            CurveGeometry::Unknown {
+                record: Some(unknown),
+            } => {
+                if !ids.unknowns.contains(&unknown.0) {
+                    ref_error(findings, &curve.id.0, "unknown record", &unknown.0);
+                }
             }
+            CurveGeometry::Composite { segments, .. } => {
+                for segment in segments {
+                    if !ids.curves.contains(&segment.curve.0) {
+                        ref_error(findings, &curve.id.0, "curve", &segment.curve.0);
+                    }
+                }
+            }
+            _ => {}
         }
     }
     for procedural in &ir.model.procedural_surfaces {

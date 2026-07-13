@@ -802,8 +802,50 @@ impl<'a> Builder<'a> {
         if let Some(r) = self.curve_refs.get(curve_id) {
             return Some(*r);
         }
-        let crv = self.curves.get(curve_id).copied()?;
-        let r = geometry::curve(&mut self.emitter, &crv.geometry);
+        let geometry = self.curves.get(curve_id)?.geometry.clone();
+        let r = if let CurveGeometry::Composite {
+            segments,
+            self_intersect,
+        } = &geometry
+        {
+            let mut segment_refs = Vec::with_capacity(segments.len());
+            for segment in segments {
+                let curve = self.emit_curve(segment.curve.as_str())?;
+                let transition = match segment.transition {
+                    cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous => {
+                        ".DISCONTINUOUS."
+                    }
+                    cadmpeg_ir::geometry::CompositeCurveTransition::Continuous => ".CONTINUOUS.",
+                    cadmpeg_ir::geometry::CompositeCurveTransition::ContSameGradient => {
+                        ".CONTSAMEGRADIENT."
+                    }
+                    cadmpeg_ir::geometry::CompositeCurveTransition::ContSameGradientSameCurvature => {
+                        ".CONTSAMEGRADIENTSAMECURVATURE."
+                    }
+                };
+                segment_refs.push(self.emitter.emit(
+                    "COMPOSITE_CURVE_SEGMENT",
+                    &format!(
+                        "{transition},{},{curve}",
+                        if segment.same_sense { ".T." } else { ".F." }
+                    ),
+                ));
+            }
+            self.emitter.emit(
+                "COMPOSITE_CURVE",
+                &format!(
+                    "'',{},{}",
+                    refs(&segment_refs),
+                    match self_intersect {
+                        Some(true) => ".T.",
+                        Some(false) => ".F.",
+                        None => ".U.",
+                    }
+                ),
+            )
+        } else {
+            geometry::curve(&mut self.emitter, &geometry)
+        };
         self.curve_refs.insert(curve_id.to_string(), r);
         Some(r)
     }

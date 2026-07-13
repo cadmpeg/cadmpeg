@@ -216,6 +216,13 @@ pub enum CurveGeometry {
         /// The collapsed curve point.
         point: Point3,
     },
+    /// Ordered child curves joined into one bounded carrier.
+    Composite {
+        /// Ordered curve uses and their continuity contracts.
+        segments: Vec<CompositeCurveSegment>,
+        /// Whether the source classifies the complete curve as self-intersecting.
+        self_intersect: Option<bool>,
+    },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
     /// Native curve carrier whose shape is not decoded.
@@ -224,6 +231,31 @@ pub enum CurveGeometry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
     },
+}
+
+/// One directed child use in a composite curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompositeCurveSegment {
+    /// Referenced child curve carrier.
+    pub curve: CurveId,
+    /// Whether the child parameter direction is retained.
+    pub same_sense: bool,
+    /// Required continuity from the preceding segment to this segment.
+    pub transition: CompositeCurveTransition,
+}
+
+/// STEP composite-curve transition continuity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositeCurveTransition {
+    /// No positional continuity is asserted.
+    Discontinuous,
+    /// Positional continuity.
+    Continuous,
+    /// Positional and tangent continuity.
+    ContSameGradient,
+    /// Positional, tangent, and curvature continuity.
+    ContSameGradientSameCurvature,
 }
 
 /// Derive a stable in-plane reference direction from an axis.

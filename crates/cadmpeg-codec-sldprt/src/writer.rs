@@ -2373,6 +2373,11 @@ pub(super) fn curve_values(
                 "semantic SLDPRT writer does not support degenerate curves".into(),
             ))
         }
+        CurveGeometry::Composite { .. } => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer does not support composite curves".into(),
+            ))
+        }
         CurveGeometry::Nurbs(_) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support NURBS curves".into(),

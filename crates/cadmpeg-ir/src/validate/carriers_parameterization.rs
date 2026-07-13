@@ -31,6 +31,20 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             .filter(|curve| curve.source_object.is_some())
             .map(|curve| curve.id.0.as_str()),
     );
+    loop {
+        let before = curves.len();
+        for curve in &ir.model.curves {
+            if !curves.contains(curve.id.0.as_str()) {
+                continue;
+            }
+            if let CurveGeometry::Composite { segments, .. } = &curve.geometry {
+                curves.extend(segments.iter().map(|segment| segment.curve.0.as_str()));
+            }
+        }
+        if curves.len() == before {
+            break;
+        }
+    }
     let pcurves = ir
         .model
         .coedges
