@@ -50,6 +50,7 @@ macro_rules! arena_registry {
             products: crate::product::Product, "Product prototype arena.", [serde(default)] => |e| e.id.0.clone();
             occurrences: crate::product::ProductOccurrence, "Placed product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
             pmi: crate::pmi::PmiAnnotation, "Product-manufacturing information arena.", [serde(default)] => |e| e.id.0.clone();
+            presentation_layers: crate::presentation::PresentationLayer, "Presentation layer arena.", [serde(default)] => |e| e.id.0.clone();
         }
     };
 }

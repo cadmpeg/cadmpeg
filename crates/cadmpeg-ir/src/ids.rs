@@ -122,3 +122,7 @@ id_type!(
     /// Identifies a document-level [`crate::pmi::PmiAnnotation`].
     PmiId
 );
+id_type!(
+    /// Identifies a [`crate::presentation::PresentationLayer`].
+    LayerId
+);

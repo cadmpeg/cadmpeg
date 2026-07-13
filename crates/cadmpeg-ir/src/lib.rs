@@ -48,6 +48,7 @@ pub mod le;
 pub mod math;
 pub mod native;
 pub mod pmi;
+pub mod presentation;
 pub mod product;
 mod provenance;
 pub mod read;
@@ -77,6 +78,7 @@ pub use pmi::{
     DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
     PmiQuantity, PmiTarget, PmiValue,
 };
+pub use presentation::{PresentationItem, PresentationLayer};
 pub use product::{OccurrenceParent, Product, ProductOccurrence};
 /// Source location attached to a [`LossNote`].
 pub use provenance::Provenance as LossProvenance;
