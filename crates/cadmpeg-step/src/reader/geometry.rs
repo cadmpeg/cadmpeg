@@ -18,6 +18,7 @@ pub(super) struct GeometryResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
     pub placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
+    pub length_scale: f64,
 }
 
 pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
@@ -317,6 +318,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         typed_records: typed,
         warnings,
         placements,
+        length_scale: scale,
     }
 }
 

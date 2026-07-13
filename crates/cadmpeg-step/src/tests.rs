@@ -280,6 +280,22 @@ fn decode_builds_product_occurrences_with_relative_placement() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
+#[test]
+fn decode_transfers_ap242_one_based_tessellation_indices() {
+    let bytes = include_bytes!("../tests/fixtures/ap242_tessellation.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode AP242 tessellation");
+
+    assert_eq!(result.ir.model.tessellations.len(), 1);
+    let mesh = &result.ir.model.tessellations[0];
+    assert_eq!(mesh.vertices.len(), 3);
+    assert_eq!(mesh.vertices[1].x, 10.0);
+    assert_eq!(mesh.triangles, [[0, 1, 2]]);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 fn export(ir: &CadIr) -> String {
     let mut buf = Vec::new();
     write_step(ir, &mut buf, &StepWriteOptions::default()).expect("write");
