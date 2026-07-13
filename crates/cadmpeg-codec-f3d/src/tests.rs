@@ -10890,11 +10890,33 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
             construction.boundaries[3].geometry,
             VertexBlendBoundaryGeometry::Plane { .. }
         ));
+        let bounded_curves =
+            [0usize, 3].map(|ordinal| match &construction.boundaries[ordinal].geometry {
+                VertexBlendBoundaryGeometry::Circle {
+                    curve, parameters, ..
+                }
+                | VertexBlendBoundaryGeometry::Plane {
+                    curve, parameters, ..
+                } => (curve.clone(), *parameters),
+                _ => unreachable!(),
+            });
 
         let expected = construction.clone();
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
+        for (ordinal, (curve, _)) in bounded_curves.iter().enumerate() {
+            source_less
+                .model
+                .curves
+                .iter_mut()
+                .find(|candidate| candidate.id == *curve)
+                .expect("vertex-blend boundary curve")
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -3.0),
+                direction: cadmpeg_ir::math::Vector3::new(2.0, -1.0, 4.0),
+            };
+        }
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -10909,6 +10931,20 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
             panic!("expected round-trip vertex blend")
         };
         assert_eq!(actual.as_ref(), expected.as_ref());
+        for (curve, range) in bounded_curves {
+            assert!(matches!(
+                round_trip
+                    .ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|candidate| candidate.id == curve)
+                    .map(|curve| &curve.geometry),
+                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                    if curve.degree == 1
+                        && curve.knots == [range[0], range[0], range[1], range[1]]
+            ));
+        }
     }
 }
 

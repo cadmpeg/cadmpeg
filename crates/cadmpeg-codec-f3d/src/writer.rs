@@ -5526,7 +5526,8 @@ fn native_vertex_blend_boundary(
                     "vertex-blend circle twist count conflicts with its form".into(),
                 ));
             }
-            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            let curve = native_loft_curve_in_range(target, curve, Some(*parameters))?;
+            native_nurbs_curve(bytes, &curve)?;
             native_enum(bytes, *form);
             for twist in twists {
                 native_point(bytes, [twist.x / 10.0, twist.y / 10.0, twist.z / 10.0]);
@@ -5571,7 +5572,8 @@ fn native_vertex_blend_boundary(
             native_vector(bytes, [normal.x, normal.y, normal.z]);
             native_f64(bytes, parameters[0]);
             native_f64(bytes, parameters[1]);
-            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            let curve = native_loft_curve_in_range(target, curve, Some(*parameters))?;
+            native_nurbs_curve(bytes, &curve)?;
         }
     }
     Ok(())
