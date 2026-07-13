@@ -3726,6 +3726,7 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
     let mut duplicate = decoded.ir.model.configurations[0].clone();
     duplicate.id.0.push_str("-duplicate");
     duplicate.ordinal += 1;
+    duplicate.name.push_str(" Duplicate");
     duplicate.native_ref = None;
     decoded.ir.model.configurations.push(duplicate);
 
