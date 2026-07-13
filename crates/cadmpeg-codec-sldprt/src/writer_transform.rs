@@ -315,9 +315,9 @@ fn transform_surface(
             .control_points
             .iter_mut()
             .for_each(|point| *point = transform_point(transform, *point)),
-        SurfaceGeometry::Unknown { .. } => {
+        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
-                "SLDPRT cannot transform an opaque surface".into(),
+                "SLDPRT cannot transform a non-explicit surface".into(),
             ))
         }
     }

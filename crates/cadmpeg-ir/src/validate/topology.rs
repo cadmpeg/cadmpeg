@@ -246,10 +246,28 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         }
     }
     for s in &ir.model.surfaces {
-        if let SurfaceGeometry::Unknown { record: Some(u) } = &s.geometry {
-            if !ids.unknowns.contains(&u.0) {
+        match &s.geometry {
+            SurfaceGeometry::Procedural { construction } => {
+                match ir
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .find(|procedural| procedural.id == *construction)
+                {
+                    Some(procedural) if procedural.surface == s.id => {}
+                    Some(_) => findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: "procedural construction points to a different surface".into(),
+                        entity: Some(s.id.0.clone()),
+                    }),
+                    None => ref_error(findings, &s.id.0, "procedural surface", &construction.0),
+                }
+            }
+            SurfaceGeometry::Unknown { record: Some(u) } if !ids.unknowns.contains(&u.0) => {
                 ref_error(findings, &s.id.0, "unknown record", &u.0);
             }
+            _ => {}
         }
     }
     for curve in &ir.model.curves {

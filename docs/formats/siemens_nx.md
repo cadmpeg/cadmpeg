@@ -251,6 +251,8 @@ Validity gates: CONE satisfies `sin_half² + cos_half² ≈ 1`; SPHERE has `radi
 Pu = (Au·W − A·Wu)/W²,  Pv = (Av·W − A·Wv)/W²,  normal = normalize(Pu × Pv)
 ```
 
+An OFFSET_SURF used by a FACE transfers as a procedural surface carrier. The carrier and offset construction reference each other; the base surface and signed millimeter offset remain in the construction.
+
 ### 6.2 B-spline carriers (B_SURFACE 124 / B_CURVE 134)
 
 B_SURFACE / B_CURVE are compact: header through sense `+18`, then `nurbs` ref `+19` and `data` ref `+21` (both large-index capable). The full NURBS resolves through support records:
@@ -334,6 +336,8 @@ support refs +20,+22,+24    (large-index capable): support 0, support 1, spine
 4 × f64                     values = (range[0], range[1], thumb_weight[0], thumb_weight[1])
 4 × xmt tail refs           `1` (null references)
 ```
+
+A BLEND_SURF used by a FACE transfers as a procedural surface carrier. The carrier and blend construction reference each other; oriented supports, spine, radius law, and cross-section remain in the construction.
 
 `values[0:2]` are signed support offsets `range[2]` in meters. Their magnitude gives the rolling-ball radius `r = |range|`. `values[2:4]` are dimensionless `thumb_weight[2]`. Support reference 2 identifies the ball-centre spine. Spine families include:
 

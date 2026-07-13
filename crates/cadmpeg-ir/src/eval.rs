@@ -294,7 +294,7 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
             ))
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point(nurbs, u, v),
-        SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => None,
     }
 }
 

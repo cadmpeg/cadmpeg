@@ -3792,7 +3792,7 @@ fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     pole.x += dx;
                 }
             }
-            SurfaceGeometry::Unknown { .. } => {}
+            SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {}
         }
     }
 }

@@ -90,6 +90,50 @@ fn face_on_unknown_surface_validates_clean() {
 }
 
 #[test]
+fn procedural_surface_geometry_resolves_its_construction() {
+    let mut ir = unit_cube();
+    let surface = ir.model.faces[0].surface.clone();
+    let construction = ProceduralSurfaceId("synthetic:cube:procedural#0".into());
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|candidate| candidate.id == surface)
+        .unwrap()
+        .geometry = SurfaceGeometry::Procedural {
+        construction: construction.clone(),
+    };
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: construction,
+        surface,
+        definition: ProceduralSurfaceDefinition::Exact {
+            parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
+            extension: 0,
+        },
+        cache_fit_tolerance: None,
+    });
+
+    let report = validate(&ir, Vec::new());
+    assert!(report.is_ok(), "findings: {:?}", report.findings);
+    assert_eq!(
+        report.entity_counts.get("surfaces_procedural_geometry"),
+        Some(&1)
+    );
+}
+
+#[test]
+fn procedural_surface_geometry_requires_its_construction() {
+    let mut ir = unit_cube();
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+        construction: ProceduralSurfaceId("missing".into()),
+    };
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(ir.model.surfaces[0].id.0.as_str())
+    }));
+}
+
+#[test]
 fn unknown_surface_without_record_is_legal() {
     let mut ir = unit_cube();
     make_first_face_surface_unknown(&mut ir, None);

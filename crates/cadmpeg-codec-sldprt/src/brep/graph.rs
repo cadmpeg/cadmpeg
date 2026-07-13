@@ -962,7 +962,9 @@ fn fold_surface_frame(
             *axis = v_reference;
             *ref_direction = u_reference;
         }
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. } => {}
     }
 }
 
@@ -985,7 +987,9 @@ fn annotate_surface_frame(
                 .derived(&id, "geometry.axis")
                 .derived(id, "geometry.ref_direction");
         }
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. } => {}
     }
 }
 

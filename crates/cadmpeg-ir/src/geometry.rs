@@ -125,6 +125,11 @@ pub enum SurfaceGeometry {
     },
     /// Free-form NURBS surface.
     Nurbs(NurbsSurface),
+    /// Exact procedural surface whose construction is stored separately.
+    Procedural {
+        /// Construction defining this carrier.
+        construction: ProceduralSurfaceId,
+    },
     /// Surface geometry that has no typed neutral representation.
     ///
     /// `record` links to retained source bytes when available.

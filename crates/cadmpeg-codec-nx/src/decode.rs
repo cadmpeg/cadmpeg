@@ -222,7 +222,9 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 SurfaceGeometry::Cone { .. } => counts.cones += 1,
                 SurfaceGeometry::Sphere { .. } => counts.spheres += 1,
                 SurfaceGeometry::Torus { .. } => counts.tori += 1,
-                SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
+                SurfaceGeometry::Nurbs(_)
+                | SurfaceGeometry::Procedural { .. }
+                | SurfaceGeometry::Unknown { .. } => {}
             }
             let id = SurfaceId(format!("nx:s{si}:surf#{fi}"));
             annotations
@@ -299,11 +301,11 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             annotations
                 .note(&surface_id, source_stream, offset.pos as u64)
                 .tag("OFFSET_SURF");
-            annotations.exactness(&surface_id, Exactness::Unknown);
+            annotations.derived(&surface_id, "geometry");
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
-                geometry: SurfaceGeometry::Unknown {
-                    record: Some(UnknownId(format!("nx:container:parasolid#{si}"))),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: procedural_id.clone(),
                 },
                 source_object: None,
             });
@@ -336,11 +338,11 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             annotations
                 .note(&surface_id, source_stream, blend.pos as u64)
                 .tag("BLEND_SURF");
-            annotations.exactness(&surface_id, Exactness::Unknown);
+            annotations.derived(&surface_id, "geometry");
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
-                geometry: SurfaceGeometry::Unknown {
-                    record: Some(UnknownId(format!("nx:container:parasolid#{si}"))),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: procedural_id.clone(),
                 },
                 source_object: None,
             });
@@ -1292,6 +1294,7 @@ fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Point2 {
         SurfaceGeometry::Sphere { .. }
         | SurfaceGeometry::Torus { .. }
         | SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
     }
 }
@@ -1808,6 +1811,7 @@ fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
         SurfaceGeometry::Sphere { .. } => "SPHERE",
         SurfaceGeometry::Torus { .. } => "TORUS",
         SurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
+        SurfaceGeometry::Procedural { .. } => "PROCEDURAL_SURFACE",
         SurfaceGeometry::Unknown { .. } => "UNKNOWN_SURFACE",
     }
 }

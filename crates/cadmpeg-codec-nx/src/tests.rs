@@ -3070,7 +3070,7 @@ fn decode_emits_offset_surface_construction() {
     assert_ne!(procedural.surface, *support);
     assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
     assert!(matches!(
-        result
+        &result
             .ir
             .model
             .surfaces
@@ -3078,7 +3078,7 @@ fn decode_emits_offset_surface_construction() {
             .find(|surface| surface.id == procedural.surface)
             .expect("offset carrier")
             .geometry,
-        SurfaceGeometry::Unknown { .. }
+        SurfaceGeometry::Procedural { construction } if construction == &procedural.id
     ));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }

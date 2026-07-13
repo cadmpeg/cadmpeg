@@ -345,7 +345,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             // An unknown surface carries no numeric geometry to bounds-check; its
             // record link is checked in `check_references`. A face resting on it
             // is legal (topology known, shape opaque).
-            SurfaceGeometry::Unknown { .. } => {}
+            SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {}
         }
     }
     for procedural in &ir.model.procedural_surfaces {

@@ -108,8 +108,8 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
         SurfaceGeometry::Nurbs(n) => nurbs_surface(e, n),
         // Unknown surfaces have no STEP representation; the writer filters faces
         // resting on them in `emit_face` before ever reaching here.
-        SurfaceGeometry::Unknown { .. } => {
-            unreachable!("unknown surfaces are filtered before surface emission")
+        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
+            unreachable!("non-explicit surfaces are filtered before surface emission")
         }
     }
 }

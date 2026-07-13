@@ -299,6 +299,7 @@ fn surface_class(value: &SurfaceGeometry) -> u8 {
         SurfaceGeometry::Torus { .. } => 4,
         SurfaceGeometry::Nurbs(_) => 5,
         SurfaceGeometry::Unknown { .. } => 6,
+        SurfaceGeometry::Procedural { .. } => 7,
     }
 }
 

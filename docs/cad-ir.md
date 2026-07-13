@@ -135,7 +135,7 @@ NURBS surfaces store degrees, full knot vectors, pole counts, u-major control po
 
 ## Procedural carriers
 
-Procedural entities retain construction semantics beside a solved carrier. `cache_fit_tolerance`, when present, is the maximum millimeter deviation between the procedural definition and solved carrier.
+Procedural entities retain construction semantics either as a surface carrier or beside a solved carrier. `SurfaceGeometry::Procedural.construction` identifies the procedural surface that exactly defines the carrier; the referenced construction's `carrier` identifies that surface in return. This bidirectional relation is required. A procedural construction with an analytic or NURBS carrier retains both the construction and its solved representation. `cache_fit_tolerance`, when present, is the maximum millimeter deviation between the procedural definition and solved carrier.
 
 Procedural surface definitions are:
 

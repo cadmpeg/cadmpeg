@@ -409,7 +409,7 @@ impl<'a> Builder<'a> {
         }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
         // a face override whose face was skipped, or a body whose faces were all
-        // skipped (hidden bodies or faces on unknown surfaces).
+        // skipped (hidden bodies or faces without an explicit STEP surface).
         let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
         self.unstyled_colors = face_colors
             .keys()
@@ -670,7 +670,10 @@ impl<'a> Builder<'a> {
         // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
         // loss rather than fabricate placeholder geometry.
         if let Some(surf) = self.surfaces.get(surface_id.as_str()) {
-            if matches!(surf.geometry, SurfaceGeometry::Unknown { .. }) {
+            if matches!(
+                surf.geometry,
+                SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. }
+            ) {
                 self.unknown_surface_faces.insert(face_id.to_string());
                 return None;
             }
