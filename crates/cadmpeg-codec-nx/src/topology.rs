@@ -72,7 +72,7 @@ pub struct ShellFields {
     /// Owning region.
     pub region: u32,
     /// Third fixed shell sentinel.
-    /// Final face in the shell chain, or null in layouts without this cache.
+    /// Face ownership anchor, or null when ownership uses the FACE chain.
     pub last_face: u32,
 }
 
@@ -618,12 +618,7 @@ impl Graph {
         self.nodes.values().filter(move |node| node.kind == kind)
     }
 
-    /// Return SHELL nodes whose ownership fields form a complete body-shape chain.
-    ///
-    /// A body-shape shell has the fixed null sentinels, resolves its BODY and
-    /// REGION in the same ownership domain, and owns a finite FACE chain ending
-    /// at the Parasolid null reference. Every visited FACE must point back to the
-    /// shell. Cycles and broken references reject the shell.
+    /// Return SHELL nodes whose ownership fields define a body shape.
     pub fn body_shape_shells(&self) -> Vec<&Node> {
         self.of_kind(13)
             .filter(|shell| self.is_body_shape_shell(shell))
@@ -640,14 +635,10 @@ impl Graph {
         }
         let mut reachable_fins = BTreeSet::new();
         for shell in shells {
-            let Some(fields) = shell.shell_fields() else {
+            let Some(face_xmts) = self.shell_face_xmts(shell) else {
                 return false;
             };
-            let mut face_xmt = fields.first_face;
-            while face_xmt != 1 {
-                let Some(face) = self.get(14, face_xmt).and_then(Node::face_fields) else {
-                    return false;
-                };
+            for face_xmt in face_xmts {
                 let Some(rings) = self.face_loop_rings(face_xmt) else {
                     return false;
                 };
@@ -655,7 +646,6 @@ impl Graph {
                     return false;
                 }
                 reachable_fins.extend(rings.into_iter().flat_map(|(_, ring)| ring));
-                face_xmt = face.next_face;
             }
         }
         reachable_fins.iter().all(|xmt| {
@@ -665,23 +655,11 @@ impl Graph {
         })
     }
 
-    /// Count faces in validated body-shape shell ownership chains.
+    /// Count faces owned by validated body-shape shells.
     pub fn body_shape_face_count(&self) -> usize {
         self.body_shape_shells()
             .into_iter()
-            .map(|shell| {
-                let mut count = 0usize;
-                let mut face_xmt = shell.shell_fields().map_or(1, |fields| fields.first_face);
-                let mut seen = BTreeSet::new();
-                while face_xmt != 1 && seen.insert(face_xmt) {
-                    let Some(face) = self.get(14, face_xmt).and_then(Node::face_fields) else {
-                        break;
-                    };
-                    count += 1;
-                    face_xmt = face.next_face;
-                }
-                count
-            })
+            .filter_map(|shell| self.shell_face_xmts(shell).map(|faces| faces.len()))
             .sum()
     }
 
@@ -764,23 +742,40 @@ impl Graph {
             return false;
         }
 
+        self.shell_face_xmts(shell).is_some()
+    }
+
+    fn shell_face_xmts(&self, shell: &Node) -> Option<Vec<u32>> {
+        let fields = shell.shell_fields()?;
+        if fields.last_face != 1 {
+            (fields.last_face == fields.first_face).then_some(())?;
+            self.get(14, fields.first_face)
+                .and_then(Node::face_fields)
+                .filter(|face| face.shell == shell.xmt)?;
+            let faces: Vec<_> = self
+                .of_kind(14)
+                .filter(|face| {
+                    face.face_fields()
+                        .is_some_and(|fields| fields.shell == shell.xmt)
+                })
+                .map(|face| face.xmt)
+                .collect();
+            return (!faces.is_empty()).then_some(faces);
+        }
+
         let mut face_xmt = fields.first_face;
         let mut visited = BTreeSet::new();
-        let mut last_face = 1;
         while face_xmt != 1 {
             if !visited.insert(face_xmt) {
-                return false;
+                return None;
             }
-            let Some(face) = self.get(14, face_xmt).and_then(Node::face_fields) else {
-                return false;
-            };
+            let face = self.get(14, face_xmt).and_then(Node::face_fields)?;
             if face.shell != shell.xmt {
-                return false;
+                return None;
             }
-            last_face = face_xmt;
             face_xmt = face.next_face;
         }
-        !visited.is_empty() && (fields.last_face == 1 || fields.last_face == last_face)
+        (!visited.is_empty()).then(|| visited.into_iter().collect())
     }
 }
 

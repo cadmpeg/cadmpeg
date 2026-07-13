@@ -344,10 +344,21 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
         .position(|window| window == [0, 19, 0, 12])
         .expect("region record");
     stream[region..region + 16].fill(0xff);
+    let mut second_face = record(14, 39);
+    put_ref(&mut second_face, 2, 20);
+    put_f64(&mut second_face, 10, 0.000_2);
+    put_ref(&mut second_face, 18, 1);
+    put_ref(&mut second_face, 20, 1);
+    put_ref(&mut second_face, 22, 1);
+    put_ref(&mut second_face, 24, 3);
+    put_ref(&mut second_face, 26, 6);
+    second_face[28] = b'+';
+    stream.extend(second_face);
 
     let graph = crate::topology::Graph::parse(&stream);
     assert!(graph.get(19, 12).is_none());
     assert_eq!(graph.body_shape_shells().len(), 1);
+    assert_eq!(graph.body_shape_face_count(), 2);
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -355,7 +366,7 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
         .unwrap();
     assert_eq!(result.ir.model.regions.len(), 1);
     assert_eq!(result.ir.model.regions[0].id.0, "nx:s0:region#12");
-    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 2);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
