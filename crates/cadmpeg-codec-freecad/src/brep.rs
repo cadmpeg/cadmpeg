@@ -49,8 +49,12 @@ pub struct BinaryFacts {
     pub curve2ds: Vec<TextCurve2d>,
     /// Ordered 3D curve table.
     pub curves: Vec<TextCurve>,
-    /// Byte offset immediately after the `Polygon3D` section header.
-    pub polygons3d_offset: usize,
+    /// Ordered standalone 3D polygons.
+    pub polygons3d: Vec<TextPolygon3d>,
+    /// Ordered polygons indexing triangulation nodes.
+    pub polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+    /// Byte offset immediately after the `Surfaces` section header.
+    pub surfaces_offset: usize,
 }
 
 /// Framing facts from a text shape set.
@@ -657,13 +661,69 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
     for _ in 0..curve_count {
         curves.push(parse_binary_curve(&mut cursor, 0)?);
     }
-    cursor.expect_section_name("Polygon3D")?;
+    let polygon_count = cursor.section_count("Polygon3D")?;
+    let mut polygons3d = Vec::with_capacity(polygon_count);
+    for _ in 0..polygon_count {
+        let node_count = cursor.count("binary 3D polygon node count")?;
+        let has_parameters = cursor.bool("binary 3D polygon parameter flag")?;
+        let deflection = cursor.f64("binary 3D polygon deflection")?;
+        let nodes = (0..node_count)
+            .map(|_| cursor.point3("binary 3D polygon node"))
+            .collect::<Result<Vec<_>, _>>()?;
+        let parameters = has_parameters
+            .then(|| {
+                (0..node_count)
+                    .map(|_| cursor.f64("binary 3D polygon parameter"))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        polygons3d.push(TextPolygon3d {
+            deflection,
+            nodes,
+            parameters,
+        });
+    }
+    let indexed_polygon_count = cursor.section_count("PolygonOnTriangulations")?;
+    let mut polygons_on_triangulations = Vec::with_capacity(indexed_polygon_count);
+    for _ in 0..indexed_polygon_count {
+        let node_count = cursor.count("binary indexed polygon node count")?;
+        let nodes = (0..node_count)
+            .map(|_| {
+                let node = cursor.i32("binary indexed polygon node")?;
+                u32::try_from(node).map_err(|_| {
+                    CodecError::Malformed("non-positive binary indexed polygon node".into())
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if nodes.contains(&0) {
+            return Err(CodecError::Malformed(
+                "binary indexed polygon node indices are one-based".into(),
+            ));
+        }
+        let deflection = cursor.f64("binary indexed polygon deflection")?;
+        let has_parameters = cursor.bool("binary indexed polygon parameter flag")?;
+        let parameters = has_parameters
+            .then(|| {
+                (0..node_count)
+                    .map(|_| cursor.f64("binary indexed polygon parameter"))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        polygons_on_triangulations.push(TextPolygonOnTriangulation {
+            nodes,
+            deflection,
+            parameters,
+        });
+    }
+    cursor.expect_section_name("Surfaces")?;
     Ok(BinaryFacts {
         topology_version: version,
         locations,
         curve2ds,
         curves,
-        polygons3d_offset: cursor.offset,
+        polygons3d,
+        polygons_on_triangulations,
+        surfaces_offset: cursor.offset,
     })
 }
 
@@ -2591,7 +2651,20 @@ mod tests {
         for value in [1.0, 2.0, 3.0, 0.0, 1.0, 0.0] {
             real(&mut bytes, value);
         }
-        bytes.extend_from_slice(b"Polygon3D 0\n");
+        bytes.extend_from_slice(b"Polygon3D 1\n");
+        bytes.extend_from_slice(&2_i32.to_le_bytes());
+        bytes.push(1);
+        real(&mut bytes, 0.01);
+        for value in [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] {
+            real(&mut bytes, value);
+        }
+        bytes.extend_from_slice(b"PolygonOnTriangulations 1\n");
+        bytes.extend_from_slice(&2_i32.to_le_bytes());
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        bytes.extend_from_slice(&2_i32.to_le_bytes());
+        real(&mut bytes, 0.02);
+        bytes.push(0);
+        bytes.extend_from_slice(b"Surfaces 0\n");
 
         let facts = parse_binary_prefix(&bytes).expect("binary prefix");
         assert_eq!(facts.topology_version, 3);
@@ -2600,7 +2673,13 @@ mod tests {
         assert!(matches!(facts.curve2ds[1], TextCurve2d::Trimmed { .. }));
         assert!(matches!(facts.curves[0], TextCurve::Line { .. }));
         assert!(matches!(facts.curves[1], TextCurve::Offset { .. }));
-        assert_eq!(&bytes[facts.polygons3d_offset..], b"");
+        assert_eq!(facts.polygons3d[0].nodes.len(), 2);
+        assert_eq!(
+            facts.polygons3d[0].parameters.as_deref(),
+            Some(&[0.0, 1.0][..])
+        );
+        assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
+        assert_eq!(&bytes[facts.surfaces_offset..], b"");
     }
 
     #[test]

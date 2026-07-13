@@ -43,7 +43,7 @@ fn transfers_binary_exact_curve_carrier() {
     for value in [0.0_f64, 0.0, 0.0, 1.0, 0.0, 0.0] {
         brep.extend_from_slice(&value.to_le_bytes());
     }
-    brep.extend_from_slice(b"Polygon3D 0\n");
+    brep.extend_from_slice(b"Polygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\n");
     let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.bin", &brep)]);
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
