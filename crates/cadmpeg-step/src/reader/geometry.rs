@@ -17,6 +17,7 @@ use crate::parse::{Exchange, RawRecord, Value};
 pub(super) struct GeometryResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
+    pub placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
 }
 
 pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
@@ -33,10 +34,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             Some("CARTESIAN_POINT") => match coordinates(record, 1, scale) {
                 Some(position) => {
                     points.insert(id, position);
-                    ir.model.points.push(Point {
-                        id: PointId(format!("step:data:point#{id}")),
-                        position,
-                    });
                     typed.insert(id);
                 }
                 None => warnings.push(format!("CARTESIAN_POINT #{id} has invalid coordinates")),
@@ -51,6 +48,35 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             _ => {}
         }
     }
+    let mut point_carriers = BTreeSet::new();
+    for record in exchange.records.values() {
+        if record.simple_name() == Some("VERTEX_POINT") {
+            if let Some(id) = record.parameter(1).and_then(Value::reference) {
+                point_carriers.insert(id);
+            }
+        }
+        if record
+            .simple_name()
+            .is_some_and(|name| name.ends_with("REPRESENTATION"))
+        {
+            if let Some(items) = record.parameter(1).and_then(Value::list) {
+                point_carriers.extend(
+                    items
+                        .iter()
+                        .filter_map(Value::reference)
+                        .filter(|id| points.contains_key(id)),
+                );
+            }
+        }
+    }
+    ir.model
+        .points
+        .extend(point_carriers.into_iter().filter_map(|id| {
+            points.get(&id).copied().map(|position| Point {
+                id: PointId(format!("step:data:point#{id}")),
+                position,
+            })
+        }));
     for (&id, record) in &exchange.records {
         if record.simple_name() == Some("VECTOR") {
             let value = record
@@ -290,6 +316,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     GeometryResult {
         typed_records: typed,
         warnings,
+        placements,
     }
 }
 

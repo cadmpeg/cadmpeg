@@ -133,7 +133,7 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode typed STEP geometry");
 
-    assert_eq!(result.ir.model.points.len(), 5);
+    assert_eq!(result.ir.model.points.len(), 1);
     let placed = result
         .ir
         .model
@@ -250,6 +250,32 @@ fn reader_recovers_a_valid_solid_from_writer_output() {
     assert_eq!(result.ir.model.faces.len(), 6);
     assert_eq!(result.ir.model.edges.len(), 12);
     assert_eq!(result.ir.model.vertices.len(), 8);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_builds_product_occurrences_with_relative_placement() {
+    use cadmpeg_ir::product::OccurrenceParent;
+
+    let bytes = include_bytes!("../tests/fixtures/ap242_assembly.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode AP242 assembly");
+
+    assert_eq!(result.ir.model.products.len(), 2);
+    assert_eq!(result.ir.model.occurrences.len(), 2);
+    let child = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
+        .unwrap();
+    assert!(matches!(child.parent, OccurrenceParent::Occurrence { .. }));
+    assert_eq!(child.transform.rows[0][3], 25.0);
+    assert_eq!(child.transform.rows[1][3], 0.0);
+    assert_eq!(child.transform.rows[2][3], 0.0);
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

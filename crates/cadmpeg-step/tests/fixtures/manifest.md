@@ -11,3 +11,4 @@ authored against `docs/formats/step.md`.
 | `strings.p21` | apostrophe, reverse-solidus, X, X2, X4, S, and page-selection string escapes |
 | `ap242_geometry.p21` | millimetre unit context and placed point, line, and circle carriers |
 | `ap214_sheet.p21` | connected triangular sheet B-rep with oriented edge uses and a planar face |
+| `ap242_assembly.p21` | product-definition tree, NAUO identity, and item-defined occurrence placement |
