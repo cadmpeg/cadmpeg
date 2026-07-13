@@ -1616,7 +1616,20 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
 
     let curve_start = 7i64;
     let pcurve_start = native_record_index(curve_start, model.curves.len())?;
-    let coedge_start = native_record_index(pcurve_start, model.pcurves.len())?;
+    let ref_pcurve_count = model
+        .pcurves
+        .iter()
+        .map(pcurve_uses_ref_form)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|uses_ref_form| *uses_ref_form)
+        .count();
+    let pcurve_record_count = model
+        .pcurves
+        .len()
+        .checked_add(ref_pcurve_count)
+        .ok_or_else(|| CodecError::Malformed("pcurve record count overflows usize".into()))?;
+    let coedge_start = native_record_index(pcurve_start, pcurve_record_count)?;
     let edge_start = native_record_index(coedge_start, coedges.len())?;
     let vertex_start = native_record_index(edge_start, model.edges.len())?;
     let point_start = native_record_index(vertex_start, model.vertices.len())?;
@@ -1889,8 +1902,22 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         records.push(0x11);
     }
 
+    let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
+    let mut ref_pcurve_ordinal = 0usize;
     for pcurve in &model.pcurves {
-        native_pcurve(&mut records, pcurve)?;
+        let companion_ref = pcurve_uses_ref_form(pcurve)?
+            .then(|| native_record_index(ref_pcurve_start, ref_pcurve_ordinal))
+            .transpose()?;
+        native_pcurve(&mut records, pcurve, companion_ref)?;
+        ref_pcurve_ordinal += usize::from(companion_ref.is_some());
+        records.push(0x11);
+    }
+    for pcurve in model
+        .pcurves
+        .iter()
+        .filter(|pcurve| pcurve_uses_ref_form(pcurve).is_ok_and(|value| value))
+    {
+        native_ref_pcurve_companion(&mut records, pcurve)?;
         records.push(0x11);
     }
 
@@ -2100,7 +2127,20 @@ impl NativeRecordPlan {
         let surface_start = native_record_index(loop_start, model.loops.len())?;
         let curve_start = native_record_index(surface_start, model.surfaces.len())?;
         let pcurve_start = native_record_index(curve_start, model.curves.len())?;
-        let coedge_start = native_record_index(pcurve_start, model.pcurves.len())?;
+        let ref_pcurve_count = model
+            .pcurves
+            .iter()
+            .map(pcurve_uses_ref_form)
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|uses_ref_form| *uses_ref_form)
+            .count();
+        let pcurve_record_count = model
+            .pcurves
+            .len()
+            .checked_add(ref_pcurve_count)
+            .ok_or_else(|| CodecError::Malformed("pcurve record count overflows usize".into()))?;
+        let coedge_start = native_record_index(pcurve_start, pcurve_record_count)?;
         let wire_coedge_start = native_record_index(coedge_start, model.coedges.len())?;
         let wire_edge_count = model
             .shells
@@ -3148,8 +3188,22 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         records.push(0x11);
     }
 
+    let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
+    let mut ref_pcurve_ordinal = 0usize;
     for pcurve in &model.pcurves {
-        native_pcurve(&mut records, pcurve)?;
+        let companion_ref = pcurve_uses_ref_form(pcurve)?
+            .then(|| native_record_index(ref_pcurve_start, ref_pcurve_ordinal))
+            .transpose()?;
+        native_pcurve(&mut records, pcurve, companion_ref)?;
+        ref_pcurve_ordinal += usize::from(companion_ref.is_some());
+        records.push(0x11);
+    }
+    for pcurve in model
+        .pcurves
+        .iter()
+        .filter(|pcurve| pcurve_uses_ref_form(pcurve).is_ok_and(|value| value))
+    {
+        native_ref_pcurve_companion(&mut records, pcurve)?;
         records.push(0x11);
     }
 
@@ -8390,7 +8444,55 @@ fn native_embedded_cone(
     Ok(())
 }
 
-fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError> {
+fn pcurve_uses_ref_form(pcurve: &Pcurve) -> Result<bool, CodecError> {
+    match (
+        pcurve.wrapper_reversed,
+        pcurve.native_tail_flags,
+        pcurve.fit_tolerance,
+    ) {
+        (None, None, None) => Ok(true),
+        (Some(_), Some(_), Some(_)) => Ok(false),
+        _ => Err(CodecError::Malformed(format!(
+            "pcurve {} mixes inline and ref-form native fields",
+            pcurve.id
+        ))),
+    }
+}
+
+fn native_pcurve(
+    bytes: &mut Vec<u8>,
+    pcurve: &Pcurve,
+    companion_ref: Option<i64>,
+) -> Result<(), CodecError> {
+    if pcurve_uses_ref_form(pcurve)? {
+        let companion_ref = companion_ref.ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "ref-form pcurve {} has no companion record",
+                pcurve.id
+            ))
+        })?;
+        let range = pcurve.parameter_range.ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "ref-form pcurve {} has no parameter range",
+                pcurve.id
+            ))
+        })?;
+        native_ident(bytes, "pcurve")?;
+        native_ref(bytes, -1);
+        native_i64(bytes, -1);
+        native_ref(bytes, -1);
+        native_i64(bytes, 2);
+        native_ref(bytes, companion_ref);
+        native_f64(bytes, range[0]);
+        native_f64(bytes, range[1]);
+        return Ok(());
+    }
+    if companion_ref.is_some() {
+        return Err(CodecError::Malformed(format!(
+            "inline pcurve {} unexpectedly has a companion record",
+            pcurve.id
+        )));
+    }
     let range = pcurve.parameter_range.unwrap_or([0.0, 1.0]);
     let NativePcurveGeometry {
         degree,
@@ -8448,6 +8550,37 @@ fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError>
     });
     native_f64(bytes, range[0]);
     native_f64(bytes, range[1]);
+    Ok(())
+}
+
+fn native_ref_pcurve_companion(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError> {
+    if !pcurve_uses_ref_form(pcurve)? {
+        return Err(CodecError::Malformed(format!(
+            "inline pcurve {} cannot emit a ref-form companion",
+            pcurve.id
+        )));
+    }
+    let range = pcurve.parameter_range.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "ref-form pcurve {} has no parameter range",
+            pcurve.id
+        ))
+    })?;
+    let native = native_pcurve_geometry(&pcurve.geometry, range)?;
+    let lifted = NurbsCurve {
+        degree: native.degree,
+        knots: native.knots,
+        control_points: native
+            .control_points
+            .into_iter()
+            .map(|point| Point3::new(point.u * 10.0, point.v * 10.0, 0.0))
+            .collect(),
+        weights: native.weights,
+        periodic: native.periodic,
+    };
+    native_curve_base(bytes, "intcurve")?;
+    native_nurbs_curve(bytes, &lifted)?;
+    native_nurbs_pcurve_block(bytes, &pcurve.geometry)?;
     Ok(())
 }
 

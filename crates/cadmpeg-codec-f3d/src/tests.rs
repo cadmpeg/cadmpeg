@@ -15223,7 +15223,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated pcurve decode");
-    assert_eq!(round_trip.ir.model.pcurves, [expected]);
+    assert_eq!(round_trip.ir.model.pcurves, [expected.clone()]);
 }
 
 #[test]
@@ -15287,7 +15287,29 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated ref-form pcurve decode");
-    assert_eq!(round_trip.ir.model.pcurves, [expected]);
+    assert_eq!(round_trip.ir.model.pcurves, [expected.clone()]);
+
+    edited.source = None;
+    edited.set_native_unknowns("f3d", &[]).unwrap();
+    let mut source_less = Vec::new();
+    F3dCodec
+        .encode(&edited, &mut source_less)
+        .expect("source-less ref-form pcurve encode");
+    let source_less_round_trip = F3dCodec
+        .decode(&mut Cursor::new(source_less), &DecodeOptions::default())
+        .expect("source-less ref-form pcurve round trip");
+    let actual = &source_less_round_trip.ir.model.pcurves[0];
+    assert_eq!(actual.geometry, expected.geometry);
+    assert_eq!(actual.wrapper_reversed, expected.wrapper_reversed);
+    assert_eq!(actual.native_tail_flags, expected.native_tail_flags);
+    assert_eq!(actual.parameter_range, expected.parameter_range);
+    assert_eq!(actual.fit_tolerance, expected.fit_tolerance);
+    assert!(source_less_round_trip
+        .ir
+        .model
+        .coedges
+        .iter()
+        .any(|coedge| coedge.pcurve.as_ref() == Some(&actual.id)));
 }
 
 #[test]
