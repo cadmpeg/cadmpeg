@@ -343,6 +343,12 @@ mod marker_tests {
         payload[70] = 0;
         payload[72..80].copy_from_slice(&0.0f64.to_le_bytes());
         assert_eq!(marker_local_links(&payload, 0), None);
+        payload[5..17].copy_from_slice(&[
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x80, 0xbf,
+        ]);
+        payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+        payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        assert_eq!(marker_local_links(&payload, 0), None);
     }
 
     #[test]
@@ -820,7 +826,13 @@ pub(crate) fn operand_accepts_marker(
 }
 
 fn marker_local_links(payload: &[u8], offset: usize) -> Option<([u16; 2], u16)> {
-    if payload.get(offset + 70..offset + 72)? != [0, 0]
+    let coordinate_layout = payload.get(offset + 5..offset + 17)?
+        == [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x80, 0xbf,
+        ]
+        && payload.get(offset + 64..offset + 66)? == [0x1e, 0x00];
+    if coordinate_layout
+        || payload.get(offset + 70..offset + 72)? != [0, 0]
         || payload.get(offset + 72..offset + 80)? != (-1.0f64).to_le_bytes()
     {
         return None;
