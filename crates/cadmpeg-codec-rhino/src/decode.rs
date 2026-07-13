@@ -433,6 +433,10 @@ impl<'a> DecodeContext<'a> {
                 self.decode_detail(source_order, object);
                 continue;
             }
+            if object.class_uuid == crate::cage::CLASS {
+                self.decode_cage(source_order, object);
+                continue;
+            }
             if !crate::curves::supported_class(object.class_uuid)
                 && !crate::mesh::supported_class(object.class_uuid)
             {
@@ -857,6 +861,137 @@ impl<'a> DecodeContext<'a> {
             }
             Err(error) => {
                 self.scan_warning(source_order, &format!("detail candidate rejected: {error}"));
+                self.mark_failed(source_order);
+            }
+        }
+    }
+
+    fn decode_cage(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let Some(scale) = self.unit_scale() else {
+            self.scan_warning(
+                source_order,
+                "NURBS cage retained because document units are unavailable",
+            );
+            return;
+        };
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "NURBS cage retained because identity is unavailable",
+            );
+            return;
+        };
+        let cage = match crate::cage::decode(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            scale,
+            self.archive(),
+        ) {
+            Ok(cage) => cage,
+            Err(error) => {
+                let future = matches!(
+                    error,
+                    crate::curves::GeometryError::UnsupportedVersion { .. }
+                );
+                self.scan_warning(
+                    source_order,
+                    &format!(
+                        "NURBS cage {}: {error}",
+                        if future { "retained" } else { "failed" }
+                    ),
+                );
+                if !future {
+                    self.mark_failed(source_order);
+                }
+                return;
+            }
+        };
+        if !self.charge_entities(source_order, 1) {
+            return;
+        }
+        let key = self.object_key(identity, source_order);
+        let feature_id = FeatureId(format!("rhino:cage:feature#{key}"));
+        let knots = cage
+            .knots
+            .iter()
+            .map(|axis| {
+                axis.iter()
+                    .map(f64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .collect::<Vec<_>>();
+        let control_points = cage
+            .control_points
+            .iter()
+            .map(|point| {
+                point
+                    .iter()
+                    .map(f64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .collect::<Vec<_>>()
+            .join(";");
+        let mut properties = BTreeMap::from([
+            ("u_knots".to_string(), knots[0].clone()),
+            ("v_knots".to_string(), knots[1].clone()),
+            ("w_knots".to_string(), knots[2].clone()),
+            ("control_points".to_string(), control_points),
+        ]);
+        if let Some(weights) = &cage.weights {
+            properties.insert(
+                "weights".to_string(),
+                weights
+                    .iter()
+                    .map(f64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        }
+        let feature = Feature {
+            id: feature_id.clone(),
+            ordinal: u64::try_from(cage.source_range.start).expect("source offset fits u64"),
+            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("RhinoNurbsCage".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "nurbs_cage".to_string(),
+                parameters: BTreeMap::from([
+                    ("dimension".to_string(), cage.dimension.to_string()),
+                    ("rational".to_string(), cage.rational.to_string()),
+                    (
+                        "orders".to_string(),
+                        format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
+                    ),
+                    (
+                        "counts".to_string(),
+                        format!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
+                    ),
+                ]),
+                properties,
+            },
+            native_ref: Some(self.unknowns[source_order].id.to_string()),
+        };
+        match self.validate_candidate(|candidate| candidate.model.features.push(feature)) {
+            Ok(()) => {
+                self.append_link(source_order, feature_id.to_string());
+                self.geometry_transferred = true;
+                self.mark_decoded(source_order);
+            }
+            Err(error) => {
+                self.scan_warning(
+                    source_order,
+                    &format!("NURBS cage candidate rejected: {error}"),
+                );
                 self.mark_failed(source_order);
             }
         }

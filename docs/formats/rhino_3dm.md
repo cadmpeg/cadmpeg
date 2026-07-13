@@ -979,6 +979,7 @@ failure make the buffer invalid.
 | `ON_PointGrid`           | `4ED7D4E5-E947-11D3-BFE5-0010830122F0` |
 | `ON_Hatch`               | `0559733B-5332-49D1-A936-0532AC76ADE5` |
 | `ON_DetailView`          | `C8C66EFA-B3CB-4E00-9440-2AD66203379E` |
+| `ON_NurbsCage`           | `06936AFB-3D3C-41AC-BF70-C9319FA480A1` |
 | `ON_Layer`               | `95809813-E985-11D3-BFE5-0010830122F0` |
 | `ON_InstanceDefinition`  | `26F8BFF6-2618-417F-A158-153D64A94989` |
 | `ON_InstanceRef`         | `F9CFB638-B9D4-4340-87E3-C56E7865D96A` |
@@ -1796,6 +1797,32 @@ geometry. The boundary NURBS curve uses the ordinary NURBS curve layout
 without a class wrapper. Its control points use document length conversion.
 The page-per-model ratio is finite and nonnegative; version 1.0 defaults it to
 zero.
+
+### 18.4 NURBS cages
+
+`ON_NurbsCage` uses anonymous version 1.0:
+
+```text
+i32 dimension
+i32 rational flag
+i32 order[3]
+i32 control_count[3]
+(order[0] + control_count[0] - 2) × f64 U knots
+(order[1] + control_count[1] - 2) × f64 V knots
+(order[2] + control_count[2] - 2) × f64 W knots
+for u in 0..control_count[0]:
+  for v in 0..control_count[1]:
+    for w in 0..control_count[2]:
+      (dimension + rational) × f64 control value
+```
+
+Dimension is positive and at most 10000. The rational flag is zero or one.
+Each order is at least two, and each control count is at least its order.
+Knots are finite and nondecreasing independently in all three directions.
+Nonrational control values are Euclidean coordinates. Rational control values
+are homogeneous coordinates followed by a finite nonzero weight; Euclidean
+coordinates divide by that weight. Coordinates use document length conversion.
+Knot values and weights are unscaled.
 
 ## 19. Exact gates and invariants
 

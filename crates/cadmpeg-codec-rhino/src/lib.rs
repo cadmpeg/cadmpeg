@@ -9,6 +9,7 @@ use cadmpeg_ir::codec::{
 };
 
 pub(crate) mod brep;
+pub(crate) mod cage;
 pub(crate) mod chunks;
 pub(crate) mod container;
 pub(crate) mod curves;
