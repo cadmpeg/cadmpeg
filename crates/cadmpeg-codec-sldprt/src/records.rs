@@ -144,9 +144,27 @@ pub struct FeatureInputLane {
     /// Class declarations used by object instances in this lane.
     #[serde(default)]
     pub classes: Vec<FeatureInputClass>,
+    /// Serialized object names in this lane.
+    #[serde(default)]
+    pub names: Vec<FeatureInputName>,
     /// Typed sketch-entity markers located within `native_payload`.
     #[serde(default)]
     pub sketch_entities: Vec<SketchInputEntity>,
+}
+
+/// One serialized UTF-16 object name in a feature-input stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureInputName {
+    /// Globally unique deterministic identifier for this name record.
+    pub id: String,
+    /// Owning feature-input lane record id.
+    pub parent: String,
+    /// Position among serialized names in stream order.
+    pub ordinal: u32,
+    /// Byte offset of the name marker.
+    pub offset: u64,
+    /// Decoded object name.
+    pub value: String,
 }
 
 /// One class declaration in a native feature-input stream.

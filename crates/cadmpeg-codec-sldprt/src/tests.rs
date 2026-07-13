@@ -932,6 +932,12 @@ fn resolved_features_payload(codes: &[u32]) -> Vec<u8> {
         payload.extend_from_slice(&(name.len() as u16).to_le_bytes());
         payload.extend_from_slice(name.as_bytes());
     }
+    for name in ["Sketch1", "D1"] {
+        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
+        for unit in name.encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
     for code in codes {
         payload.extend_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
         payload.extend_from_slice(&[0; 12]);
@@ -10696,6 +10702,13 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         .classes
         .iter()
         .all(|class| class.role == FeatureInputClassRole::SketchEntity));
+    assert_eq!(
+        lane.names
+            .iter()
+            .map(|name| name.value.as_str())
+            .collect::<Vec<_>>(),
+        ["Sketch1", "D1"]
+    );
     assert!(lane
         .classes
         .iter()
@@ -10773,6 +10786,25 @@ fn semantic_writer_rejects_edited_feature_input_class_index() {
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("has edited class declarations"));
+}
+
+#[test]
+fn semantic_writer_rejects_edited_feature_input_name_index() {
+    let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_input_lanes[0].names[1].value = "Depth".into();
+    });
+    assert!(crate::validate_native(&decoded.ir)
+        .iter()
+        .any(|finding| finding.message.contains("name index does not match")));
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("has edited object names"));
 }
 
 #[test]

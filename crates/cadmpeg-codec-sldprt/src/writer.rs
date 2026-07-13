@@ -737,6 +737,12 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
+    if lane.names != crate::resolved_features::object_names(&lane.native_payload, &lane.id) {
+        return Err(CodecError::NotImplemented(format!(
+            "feature-input lane {} has edited object names",
+            lane.id
+        )));
+    }
     let expected_offsets = lane
         .native_payload
         .windows(MARKER.len())

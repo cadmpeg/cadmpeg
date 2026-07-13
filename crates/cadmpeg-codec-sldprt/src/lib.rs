@@ -251,6 +251,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 entity: Some(lane.id.clone()),
             });
         }
+        if lane.names != crate::resolved_features::object_names(&lane.native_payload, &lane.id) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "SolidWorks feature-input name index does not match its native payload"
+                    .into(),
+                entity: Some(lane.id.clone()),
+            });
+        }
         let expected_offsets = lane
             .native_payload
             .windows(MARKER.len())

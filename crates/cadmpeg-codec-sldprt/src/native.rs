@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::records::{FeatureHistory, FeatureInputClass, FeatureInputLane};
+use crate::records::{FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName};
 
 /// Current schema version for the SOLIDWORKS native namespace.
 pub const SLDPRT_NATIVE_VERSION: u32 = 1;
@@ -14,6 +14,7 @@ pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "feature_histories",
     "feature_input_classes",
     "feature_input_lanes",
+    "feature_input_names",
     "features",
     "sketch_input_entities",
 ];
@@ -56,6 +57,7 @@ impl SldprtNative {
         let entities: Vec<crate::records::SketchInputEntity> =
             namespace.arena_as("sketch_input_entities")?;
         let classes: Vec<FeatureInputClass> = namespace.arena_as("feature_input_classes")?;
+        let names: Vec<FeatureInputName> = namespace.arena_as("feature_input_names")?;
         let history_ids = native
             .feature_histories
             .iter()
@@ -102,6 +104,15 @@ impl SldprtNative {
                 record.id, record.parent
             )));
         }
+        if let Some(record) = names
+            .iter()
+            .find(|record| !lane_ids.contains(record.parent.as_str()))
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "feature-input name {} references {}",
+                record.id, record.parent
+            )));
+        }
         for history in &mut native.feature_histories {
             history.configurations = configurations
                 .iter()
@@ -123,6 +134,12 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.classes.sort_by_key(|record| record.ordinal);
+            lane.names = names
+                .iter()
+                .filter(|record| record.parent == lane.id)
+                .cloned()
+                .collect();
+            lane.names.sort_by_key(|record| record.ordinal);
             lane.sketch_entities = entities
                 .iter()
                 .filter(|record| record.parent == lane.id)
@@ -163,6 +180,12 @@ impl SldprtNative {
             if let Some(record) = lane.classes.iter().find(|record| record.parent != lane.id) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input class {} references {} instead of {}",
+                    record.id, record.parent, lane.id
+                )));
+            }
+            if let Some(record) = lane.names.iter().find(|record| record.parent != lane.id) {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "feature-input name {} references {} instead of {}",
                     record.id, record.parent, lane.id
                 )));
             }
@@ -211,6 +234,7 @@ impl SldprtNative {
             .cloned()
             .map(|mut lane| {
                 lane.classes.clear();
+                lane.names.clear();
                 lane.sketch_entities.clear();
                 lane
             })
@@ -222,6 +246,14 @@ impl SldprtNative {
                 .feature_input_lanes
                 .iter()
                 .flat_map(|lane| lane.classes.clone())
+                .collect::<Vec<_>>(),
+        )?;
+        namespace.set_arena(
+            "feature_input_names",
+            &self
+                .feature_input_lanes
+                .iter()
+                .flat_map(|lane| lane.names.clone())
                 .collect::<Vec<_>>(),
         )?;
         namespace.set_arena(
