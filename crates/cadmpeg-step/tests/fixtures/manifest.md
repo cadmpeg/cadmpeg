@@ -13,3 +13,4 @@ authored against `docs/formats/step.md`.
 | `ap214_sheet.p21` | connected triangular sheet B-rep with oriented edge uses and a planar face |
 | `ap242_assembly.p21` | product-definition tree, NAUO identity, and item-defined occurrence placement |
 | `ap242_tessellation.p21` | shared coordinate list and one-based AP242 triangulated face indices |
+| `ap242_semantic_pmi.p21` | datum, datum system, dimensional size with plus/minus limits, and geometric tolerance |

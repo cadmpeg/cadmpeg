@@ -305,6 +305,57 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
+#[test]
+fn decode_transfers_ap242_semantic_pmi() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
+
+    let bytes = include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode AP242 semantic PMI");
+
+    assert_eq!(result.ir.model.pmi.len(), 4);
+    let dimension = result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("width"))
+        .unwrap();
+    let PmiDefinition::Dimension {
+        nominal,
+        lower_deviation,
+        upper_deviation,
+        ..
+    } = dimension.definition
+    else {
+        panic!("width is not a dimension")
+    };
+    assert_eq!(nominal.unwrap().value, 12.0);
+    assert_eq!(lower_deviation.unwrap().value, -0.1);
+    assert_eq!(upper_deviation.unwrap().value, 0.2);
+    let tolerance = result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
+        .unwrap();
+    assert!(matches!(
+        tolerance.definition,
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Flatness,
+            magnitude: cadmpeg_ir::PmiValue {
+                value: 0.05,
+                quantity: PmiQuantity::Length,
+            },
+            datum_system: Some(_),
+        }
+    ));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 fn export(ir: &CadIr) -> String {
     let mut buf = Vec::new();
     write_step(ir, &mut buf, &StepWriteOptions::default()).expect("write");
