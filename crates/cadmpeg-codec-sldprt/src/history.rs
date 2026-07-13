@@ -9,8 +9,8 @@ use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, ConfigurationId,
     DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterId,
-    ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, ScaleCenter, VariableRadius,
-    WrapMode,
+    ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, ScaleCenter, SurfaceContinuity,
+    VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -719,6 +719,14 @@ pub fn bind_topology_selections(
             FeatureDefinition::KnitSurface { faces, .. } => {
                 resolve_face_selection(faces, &face_ids);
             }
+            FeatureDefinition::FilledSurface {
+                boundary,
+                support_faces,
+                ..
+            } => {
+                resolve_edge_selection(boundary, &edge_ids);
+                resolve_face_selection(support_faces, &face_ids);
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
@@ -953,6 +961,8 @@ fn project_definition(
         project_offset_surface(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "KnitSurface") || feature_family(feature, "Knit") {
         project_knit_surface(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature_family(feature, "FilledSurface") || feature_family(feature, "FillSurface") {
+        project_filled_surface(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Draft") {
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Combine") {
@@ -1718,6 +1728,30 @@ fn project_knit_surface(feature: &Feature) -> Option<FeatureDefinition> {
             .and_then(|value| parse_bool(value))
             .unwrap_or(false),
         gap_tolerance: gap_tolerance.map(Length),
+    })
+}
+
+fn project_filled_surface(feature: &Feature) -> Option<FeatureDefinition> {
+    let continuity = match feature
+        .properties
+        .get("Continuity")?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "contact" => SurfaceContinuity::Contact,
+        "tangent" => SurfaceContinuity::Tangent,
+        "curvature" => SurfaceContinuity::Curvature,
+        _ => return None,
+    };
+    Some(FeatureDefinition::FilledSurface {
+        boundary: EdgeSelection::Native(feature.properties.get("Boundary")?.clone()),
+        support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
+        continuity,
+        merge_result: feature
+            .properties
+            .get("MergeResult")
+            .and_then(|value| parse_bool(value))
+            .unwrap_or(false),
     })
 }
 
@@ -3670,6 +3704,57 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::FilledSurface {
+                boundary,
+                support_faces,
+                continuity,
+                merge_result,
+            } => {
+                let boundary = edge_selection_value(boundary).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no filled-surface boundary",
+                        feature.id
+                    ))
+                })?;
+                let support_faces = face_selection_value(support_faces).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no filled-surface supports",
+                        feature.id
+                    ))
+                })?;
+                if existing.as_deref().is_some_and(|record| {
+                    !feature_family(record, "FilledSurface")
+                        && !feature_family(record, "FillSurface")
+                }) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Boundary".into(), boundary);
+                properties.insert("SupportFaces".into(), support_faces);
+                properties.insert(
+                    "Continuity".into(),
+                    match continuity {
+                        SurfaceContinuity::Contact => "Contact",
+                        SurfaceContinuity::Tangent => "Tangent",
+                        SurfaceContinuity::Curvature => "Curvature",
+                    }
+                    .into(),
+                );
+                properties.insert("MergeResult".into(), merge_result.to_string());
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "FilledSurface".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
+            }
             FeatureDefinition::Draft {
                 faces: face_selection,
                 neutral_plane: plane_selection,
@@ -5084,6 +5169,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Thicken { .. } => "Thicken",
         FeatureDefinition::OffsetSurface { .. } => "OffsetSurface",
         FeatureDefinition::KnitSurface { .. } => "KnitSurface",
+        FeatureDefinition::FilledSurface { .. } => "FilledSurface",
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
         FeatureDefinition::CutWithSurface { .. } => "CutWithSurface",

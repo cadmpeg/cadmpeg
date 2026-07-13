@@ -393,6 +393,17 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         gap_tolerance: Option<Length>,
     },
+    /// Surface patch spanning a selected edge boundary.
+    FilledSurface {
+        /// Closed edge boundary of the generated patch.
+        boundary: EdgeSelection,
+        /// Adjacent faces supplying tangent or curvature conditions.
+        support_faces: FaceSelection,
+        /// Continuity imposed against the support faces.
+        continuity: SurfaceContinuity,
+        /// Whether the generated patch is merged into adjacent surface bodies.
+        merge_result: bool,
+    },
     /// Taper applied to selected faces about a neutral plane.
     Draft {
         /// Faces whose angle is modified.
@@ -550,6 +561,18 @@ pub enum WrapMode {
     Deboss,
     /// Imprint the profile without adding or removing material.
     Scribe,
+}
+
+/// Continuity order imposed at a generated surface boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceContinuity {
+    /// Positional continuity only.
+    Contact,
+    /// First-derivative continuity.
+    Tangent,
+    /// Second-derivative continuity.
+    Curvature,
 }
 
 /// Fixed locus of a body-scale transform.

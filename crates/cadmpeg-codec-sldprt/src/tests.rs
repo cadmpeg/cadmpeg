@@ -7949,6 +7949,79 @@ fn semantic_writer_round_trips_cut_with_surface() {
 }
 
 #[test]
+fn semantic_writer_round_trips_filled_surface() {
+    use cadmpeg_ir::features::{
+        EdgeSelection, FaceSelection, FeatureDefinition, SurfaceContinuity,
+    };
+
+    let base_bytes = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(base_bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let edge = base.ir.model.edges[0].id.0.clone();
+    let face = base.ir.model.faces[0].id.0.clone();
+    let xml = format!(
+        r#"<Keywords><FilledSurface Name="Fill" Type="FillSurface" id="36" Boundary="{edge}" SupportFaces="{face}" Continuity="Tangent" MergeResult="false" Optimize="true"/></Keywords>"#
+    );
+    let mut source = base_bytes;
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let edge_id = decoded.ir.model.edges[0].id.clone();
+    let face_id = decoded.ir.model.faces[0].id.clone();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::FilledSurface {
+            boundary: EdgeSelection::Resolved { edges, native: edge_native },
+            support_faces: FaceSelection::Resolved { faces, native: face_native },
+            continuity: SurfaceContinuity::Tangent,
+            merge_result: false,
+        } if edges == &[edge_id.clone()] && edge_native == &edge
+            && faces == &[face_id.clone()] && face_native == &face
+    ));
+
+    let FeatureDefinition::FilledSurface {
+        boundary,
+        support_faces,
+        continuity,
+        merge_result,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed filled surface");
+    };
+    *boundary = EdgeSelection::Edges(vec![edge_id.clone()]);
+    *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
+    *continuity = SurfaceContinuity::Curvature;
+    *merge_result = true;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.properties["Boundary"], edge_id.0);
+    assert_eq!(native.properties["SupportFaces"], face_id.0);
+    assert_eq!(native.properties["Continuity"], "Curvature");
+    assert_eq!(native.properties["MergeResult"], "true");
+    assert_eq!(native.properties["Optimize"], "true");
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::FilledSurface {
+            continuity: SurfaceContinuity::Curvature,
+            merge_result: true,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 

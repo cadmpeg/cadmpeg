@@ -1242,6 +1242,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "knit tolerance is invalid");
                 }
             }
+            FeatureDefinition::FilledSurface {
+                boundary,
+                support_faces,
+                ..
+            } => {
+                edge_selections.push(boundary);
+                face_selections.push(support_faces);
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
