@@ -445,20 +445,13 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             })
         }
         0x2d => {
-            if record.payload.get(1) != Some(&0x38) {
-                return None;
-            }
-            let profile_curve = u32::from_le_bytes([
-                *record.payload.get(2)?,
-                *record.payload.get(3)?,
-                *record.payload.get(4)?,
-                0,
-            ]);
-            let gauge_radius = scalar(&record.payload, 135)?;
+            let mut position = 1;
+            let profile_curve = reference(&record.payload, &mut position, record.object_id)?;
+            let gauge_radius = scalar(&record.payload, position.checked_add(130)?)?;
             (gauge_radius.abs() > f64::EPSILON).then_some(B5Surface::Revolution {
                 profile_curve,
-                axis_origin: point(&record.payload, 5)?,
-                axis_direction: unit(point(&record.payload, 77)?)?,
+                axis_origin: point(&record.payload, position)?,
+                axis_direction: unit(point(&record.payload, position.checked_add(72)?)?)?,
                 gauge_radius,
             })
         }
@@ -1077,5 +1070,29 @@ mod tests {
         position = 0;
         assert_eq!(reference(&[0x8b], &mut position, 0), Some(11));
         assert_eq!(position, 1);
+    }
+
+    #[test]
+    fn revolution_surface_accepts_sparse_profile_reference() {
+        let mut payload = vec![0; 175];
+        payload[1..4].copy_from_slice(&[0x30, 0x86, 0x16]);
+        payload[4..12].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[76..84].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[134..142].copy_from_slice(&2.0f64.to_le_bytes());
+        let record = B5Record {
+            offset: 0,
+            class: 0x2d,
+            object_id: 0x16_8601,
+            payload,
+        };
+        assert_eq!(
+            parse_surface(&record),
+            Some(B5Surface::Revolution {
+                profile_curve: 0x16_8600,
+                axis_origin: [1.0, 0.0, 0.0],
+                axis_direction: [1.0, 0.0, 0.0],
+                gauge_radius: 2.0,
+            })
+        );
     }
 }
