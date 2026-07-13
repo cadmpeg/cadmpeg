@@ -211,7 +211,7 @@ pub fn counted_record_references(
     let mut references = Vec::new();
     let mut at = 0usize;
     while at + 5 <= bytes.len() {
-        if bytes[at] != 0x01 || !(2..=64).contains(&bytes[at + 1]) {
+        if bytes[at] != 0x01 || bytes[at + 1] < 2 {
             at += 1;
             continue;
         }
