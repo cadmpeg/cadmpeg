@@ -1063,7 +1063,7 @@ fn decode_g2_blend_spl_sur(
     let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
         .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
         .flatten();
-    position = cache.end + 9;
+    position = cache.end + usize::from(cache_fit_tolerance.is_some()) * 9;
     let discontinuities = [
         take_float_array(span, &mut position, int_width)?,
         take_float_array(span, &mut position, int_width)?,
@@ -2523,7 +2523,7 @@ fn decode_taper_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
         .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
         .flatten();
-    position = cache.end + 9;
+    position = cache.end + usize::from(cache_fit_tolerance.is_some()) * 9;
     let take_draft = |position: &mut usize| {
         let draft = take_native_vec3(span, position, 0x14)?;
         Some(Vector3::new(draft[0], draft[1], draft[2]))
@@ -2581,7 +2581,7 @@ fn decode_comp_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
     let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
         .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
         .flatten();
-    let mut position = cache.end + 9;
+    let mut position = cache.end + usize::from(cache_fit_tolerance.is_some()) * 9;
     let parameters = take_float_array(span, &mut position, int_width)?;
     let mut components = Vec::with_capacity(parameters.len());
     for _ in 0..parameters.len() {
@@ -2785,7 +2785,7 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
         .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
         .flatten();
-    let mut position = cache.end + 9;
+    let mut position = cache.end + usize::from(cache_fit_tolerance.is_some()) * 9;
     let parameter_ranges = [
         [
             take_range_value(span, &mut position)?,

@@ -11039,6 +11039,115 @@ fn generated_legacy_surface_names_select_modern_layouts() {
 }
 
 #[test]
+fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let required = [
+        (
+            synthetic_minimal_deformable_surface_smbh(),
+            "deformable surface",
+        ),
+        (synthetic_t_spl_sur_smbh(), "T-spline surface"),
+        (
+            synthetic_exact_spl_sur_smbh("exact_spl_sur"),
+            "exact spline surface",
+        ),
+        (synthetic_skin_spl_sur_smbh(0, false), "skin surface"),
+        (synthetic_net_spl_sur_smbh(), "net surface"),
+        (synthetic_profile_first_sweep_smbh(), "sweep surface"),
+    ];
+    for (smbh, family) in required {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{family} decode: {error}"));
+        assert!(decoded.ir.model.procedural_surfaces[0]
+            .cache_fit_tolerance
+            .is_some());
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
+        let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("{family} requires a native cache-fit tolerance")),
+            "unexpected {family} error: {error}"
+        );
+    }
+
+    let optional = [
+        (synthetic_comp_spl_sur_smbh(), "compound"),
+        (synthetic_taper_spl_sur_smbh("taper_spl_sur"), "taper"),
+        (synthetic_ruled_spl_sur_smbh("rule_sur"), "ruled"),
+        (synthetic_sum_spl_sur_smbh("sum_spl_sur"), "sum"),
+        (synthetic_rot_spl_sur_smbh("rot_spl_sur"), "revolution"),
+        (synthetic_off_spl_sur_smbh("off_spl_sur"), "offset"),
+        (
+            synthetic_g2_blend_spl_sur_smbh("g2_blend_spl_sur", false),
+            "G2 blend",
+        ),
+    ];
+    for (smbh, family) in optional {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("optional-tolerance surface decode");
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less surface without optional tolerance");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{family} round trip: {error}"));
+        assert_eq!(
+            round_trip.ir.model.procedural_surfaces.len(),
+            1,
+            "{family} procedural surface was not reconstructed"
+        );
+        assert_eq!(
+            round_trip.ir.model.procedural_surfaces[0].cache_fit_tolerance,
+            None
+        );
+    }
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_loft_spl_sur_smbh("loft_spl_sur"))),
+            &DecodeOptions::default(),
+        )
+        .expect("loft decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less loft without optional tolerance");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less loft round trip");
+    assert!(matches!(
+        round_trip.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::Loft { .. }
+    ));
+    assert_eq!(
+        round_trip.ir.model.procedural_surfaces[0].cache_fit_tolerance,
+        None
+    );
+}
+
+#[test]
 fn generated_compound_loft_decodes_scale_and_zero_tail() {
     use cadmpeg_ir::geometry::{
         CompoundLoftDirection, CompoundLoftTail, ProceduralSurfaceDefinition,
