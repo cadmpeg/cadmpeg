@@ -667,6 +667,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             &graph,
             &mut surfaces_by_xmt,
             &mut curves_by_xmt,
+            &pcurves_by_xmt,
             source_stream,
             &mut annotations,
         );
@@ -2169,6 +2170,7 @@ fn retain_unresolved_topology_carriers(
     graph: &Graph,
     surfaces: &mut BTreeMap<u32, SurfaceId>,
     curves: &mut BTreeMap<u32, CurveId>,
+    pcurves: &BTreeMap<u32, PcurveId>,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
@@ -2199,7 +2201,7 @@ fn retain_unresolved_topology_carriers(
         let Some(curve_xmt) = edge.edge_fields().map(|fields| fields.curve) else {
             continue;
         };
-        if curve_xmt <= 1 || curves.contains_key(&curve_xmt) {
+        if curve_xmt <= 1 || curves.contains_key(&curve_xmt) || pcurves.contains_key(&curve_xmt) {
             continue;
         }
         let id = CurveId(format!("nx:s{stream_index}:curve#unknown-{curve_xmt}"));
@@ -2385,10 +2387,21 @@ fn orient_edge_range(
         }
         _ => range,
     };
-    let at = [
-        curve_point(geometry, range[0])?,
-        curve_point(geometry, range[1])?,
-    ];
+    let at = match (
+        curve_point(geometry, range[0]),
+        curve_point(geometry, range[1]),
+    ) {
+        (Some(start), Some(end)) => [start, end],
+        _ if ir
+            .model
+            .procedural_curves
+            .iter()
+            .any(|procedural| procedural.curve == *curve) =>
+        {
+            return Some((range, false));
+        }
+        _ => return None,
+    };
     let vertex_position = |vertex: &VertexId| {
         let vertex = ir
             .model

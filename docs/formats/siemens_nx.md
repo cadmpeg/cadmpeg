@@ -226,6 +226,10 @@ An unresolved carrier placeholder belongs to the transferred model only when an
 emitted FACE or EDGE references it. Fixed-record scanner candidates outside the
 resolved body closure do not create free unknown carriers.
 An edge's two serialized trim limits are an unordered interval. Canonical start/end order follows evaluation at the ascending limits. A periodic interval is then normalized by reducing its start modulo `2π` and preserving its nonnegative sweep; a seam-crossing interval therefore ends above `2π`.
+For a procedural carrier without a solved evaluator, the ascending native trim
+interval remains authoritative and FIN incidence supplies endpoint order. Lack
+of an evaluator does not replace an exact procedural construction with an
+unknown carrier.
 
 An EDGE may carry null curve reference `1` with a finite tolerance. With a null
 owning `FIN.curve`, this is a tolerant intersection edge: its carrier is the
