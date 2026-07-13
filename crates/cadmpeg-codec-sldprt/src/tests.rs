@@ -941,7 +941,11 @@ fn resolved_features_payload_with_names(codes: &[u32], names: &[&str]) -> Vec<u8
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }
-        if *name == "D1" {
+        if name.starts_with('D')
+            && name[1..]
+                .chars()
+                .all(|character| character.is_ascii_digit())
+        {
             payload.extend_from_slice(&[
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
                 0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
@@ -11129,6 +11133,47 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .native_ref
         .as_deref()
         .is_some_and(|id| id.starts_with("sldprt:feature-input:scalar#")));
+}
+
+#[test]
+fn decode_applies_owned_feature_units_to_resolved_scalar() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Fillet Name="Round1" Type="Fillet"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload_with_names(&[0], &["Round1", "D1"]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Round1"))
+        .expect("projected fillet feature");
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .expect("projected D1 parameter");
+    assert_eq!(parameter.expression, "25mm");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(25.0)
+        ))
+    );
+    assert!(parameter.native_ref.is_some());
 }
 
 #[test]

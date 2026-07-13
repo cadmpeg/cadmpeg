@@ -279,16 +279,7 @@ pub(crate) fn enrich_history_parameters(
             continue;
         }
         let feature = &mut histories[history_index].features[feature_index];
-        let expression = if name == "D1"
-            && (feature.xml_tag.eq_ignore_ascii_case("Extrusion")
-                || feature.kind.eq_ignore_ascii_case("BossExtrude")
-                || feature.kind.eq_ignore_ascii_case("CutExtrude")
-                || feature.kind.eq_ignore_ascii_case("Extrude"))
-        {
-            crate::history::format_length_mm(first * 1000.0)
-        } else {
-            first.to_string()
-        };
+        let expression = crate::history::format_native_scalar(feature, &name, first);
         feature.parameters.entry(name).or_insert(expression);
     }
 }

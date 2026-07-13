@@ -494,7 +494,15 @@ fn parse_native_parameter_literal(
     name: &str,
     expression: &str,
 ) -> Option<ParameterValue> {
-    let positional_length = match name {
+    if native_parameter_is_length(feature, name, Some(expression)) {
+        return parse_positive_dimension_length_mm(expression)
+            .map(|value| ParameterValue::Length(Length(value)));
+    }
+    parse_parameter_literal(expression)
+}
+
+fn native_parameter_is_length(feature: &Feature, name: &str, expression: Option<&str>) -> bool {
+    match name {
         "D1" => {
             is_extrude(feature)
                 || is_fillet(feature)
@@ -504,7 +512,9 @@ fn parse_native_parameter_literal(
                 || feature_family(feature, "Thickness")
                 || is_offset_plane(feature)
         }
-        "D2" if is_chamfer(feature) => parse_angle_rad(expression).is_none(),
+        "D2" if is_chamfer(feature) => {
+            expression.is_none_or(|value| parse_angle_rad(value).is_none())
+        }
         "D3" if matches!(
             pattern_form(feature),
             Some(PatternForm::Linear | PatternForm::CurveDriven)
@@ -513,12 +523,15 @@ fn parse_native_parameter_literal(
             true
         }
         _ => false,
-    };
-    if positional_length {
-        return parse_positive_dimension_length_mm(expression)
-            .map(|value| ParameterValue::Length(Length(value)));
     }
-    parse_parameter_literal(expression)
+}
+
+pub(crate) fn format_native_scalar(feature: &Feature, name: &str, value: f64) -> String {
+    if native_parameter_is_length(feature, name, None) {
+        format_length_mm(value * 1000.0)
+    } else {
+        value.to_string()
+    }
 }
 
 fn populate_parameter_dependencies(
