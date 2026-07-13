@@ -214,6 +214,8 @@ pub struct ZeroResolvedEdge {
     pub endpoints: [[f64; 3]; 2],
     /// The two radial surface-side occurrences.
     pub occurrences: [ZeroResolvedOccurrence; 2],
+    /// Endpoint order after applying each occurrence's packed loop sense.
+    pub occurrence_endpoints: [[[f64; 3]; 2]; 2],
 }
 
 /// Resolve the reference-closed subset of zero-entity edge occurrences.
@@ -314,9 +316,13 @@ pub fn resolve_occurrence_edges(topology: &ZeroEntityTopology) -> Vec<ZeroResolv
         }
         used[left] = true;
         used[right] = true;
+        let Some(right_endpoints) = occurrences[right].1 else {
+            continue;
+        };
         edges.push(ZeroResolvedEdge {
             endpoints,
             occurrences: [occurrences[left].0, occurrences[right].0],
+            occurrence_endpoints: [endpoints, right_endpoints],
         });
     }
     edges

@@ -112,7 +112,8 @@ fn annotate(
 fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let decoded = geometry::zero_entity_surfaces(&scan.data);
     let points = geometry::vertices(&scan.data);
-    if decoded.is_empty() && points.is_empty() {
+    let topology = crate::zero_entity::parse(&scan.data);
+    if decoded.is_empty() && points.is_empty() && topology.is_none() {
         return None;
     }
     let mut ir = CadIr::empty(Units::default());
@@ -125,6 +126,29 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
         "catia:payload:unknown#zero-entity",
     )
     .ok()?;
+    let topology_transferred = topology
+        .as_ref()
+        .is_some_and(|topology| transfer_zero_entity_topology(&mut ir, &mut annotations, topology));
+    if topology_transferred {
+        link_payload_carriers(&mut ir, &mut annotations).ok()?;
+        ir.annotations = annotations.build();
+        return Some((
+            ir,
+            DecodeReport {
+                format: "catia".to_string(),
+                container_only: false,
+                geometry_transferred: true,
+                losses: vec![LossNote {
+                    category: LossCategory::Topology,
+                    severity: Severity::Warning,
+                    message: "The zero-entity B-rep graph is connected; face/shell orientation gauge and pcurve geometry for odd support families remain unresolved."
+                        .to_string(),
+                    provenance: None,
+                }],
+                notes: container::summarize(scan).notes,
+            },
+        ));
+    }
     for (index, point) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:zero-entity:pt#{index}"));
         annotate(
@@ -188,6 +212,311 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
         notes: summary.notes,
     };
     Some((ir, report))
+}
+
+fn transfer_zero_entity_topology(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    topology: &crate::zero_entity::ZeroEntityTopology,
+) -> bool {
+    const TOLERANCE: f64 = 2e-3;
+    let edges = crate::zero_entity::resolve_occurrence_edges(topology);
+    if edges.len() != topology.physical_edges.len()
+        || topology.faces.len() != topology.carrier_runs.len()
+        || topology
+            .carrier_runs
+            .iter()
+            .any(|run| run.geometry.is_none())
+    {
+        return false;
+    }
+    let mut occurrence_edges = HashMap::new();
+    for (edge_index, edge) in edges.iter().enumerate() {
+        for (side, occurrence) in edge.occurrences.iter().enumerate() {
+            if occurrence_edges
+                .insert(
+                    (occurrence.loop_index, occurrence.member_index),
+                    (edge_index, side),
+                )
+                .is_some()
+            {
+                return false;
+            }
+        }
+    }
+    if topology
+        .loops
+        .iter()
+        .enumerate()
+        .any(|(loop_index, loop_)| {
+            (0..loop_.member_ids.len())
+                .any(|member| !occurrence_edges.contains_key(&(loop_index, member)))
+        })
+    {
+        return false;
+    }
+
+    let mut points = Vec::<Point3>::new();
+    let mut edge_vertices = Vec::with_capacity(edges.len());
+    for edge in &edges {
+        let mut pair = [0usize; 2];
+        for (slot, coordinates) in edge.endpoints.iter().enumerate() {
+            let point = Point3::new(coordinates[0], coordinates[1], coordinates[2]);
+            let matches: Vec<usize> = points
+                .iter()
+                .enumerate()
+                .filter_map(|(index, existing)| {
+                    (point_distance(point, *existing) <= TOLERANCE).then_some(index)
+                })
+                .collect();
+            pair[slot] = match matches.as_slice() {
+                [index] => *index,
+                [] => {
+                    points.push(point);
+                    points.len() - 1
+                }
+                _ => return false,
+            };
+        }
+        if pair[0] == pair[1] {
+            return false;
+        }
+        edge_vertices.push(pair);
+    }
+    if points.len() != topology.vertices.len() {
+        return false;
+    }
+
+    for (index, point) in points.into_iter().enumerate() {
+        let point_id = PointId(format!("catia:zero-entity:pt#{index}"));
+        let vertex_id = VertexId(format!("catia:zero-entity:v#{index}"));
+        annotate(
+            annotations,
+            &point_id,
+            "zero_entity_a9_03",
+            0,
+            "lifted_logical_vertex",
+            Exactness::Derived,
+        );
+        ir.model.points.push(Point {
+            id: point_id.clone(),
+            position: point,
+        });
+        annotate(
+            annotations,
+            &vertex_id,
+            "zero_entity_a9_03",
+            0,
+            "vertex_incidence_class",
+            Exactness::Derived,
+        );
+        annotations.derived(&vertex_id, "point");
+        ir.model.vertices.push(Vertex {
+            id: vertex_id,
+            point: point_id,
+            tolerance: None,
+        });
+    }
+    for (index, run) in topology.carrier_runs.iter().enumerate() {
+        let id = SurfaceId(format!("catia:zero-entity:surf#{index}"));
+        let record = &topology.records[run.carrier_ordinal];
+        annotate(
+            annotations,
+            &id,
+            "zero_entity_a9_03",
+            record.offset as u64,
+            "face_carrier_run",
+            Exactness::ByteExact,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: run.geometry.clone().unwrap_or_else(|| unreachable!()),
+            source_object: None,
+        });
+    }
+
+    let body_id = BodyId("catia:zero-entity:body#0".to_string());
+    let region_id = RegionId("catia:zero-entity:region#0".to_string());
+    let shell_id = ShellId("catia:zero-entity:shell#0".to_string());
+    for (id, tag) in [
+        (&body_id.0, "derived_body"),
+        (&region_id.0, "derived_region"),
+        (&shell_id.0, "derived_shell"),
+    ] {
+        annotate(
+            annotations,
+            id,
+            "zero_entity_a9_03",
+            0,
+            tag,
+            Exactness::Inferred,
+        );
+    }
+    annotations
+        .derived(&body_id, "kind")
+        .derived(&body_id, "regions");
+    ir.model.bodies.push(Body {
+        id: body_id.clone(),
+        kind: BodyKind::Solid,
+        regions: vec![region_id.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    annotations
+        .derived(&region_id, "body")
+        .derived(&region_id, "shells");
+    ir.model.regions.push(Region {
+        id: region_id.clone(),
+        body: body_id,
+        shells: vec![shell_id.clone()],
+    });
+    annotations
+        .derived(&shell_id, "region")
+        .derived(&shell_id, "faces");
+    ir.model.shells.push(Shell {
+        id: shell_id.clone(),
+        region: region_id,
+        faces: (0..topology.faces.len())
+            .map(|index| FaceId(format!("catia:zero-entity:face#{index}")))
+            .collect(),
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    });
+
+    for (edge_index, pair) in edge_vertices.iter().enumerate() {
+        let id = EdgeId(format!("catia:zero-entity:edge#{edge_index}"));
+        annotate(
+            annotations,
+            &id,
+            "zero_entity_a9_03",
+            0,
+            "radial_endpoint_pair",
+            Exactness::Derived,
+        );
+        annotations.derived(&id, "start").derived(&id, "end");
+        ir.model.edges.push(Edge {
+            id,
+            curve: None,
+            start: VertexId(format!("catia:zero-entity:v#{}", pair[0])),
+            end: VertexId(format!("catia:zero-entity:v#{}", pair[1])),
+            param_range: None,
+            tolerance: None,
+        });
+    }
+
+    let loop_owner: HashMap<usize, usize> = topology
+        .faces
+        .iter()
+        .enumerate()
+        .flat_map(|(face, value)| value.loop_indices.iter().map(move |loop_| (*loop_, face)))
+        .collect();
+    if loop_owner.len() != topology.loops.len() {
+        return false;
+    }
+    for (face_index, face) in topology.faces.iter().enumerate() {
+        let id = FaceId(format!("catia:zero-entity:face#{face_index}"));
+        let carrier = face.carrier_run.unwrap_or(face_index);
+        annotate(
+            annotations,
+            &id,
+            "zero_entity_a9_03",
+            topology.records[face.record_ordinal].offset as u64,
+            "face_loop_carrier_binding",
+            Exactness::Derived,
+        );
+        for field in ["shell", "surface", "sense", "loops"] {
+            annotations.derived(&id, field);
+        }
+        ir.model.faces.push(Face {
+            id,
+            shell: shell_id.clone(),
+            surface: SurfaceId(format!("catia:zero-entity:surf#{carrier}")),
+            sense: Sense::Forward,
+            loops: face
+                .loop_indices
+                .iter()
+                .map(|index| LoopId(format!("catia:zero-entity:loop#{index}")))
+                .collect(),
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+    }
+    for (loop_index, loop_) in topology.loops.iter().enumerate() {
+        let id = LoopId(format!("catia:zero-entity:loop#{loop_index}"));
+        let coedges: Vec<CoedgeId> = (0..loop_.member_ids.len())
+            .map(|member| CoedgeId(format!("catia:zero-entity:coedge#{loop_index}:{member}")))
+            .collect();
+        annotate(
+            annotations,
+            &id,
+            "zero_entity_a9_03",
+            topology.records[loop_.record_ordinal].offset as u64,
+            "serialized_loop",
+            Exactness::ByteExact,
+        );
+        annotations.derived(&id, "face").derived(&id, "coedges");
+        ir.model.loops.push(Loop {
+            id: id.clone(),
+            face: FaceId(format!(
+                "catia:zero-entity:face#{}",
+                loop_owner[&loop_index]
+            )),
+            coedges: coedges.clone(),
+        });
+        for member in 0..coedges.len() {
+            let (edge_index, side) = occurrence_edges[&(loop_index, member)];
+            let edge = &edges[edge_index];
+            let occurrence = edge.occurrence_endpoints[side];
+            let reversed = point_distance(
+                Point3::new(occurrence[0][0], occurrence[0][1], occurrence[0][2]),
+                Point3::new(
+                    edge.endpoints[1][0],
+                    edge.endpoints[1][1],
+                    edge.endpoints[1][2],
+                ),
+            ) <= TOLERANCE;
+            let radial = edge.occurrences[1 - side];
+            annotate(
+                annotations,
+                &coedges[member],
+                "zero_entity_a9_03",
+                topology.records[loop_.record_ordinal].offset as u64,
+                "serialized_loop_member",
+                Exactness::Derived,
+            );
+            for field in [
+                "owner_loop",
+                "edge",
+                "next",
+                "previous",
+                "radial_next",
+                "sense",
+            ] {
+                annotations.derived(&coedges[member], field);
+            }
+            ir.model.coedges.push(Coedge {
+                id: coedges[member].clone(),
+                owner_loop: id.clone(),
+                edge: EdgeId(format!("catia:zero-entity:edge#{edge_index}")),
+                next: coedges[(member + 1) % coedges.len()].clone(),
+                previous: coedges[(member + coedges.len() - 1) % coedges.len()].clone(),
+                radial_next: CoedgeId(format!(
+                    "catia:zero-entity:coedge#{}:{}",
+                    radial.loop_index, radial.member_index
+                )),
+                sense: if reversed {
+                    Sense::Reversed
+                } else {
+                    Sense::Forward
+                },
+                pcurve: None,
+            });
+        }
+    }
+    true
 }
 
 /// Decode direct E5 circle carriers.  Their edge and face references are a
