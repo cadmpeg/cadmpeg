@@ -112,6 +112,8 @@ pub struct DesignParameter {
 pub enum DimensionDisplay {
     /// Displays the dimension as a diameter.
     Diameter,
+    /// Displays the dimension as a radius.
+    Radius,
 }
 
 /// Canonical scalar value of a literal design parameter.

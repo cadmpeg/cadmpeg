@@ -452,8 +452,10 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                         .cloned()
                         .unwrap_or_default();
                     let parse_value = |value: &str| match display {
-                        Some(DimensionDisplay::Diameter) => parse_dimension_display_length(value)
-                            .map(|value| ParameterValue::Length(Length(value))),
+                        Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
+                            parse_dimension_display_length(value)
+                                .map(|value| ParameterValue::Length(Length(value)))
+                        }
                         None => parse_native_parameter_literal(feature, &name, value),
                     };
                     let value = properties
@@ -2666,7 +2668,7 @@ fn parse_bool(value: &str) -> Option<bool> {
 }
 
 fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
-    if dimension_display(expression) == Some(DimensionDisplay::Diameter) {
+    if dimension_display(expression).is_some() {
         return parse_dimension_display_length(expression)
             .map(|value| ParameterValue::Length(Length(value)));
     }
@@ -2690,10 +2692,16 @@ fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
 }
 
 fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
-    expression
-        .trim()
-        .starts_with("<MOD-DIAM>")
-        .then_some(DimensionDisplay::Diameter)
+    let expression = expression.trim();
+    if expression.starts_with("<MOD-DIAM>")
+        || (expression.starts_with(['⌀', 'Ø']) && parse_length_mm(expression).is_some())
+    {
+        Some(DimensionDisplay::Diameter)
+    } else if expression.starts_with(['R', 'r']) && parse_length_mm(expression).is_some() {
+        Some(DimensionDisplay::Radius)
+    } else {
+        None
+    }
 }
 
 fn parse_dimension_display_length(expression: &str) -> Option<f64> {
@@ -2702,7 +2710,7 @@ fn parse_dimension_display_length(expression: &str) -> Option<f64> {
         .strip_prefix("<MOD-DIAM>")
         .unwrap_or(expression)
         .trim();
-    parse_dimension_length_mm(value)
+    parse_dimension_length_mm(value).or_else(|| parse_length_mm(expression))
 }
 
 fn parse_neutral_parameter_literal(

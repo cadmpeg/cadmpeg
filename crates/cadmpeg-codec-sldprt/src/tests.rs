@@ -5199,6 +5199,13 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
         Some(&ParameterValue::Length(Length(2.5)))
     );
     assert_eq!(
+        parameters
+            .iter()
+            .find(|parameter| parameter.name == "Diameter")
+            .and_then(|parameter| parameter.display),
+        Some(DimensionDisplay::Diameter)
+    );
+    assert_eq!(
         value("ModifiedDiameter"),
         Some(&ParameterValue::Length(Length(3.18)))
     );
@@ -5213,6 +5220,13 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     assert_eq!(value("Expression"), None);
     assert_eq!(value("Length"), Some(&ParameterValue::Length(Length(12.7))));
     assert_eq!(value("Radius"), Some(&ParameterValue::Length(Length(0.5))));
+    assert_eq!(
+        parameters
+            .iter()
+            .find(|parameter| parameter.name == "Radius")
+            .and_then(|parameter| parameter.display),
+        Some(DimensionDisplay::Radius)
+    );
     assert_eq!(value("Ratio"), Some(&ParameterValue::Real(1.25)));
     assert!(parameters
         .iter()
@@ -5271,6 +5285,16 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             .and_then(|parameter| parameter.value.as_ref()),
         Some(ParameterValue::Length(Length(2.0)))
     ));
+    assert_eq!(
+        regenerated
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == "Radius")
+            .and_then(|parameter| parameter.display),
+        Some(DimensionDisplay::Radius)
+    );
     assert!(matches!(
         regenerated
             .ir
