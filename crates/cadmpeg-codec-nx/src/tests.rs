@@ -389,6 +389,23 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
+#[test]
+fn decode_preserves_multiple_shells_in_one_region() {
+    let stream = shared_region_shells_partition_stream();
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.regions.len(), 1);
+    assert_eq!(result.ir.model.shells.len(), 2);
+    assert_eq!(result.ir.model.regions[0].shells.len(), 2);
+    assert_eq!(result.ir.model.bodies[0].regions.len(), 1);
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
 fn offset_surface_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
     let face = stream
@@ -490,6 +507,62 @@ fn pcurve_topology_partition_stream() -> Vec<u8> {
     put_ref(&mut surface_curve, 23, 9);
     put_f64(&mut surface_curve, 25, 0.000_01);
     stream.extend(surface_curve);
+    stream
+}
+
+fn shared_region_shells_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    let mut shell = record(13, 24);
+    put_ref(&mut shell, 2, 13);
+    for (offset, reference) in [
+        (8, 1),
+        (10, 2),
+        (12, 1),
+        (14, 14),
+        (16, 1),
+        (18, 1),
+        (20, 12),
+        (22, 1),
+    ] {
+        put_ref(&mut shell, offset, reference);
+    }
+    stream.extend(shell);
+
+    let mut face = record(14, 39);
+    put_ref(&mut face, 2, 14);
+    put_f64(&mut face, 10, 0.000_2);
+    put_ref(&mut face, 18, 1);
+    put_ref(&mut face, 20, 1);
+    put_ref(&mut face, 22, 15);
+    put_ref(&mut face, 24, 13);
+    put_ref(&mut face, 26, 6);
+    face[28] = b'+';
+    stream.extend(face);
+
+    let mut loop_ = record(15, 16);
+    put_ref(&mut loop_, 2, 15);
+    put_ref(&mut loop_, 10, 16);
+    put_ref(&mut loop_, 12, 14);
+    put_ref(&mut loop_, 14, 1);
+    stream.extend(loop_);
+
+    let mut fin = record(17, 23);
+    put_ref(&mut fin, 2, 16);
+    put_ref(&mut fin, 6, 15);
+    put_ref(&mut fin, 8, 16);
+    put_ref(&mut fin, 10, 16);
+    put_ref(&mut fin, 12, 10);
+    put_ref(&mut fin, 16, 17);
+    put_ref(&mut fin, 18, 9);
+    fin[22] = b'+';
+    stream.extend(fin);
+
+    let mut edge = record(16, 32);
+    put_ref(&mut edge, 2, 17);
+    put_f64(&mut edge, 10, 0.000_3);
+    put_ref(&mut edge, 18, 16);
+    put_ref(&mut edge, 24, 9);
+    stream.extend(edge);
     stream
 }
 

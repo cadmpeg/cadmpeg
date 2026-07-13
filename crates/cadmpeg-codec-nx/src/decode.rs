@@ -1021,6 +1021,7 @@ fn emit_topology(
         });
     }
 
+    let mut regions: BTreeMap<u32, (RegionId, BodyId)> = BTreeMap::new();
     let mut shells = BTreeMap::new();
     for node in body_shape_shells {
         let Some(fields) = node.shell_fields() else {
@@ -1029,16 +1030,36 @@ fn emit_topology(
         let Some(body) = bodies.get(&fields.body).cloned() else {
             continue;
         };
-        let region_id = RegionId(format!("{prefix}:region#{}", node.xmt));
+        let Some(region_node) = graph.get(19, fields.region) else {
+            continue;
+        };
+        let region_id = if let Some((region, owner)) = regions.get(&fields.region) {
+            if owner != &body {
+                continue;
+            }
+            region.clone()
+        } else {
+            let region = RegionId(format!("{prefix}:region#{}", fields.region));
+            annotate_node(annotations, &region, source_stream, region_node, "REGION");
+            annotations.derived(&region, "body");
+            ir.model.regions.push(Region {
+                id: region.clone(),
+                body: body.clone(),
+                shells: Vec::new(),
+            });
+            if let Some(parent) = ir
+                .model
+                .bodies
+                .iter_mut()
+                .find(|candidate| candidate.id == body)
+            {
+                parent.regions.push(region.clone());
+            }
+            regions.insert(fields.region, (region.clone(), body.clone()));
+            region
+        };
         let shell_id = ShellId(format!("{prefix}:shell#{}", node.xmt));
-        annotate_node(annotations, &region_id, source_stream, node, "SHELL");
-        annotations.exactness(&region_id, Exactness::Inferred);
         annotate_node(annotations, &shell_id, source_stream, node, "SHELL");
-        ir.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body.clone(),
-            shells: vec![shell_id.clone()],
-        });
         ir.model.shells.push(Shell {
             id: shell_id.clone(),
             region: region_id.clone(),
@@ -1048,11 +1069,11 @@ fn emit_topology(
         });
         if let Some(parent) = ir
             .model
-            .bodies
+            .regions
             .iter_mut()
-            .find(|candidate| candidate.id == body)
+            .find(|candidate| candidate.id == region_id)
         {
-            parent.regions.push(region_id);
+            parent.shells.push(shell_id.clone());
         }
         shells.insert(node.xmt, shell_id);
     }
