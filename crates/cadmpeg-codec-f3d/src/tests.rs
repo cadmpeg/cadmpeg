@@ -1884,6 +1884,17 @@ fn synthetic_exact_spl_sur_smbh(name: &str) -> Vec<u8> {
     bytes
 }
 
+fn synthetic_exact_spl_sur_with_decoy_sense_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_exact_spl_sur_smbh("exact_spl_sur");
+    let marker = b"\x0f\x0d\x0dexact_spl_sur";
+    let subtype = bytes
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("generated exact spline-surface subtype");
+    bytes.splice(subtype..subtype, [0x0a, 0x0b]);
+    bytes
+}
+
 fn synthetic_ruled_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -13684,6 +13695,42 @@ fn generated_intcurve_sense_uses_token_adjacent_to_subtype() {
     assert_eq!(
         decode_curve(synthetic_geometry_with_decoy_curve_sense_smbh()),
         decode_curve(synthetic_geometry_with_exact_curve_smbh())
+    );
+}
+
+#[test]
+fn generated_spline_surface_sense_uses_token_adjacent_to_subtype() {
+    let decode_surface = |smbh: Vec<u8>| {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("generated exact spline-surface decode");
+        let surface_id = &result.ir.model.procedural_surfaces[0].surface;
+        let geometry = result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == *surface_id)
+            .expect("exact spline-surface carrier")
+            .geometry
+            .clone();
+        let face_sense = result
+            .ir
+            .model
+            .faces
+            .iter()
+            .find(|face| face.surface == *surface_id)
+            .expect("spline-surface face")
+            .sense;
+        (geometry, face_sense)
+    };
+
+    assert_eq!(
+        decode_surface(synthetic_exact_spl_sur_with_decoy_sense_smbh()),
+        decode_surface(synthetic_exact_spl_sur_smbh("exact_spl_sur"))
     );
 }
 
