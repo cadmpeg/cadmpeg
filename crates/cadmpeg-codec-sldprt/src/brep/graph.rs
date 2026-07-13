@@ -2165,7 +2165,14 @@ fn synthesize_sphere_seams(
         let vertex_id = VertexId(format!("sldprt:brep:vertex#sphere-seam:{suffix}"));
         let edge_id = EdgeId(format!("sldprt:brep:edge#sphere-seam:{suffix}"));
         let coedge_id = CoedgeId(format!("sldprt:brep:coedge#sphere-seam:{suffix}"));
-        for id in [&point_id.0, &vertex_id.0, &edge_id.0, &coedge_id.0] {
+        let pcurve_id = PcurveId(format!("sldprt:brep:pcurve#sphere-seam:{suffix}"));
+        for id in [
+            &point_id.0,
+            &vertex_id.0,
+            &edge_id.0,
+            &coedge_id.0,
+            &pcurve_id.0,
+        ] {
             annotations
                 .note(id, source_stream, 0)
                 .tag("derived_sphere_seam");
@@ -2192,6 +2199,17 @@ fn synthesize_sphere_seams(
             param_range: None,
             tolerance: None,
         });
+        out.pcurves.push(Pcurve {
+            id: pcurve_id.clone(),
+            geometry: PcurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point2::new(0.0, std::f64::consts::FRAC_PI_2),
+                direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: Some([0.0, std::f64::consts::TAU]),
+            fit_tolerance: None,
+        });
         ring.push(coedge_id.clone());
         coedge_indices.insert(coedge_id.clone(), out.coedges.len());
         out.coedges.push(Coedge {
@@ -2202,7 +2220,7 @@ fn synthesize_sphere_seams(
             previous: ring[2].clone(),
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
-            pcurve: None,
+            pcurve: Some(pcurve_id),
         });
         for (index, id) in ring.iter().enumerate() {
             if let Some(coedge_index) = coedge_indices.get(id) {

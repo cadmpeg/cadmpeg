@@ -4560,7 +4560,21 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         .unwrap();
     assert_eq!(result.ir.model.edges.len(), 4);
     assert_eq!(result.ir.model.loops[0].coedges.len(), 4);
-    assert_eq!(result.ir.model.pcurves.len(), 3);
+    assert_eq!(result.ir.model.pcurves.len(), 4);
+    let pole = result
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.0.contains("sphere-seam"))
+        .expect("sphere pole pcurve");
+    assert!(matches!(
+        pole.geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction }
+            if origin == cadmpeg_ir::math::Point2::new(0.0, std::f64::consts::FRAC_PI_2)
+                && direction == cadmpeg_ir::math::Point2::new(1.0, 0.0)
+    ));
+    assert_eq!(pole.parameter_range, Some([0.0, std::f64::consts::TAU]));
     let seam = result
         .ir
         .model
