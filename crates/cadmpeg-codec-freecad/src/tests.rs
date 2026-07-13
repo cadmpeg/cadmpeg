@@ -138,7 +138,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         ("Payload.bin", b"payload"),
         (
             "Shape.brp",
-            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 2\n1 10 20 30 1 0 0\n7 0 0 2 3 2 0 0 0 5 0 0 10 0 0 0 3 1 3\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 2\n1 0 0 0 0 0 1 1 0 0 0 1 0\n9 0 0 0 0 1 1 2 2 2 2 0 0 0 0 1 0 1 0 0 1 1 0 0 2 1 2 0 2 1 2\nTriangulations 0\nTShapes 0\n*",
+            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 4\n1 10 20 30 1 0 0\n7 0 0 2 3 2 0 0 0 5 0 0 10 0 0 0 3 1 3\n8 0 5 1 0 0 0 1 0 0\n9 2 0 0 1 1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 2\n1 0 0 0 0 0 1 1 0 0 0 1 0\n9 0 0 0 0 1 1 2 2 2 2 0 0 0 0 1 0 1 0 0 1 1 0 0 2 1 2 0 2 1 2\nTriangulations 0\nTShapes 0\n*",
         ),
     ]);
     let result = FcstdCodec
@@ -217,7 +217,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         Some(1)
     );
     assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.curves.len(), 2);
+    assert_eq!(result.ir.model.curves.len(), 6);
     match &result.ir.model.curves[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } => {
             assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
@@ -233,6 +233,25 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             assert!(nurbs.weights.is_none());
         }
         other => panic!("unexpected curve {other:?}"),
+    }
+    assert_eq!(result.ir.model.procedural_curves.len(), 2);
+    match &result.ir.model.procedural_curves[0].definition {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+            parameter_range, ..
+        } => assert_eq!(*parameter_range, [0.0, 5.0]),
+        other => panic!("unexpected trimmed construction {other:?}"),
+    }
+    match &result.ir.model.procedural_curves[1].definition {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
+            distance,
+            direction,
+            ..
+        } => {
+            assert_eq!(*distance, 2.0);
+            let direction = direction.expect("offset direction");
+            assert_eq!([direction.x, direction.y, direction.z], [0.0, 0.0, 1.0]);
+        }
+        other => panic!("unexpected offset construction {other:?}"),
     }
     assert_eq!(result.ir.model.surfaces.len(), 2);
     match &result.ir.model.surfaces[0].geometry {

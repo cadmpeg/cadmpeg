@@ -1612,6 +1612,27 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
+        if let ProceduralCurveDefinition::Offset {
+            distance,
+            direction,
+            ..
+        } = &procedural.definition
+        {
+            let direction_valid = direction.is_none_or(|direction| {
+                direction.x.is_finite()
+                    && direction.y.is_finite()
+                    && direction.z.is_finite()
+                    && direction.norm() > 0.0
+            });
+            if !distance.is_finite() || !direction_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "offset curve distance or direction is invalid",
+                );
+            }
+            continue;
+        }
         if let ProceduralCurveDefinition::TwoSidedOffset {
             context, offsets, ..
         } = &procedural.definition

@@ -13,9 +13,11 @@ use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
 };
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::{CurveId, SurfaceId, UnknownId};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId, UnknownId};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -377,10 +379,11 @@ impl Codec for FcstdCodec {
             namespace.set_arena("entries", &entry_records)?;
             namespace.set_arena("logical_ledger", &logical_ledger)?;
             namespace.set_arena("shape_payloads", &shape_payloads)?;
-            let curves = transfer_text_curves(&shape_payloads, &graph.properties);
+            let curve_transfer = transfer_text_curves(&shape_payloads, &graph.properties);
             let surfaces = transfer_text_surfaces(&shape_payloads, &graph.properties);
-            geometry_transferred = !curves.is_empty() || !surfaces.is_empty();
-            ir.model.curves.extend(curves);
+            geometry_transferred = !curve_transfer.curves.is_empty() || !surfaces.is_empty();
+            ir.model.curves.extend(curve_transfer.curves);
+            ir.model.procedural_curves.extend(curve_transfer.procedural);
             ir.model.surfaces.extend(surfaces);
         }
         let losses = if options.container_only {
@@ -407,93 +410,149 @@ impl Codec for FcstdCodec {
     }
 }
 
+#[derive(Default)]
+struct CurveTransfer {
+    curves: Vec<Curve>,
+    procedural: Vec<ProceduralCurve>,
+}
+
 fn transfer_text_curves(
     payloads: &[brep::ShapePayloadRecord],
     properties: &[native::PropertyRecord],
-) -> Vec<Curve> {
-    payloads
+) -> CurveTransfer {
+    let mut transfer = CurveTransfer::default();
+    for (payload, text) in payloads
         .iter()
         .filter_map(|payload| payload.text.as_ref().map(|text| (payload, text)))
-        .flat_map(|(payload, text)| {
-            let object_id = properties
-                .iter()
-                .find(|property| property.id == payload.property)
-                .map_or_else(
-                    || payload.property.clone(),
-                    |property| property.owner.clone(),
-                );
-            text.curves.iter().enumerate().map(move |(index, curve)| {
-                let geometry = match curve {
-                    brep::TextCurve::Line { origin, direction } => CurveGeometry::Line {
-                        origin: *origin,
-                        direction: *direction,
-                    },
-                    brep::TextCurve::Circle {
-                        center,
-                        axis,
-                        ref_direction,
-                        radius,
-                    } => CurveGeometry::Circle {
-                        center: *center,
-                        axis: *axis,
-                        ref_direction: *ref_direction,
-                        radius: *radius,
-                    },
-                    brep::TextCurve::Ellipse {
-                        center,
-                        axis,
-                        major_direction,
-                        major_radius,
-                        minor_radius,
-                    } => CurveGeometry::Ellipse {
-                        center: *center,
-                        axis: *axis,
-                        major_direction: *major_direction,
-                        major_radius: *major_radius,
-                        minor_radius: *minor_radius,
-                    },
-                    brep::TextCurve::Parabola {
-                        vertex,
-                        axis,
-                        major_direction,
-                        focal_distance,
-                    } => CurveGeometry::Parabola {
-                        vertex: *vertex,
-                        axis: *axis,
-                        major_direction: *major_direction,
-                        focal_distance: *focal_distance,
-                    },
-                    brep::TextCurve::Hyperbola {
-                        center,
-                        axis,
-                        major_direction,
-                        major_radius,
-                        minor_radius,
-                    } => CurveGeometry::Hyperbola {
-                        center: *center,
-                        axis: *axis,
-                        major_direction: *major_direction,
-                        major_radius: *major_radius,
-                        minor_radius: *minor_radius,
-                    },
-                    brep::TextCurve::Nurbs(nurbs) => CurveGeometry::Nurbs(nurbs.clone()),
-                };
-                Curve {
-                    id: CurveId(format!("{}:curve#{}", payload.id, index + 1)),
-                    geometry,
-                    source_object: Some(SourceObjectAssociation {
-                        format: "fcstd".into(),
-                        object_id: object_id.clone(),
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
-                        instance_path: Vec::new(),
-                    }),
-                }
-            })
-        })
-        .collect()
+    {
+        let object_id = properties
+            .iter()
+            .find(|property| property.id == payload.property)
+            .map_or_else(
+                || payload.property.clone(),
+                |property| property.owner.clone(),
+            );
+        let association = SourceObjectAssociation {
+            format: "fcstd".into(),
+            object_id,
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        };
+        for (index, curve) in text.curves.iter().enumerate() {
+            let id = CurveId(format!("{}:curve#{}", payload.id, index + 1));
+            append_text_curve(curve, id, &association, &mut transfer);
+        }
+    }
+    transfer
+}
+
+fn append_text_curve(
+    curve: &brep::TextCurve,
+    id: CurveId,
+    association: &SourceObjectAssociation,
+    transfer: &mut CurveTransfer,
+) -> CurveGeometry {
+    let geometry = match curve {
+        brep::TextCurve::Line { origin, direction } => CurveGeometry::Line {
+            origin: *origin,
+            direction: *direction,
+        },
+        brep::TextCurve::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => CurveGeometry::Circle {
+            center: *center,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: *radius,
+        },
+        brep::TextCurve::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => CurveGeometry::Ellipse {
+            center: *center,
+            axis: *axis,
+            major_direction: *major_direction,
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        },
+        brep::TextCurve::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => CurveGeometry::Parabola {
+            vertex: *vertex,
+            axis: *axis,
+            major_direction: *major_direction,
+            focal_distance: *focal_distance,
+        },
+        brep::TextCurve::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => CurveGeometry::Hyperbola {
+            center: *center,
+            axis: *axis,
+            major_direction: *major_direction,
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        },
+        brep::TextCurve::Nurbs(nurbs) => CurveGeometry::Nurbs(nurbs.clone()),
+        brep::TextCurve::Trimmed {
+            parameter_range,
+            basis,
+        } => {
+            let basis_id = CurveId(format!("{}:basis", id.0));
+            let basis_geometry = append_text_curve(basis, basis_id.clone(), association, transfer);
+            transfer.procedural.push(ProceduralCurve {
+                id: ProceduralCurveId(format!("{}:construction", id.0)),
+                curve: id.clone(),
+                definition: ProceduralCurveDefinition::Subset {
+                    source: basis_id,
+                    parameter_range: *parameter_range,
+                },
+                cache_fit_tolerance: None,
+            });
+            basis_geometry
+        }
+        brep::TextCurve::Offset {
+            distance,
+            direction,
+            basis,
+        } => {
+            let basis_id = CurveId(format!("{}:basis", id.0));
+            append_text_curve(basis, basis_id.clone(), association, transfer);
+            transfer.procedural.push(ProceduralCurve {
+                id: ProceduralCurveId(format!("{}:construction", id.0)),
+                curve: id.clone(),
+                definition: ProceduralCurveDefinition::Offset {
+                    source: basis_id,
+                    distance: *distance,
+                    direction: Some(*direction),
+                    support: None,
+                },
+                cache_fit_tolerance: None,
+            });
+            CurveGeometry::Unknown { record: None }
+        }
+    };
+    transfer.curves.push(Curve {
+        id,
+        geometry: geometry.clone(),
+        source_object: Some(association.clone()),
+    });
+    geometry
 }
 
 fn transfer_text_surfaces(

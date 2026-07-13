@@ -88,6 +88,17 @@ pub enum TextCurve {
     },
     /// Rational or non-rational B-spline curve.
     Nurbs(NurbsCurve),
+    /// A parameter sub-range of an inline basis curve.
+    Trimmed {
+        parameter_range: [f64; 2],
+        basis: Box<TextCurve>,
+    },
+    /// A signed offset from an inline basis curve in a fixed direction.
+    Offset {
+        distance: f64,
+        direction: Vector3,
+        basis: Box<TextCurve>,
+    },
 }
 
 /// Supported byte-exact surface records from the text carrier table.
@@ -450,107 +461,7 @@ fn parse_curves(
     let mut cursor = TokenCursor::new(&tokens[start..end]);
     let mut curves = Vec::with_capacity(count);
     for index in 0..count {
-        let kind = cursor.integer("curve type")?;
-        let curve = match kind {
-            1 => TextCurve::Line {
-                origin: cursor.point("line origin")?,
-                direction: cursor.vector("line direction")?,
-            },
-            2 => {
-                let center = cursor.point("circle center")?;
-                let axis = cursor.vector("circle axis")?;
-                let ref_direction = cursor.vector("circle reference direction")?;
-                let _y_direction = cursor.vector("circle y direction")?;
-                TextCurve::Circle {
-                    center,
-                    axis,
-                    ref_direction,
-                    radius: cursor.real("circle radius")?,
-                }
-            }
-            3 => {
-                let center = cursor.point("ellipse center")?;
-                let axis = cursor.vector("ellipse axis")?;
-                let major_direction = cursor.vector("ellipse major direction")?;
-                let _y_direction = cursor.vector("ellipse y direction")?;
-                TextCurve::Ellipse {
-                    center,
-                    axis,
-                    major_direction,
-                    major_radius: cursor.real("ellipse major radius")?,
-                    minor_radius: cursor.real("ellipse minor radius")?,
-                }
-            }
-            4 => {
-                let vertex = cursor.point("parabola vertex")?;
-                let axis = cursor.vector("parabola axis")?;
-                let major_direction = cursor.vector("parabola major direction")?;
-                let _y_direction = cursor.vector("parabola y direction")?;
-                TextCurve::Parabola {
-                    vertex,
-                    axis,
-                    major_direction,
-                    focal_distance: cursor.real("parabola focal distance")?,
-                }
-            }
-            5 => {
-                let center = cursor.point("hyperbola center")?;
-                let axis = cursor.vector("hyperbola axis")?;
-                let major_direction = cursor.vector("hyperbola major direction")?;
-                let _y_direction = cursor.vector("hyperbola y direction")?;
-                TextCurve::Hyperbola {
-                    center,
-                    axis,
-                    major_direction,
-                    major_radius: cursor.real("hyperbola major radius")?,
-                    minor_radius: cursor.real("hyperbola minor radius")?,
-                }
-            }
-            6 => TextCurve::Nurbs(parse_bezier_curve(&mut cursor)?),
-            7 => {
-                let rational = cursor.boolean("B-spline rational flag")?;
-                let periodic = cursor.boolean("B-spline periodic flag")?;
-                let degree = cursor.count("B-spline degree", 64)?;
-                let pole_count = cursor.count("B-spline pole count", 1_000_000)?;
-                let knot_count = cursor.count("B-spline knot count", 1_000_000)?;
-                let mut control_points = Vec::with_capacity(pole_count);
-                let mut weights = rational.then(|| Vec::with_capacity(pole_count));
-                for _ in 0..pole_count {
-                    control_points.push(cursor.point("B-spline pole")?);
-                    if let Some(weights) = &mut weights {
-                        weights.push(cursor.real("B-spline weight")?);
-                    }
-                }
-                let mut knots = Vec::new();
-                for _ in 0..knot_count {
-                    let knot = cursor.real("B-spline knot")?;
-                    let multiplicity = cursor.count("B-spline knot multiplicity", degree + 1)?;
-                    let expanded = knots.len().checked_add(multiplicity).ok_or_else(|| {
-                        CodecError::Malformed("B-spline knot count overflow".into())
-                    })?;
-                    if expanded > 2_000_000 {
-                        return Err(CodecError::Malformed(
-                            "expanded B-spline knot limit exceeded".into(),
-                        ));
-                    }
-                    knots.resize(expanded, knot);
-                }
-                TextCurve::Nurbs(NurbsCurve {
-                    degree: degree as u32,
-                    knots,
-                    control_points,
-                    weights,
-                    periodic,
-                })
-            }
-            other => {
-                return Err(CodecError::NotImplemented(format!(
-                    "text B-rep 3D curve family {other} at table index {}",
-                    index + 1
-                )))
-            }
-        };
-        curves.push(curve);
+        curves.push(parse_curve(&mut cursor, 0, index + 1)?);
     }
     if !cursor.is_empty() {
         return Err(CodecError::Malformed(
@@ -558,6 +469,133 @@ fn parse_curves(
         ));
     }
     Ok(curves)
+}
+
+fn parse_curve(
+    cursor: &mut TokenCursor<'_>,
+    depth: usize,
+    table_index: usize,
+) -> Result<TextCurve, CodecError> {
+    if depth > 64 {
+        return Err(CodecError::Malformed(
+            "text B-rep curve recursion limit exceeded".into(),
+        ));
+    }
+    let kind = cursor.integer("curve type")?;
+    Ok(match kind {
+        1 => TextCurve::Line {
+            origin: cursor.point("line origin")?,
+            direction: cursor.vector("line direction")?,
+        },
+        2 => {
+            let center = cursor.point("circle center")?;
+            let axis = cursor.vector("circle axis")?;
+            let ref_direction = cursor.vector("circle reference direction")?;
+            let _y_direction = cursor.vector("circle y direction")?;
+            TextCurve::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius: cursor.real("circle radius")?,
+            }
+        }
+        3 => {
+            let center = cursor.point("ellipse center")?;
+            let axis = cursor.vector("ellipse axis")?;
+            let major_direction = cursor.vector("ellipse major direction")?;
+            let _y_direction = cursor.vector("ellipse y direction")?;
+            TextCurve::Ellipse {
+                center,
+                axis,
+                major_direction,
+                major_radius: cursor.real("ellipse major radius")?,
+                minor_radius: cursor.real("ellipse minor radius")?,
+            }
+        }
+        4 => {
+            let vertex = cursor.point("parabola vertex")?;
+            let axis = cursor.vector("parabola axis")?;
+            let major_direction = cursor.vector("parabola major direction")?;
+            let _y_direction = cursor.vector("parabola y direction")?;
+            TextCurve::Parabola {
+                vertex,
+                axis,
+                major_direction,
+                focal_distance: cursor.real("parabola focal distance")?,
+            }
+        }
+        5 => {
+            let center = cursor.point("hyperbola center")?;
+            let axis = cursor.vector("hyperbola axis")?;
+            let major_direction = cursor.vector("hyperbola major direction")?;
+            let _y_direction = cursor.vector("hyperbola y direction")?;
+            TextCurve::Hyperbola {
+                center,
+                axis,
+                major_direction,
+                major_radius: cursor.real("hyperbola major radius")?,
+                minor_radius: cursor.real("hyperbola minor radius")?,
+            }
+        }
+        6 => TextCurve::Nurbs(parse_bezier_curve(cursor)?),
+        7 => TextCurve::Nurbs(parse_nurbs_curve(cursor)?),
+        8 => {
+            let first = cursor.real("trimmed curve first parameter")?;
+            let last = cursor.real("trimmed curve last parameter")?;
+            if first > last {
+                return Err(CodecError::Malformed(
+                    "trimmed curve parameter range is reversed".into(),
+                ));
+            }
+            TextCurve::Trimmed {
+                parameter_range: [first, last],
+                basis: Box::new(parse_curve(cursor, depth + 1, table_index)?),
+            }
+        }
+        9 => {
+            let distance = cursor.real("offset curve distance")?;
+            let direction = cursor.vector("offset curve direction")?;
+            if direction.norm() == 0.0 {
+                return Err(CodecError::Malformed(
+                    "offset curve direction is zero".into(),
+                ));
+            }
+            TextCurve::Offset {
+                distance,
+                direction,
+                basis: Box::new(parse_curve(cursor, depth + 1, table_index)?),
+            }
+        }
+        other => {
+            return Err(CodecError::NotImplemented(format!(
+                "text B-rep 3D curve family {other} at table index {table_index}"
+            )))
+        }
+    })
+}
+
+fn parse_nurbs_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecError> {
+    let rational = cursor.boolean("B-spline rational flag")?;
+    let periodic = cursor.boolean("B-spline periodic flag")?;
+    let degree = cursor.count("B-spline degree", 64)?;
+    let pole_count = cursor.count("B-spline pole count", 1_000_000)?;
+    let knot_count = cursor.count("B-spline knot count", 1_000_000)?;
+    let mut control_points = Vec::with_capacity(pole_count);
+    let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+    for _ in 0..pole_count {
+        control_points.push(cursor.point("B-spline pole")?);
+        if let Some(weights) = &mut weights {
+            weights.push(cursor.real("B-spline weight")?);
+        }
+    }
+    let knots = parse_knots(cursor, knot_count, degree, "B-spline")?;
+    Ok(NurbsCurve {
+        degree: degree as u32,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    })
 }
 
 fn parse_bezier_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecError> {
@@ -696,5 +734,16 @@ mod tests {
         assert_eq!(surface.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
         assert_eq!(surface.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
         assert!(surface.weights.is_none());
+    }
+
+    #[test]
+    fn rejects_invalid_recursive_curve_domains() {
+        let reversed = text_brep("8 2 1 1 0 0 0 1 0 0", 1, "", 0);
+        let error = parse_text(reversed.as_bytes()).expect_err("reversed trim must fail");
+        assert!(error.to_string().contains("parameter range is reversed"));
+
+        let zero_normal = text_brep("9 2 0 0 0 1 0 0 0 1 0 0", 1, "", 0);
+        let error = parse_text(zero_normal.as_bytes()).expect_err("zero normal must fail");
+        assert!(error.to_string().contains("direction is zero"));
     }
 }

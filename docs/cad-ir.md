@@ -150,7 +150,7 @@ Procedural surface definitions are:
 
 A blend radius law is constant, linear between endpoint radii, or an explicit NURBS law. An unresolved support occupies its fixed side as `null`; omission of the semantic source is reported as decode loss.
 
-Procedural curve definitions are intersection, projection, offset, blend spine, or unknown. Intersection keeps two fixed optional support slots. Projection identifies source curve, support surface, and optional projection direction. Offset identifies source curve, signed distance, and optional support surface.
+Procedural curve definitions are intersection, projection, offset, blend spine, or unknown. Intersection keeps two fixed optional support slots. Projection identifies source curve, support surface, and optional projection direction. Offset identifies its source curve, signed distance, optional support surface, and an optional fixed plane-normal direction when the source defines a free-space planar offset.
 
 ## Sparse annotations
 

@@ -2129,6 +2129,10 @@ pub enum ProceduralCurveDefinition {
         source: CurveId,
         /// Signed offset distance, in document length units.
         distance: f64,
+        /// Fixed plane-normal direction defining the offset side, when carried
+        /// by the source representation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
         /// Surface the offset is measured within, when the offset is constrained
         /// to a support surface; `None` for a free-space offset.
         #[serde(default, skip_serializing_if = "Option::is_none")]
