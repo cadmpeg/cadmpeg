@@ -19,6 +19,7 @@ const MATERIAL_TABLE: u32 = 0x1000_0010;
 const LIGHT_TABLE: u32 = 0x1000_0012;
 const BITMAP_TABLE: u32 = 0x1000_0016;
 const GROUP_TABLE: u32 = 0x1000_0018;
+const FONT_TABLE: u32 = 0x1000_0019;
 const DIMSTYLE_TABLE: u32 = 0x1000_0020;
 const HATCH_PATTERN_TABLE: u32 = 0x1000_0022;
 const LINETYPE_TABLE: u32 = 0x1000_0023;
@@ -46,6 +47,9 @@ const EMBEDDED_BITMAP: Uuid = Uuid::from_canonical([
 ]);
 const TEXTURE_MAPPING: Uuid = Uuid::from_canonical([
     0x32, 0xec, 0x99, 0x7a, 0xc3, 0xbf, 0x4a, 0xe5, 0xab, 0x19, 0xfd, 0x57, 0x2b, 0x8a, 0xd5, 0x54,
+]);
+const TEXT_STYLE: Uuid = Uuid::from_canonical([
+    0x4f, 0x0f, 0x51, 0xfb, 0x35, 0xd0, 0x48, 0x65, 0x99, 0x98, 0x6d, 0x2c, 0x6a, 0x99, 0x72, 0x1d,
 ]);
 
 #[derive(Debug)]
@@ -202,6 +206,40 @@ struct DimensionStyleRecord {
     extension_offset: u64,
     extension_byte_len: u64,
     extension_sha256: String,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct FontRecord {
+    characteristics: u32,
+    windows_logfont_name: String,
+    postscript_name: String,
+    obsolete_description: String,
+    windows_logfont_weight: Option<i32>,
+    apple_weight_trait: Option<f64>,
+    point_size: Option<f64>,
+    family_name: String,
+    locale_name: String,
+    localized_postscript_name: String,
+    english_postscript_name: String,
+    localized_logfont_name: String,
+    english_logfont_name: String,
+    localized_family_name: String,
+    english_family_name: String,
+    localized_face_name: String,
+    english_face_name: String,
+    panose: Option<[u8; 10]>,
+    quartet_member: Option<u8>,
+}
+
+#[derive(Debug, Serialize)]
+struct TextStyleRecord {
+    id: String,
+    source_offset: u64,
+    archive_index: i32,
+    source_uuid: Option<String>,
+    name: String,
+    font_description: String,
+    font: FontRecord,
 }
 
 #[derive(Debug, Serialize)]
@@ -1422,6 +1460,187 @@ fn rendering_materials(
     .unwrap_or_default()
 }
 
+fn parse_font(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<FontRecord, FramingError> {
+    let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+    if chunk.typecode != ANONYMOUS || chunk.short {
+        return Err(structural(reader.position(), "font wrapper is invalid"));
+    }
+    let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let (major, minor) = (value.i32()?, value.i32()?);
+    if major != 1 || !(0..=6).contains(&minor) {
+        return Err(structural(value.position(), "font version is unsupported"));
+    }
+    let mut font = FontRecord {
+        characteristics: value.u32()?,
+        windows_logfont_name: utf16(&mut value)?,
+        postscript_name: utf16(&mut value)?,
+        ..FontRecord::default()
+    };
+    if minor >= 1 {
+        font.obsolete_description = utf16(&mut value)?;
+    }
+    if minor >= 2 {
+        font.windows_logfont_weight = Some(value.i32()?);
+        font.apple_weight_trait = Some(read_finite(&mut value, "Apple font weight trait")?);
+    }
+    if minor >= 3 {
+        font.point_size = Some(read_finite(&mut value, "font point size")?);
+        if value.bool()? {
+            value.skip(4 + 16)?;
+        }
+    }
+    if minor >= 4 {
+        font.family_name = utf16(&mut value)?;
+    }
+    if minor >= 5 {
+        font.locale_name = utf16(&mut value)?;
+        font.localized_postscript_name = utf16(&mut value)?;
+        font.english_postscript_name = utf16(&mut value)?;
+        font.localized_logfont_name = utf16(&mut value)?;
+        font.english_logfont_name = utf16(&mut value)?;
+        font.localized_family_name = utf16(&mut value)?;
+        font.english_family_name = utf16(&mut value)?;
+        font.localized_face_name = utf16(&mut value)?;
+        font.english_face_name = utf16(&mut value)?;
+        let panose = chunk_at(data, value.position(), value.end(), archive, false)?;
+        if panose.typecode != ANONYMOUS || panose.short {
+            return Err(structural(
+                value.position(),
+                "font PANOSE wrapper is invalid",
+            ));
+        }
+        let mut bytes = BoundedReader::new(data, panose.body.start, panose.body.end)?;
+        if bytes.u8()? != 0x10 || bytes.remaining() != 10 {
+            return Err(structural(
+                bytes.position(),
+                "font PANOSE version is unsupported",
+            ));
+        }
+        font.panose = Some(bytes.array()?);
+        value.skip(panose.next_offset - value.position())?;
+    }
+    if minor >= 6 {
+        font.quartet_member = Some(value.u8()?);
+    }
+    if value.remaining() != 0 {
+        return Err(structural(value.position(), "font has trailing bytes"));
+    }
+    reader.skip(chunk.next_offset - reader.position())?;
+    Ok(font)
+}
+
+fn parse_text_style(
+    data: &[u8],
+    range: Range<usize>,
+    archive: ArchiveVersion,
+    source_offset: usize,
+) -> Result<TextStyleRecord, FramingError> {
+    if data.get(range.start).copied() != Some(0) {
+        let mut reader = BoundedReader::new(data, range.start, range.end)?;
+        let packed = reader.u8()?;
+        if packed >> 4 != 1 || packed & 0x0f > 2 {
+            return Err(structural(
+                range.start,
+                "legacy text-style version is unsupported",
+            ));
+        }
+        let index = reader.i32()?;
+        let description = utf16(&mut reader)?;
+        let mut face_units = [0_u16; 64];
+        for unit in &mut face_units {
+            *unit = reader.u16()?;
+        }
+        let face_end = face_units.iter().position(|unit| *unit == 0).unwrap_or(64);
+        let windows_logfont_name = String::from_utf16_lossy(&face_units[..face_end]);
+        let mut font = FontRecord {
+            windows_logfont_name,
+            postscript_name: description.clone(),
+            obsolete_description: description.clone(),
+            ..FontRecord::default()
+        };
+        if packed & 0x0f >= 1 {
+            font.windows_logfont_weight = Some(reader.i32()?);
+            let italic = reader.i32()?;
+            if !matches!(italic, 0 | 1) {
+                return Err(structural(
+                    reader.position() - 4,
+                    "legacy font italic flag is invalid",
+                ));
+            }
+            let _linefeed_ratio = read_finite(&mut reader, "legacy font linefeed ratio")?;
+            font.characteristics = u32::from(italic != 0);
+        }
+        let id = if packed & 0x0f >= 2 {
+            uuid(&mut reader)?
+        } else {
+            Uuid::nil()
+        };
+        if reader.remaining() != 0 {
+            return Err(structural(
+                reader.position(),
+                "legacy text style has trailing bytes",
+            ));
+        }
+        return Ok(TextStyleRecord {
+            id: format!("rhino:presentation:text_style#index-{index}-offset-{source_offset}"),
+            source_offset: source_offset as u64,
+            archive_index: index,
+            source_uuid: (!id.is_nil()).then(|| id.to_string()),
+            name: description.clone(),
+            font_description: description,
+            font,
+        });
+    }
+
+    let (mut reader, version) = anonymous(data, range, archive)?;
+    if version.0 != 1 || !(0..=1).contains(&version.1) {
+        return Err(structural(
+            reader.position(),
+            "text-style version is unsupported",
+        ));
+    }
+    let component = component(data, &mut reader, archive)?;
+    let font_description = if reader.bool()? {
+        utf16(&mut reader)?
+    } else {
+        String::new()
+    };
+    let font = if reader.bool()? {
+        parse_font(data, &mut reader, archive)?
+    } else {
+        FontRecord::default()
+    };
+    let (id, name) = if version.1 >= 1 {
+        (uuid(&mut reader)?, utf16(&mut reader)?)
+    } else {
+        (component.id, component.name)
+    };
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "text style has trailing bytes",
+        ));
+    }
+    let index = component.index.unwrap_or(-1);
+    Ok(TextStyleRecord {
+        id: if id.is_nil() {
+            format!("rhino:presentation:text_style#index-{index}-offset-{source_offset}")
+        } else {
+            format!("rhino:presentation:text_style#{id}")
+        },
+        source_offset: source_offset as u64,
+        archive_index: index,
+        source_uuid: (!id.is_nil()).then(|| id.to_string()),
+        name,
+        font_description,
+        font,
+    })
+}
+
 /// Installs built-in appearance, group membership, and light semantics.
 pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let scale = scan
@@ -1439,6 +1658,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let mut dimension_styles = Vec::new();
     let mut images = Vec::new();
     let mut texture_mappings = Vec::new();
+    let mut text_styles = Vec::new();
     let mut layers = Vec::new();
     let mut object_presentation = Vec::new();
     let mut object_id_counts = BTreeMap::<Uuid, usize>::new();
@@ -1518,6 +1738,14 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                         parse_texture_mapping(&scan.data, range, scan.archive, record.range.start)
                     {
                         texture_mappings.push(value);
+                    }
+                }
+            } else if table_type == FONT_TABLE {
+                if let Ok(range) = class_data(&scan.data, record, scan.archive, TEXT_STYLE) {
+                    if let Ok(value) =
+                        parse_text_style(&scan.data, range, scan.archive, record.range.start)
+                    {
+                        text_styles.push(value);
                     }
                 }
             }
@@ -1684,6 +1912,9 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
         .set_arena("texture_mappings", &texture_mappings)
         .expect("Rhino texture mappings serialize");
     namespace
+        .set_arena("text_styles", &text_styles)
+        .expect("Rhino text styles serialize");
+    namespace
         .set_arena("layers", &layers)
         .expect("Rhino layers serialize");
     namespace
@@ -1693,7 +1924,10 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_group, parse_hatch_pattern, parse_light, parse_linetype, parse_material};
+    use super::{
+        parse_group, parse_hatch_pattern, parse_light, parse_linetype, parse_material,
+        parse_text_style,
+    };
     use crate::chunks::ArchiveVersion;
 
     fn utf16(value: &str) -> Vec<u8> {
@@ -1715,6 +1949,31 @@ mod tests {
         bytes.extend((payload.len() as i64).to_le_bytes());
         bytes.extend(payload);
         bytes
+    }
+
+    #[test]
+    fn legacy_text_style_preserves_font_identity_and_characteristics() {
+        let mut bytes = vec![0x12];
+        bytes.extend(7_i32.to_le_bytes());
+        bytes.extend(utf16("Helvetica Neue"));
+        let mut face = [0_u16; 64];
+        for (target, source) in face.iter_mut().zip("Helvetica Neue".encode_utf16()) {
+            *target = source;
+        }
+        for unit in face {
+            bytes.extend(unit.to_le_bytes());
+        }
+        bytes.extend(700_i32.to_le_bytes());
+        bytes.extend(1_i32.to_le_bytes());
+        bytes.extend(1.6_f64.to_le_bytes());
+        bytes.extend([0x11; 16]);
+        let value = parse_text_style(&bytes, 0..bytes.len(), ArchiveVersion::V8, 42)
+            .expect("valid legacy text style");
+        assert_eq!(value.archive_index, 7);
+        assert_eq!(value.font.windows_logfont_name, "Helvetica Neue");
+        assert_eq!(value.font.windows_logfont_weight, Some(700));
+        assert_eq!(value.font.characteristics, 1);
+        assert_eq!(value.source_offset, 42);
     }
 
     #[test]
