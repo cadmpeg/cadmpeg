@@ -377,6 +377,8 @@ A typed schema row that owns a materialized `srf_array` row is an active constru
 
 A class-923 feature with exactly one resolved plane carrier defines that datum plane by the carrier's model-space origin, normal, and in-plane reference direction.
 
+For a linear section sweep, generated plane carriers parallel to the section normal are cap planes. Let `d0` and `d1` be their signed offsets from the section origin along the section normal. Exactly two distinct cap offsets with opposite signs and equal magnitudes define a symmetric extrusion of total length `|d0| + |d1|`. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain.
+
 A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
 
 `strong_parents` is the ordered set of earlier modeling features consumed to

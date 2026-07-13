@@ -15,8 +15,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
-    Angle, DesignParameter, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, Length, ParameterId, ParameterValue,
+    Angle, BooleanOp, DesignParameter, Extent, Feature, FeatureDefinition as IrFeatureDefinition,
+    FeatureId as IrFeatureId, Length, ParameterId, ParameterValue, ProfileRef,
 };
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::hash::sha256_hex;
@@ -1319,6 +1319,66 @@ fn schema_feature_definition(
     schema_class: u32,
     kind: &str,
 ) -> IrFeatureDefinition {
+    if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude) {
+        let transforms = scan
+            .feature_section_transforms
+            .iter()
+            .filter(|transform| transform.feature_id == Some(feature_id))
+            .collect::<Vec<_>>();
+        if let [transform] = transforms.as_slice() {
+            let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
+            let profile = ir
+                .model
+                .sketches
+                .iter()
+                .find(|sketch| sketch.id == sketch_id)
+                .map(|sketch| {
+                    if sketch.profiles.is_empty() {
+                        ProfileRef::Native(format!(
+                            "creo:featdefs:sketch#{}",
+                            transform.definition_id
+                        ))
+                    } else {
+                        ProfileRef::Sketch(sketch_id.clone())
+                    }
+                });
+            if let Some(profile) = profile {
+                let cap_origins = scan
+                    .surface_rows
+                    .iter()
+                    .filter(|row| {
+                        row.feature_id == feature_id
+                            && row.kind == crate::surface::SurfaceKind::Plane
+                    })
+                    .filter_map(|row| {
+                        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+                        ir.model.surfaces.iter().find(|surface| surface.id == id)
+                    })
+                    .filter_map(|surface| match surface.geometry {
+                        SurfaceGeometry::Plane { origin, normal, .. } => Some((
+                            [origin.x, origin.y, origin.z],
+                            [normal.x, normal.y, normal.z],
+                        )),
+                        _ => None,
+                    });
+                if let Some(extent) =
+                    symmetric_extrusion_extent(transform.origin, transform.normal, cap_origins)
+                {
+                    return IrFeatureDefinition::Extrude {
+                        profile,
+                        direction: Some(Vector3::new(
+                            transform.normal[0],
+                            transform.normal[1],
+                            transform.normal[2],
+                        )),
+                        extent,
+                        op: BooleanOp::Unresolved,
+                        draft: None,
+                    };
+                }
+            }
+        }
+    }
     if schema_class == 923 {
         let planes = scan
             .surface_rows
@@ -1353,9 +1413,111 @@ fn schema_feature_definition(
     }
 }
 
+fn retain_native_feature_parameters(
+    source_properties: &mut BTreeMap<String, String>,
+    definition: &IrFeatureDefinition,
+    parameters: &BTreeMap<String, String>,
+) {
+    if matches!(definition, IrFeatureDefinition::Native { .. }) {
+        return;
+    }
+    for (name, value) in parameters {
+        source_properties.insert(format!("native_parameter.{name}"), value.clone());
+    }
+}
+
+fn symmetric_extrusion_extent(
+    profile_origin: [f64; 3],
+    direction: [f64; 3],
+    planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
+) -> Option<Extent> {
+    let direction_length = direction
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    if direction_length <= f64::EPSILON {
+        return None;
+    }
+    let direction = direction.map(|value| value / direction_length);
+    let mut offsets = Vec::<f64>::new();
+    for (origin, normal) in planes {
+        let normal_length = normal.iter().map(|value| value * value).sum::<f64>().sqrt();
+        if normal_length <= f64::EPSILON {
+            continue;
+        }
+        let parallel = normal
+            .iter()
+            .zip(direction)
+            .map(|(left, right)| left * right)
+            .sum::<f64>()
+            .abs();
+        if (parallel / normal_length - 1.0).abs() > 1e-9 {
+            continue;
+        }
+        let offset = origin
+            .iter()
+            .zip(profile_origin)
+            .zip(direction)
+            .map(|((coordinate, base), axis)| (coordinate - base) * axis)
+            .sum::<f64>();
+        let scale = offset.abs().max(1.0);
+        if !offsets
+            .iter()
+            .any(|known| (known - offset).abs() <= 1e-9 * scale)
+        {
+            offsets.push(offset);
+        }
+    }
+    if offsets.len() != 2 || offsets[0] * offsets[1] >= 0.0 {
+        return None;
+    }
+    let first = offsets[0].abs();
+    let second = offsets[1].abs();
+    let scale = first.max(second).max(1.0);
+    ((first - second).abs() <= 1e-9 * scale).then_some(Extent::Symmetric {
+        length: Length(first + second),
+    })
+}
+
 #[cfg(test)]
 mod resolved_sketch_tests {
     use super::*;
+
+    #[test]
+    fn equal_opposite_cap_planes_define_symmetric_extent() {
+        let extent = symmetric_extrusion_extent(
+            [0.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [
+                ([0.0, 4.0, 0.0], [0.0, 1.0, 0.0]),
+                ([0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
+                ([3.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            ],
+        );
+
+        assert_eq!(
+            extent,
+            Some(Extent::Symmetric {
+                length: Length(8.0)
+            })
+        );
+    }
+
+    #[test]
+    fn asymmetric_cap_planes_do_not_define_symmetric_extent() {
+        assert_eq!(
+            symmetric_extrusion_extent(
+                [0.0; 3],
+                [0.0, 0.0, 1.0],
+                [
+                    ([0.0, 0.0, -2.0], [0.0, 0.0, 1.0]),
+                    ([0.0, 0.0, 3.0], [0.0, 0.0, 1.0]),
+                ],
+            ),
+            None
+        );
+    }
 
     #[test]
     fn section_line_requires_two_solved_points() {
@@ -2602,6 +2764,28 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             );
         }
         let parameters = feature_parameters(scan, operation.feature_id);
+        let schema_class = scan
+            .feature_rows
+            .iter()
+            .find(|row| row.feature_id == operation.feature_id)
+            .and_then(|row| row.root_schema_class);
+        let definition = schema_class.map_or_else(
+            || IrFeatureDefinition::Native {
+                kind: operation.kind.clone(),
+                parameters: parameters.clone(),
+                properties: BTreeMap::new(),
+            },
+            |schema_class| {
+                schema_feature_definition(
+                    scan,
+                    &ir,
+                    operation.feature_id,
+                    schema_class,
+                    &operation.kind,
+                )
+            },
+        );
+        retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         let dependencies = feature_dependencies(scan, &ir, operation.feature_id);
         annotate(
             &mut annotations,
@@ -2623,11 +2807,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             source_text: None,
             source_content: Vec::new(),
             outputs,
-            definition: IrFeatureDefinition::Native {
-                kind: operation.kind.clone(),
-                parameters,
-                properties: BTreeMap::new(),
-            },
+            definition,
             native_ref: None,
         });
     }
@@ -2655,6 +2835,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             "schema_feature_operation",
             Exactness::ByteExact,
         );
+        let definition = schema_feature_definition(scan, &ir, row.feature_id, schema_class, kind);
+        let parameters = feature_parameters(scan, row.feature_id);
+        let mut source_properties = feature_source_properties(scan, row.feature_id);
+        retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         ir.model.features.push(Feature {
             id,
             ordinal: ir.model.features.len() as u64,
@@ -2662,12 +2846,12 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             suppressed: false,
             parent: None,
             dependencies: feature_dependencies(scan, &ir, row.feature_id),
-            source_properties: feature_source_properties(scan, row.feature_id),
+            source_properties,
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
             outputs: feature_output_bodies(scan, &ir, row.feature_id),
-            definition: schema_feature_definition(scan, &ir, row.feature_id, schema_class, kind),
+            definition,
             native_ref: None,
         });
     }
