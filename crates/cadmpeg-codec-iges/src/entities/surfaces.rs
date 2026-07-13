@@ -79,6 +79,64 @@ fn reverse_knots(knots: &[f64]) -> Option<Vec<f64>> {
     Some(knots.iter().rev().map(|knot| first + last - knot).collect())
 }
 
+fn dot(left: Vector3, right: Vector3) -> f64 {
+    left.x * right.x + left.y * right.y + left.z * right.z
+}
+
+fn subtract(left: Vector3, right: Vector3) -> Vector3 {
+    Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+}
+
+fn scale(vector: Vector3, factor: f64) -> Vector3 {
+    Vector3::new(vector.x * factor, vector.y * factor, vector.z * factor)
+}
+
+fn add_point_vector(point: Point3, vector: Vector3) -> Point3 {
+    Point3::new(point.x + vector.x, point.y + vector.y, point.z + vector.z)
+}
+
+fn rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
+    let cosine = angle.cos();
+    let sine = angle.sin();
+    let parallel = scale(axis, dot(axis, vector));
+    let perpendicular = subtract(vector, parallel);
+    let tangent = cross(axis, perpendicular);
+    Vector3::new(
+        parallel.x + cosine * perpendicular.x + sine * tangent.x,
+        parallel.y + cosine * perpendicular.y + sine * tangent.y,
+        parallel.z + cosine * perpendicular.z + sine * tangent.z,
+    )
+}
+
+struct AngularBasis {
+    knots: Vec<f64>,
+    controls: Vec<(f64, f64)>,
+}
+
+fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
+    let sweep = end - start;
+    if !sweep.is_finite() || !(0.0..=std::f64::consts::TAU).contains(&sweep) || sweep == 0.0 {
+        return None;
+    }
+    let segment_count = (sweep / std::f64::consts::FRAC_PI_2).ceil() as usize;
+    let segment_angle = sweep / segment_count as f64;
+    let mut knots = vec![start; 3];
+    let mut controls = Vec::with_capacity(segment_count * 2 + 1);
+    controls.push((start, 1.0));
+    for segment in 0..segment_count {
+        let segment_start = start + segment as f64 * segment_angle;
+        let midpoint = segment_start + segment_angle / 2.0;
+        let segment_end = segment_start + segment_angle;
+        controls.push((midpoint, (segment_angle / 2.0).cos()));
+        controls.push((segment_end, 1.0));
+        if segment + 1 < segment_count {
+            knots.extend([segment_end; 2]);
+        }
+    }
+    knots.extend([end; 3]);
+    Some(AngularBasis { knots, controls })
+}
+
 pub(super) struct SurfaceProjection {
     pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
@@ -441,6 +499,163 @@ pub(super) fn project(
                 parameter_interval: Some(interval),
                 direction,
                 native_position: Some(target),
+            },
+            cache_fit_tolerance: None,
+        });
+        decoded.insert(entry.sequence);
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 120 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(axis_sequence) = record
+            .integer(1)
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            losses.push(entity_loss(entry, "revolution axis pointer is invalid"));
+            continue;
+        };
+        let Some(generatrix_sequence) = record
+            .integer(2)
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            losses.push(entity_loss(
+                entry,
+                "revolution generatrix pointer is invalid",
+            ));
+            continue;
+        };
+        let (Some(start_angle), Some(end_angle)) = (record.number(3), record.number(4)) else {
+            losses.push(entity_loss(entry, "revolution angles are not numeric"));
+            continue;
+        };
+        let Some(AngularBasis {
+            knots: v_knots,
+            controls: angular_controls,
+        }) = angular_basis(start_angle, end_angle)
+        else {
+            losses.push(entity_loss(
+                entry,
+                "revolution angular interval is not in (0, 2*pi]",
+            ));
+            continue;
+        };
+        if entry.transform != 0 {
+            losses.push(entity_loss(
+                entry,
+                "placed surfaces of revolution require transformed child-carrier projection",
+            ));
+            continue;
+        }
+        let axis_id = CurveId(format!("iges:model:curve#D{axis_sequence}"));
+        let Some(axis_curve) = ir.model.curves.iter().find(|curve| curve.id == axis_id) else {
+            losses.push(entity_loss(entry, "revolution axis carrier is missing"));
+            continue;
+        };
+        let CurveGeometry::Line {
+            origin: axis_origin,
+            direction: axis_direction,
+        } = axis_curve.geometry
+        else {
+            losses.push(entity_loss(
+                entry,
+                "revolution axis is not a Line Entity carrier",
+            ));
+            continue;
+        };
+        let Some((generatrix, parameter_interval)) = bounded_nurbs(ir, generatrix_sequence) else {
+            losses.push(entity_loss(
+                entry,
+                "generatrix has no bounded polynomial or NURBS carrier",
+            ));
+            continue;
+        };
+        let Ok(u_count) = u32::try_from(generatrix.control_points.len()) else {
+            losses.push(entity_loss(entry, "generatrix pole count exceeds u32"));
+            continue;
+        };
+        let Ok(v_count) = u32::try_from(angular_controls.len()) else {
+            losses.push(entity_loss(entry, "angular pole count exceeds u32"));
+            continue;
+        };
+        let Some(surface_pole_count) = generatrix
+            .control_points
+            .len()
+            .checked_mul(angular_controls.len())
+        else {
+            losses.push(entity_loss(entry, "revolution pole count overflows"));
+            continue;
+        };
+        if surface_pole_count > MAX_SURFACE_POLES {
+            losses.push(entity_loss(
+                entry,
+                format!("revolution exceeds the {MAX_SURFACE_POLES}-pole limit"),
+            ));
+            continue;
+        }
+        let mut control_points = Vec::with_capacity(surface_pole_count);
+        let mut weights = Vec::with_capacity(control_points.capacity());
+        for (u_index, point) in generatrix.control_points.iter().enumerate() {
+            let delta = Vector3::new(
+                point.x - axis_origin.x,
+                point.y - axis_origin.y,
+                point.z - axis_origin.z,
+            );
+            let axis_point = add_point_vector(
+                axis_origin,
+                scale(axis_direction, dot(delta, axis_direction)),
+            );
+            let radial = Vector3::new(
+                point.x - axis_point.x,
+                point.y - axis_point.y,
+                point.z - axis_point.z,
+            );
+            let u_weight = generatrix
+                .weights
+                .as_ref()
+                .and_then(|values| values.get(u_index))
+                .copied()
+                .unwrap_or(1.0);
+            for (angle, angular_weight) in &angular_controls {
+                let rotated = rotate(radial, axis_direction, *angle);
+                let radial_control = scale(rotated, 1.0 / angular_weight);
+                control_points.push(add_point_vector(axis_point, radial_control));
+                weights.push(u_weight * angular_weight);
+            }
+        }
+        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+                u_degree: generatrix.degree,
+                v_degree: 2,
+                u_knots: generatrix.knots,
+                v_knots,
+                u_count,
+                v_count,
+                control_points,
+                weights: Some(weights),
+                u_periodic: generatrix.periodic,
+                v_periodic: (end_angle - start_angle - std::f64::consts::TAU).abs() <= 1.0e-12,
+            }),
+            source_object: Some(source_object(entry)),
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+            surface: surface_id,
+            definition: ProceduralSurfaceDefinition::Revolution {
+                directrix: CurveId(format!("iges:model:curve#D{generatrix_sequence}")),
+                axis_origin,
+                axis_direction,
+                angular_interval: [start_angle, end_angle],
+                parameter_interval,
+                transposed: false,
             },
             cache_fit_tolerance: None,
         });

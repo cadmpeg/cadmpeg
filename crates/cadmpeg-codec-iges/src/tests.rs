@@ -526,6 +526,74 @@ fn tabulated_cylinder_file() -> Vec<u8> {
     bytes
 }
 
+fn surface_of_revolution_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (sequence, parameter_start, entity_type, label, status) in [
+        (1, 1, "110", "AXIS", "00010000"),
+        (3, 2, "110", "PROFILE", "00010000"),
+        (5, 3, "120", "REVOLVE", "00000000"),
+    ] {
+        bytes.extend(directory_card(
+            [
+                entity_type,
+                &parameter_start.to_string(),
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [entity_type, "0", "0", "1", "0", "", "", label, "0"],
+            sequence + 1,
+        ));
+    }
+    bytes.extend(parameter_card(b"110,0,0,0,0,0,2;", 1, 1));
+    bytes.extend(parameter_card(b"110,1,0,0,1,0,2;", 3, 2));
+    bytes.extend(parameter_card(b"120,1,3,0,1.5707963267948966;", 5, 3));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(surface_of_revolution_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 1);
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
+        &result.ir.model.surfaces[0].geometry
+    else {
+        panic!("expected an exact rational revolution cache");
+    };
+    assert_eq!(surface.v_degree, 2);
+    assert_eq!(surface.weights.as_ref().unwrap().len(), 6);
+    let point =
+        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, std::f64::consts::FRAC_PI_4).unwrap();
+    let expected = 0.5_f64.sqrt();
+    assert!((point.x - expected).abs() < 1.0e-12);
+    assert!((point.y - expected).abs() < 1.0e-12);
+    assert!((point.z - 1.0).abs() < 1.0e-12);
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
     let result = IgesCodec
