@@ -129,6 +129,11 @@ pub struct Section<'a> {
 }
 
 impl<'a> IndexedSection<'a> {
+    /// Return the section base used by its external record offsets.
+    pub const fn base_offset(&self) -> usize {
+        self.base
+    }
+
     /// Decode explicit numeric-expression text within bounded entity records.
     pub fn numeric_expressions(&self) -> Vec<NumericExpression<'a>> {
         self.numeric_expression_records()

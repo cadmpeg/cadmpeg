@@ -92,6 +92,8 @@ pub struct ClassDefinition {
     pub ordinal: u32,
     /// Declaration code serialized after the class name.
     pub trailing_code: u8,
+    /// Absolute file offset of the containing OM section base.
+    pub section_offset: u64,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the definition's length byte.
@@ -109,6 +111,8 @@ pub struct FieldDefinition {
     pub ordinal: u32,
     /// Declaration code serialized immediately after the name.
     pub trailing_code: u8,
+    /// Absolute file offset of the containing OM section signature.
+    pub section_offset: u64,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the declaration length byte.
@@ -126,6 +130,8 @@ pub struct ObjectRecord {
     pub section_ordinal: u32,
     /// Zero-based record ordinal within the indexed section.
     pub record_ordinal: u32,
+    /// Absolute file offset of the containing OM section base.
+    pub section_offset: u64,
     /// Exact serialized record length.
     pub byte_len: u64,
     /// SHA-256 of the exact serialized record bytes.
@@ -387,6 +393,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
+                    section_offset: entry_offset + section.offset as u64,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
                 },
@@ -400,6 +407,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
             .position(|candidate| std::ptr::eq(candidate, entry))
             .expect("indexed entry belongs to container");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.types.into_iter().enumerate() {
             definitions
                 .entry((entry_index, definition.offset))
@@ -408,6 +416,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
+                    section_offset,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
                 });
@@ -436,6 +445,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
+                    section_offset: entry_offset + section.offset as u64,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
                 }),
@@ -452,6 +462,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let section_offset = entry_offset + section.base_offset() as u64;
             let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
             let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
             for (source, _, _, reference) in section.references() {
@@ -481,6 +492,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                         object_id: record.object_id,
                         section_ordinal: section_ordinal as u32,
                         record_ordinal: record_ordinal as u32,
+                        section_offset,
                         byte_len: record.bytes.len() as u64,
                         sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
                         dependencies: dependencies

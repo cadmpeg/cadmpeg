@@ -2584,7 +2584,7 @@ fn attach_native_object_model(
     }
     attach_expression_parameters(ir, &expressions, annotations);
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(4);
+    namespace.version = namespace.version.max(5);
     if !expressions.is_empty() {
         namespace.set_arena("expressions", &expressions)?;
     }

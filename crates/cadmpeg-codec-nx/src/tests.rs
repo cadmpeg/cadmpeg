@@ -2851,7 +2851,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 4);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 5);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -2892,6 +2892,10 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(object_records[1].object_id, Some(0x102));
     assert_eq!(expressions[0].record.as_ref(), Some(&object_records[1].id));
     assert_eq!(object_records[1].record_ordinal, 1);
+    assert_eq!(
+        object_records[0].section_offset,
+        object_records[1].section_offset
+    );
     assert_eq!(object_records[1].byte_len, om_records[1].byte_len);
     assert_eq!(object_records[1].sha256, om_records[1].sha256);
     assert_eq!(

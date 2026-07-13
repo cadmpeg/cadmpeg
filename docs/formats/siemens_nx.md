@@ -109,6 +109,12 @@ An indexed object-model section carries an entity-boundary array followed by an 
 
 Class definitions before the boundary array use `declared_length:u8 + "UGS::" name bytes + trailing_code:u8`, where `declared_length` includes the trailing code. Declaration order supplies class identity.
 
+Class and member declaration ordinals are local to one OM section. The containing
+section base plus the declaration ordinal forms their identity; equal ordinals in
+distinct sections do not identify the same class or member. Entity-record
+ordinals are likewise local to the indexed section whose base governs the
+external boundary array.
+
 A numeric expression table contains a `hostglobalvariables` root entity. Each expression entity contains:
 
 ```text
