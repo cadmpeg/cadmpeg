@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SolidWorks` Keywords XML feature history.
 
-use crate::classification::{classify, FeatureClass};
+use crate::classification::{classify, native_object_class, FeatureClass};
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_ir::annotations::Annotations;
@@ -1168,21 +1168,7 @@ fn project_definition(
 }
 
 fn feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
-    Some(match feature.input_class.as_deref()? {
-        "moDetailCabinet_c" => FeatureTreeNodeRole::Annotations,
-        "moCommentsFolder_c" => FeatureTreeNodeRole::Comments,
-        "moDocsFolder_c" => FeatureTreeNodeRole::DesignBinder,
-        "moEqnFolder_c" => FeatureTreeNodeRole::Equations,
-        "moFavoriteFolder_c" => FeatureTreeNodeRole::Favorites,
-        "moHistoryFolder_c" => FeatureTreeNodeRole::History,
-        "moMaterialFolder_c" => FeatureTreeNodeRole::Materials,
-        "moNotesAreaFtrFolder_c" => FeatureTreeNodeRole::Notes,
-        "moSelectionSetFolder_c" => FeatureTreeNodeRole::SelectionSets,
-        "moSensorFolder_c" => FeatureTreeNodeRole::Sensors,
-        "moSolidBodyFolder_c" => FeatureTreeNodeRole::SolidBodies,
-        "moSurfaceBodyFolder_c" => FeatureTreeNodeRole::SurfaceBodies,
-        _ => return None,
-    })
+    native_object_class(feature.input_class.as_deref()?).tree_node
 }
 
 fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
