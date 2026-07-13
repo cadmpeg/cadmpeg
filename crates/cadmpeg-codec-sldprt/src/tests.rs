@@ -13044,18 +13044,18 @@ fn decode_projects_feature_input_extrusion_operations() {
         code: u32,
         object_id: u32,
         name: &str,
-        repeated_padding: Option<usize>,
+        direct_class: bool,
+        padding: usize,
     ) -> Vec<u8> {
         let mut payload = Vec::new();
         payload.extend_from_slice(&code.to_le_bytes());
-        if let Some(padding) = repeated_padding {
-            payload.extend(std::iter::repeat_n(0, padding));
-            payload.extend_from_slice(&0x84d8u16.to_le_bytes());
-        } else {
-            payload.extend_from_slice(&[0; 8]);
+        payload.extend(std::iter::repeat_n(0, padding));
+        if direct_class {
             payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
             payload.extend_from_slice(&7u16.to_le_bytes());
             payload.extend_from_slice(b"moICE_c");
+        } else {
+            payload.extend_from_slice(&0x84d8u16.to_le_bytes());
         }
         payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff]);
         payload.push(name.encode_utf16().count() as u8);
@@ -13071,7 +13071,7 @@ fn decode_projects_feature_input_extrusion_operations() {
         (3, cadmpeg_ir::features::BooleanOp::Join),
         (11, cadmpeg_ir::features::BooleanOp::Cut),
     ] {
-        for repeated_padding in [None, Some(8), Some(4)] {
+        for (direct_class, padding) in [(true, 8), (true, 4), (false, 8), (false, 4)] {
             let mut source = sldprt_with_body(&triangle_body());
             source.extend(make_block(
                 0x42,
@@ -13081,7 +13081,7 @@ fn decode_projects_feature_input_extrusion_operations() {
             source.extend(make_block(
                 0x45,
                 "Contents/Config-0-ResolvedFeatures",
-                &operation_payload(code, 8, "Extrude1", repeated_padding),
+                &operation_payload(code, 8, "Extrude1", direct_class, padding),
             ));
 
             let decoded = SldprtCodec

@@ -1000,12 +1000,14 @@ fn feature_operation_code(lane: &FeatureInputLane, name: &FeatureInputName) -> O
         .find(|class| class.offset + 6 + class.name.len() as u64 == name.offset);
     let code_offset = if let Some(class) = direct_class {
         let class_offset = usize::try_from(class.offset).ok()?;
-        let code_offset = class_offset.checked_sub(12)?;
-        lane.native_payload
-            .get(code_offset + 4..class_offset)?
-            .iter()
-            .all(|byte| *byte == 0)
-            .then_some(code_offset)?
+        [8usize, 4].into_iter().find_map(|padding| {
+            let code_offset = class_offset.checked_sub(4 + padding)?;
+            lane.native_payload
+                .get(code_offset + 4..class_offset)?
+                .iter()
+                .all(|byte| *byte == 0)
+                .then_some(code_offset)
+        })?
     } else {
         [8usize, 4].into_iter().find_map(|padding| {
             let code_offset = name_offset.checked_sub(6 + padding)?;
