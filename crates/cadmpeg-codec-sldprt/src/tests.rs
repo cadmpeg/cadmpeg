@@ -2244,12 +2244,15 @@ fn decode_retains_invalid_flex_operations_as_native() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.features.len(), 4);
-    assert!(decoded
+    let typed = decoded
         .ir
         .model
         .features
         .iter()
-        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+        .filter(|feature| !matches!(feature.definition, FeatureDefinition::Native { .. }))
+        .map(|feature| (feature.name.as_deref(), &feature.definition))
+        .collect::<Vec<_>>();
+    assert!(typed.is_empty(), "unexpected typed features: {typed:?}");
 }
 
 #[test]
@@ -2307,6 +2310,39 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
         .features
         .iter()
         .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+}
+
+#[test]
+fn decode_retains_invalid_feature_directions_and_angles_as_native() {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Feature Name="Seed" Type="NativeSeed" id="1"/>
+            <Pattern Name="Pattern" Type="LinearPattern" id="2" Seeds="1" Direction="0,0,0"><Dimension Name="Spacing">2mm</Dimension><Dimension Name="Count">2</Dimension></Pattern>
+            <MoveFace Name="Move" Type="MoveFace" id="3" Faces="face:1" Mode="Translate" Direction="0,0,0"><Dimension Name="Distance">2mm</Dimension></MoveFace>
+            <Chamfer Name="Chamfer" Type="Chamfer" id="4"><Dimension Name="Distance">2mm</Dimension><Dimension Name="Angle">180deg</Dimension></Chamfer>
+            <Revolve Name="Revolve" Type="Revolve" id="5" AxisOrigin="0mm,0mm,0mm" AxisDirection="0,0,1" Operation="Join"><Dimension Name="Angle">-1deg</Dimension></Revolve>
+            <Sweep Name="Sweep" Type="Sweep" id="6" Profile="1" Path="1" Operation="Join"><Dimension Name="Scale">inf</Dimension></Sweep>
+            <Rib Name="Rib" Type="Rib" id="7" Profile="1" Direction="0,0,0" BothSides="false" Operation="Join"><Dimension Name="Thickness">2mm</Dimension></Rib>
+        </Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.features.len(), 7);
+    let typed = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| !matches!(feature.definition, FeatureDefinition::Native { .. }))
+        .map(|feature| (feature.name.as_deref(), &feature.definition))
+        .collect::<Vec<_>>();
+    assert!(typed.is_empty(), "unexpected typed features: {typed:?}");
 }
 
 #[test]

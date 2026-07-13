@@ -701,13 +701,17 @@ fn project_rib(
     native_by_source: &HashMap<&str, &str>,
 ) -> Option<FeatureDefinition> {
     let profile = *native_by_source.get(feature.properties.get("Profile")?.as_str())?;
+    let direction = parse_vector3(feature.properties.get("Direction")?)?;
+    if !valid_direction(direction) {
+        return None;
+    }
     let draft = match feature.parameters.get("Draft") {
         Some(value) => Some(Angle(parse_angle_rad(value)?)),
         None => None,
     };
     Some(FeatureDefinition::Rib {
         profile: ProfileRef::Native(profile.to_string()),
-        direction: parse_vector3(feature.properties.get("Direction")?)?,
+        direction,
         thickness: Length(
             feature
                 .parameters
@@ -769,7 +773,7 @@ fn project_sweep(
                 .trim()
                 .parse::<f64>()
                 .ok()
-                .filter(|value| *value > 0.0)?,
+                .filter(|value| value.is_finite() && *value > 0.0)?,
         ),
         None => None,
     };
@@ -826,7 +830,7 @@ fn project_pattern(
     }
     let pattern = match pattern_form(feature)? {
         PatternForm::Linear => PatternKind::Linear {
-            direction: parse_vector3(feature.properties.get("Direction")?)?,
+            direction: parse_valid_direction(feature.properties.get("Direction")?)?,
             spacing: Length(
                 feature
                     .parameters
@@ -837,18 +841,18 @@ fn project_pattern(
         },
         PatternForm::Circular => PatternKind::Circular {
             axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
-            axis_dir: parse_vector3(feature.properties.get("AxisDirection")?)?,
+            axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
             angle: Angle(
                 feature
                     .parameters
                     .get("Angle")
-                    .and_then(|value| parse_angle_rad(value))?,
+                    .and_then(|value| parse_positive_angle_rad(value))?,
             ),
             count: parse_count(feature.parameters.get("Count")?)?,
         },
         PatternForm::Mirror => PatternKind::Mirror {
             plane_origin: parse_point3_mm(feature.properties.get("PlaneOrigin")?)?,
-            plane_normal: parse_vector3(feature.properties.get("PlaneNormal")?)?,
+            plane_normal: parse_valid_direction(feature.properties.get("PlaneNormal")?)?,
         },
     };
     Some(FeatureDefinition::Pattern { seeds, pattern })
@@ -866,7 +870,7 @@ fn project_revolve(
         feature
             .parameters
             .get(name)
-            .and_then(|value| parse_angle_rad(value))
+            .and_then(|value| parse_positive_angle_rad(value))
             .map(Angle)
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
@@ -944,7 +948,7 @@ fn project_hole(feature: &Feature) -> Option<FeatureDefinition> {
                 feature
                     .parameters
                     .get("CountersinkAngle")
-                    .and_then(|value| parse_angle_rad(value))?,
+                    .and_then(|value| parse_bounded_angle_rad(value))?,
             ),
         }
     } else {
@@ -1067,7 +1071,7 @@ fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
             ),
         },
         "translate" => FaceMotion::Translate {
-            direction: parse_vector3(feature.properties.get("Direction")?)?,
+            direction: parse_valid_direction(feature.properties.get("Direction")?)?,
             distance: Length(
                 feature
                     .parameters
@@ -1077,7 +1081,7 @@ fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
         },
         "rotate" => FaceMotion::Rotate {
             axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
-            axis_dir: parse_vector3(feature.properties.get("AxisDirection")?)?,
+            axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
             angle: Angle(
                 feature
                     .parameters
@@ -1171,15 +1175,11 @@ fn project_chamfer(feature: &Feature) -> Option<FeatureDefinition> {
             .and_then(|value| parse_positive_length_mm(value))
             .map(Length)
     };
-    let spec = if let (Some(distance), Some(angle)) = (
-        length("Distance"),
-        feature
-            .parameters
-            .get("Angle")
-            .and_then(|value| parse_angle_rad(value))
-            .map(Angle),
-    ) {
-        ChamferSpec::DistanceAngle { distance, angle }
+    let spec = if let Some(value) = feature.parameters.get("Angle") {
+        ChamferSpec::DistanceAngle {
+            distance: length("Distance")?,
+            angle: Angle(parse_bounded_angle_rad(value)?),
+        }
     } else if let (Some(first), Some(second)) = (length("Distance1"), length("Distance2")) {
         ChamferSpec::TwoDistances { first, second }
     } else {
@@ -1244,6 +1244,14 @@ fn parse_angle_rad(value: &str) -> Option<f64> {
         .filter(|value| value.is_finite())
 }
 
+fn parse_positive_angle_rad(value: &str) -> Option<f64> {
+    parse_angle_rad(value).filter(|value| *value > 0.0)
+}
+
+fn parse_bounded_angle_rad(value: &str) -> Option<f64> {
+    parse_positive_angle_rad(value).filter(|value| *value < std::f64::consts::PI)
+}
+
 fn format_angle_rad(value: f64) -> String {
     format!("{value}rad")
 }
@@ -1262,6 +1270,10 @@ fn parse_vector3(value: &str) -> Option<Vector3> {
         .map(|component| component.trim().parse::<f64>().ok())
         .collect::<Option<Vec<_>>>()?;
     (values.len() == 3).then(|| Vector3::new(values[0], values[1], values[2]))
+}
+
+fn parse_valid_direction(value: &str) -> Option<Vector3> {
+    parse_vector3(value).filter(|value| valid_direction(*value))
 }
 
 fn format_point3_mm(value: Point3) -> String {
