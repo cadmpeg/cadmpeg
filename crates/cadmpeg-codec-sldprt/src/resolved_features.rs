@@ -1865,7 +1865,7 @@ fn typed_marker_relation_definition(
         Horizontal | Vertical | Fixed => {
             let entities = marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
             let [entity] = entities.as_slice() else {
-                return None;
+                return Some(native());
             };
             match kind {
                 Horizontal => SketchConstraintDefinition::Horizontal {
@@ -1881,7 +1881,10 @@ fn typed_marker_relation_definition(
             }
         }
         ArcAngle90 | ArcAngle180 | ArcAngle270 => {
-            let entity = linked_single_arc_entity(marker, markers_by_id, loci_by_marker)?;
+            let Some(entity) = linked_single_arc_entity(marker, markers_by_id, loci_by_marker)
+            else {
+                return Some(native());
+            };
             let angle = match kind {
                 ArcAngle90 => std::f64::consts::FRAC_PI_2,
                 ArcAngle180 => std::f64::consts::PI,
@@ -1894,9 +1897,11 @@ fn typed_marker_relation_definition(
             }
         }
         Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric => {
-            let entities = linked_single_entities(marker, loci_by_marker)?;
+            let Some(entities) = linked_single_entities(marker, loci_by_marker) else {
+                return Some(native());
+            };
             let [first, second] = entities.as_slice() else {
-                return None;
+                return Some(native());
             };
             match kind {
                 Parallel => SketchConstraintDefinition::Parallel {
@@ -1927,16 +1932,20 @@ fn typed_marker_relation_definition(
             }
         }
         Coincident => {
-            let loci = linked_single_loci(marker, loci_by_marker)?;
+            let Some(loci) = linked_single_loci(marker, loci_by_marker) else {
+                return Some(native());
+            };
             if loci.len() < 2 {
-                return None;
+                return Some(native());
             }
             SketchConstraintDefinition::CoincidentLoci { loci }
         }
         HorizontalPoints | VerticalPoints => {
-            let loci = linked_single_loci(marker, loci_by_marker)?;
+            let Some(loci) = linked_single_loci(marker, loci_by_marker) else {
+                return Some(native());
+            };
             let [first, second] = loci.as_slice() else {
-                return None;
+                return Some(native());
             };
             match kind {
                 HorizontalPoints => SketchConstraintDefinition::HorizontalPoints {
@@ -1951,7 +1960,11 @@ fn typed_marker_relation_definition(
             }
         }
         Midpoint => {
-            let (point, entity) = linked_midpoint_operands(marker, markers_by_id, loci_by_marker)?;
+            let Some((point, entity)) =
+                linked_midpoint_operands(marker, markers_by_id, loci_by_marker)
+            else {
+                return Some(native());
+            };
             SketchConstraintDefinition::Midpoint { point, entity }
         }
         crate::records::SketchRelationKind::Distance
@@ -2763,10 +2776,19 @@ mod profile_join_tests {
                 })
             );
             arc_angle.links[0].entity_ref.clone_from(&entity_marker.id);
-            assert_eq!(
+            assert!(matches!(
                 typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
-                None
-            );
+                Some(SketchConstraintDefinition::Native {
+                    native_kind,
+                    entities,
+                    parameter: None,
+                    operands,
+                }) if native_kind == format!("sldprt:marker-relation:{}", kind.native_code())
+                    && entities == vec![SketchEntityId("second".into())]
+                    && operands.len() == 1
+                    && operands[0].object_index == 1
+                    && operands[0].native_ref.as_deref() == Some("entity-marker")
+            ));
         }
         let relation = FeatureInputRelationInstance {
             id: "relation".into(),

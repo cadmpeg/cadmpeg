@@ -509,7 +509,7 @@ pub enum SketchInputKind {
     Arc,
     /// A sketch point bound by a geometric constraint.
     ConstrainedPoint,
-    /// A non-coordinate sketch relation handle.
+    /// A sketch relation handle.
     Relation(SketchRelationKind),
     /// A native code not in the known vocabulary, preserved verbatim.
     Native(u32),
@@ -531,7 +531,7 @@ impl SketchInputKind {
     /// Maps a marker code using the marker layout to separate geometry handles
     /// from relation handles that reuse codes `1..3`.
     pub fn from_native_code_and_layout(code: u32, coordinate_bearing: bool) -> Self {
-        if coordinate_bearing || code == 0 {
+        if code == 0 || (coordinate_bearing && code <= 3) {
             return Self::from_native_code(code);
         }
         SketchRelationKind::from_native_code(code).map_or(Self::Native(code), Self::Relation)
@@ -697,6 +697,14 @@ mod tests {
         assert_eq!(
             SketchInputKind::from_native_code_and_layout(9, false),
             SketchInputKind::Relation(SketchRelationKind::Coincident)
+        );
+        assert_eq!(
+            SketchInputKind::from_native_code_and_layout(4, true),
+            SketchInputKind::Relation(SketchRelationKind::Horizontal)
+        );
+        assert_eq!(
+            SketchInputKind::from_native_code_and_layout(10, true),
+            SketchInputKind::Relation(SketchRelationKind::Concentric)
         );
         assert_eq!(
             SketchInputKind::from_native_code_and_layout(27, false),
