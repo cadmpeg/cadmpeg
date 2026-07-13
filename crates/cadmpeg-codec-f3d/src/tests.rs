@@ -3521,6 +3521,25 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         7
     );
 
+    let mut retained = decoded.ir.clone();
+    update_f3d_native(&mut retained, |native| {
+        native.design_configurations[0].payload["active"] = "narrow".into();
+        native.design_configurations[0].payload["configurations"]["narrow"] =
+            serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
+    });
+    let expected_retained = f3d_native(&retained).design_configurations;
+    let mut retained_bytes = Vec::new();
+    F3dCodec
+        .write_preserved(&retained, &mut retained_bytes)
+        .expect("retained configuration edit");
+    let retained_round_trip = F3dCodec
+        .decode(&mut Cursor::new(retained_bytes), &DecodeOptions::default())
+        .expect("retained configuration round trip");
+    assert_eq!(
+        f3d_native(&retained_round_trip.ir).design_configurations,
+        expected_retained
+    );
+
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();

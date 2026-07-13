@@ -7074,6 +7074,7 @@ pub fn write_semantic(
     let act_guid_edits = validate_act_guid_edits(&baseline.ir, target)?;
     let act_root_edits = validate_act_root_edits(&baseline.ir, target)?;
     let act_entity_edits = validate_act_entity_edits(&baseline.ir, target)?;
+    let configuration_edits = validate_configuration_edits(&baseline.ir, target)?;
     validate_act_appearance_bindings(&baseline.ir, target)?;
     let body_transform_edits =
         validate_body_transform_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
@@ -7180,6 +7181,9 @@ pub fn write_semantic(
         supported
             .design_body_members
             .clone_from(&target_native.design_body_members);
+        supported
+            .design_configurations
+            .clone_from(&target_native.design_configurations);
         supported
             .design_entity_headers
             .clone_from(&target_native.design_entity_headers);
@@ -7379,6 +7383,9 @@ pub fn write_semantic(
         }
         let mut bytes = Vec::with_capacity(entry.size() as usize);
         entry.read_to_end(&mut bytes)?;
+        if let Some(configuration) = configuration_edits.get(&name) {
+            bytes.clone_from(configuration);
+        }
         if name == *active_brep {
             patch_geometry(
                 &mut bytes,
@@ -8444,6 +8451,51 @@ fn validate_fixed_design_string(id: &str, before: &str, after: &str) -> Result<(
         )));
     }
     Ok(())
+}
+
+fn validate_configuration_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<String, Vec<u8>>, CodecError> {
+    let baseline = f3d_native(baseline)?
+        .map(|native| native.design_configurations)
+        .unwrap_or_default();
+    let target = f3d_native(target)?
+        .map(|native| native.design_configurations)
+        .unwrap_or_default();
+    let baseline = baseline
+        .iter()
+        .map(|configuration| (configuration.entry_name.as_str(), configuration))
+        .collect::<BTreeMap<_, _>>();
+    let target = target
+        .iter()
+        .map(|configuration| (configuration.entry_name.as_str(), configuration))
+        .collect::<BTreeMap<_, _>>();
+    if baseline.keys().ne(target.keys()) {
+        return Err(CodecError::NotImplemented(
+            "retained F3D configuration editing requires the unchanged entry-name set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (name, before) in baseline {
+        let after = target[name];
+        if before.id != after.id || before.is_rule != after.is_rule {
+            return Err(CodecError::NotImplemented(format!(
+                "retained F3D configuration edit changes entry identity: {name}"
+            )));
+        }
+        if before.payload != after.payload {
+            edits.insert(
+                name.to_owned(),
+                serde_json::to_vec(&after.payload).map_err(|error| {
+                    CodecError::Malformed(format!(
+                        "cannot encode retained F3D configuration {name}: {error}"
+                    ))
+                })?,
+            );
+        }
+    }
+    Ok(edits)
 }
 
 fn patch_design_objects(bytes: &mut [u8], edits: &[DesignObjectEdit]) -> Result<(), CodecError> {
