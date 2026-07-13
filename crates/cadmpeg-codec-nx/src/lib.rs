@@ -44,7 +44,8 @@
 //!
 //! Read [`cadmpeg_ir::report::DecodeReport`] before using the model as a complete
 //! representation. Adjacent equal-schema partition and deltas streams apply
-//! supported full records and exact-key tombstones in source order. Unmatched
+//! supported full records and exact-key tombstones using the first current
+//! snapshot for each key. Unmatched
 //! tombstone relations remain unresolved. Multiple
 //! partitions are not combined through NX feature-history Booleans. Assembly
 //! files may contain only references to external child parts.
@@ -108,6 +109,7 @@ impl Codec for NxCodec {
 /// one per embedded Parasolid stream, and the shared container notes.
 fn summarize(scan: &decode::Scan) -> ContainerSummary {
     let mut entries = Vec::new();
+    let semantic_streams = decode::topology_streams(scan);
 
     for entry in &scan.container.entries {
         let mut attributes = BTreeMap::new();
@@ -138,6 +140,56 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         attributes.insert("kind".to_string(), stream.kind.label().to_string());
         if let Some(schema) = &stream.schema {
             attributes.insert("schema".to_string(), schema.clone());
+        }
+        if stream.kind.is_parasolid() {
+            let graph = topology::Graph::parse(&stream.inflated);
+            for (kind, name) in [
+                (12, "body"),
+                (13, "shell"),
+                (14, "face"),
+                (15, "loop"),
+                (16, "edge"),
+                (17, "fin"),
+                (18, "vertex"),
+                (19, "region"),
+            ] {
+                attributes.insert(
+                    format!("records.{name}"),
+                    graph.of_kind(kind).count().to_string(),
+                );
+            }
+            if stream.kind == parasolid::StreamKind::Partition {
+                let graph = topology::Graph::parse(&semantic_streams[si]);
+                for (kind, name) in [
+                    (12, "body"),
+                    (13, "shell"),
+                    (14, "face"),
+                    (15, "loop"),
+                    (16, "edge"),
+                    (17, "fin"),
+                    (18, "vertex"),
+                    (19, "region"),
+                ] {
+                    attributes.insert(
+                        format!("records.live.{name}"),
+                        graph.of_kind(kind).count().to_string(),
+                    );
+                }
+            } else if stream.kind == parasolid::StreamKind::Deltas {
+                let census = deltas::walk(&stream.inflated);
+                for (family, count) in census.full_counts {
+                    attributes.insert(
+                        format!("records.delta.full.{}", family.to_ascii_lowercase()),
+                        count.to_string(),
+                    );
+                }
+                for (family, count) in census.tombstone_counts {
+                    attributes.insert(
+                        format!("records.delta.tombstone.{}", family.to_ascii_lowercase()),
+                        count.to_string(),
+                    );
+                }
+            }
         }
         entries.push(ContainerEntry {
             name: format!("parasolid#{si}"),

@@ -339,6 +339,40 @@ fn topology_rejects_nonreciprocal_fin_ring() {
 }
 
 #[test]
+fn topology_accepts_fixed_record_envelope_escape() {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    stream.insert(fin + 2, 0xff);
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.get(17, 7).is_some());
+    assert_eq!(graph.face_loop_rings(4).unwrap().len(), 1);
+}
+
+#[test]
+fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 12, 1);
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    let edge = result.ir.model.edges.first().expect("closed edge");
+    assert_eq!(edge.start, edge.end);
+    assert!(edge.start.0.contains("closed-edge"));
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 1);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn topology_invalid_candidate_cannot_shadow_later_valid_record() {
     let mut stream = record(14, 39);
     put_ref(&mut stream, 2, 4);
@@ -2544,7 +2578,7 @@ fn merged_exact_key_tombstone_removes_partition_node() {
 }
 
 #[test]
-fn merged_deltas_uses_last_full_or_tombstone_event() {
+fn merged_deltas_uses_first_full_or_tombstone_snapshot() {
     let partition = topology_partition_stream();
     let tombstone = [0, 29, 0, 11, 0, 1];
     let mut full = status_framed_deltas_point_stream();
@@ -2553,13 +2587,13 @@ fn merged_deltas_uses_last_full_or_tombstone_event() {
     let mut delete_then_replace = tombstone.to_vec();
     delete_then_replace.extend_from_slice(&full);
     let merged = crate::deltas::merge_full_records(&partition, &delete_then_replace);
-    assert_eq!(crate::geometry::points(&merged).len(), 1);
-    assert_eq!(crate::geometry::points(&merged)[0].position.x, 12.5);
+    assert!(crate::geometry::points(&merged).is_empty());
 
     let mut replace_then_delete = full;
     replace_then_delete.extend_from_slice(&tombstone);
     let merged = crate::deltas::merge_full_records(&partition, &replace_then_delete);
-    assert!(crate::geometry::points(&merged).is_empty());
+    assert_eq!(crate::geometry::points(&merged).len(), 1);
+    assert_eq!(crate::geometry::points(&merged)[0].position.x, 12.5);
 }
 
 #[test]

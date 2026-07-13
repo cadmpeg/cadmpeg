@@ -54,12 +54,12 @@ trimmed curves. The decoder builds body, region, shell, face, loop, coedge,
 edge, and vertex topology when its fixed-record references resolve. Geometry
 that cannot be attached remains available through derived free topology.
 
-Partition and deltas streams are scanned together. The decoder does not apply
-the tombstone relation that selects the surviving face set, so deleted or
-superseded carriers can remain in the result. Multiple partitions are emitted
-without reconstructing their feature-history Boolean composition. Assembly
-files can contain only external child-part references and therefore produce no
-inline geometry.
+Partition and adjacent equal-schema deltas streams are scanned together.
+Exactly keyed full records and tombstones use the first current snapshot for
+each key. Unmatched tombstones remain unresolved. Multiple partitions are
+emitted without reconstructing their feature-history Boolean composition.
+Assembly files can contain only external child-part references and therefore
+produce no inline geometry.
 
 Procedural blend surfaces, NX design history, assembly occurrence placement,
 materials, appearances, attributes, tessellation, and native `.prt` writing

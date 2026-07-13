@@ -555,31 +555,48 @@ impl Graph {
             let Some(len) = fixed_len(kind) else {
                 continue;
             };
-            let Some((xmt, shift)) = read_xmt(stream, pos + 2) else {
-                continue;
-            };
-            // 1 is Parasolid's null reference. A node itself cannot occupy it.
-            if xmt <= 1 {
-                continue;
+            let mut candidates = Vec::with_capacity(2);
+            if let Some((xmt, shift)) = read_xmt(stream, pos + 2) {
+                candidates.push((xmt, shift));
             }
-            let Some(payload_shift) = payload_shift(stream, pos, kind, shift) else {
-                continue;
-            };
-            let Some(bytes) = stream.get(pos..pos + len + shift + payload_shift) else {
-                continue;
-            };
-            let node = Node {
-                kind,
-                xmt,
-                pos,
-                shift,
-                bytes: bytes.to_vec(),
-            };
-            if !node.has_valid_family_framing() {
-                continue;
+            if stream.get(pos + 2) == Some(&0xff) {
+                if let Some((xmt, shift)) = read_xmt(stream, pos + 3) {
+                    candidates.push((xmt, shift + 1));
+                }
             }
-            graph.by_pos.insert(pos, (kind, xmt));
-            graph.nodes.entry((kind, xmt)).or_insert(node);
+            for (xmt, shift) in candidates {
+                // 1 is Parasolid's null reference. A node itself cannot occupy it.
+                if xmt <= 1 {
+                    continue;
+                }
+                let Some(payload_shift) = payload_shift(stream, pos, kind, shift) else {
+                    continue;
+                };
+                let Some(bytes) = stream.get(pos..pos + len + shift + payload_shift) else {
+                    continue;
+                };
+                let node = Node {
+                    kind,
+                    xmt,
+                    pos,
+                    shift,
+                    bytes: bytes.to_vec(),
+                };
+                if !node.has_valid_family_framing() {
+                    continue;
+                }
+                let key = (kind, xmt);
+                let replace = graph
+                    .nodes
+                    .get(&key)
+                    .is_none_or(|current| node.family_quality() > current.family_quality());
+                if replace {
+                    if let Some(current) = graph.nodes.insert(key, node) {
+                        graph.by_pos.remove(&current.pos);
+                    }
+                    graph.by_pos.insert(pos, key);
+                }
+            }
         }
         graph
     }
@@ -610,6 +627,41 @@ impl Graph {
         self.of_kind(13)
             .filter(|shell| self.is_body_shape_shell(shell))
             .collect()
+    }
+
+    /// Return whether every body-shape face has a non-empty valid loop chain
+    /// and every non-null radial FIN partner belongs to the same reachable
+    /// body topology.
+    pub fn has_complete_body_topology(&self) -> bool {
+        let shells = self.body_shape_shells();
+        if shells.is_empty() {
+            return false;
+        }
+        let mut reachable_fins = BTreeSet::new();
+        for shell in shells {
+            let Some(fields) = shell.shell_fields() else {
+                return false;
+            };
+            let mut face_xmt = fields.first_face;
+            while face_xmt != 1 {
+                let Some(face) = self.get(14, face_xmt).and_then(Node::face_fields) else {
+                    return false;
+                };
+                let Some(rings) = self.face_loop_rings(face_xmt) else {
+                    return false;
+                };
+                if rings.is_empty() {
+                    return false;
+                }
+                reachable_fins.extend(rings.into_iter().flat_map(|(_, ring)| ring));
+                face_xmt = face.next_face;
+            }
+        }
+        reachable_fins.iter().all(|xmt| {
+            self.get(17, *xmt)
+                .and_then(Node::fin_fields)
+                .is_some_and(|fields| fields.other == 1 || reachable_fins.contains(&fields.other))
+        })
     }
 
     /// Return the validated loop-to-FIN rings owned by a face.
@@ -649,9 +701,11 @@ impl Graph {
             }
             ring.push(current);
             let fields = self.get(17, current)?.fin_fields()?;
+            let vertex_resolves = self.get(18, fields.vertex).is_some()
+                || (fields.vertex == 1 && fields.forward == current && fields.backward == current);
             if fields.loop_xmt != loop_xmt
                 || self.get(16, fields.edge).is_none()
-                || self.get(18, fields.vertex).is_none()
+                || !vertex_resolves
             {
                 return None;
             }
@@ -709,6 +763,21 @@ impl Graph {
 }
 
 impl Node {
+    fn family_quality(&self) -> usize {
+        match self.kind {
+            13 => self.shell_fields().map_or(0, |fields| {
+                usize::from(fields.attributes == 1)
+                    + usize::from(fields.body > 1)
+                    + usize::from(fields.first_face > 1)
+                    + usize::from(fields.sentinel_0 == 1)
+                    + usize::from(fields.sentinel_1 == 1)
+                    + usize::from(fields.region > 1)
+                    + usize::from(fields.sentinel_2 == 1)
+            }),
+            _ => 0,
+        }
+    }
+
     fn has_valid_family_framing(&self) -> bool {
         match self.kind {
             13 => self.shell_fields().is_some(),

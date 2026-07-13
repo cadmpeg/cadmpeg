@@ -178,6 +178,8 @@ body → shell → [region] → face → loop → fin → edge → vertex → po
 
 **Common header** for analytic curve/surface types 30–32, 50–54: `attributes +8`, `owner +10`, `next +12`, `previous +14`, `group +16`, `sense +18`.
 
+Any fixed record may place an envelope escape byte `ff` between its type and xmt fields. The xmt begins one byte later and all logical payload offsets shift by one. When the first xmt byte is also `ff`, both the escaped and unescaped large-index forms are structurally possible; the complete family field grammar disambiguates them.
+
 Topology node layouts (logical offsets, pre-shift):
 
 | Type        | Fields                                                                                                                                                                                                                           |
@@ -211,7 +213,7 @@ A **body-shape SHELL** requires the four sentinel slots `= 1` and `body_ref`/`fi
 
 Body-shape SHELL validation: sentinel/ref predicate passes; `body_ref`→BODY in ownership domain; `first_face`→FACE in the SHELL's stream; the `FACE.next` walk closes at null with visited faces back-referencing the SHELL.
 
-**Periodic faces / closed edges.** Parasolid stores a periodic surface as one face. A full-circle/ellipse edge stores no trim interval or wrap-count field, references the bare CIRCLE/ELLIPSE, and signals a full revolution by start and end resolving to the same vertex. Its span is the analytic identity `[0, 2π]` in the curve's native radian parameterization. Do not unwrap it into a two-arc split. An EDGE with `curve == 1` (null ref) has valid vertices but no curve record; its geometry lives on the periodic surface. Do not synthesize a seam that changes loop winding or count.
+**Periodic faces / closed edges.** Parasolid stores a periodic surface as one face. A full-circle/ellipse edge stores no trim interval or wrap-count field and references the bare CIRCLE/ELLIPSE. Its one-FIN loop has `forward_fin == backward_fin == self`. The FIN vertex is either a VERTEX shared by both edge ends or the null reference; the null form's canonical topological point is the analytic curve point at parameter zero. The full revolution has parameter identity `[0, 2π]`. An EDGE with `curve == 1` has no curve record and is the surface-intersection locus of its incident faces.
 
 ---
 
@@ -387,8 +389,9 @@ BODY (`00 0c`, xmt=3) records delimit snapshots. `node_id` is a monotonic per-bo
 
 A compact deltas tombstone is `type:u16 BE, xmt:u16 BE, 00 01`. When its
 `(type, xmt)` key matches a partition entity, it deletes that entity. Full
-deltas records with the same key replace the partition record. Later full or
-tombstone events for one key take precedence over earlier events.
+deltas records with the same key replace the partition record. Repeated events
+for one key are reverse snapshots: the first full record or tombstone is the
+current event and takes precedence over later historical states.
 
 ---
 

@@ -296,14 +296,14 @@ pub fn points(stream: &[u8]) -> Vec<Point> {
 
 /// Overlay supported complete deltas records onto one paired partition stream.
 ///
-/// Replaced partition records and status-framed source records are masked with
-/// non-tag bytes. Their status-free canonical forms are appended in last-write
-/// order. Unrecognized deltas bytes remain available to independent procedural
-/// record decoders.
+/// Replaced partition records are masked with non-tag bytes. Status-free
+/// canonical current-snapshot replacements are appended once. The result is a
+/// topology image only: raw deltas bytes remain in their original stream for
+/// independent procedural decoders and cannot be reinterpreted as partition
+/// records here.
 pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     let census = walk(deltas);
     let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
-    let mut normalized_sources = Vec::new();
     for record in &census.records {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
@@ -313,26 +313,22 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
                 .get(kind, record.xmt)
                 .is_some()
         {
-            replacements.insert((kind, record.xmt), record);
-            normalized_sources.push(record);
+            replacements.entry((kind, record.xmt)).or_insert(record);
         }
     }
 
-    let tombstones = census
-        .tombstones
-        .iter()
-        .filter_map(|tombstone| {
-            u8::try_from(tombstone.kind)
-                .ok()
-                .map(|kind| ((kind, tombstone.xmt), tombstone))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut tombstones = BTreeMap::new();
+    for tombstone in &census.tombstones {
+        if let Ok(kind) = u8::try_from(tombstone.kind) {
+            tombstones.entry((kind, tombstone.xmt)).or_insert(tombstone);
+        }
+    }
 
     let graph = crate::topology::Graph::parse(partition);
     replacements.retain(|key, record| {
         tombstones
             .get(key)
-            .is_none_or(|tombstone| record.offset > tombstone.offset)
+            .is_none_or(|tombstone| record.offset < tombstone.offset)
     });
     let deletions = tombstones
         .into_iter()
@@ -340,28 +336,49 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
             graph.get(key.0, key.1).is_some()
                 && replacements
                     .get(key)
-                    .is_none_or(|record| tombstone.offset > record.offset)
+                    .is_none_or(|record| tombstone.offset < record.offset)
         })
         .collect::<BTreeMap<_, _>>();
-    let mut merged = partition.to_vec();
-    for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
-        if let Some(node) = graph.get(kind, xmt) {
-            merged[node.pos..node.end()].fill(0xff);
+    let build = |include_topology: bool| {
+        let included = |kind: u8| include_topology || !matches!(kind, 12..=19);
+        let mut merged = partition.to_vec();
+        for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
+            if included(kind) {
+                if let Some(node) = graph.get(kind, xmt) {
+                    merged[node.pos..node.end()].fill(0xff);
+                }
+            }
         }
+        for (&(kind, _), record) in &replacements {
+            if included(kind) {
+                merged.extend_from_slice(&record.canonical_bytes);
+            }
+        }
+        merged
+    };
+    let merged = build(true);
+    if graph.has_complete_body_topology()
+        && !crate::topology::Graph::parse(&merged).has_complete_body_topology()
+    {
+        build(false)
+    } else {
+        merged
     }
+}
 
-    let mut residual_deltas = deltas.to_vec();
-    for record in normalized_sources {
-        residual_deltas[record.offset..record.end].fill(0xff);
+/// Return raw deltas bytes with every decoded fixed record and compact
+/// tombstone masked. Procedural families outside the fixed-record census keep
+/// their original offsets and bytes.
+pub fn procedural_residual(stream: &[u8]) -> Vec<u8> {
+    let census = walk(stream);
+    let mut residual = stream.to_vec();
+    for record in census.records {
+        residual[record.offset..record.end].fill(0xff);
     }
-    for tombstone in deletions.values() {
-        residual_deltas[tombstone.offset..tombstone.offset + 6].fill(0xff);
+    for tombstone in census.tombstones {
+        residual[tombstone.offset..tombstone.offset + 6].fill(0xff);
     }
-    merged.extend(residual_deltas);
-    for record in replacements.values() {
-        merged.extend_from_slice(&record.canonical_bytes);
-    }
-    merged
+    residual
 }
 
 fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -> Option<Record> {

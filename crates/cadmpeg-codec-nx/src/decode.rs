@@ -148,6 +148,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
     let semantic_streams = semantic_streams(scan);
+    let topology_streams = topology_streams(scan);
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
@@ -156,7 +157,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         let semantic = &semantic_streams[si];
         let stream_name = format!("parasolid#{si}:{}", stream.kind.label());
         let source_stream = annotations.stream(format!("nx:{stream_name}"));
-        let graph = Graph::parse(semantic);
+        let graph = Graph::parse(&topology_streams[si]);
         body_node_ids.extend(topology_body_node_ids(si, &graph));
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
@@ -165,7 +166,10 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         let mut trim_ranges = BTreeMap::new();
         let first_surface = ir.model.surfaces.len();
         let first_curve = ir.model.curves.len();
-        for (pi, pt) in geometry::points(semantic).into_iter().enumerate() {
+        let mut point_ordinal = 0usize;
+        for pt in geometry::points(semantic) {
+            let pi = point_ordinal;
+            point_ordinal += 1;
             let pid = PointId(format!("nx:s{si}:pt#{pi}"));
             let vid = VertexId(format!("nx:s{si}:v#{pi}"));
             annotations
@@ -206,7 +210,8 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             let Some(position) = node.point_position() else {
                 continue;
             };
-            let pi = points_by_xmt.len();
+            let pi = point_ordinal;
+            point_ordinal += 1;
             let pid = PointId(format!("nx:s{si}:pt#{pi}"));
             let vid = VertexId(format!("nx:s{si}:v#{pi}"));
             annotate_node(&mut annotations, &pid, source_stream, node, "POINT");
@@ -635,7 +640,31 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
     Some((ir, report))
 }
 
-fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
+pub(crate) fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
+    let mut semantic = topology_streams(scan);
+    let mut index = 0;
+    while index < scan.streams.len() {
+        if scan.streams[index].kind != StreamKind::Partition {
+            index += 1;
+            continue;
+        }
+        let mut next = index + 1;
+        while next < scan.streams.len()
+            && scan.streams[next].kind == StreamKind::Deltas
+            && scan.streams[next].schema == scan.streams[index].schema
+        {
+            semantic[index].extend_from_slice(&crate::deltas::procedural_residual(
+                &scan.streams[next].inflated,
+            ));
+            semantic[next].clear();
+            next += 1;
+        }
+        index = next;
+    }
+    semantic
+}
+
+pub(crate) fn topology_streams(scan: &Scan) -> Vec<Vec<u8>> {
     let mut semantic = scan
         .streams
         .iter()
@@ -1160,7 +1189,28 @@ fn emit_topology(
         let Some(fin_fields) = fin.fin_fields() else {
             continue;
         };
-        let Some(start) = vertices.get(&fin_fields.vertex).cloned() else {
+        let curve_xmt = Some(fields.curve);
+        let mut curve = curve_xmt.and_then(|xmt| curves.get(&xmt)).cloned();
+        let mut param_range = curve_xmt.and_then(|xmt| trim_ranges.get(&xmt)).copied();
+        let start = vertices.get(&fin_fields.vertex).cloned().or_else(|| {
+            (fin_fields.vertex == 1
+                && fin_fields.forward == fin.xmt
+                && fin_fields.backward == fin.xmt)
+                .then(|| {
+                    synthesize_closed_edge_vertex(
+                        ir,
+                        annotations,
+                        &prefix,
+                        node,
+                        curve.as_ref()?,
+                        param_range,
+                        source_stream,
+                        decoded_tolerance(fields.tolerance),
+                    )
+                })
+                .flatten()
+        });
+        let Some(start) = start else {
             continue;
         };
         let end = graph
@@ -1169,9 +1219,6 @@ fn emit_topology(
             .and_then(|next| vertices.get(&next.vertex))
             .cloned()
             .unwrap_or_else(|| start.clone());
-        let curve_xmt = Some(fields.curve);
-        let mut curve = curve_xmt.and_then(|xmt| curves.get(&xmt)).cloned();
-        let mut param_range = curve_xmt.and_then(|xmt| trim_ranges.get(&xmt)).copied();
         let id = EdgeId(format!("{prefix}:edge#{}", node.xmt));
         annotate_node(annotations, &id, source_stream, node, "EDGE");
         if decoded_tolerance(fields.tolerance).is_some() {
@@ -1457,6 +1504,53 @@ fn decoded_tolerance(value: f64) -> Option<f64> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn synthesize_closed_edge_vertex(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    prefix: &str,
+    edge: &Node,
+    curve: &CurveId,
+    range: Option<[f64; 2]>,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    tolerance: Option<f64>,
+) -> Option<VertexId> {
+    let geometry = &ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| candidate.id == *curve)?
+        .geometry;
+    let parameter = range.map_or_else(
+        || match geometry {
+            CurveGeometry::Nurbs(nurbs) => nurbs.knots.first().copied().unwrap_or(0.0),
+            _ => 0.0,
+        },
+        |range| range[0],
+    );
+    let position = curve_point(geometry, parameter)?;
+    let point = PointId(format!("{prefix}:point#closed-edge-{}", edge.xmt));
+    let vertex = VertexId(format!("{prefix}:vertex#closed-edge-{}", edge.xmt));
+    annotations
+        .note(&point, source_stream, edge.pos as u64)
+        .tag("CLOSED_EDGE_POINT");
+    annotations.exactness(&point, Exactness::Inferred);
+    annotations
+        .note(&vertex, source_stream, edge.pos as u64)
+        .tag("CLOSED_EDGE_VERTEX");
+    annotations.exactness(&vertex, Exactness::Inferred);
+    ir.model.points.push(Point {
+        id: point.clone(),
+        position,
+    });
+    ir.model.vertices.push(Vertex {
+        id: vertex.clone(),
+        point,
+        tolerance,
+    });
+    Some(vertex)
+}
+
 fn push_unknown_edge_curve(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -1707,7 +1801,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
             message: format!(
                 "{} Parasolid deltas stream(s) were paired by adjacency and equal schema. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, B_SURFACE, and B_CURVE full records and compact \
-                 tombstones were applied in source order. Tombstones \
+                 tombstones were applied using the first current snapshot for each key. Tombstones \
                  without an exact partition key remain unresolved.",
                 scan.count(StreamKind::Deltas)
             ),
