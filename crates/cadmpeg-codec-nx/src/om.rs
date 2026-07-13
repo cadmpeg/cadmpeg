@@ -5,8 +5,6 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::le::u32_at;
 
-const ROOT_PREFIX: &[u8] = b"\x04\x01\x0eNX ";
-
 /// One NX object-model entity with persistent object identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityRecord<'a> {
@@ -144,7 +142,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         else {
             continue;
         };
-        if bytes.get(table_end..table_end + ROOT_PREFIX.len()) != Some(ROOT_PREFIX)
+        if !is_root_record(bytes.get(table_end..).unwrap_or_default())
             || u32_at(bytes, index_start) != Some(0)
             || !seen_record_starts.insert(table_end)
         {
@@ -264,6 +262,29 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         });
     }
     out
+}
+
+fn is_root_record(bytes: &[u8]) -> bool {
+    if bytes.get(..2) != Some(&[0x04, 0x01]) {
+        return false;
+    }
+    let Some(length) = bytes
+        .get(2)
+        .copied()
+        .map(usize::from)
+        .and_then(|declared| declared.checked_sub(2))
+    else {
+        return false;
+    };
+    let Some(end) = 3usize.checked_add(length) else {
+        return false;
+    };
+    bytes.get(3..end).is_some_and(|text| {
+        text.starts_with(b"NX ")
+            && text
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    }) && bytes.get(end) == Some(&0)
 }
 
 fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinition<'_>> {

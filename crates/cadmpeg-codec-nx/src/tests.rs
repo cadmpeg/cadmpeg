@@ -129,6 +129,31 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
 }
 
 #[test]
+fn om_index_accepts_length_framed_root_version_text() {
+    let mut bytes = indexed_om_section();
+    let marker = bytes
+        .windows(b"\x04\x01\x0eNX 2027.3102\0".len())
+        .position(|window| window == b"\x04\x01\x0eNX 2027.3102\0")
+        .expect("root record");
+    bytes[marker + 2] = 0x0f;
+    bytes.insert(marker + 3 + 12, b' ');
+    let index = bytes
+        .windows(4)
+        .position(|window| window == 0u32.to_le_bytes())
+        .expect("index");
+    for ordinal in 2..4 {
+        let at = index + ordinal * 4;
+        let value = u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) + 1;
+        bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    let sections = crate::om::indexed_sections(&bytes);
+    assert_eq!(sections.len(), 1);
+    assert!(sections[0].records[0]
+        .bytes
+        .starts_with(b"\x04\x01\x0fNX 2027.3102 \0"));
+}
+
+#[test]
 fn om_offset_only_index_bounds_primary_entity_records() {
     let bytes = offset_only_indexed_om_section();
     let sections = crate::om::indexed_sections(&bytes);
