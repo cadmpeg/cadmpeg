@@ -504,13 +504,17 @@ pub(crate) fn bind_scalar_operands(
                     if !matches!(
                         operand.kind,
                         FeatureInputOperandKind::D6
-                            | FeatureInputOperandKind::Native(0x837b | 0x8dcb | 0xbc7c)
+                            | FeatureInputOperandKind::E1
+                            | FeatureInputOperandKind::Native(
+                                0x837b | 0x8386 | 0x83fe | 0x8dcb | 0x8dda | 0xbc7c | 0xbc87
+                            )
                     ) {
                         continue;
                     }
                     let mut matches = entities
                         .iter()
-                        .filter(|entity| entity.local_id == Some(u32::from(operand.entity_index)));
+                        .filter(|entity| entity.local_id == Some(u32::from(operand.entity_index)))
+                        .filter(|entity| operand_accepts_marker(operand.kind, entity.kind));
                     let Some(entity) = matches.next() else {
                         continue;
                     };
@@ -572,6 +576,21 @@ pub(crate) fn bind_scalar_operands(
                 .flatten();
         }
         lane.relation_instances = relation_instances(histories, lane);
+    }
+}
+
+fn operand_accepts_marker(kind: FeatureInputOperandKind, marker: SketchInputKind) -> bool {
+    match kind {
+        FeatureInputOperandKind::Native(0x837b | 0xbc7c) => {
+            matches!(
+                marker,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            )
+        }
+        FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0xbc87) => {
+            marker == SketchInputKind::LineOrCircle
+        }
+        _ => true,
     }
 }
 

@@ -12767,6 +12767,44 @@ fn decode_resolves_feature_input_operands_within_sketch() {
 }
 
 #[test]
+fn decode_uses_operand_tag_to_disambiguate_marker_kind() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let mut payload = resolved_features_payload_with_names(&[0, 1, 2], &["Sketch1", "D1"]);
+    for offset in 0..payload.len().saturating_sub(1) {
+        if payload[offset..offset + 2] == [0xd6, 0x80] {
+            payload[offset..offset + 2].copy_from_slice(&0x837bu16.to_le_bytes());
+        }
+    }
+    let marker = [0xff, 0xff, 0x1f, 0x00, 0x03];
+    let first = payload
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("first marker");
+    payload[first + 88..first + 92].copy_from_slice(&2u32.to_le_bytes());
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let lane = &sldprt_native(&decoded.ir).feature_input_lanes[0];
+    let operand = &lane.scalars[0].operands[1];
+    assert_eq!(operand.entity_index, 2);
+    assert_eq!(
+        operand.entity_ref.as_deref(),
+        Some(lane.sketch_entities[0].id.as_str())
+    );
+}
+
+#[test]
 fn decode_resolves_each_marker_link_by_trailing_local_id() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
