@@ -1491,20 +1491,26 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                     .to_string(),
             );
         }
-        let parent = scan
+        let dependencies = scan
             .feature_affected_ids
             .iter()
-            .find(|record| {
+            .filter(|record| {
                 record.feature_id == operation.feature_id
                     && record.kind == crate::feature::AffectedIdKind::StrongParents
             })
-            .and_then(|record| record.ids.first())
-            .filter(|parent| {
-                scan.feature_operations
+            .flat_map(|record| &record.ids)
+            .filter(|dependency| {
+                scan.feature_operations[..ordinal]
                     .iter()
-                    .any(|candidate| candidate.feature_id == **parent)
+                    .any(|candidate| candidate.feature_id == **dependency)
             })
-            .map(|parent| IrFeatureId(format!("creo:mdlstatus:feature#{parent}")));
+            .map(|dependency| IrFeatureId(format!("creo:mdlstatus:feature#{dependency}")))
+            .fold(Vec::new(), |mut dependencies, dependency| {
+                if !dependencies.contains(&dependency) {
+                    dependencies.push(dependency);
+                }
+                dependencies
+            });
         annotate(
             &mut annotations,
             &id,
@@ -1518,8 +1524,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             ordinal: ordinal as u64,
             name: Some(format!("{} id {}", operation.kind, operation.feature_id)),
             suppressed: false,
-            parent,
-            dependencies: Vec::new(),
+            parent: None,
+            dependencies,
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,

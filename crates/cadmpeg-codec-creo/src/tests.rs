@@ -602,6 +602,43 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
 }
 
 #[test]
+fn decode_transfers_strong_parents_as_ordered_dependencies() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let allfeatur = b"\x04\xeb\x04\xe0\x21strong_parents\0\xf8\x03\x02\x03\x02".to_vec();
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", geometry),
+            ("AllFeatur", allfeatur),
+            (
+                "MdlStatus",
+                b"Datum Plane id 2\0Datum Plane id 3\0Protrusion id 4\0".to_vec(),
+            ),
+        ],
+    );
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:mdlstatus:feature#4")
+        .expect("feature 4");
+    assert!(feature.parent.is_none());
+    assert_eq!(
+        feature
+            .dependencies
+            .iter()
+            .map(cadmpeg_ir::FeatureId::as_str)
+            .collect::<Vec<_>>(),
+        vec!["creo:mdlstatus:feature#2", "creo:mdlstatus:feature#3"]
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn scan_decodes_allfeatur_positional_replay_affected_ids() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
