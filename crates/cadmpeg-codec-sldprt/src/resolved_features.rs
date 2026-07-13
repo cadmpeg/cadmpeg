@@ -567,11 +567,15 @@ fn sketch_brep(
         },
         source_object: None,
     });
-    let entities = source
+    let ordered_entities = source
         .model
         .sketch_entities
         .iter()
         .filter(|entity| entity.sketch == sketch.id)
+        .collect::<Vec<_>>();
+    let entities = ordered_entities
+        .iter()
+        .copied()
         .map(|entity| (entity.id.clone(), entity))
         .collect::<HashMap<_, _>>();
     let referenced = sketch
@@ -582,15 +586,15 @@ fn sketch_brep(
         .collect::<HashSet<_>>();
     let mut profiles = sketch.profiles.clone();
     profiles.extend(
-        entities
+        ordered_entities
             .iter()
-            .filter(|(id, entity)| {
-                !referenced.contains(*id)
+            .filter(|entity| {
+                !referenced.contains(&entity.id)
                     && !matches!(entity.geometry, SketchGeometry::Point { .. })
             })
-            .map(|(id, _)| {
+            .map(|entity| {
                 vec![SketchEntityUse {
-                    entity: id.clone(),
+                    entity: entity.id.clone(),
                     reversed: false,
                 }]
             }),
@@ -693,7 +697,7 @@ fn sketch_brep(
             coedges: coedge_ids,
         });
     }
-    for (ordinal, entity) in entities.values().enumerate() {
+    for (ordinal, entity) in ordered_entities.iter().enumerate() {
         let SketchGeometry::Point { position } = entity.geometry else {
             continue;
         };
