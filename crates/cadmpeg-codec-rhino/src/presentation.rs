@@ -18,6 +18,8 @@ const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
 const MATERIAL_TABLE: u32 = 0x1000_0010;
 const LIGHT_TABLE: u32 = 0x1000_0012;
 const GROUP_TABLE: u32 = 0x1000_0018;
+const HATCH_PATTERN_TABLE: u32 = 0x1000_0022;
+const LINETYPE_TABLE: u32 = 0x1000_0023;
 const MATERIAL: Uuid = Uuid::from_canonical([
     0x60, 0xb5, 0xdb, 0xbc, 0xe6, 0x60, 0x11, 0xd3, 0xbf, 0xe4, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
@@ -26,6 +28,12 @@ const LIGHT: Uuid = Uuid::from_canonical([
 ]);
 const GROUP: Uuid = Uuid::from_canonical([
     0x72, 0x1d, 0x9f, 0x97, 0x36, 0x45, 0x44, 0xc4, 0x8b, 0xe6, 0xb2, 0xcf, 0x69, 0x7d, 0x25, 0xce,
+]);
+const HATCH_PATTERN: Uuid = Uuid::from_canonical([
+    0x06, 0x4e, 0x7c, 0x91, 0x35, 0xf6, 0x47, 0x34, 0xa4, 0x46, 0x79, 0xff, 0x7c, 0xd6, 0x59, 0xe1,
+]);
+const LINETYPE: Uuid = Uuid::from_canonical([
+    0x26, 0xf1, 0x0a, 0x24, 0x7d, 0x13, 0x4f, 0x05, 0x8f, 0xda, 0x8e, 0x36, 0x4d, 0xaf, 0x8e, 0xa6,
 ]);
 
 #[derive(Debug)]
@@ -102,6 +110,48 @@ struct LightRecord {
     width: [f64; 3],
     hotspot: f64,
     links: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct LinetypeSegment {
+    length_millimeters: f64,
+    segment_type: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct LinetypeRecord {
+    id: String,
+    source_offset: u64,
+    archive_index: i32,
+    source_uuid: Option<String>,
+    name: String,
+    segments: Vec<LinetypeSegment>,
+    line_cap: u8,
+    line_join: u8,
+    width: f64,
+    width_units: u8,
+    taper_points: Vec<[f64; 2]>,
+    always_model_distance: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct HatchLineRecord {
+    angle_radians: f64,
+    base_millimeters: [f64; 2],
+    offset_millimeters: [f64; 2],
+    dashes_millimeters: Vec<f64>,
+}
+
+#[derive(Debug, Serialize)]
+struct HatchPatternRecord {
+    id: String,
+    source_offset: u64,
+    archive_index: i32,
+    source_uuid: Option<String>,
+    name: String,
+    fill_type: i32,
+    description: String,
+    lines: Vec<HatchLineRecord>,
 }
 
 fn structural(offset: usize, message: impl Into<String>) -> FramingError {
@@ -533,6 +583,370 @@ fn parse_light(
     })
 }
 
+fn segments(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+) -> Result<Vec<LinetypeSegment>, FramingError> {
+    let count = reader.i32()?;
+    let bytes = crate::chunks::checked_count_bytes(
+        count,
+        12,
+        reader.remaining(),
+        1 << 16,
+        reader.position(),
+    )?;
+    let mut values = Vec::with_capacity(bytes / 12);
+    for _ in 0..bytes / 12 {
+        let length = read_finite(reader, "linetype segment length")?;
+        let length = scaled_coordinate(length, scale).ok_or_else(|| {
+            structural(reader.position() - 12, "scaled linetype segment is invalid")
+        })?;
+        values.push(LinetypeSegment {
+            length_millimeters: length,
+            segment_type: reader.u32()?,
+        });
+    }
+    Ok(values)
+}
+
+fn parse_linetype(
+    data: &[u8],
+    range: Range<usize>,
+    archive: ArchiveVersion,
+    scale: f64,
+    source_offset: usize,
+) -> Result<LinetypeRecord, FramingError> {
+    let (mut reader, version) = anonymous(data, range, archive)?;
+    let component = if version.0 == 1 && (0..=1).contains(&version.1) {
+        let index = reader.i32()?;
+        let name = utf16(&mut reader)?;
+        let value = Component {
+            index: Some(index),
+            id: Uuid::nil(),
+            name,
+        };
+        let values = segments(&mut reader, scale)?;
+        let id = if version.1 >= 1 {
+            uuid(&mut reader)?
+        } else {
+            Uuid::nil()
+        };
+        if reader.remaining() != 0 {
+            return Err(structural(reader.position(), "linetype has trailing bytes"));
+        }
+        return Ok(linetype_record(
+            value,
+            id,
+            values,
+            source_offset,
+            0,
+            0,
+            1.0,
+            0,
+            Vec::new(),
+            false,
+        ));
+    } else if version.0 == 2 && (0..=3).contains(&version.1) {
+        component(data, &mut reader, archive)?
+    } else {
+        return Err(structural(
+            reader.position(),
+            "linetype version is unsupported",
+        ));
+    };
+    let values = segments(&mut reader, scale)?;
+    let mut item = if version.1 >= 1 { reader.u8()? } else { 0 };
+    let mut cap = 0;
+    let mut join = 0;
+    let mut width = 1.0;
+    let mut width_units = 0;
+    let mut taper = Vec::new();
+    let mut always = false;
+    if item == 1 {
+        cap = reader.u8()?;
+        item = reader.u8()?;
+    }
+    if item == 2 {
+        join = reader.u8()?;
+        item = reader.u8()?;
+    }
+    if version.1 >= 2 {
+        if item == 3 {
+            width = read_finite(&mut reader, "linetype width")?;
+            item = reader.u8()?;
+        }
+        if item == 4 {
+            width_units = reader.u8()?;
+            item = reader.u8()?;
+        }
+        if item == 5 {
+            let count = reader.i32()?;
+            let bytes = crate::chunks::checked_count_bytes(
+                count,
+                16,
+                reader.remaining(),
+                1 << 16,
+                reader.position(),
+            )?;
+            for _ in 0..bytes / 16 {
+                taper.push([reader.f64()?, reader.f64()?]);
+            }
+            if !taper.iter().flatten().all(|value| value.is_finite()) {
+                return Err(structural(
+                    reader.position(),
+                    "linetype taper is not finite",
+                ));
+            }
+            item = reader.u8()?;
+        }
+    }
+    if version.1 >= 3 && item == 6 {
+        always = reader.bool()?;
+        item = reader.u8()?;
+    }
+    if item != 0 || reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "linetype extension stream is invalid",
+        ));
+    }
+    let component_id = component.id;
+    Ok(linetype_record(
+        component,
+        component_id,
+        values,
+        source_offset,
+        cap,
+        join,
+        width,
+        width_units,
+        taper,
+        always,
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn linetype_record(
+    component: Component,
+    fallback_id: Uuid,
+    segments: Vec<LinetypeSegment>,
+    source_offset: usize,
+    line_cap: u8,
+    line_join: u8,
+    width: f64,
+    width_units: u8,
+    taper_points: Vec<[f64; 2]>,
+    always_model_distance: bool,
+) -> LinetypeRecord {
+    let id = if component.id.is_nil() {
+        fallback_id
+    } else {
+        component.id
+    };
+    let key = if id.is_nil() {
+        format!("record-{source_offset}")
+    } else {
+        id.to_string()
+    };
+    LinetypeRecord {
+        id: format!("rhino:presentation:linetype#{key}"),
+        source_offset: source_offset as u64,
+        archive_index: component.index.unwrap_or(-1),
+        source_uuid: (!id.is_nil()).then(|| id.to_string()),
+        name: component.name,
+        segments,
+        line_cap,
+        line_join,
+        width,
+        width_units,
+        taper_points,
+        always_model_distance,
+    }
+}
+
+fn hatch_line_v5(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+) -> Result<HatchLineRecord, FramingError> {
+    let packed = reader.u8()?;
+    if packed >> 4 != 1 {
+        return Err(structural(
+            reader.position() - 1,
+            "hatch-line version is unsupported",
+        ));
+    }
+    hatch_line_fields(reader, scale)
+}
+
+fn hatch_line_fields(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+) -> Result<HatchLineRecord, FramingError> {
+    let angle_radians = read_finite(reader, "hatch-line angle")?;
+    let mut base = [reader.f64()?, reader.f64()?];
+    let mut offset = [reader.f64()?, reader.f64()?];
+    let count = reader.i32()?;
+    let bytes = crate::chunks::checked_count_bytes(
+        count,
+        8,
+        reader.remaining(),
+        1 << 16,
+        reader.position(),
+    )?;
+    let mut dashes = Vec::with_capacity(bytes / 8);
+    for _ in 0..bytes / 8 {
+        dashes.push(read_finite(reader, "hatch dash")?);
+    }
+    for value in base
+        .iter_mut()
+        .chain(offset.iter_mut())
+        .chain(dashes.iter_mut())
+    {
+        *value = scaled_coordinate(*value, scale)
+            .ok_or_else(|| structural(reader.position(), "scaled hatch line is invalid"))?;
+    }
+    Ok(HatchLineRecord {
+        angle_radians,
+        base_millimeters: base,
+        offset_millimeters: offset,
+        dashes_millimeters: dashes,
+    })
+}
+
+fn parse_hatch_pattern(
+    data: &[u8],
+    range: Range<usize>,
+    archive: ArchiveVersion,
+    scale: f64,
+    source_offset: usize,
+) -> Result<HatchPatternRecord, FramingError> {
+    let modern = data.get(range.start).copied() == Some(0);
+    let (component, fill_type, description, lines) = if modern {
+        let (mut reader, version) = anonymous(data, range, archive)?;
+        if version != (1, 0) {
+            return Err(structural(
+                reader.position(),
+                "hatch-pattern version is unsupported",
+            ));
+        }
+        let component = component(data, &mut reader, archive)?;
+        let fill_type = reader.i32()?;
+        let description = utf16(&mut reader)?;
+        let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+        let mut line_reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+        let count = line_reader.i32()?;
+        let count = usize::try_from(count)
+            .map_err(|_| structural(line_reader.position() - 4, "negative hatch-line count"))?;
+        if count > 1 << 16 {
+            return Err(structural(
+                line_reader.position() - 4,
+                "hatch-line count exceeds limit",
+            ));
+        }
+        let mut lines = Vec::with_capacity(count);
+        for _ in 0..count {
+            let line = chunk_at(
+                data,
+                line_reader.position(),
+                line_reader.end(),
+                archive,
+                false,
+            )?;
+            let mut payload = BoundedReader::new(data, line.body.start, line.body.end)?;
+            if (payload.i32()?, payload.i32()?) != (1, 0) {
+                return Err(structural(
+                    payload.position(),
+                    "hatch-line version is unsupported",
+                ));
+            }
+            lines.push(hatch_line_fields(&mut payload, scale)?);
+            if payload.remaining() != 0 {
+                return Err(structural(
+                    payload.position(),
+                    "hatch line has trailing bytes",
+                ));
+            }
+            line_reader.skip(line.next_offset - line_reader.position())?;
+        }
+        if line_reader.remaining() != 0 {
+            return Err(structural(
+                line_reader.position(),
+                "hatch-line array has trailing bytes",
+            ));
+        }
+        reader.skip(chunk.next_offset - reader.position())?;
+        if reader.remaining() != 0 {
+            return Err(structural(
+                reader.position(),
+                "hatch pattern has trailing bytes",
+            ));
+        }
+        (component, fill_type, description, lines)
+    } else {
+        let mut reader = BoundedReader::new(data, range.start, range.end)?;
+        let packed = reader.u8()?;
+        if packed >> 4 != 1 || packed & 0x0f > 2 {
+            return Err(structural(
+                range.start,
+                "legacy hatch-pattern version is unsupported",
+            ));
+        }
+        let index = reader.i32()?;
+        let fill_type = reader.i32()?;
+        let name = utf16(&mut reader)?;
+        let description = utf16(&mut reader)?;
+        let count = if fill_type == 1 { reader.i32()? } else { 0 };
+        let count = usize::try_from(count)
+            .map_err(|_| structural(reader.position() - 4, "negative hatch-line count"))?;
+        if count > 1 << 16 {
+            return Err(structural(
+                reader.position() - 4,
+                "hatch-line count exceeds limit",
+            ));
+        }
+        let mut lines = Vec::with_capacity(count);
+        for _ in 0..count {
+            lines.push(hatch_line_v5(&mut reader, scale)?);
+        }
+        let id = if packed & 0x0f >= 2 {
+            uuid(&mut reader)?
+        } else {
+            Uuid::nil()
+        };
+        if reader.remaining() != 0 {
+            return Err(structural(
+                reader.position(),
+                "legacy hatch pattern has trailing bytes",
+            ));
+        }
+        (
+            Component {
+                index: Some(index),
+                id,
+                name,
+            },
+            fill_type,
+            description,
+            lines,
+        )
+    };
+    let key = if component.id.is_nil() {
+        format!("record-{source_offset}")
+    } else {
+        component.id.to_string()
+    };
+    Ok(HatchPatternRecord {
+        id: format!("rhino:presentation:hatch_pattern#{key}"),
+        source_offset: source_offset as u64,
+        archive_index: component.index.unwrap_or(-1),
+        source_uuid: (!component.id.is_nil()).then(|| component.id.to_string()),
+        name: component.name,
+        fill_type,
+        description,
+        lines,
+    })
+}
+
 /// Installs built-in appearance, group membership, and light semantics.
 pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let scale = scan
@@ -545,6 +959,8 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let mut groups = Vec::new();
     let mut materials = Vec::new();
     let mut lights = Vec::new();
+    let mut linetypes = Vec::new();
+    let mut hatch_patterns = Vec::new();
     for table in &scan.tables {
         let table_type = table.typecode & !0x0000_8000;
         for record in &table.records {
@@ -568,6 +984,26 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                         parse_light(&scan.data, range, scale, record.range.start, None)
                     {
                         lights.push(light);
+                    }
+                }
+            } else if table_type == LINETYPE_TABLE {
+                if let Ok(range) = class_data(&scan.data, record, scan.archive, LINETYPE) {
+                    if let Ok(value) =
+                        parse_linetype(&scan.data, range, scan.archive, scale, record.range.start)
+                    {
+                        linetypes.push(value);
+                    }
+                }
+            } else if table_type == HATCH_PATTERN_TABLE {
+                if let Ok(range) = class_data(&scan.data, record, scan.archive, HATCH_PATTERN) {
+                    if let Ok(value) = parse_hatch_pattern(
+                        &scan.data,
+                        range,
+                        scan.archive,
+                        scale,
+                        record.range.start,
+                    ) {
+                        hatch_patterns.push(value);
                     }
                 }
             }
@@ -613,11 +1049,17 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     namespace
         .set_arena("lights", &lights)
         .expect("Rhino lights serialize");
+    namespace
+        .set_arena("linetypes", &linetypes)
+        .expect("Rhino linetypes serialize");
+    namespace
+        .set_arena("hatch_patterns", &hatch_patterns)
+        .expect("Rhino hatch patterns serialize");
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_group, parse_light, parse_material};
+    use super::{parse_group, parse_hatch_pattern, parse_light, parse_linetype, parse_material};
     use crate::chunks::ArchiveVersion;
 
     fn utf16(value: &str) -> Vec<u8> {
@@ -717,5 +1159,47 @@ mod tests {
         assert_eq!(material.index_of_refraction, 1.5);
         assert!(material.shareable);
         assert!(!material.disable_lighting);
+    }
+
+    #[test]
+    fn legacy_linetype_scales_pattern_lengths() {
+        let mut body = 4_i32.to_le_bytes().to_vec();
+        body.extend(utf16("dash"));
+        body.extend(2_i32.to_le_bytes());
+        body.extend(2.0_f64.to_le_bytes());
+        body.extend(0_u32.to_le_bytes());
+        body.extend(1.0_f64.to_le_bytes());
+        body.extend(1_u32.to_le_bytes());
+        body.extend([0x66; 16]);
+        let bytes = anonymous(1, &body);
+        let value = parse_linetype(&bytes, 0..bytes.len(), ArchiveVersion::V5, 10.0, 0).unwrap();
+        assert_eq!(value.name, "dash");
+        assert_eq!(value.segments[0].length_millimeters, 20.0);
+        assert_eq!(value.segments[1].segment_type, 1);
+    }
+
+    #[test]
+    fn legacy_hatch_pattern_scales_line_offsets_and_dashes() {
+        let mut bytes = vec![0x12];
+        bytes.extend(3_i32.to_le_bytes());
+        bytes.extend(1_i32.to_le_bytes());
+        bytes.extend(utf16("cross"));
+        bytes.extend(utf16("cross hatch"));
+        bytes.extend(1_i32.to_le_bytes());
+        bytes.push(0x11);
+        bytes.extend(0.5_f64.to_le_bytes());
+        for value in [1.0_f64, 2.0, 3.0, 4.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend(2_i32.to_le_bytes());
+        bytes.extend(5.0_f64.to_le_bytes());
+        bytes.extend((-2.0_f64).to_le_bytes());
+        bytes.extend([0x77; 16]);
+        let value =
+            parse_hatch_pattern(&bytes, 0..bytes.len(), ArchiveVersion::V5, 10.0, 0).unwrap();
+        assert_eq!(value.lines[0].base_millimeters, [10.0, 20.0]);
+        assert_eq!(value.lines[0].offset_millimeters, [30.0, 40.0]);
+        assert_eq!(value.lines[0].dashes_millimeters, [50.0, -20.0]);
+        assert_eq!(value.lines[0].angle_radians, 0.5);
     }
 }
