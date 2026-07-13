@@ -5126,18 +5126,22 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Base" EquationId="D1@Equations">2mm</Dimension><Dimension Name="Driven" EquationId="D2@Equations">D1@Equations * 3</Dimension></Feature></Keywords>"#,
+        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Base" EquationId="D1@Equations">2mm</Dimension><Dimension Name="Wall Thickness">4mm</Dimension><Dimension Name="Datum &quot;A&quot;">1mm</Dimension><Dimension Name="Driven" EquationId="D2@Equations">&quot;Wall Thickness&quot; + &quot;Datum &quot;&quot;A&quot;&quot;&quot; + D1@Equations + &quot;Wall Thickness&quot;</Dimension></Feature></Keywords>"#,
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.parameters.len(), 2);
+    assert_eq!(decoded.ir.model.parameters.len(), 4);
     assert_eq!(
-        decoded.ir.model.parameters[1].dependencies,
-        vec![decoded.ir.model.parameters[0].id.clone()]
+        decoded.ir.model.parameters[3].dependencies,
+        vec![
+            decoded.ir.model.parameters[1].id.clone(),
+            decoded.ir.model.parameters[2].id.clone(),
+            decoded.ir.model.parameters[0].id.clone(),
+        ]
     );
 
-    decoded.ir.model.parameters[1].expression = "6mm".into();
+    decoded.ir.model.parameters[3].expression = "6mm".into();
     let error = SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap_err();

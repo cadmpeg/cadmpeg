@@ -407,18 +407,60 @@ fn populate_parameter_dependencies(parameters: &mut [DesignParameter]) {
     for parameter in parameters.iter_mut() {
         let mut seen = std::collections::HashSet::new();
         parameter.dependencies = expression_identifiers(&parameter.expression)
-            .filter_map(|identifier| aliases.get(identifier).and_then(Clone::clone))
+            .filter_map(|identifier| aliases.get(&identifier).and_then(Clone::clone))
             .filter(|dependency| dependency != &parameter.id && seen.insert(dependency.clone()))
             .collect();
     }
 }
 
-fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
-    expression
-        .split(|character: char| {
-            !(character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.' | '-'))
-        })
-        .filter(|identifier| !identifier.is_empty())
+fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
+    let mut identifiers = Vec::new();
+    let mut at = 0;
+    while at < expression.len() {
+        let rest = &expression[at..];
+        if rest.starts_with('"') {
+            let mut value = String::new();
+            let mut cursor = at + 1;
+            let mut closed = false;
+            while cursor < expression.len() {
+                let quoted = &expression[cursor..];
+                if quoted.starts_with("\"\"") {
+                    value.push('"');
+                    cursor += 2;
+                } else if quoted.starts_with('"') {
+                    cursor += 1;
+                    closed = true;
+                    break;
+                } else {
+                    let character = quoted.chars().next().expect("nonempty suffix");
+                    value.push(character);
+                    cursor += character.len_utf8();
+                }
+            }
+            if closed && !value.is_empty() {
+                identifiers.push(value);
+                at = cursor;
+                continue;
+            }
+        }
+
+        let Some(character) = rest.chars().next() else {
+            break;
+        };
+        if character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.' | '-') {
+            let end = rest
+                .find(|candidate: char| {
+                    !(candidate.is_ascii_alphanumeric()
+                        || matches!(candidate, '_' | '@' | '$' | '.' | '-'))
+                })
+                .unwrap_or(rest.len());
+            identifiers.push(rest[..end].to_string());
+            at += end;
+        } else {
+            at += character.len_utf8();
+        }
+    }
+    identifiers.into_iter()
 }
 
 /// Bind a uniquely identified native sketch history node to solved sketch geometry.
