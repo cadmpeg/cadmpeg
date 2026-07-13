@@ -13215,10 +13215,21 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             _ => panic!("wrong deformable discriminator payload"),
         }
         let expected_data = data.clone();
+        let bend = bend.clone();
 
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == bend)
+            .expect("deformable bend carrier")
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(3.0, -2.0, 5.0),
+            direction: cadmpeg_ir::math::Vector3::new(2.0, 4.0, -1.0),
+        };
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -13255,6 +13266,22 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             .curves
             .iter()
             .any(|curve| curve.id == *round_bend));
+        assert!(matches!(
+            round_trip
+                .ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *round_bend)
+                .map(|curve| &curve.geometry),
+            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                if curve.degree == 1
+                    && curve.knots == [0.0, 0.0, 1.0, 1.0]
+                    && curve.control_points == [
+                        cadmpeg_ir::math::Point3::new(3.0, -2.0, 5.0),
+                        cadmpeg_ir::math::Point3::new(5.0, 2.0, 4.0),
+                    ]
+        ));
     }
 }
 

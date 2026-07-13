@@ -6024,16 +6024,20 @@ fn native_procedural_curve(
             .iter()
             .find(|curve| curve.id == *bend)
             .ok_or_else(|| CodecError::Malformed("deformable bend curve is missing".into()))?;
-        let CurveGeometry::Nurbs(bend) = &bend.geometry else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D defm_int_cur requires a NURBS bend curve".into(),
-            ));
-        };
+        let bend_range = [
+            solved_cache.knots.first().copied().ok_or_else(|| {
+                CodecError::Malformed("deformable solved curve has no knot domain".into())
+            })?,
+            solved_cache.knots.last().copied().ok_or_else(|| {
+                CodecError::Malformed("deformable solved curve has no knot domain".into())
+            })?,
+        ];
+        let bend = native_interval_curve(&bend.geometry, bend_range)?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "defm_int_cur")?;
         native_i64(bytes, *extension);
-        native_nurbs_curve(bytes, bend)?;
+        native_nurbs_curve(bytes, &bend)?;
         match data {
             cadmpeg_ir::geometry::DeformableCurveData::VectorField {
                 vectors,
