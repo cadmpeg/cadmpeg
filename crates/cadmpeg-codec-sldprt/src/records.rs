@@ -310,6 +310,9 @@ pub struct FeatureInputName {
     pub ordinal: u32,
     /// Byte offset of the name marker.
     pub offset: u64,
+    /// Native object identifier stored after the UTF-16 name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_id: Option<u32>,
     /// Decoded object name.
     pub value: String,
 }

@@ -60,8 +60,10 @@ pub(crate) fn classify(feature: &Feature) -> Option<FeatureClass> {
 
 fn classify_input_class(class: Option<&str>) -> Option<FeatureClass> {
     Some(match class? {
+        "moExtrusion_c" => FeatureClass::Extrude,
         "Fillet_c" => FeatureClass::Fillet,
         "Chamfer_c" => FeatureClass::Chamfer,
+        "moOriginProfileFeature_c" | "moProfileFeature_c" => FeatureClass::Sketch,
         "moRefPlane_c" => FeatureClass::ReferencePlane,
         "moThicken_c" => FeatureClass::Thicken,
         "moSweep_c" => FeatureClass::Sweep,

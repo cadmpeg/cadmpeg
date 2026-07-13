@@ -326,27 +326,45 @@ fn operand_kind(tag: [u8; 2]) -> Option<FeatureInputOperandKind> {
     }
 }
 
+fn feature_object_name<'a>(
+    feature: &crate::records::Feature,
+    lane: &'a FeatureInputLane,
+) -> Option<&'a FeatureInputName> {
+    if let Some(source_id) = feature
+        .source_id
+        .as_deref()
+        .and_then(|value| value.parse::<u32>().ok())
+    {
+        let mut matches = lane
+            .names
+            .iter()
+            .filter(|name| name.object_id == Some(source_id));
+        if let Some(first) = matches.next() {
+            if matches.next().is_none() {
+                return Some(first);
+            }
+            return None;
+        }
+    }
+    let mut matches = lane.names.iter().filter(|name| name.value == feature.name);
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
+}
+
 /// Resolve scalar operand indices within their owning feature-object interval.
 pub(crate) fn bind_scalar_operands(
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
 ) {
-    let mut feature_name_counts = HashMap::<String, usize>::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        *feature_name_counts.entry(feature.name.clone()).or_default() += 1;
-    }
     for lane in lanes {
         let mut starts = histories
             .iter()
             .flat_map(|history| &history.features)
-            .filter(|feature| feature_name_counts.get(feature.name.as_str()) == Some(&1))
             .filter_map(|feature| {
-                let mut names = lane.names.iter().filter(|name| name.value == feature.name);
-                let first = names.next()?;
-                names
-                    .next()
-                    .is_none()
-                    .then_some((first.offset, feature.id.as_str()))
+                Some((
+                    feature_object_name(feature, lane)?.offset,
+                    feature.id.as_str(),
+                ))
             })
             .collect::<Vec<_>>();
         starts.sort_unstable_by_key(|start| start.0);
@@ -580,11 +598,6 @@ pub(crate) fn enrich_history_parameters(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    let mut feature_name_counts = HashMap::<String, usize>::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        *feature_name_counts.entry(feature.name.clone()).or_default() += 1;
-    }
-
     let mut candidates = BTreeMap::<(usize, usize, String), Vec<f64>>::new();
     for lane in lanes {
         let names_by_id = lane
@@ -595,14 +608,10 @@ pub(crate) fn enrich_history_parameters(
         let mut starts = Vec::<(u64, usize, usize)>::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if feature_name_counts.get(feature.name.as_str()) != Some(&1) {
+                let Some(name) = feature_object_name(feature, lane) else {
                     continue;
-                }
-                let mut matches = lane.names.iter().filter(|name| name.value == feature.name);
-                let Some(name) = matches.next() else { continue };
-                if matches.next().is_none() {
-                    starts.push((name.offset, history_index, feature_index));
-                }
+                };
+                starts.push((name.offset, history_index, feature_index));
             }
         }
         starts.sort_by_key(|start| start.0);
@@ -661,11 +670,7 @@ pub(crate) fn bind_history_classes(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    let mut feature_name_counts = HashMap::<String, usize>::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        *feature_name_counts.entry(feature.name.clone()).or_default() += 1;
-    }
-
+    let mut classes_by_object = HashMap::<u32, Vec<&str>>::new();
     let mut classes_by_name = HashMap::<&str, Vec<&str>>::new();
     for lane in lanes {
         let names_by_offset = lane
@@ -682,6 +687,12 @@ pub(crate) fn bind_history_classes(
                 .entry(&name.value)
                 .or_default()
                 .push(&class.name);
+            if let Some(object_id) = name.object_id {
+                classes_by_object
+                    .entry(object_id)
+                    .or_default()
+                    .push(&class.name);
+            }
         }
     }
 
@@ -689,10 +700,13 @@ pub(crate) fn bind_history_classes(
         .iter_mut()
         .flat_map(|history| &mut history.features)
     {
-        if feature_name_counts.get(feature.name.as_str()) != Some(&1) {
-            continue;
-        }
-        let Some(classes) = classes_by_name.get(feature.name.as_str()) else {
+        let classes = feature
+            .source_id
+            .as_deref()
+            .and_then(|value| value.parse::<u32>().ok())
+            .and_then(|object_id| classes_by_object.get(&object_id))
+            .or_else(|| classes_by_name.get(feature.name.as_str()));
+        let Some(classes) = classes else {
             continue;
         };
         let Some((&first, rest)) = classes.split_first() else {
@@ -717,22 +731,13 @@ pub(crate) fn bind_sketch_profiles(
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
-    let mut feature_name_counts = HashMap::<&str, usize>::new();
-    for feature in native_features.values() {
-        *feature_name_counts.entry(&feature.name).or_default() += 1;
-    }
-
     for lane in lanes {
         let mut starts = Vec::<(u64, &crate::records::Feature)>::new();
         for feature in native_features.values() {
-            if feature_name_counts.get(feature.name.as_str()) != Some(&1) {
+            let Some(name) = feature_object_name(feature, lane) else {
                 continue;
-            }
-            let mut matches = lane.names.iter().filter(|name| name.value == feature.name);
-            let Some(name) = matches.next() else { continue };
-            if matches.next().is_none() {
-                starts.push((name.offset, feature));
-            }
+            };
+            starts.push((name.offset, feature));
         }
         starts.sort_by_key(|start| start.0);
         for (index, &(start, native_feature)) in starts.iter().enumerate() {
@@ -787,11 +792,6 @@ pub(crate) fn bind_parameter_scalars(
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
-    let mut feature_name_counts = HashMap::<&str, usize>::new();
-    for feature in native_features.values() {
-        *feature_name_counts.entry(&feature.name).or_default() += 1;
-    }
-
     for lane in lanes {
         let names_by_id = lane
             .names
@@ -800,14 +800,10 @@ pub(crate) fn bind_parameter_scalars(
             .collect::<HashMap<_, _>>();
         let mut starts = Vec::<(u64, &crate::records::Feature)>::new();
         for feature in native_features.values() {
-            if feature_name_counts.get(feature.name.as_str()) != Some(&1) {
+            let Some(name) = feature_object_name(feature, lane) else {
                 continue;
-            }
-            let mut matches = lane.names.iter().filter(|name| name.value == feature.name);
-            let Some(name) = matches.next() else { continue };
-            if matches.next().is_none() {
-                starts.push((name.offset, feature));
-            }
+            };
+            starts.push((name.offset, feature));
         }
         starts.sort_by_key(|start| start.0);
         for (index, &(start, native_feature)) in starts.iter().enumerate() {
@@ -952,14 +948,20 @@ pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName
                 .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
                 .collect::<Vec<_>>();
             let value = String::from_utf16(&units).ok()?;
-            (!value.chars().any(char::is_control)).then_some((offset, value))
+            let object_id = end.checked_add(8).and_then(|offset| {
+                Some(u32::from_le_bytes(
+                    payload.get(offset..offset + 4)?.try_into().ok()?,
+                ))
+            });
+            (!value.chars().any(char::is_control)).then_some((offset, object_id, value))
         })
         .enumerate()
-        .map(|(ordinal, (offset, value))| FeatureInputName {
+        .map(|(ordinal, (offset, object_id, value))| FeatureInputName {
             id: format!("sldprt:feature-input:name#{lane_key}:{offset}"),
             parent: parent.to_string(),
             ordinal: ordinal as u32,
             offset: offset as u64,
+            object_id,
             value,
         })
         .collect()

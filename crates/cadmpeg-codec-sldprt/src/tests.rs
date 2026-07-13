@@ -990,6 +990,22 @@ fn resolved_feature_classes(entries: &[(&str, &str)]) -> Vec<u8> {
     payload
 }
 
+fn resolved_feature_classes_with_ids(entries: &[(&str, &str, u32)]) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for (class, name, object_id) in entries {
+        payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
+        payload.extend_from_slice(&(class.len() as u16).to_le_bytes());
+        payload.extend_from_slice(class.as_bytes());
+        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
+        for unit in name.encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0; 8]);
+        payload.extend_from_slice(&object_id.to_le_bytes());
+    }
+    payload
+}
+
 fn resolved_features_payload_with_names_and_relation(
     codes: &[u32],
     names: &[&str],
@@ -5530,6 +5546,45 @@ fn decode_types_non_modeling_feature_tree_nodes() {
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::Annotations
+        }
+    ));
+}
+
+#[test]
+fn decode_binds_duplicate_feature_names_by_native_object_id() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureTreeNodeRole};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Feature Name="Folder" Type="Custom" id="41"/>
+            <Feature Name="Folder" Type="Custom" id="42"/>
+        </Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[
+            ("moEqnFolder_c", "Folder", 41),
+            ("moSolidBodyFolder_c", "Folder", 42),
+        ]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::Equations
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::SolidBodies
         }
     ));
 }
