@@ -623,7 +623,7 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id.as_str() == "creo:mdlstatus:feature#4")
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature 4");
     assert!(feature.parent.is_none());
     assert_eq!(
@@ -632,7 +632,7 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
             .iter()
             .map(cadmpeg_ir::FeatureId::as_str)
             .collect::<Vec<_>>(),
-        vec!["creo:mdlstatus:feature#2", "creo:mdlstatus:feature#3"]
+        vec!["creo:model:feature#2", "creo:model:feature#3"]
     );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
@@ -1004,7 +1004,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
 
     assert_eq!(result.ir.model.parameters.len(), 1);
     let parameter = &result.ir.model.parameters[0];
-    assert_eq!(parameter.owner.as_str(), "creo:mdlstatus:feature#40");
+    assert_eq!(parameter.owner.as_str(), "creo:model:feature#40");
     assert_eq!(parameter.name, "d42");
     assert_eq!(parameter.expression, "1");
     assert_eq!(
@@ -1575,6 +1575,13 @@ fn decode_transfers_exact_datum_plane_carrier() {
     let result = decode::decode(&mut reader, &DecodeOptions::default()).unwrap();
     assert!(result.report.geometry_transferred);
     assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert_eq!(result.ir.model.features.len(), 1);
+    let feature = &result.ir.model.features[0];
+    assert_eq!(feature.id.as_str(), "creo:model:feature#1");
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::DatumPlane { .. }
+    ));
 }
 
 #[test]
@@ -1632,7 +1639,8 @@ fn decode_annotations_cover_every_emitted_entity() {
             Exactness::Derived,
         );
     }
-    let emitted_entity_count = unknowns.len() + result.ir.model.surfaces.len();
+    let emitted_entity_count =
+        unknowns.len() + result.ir.model.surfaces.len() + result.ir.model.features.len();
     assert_eq!(result.ir.annotations.provenance.len(), emitted_entity_count);
     assert_eq!(result.ir.annotations.exactness.len(), emitted_entity_count);
 }
@@ -1670,12 +1678,12 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     assert_eq!(result.ir.model.features.len(), 4);
     assert_eq!(
         result.ir.model.features[0].id.as_str(),
-        "creo:mdlstatus:feature#40"
+        "creo:model:feature#40"
     );
     assert_eq!(result.ir.model.features[0].ordinal, 0);
     assert_eq!(
         result.ir.model.features[1].id.as_str(),
-        "creo:mdlstatus:feature#41"
+        "creo:model:feature#41"
     );
     assert_eq!(result.ir.model.features[1].ordinal, 1);
     assert!(matches!(
@@ -1684,7 +1692,7 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     ));
     assert_annotation(
         &result.ir,
-        "creo:mdlstatus:feature#40",
+        "creo:model:feature#40",
         "creo:MdlStatus",
         scan.feature_operations[0].offset as u64,
         "feature_operation_name",

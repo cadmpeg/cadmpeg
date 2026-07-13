@@ -13,6 +13,8 @@ pub struct DatumPlane {
     /// `srf_array` namespace. `ref_planes` nested `plane_id` fields join
     /// this identifier ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#81-scalar-and-datum-tokens)).
     pub id: u32,
+    /// Modeling feature identifier from the owning `srf_array.feat_id`.
+    pub feature_id: u32,
     /// The plane's unit normal, one of the three standard basis vectors.
     pub normal: [f64; 3],
     /// The plane's model-space offset along the axis identified by
@@ -61,6 +63,7 @@ pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
         normal[axis] = 1.0;
         result.push(DatumPlane {
             id: id as u32,
+            feature_id: payload[offset + 2] as u32,
             normal,
             offset: outline[axis],
             corners: [
@@ -83,6 +86,11 @@ pub fn named_zero_plane(payload: &[u8]) -> Option<DatumPlane> {
         .rposition(|window| window == id_marker)?;
     let id_start = id_at + id_marker.len();
     let id = *payload.get(id_start)? as u32;
+    let feature_marker = b"feat_id\0";
+    let feature_at = payload[..outline]
+        .windows(feature_marker.len())
+        .rposition(|window| window == feature_marker)?;
+    let feature_id = *payload.get(feature_at + feature_marker.len())? as u32;
     let mut zeros = [false; 6];
     let mut cursor = outline + marker.len();
     for zero in &mut zeros {
@@ -102,6 +110,7 @@ pub fn named_zero_plane(payload: &[u8]) -> Option<DatumPlane> {
     normal[axis] = 1.0;
     Some(DatumPlane {
         id,
+        feature_id,
         normal,
         offset: 0.0,
         corners: [[0.0; 3]; 2],
@@ -155,6 +164,7 @@ mod tests {
             planes(&data),
             vec![DatumPlane {
                 id: 4,
+                feature_id: 1,
                 normal: [0.0, 1.0, 0.0],
                 offset: 0.0,
                 corners: [[2.0, 0.0, 3.0], [-2.0, 0.0, -3.0]],
@@ -165,9 +175,10 @@ mod tests {
 
     #[test]
     fn decodes_named_standard_plane_from_zero_slots() {
-        let data = b"\xe0\x01geom_id\0\x02outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x18\x18\x46\x08\0\0\0\0\0\0\x18";
+        let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x18\x18\x46\x08\0\0\0\0\0\0\x18";
         let plane = named_zero_plane(data).unwrap();
         assert_eq!(plane.id, 2);
+        assert_eq!(plane.feature_id, 1);
         assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
         assert_eq!(plane.offset, 0.0);
     }

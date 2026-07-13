@@ -449,7 +449,7 @@ fn transfer_feature_dimensions(
         let Some(owner_feature_id) = definition.owner_feature_id else {
             continue;
         };
-        let owner = IrFeatureId(format!("creo:mdlstatus:feature#{owner_feature_id}"));
+        let owner = IrFeatureId(format!("creo:model:feature#{owner_feature_id}"));
         if !feature_ids.contains(&owner) {
             continue;
         }
@@ -1430,8 +1430,50 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     transfer_plane_intersection_vertices(scan, &mut ir, &mut annotations);
     transfer_plane_brep(scan, &mut ir, &mut annotations);
     transfer_resolved_sketches(scan, &mut ir, &mut annotations);
-    for (ordinal, operation) in scan.feature_operations.iter().enumerate() {
-        let id = IrFeatureId(format!("creo:mdlstatus:feature#{}", operation.feature_id));
+    for datum in &scan.datum_planes {
+        let id = IrFeatureId(format!("creo:model:feature#{}", datum.feature_id));
+        if ir.model.features.iter().any(|feature| feature.id == id) {
+            continue;
+        }
+        annotate(
+            &mut annotations,
+            &id,
+            "ActDatums",
+            datum.offset_in_payload as u64,
+            "datum_plane_feature",
+            Exactness::Derived,
+        );
+        ir.model.features.push(Feature {
+            id,
+            ordinal: ir.model.features.len() as u64,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: IrFeatureDefinition::DatumPlane {
+                origin: Point3::new(
+                    datum.normal[0] * datum.offset,
+                    datum.normal[1] * datum.offset,
+                    datum.normal[2] * datum.offset,
+                ),
+                normal: Vector3::new(datum.normal[0], datum.normal[1], datum.normal[2]),
+                u_axis: cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
+                    datum.normal[0],
+                    datum.normal[1],
+                    datum.normal[2],
+                )),
+            },
+            native_ref: None,
+        });
+    }
+    let operation_ordinal_base = ir.model.features.len();
+    for (operation_index, operation) in scan.feature_operations.iter().enumerate() {
+        let id = IrFeatureId(format!("creo:model:feature#{}", operation.feature_id));
         let mut parameters = BTreeMap::new();
         for affected in scan
             .feature_affected_ids
@@ -1500,11 +1542,11 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             })
             .flat_map(|record| &record.ids)
             .filter(|dependency| {
-                scan.feature_operations[..ordinal]
+                scan.feature_operations[..operation_index]
                     .iter()
                     .any(|candidate| candidate.feature_id == **dependency)
             })
-            .map(|dependency| IrFeatureId(format!("creo:mdlstatus:feature#{dependency}")))
+            .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
             .fold(Vec::new(), |mut dependencies, dependency| {
                 if !dependencies.contains(&dependency) {
                     dependencies.push(dependency);
@@ -1521,7 +1563,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         );
         ir.model.features.push(Feature {
             id,
-            ordinal: ordinal as u64,
+            ordinal: (operation_ordinal_base + operation_index) as u64,
             name: Some(format!("{} id {}", operation.kind, operation.feature_id)),
             suppressed: false,
             parent: None,

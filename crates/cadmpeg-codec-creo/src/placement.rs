@@ -128,6 +128,7 @@ mod tests {
     fn datum(id: u32, normal: [f64; 3], offset: f64) -> DatumPlane {
         DatumPlane {
             id,
+            feature_id: id.saturating_sub(1),
             normal,
             offset,
             corners: [[0.0; 3]; 2],
