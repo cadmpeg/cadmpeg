@@ -1811,6 +1811,33 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
 }
 
 #[test]
+fn scan_distinguishes_null_and_referenced_family_tables() {
+    let null = container::scan_bytes(build_prt(
+        "c",
+        &[(
+            "FamilyInf",
+            b"Sld_FamilyInfo\0drv_tbl_ptr\0\xe1\xf1".to_vec(),
+        )],
+    ));
+    assert_eq!(
+        null.family_table.unwrap().pointer,
+        crate::container::FamilyTablePointer::Null
+    );
+
+    let referenced = container::scan_bytes(build_prt(
+        "c",
+        &[(
+            "FamilyInf",
+            b"Sld_FamilyInfo\0drv_tbl_ptr\0\xf7\x81\x23\xf1".to_vec(),
+        )],
+    ));
+    assert_eq!(
+        referenced.family_table.unwrap().pointer,
+        crate::container::FamilyTablePointer::Entity(0x0123)
+    );
+}
+
+#[test]
 fn framing_names_are_not_mistaken_for_sections() {
     let data = build_prt("c", &[("VisibGeom", vec![0x00])]);
     let scan = container::scan_bytes(data);

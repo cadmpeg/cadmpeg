@@ -1967,6 +1967,15 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         "decoded_curve_expression_record_count".to_string(),
         scan.curve_expressions.len().to_string(),
     );
+    if let Some(family_table) = scan.family_table {
+        attributes.insert(
+            "family_table_pointer".to_string(),
+            match family_table.pointer {
+                crate::container::FamilyTablePointer::Null => "null".to_string(),
+                crate::container::FamilyTablePointer::Entity(id) => format!("entity:{id}"),
+            },
+        );
+    }
     attributes.insert(
         "decoded_pcurve_count".to_string(),
         scan.pcurves.len().to_string(),

@@ -128,6 +128,24 @@ pub struct GeomCensus {
     pub crv_array_count: Option<u32>,
 }
 
+/// Configuration family-table pointer carried by `FamilyInf`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FamilyTablePointer {
+    /// Explicit `e1` null pointer.
+    Null,
+    /// Canonical `f7` entity reference to a driver table.
+    Entity(u32),
+}
+
+/// Typed `drv_tbl_ptr` field from `FamilyInf`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FamilyTableRecord {
+    /// Null or referenced driver table.
+    pub pointer: FamilyTablePointer,
+    /// Byte offset of the pointer value.
+    pub offset: usize,
+}
+
 /// Structural data read from one `.prt` file.
 pub struct ContainerScan {
     /// Complete source bytes.
@@ -143,6 +161,8 @@ pub struct ContainerScan {
     /// Active Creo principal coordinate unit system, when its selector is
     /// present. Both currently defined systems store model lengths in mm.
     pub principal_unit: Option<String>,
+    /// Configuration driver-table pointer from `FamilyInf`.
+    pub family_table: Option<FamilyTableRecord>,
     /// Typed fixed-prefix surface rows from visible and invisible geometry
     /// sections. Parameter bodies are decoded separately.
     pub surface_rows: Vec<SurfaceRow>,
@@ -421,6 +441,27 @@ fn principal_unit(data: &[u8]) -> Option<String> {
         55 => Some("mmKs".to_string()),
         value => Some(format!("unknown:{value}")),
     }
+}
+
+fn family_table(data: &[u8], sections: &[Section]) -> Option<FamilyTableRecord> {
+    let section = sections
+        .iter()
+        .find(|section| section.name == "FamilyInf")?;
+    let end = (section.offset + section.length).min(data.len());
+    let label = b"drv_tbl_ptr\0";
+    let offset = find(data, label, section.offset)? + label.len();
+    if offset >= end {
+        return None;
+    }
+    let pointer = match data[offset] {
+        0xe1 => FamilyTablePointer::Null,
+        psb::token::ENTITY_REF => {
+            let (id, after) = psb::reference_id(data, offset + 1).ok()?;
+            (after <= end).then_some(FamilyTablePointer::Entity(id))?
+        }
+        _ => return None,
+    };
+    Some(FamilyTableRecord { pointer, offset })
 }
 
 fn surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceRow> {
@@ -954,6 +995,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let layout = identify_layout(&sections);
     let census = geom_census(&data, &sections);
     let principal_unit = principal_unit(&data);
+    let family_table = family_table(&data, &sections);
     let surface_rows = surface_rows(&data, &sections);
     let surface_parameters = surface_parameters(&data, &sections);
     let plane_local_systems = plane_local_systems(&data, &sections);
@@ -1007,6 +1049,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         layout,
         census,
         principal_unit,
+        family_table,
         surface_rows,
         surface_parameters,
         plane_local_systems,

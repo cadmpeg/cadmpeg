@@ -39,6 +39,7 @@ PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology ma
 | `Geomlists`                      | Body-count and quilt-discriminator fields.                                                                           |
 | `ActDatums`                      | Active datum-plane geometry under `act_datum_geoms → srf_array`.                                                     |
 | `DEPDB_DATA`                     | Persistence data used by DEPDB-layout parts.                                                                         |
+| `FamilyInf`                      | Family-table driver pointer for configurations.                                                                       |
 | `NeuPrtSld` and display sections | Material, appearance, display, and tessellation data.                                                                |
 | `THMB_IMG_MAIN`                  | JPEG thumbnail. The payload begins with `FF D8 FF` and does not contain model geometry.                              |
 
@@ -417,5 +418,7 @@ A `point` record stores a first section coordinate as an IEEE-fill scalar, a poi
 A curve-from-equation entity stores `expression f8 <count>` followed by exactly `count` NUL-terminated UTF-8 source lines. `entity(crv_fr_eqn)` is the active equation record and `backup_ents(crv_fr_eqn)` is its separately identified backup record. Source-line order is significant. Lines beginning with `/*` are comments. Executable lines use `identifier = expression`; identifiers referenced on the right-hand side are expression dependencies. Numeric literals, previously assigned identifiers, parentheses, and `+`, `-`, `*`, `/` form the arithmetic subset. Evaluate assignments in source order; an assignment remains symbolic when a dependency is unresolved.
 
 A `protextrude` or `protrevolve` operation references its sweep axis through `gsec3d_ptr` placement fields rather than an inline axis vector. Extruding a section line yields a plane, extruding an arc yields a cylinder, and a closed profile yields cap planes. Revolving a line parallel, angled, or perpendicular to the axis yields a cylinder, cone, or plane. An arc with center on or off the axis yields a sphere or torus.
+
+`FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table pointer. `e1` is an explicit null pointer; `f7 <canonical-reference-id>` identifies a present driver table.
 
 Unix-compress streams with header `1f 9d 10` grow code width from 9 to 16 bits. Code 256 is a literal dictionary entry rather than a clear code.
