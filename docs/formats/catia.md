@@ -337,6 +337,8 @@ For `b5 03 2d`, surface U is the referenced `0e` line or `0f` arc profile parame
 
 Plane lifting is affine: every pcurve pole `(u,v)` maps to `origin + u·direction_u + v·direction_v`, preserving degree, knots, and weights. On a cylinder, constant U with varying V is an axis-parallel line; constant V with varying U is a circle centered at `origin + V·axis`, with cylinder axis, reference direction, and radius. Other pcurve/carrier compositions retain the pcurve-on-surface construction until an exact solved 3D carrier is available.
 
+A degree-1 cylinder pcurve with both U and V varying is a circular helix. Its angular interval is `[U0/r,U1/r]`; its axial rise per radian is `(V1−V0)/(U1/r−U0/r)`, so the pitch vector per full turn is `2π·rise_per_radian·axis`. Reversing the two endpoints to order the angular interval does not change the curve. The helix radius vectors are `r·reference_x` and `r·(axis×reference_x)` and its radial growth is zero.
+
 A constant-U or constant-V pcurve on a tensor-product NURBS surface, including an exact revolution cache in the native chart, is the corresponding exact surface isocurve. Fixing U contracts each V-column in homogeneous coordinates by the U basis values; fixing V contracts each U-row by the V basis values. The varying direction retains its degree, knot vector, and periodic flag. Each resulting control point is the contracted homogeneous numerator divided by its contracted weight.
 
 Coincident `05 08 01` rows share an endpoint locus. For topology subsets whose

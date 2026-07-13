@@ -5,12 +5,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
-    RegionId, ShellId, SurfaceId, UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{
@@ -113,6 +114,7 @@ pub(crate) fn transfer(
 
     let mut pcurve_plan = BTreeMap::new();
     let mut edge_curve_plan = HashMap::<u32, CurveGeometry>::new();
+    let mut edge_procedural_plan = HashMap::<u32, ProceduralCurveDefinition>::new();
     let mut loop_senses = BTreeMap::new();
     let mut edge_ids = HashSet::new();
     for loop_ in graph.loops.values() {
@@ -171,6 +173,8 @@ pub(crate) fn transfer(
             });
             if let Some(geometry) = lifted {
                 edge_curve_plan.entry(edge_id).or_insert(geometry);
+            } else if let Some(definition) = cylinder_helix(pcurve, surface) {
+                edge_procedural_plan.entry(edge_id).or_insert(definition);
             }
             edge_ids.insert(edge_id);
         }
@@ -332,6 +336,22 @@ pub(crate) fn transfer(
             geometry,
             source_object: None,
         });
+        if let Some(definition) = edge_procedural_plan.remove(&edge_id) {
+            let procedural_id = ProceduralCurveId(format!("catia:b5:helix#{edge_id}"));
+            annotate(
+                annotations,
+                &procedural_id,
+                "object_stream_b5_03",
+                "cylinder_parametric_helix",
+                Exactness::Derived,
+            );
+            ir.model.procedural_curves.push(ProceduralCurve {
+                id: procedural_id,
+                curve: curve_id.clone(),
+                definition,
+                cache_fit_tolerance: None,
+            });
+        }
         annotate(
             annotations,
             &id,
@@ -730,6 +750,41 @@ fn cylinder_point(
             scale(axis, uv[1]),
         ),
     )
+}
+
+fn cylinder_helix(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<ProceduralCurveDefinition> {
+    let B5Surface::Cylinder {
+        origin,
+        reference_x,
+        axis,
+        radius,
+    } = surface
+    else {
+        return None;
+    };
+    if pcurve.degree != 1 || pcurve.control_points.len() != 2 {
+        return None;
+    }
+    let mut endpoints = [pcurve.control_points[0], pcurve.control_points[1]];
+    let mut angles = [endpoints[0][0] / radius, endpoints[1][0] / radius];
+    if angles[0] == angles[1] || endpoints[0][1] == endpoints[1][1] {
+        return None;
+    }
+    if angles[0] > angles[1] {
+        endpoints.swap(0, 1);
+        angles.swap(0, 1);
+    }
+    let rise_per_radian = (endpoints[1][1] - endpoints[0][1]) / (angles[1] - angles[0]);
+    let reference_y = cross(*axis, *reference_x);
+    Some(ProceduralCurveDefinition::Helix {
+        angle_range: angles,
+        center: point3(add(*origin, scale(*axis, endpoints[0][1]))),
+        major: vector(scale(*reference_x, *radius)),
+        minor: vector(scale(reference_y, *radius)),
+        pitch: vector(scale(*axis, rise_per_radian * 2.0 * std::f64::consts::PI)),
+        apex_factor: 0.0,
+        axis: vector(*axis),
+    })
 }
 
 fn neutral_surface(
@@ -1191,11 +1246,12 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::{
-        contract_surface, lifted_curve_geometry, neutral_pcurve_point, revolution_surface,
+        contract_surface, cylinder_helix, lifted_curve_geometry, neutral_pcurve_point,
+        revolution_surface,
     };
     use crate::b5::{B5Pcurve, B5Profile, B5Surface};
     use cadmpeg_ir::eval::surface_point;
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SurfaceGeometry};
     use cadmpeg_ir::math::Point3;
 
     #[test]
@@ -1304,5 +1360,38 @@ mod tests {
         assert_eq!(curve.knots, surface.v_knots);
         assert_eq!(curve.control_points[0], Point3::new(0.5, 0.0, 0.0));
         assert_eq!(curve.control_points[1], Point3::new(0.5, 1.0, 0.5));
+    }
+
+    #[test]
+    fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
+        let pcurve = B5Pcurve {
+            object_id: 1,
+            surface: 2,
+            degree: 1,
+            distinct_knots: vec![0.0, 1.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[0.0, 3.0], [4.0, 7.0]],
+            lifted_endpoints: None,
+        };
+        let cylinder = B5Surface::Cylinder {
+            origin: [0.0, 0.0, 0.0],
+            reference_x: [1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 2.0,
+        };
+        let Some(ProceduralCurveDefinition::Helix {
+            angle_range,
+            center,
+            pitch,
+            apex_factor,
+            ..
+        }) = cylinder_helix(&pcurve, &cylinder)
+        else {
+            panic!("degree-one cylinder helix");
+        };
+        assert_eq!(angle_range, [0.0, 2.0]);
+        assert_eq!(center, Point3::new(0.0, 0.0, 3.0));
+        assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1e-12);
+        assert_eq!(apex_factor, 0.0);
     }
 }
