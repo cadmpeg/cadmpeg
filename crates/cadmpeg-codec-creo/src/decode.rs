@@ -2196,6 +2196,27 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                     .join(","),
             );
         }
+        for affected in scan
+            .feature_replay_affected_ids
+            .iter()
+            .filter(|record| record.feature_id == operation.feature_id)
+        {
+            insert_feature_parameter(
+                &mut parameters,
+                "replay_affected_ids",
+                affected
+                    .ids
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            insert_feature_parameter(
+                &mut parameters,
+                "replay_affected_counted",
+                affected.has_count_opener.to_string(),
+            );
+        }
         for direction in scan
             .feature_direction_bytes
             .iter()

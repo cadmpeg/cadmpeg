@@ -359,6 +359,8 @@ identifiers are not interchangeable.
 
 Named procedural-choice fields belong to their containing feature row. Complete compact integers, compact-integer arrays, entity references, empty alternatives, and fully decoded `f9` scalar arrays are operation parameters qualified by choice and field name. A repeated qualified field name denotes ordered occurrences of the same parameter slot. Incomplete scalar wrappers and undefined field bodies remain opaque.
 
+An unlabeled positional affected-ID replay retains its compact identifiers as one ordered sequence. The sequence does not imply the labeled template's geometry/edge partition. Presence of an `f8` opener is retained independently from the identifiers because later instances can inherit the array extent.
+
 The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are linear protrusion/extrusion definitions, class 913 is a round definition, class 911 is a hole definition, and class 923 is a datum-plane definition.
 
 A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
