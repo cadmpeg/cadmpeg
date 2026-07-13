@@ -83,6 +83,32 @@ fn indexed_om_section() -> Vec<u8> {
     bytes
 }
 
+fn offset_only_indexed_om_section() -> Vec<u8> {
+    let mut bytes = vec![0xaa; 8];
+    let class_name = b"UGS::ModlFeature";
+    bytes.push(class_name.len() as u8);
+    bytes.extend_from_slice(class_name);
+    bytes.push(0x81);
+    let index_start = bytes.len();
+    bytes.extend_from_slice(&[0; 16]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    let metadata = bytes.len();
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    let first = bytes.len();
+    bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0hostglobalvariables");
+    let second = bytes.len();
+    let text = b"(Number [mm]) length: 25; ";
+    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(text);
+    bytes.push(0);
+    let end = bytes.len();
+    for (index, offset) in [metadata, first, second, end].into_iter().enumerate() {
+        bytes[index_start + index * 4..index_start + index * 4 + 4]
+            .copy_from_slice(&(offset as u32).to_le_bytes());
+    }
+    bytes
+}
+
 #[test]
 fn om_index_pairs_object_ids_with_bounded_entity_records() {
     let bytes = indexed_om_section();
@@ -90,16 +116,33 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].base, 8);
     assert_eq!(sections[0].records.len(), 2);
-    assert_eq!(sections[0].records[0].object_id, 0x101);
+    assert_eq!(sections[0].records[0].object_id, Some(0x101));
     assert_eq!(
         sections[0].records[0].bytes,
         b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables"
     );
-    assert_eq!(sections[0].records[1].object_id, 0x102);
+    assert_eq!(sections[0].records[1].object_id, Some(0x102));
     assert_eq!(
         sections[0].records[1].bytes,
         b"\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00"
     );
+}
+
+#[test]
+fn om_offset_only_index_bounds_primary_entity_records() {
+    let bytes = offset_only_indexed_om_section();
+    let sections = crate::om::indexed_sections(&bytes);
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].base, 0);
+    assert_eq!(sections[0].records.len(), 2);
+    assert_eq!(sections[0].records[0].object_id, None);
+    assert!(sections[0].records[0].bytes.starts_with(b"\x04\x01\x0eNX "));
+    assert_eq!(sections[0].records[1].object_id, None);
+    assert!(sections[0].records[1].bytes.ends_with(b"\0"));
+    let expressions = sections[0].numeric_expressions();
+    assert_eq!(expressions.len(), 1);
+    assert_eq!(expressions[0].name, "length");
+    assert_eq!(expressions[0].value, 25.0);
 }
 
 #[test]

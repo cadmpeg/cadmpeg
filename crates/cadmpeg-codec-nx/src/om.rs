@@ -10,8 +10,9 @@ const ROOT_PREFIX: &[u8] = b"\x04\x01\x0eNX ";
 /// One NX object-model entity with persistent object identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityRecord<'a> {
-    /// NX object identifier paired with this boundary slot.
-    pub object_id: u32,
+    /// NX object identifier paired with this boundary slot, when the section
+    /// carries a fixed-width object-id table.
+    pub object_id: Option<u32>,
     /// Absolute byte offset of the entity payload.
     pub offset: usize,
     /// Exactly bounded serialized entity payload.
@@ -60,7 +61,7 @@ pub struct IndexedSection<'a> {
     pub base: usize,
     /// Absolute offset of the entity-index array.
     pub entity_index_offset: usize,
-    /// Absolute offset of the object-id table.
+    /// Absolute offset of the object-id table or offset-only identity metadata.
     pub object_id_table_offset: usize,
     /// Length-framed class definitions preceding the entity index.
     pub types: Vec<TypeDefinition<'a>>,
@@ -82,7 +83,7 @@ impl<'a> IndexedSection<'a> {
         self.records
             .iter()
             .filter_map(|record| {
-                numeric_expression_at(record.bytes, record.offset, Some(record.object_id))
+                numeric_expression_at(record.bytes, record.offset, record.object_id)
             })
             .collect()
     }
@@ -185,7 +186,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
                 break;
             };
             records.push(EntityRecord {
-                object_id,
+                object_id: Some(object_id),
                 offset: start,
                 bytes: payload,
             });
@@ -200,6 +201,67 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
                 records,
             });
         }
+    }
+    for count_offset in 8..bytes.len().saturating_sub(4) {
+        let Some(record_count) = u32_at(bytes, count_offset).map(|value| value as usize) else {
+            continue;
+        };
+        if !(2..=100_000).contains(&record_count) {
+            continue;
+        }
+        let offset_count = record_count + 2;
+        let Some(index_len) = offset_count.checked_mul(4) else {
+            continue;
+        };
+        let Some(index_start) = count_offset.checked_sub(index_len) else {
+            continue;
+        };
+        let Some(first) = u32_at(bytes, index_start).map(|value| value as usize) else {
+            continue;
+        };
+        let Some(second) = u32_at(bytes, index_start + 4).map(|value| value as usize) else {
+            continue;
+        };
+        let Some(last) = u32_at(bytes, count_offset - 4).map(|value| value as usize) else {
+            continue;
+        };
+        if first < count_offset + 4 || first >= second || second > last || last > bytes.len() {
+            continue;
+        }
+        let mut offsets = Vec::with_capacity(offset_count);
+        for index in 0..offset_count {
+            let Some(offset) = u32_at(bytes, index_start + index * 4).map(|v| v as usize) else {
+                offsets.clear();
+                break;
+            };
+            offsets.push(offset);
+        }
+        if offsets.len() != offset_count
+            || offsets[0] < count_offset + 4
+            || !offsets.windows(2).all(|pair| pair[0] <= pair[1])
+            || offsets.last().is_none_or(|end| *end > bytes.len())
+            || !seen_record_starts.insert(offsets[1])
+        {
+            continue;
+        }
+        let records = offsets[1..]
+            .windows(2)
+            .map(|bounds| EntityRecord {
+                object_id: None,
+                offset: bounds[0],
+                bytes: &bytes[bounds[0]..bounds[1]],
+            })
+            .collect::<Vec<_>>();
+        if records.len() != record_count {
+            continue;
+        }
+        out.push(IndexedSection {
+            base: 0,
+            entity_index_offset: index_start,
+            object_id_table_offset: offsets[0],
+            types: type_definitions(bytes, 0, index_start),
+            records,
+        });
     }
     out
 }

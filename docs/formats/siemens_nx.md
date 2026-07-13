@@ -373,6 +373,15 @@ object_id(i) = object_id_table[i]
 
 The first record at `oid_end` begins with the NX root marker `04 01 0e "NX "` (for example, `NX 2027.3102`). The **type registry** stores `UGS::<class>` names and class-ID bytes. The **field registry** stores `m_*` member names such as `m_color` and `m_csys`.
 
+The primary UG_PART section uses an offset-only index. A trailing `record_count:u32 LE` follows `record_count+2` monotone offsets. Offsets are relative to the UG_PART payload start. `index[0]` starts identity metadata, `index[1]` starts the first entity, and the remaining entries bound `record_count` entities:
+
+```text
+identity_metadata = bytes[index[0], index[1])
+record i = bytes[index[i+1], index[i+2])   # 0 <= i < record_count
+```
+
+The offset-only form does not assign one fixed-width object ID to every record. Entity identity remains unspecified unless a persistent handle is present in the bounded record.
+
 **Persistent-handle identity.** `0xe0`-prefixed 4-byte values are persistent handles forming a cross-stream bridge (RMFastLoad ↔ UG_PART OM ↔ EXTREFSTREAM). A second family uses `0xC0..0xCF` (4-bit tag plus 28-bit value) and occurs as `(e0-handle, c-ref)` pairs.
 
 ### 7.2 Partition and deltas merge
