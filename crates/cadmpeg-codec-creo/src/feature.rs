@@ -6,7 +6,7 @@
 //! `f7 1e` may prefix an entry. The table belongs to an `AllFeatur` row only
 //! when its byte offset is bounded by that row's known feature-id header.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::psb;
 use crate::scalar;
@@ -18,6 +18,8 @@ pub struct FeatureOperation {
     pub feature_id: u32,
     /// Stored operation-family name.
     pub kind: String,
+    /// Optional one-byte state prefix immediately preceding the family name.
+    pub status_prefix: Option<u8>,
     /// Byte offset of the operation name in the original stream.
     pub offset: usize,
 }
@@ -42,6 +44,13 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
         if family.is_empty() || family.first() == Some(&b' ') || family.last() == Some(&b' ') {
             continue;
         }
+        let (status_prefix, family) = match family {
+            [prefix @ (b'x' | b'y'), first, ..] if first.is_ascii_uppercase() => {
+                offset += 1;
+                (Some(*prefix), &family[1..])
+            }
+            _ => (None, family),
+        };
         let digits = &payload[separator + SEPARATOR.len()..];
         let Some(end) = digits.iter().position(|byte| *byte == 0) else {
             continue;
@@ -55,12 +64,19 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
         result.push(FeatureOperation {
             feature_id,
             kind: String::from_utf8_lossy(family).into_owned(),
+            status_prefix,
             offset,
         });
     }
     result.sort_by_key(|operation| operation.offset);
-    result.dedup_by_key(|operation| operation.feature_id);
-    result
+    let mut current = result
+        .into_iter()
+        .map(|operation| (operation.feature_id, operation))
+        .collect::<BTreeMap<_, _>>()
+        .into_values()
+        .collect::<Vec<_>>();
+    current.sort_by_key(|operation| operation.offset);
+    current
 }
 
 /// One `AllFeatur` mixed generated-entity table.

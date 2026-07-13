@@ -1744,6 +1744,13 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let operation_ordinal_base = ir.model.features.len();
     for (operation_index, operation) in scan.feature_operations.iter().enumerate() {
         let id = IrFeatureId(format!("creo:model:feature#{}", operation.feature_id));
+        let mut source_properties = BTreeMap::new();
+        if let Some(prefix) = operation.status_prefix {
+            source_properties.insert(
+                "mdl_status_prefix".to_string(),
+                char::from(prefix).to_string(),
+            );
+        }
         let mut parameters = BTreeMap::new();
         for affected in scan
             .feature_affected_ids
@@ -1843,7 +1850,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             suppressed: false,
             parent: None,
             dependencies,
-            source_properties: BTreeMap::new(),
+            source_properties,
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),

@@ -333,6 +333,11 @@ In a round-feature generated-entity table, a rowless face-use entry is a cylinde
 `Protrusion`, `Extrude`, `Revolve`, `Hole`, `Cut`, `Draft`, `Mirror`, and
 `Surface`.
 
+An ASCII `x` or `y` byte immediately preceding an uppercase operation-family
+name is a state prefix, not part of the family name. Multiple operation names
+with the same feature identifier are stored states; the last occurrence is the
+current state.
+
 A `FeatDefs` record-name identifier belongs to the feature-definition record
 namespace. A unique named `feat_id` inside the bounded record is the owning
 modeling feature identifier and joins `MdlStatus` and `AllFeatur`. The two

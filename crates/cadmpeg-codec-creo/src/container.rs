@@ -951,7 +951,14 @@ fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation
         );
     }
     records.sort_by_key(|record| record.offset);
-    records
+    let mut current = records
+        .into_iter()
+        .map(|record| (record.feature_id, record))
+        .collect::<BTreeMap<_, _>>()
+        .into_values()
+        .collect::<Vec<_>>();
+    current.sort_by_key(|record| record.offset);
+    current
 }
 
 fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u32> {

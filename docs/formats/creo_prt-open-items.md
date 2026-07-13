@@ -30,8 +30,10 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - The byte-backed relation that assigns shells to body identifiers when face-adjacency components and body-count fields disagree is unspecified.
 - Face-instance bindings for `element_colors`, `NeuPrtSld`, and display-table elements are unspecified.
 - The remaining RGB and component scalar lanes used by appearance records are unspecified.
+- The suppression and deletion meanings of `MdlStatus` `x` and `y` state prefixes are unspecified.
 
 ## Packed persistence data
 
 - Geometry encoding in packed `VisibGeom`, `SolidPrimdata`, `SolidPersistTable`, and `DEPDB_DATA` bodies is unspecified.
 - The `DispDataTable` compressed-stream variant is unspecified, including its initial dictionary state and geometry bindings.
+- Traversal and row semantics of the configuration driver table referenced by a non-null `FamilyInf.drv_tbl_ptr` are unspecified.

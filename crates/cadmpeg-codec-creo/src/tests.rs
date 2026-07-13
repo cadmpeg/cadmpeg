@@ -1749,39 +1749,55 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
         "c",
         &[(
             "MdlStatus",
-            b"noise\0Extrude id 40\0Round id 41\0Future Feature id 42\0Datum Plane id 43\0Draft id 44\0"
+            b"noise\0xProtrusion id 40\0Round id 41\0Future Feature id 42\0Datum Plane id 43\0Draft id 44\0Hole id 40\0ySurface id 45\0"
                 .to_vec(),
         )],
     );
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.feature_operations.len(), 5);
-    assert_eq!(scan.feature_operations[0].feature_id, 40);
-    assert_eq!(scan.feature_operations[0].kind, "Extrude");
-    assert_eq!(scan.feature_operations[1].feature_id, 41);
-    assert_eq!(scan.feature_operations[1].kind, "Round");
-    assert_eq!(scan.feature_operations[2].kind, "Future Feature");
-    assert_eq!(scan.feature_operations[3].kind, "Datum Plane");
-    assert_eq!(scan.feature_operations[4].kind, "Draft");
+    assert_eq!(scan.feature_operations.len(), 6);
+    assert_eq!(scan.feature_operations[0].feature_id, 41);
+    assert_eq!(scan.feature_operations[0].kind, "Round");
+    assert_eq!(scan.feature_operations[1].kind, "Future Feature");
+    assert_eq!(scan.feature_operations[2].kind, "Datum Plane");
+    assert_eq!(scan.feature_operations[3].kind, "Draft");
+    assert_eq!(scan.feature_operations[4].feature_id, 40);
+    assert_eq!(scan.feature_operations[4].kind, "Hole");
+    assert_eq!(scan.feature_operations[4].status_prefix, None);
+    assert_eq!(scan.feature_operations[5].kind, "Surface");
+    assert_eq!(scan.feature_operations[5].status_prefix, Some(b'y'));
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
-    assert_eq!(result.ir.model.features.len(), 5);
+    assert_eq!(result.ir.model.features.len(), 6);
     assert_eq!(
         result.ir.model.features[0].id.as_str(),
         "creo:model:feature#40"
     );
-    assert_eq!(result.ir.model.features[0].ordinal, 0);
+    assert_eq!(result.ir.model.features[0].ordinal, 4);
     assert_eq!(
         result.ir.model.features[1].id.as_str(),
         "creo:model:feature#41"
     );
-    assert_eq!(result.ir.model.features[1].ordinal, 1);
+    assert_eq!(result.ir.model.features[1].ordinal, 0);
     assert!(matches!(
         &result.ir.model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "Extrude"
+        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "Hole"
     ));
+    assert_eq!(
+        result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id.as_str() == "creo:model:feature#45")
+            .expect("state-prefixed feature")
+            .source_properties
+            .get("mdl_status_prefix")
+            .map(String::as_str),
+        Some("y")
+    );
     assert_annotation(
         &result.ir,
-        "creo:model:feature#40",
+        "creo:model:feature#41",
         "creo:MdlStatus",
         scan.feature_operations[0].offset as u64,
         "feature_operation_name",
