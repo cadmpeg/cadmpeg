@@ -162,6 +162,17 @@ fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<(), CodecEr
     Ok(())
 }
 
+fn validate_configuration_projection(target: &CadIr, native: &F3dNative) -> Result<(), CodecError> {
+    let projected = crate::design::project_configurations(&native.design_configurations);
+    if target.model.configurations != projected {
+        return Err(CodecError::Malformed(
+            "neutral F3D configurations must equal the projection of native configuration tables"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
 pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
@@ -175,6 +186,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     validate_source_less_topology_tolerances(target)?;
     validate_source_less_auxiliary_geometry(target)?;
     if let Some(native) = &native {
+        validate_configuration_projection(target, native)?;
         validate_source_less_history_graph(target, native)?;
         validate_source_less_act(native)?;
         validate_source_less_design_bindings(native)?;
@@ -9364,7 +9376,9 @@ pub fn write_semantic(
     source_image: &[u8],
     writer: &mut dyn Write,
 ) -> Result<(), CodecError> {
-    let _ = f3d_native(target)?;
+    if let Some(native) = f3d_native(target)? {
+        validate_configuration_projection(target, &native)?;
+    }
     let baseline = F3dCodec.decode(&mut Cursor::new(source_image), &DecodeOptions::default())?;
     let baseline_point_ids = baseline
         .ir
@@ -9570,6 +9584,10 @@ pub fn write_semantic(
         .model
         .procedural_curves
         .clone_from(&target.model.procedural_curves);
+    supported_target
+        .model
+        .configurations
+        .clone_from(&target.model.configurations);
     if let (Some(mut supported), Some(target_native)) =
         (f3d_native(&supported_target)?, f3d_native(target)?)
     {

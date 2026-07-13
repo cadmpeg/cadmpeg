@@ -79,6 +79,81 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
     Ok(configurations)
 }
 
+/// Project named variants from configuration-table JSON into the neutral
+/// configuration arena. Rule documents remain in the native arena because a
+/// rule is a selector, not a model variant.
+pub fn project_configurations(
+    native: &[DesignConfiguration],
+) -> Vec<cadmpeg_ir::features::DesignConfiguration> {
+    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration as NeutralConfiguration};
+    use std::collections::BTreeMap;
+
+    let mut projected = Vec::new();
+    for table in native
+        .iter()
+        .filter(|configuration| configuration.kind == DesignConfigurationKind::Table)
+    {
+        let active = table
+            .payload
+            .get("active")
+            .and_then(serde_json::Value::as_str);
+        let Some(configurations) = table
+            .payload
+            .get("configurations")
+            .and_then(serde_json::Value::as_object)
+        else {
+            continue;
+        };
+        for (name, definition) in configurations {
+            let mut properties = BTreeMap::new();
+            let definition = definition.as_object();
+            if let Some(parameters) = definition
+                .and_then(|value| value.get("parameters"))
+                .and_then(serde_json::Value::as_object)
+            {
+                for (parameter, value) in parameters {
+                    properties.insert(format!("parameter:{parameter}"), json_scalar_text(value));
+                }
+            }
+            if let Some(suppressed) = definition
+                .and_then(|value| value.get("suppressed"))
+                .and_then(serde_json::Value::as_array)
+            {
+                for feature in suppressed.iter().filter_map(serde_json::Value::as_str) {
+                    properties.insert(format!("suppressed:{feature}"), "true".into());
+                }
+            }
+            let material = definition
+                .and_then(|value| value.get("material"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned);
+            let ordinal = u32::try_from(projected.len()).unwrap_or(u32::MAX);
+            projected.push(NeutralConfiguration {
+                id: ConfigurationId(format!("f3d:configuration:variant#{ordinal}")),
+                ordinal,
+                active: active == Some(name.as_str()),
+                source_index: None,
+                name: name.clone(),
+                material,
+                properties,
+                bodies: Vec::new(),
+                native_ref: Some(table.id.clone()),
+            });
+        }
+    }
+    projected
+}
+
+fn json_scalar_text(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(value) => value.clone(),
+        serde_json::Value::Null => "null".into(),
+        serde_json::Value::Bool(value) => value.to_string(),
+        serde_json::Value::Number(value) => value.to_string(),
+        value => value.to_string(),
+    }
+}
+
 /// Decode every parametric construction-recipe record (`body_recipe_data`,
 /// `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`,
 /// `vertex_recipe_data`) from each design `BulkStream` entry in `scan`.

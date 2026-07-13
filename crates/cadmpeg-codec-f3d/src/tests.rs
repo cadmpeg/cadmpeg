@@ -3742,6 +3742,16 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         native.design_configurations[0].payload["extension"]["future"],
         7
     );
+    assert_eq!(decoded.ir.model.configurations.len(), 1);
+    let wide = &decoded.ir.model.configurations[0];
+    assert_eq!(wide.name, "wide");
+    assert!(wide.active);
+    assert_eq!(wide.properties["parameter:width"], "25 mm");
+    assert_eq!(wide.properties["suppressed:slot"], "true");
+    assert_eq!(
+        wide.native_ref.as_deref(),
+        Some(native.design_configurations[0].id.as_str())
+    );
 
     let mut retained = decoded.ir.clone();
     update_f3d_native(&mut retained, |native| {
@@ -3749,6 +3759,8 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         native.design_configurations[0].payload["configurations"]["narrow"] =
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
     });
+    retained.model.configurations =
+        crate::design::project_configurations(&f3d_native(&retained).design_configurations);
     let expected_retained = f3d_native(&retained).design_configurations;
     let mut retained_bytes = Vec::new();
     F3dCodec
@@ -3762,6 +3774,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         expected_retained
     );
 
+    let expected_projected = decoded.ir.model.configurations.clone();
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
@@ -3769,6 +3782,14 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less configuration encode");
+    let mut inconsistent = source_less.clone();
+    inconsistent.model.configurations[0].active = false;
+    let error = F3dCodec
+        .encode(&inconsistent, &mut Vec::new())
+        .expect_err("neutral/native configuration divergence must be rejected");
+    assert!(error
+        .to_string()
+        .contains("must equal the projection of native configuration tables"));
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less configuration round trip");
@@ -3776,6 +3797,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         f3d_native(&round_trip.ir).design_configurations,
         native.design_configurations
     );
+    assert_eq!(round_trip.ir.model.configurations, expected_projected);
 
     let rule_name = "FusionAssetName[Active]/DesignConfigurationRule.456.dsgcfgrule";
     let rule = F3dCodec
