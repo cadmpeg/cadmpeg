@@ -7441,7 +7441,11 @@ type PersistentReferenceEdit = (u64, u32, u64);
 type BodyMemberEdit = (u64, u64, u16);
 
 enum ProceduralSurfaceEdit {
-    ExtrusionDirection(Vector3),
+    Extrusion {
+        parameter_interval: [f64; 2],
+        direction: Vector3,
+        native_position: Point3,
+    },
     BlendRadii([f64; 2]),
 }
 
@@ -10279,11 +10283,15 @@ fn validate_procedural_surface_edits(
                     native_position: after_native_position,
                 },
             ) if before_directrix == after_directrix => {
-                if before_parameter_interval != after_parameter_interval
-                    || before_native_position != after_native_position
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "F3D retained extrusion edit changes non-writable interval or native position: {id}"
+                let interval = after_parameter_interval.ok_or_else(|| {
+                    CodecError::Malformed(format!("F3D extrusion interval is missing: {id}"))
+                })?;
+                let position = after_native_position.ok_or_else(|| {
+                    CodecError::Malformed(format!("F3D extrusion native position is missing: {id}"))
+                })?;
+                if !interval.into_iter().all(f64::is_finite) || interval[0] >= interval[1] {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D extrusion interval must be finite and ordered: {id}"
                     )));
                 }
                 if !finite_vector(*after_direction) || after_direction.norm() == 0.0 {
@@ -10291,8 +10299,22 @@ fn validate_procedural_surface_edits(
                         "F3D extrusion direction must be finite and nonzero: {id}"
                     )));
                 }
-                (before_direction != after_direction)
-                    .then_some(ProceduralSurfaceEdit::ExtrusionDirection(*after_direction))
+                if ![position.x, position.y, position.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D extrusion native position must be finite: {id}"
+                    )));
+                }
+                (before_parameter_interval != after_parameter_interval
+                    || before_direction != after_direction
+                    || before_native_position != after_native_position)
+                    .then_some(ProceduralSurfaceEdit::Extrusion {
+                        parameter_interval: interval,
+                        direction: *after_direction,
+                        native_position: position,
+                    })
             }
             (
                 ProceduralSurfaceDefinition::Blend {
@@ -10965,13 +10987,32 @@ fn patch_framed_geometry(
                 )));
             }
             match edit {
-                ProceduralSurfaceEdit::ExtrusionDirection(direction) => patch_vec3_token(
-                    bytes,
-                    record,
-                    0x14,
-                    0,
-                    [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
-                )?,
+                ProceduralSurfaceEdit::Extrusion {
+                    parameter_interval,
+                    direction,
+                    native_position,
+                } => {
+                    patch_double_token(bytes, record, 0, parameter_interval[0])?;
+                    patch_double_token(bytes, record, 1, parameter_interval[1])?;
+                    patch_vec3_token(
+                        bytes,
+                        record,
+                        0x14,
+                        0,
+                        [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
+                    )?;
+                    patch_vec3_token(
+                        bytes,
+                        record,
+                        0x13,
+                        0,
+                        [
+                            native_position.x / 10.0,
+                            native_position.y / 10.0,
+                            native_position.z / 10.0,
+                        ],
+                    )?;
+                }
                 ProceduralSurfaceEdit::BlendRadii(radii) => {
                     patch_blend_radius_tokens(bytes, record, *radii)?;
                 }

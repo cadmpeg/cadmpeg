@@ -10546,7 +10546,7 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
 }
 
 #[test]
-fn generated_f3d_rewrites_translational_extrusion_direction() {
+fn generated_f3d_rewrites_translational_extrusion_header() {
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
     let source = f3d_with_smbh(&synthetic_cyl_spl_sur_smbh());
@@ -10554,12 +10554,18 @@ fn generated_f3d_rewrites_translational_extrusion_direction() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated extrusion decode");
     let mut edited = decoded.ir;
-    let ProceduralSurfaceDefinition::Extrusion { direction, .. } =
-        &mut edited.model.procedural_surfaces[0].definition
+    let ProceduralSurfaceDefinition::Extrusion {
+        parameter_interval,
+        direction,
+        native_position,
+        ..
+    } = &mut edited.model.procedural_surfaces[0].definition
     else {
         panic!("expected extrusion")
     };
+    *parameter_interval = Some([-0.5, 1.25]);
     *direction = cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0);
+    *native_position = Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0));
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -10568,12 +10574,21 @@ fn generated_f3d_rewrites_translational_extrusion_direction() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated extrusion decode");
-    let ProceduralSurfaceDefinition::Extrusion { direction, .. } =
-        &round_trip.ir.model.procedural_surfaces[0].definition
+    let ProceduralSurfaceDefinition::Extrusion {
+        parameter_interval,
+        direction,
+        native_position,
+        ..
+    } = &round_trip.ir.model.procedural_surfaces[0].definition
     else {
         panic!("expected round-trip extrusion")
     };
+    assert_eq!(*parameter_interval, Some([-0.5, 1.25]));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0));
+    assert_eq!(
+        *native_position,
+        Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0))
+    );
 }
 
 #[test]
