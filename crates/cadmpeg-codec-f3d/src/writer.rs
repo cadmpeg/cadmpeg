@@ -4438,7 +4438,8 @@ fn encode_native_compound_loft(
             for value in parameter_range {
                 native_f64(bytes, *value);
             }
-            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            let curve = native_loft_curve_in_range(target, curve, Some(*parameter_range))?;
+            native_nurbs_curve(bytes, &curve)?;
         }
         CompoundLoftTail::Seven {
             first_flag,

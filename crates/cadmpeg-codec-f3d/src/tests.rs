@@ -10051,6 +10051,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
     };
     let scale = construction.scales[0].clone().expect("generated scale");
     let curve = scale.path.clone();
+    let line_curve = cadmpeg_ir::ids::CurveId("generated:compound_loft_tail_line#0".into());
     let tails = [
         CompoundLoftTail::Six {
             flags: [true, false],
@@ -10058,7 +10059,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
             selector: 31,
             direction: Vector3::new(0.0, 1.0, 0.0),
             parameter_range: [-0.5, 1.5],
-            curve: curve.clone(),
+            curve: line_curve.clone(),
         },
         CompoundLoftTail::Seven {
             first_flag: true,
@@ -10081,6 +10082,14 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         let mut source_less = decoded.ir.clone();
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
+            id: line_curve.clone(),
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
+                direction: cadmpeg_ir::math::Vector3::new(4.0, -2.0, 1.0),
+            },
+            source_object: None,
+        });
         let ProceduralSurfaceDefinition::CompoundLoft { construction } =
             &mut source_less.model.procedural_surfaces[0].definition
         else {
@@ -10105,7 +10114,33 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
             panic!("expected round-trip compound loft")
         };
         match (&expected, &construction.tail) {
-            (CompoundLoftTail::Six { .. }, CompoundLoftTail::Six { .. }) => {}
+            (
+                CompoundLoftTail::Six { .. },
+                CompoundLoftTail::Six {
+                    parameter_range,
+                    curve,
+                    ..
+                },
+            ) => {
+                assert!(matches!(
+                    round_trip
+                        .ir
+                        .model
+                        .curves
+                        .iter()
+                        .find(|candidate| candidate.id == *curve)
+                        .map(|curve| &curve.geometry),
+                    Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                        if curve.degree == 1
+                            && curve.knots
+                                == [
+                                    parameter_range[0],
+                                    parameter_range[0],
+                                    parameter_range[1],
+                                    parameter_range[1],
+                                ]
+                ));
+            }
             (CompoundLoftTail::Seven { .. }, CompoundLoftTail::Seven { first_scale, .. }) => {
                 assert!(first_scale.is_some());
             }
