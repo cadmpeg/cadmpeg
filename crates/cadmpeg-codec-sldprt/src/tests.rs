@@ -7696,6 +7696,80 @@ fn semantic_writer_round_trips_typed_loft() {
 }
 
 #[test]
+fn semantic_writer_round_trips_boundary_boss_as_loft() {
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, ProfileRef};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Sketch Name="SectionA" Type="Sketch" id="41"/>
+            <Sketch Name="SectionB" Type="Sketch" id="42"/>
+            <Boundary Name="Blend" Type="BoundaryBoss" id="43" Profiles="41,42"/>
+            <Boundary Name="Pocket" Type="BoundaryCut" id="44" Profiles="41,42"/>
+        </Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let refs = decoded.ir.model.features[..2]
+        .iter()
+        .map(|feature| feature.native_ref.clone().unwrap())
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        &decoded.ir.model.features[2].definition,
+        FeatureDefinition::Loft {
+            profiles,
+            guides,
+            op: BooleanOp::Join,
+            closed: false,
+        } if profiles == &vec![
+            ProfileRef::Native(refs[0].clone()),
+            ProfileRef::Native(refs[1].clone()),
+        ] && guides.is_empty()
+    ));
+    assert!(matches!(
+        &decoded.ir.model.features[3].definition,
+        FeatureDefinition::Loft {
+            op: BooleanOp::Cut,
+            closed: false,
+            ..
+        }
+    ));
+
+    let FeatureDefinition::Loft {
+        profiles, closed, ..
+    } = &mut decoded.ir.model.features[2].definition
+    else {
+        panic!("typed boundary loft");
+    };
+    profiles.reverse();
+    *closed = true;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[2];
+    assert_eq!(feature.xml_tag, "Boundary");
+    assert_eq!(feature.kind, "BoundaryBoss");
+    assert_eq!(feature.properties["Profiles"], "42,41");
+    assert_eq!(feature.properties["Operation"], "Join");
+    assert_eq!(feature.properties["Closed"], "true");
+    assert!(matches!(
+        &regenerated.ir.model.features[3].definition,
+        FeatureDefinition::Loft {
+            op: BooleanOp::Cut,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_rib() {
     use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, Length, ProfileRef};
     use cadmpeg_ir::math::Vector3;

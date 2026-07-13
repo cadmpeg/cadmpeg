@@ -921,7 +921,7 @@ fn project_definition(
         project_pattern(feature, by_source).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Sweep") {
         project_sweep(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Loft") {
+    } else if is_loft(feature) {
         project_loft(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Rib") {
         project_rib(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
@@ -952,6 +952,17 @@ fn is_revolve(feature: &Feature) -> bool {
             .get("Operation")
             .and_then(|operation| parse_boolean_op(operation))
             .is_some()
+}
+
+fn is_loft(feature: &Feature) -> bool {
+    loft_op(&feature.kind).is_some()
+        || (feature.xml_tag.eq_ignore_ascii_case("Loft")
+            || feature.xml_tag.eq_ignore_ascii_case("Boundary"))
+            && feature
+                .properties
+                .get("Operation")
+                .and_then(|operation| parse_boolean_op(operation))
+                .is_some()
 }
 
 fn project_extrude(
@@ -1161,8 +1172,15 @@ fn project_loft(
     Some(FeatureDefinition::Loft {
         profiles,
         guides: guides.into_iter().map(PathRef::Native).collect(),
-        op: parse_boolean_op(feature.properties.get("Operation")?)?,
-        closed: parse_bool(feature.properties.get("Closed")?)?,
+        op: feature
+            .properties
+            .get("Operation")
+            .and_then(|operation| parse_boolean_op(operation))
+            .or_else(|| loft_op(&feature.kind))?,
+        closed: feature
+            .properties
+            .get("Closed")
+            .map_or(Some(false), |closed| parse_bool(closed))?,
     })
 }
 
@@ -3577,10 +3595,7 @@ pub fn sync_neutral_features(
                 op,
                 closed,
             } => {
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Loft"))
-                    || profiles.len() < 2
+                if existing.as_deref().is_some_and(|record| !is_loft(record)) || profiles.len() < 2
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported loft semantics",
@@ -4119,6 +4134,14 @@ fn extrude_op(kind: &str) -> Option<BooleanOp> {
     match kind.to_ascii_lowercase().as_str() {
         "bossextrude" => Some(BooleanOp::Join),
         "cutextrude" => Some(BooleanOp::Cut),
+        _ => None,
+    }
+}
+
+fn loft_op(kind: &str) -> Option<BooleanOp> {
+    match kind.to_ascii_lowercase().as_str() {
+        "bossloft" | "boundaryboss" => Some(BooleanOp::Join),
+        "cutloft" | "boundarycut" => Some(BooleanOp::Cut),
         _ => None,
     }
 }
