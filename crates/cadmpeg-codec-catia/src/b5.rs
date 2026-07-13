@@ -1019,7 +1019,7 @@ fn uncounted_references(bytes: &[u8], anchor: u32) -> Option<Vec<u32>> {
     Some(references)
 }
 
-fn reference(bytes: &[u8], position: &mut usize, anchor: u32) -> Option<u32> {
+fn reference(bytes: &[u8], position: &mut usize, _anchor: u32) -> Option<u32> {
     let lead = *bytes.get(*position)?;
     let (value, width) = match lead {
         0x38 => (
@@ -1039,13 +1039,10 @@ fn reference(bytes: &[u8], position: &mut usize, anchor: u32) -> Option<u32> {
             3,
         ),
         0x28 => (
-            (anchor & 0xff_0000)
-                | u32::from(u16::from_le_bytes([
-                    *bytes.get(*position + 1)?,
-                    *bytes.get(*position + 2)?,
-                ])),
+            u32::from(*bytes.get(*position + 1)?) | (u32::from(*bytes.get(*position + 2)?) << 16),
             3,
         ),
+        0x20 => (u32::from(*bytes.get(*position + 1)?) << 16, 2),
         0x18 => (
             u32::from(u16::from_le_bytes([
                 *bytes.get(*position + 1)?,
@@ -1063,15 +1060,18 @@ fn reference(bytes: &[u8], position: &mut usize, anchor: u32) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::reference;
+    use super::*;
 
     #[test]
-    fn page_local_reference_inherits_anchor_high_byte() {
+    fn sparse_reference_tokens_fill_selected_id_bytes() {
         let mut position = 0;
         assert_eq!(
             reference(&[0x28, 0x34, 0x02], &mut position, 0x02_0033),
-            Some(0x02_0234)
+            Some(0x02_0034)
         );
         assert_eq!(position, 3);
+        position = 0;
+        assert_eq!(reference(&[0x20, 0x07], &mut position, 0), Some(0x07_0000));
+        assert_eq!(position, 2);
     }
 }
