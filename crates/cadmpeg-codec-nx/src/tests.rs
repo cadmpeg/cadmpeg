@@ -44,6 +44,18 @@ fn put_ref(rec: &mut [u8], at: usize, value: u16) {
     rec[at..at + 2].copy_from_slice(&value.to_be_bytes());
 }
 
+fn encoded_xmt(value: u32) -> Vec<u8> {
+    if value <= i16::MAX as u32 {
+        return (value as u16).to_be_bytes().to_vec();
+    }
+    let quotient = value / 32_767;
+    let remainder = value % 32_767;
+    assert!(remainder > 0 && remainder <= i16::MAX as u32);
+    let mut out = (-(remainder as i16)).to_be_bytes().to_vec();
+    out.extend_from_slice(&(quotient as u16).to_be_bytes());
+    out
+}
+
 /// One fixed-length analytic record: a `00 <tag>` header then zeroed payload the
 /// caller fills at the documented offsets.
 fn record(tag: u8, len: usize) -> Vec<u8> {
@@ -1718,6 +1730,93 @@ fn bspline_partition_stream() -> Vec<u8> {
         s.extend(array);
     }
     s
+}
+
+fn extended_bspline_surface_stream() -> Vec<u8> {
+    let descriptor_ref = 40_000u32;
+    let payload_ref = 40_001u32;
+    let support_refs = [40_010u32, 40_011, 40_012, 40_013];
+
+    let mut stream = Vec::new();
+    let mut wrapper = record(124, 19);
+    put_ref(&mut wrapper, 2, 10);
+    wrapper[18] = b'+';
+    stream.extend(wrapper);
+    stream.extend(encoded_xmt(descriptor_ref));
+    stream.extend(encoded_xmt(payload_ref));
+
+    let xmt = encoded_xmt(descriptor_ref);
+    let shift = xmt.len() - 2;
+    let mut descriptor = vec![0u8; 58 + shift];
+    descriptor[..2].copy_from_slice(&126u16.to_be_bytes());
+    descriptor[2..2 + xmt.len()].copy_from_slice(&xmt);
+    put_ref(&mut descriptor, 6 + shift, 1);
+    put_ref(&mut descriptor, 8 + shift, 1);
+    put_ref(&mut descriptor, 12 + shift, 2);
+    put_ref(&mut descriptor, 16 + shift, 2);
+    descriptor[18 + shift] = 5;
+    descriptor[19 + shift] = 5;
+    descriptor[20 + shift..24 + shift].copy_from_slice(&2u32.to_be_bytes());
+    descriptor[24 + shift..28 + shift].copy_from_slice(&2u32.to_be_bytes());
+    let mut at = 34 + shift;
+    for reference in [
+        40_009,
+        support_refs[0],
+        support_refs[1],
+        support_refs[2],
+        support_refs[3],
+    ] {
+        let encoded = encoded_xmt(reference);
+        descriptor[at..at + encoded.len()].copy_from_slice(&encoded);
+        at += encoded.len();
+    }
+    assert_eq!(at, 54 + shift);
+    put_ref(&mut descriptor, 54 + shift, 125);
+    stream.extend(descriptor);
+
+    let xmt = encoded_xmt(payload_ref);
+    let shift = xmt.len() - 2;
+    let first = encoded_xmt(40_020);
+    let data_at = 95 + shift + first.len();
+    let mut payload = vec![0u8; data_at + 12 * 8];
+    payload[..2].copy_from_slice(&125u16.to_be_bytes());
+    payload[2..2 + xmt.len()].copy_from_slice(&xmt);
+    payload[90 + shift] = b'+';
+    payload[91 + shift..95 + shift].copy_from_slice(&12u32.to_be_bytes());
+    payload[95 + shift..data_at].copy_from_slice(&first);
+    for (index, value) in [
+        0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.01, 0.0, 0.0, 0.01, 0.02, 0.0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        put_f64(&mut payload, data_at + index * 8, value);
+    }
+    stream.extend(payload);
+
+    for (tag, reference, values) in [
+        (127, support_refs[0], vec![2u16, 2]),
+        (127, support_refs[1], vec![2, 2]),
+    ] {
+        let reference = encoded_xmt(reference);
+        let mut array = record(tag, 6 + reference.len() + values.len() * 2);
+        array[4..6].copy_from_slice(&(values.len() as u16).to_be_bytes());
+        array[6..6 + reference.len()].copy_from_slice(&reference);
+        for (index, value) in values.into_iter().enumerate() {
+            put_ref(&mut array, 6 + reference.len() + index * 2, value);
+        }
+        stream.extend(array);
+    }
+    for reference in [support_refs[2], support_refs[3]] {
+        let reference = encoded_xmt(reference);
+        let mut array = record(128, 6 + reference.len() + 16);
+        array[4..6].copy_from_slice(&2u16.to_be_bytes());
+        array[6..6 + reference.len()].copy_from_slice(&reference);
+        put_f64(&mut array, 6 + reference.len(), 0.0);
+        put_f64(&mut array, 14 + reference.len(), 1.0);
+        stream.extend(array);
+    }
+    stream
 }
 
 fn bspline_surface_replacement_partition_stream() -> Vec<u8> {
@@ -3479,6 +3578,19 @@ fn decode_transfers_bspline_surface_and_curve() {
     assert_eq!(curve.knots, vec![0.0, 0.0, 1.0, 1.0]);
     assert_eq!(curve.control_points.len(), 2);
     assert!((curve.control_points[1].x - 20.0).abs() < 1e-9);
+}
+
+#[test]
+fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
+    let surfaces = crate::nurbs::surfaces(&extended_bspline_surface_stream());
+    assert_eq!(surfaces.len(), 1);
+    let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
+        panic!("expected NURBS surface");
+    };
+    assert_eq!(surface.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.control_points.len(), 4);
+    assert_eq!(surface.control_points[3].y, 20.0);
 }
 
 #[test]

@@ -54,10 +54,8 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
         .of_kind(124)
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
-            let descriptor = u16::try_from(refs[0]).ok()?;
-            let payload = u16::try_from(refs[1]).ok()?;
-            let descriptor = descriptors.get(&descriptor)?;
-            let payload = payloads.get(&payload)?;
+            let descriptor = descriptors.get(&refs[0])?;
+            let payload = payloads.get(&refs[1])?;
             let u_mult = arrays.u16s.get(&descriptor.u_mult)?;
             let v_mult = arrays.u16s.get(&descriptor.v_mult)?;
             let u_knots = arrays.f64s.get(&descriptor.u_knots)?;
@@ -117,9 +115,9 @@ pub fn pcurves(bytes: &[u8]) -> Vec<Pcurve> {
         .of_kind(134)
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
-            let descriptor = descriptors.get(&u16::try_from(refs[0]).ok()?)?;
+            let descriptor = descriptors.get(&refs[0])?;
             (descriptor.dimension == 2).then_some(())?;
-            let control = controls.get(&u16::try_from(refs[1]).ok()?)?;
+            let control = controls.get(&refs[1])?;
             let mult = arrays
                 .u16s
                 .get(&descriptor.mult)?
@@ -171,11 +169,9 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
         .of_kind(134)
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
-            let descriptor = u16::try_from(refs[0]).ok()?;
-            let control = u16::try_from(refs[1]).ok()?;
-            let descriptor = descriptors.get(&descriptor)?;
+            let descriptor = descriptors.get(&refs[0])?;
             (descriptor.dimension == 3).then_some(())?;
-            let control = controls.get(&control)?;
+            let control = controls.get(&refs[1])?;
             let mult = arrays
                 .u16s
                 .get(&descriptor.mult)?
@@ -221,21 +217,35 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
 
 #[derive(Default)]
 struct Arrays {
-    u16s: BTreeMap<u16, Vec<u16>>,
-    f64s: BTreeMap<u16, Vec<f64>>,
+    u16s: BTreeMap<u32, Vec<u16>>,
+    f64s: BTreeMap<u32, Vec<f64>>,
 }
 
 fn arrays(bytes: &[u8]) -> Arrays {
     let mut out = Arrays::default();
     for (tag, width) in [(127, 2usize), (128, 8)] {
-        for (pos, _) in records(bytes, tag, 8) {
-            let Some(count) = be_u16(bytes, pos + 4).map(usize::from) else {
+        for pos in 0..bytes.len().saturating_sub(8) {
+            if bytes.get(pos..pos + 2) != Some(&[0, tag]) {
+                continue;
+            }
+            let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
+            if bytes.get(pos + 2 + escape..pos + 4 + escape) != Some(&[0, 0]) {
+                continue;
+            }
+            let Some(count) = be_u16(bytes, pos + 4 + escape).map(usize::from) else {
                 continue;
             };
-            let Some(reference) = be_u16(bytes, pos + 6) else {
+            if !(1..4096).contains(&count) {
+                continue;
+            }
+            let Some((reference, reference_len)) = read_xmt(bytes, pos + 6 + escape) else {
                 continue;
             };
-            let Some(raw) = bytes.get(pos + 8..pos + 8 + count * width) else {
+            if reference <= 5 {
+                continue;
+            }
+            let data = pos + 6 + escape + reference_len;
+            let Some(raw) = bytes.get(data..data + count * width) else {
                 continue;
             };
             if tag == 127 {
@@ -269,12 +279,21 @@ struct Payload {
     values: Vec<f64>,
 }
 
-fn surface_payloads(bytes: &[u8]) -> BTreeMap<u16, Payload> {
-    records(bytes, 125, 97)
-        .into_iter()
-        .filter_map(|(pos, xmt)| {
-            let count = be_u32(bytes, pos + 91)? as usize;
-            let raw = bytes.get(pos + 97..pos + 97 + count * 8)?;
+fn surface_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload> {
+    (0..bytes.len().saturating_sub(97))
+        .filter_map(|pos| {
+            (bytes.get(pos..pos + 2) == Some(&[0, 125])).then_some(())?;
+            let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
+            let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
+            (xmt > 10).then_some(())?;
+            let shift = escape + xmt_len - 2;
+            let count_escape = usize::from(bytes.get(pos + 91 + shift) == Some(&0xff));
+            let count_at = pos + 91 + shift + count_escape;
+            let count = be_u32(bytes, count_at)? as usize;
+            (count > 0 && count <= 0x40000).then_some(())?;
+            let (_, first_len) = read_xmt(bytes, count_at + 4)?;
+            let data = count_at + 4 + first_len;
+            let raw = bytes.get(data..data + count * 8)?;
             let values: Vec<_> = raw
                 .chunks_exact(8)
                 .map(|b| {
@@ -292,7 +311,7 @@ fn surface_payloads(bytes: &[u8]) -> BTreeMap<u16, Payload> {
         .collect()
 }
 
-fn curve_payloads(bytes: &[u8]) -> BTreeMap<u16, Payload> {
+fn curve_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload> {
     records(bytes, 135, 15)
         .into_iter()
         .filter_map(|(pos, xmt)| {
@@ -310,7 +329,7 @@ fn curve_payloads(bytes: &[u8]) -> BTreeMap<u16, Payload> {
             values
                 .iter()
                 .all(|value| value.is_finite())
-                .then_some((xmt, Payload { values }))
+                .then_some((u32::from(xmt), Payload { values }))
         })
         .collect()
 }
@@ -324,35 +343,74 @@ struct SurfaceDescriptor {
     v_form: u8,
     u_distinct: usize,
     v_distinct: usize,
-    u_mult: u16,
-    v_mult: u16,
-    u_knots: u16,
-    v_knots: u16,
+    u_mult: u32,
+    v_mult: u32,
+    u_knots: u32,
+    v_knots: u32,
 }
 
-fn surface_descriptors(bytes: &[u8]) -> BTreeMap<u16, SurfaceDescriptor> {
-    records(bytes, 126, 48)
-        .into_iter()
-        .filter_map(|(pos, xmt)| {
-            (be_u16(bytes, pos + 44) == Some(125))
-                .then(|| {
-                    Some(SurfaceDescriptor {
-                        u_degree: be_u16(bytes, pos + 6)?,
-                        v_degree: be_u16(bytes, pos + 8)?,
-                        u_count: be_u16(bytes, pos + 12)? as usize,
-                        v_count: be_u16(bytes, pos + 16)? as usize,
-                        u_form: *bytes.get(pos + 18)?,
-                        v_form: *bytes.get(pos + 19)?,
-                        u_distinct: be_u32(bytes, pos + 20)? as usize,
-                        v_distinct: be_u32(bytes, pos + 24)? as usize,
-                        u_mult: be_u16(bytes, pos + 36)?,
-                        v_mult: be_u16(bytes, pos + 38)?,
-                        u_knots: be_u16(bytes, pos + 40)?,
-                        v_knots: be_u16(bytes, pos + 42)?,
-                    })
-                })
-                .flatten()
-                .map(|descriptor| (xmt, descriptor))
+fn surface_descriptors(bytes: &[u8]) -> BTreeMap<u32, SurfaceDescriptor> {
+    (0..bytes.len().saturating_sub(48))
+        .filter_map(|pos| {
+            (bytes.get(pos..pos + 2) == Some(&[0, 126])).then_some(())?;
+            let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
+            let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
+            (xmt > 10).then_some(())?;
+            let shift = escape + xmt_len - 2;
+            let u_degree = be_u16(bytes, pos + 6 + shift)?;
+            let v_degree = be_u16(bytes, pos + 8 + shift)?;
+            let u_count = be_u16(bytes, pos + 12 + shift)? as usize;
+            let v_count = be_u16(bytes, pos + 16 + shift)? as usize;
+            let u_form = *bytes.get(pos + 18 + shift)?;
+            let v_form = *bytes.get(pos + 19 + shift)?;
+            let u_distinct = be_u32(bytes, pos + 20 + shift)? as usize;
+            let v_distinct = be_u32(bytes, pos + 24 + shift)? as usize;
+            ((1..=10).contains(&u_degree)
+                && (1..=10).contains(&v_degree)
+                && (2..=2000).contains(&u_count)
+                && (2..=2000).contains(&v_count)
+                && [1, 4, 5, 6].contains(&u_form)
+                && [1, 4, 5, 6].contains(&v_form)
+                && (2..2000).contains(&u_distinct)
+                && (2..2000).contains(&v_distinct))
+            .then_some(())?;
+            let short = be_u16(bytes, pos + 44 + shift) == Some(125);
+            let (u_mult, v_mult, u_knots, v_knots) = if short {
+                (
+                    u32::from(be_u16(bytes, pos + 36 + shift)?),
+                    u32::from(be_u16(bytes, pos + 38 + shift)?),
+                    u32::from(be_u16(bytes, pos + 40 + shift)?),
+                    u32::from(be_u16(bytes, pos + 42 + shift)?),
+                )
+            } else {
+                (be_u16(bytes, pos + 54 + shift) == Some(125)).then_some(())?;
+                let mut at = pos + 34 + shift;
+                let mut refs = [0u32; 5];
+                for reference in &mut refs {
+                    let (value, len) = read_xmt(bytes, at)?;
+                    *reference = value;
+                    at += len;
+                }
+                (at == pos + 54 + shift).then_some(())?;
+                (refs[1], refs[2], refs[3], refs[4])
+            };
+            Some((
+                xmt,
+                SurfaceDescriptor {
+                    u_degree,
+                    v_degree,
+                    u_count,
+                    v_count,
+                    u_form,
+                    v_form,
+                    u_distinct,
+                    v_distinct,
+                    u_mult,
+                    v_mult,
+                    u_knots,
+                    v_knots,
+                },
+            ))
         })
         .collect()
 }
@@ -363,24 +421,24 @@ struct CurveDescriptor {
     dimension: u16,
     distinct: usize,
     form: u8,
-    mult: u16,
-    knots: u16,
+    mult: u32,
+    knots: u32,
 }
 
-fn curve_descriptors(bytes: &[u8]) -> BTreeMap<u16, CurveDescriptor> {
+fn curve_descriptors(bytes: &[u8]) -> BTreeMap<u32, CurveDescriptor> {
     records(bytes, 136, 27)
         .into_iter()
         .filter_map(|(pos, xmt)| {
             Some((
-                xmt,
+                u32::from(xmt),
                 CurveDescriptor {
                     degree: be_u16(bytes, pos + 4)?,
                     poles: be_u16(bytes, pos + 8)? as usize,
                     dimension: be_u16(bytes, pos + 10)?,
                     distinct: be_u16(bytes, pos + 14)? as usize,
                     form: *bytes.get(pos + 16)?,
-                    mult: be_u16(bytes, pos + 23)?,
-                    knots: be_u16(bytes, pos + 25)?,
+                    mult: u32::from(be_u16(bytes, pos + 23)?),
+                    knots: u32::from(be_u16(bytes, pos + 25)?),
                 },
             ))
         })
@@ -396,6 +454,16 @@ fn records(bytes: &[u8], tag: u8, min_len: usize) -> Vec<(usize, u16)> {
                 .filter(|(_, xmt)| *xmt > 1 || tag == 127 || tag == 128)
         })
         .collect()
+}
+
+fn read_xmt(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
+    let first = i16::from_be_bytes([*bytes.get(at)?, *bytes.get(at + 1)?]);
+    if first >= 0 {
+        return Some((first as u32, 2));
+    }
+    let remainder = first.unsigned_abs();
+    let quotient = u16::from_be_bytes([*bytes.get(at + 2)?, *bytes.get(at + 3)?]);
+    Some((u32::from(quotient) * 32_767 + u32::from(remainder), 4))
 }
 
 fn expand_knots(distinct: &[f64], multiplicities: &[u16]) -> Option<Vec<f64>> {
