@@ -234,6 +234,80 @@ struct TextureMappingRecord {
     capped: bool,
 }
 
+#[derive(Debug, Serialize)]
+struct RenderingMaterialReference {
+    plugin_uuid: String,
+    front_material_uuid: String,
+    back_material_uuid: Option<String>,
+    material_source: Option<u8>,
+}
+
+#[derive(Debug, Serialize)]
+struct LayerPresentationRecord {
+    id: String,
+    source_offset: u64,
+    archive_index: i32,
+    source_uuid: Option<String>,
+    parent_uuid: Option<String>,
+    name: String,
+    visible: bool,
+    locked: bool,
+    expanded: Option<bool>,
+    color: [u8; 4],
+    material_index: i32,
+    linetype_index: Option<i32>,
+    plot_color: Option<[u8; 4]>,
+    plot_weight_mm: Option<f64>,
+    display_material_uuid: Option<String>,
+    clipping_planes_enabled: Option<bool>,
+    rendering_materials: Vec<RenderingMaterialReference>,
+}
+
+#[derive(Debug, Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent serialized object display flags"
+)]
+struct ObjectPresentationRecord {
+    id: String,
+    source_offset: u64,
+    source_uuid: String,
+    name: String,
+    url: String,
+    layer_index: i32,
+    material_index: i32,
+    linetype_index: i32,
+    color: [u8; 4],
+    visible: bool,
+    object_mode: u8,
+    decoration: i32,
+    wire_density: i32,
+    color_source: u8,
+    linetype_source: u8,
+    material_source: u8,
+    plot_color_source: u8,
+    plot_weight_source: u8,
+    plot_color: [u8; 4],
+    plot_weight_mm: f64,
+    group_indexes: Vec<i32>,
+    display_materials: Vec<[String; 2]>,
+    active_space: u8,
+    viewport_uuid: Option<String>,
+    display_order: i32,
+    clipping_proof: bool,
+    clipping_plane_uuids: Vec<String>,
+    hatch_pattern_index: i32,
+    section_hatch_scale: f64,
+    section_hatch_rotation: f64,
+    linetype_pattern_scale: f64,
+    hatch_background: [u8; 4],
+    hatch_boundary_visible: bool,
+    section_fill_rule: u8,
+    clipping_plane_label_style: u8,
+    rendering_materials: Vec<RenderingMaterialReference>,
+    links: Vec<String>,
+}
+
 fn structural(offset: usize, message: impl Into<String>) -> FramingError {
     FramingError::Structural {
         offset,
@@ -1270,6 +1344,84 @@ fn parse_texture_mapping(
     })
 }
 
+fn rendering_materials(
+    data: &[u8],
+    range: Option<Range<usize>>,
+    archive: ArchiveVersion,
+) -> Vec<RenderingMaterialReference> {
+    let Some(range) = range else {
+        return Vec::new();
+    };
+    (|| {
+        let (mut reader, version) = anonymous(data, range, archive)?;
+        if version.0 != 1 {
+            return Err(structural(
+                reader.position(),
+                "rendering-attributes version is unsupported",
+            ));
+        }
+        let count = reader.i32()?;
+        let count = usize::try_from(count)
+            .map_err(|_| structural(reader.position() - 4, "negative rendering-material count"))?;
+        if count > 1 << 16 {
+            return Err(structural(
+                reader.position() - 4,
+                "rendering-material count exceeds limit",
+            ));
+        }
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+            let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+            if value.i32()? != 1 {
+                return Err(structural(
+                    value.position(),
+                    "rendering-material version is unsupported",
+                ));
+            }
+            let minor = value.i32()?;
+            let plugin_uuid = uuid(&mut value)?.to_string();
+            let front_material_uuid = uuid(&mut value)?.to_string();
+            let mapping_count = value.i32()?;
+            if mapping_count != 0 {
+                return Err(structural(
+                    value.position() - 4,
+                    "obsolete rendering mappings are nonempty",
+                ));
+            }
+            let (back_material_uuid, material_source) = if minor >= 1 {
+                let id = uuid(&mut value)?;
+                let source = value.u8()?;
+                value.skip(3)?;
+                ((!id.is_nil()).then(|| id.to_string()), Some(source))
+            } else {
+                (None, None)
+            };
+            if value.remaining() != 0 {
+                return Err(structural(
+                    value.position(),
+                    "rendering-material reference has trailing bytes",
+                ));
+            }
+            values.push(RenderingMaterialReference {
+                plugin_uuid,
+                front_material_uuid,
+                back_material_uuid,
+                material_source,
+            });
+            reader.skip(chunk.next_offset - reader.position())?;
+        }
+        if reader.remaining() != 0 {
+            return Err(structural(
+                reader.position(),
+                "rendering attributes have trailing bytes",
+            ));
+        }
+        Ok(values)
+    })()
+    .unwrap_or_default()
+}
+
 /// Installs built-in appearance, group membership, and light semantics.
 pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let scale = scan
@@ -1287,6 +1439,14 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let mut dimension_styles = Vec::new();
     let mut images = Vec::new();
     let mut texture_mappings = Vec::new();
+    let mut layers = Vec::new();
+    let mut object_presentation = Vec::new();
+    let mut object_id_counts = BTreeMap::<Uuid, usize>::new();
+    for object in &scan.objects {
+        if let Some(identity) = &object.identity {
+            *object_id_counts.entry(identity.object_id).or_default() += 1;
+        }
+    }
     for table in &scan.tables {
         let table_type = table.typecode & !0x0000_8000;
         for record in &table.records {
@@ -1385,6 +1545,111 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                 lights.push(light);
             }
         }
+        if let (Some(identity), Some(attributes)) = (&object.identity, &object.attributes) {
+            let key = if identity.object_id.is_nil()
+                || object_id_counts.get(&identity.object_id).copied() != Some(1)
+            {
+                format!("record-{source_order:06}")
+            } else {
+                identity.object_id.to_string()
+            };
+            object_presentation.push(ObjectPresentationRecord {
+                id: format!("rhino:presentation:object#{key}"),
+                source_offset: object.range.start as u64,
+                source_uuid: identity.object_id.to_string(),
+                name: attributes.name.clone(),
+                url: attributes.url.clone(),
+                layer_index: attributes.layer_index,
+                material_index: attributes.material_index,
+                linetype_index: attributes.linetype_index,
+                color: attributes.color,
+                visible: attributes.visible,
+                object_mode: attributes.object_mode,
+                decoration: attributes.decoration,
+                wire_density: attributes.wire_density,
+                color_source: attributes.color_source,
+                linetype_source: attributes.linetype_source,
+                material_source: attributes.material_source,
+                plot_color_source: attributes.plot_color_source,
+                plot_weight_source: attributes.plot_weight_source,
+                plot_color: attributes.plot_color,
+                plot_weight_mm: attributes.plot_weight,
+                group_indexes: attributes.groups.clone(),
+                display_materials: attributes
+                    .display_materials
+                    .iter()
+                    .map(|(viewport, material)| [viewport.to_string(), material.to_string()])
+                    .collect(),
+                active_space: attributes.active_space,
+                viewport_uuid: (!attributes.viewport_id.is_nil())
+                    .then(|| attributes.viewport_id.to_string()),
+                display_order: attributes.display_order,
+                clipping_proof: attributes.clipping_proof,
+                clipping_plane_uuids: attributes
+                    .clipping_plane_ids
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+                hatch_pattern_index: attributes.hatch_pattern_index,
+                section_hatch_scale: attributes.section_hatch_scale,
+                section_hatch_rotation: attributes.section_hatch_rotation,
+                linetype_pattern_scale: attributes.linetype_pattern_scale,
+                hatch_background: attributes.hatch_background,
+                hatch_boundary_visible: attributes.hatch_boundary_visible,
+                section_fill_rule: attributes.section_fill_rule,
+                clipping_plane_label_style: attributes.clipping_plane_label_style,
+                rendering_materials: rendering_materials(
+                    &scan.data,
+                    attributes.rendering_range.clone(),
+                    scan.archive,
+                ),
+                links: vec![format!("rhino:object:record#{source_order:06}")],
+            });
+        }
+    }
+    let mut layer_id_counts = BTreeMap::<Uuid, usize>::new();
+    for layer in &scan.metadata.layers {
+        if let Some(id) = layer.id {
+            *layer_id_counts.entry(id).or_default() += 1;
+        }
+    }
+    for layer in &scan.metadata.layers {
+        let key = layer
+            .id
+            .filter(|id| layer_id_counts.get(id).copied() == Some(1))
+            .map_or_else(
+                || format!("index-{}-offset-{}", layer.index, layer.source.range.start),
+                |id| id.to_string(),
+            );
+        layers.push(LayerPresentationRecord {
+            id: format!("rhino:presentation:layer#{key}"),
+            source_offset: layer.source.range.start as u64,
+            archive_index: layer.index,
+            source_uuid: layer.id.map(|id| id.to_string()),
+            parent_uuid: layer
+                .parent_id
+                .filter(|id| !id.is_nil())
+                .map(|id| id.to_string()),
+            name: layer.name.clone(),
+            visible: layer.visible,
+            locked: layer.locked,
+            expanded: layer.expanded,
+            color: layer.color,
+            material_index: layer.render_material_index,
+            linetype_index: layer.linetype_index,
+            plot_color: layer.plot_color,
+            plot_weight_mm: layer.plot_weight,
+            display_material_uuid: layer
+                .display_material_id
+                .filter(|id| !id.is_nil())
+                .map(|id| id.to_string()),
+            clipping_planes_enabled: layer.no_clipping_planes.map(|value| !value),
+            rendering_materials: rendering_materials(
+                &scan.data,
+                layer.rendering_range.clone(),
+                scan.archive,
+            ),
+        });
     }
     for group in &mut groups {
         group.links = group_members
@@ -1418,6 +1683,12 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     namespace
         .set_arena("texture_mappings", &texture_mappings)
         .expect("Rhino texture mappings serialize");
+    namespace
+        .set_arena("layers", &layers)
+        .expect("Rhino layers serialize");
+    namespace
+        .set_arena("object_presentation", &object_presentation)
+        .expect("Rhino object presentation serializes");
 }
 
 #[cfg(test)]
