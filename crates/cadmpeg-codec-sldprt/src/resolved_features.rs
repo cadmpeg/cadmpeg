@@ -191,8 +191,9 @@ pub(crate) fn reference_cells(scalars: &[FeatureInputScalar]) -> Vec<FeatureInpu
 }
 
 pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
-    let start = offset.checked_sub(4)?;
-    let id = u32::from_le_bytes(payload.get(start..offset)?.try_into().ok()?);
+    let start = offset.checked_add(88)?;
+    let end = start.checked_add(4)?;
+    let id = u32::from_le_bytes(payload.get(start..end)?.try_into().ok()?);
     (id != u32::MAX).then_some(id)
 }
 
@@ -218,7 +219,16 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
 
 #[cfg(test)]
 mod marker_tests {
-    use super::{marker_coordinates, marker_local_links};
+    use super::{marker_coordinates, marker_local_id, marker_local_links};
+
+    #[test]
+    fn marker_local_id_is_the_trailing_u32() {
+        let mut payload = vec![0; 92];
+        payload[88..92].copy_from_slice(&37u32.to_le_bytes());
+        assert_eq!(marker_local_id(&payload, 0), Some(37));
+        payload[88..92].fill(0xff);
+        assert_eq!(marker_local_id(&payload, 0), None);
+    }
 
     #[test]
     fn geometry_marker_coordinates_are_selected_by_layout() {
