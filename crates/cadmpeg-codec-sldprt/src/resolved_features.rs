@@ -1704,9 +1704,9 @@ fn typed_marker_relation_definition(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
-        ArcAngle180, ArcAngle270, ArcAngle90, AtIntersection, Coincident, Collinear, Concentric,
-        Equal, Fixed, Horizontal, HorizontalPoints, Midpoint, Parallel, Perpendicular, Symmetric,
-        Tangent, Vertical, VerticalPoints,
+        ArcAngle180, ArcAngle270, ArcAngle90, Coincident, Collinear, Concentric, Equal, Fixed,
+        Horizontal, HorizontalPoints, Midpoint, Parallel, Perpendicular, Tangent, Vertical,
+        VerticalPoints,
     };
     let SketchInputKind::Relation(kind) = marker.kind else {
         return None;
@@ -1804,24 +1804,6 @@ fn typed_marker_relation_definition(
             let (point, entity) = linked_midpoint_operands(marker, markers_by_id, loci_by_marker)?;
             SketchConstraintDefinition::Midpoint { point, entity }
         }
-        AtIntersection => {
-            let (point, first, second) =
-                linked_intersection_operands(marker, markers_by_id, loci_by_marker)?;
-            SketchConstraintDefinition::AtIntersection {
-                point,
-                first,
-                second,
-            }
-        }
-        Symmetric => {
-            let (first, second, axis) =
-                linked_point_symmetry_operands(marker, markers_by_id, loci_by_marker)?;
-            SketchConstraintDefinition::Symmetric {
-                first,
-                second,
-                axis,
-            }
-        }
         _ => return None,
     })
 }
@@ -1848,67 +1830,6 @@ fn linked_single_arc_entity(
         return None;
     };
     Some(entity.clone())
-}
-
-fn linked_point_symmetry_operands(
-    marker: &SketchInputEntity,
-    markers_by_id: &HashMap<&str, &SketchInputEntity>,
-    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-) -> Option<(SketchLocus, SketchLocus, SketchEntityId)> {
-    if marker.links.len() != 3 {
-        return None;
-    }
-    let mut points = Vec::new();
-    let mut axis = None;
-    for link in &marker.links {
-        let linked_marker = markers_by_id.get(link.entity_ref.as_str())?;
-        let locus = unique_locus(loci_by_marker.get(&link.entity_ref)?)?;
-        match linked_marker.kind {
-            SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
-                if !points.contains(&locus) {
-                    points.push(locus);
-                }
-            }
-            SketchInputKind::LineOrCircle if axis.is_none() => axis = Some(locus_entity(&locus)),
-            _ => return None,
-        }
-    }
-    let [first, second] = points.as_slice() else {
-        return None;
-    };
-    Some((first.clone(), second.clone(), axis?.clone()))
-}
-
-fn linked_intersection_operands(
-    marker: &SketchInputEntity,
-    markers_by_id: &HashMap<&str, &SketchInputEntity>,
-    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-) -> Option<(SketchLocus, SketchEntityId, SketchEntityId)> {
-    if marker.links.len() != 3 {
-        return None;
-    }
-    let mut point = None;
-    let mut entities = Vec::new();
-    for link in &marker.links {
-        let linked_marker = markers_by_id.get(link.entity_ref.as_str())?;
-        let locus = unique_locus(loci_by_marker.get(&link.entity_ref)?)?;
-        match linked_marker.kind {
-            SketchInputKind::Point | SketchInputKind::ConstrainedPoint if point.is_none() => {
-                point = Some(locus)
-            }
-            SketchInputKind::LineOrCircle | SketchInputKind::Arc => {
-                let entity = locus_entity(&locus);
-                if !entities.contains(&entity) {
-                    entities.push(entity);
-                }
-            }
-            _ => return None,
-        }
-    }
-    let [first, second] = entities.as_slice() else {
-        return None;
-    };
-    Some((point?, first.clone(), second.clone()))
 }
 
 fn linked_midpoint_operands(
@@ -2609,121 +2530,16 @@ mod profile_join_tests {
                 entity: SketchEntityId("second".into()),
             })
         );
-        let point_marker = marker("intersection-point", None);
-        let mut first_curve = marker("intersection-first", None);
-        first_curve.kind = SketchInputKind::LineOrCircle;
-        let mut second_curve = marker("intersection-second", None);
-        second_curve.kind = SketchInputKind::Arc;
-        let mut intersection = marker("intersection", None);
-        intersection.kind = SketchInputKind::Relation(SketchRelationKind::AtIntersection);
-        intersection.links = vec![
-            SketchInputLink {
-                local_id: 1,
-                entity_ref: point_marker.id.clone(),
-            },
-            SketchInputLink {
-                local_id: 2,
-                entity_ref: first_curve.id.clone(),
-            },
-            SketchInputLink {
-                local_id: 3,
-                entity_ref: second_curve.id.clone(),
-            },
-        ];
-        let mut intersection_loci = midpoint_loci.clone();
-        intersection_loci.insert(
-            point_marker.id.clone(),
-            vec![cadmpeg_ir::sketches::SketchLocus::Start(first.clone())],
-        );
-        intersection_loci.insert(
-            first_curve.id.clone(),
-            vec![cadmpeg_ir::sketches::SketchLocus::Entity(first.clone())],
-        );
-        intersection_loci.insert(
-            second_curve.id.clone(),
+        let mut arc_marker = marker("arc-marker", None);
+        arc_marker.kind = SketchInputKind::Arc;
+        let mut arc_loci = midpoint_loci.clone();
+        arc_loci.insert(
+            arc_marker.id.clone(),
             vec![cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId(
                 "second".into(),
             ))],
         );
-        markers.insert(point_marker.id.as_str(), &point_marker);
-        markers.insert(first_curve.id.as_str(), &first_curve);
-        markers.insert(second_curve.id.as_str(), &second_curve);
-        assert_eq!(
-            typed_marker_relation_definition(&intersection, &markers, &intersection_loci),
-            Some(SketchConstraintDefinition::AtIntersection {
-                point: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
-                first: first.clone(),
-                second: SketchEntityId("second".into()),
-            })
-        );
-        intersection_loci.insert(
-            second_curve.id.clone(),
-            vec![cadmpeg_ir::sketches::SketchLocus::Entity(first.clone())],
-        );
-        assert_eq!(
-            typed_marker_relation_definition(&intersection, &markers, &intersection_loci),
-            None
-        );
-        intersection_loci.insert(
-            second_curve.id.clone(),
-            vec![cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId(
-                "second".into(),
-            ))],
-        );
-        intersection.links.pop();
-        assert_eq!(
-            typed_marker_relation_definition(&intersection, &markers, &intersection_loci),
-            None
-        );
-        let second_point = marker("symmetry-second-point", None);
-        let mut symmetry = marker("symmetry", None);
-        symmetry.kind = SketchInputKind::Relation(SketchRelationKind::Symmetric);
-        symmetry.links = vec![
-            SketchInputLink {
-                local_id: 1,
-                entity_ref: first_curve.id.clone(),
-            },
-            SketchInputLink {
-                local_id: 2,
-                entity_ref: point_marker.id.clone(),
-            },
-            SketchInputLink {
-                local_id: 3,
-                entity_ref: second_point.id.clone(),
-            },
-        ];
-        let mut symmetry_loci = midpoint_loci.clone();
-        symmetry_loci.insert(
-            first_curve.id.clone(),
-            vec![cadmpeg_ir::sketches::SketchLocus::Entity(first.clone())],
-        );
-        symmetry_loci.insert(
-            point_marker.id.clone(),
-            vec![cadmpeg_ir::sketches::SketchLocus::Start(first.clone())],
-        );
-        symmetry_loci.insert(
-            second_point.id.clone(),
-            vec![cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId(
-                "second".into(),
-            ))],
-        );
-        markers.insert(second_point.id.as_str(), &second_point);
-        assert_eq!(
-            typed_marker_relation_definition(&symmetry, &markers, &symmetry_loci),
-            Some(SketchConstraintDefinition::Symmetric {
-                first: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
-                second: cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
-                axis: first.clone(),
-            })
-        );
-        symmetry_loci.insert(
-            second_point.id.clone(),
-            vec![cadmpeg_ir::sketches::SketchLocus::Start(first.clone())],
-        );
-        assert_eq!(
-            typed_marker_relation_definition(&symmetry, &markers, &symmetry_loci),
-            None
-        );
+        markers.insert(arc_marker.id.as_str(), &arc_marker);
         for (kind, angle) in [
             (SketchRelationKind::ArcAngle90, std::f64::consts::FRAC_PI_2),
             (SketchRelationKind::ArcAngle180, std::f64::consts::PI),
@@ -2736,18 +2552,18 @@ mod profile_join_tests {
             arc_angle.kind = SketchInputKind::Relation(kind);
             arc_angle.links = vec![SketchInputLink {
                 local_id: 1,
-                entity_ref: second_curve.id.clone(),
+                entity_ref: arc_marker.id.clone(),
             }];
             assert_eq!(
-                typed_marker_relation_definition(&arc_angle, &markers, &intersection_loci),
+                typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
                 Some(SketchConstraintDefinition::ArcAngle {
                     entity: SketchEntityId("second".into()),
                     angle: cadmpeg_ir::features::Angle(angle),
                 })
             );
-            arc_angle.links[0].entity_ref.clone_from(&first_curve.id);
+            arc_angle.links[0].entity_ref.clone_from(&entity_marker.id);
             assert_eq!(
-                typed_marker_relation_definition(&arc_angle, &markers, &intersection_loci),
+                typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
                 None
             );
         }
