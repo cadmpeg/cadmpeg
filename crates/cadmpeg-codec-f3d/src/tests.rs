@@ -3573,6 +3573,20 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let rule = f3d_native(&rule.ir).design_configurations.remove(0);
     assert_eq!(rule.kind, crate::records::DesignConfigurationKind::Rule);
     assert_eq!(rule.payload["activate"], "wide");
+
+    let invalid = F3dCodec.decode(
+        &mut Cursor::new(f3d_with_configuration(
+            &synthetic_geometry_smbh(),
+            name,
+            b"[]",
+        )),
+        &DecodeOptions::default(),
+    );
+    assert!(matches!(
+        invalid,
+        Err(cadmpeg_ir::codec::CodecError::Malformed(message))
+            if message.contains("configuration JSON must be an object")
+    ));
 }
 
 #[test]

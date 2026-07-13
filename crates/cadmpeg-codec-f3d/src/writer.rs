@@ -67,7 +67,23 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D BREP entry: {error}")))?;
     archive.write_all(&smbh)?;
     if let Some(native) = &native {
+        let mut configuration_names = BTreeSet::new();
+        let mut configuration_ids = BTreeSet::new();
         for configuration in &native.design_configurations {
+            if !configuration_names.insert(configuration.entry_name.as_str())
+                || !configuration_ids.insert(configuration.id.as_str())
+            {
+                return Err(CodecError::Malformed(format!(
+                    "duplicate F3D configuration identity: {}",
+                    configuration.entry_name
+                )));
+            }
+            if !configuration.payload.is_object() {
+                return Err(CodecError::Malformed(format!(
+                    "F3D configuration JSON must be an object: {}",
+                    configuration.entry_name
+                )));
+            }
             let valid_name = match configuration.kind {
                 crate::records::DesignConfigurationKind::Table => {
                     configuration.entry_name.ends_with(".dsgcfg")

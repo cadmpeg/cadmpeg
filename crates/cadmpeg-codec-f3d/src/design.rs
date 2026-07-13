@@ -5,7 +5,7 @@
 //! selected by [`crate::container`]. Returned records retain source offsets and
 //! stable identifiers for native regeneration.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
@@ -34,17 +34,24 @@ const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
 
 /// Decode every JSON design-configuration table and rule entry.
 pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfiguration>, CodecError> {
-    scan.entries
+    let configurations = scan
+        .entries
         .iter()
         .filter(|entry| entry.role == role::DESIGN_CONFIG)
         .map(|entry| {
             let bytes = scan.entry_bytes(&entry.name)?;
-            let payload = serde_json::from_slice(bytes).map_err(|error| {
+            let payload: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
                 CodecError::Malformed(format!(
                     "invalid F3D configuration JSON {}: {error}",
                     entry.name
                 ))
             })?;
+            if !payload.is_object() {
+                return Err(CodecError::Malformed(format!(
+                    "F3D configuration JSON must be an object: {}",
+                    entry.name
+                )));
+            }
             Ok(DesignConfiguration {
                 id: format!("f3d:configuration:{}", entry.name),
                 entry_name: entry.name.clone(),
@@ -56,7 +63,20 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
                 payload,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut names = HashSet::new();
+    let mut ids = HashSet::new();
+    for configuration in &configurations {
+        if !names.insert(configuration.entry_name.as_str())
+            || !ids.insert(configuration.id.as_str())
+        {
+            return Err(CodecError::Malformed(format!(
+                "duplicate F3D configuration identity: {}",
+                configuration.entry_name
+            )));
+        }
+    }
+    Ok(configurations)
 }
 
 /// Decode every parametric construction-recipe record (`body_recipe_data`,

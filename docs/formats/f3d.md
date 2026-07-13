@@ -24,15 +24,17 @@
 
 `<folder>` is an asset-folder path component.
 
-### 1.2 Small stored placeholder entries
+### 1.2 Stored property and configuration entries
 
 The following small entries are STORED:
 
 | Entry                                           | Bytes                   | Meaning                                      |
 | ----------------------------------------------- | ----------------------- | -------------------------------------------- |
 | `Properties.dat`                                | `00 00 00 00` (u32 `0`) | empty document-properties slot               |
-| `.../DesignConfigurationTable.<uuid>.dsgcfg`    | `7B 7D` (`{}`)          | single-configuration model (no config table) |
-| `.../DesignConfigurationRule.<uuid>.dsgcfgrule` | `7B 7D` (`{}`)          | no configuration rules                       |
+| `.../DesignConfigurationTable.<uuid>.dsgcfg`    | JSON object             | configuration table, including parameter and suppression overrides |
+| `.../DesignConfigurationRule.<uuid>.dsgcfgrule` | JSON object             | configuration activation rules                 |
+
+Configuration tables and rules are complete JSON objects. Table objects carry named configurations, parameter overrides, suppression sets, and the active configuration. Rule objects carry activation conditions and targets. Unknown object members remain part of the configuration document. ZIP entry name and extension select table versus rule; duplicate entry names are invalid.
 
 ### 1.3 `Manifest.dat` grammar
 
