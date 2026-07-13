@@ -4805,6 +4805,45 @@ fn decode_binds_entity53_color_to_face() {
 }
 
 #[test]
+fn decode_does_not_bind_color_to_an_unemitted_face() {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+
+    let mut body = Vec::new();
+    body.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+    body.extend(entity51(1, 701, 0x0015, &[0, 0, 0, 0, 0, 901]));
+    body.extend(entity53_color(900, [0.25, 0.5, 0.75]));
+    body.extend(entity53_color(901, [0.75, 0.5, 0.25]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    body.extend(plane_carrier(
+        200,
+        [2.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    body.extend(bridge_owned(110, 120, 200, 701));
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.appearances.len(), 2);
+    assert_eq!(
+        result
+            .ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .count(),
+        1
+    );
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+}
+
+#[test]
 fn semantic_writer_preserves_face_appearance() {
     use cadmpeg_ir::appearance::AppearanceTarget;
 

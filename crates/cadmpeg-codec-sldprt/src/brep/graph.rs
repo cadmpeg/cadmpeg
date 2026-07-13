@@ -726,6 +726,11 @@ fn decode_graph(
             tolerance: None,
         });
     }
+    let emitted_faces = out
+        .faces
+        .iter()
+        .map(|face| face.id.0.as_str())
+        .collect::<HashSet<_>>();
     for appearance in &mut out.face_colors {
         appearance.target = faces
             .iter()
@@ -735,7 +740,8 @@ fn decode_graph(
                     .and_then(|bridge| bridge.owner)
                     == Some(appearance.face_attr)
             })
-            .map(|face| id_face(face.bridge_attr));
+            .map(|face| id_face(face.bridge_attr))
+            .filter(|face| emitted_faces.contains(face.as_str()));
     }
     solve_face_orientation(&mut out);
     synthesize_cylinder_seams(&mut out, &mut annotations, source_stream);
