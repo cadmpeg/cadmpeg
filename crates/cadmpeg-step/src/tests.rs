@@ -70,6 +70,38 @@ fn codec_detects_and_inspects_ap242_exchange_structure() {
 }
 
 #[test]
+fn codec_refuses_out_of_envelope_encodings_by_name() {
+    let codec = StepCodec::default();
+    let cases: &[(&[u8], &str)] = &[
+        (b"PK\x03\x04archive", "STEP Part 21 ZIP container"),
+        (
+            b"\x89HDF\r\n\x1a\ncontent",
+            "STEP Part 26 binary/HDF5 encoding",
+        ),
+        (
+            b"<?xml version='1.0'?><iso_10303_28/>",
+            "STEP Part 28 XML encoding",
+        ),
+        (
+            b"<?xml version='1.0'?><business_object_model/>",
+            "AP242 BO-Model XML sidecar",
+        ),
+    ];
+    for &(bytes, reason) in cases {
+        let error = codec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_ir::CodecError::NotImplemented(message) if message == reason)
+        );
+    }
+    assert_eq!(
+        codec.detect(b"<?xml version='1.0'?><iso_10303_28/>"),
+        Confidence::Medium
+    );
+}
+
+#[test]
 fn codec_inspects_edition3_sections_and_external_references() {
     let bytes = include_bytes!("../tests/fixtures/ap242_ed3_sections.p21");
     let summary = StepCodec::default()

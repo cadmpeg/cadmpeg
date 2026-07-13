@@ -1108,6 +1108,8 @@ impl Codec for StepCodec {
     fn detect(&self, prefix: &[u8]) -> Confidence {
         if prefix.starts_with(b"ISO-10303-21;") {
             Confidence::High
+        } else if is_part28_xml(prefix) {
+            Confidence::Medium
         } else {
             Confidence::No
         }
@@ -1116,6 +1118,7 @@ impl Codec for StepCodec {
     fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes)?;
+        refuse_alternate_encoding(&bytes)?;
         if self.detect(&bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
@@ -1246,11 +1249,59 @@ impl Codec for StepCodec {
     ) -> Result<DecodeResult, CodecError> {
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes)?;
+        refuse_alternate_encoding(&bytes)?;
         if self.detect(&bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
         reader::decode(&bytes, options)
     }
+}
+
+fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
+    if bytes.starts_with(b"PK\x03\x04") {
+        return Err(CodecError::NotImplemented(
+            "STEP Part 21 ZIP container".into(),
+        ));
+    }
+    if bytes.starts_with(b"\x89HDF\r\n\x1a\n") {
+        return Err(CodecError::NotImplemented(
+            "STEP Part 26 binary/HDF5 encoding".into(),
+        ));
+    }
+    if is_part28_xml(bytes) {
+        return Err(CodecError::NotImplemented(
+            "STEP Part 28 XML encoding".into(),
+        ));
+    }
+    let lower = bytes
+        .iter()
+        .take(4096)
+        .map(u8::to_ascii_lowercase)
+        .collect::<Vec<_>>();
+    if lower.starts_with(b"<?xml")
+        && (lower
+            .windows(21)
+            .any(|window| window == b"business_object_model")
+            || lower.windows(14).any(|window| window == b"ap242_bo_model"))
+    {
+        return Err(CodecError::NotImplemented(
+            "AP242 BO-Model XML sidecar".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn is_part28_xml(bytes: &[u8]) -> bool {
+    let lower = bytes
+        .iter()
+        .take(4096)
+        .map(u8::to_ascii_lowercase)
+        .collect::<Vec<_>>();
+    lower.starts_with(b"<?xml")
+        && (lower.windows(12).any(|window| window == b"iso_10303_28")
+            || lower
+                .windows(21)
+                .any(|window| window == b"iso:std:iso:10303:-28"))
 }
 
 impl From<StepError> for CodecError {
