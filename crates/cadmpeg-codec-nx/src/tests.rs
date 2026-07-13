@@ -32,39 +32,74 @@ fn be_f64(v: f64) -> [u8; 8] {
 #[test]
 fn nx_expression_parameter_references_preserve_formula_order() {
     assert_eq!(
-        crate::native::expression_parameter_indices("max(p12, p3) + p12 + exp2 + p7_radius"),
-        vec![12, 3, 12, 7]
+        crate::native::expression_parameter_names(
+            "max(p12, p3) + p12 + exp2 + p7_radius + p7_radius"
+        ),
+        vec!["p12", "p3", "p12", "p7_radius", "p7_radius"]
     );
 }
 
 #[test]
+fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
+    let expression = |name: &str, formula: &str, value| crate::native::Expression {
+        id: format!("nx:test:expression#{name}"),
+        object_id: None,
+        record: None,
+        name: name.into(),
+        parameter_index: None,
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: formula.into(),
+        value,
+        source_entry: "part".into(),
+        source_offset: 0,
+    };
+    let mut expressions = vec![
+        expression("p7", "3", Some(3.0)),
+        expression("p7_radius", "5", Some(5.0)),
+        expression("p8", "p7_radius * 2", None),
+        expression("p9", "p8 + p7", None),
+    ];
+
+    crate::native::evaluate_expression_graphs(&mut expressions);
+
+    assert_eq!(expressions[2].value, Some(10.0));
+    assert_eq!(expressions[3].value, Some(13.0));
+}
+
+#[test]
 fn nx_formula_dependencies_resolve_to_section_parameters() {
-    let expression =
-        |key: u32, index: u32, text: &str, value: Option<f64>| crate::native::Expression {
-            id: format!("nx:test:expression#{key}"),
-            object_id: Some(key),
-            record: None,
-            name: format!("p{index}"),
-            parameter_index: Some(index),
-            qualifier: None,
-            unit: crate::native::ExpressionUnit::Millimeter,
-            expression: text.into(),
-            value,
-            source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_offset: u64::from(key),
-        };
+    let expression = |key: u32,
+                      name: &str,
+                      index: u32,
+                      qualifier: Option<&str>,
+                      text: &str,
+                      value: Option<f64>| crate::native::Expression {
+        id: format!("nx:test:expression#{key}"),
+        object_id: Some(key),
+        record: None,
+        name: name.into(),
+        parameter_index: Some(index),
+        qualifier: qualifier.map(str::to_string),
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: text.into(),
+        value,
+        source_entry: "/Root/UG_PART/UG_PART".into(),
+        source_offset: u64::from(key),
+    };
     let expressions = [
-        expression(20, 2, "5", Some(5.0)),
-        expression(90, 9, "p2 * 2 + p2", None),
+        expression(20, "p2", 2, None, "5", Some(5.0)),
+        expression(21, "p2_radius", 2, Some("radius"), "7", Some(7.0)),
+        expression(90, "p9", 9, None, "p2_radius * 2 + p2_radius", None),
     ];
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     crate::decode::attach_expression_parameters(&mut ir, &expressions, &mut annotations);
 
-    assert_eq!(ir.model.parameters[1].value, None);
+    assert_eq!(ir.model.parameters[2].value, None);
     assert_eq!(
-        ir.model.parameters[1].dependencies,
-        vec![ir.model.parameters[0].id.clone()]
+        ir.model.parameters[2].dependencies,
+        vec![ir.model.parameters[1].id.clone()]
     );
 }
 
@@ -323,8 +358,8 @@ fn om_numeric_expression_retains_formula_without_literal_value() {
     assert_eq!(expressions[0].expression, "p2 * 2 + p7_radius");
     assert_eq!(expressions[0].value, None);
     assert_eq!(
-        crate::native::expression_parameter_indices(expressions[0].expression),
-        vec![2, 7]
+        crate::native::expression_parameter_names(expressions[0].expression),
+        vec!["p2", "p7_radius"]
     );
 }
 

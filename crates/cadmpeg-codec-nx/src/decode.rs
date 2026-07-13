@@ -2381,13 +2381,15 @@ pub(crate) fn attach_expression_parameters(
         });
         let parameter_ids = expressions
             .iter()
-            .filter_map(|expression| {
-                let index = expression.parameter_index?;
+            .map(|expression| {
                 let key = expression
                     .id
                     .rsplit_once('#')
                     .map_or("unknown", |(_, key)| key);
-                Some((index, ParameterId(format!("{section}:parameter#{key}"))))
+                (
+                    expression.name.clone(),
+                    ParameterId(format!("{section}:parameter#{key}")),
+                )
             })
             .collect::<BTreeMap<_, _>>();
         for (ordinal, expression) in expressions.into_iter().enumerate() {
@@ -2404,9 +2406,9 @@ pub(crate) fn attach_expression_parameters(
             annotations.derived(&id.0, "value");
             annotations.derived(&id.0, "native_ref");
             let mut seen_dependencies = BTreeSet::new();
-            let dependencies = crate::native::expression_parameter_indices(&expression.expression)
+            let dependencies = crate::native::expression_parameter_names(&expression.expression)
                 .into_iter()
-                .filter_map(|index| parameter_ids.get(&index).cloned())
+                .filter_map(|name| parameter_ids.get(name).cloned())
                 .filter(|dependency| seen_dependencies.insert(dependency.clone()))
                 .collect::<Vec<_>>();
             if !dependencies.is_empty() {

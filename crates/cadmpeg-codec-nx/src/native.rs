@@ -36,7 +36,7 @@ pub struct Expression {
     pub unit: ExpressionUnit,
     /// Exact serialized expression text.
     pub expression: String,
-    /// Finite numeric value when the expression text is a literal.
+    /// Finite numeric value after context-free and dependency-graph evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<f64>,
     /// Directory entry containing the OM section.
@@ -45,10 +45,10 @@ pub struct Expression {
     pub source_offset: u64,
 }
 
-/// Return `p<decimal>` parameter identifiers in formula occurrence order.
-pub(crate) fn expression_parameter_indices(expression: &str) -> Vec<u32> {
+/// Return exact `p<decimal>[_qualifier]` references in formula occurrence order.
+pub(crate) fn expression_parameter_names(expression: &str) -> Vec<&str> {
     let bytes = expression.as_bytes();
-    let mut indices = Vec::new();
+    let mut names = Vec::new();
     let mut at = 0usize;
     while at < bytes.len() {
         if bytes[at] != b'p'
@@ -69,12 +69,16 @@ pub(crate) fn expression_parameter_indices(expression: &str) -> Vec<u32> {
             at += 1;
             continue;
         }
-        if let Ok(index) = expression[start..end].parse() {
-            indices.push(index);
+        while bytes
+            .get(end)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        {
+            end += 1;
         }
+        names.push(&expression[at..end]);
         at = end;
     }
-    indices
+    names
 }
 
 /// Length-framed class definition from an NX OM type registry.
@@ -560,5 +564,86 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
             });
         }
     }
+    evaluate_expression_graphs(&mut expressions);
     expressions
+}
+
+pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
+    let mut values = BTreeMap::<(String, String), (ExpressionUnit, f64)>::new();
+    let mut name_counts = BTreeMap::<(String, String), usize>::new();
+    for expression in expressions.iter() {
+        *name_counts
+            .entry((expression.source_entry.clone(), expression.name.clone()))
+            .or_default() += 1;
+        if let Some(value) = expression.value {
+            values.insert(
+                (expression.source_entry.clone(), expression.name.clone()),
+                (expression.unit, value),
+            );
+        }
+    }
+
+    loop {
+        let mut changed = false;
+        for expression in expressions
+            .iter_mut()
+            .filter(|expression| expression.value.is_none())
+        {
+            let mut substituted = String::with_capacity(expression.expression.len());
+            let bytes = expression.expression.as_bytes();
+            let mut at = 0usize;
+            let mut complete = true;
+            while at < bytes.len() {
+                if bytes[at] == b'p'
+                    && at
+                        .checked_sub(1)
+                        .and_then(|before| bytes.get(before))
+                        .is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')
+                {
+                    let start = at;
+                    at += 1;
+                    let digits = at;
+                    while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+                        at += 1;
+                    }
+                    if at > digits {
+                        while bytes
+                            .get(at)
+                            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+                        {
+                            at += 1;
+                        }
+                        let name = &expression.expression[start..at];
+                        let key = (expression.source_entry.clone(), name.to_string());
+                        let Some((unit, value)) = values.get(&key).copied() else {
+                            complete = false;
+                            break;
+                        };
+                        if name_counts.get(&key) != Some(&1) || expression.unit != unit {
+                            complete = false;
+                            break;
+                        }
+                        substituted.push_str(&value.to_string());
+                        continue;
+                    }
+                    at = start;
+                }
+                substituted.push(char::from(bytes[at]));
+                at += 1;
+            }
+            if complete {
+                if let Some(value) = crate::om::evaluate_constant_expression(&substituted) {
+                    expression.value = Some(value);
+                    values.insert(
+                        (expression.source_entry.clone(), expression.name.clone()),
+                        (expression.unit, value),
+                    );
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
 }

@@ -96,7 +96,7 @@ pub struct NumericExpression<'a> {
     pub unit: ExpressionUnit,
     /// Exact expression text following the serialized name separator.
     pub expression: &'a str,
-    /// Finite serialized numeric value when the expression text is a literal.
+    /// Finite value when the expression is context-free arithmetic.
     pub value: Option<f64>,
 }
 
@@ -722,7 +722,7 @@ fn numeric_expression_at(
 /// Evaluate the context-free arithmetic subset used by NX numeric formulas.
 /// Names and function calls deliberately fail here; their values require the
 /// owning parameter graph rather than local expression syntax.
-fn evaluate_constant_expression(text: &str) -> Option<f64> {
+pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
     struct Parser<'a> {
         bytes: &'a [u8],
         at: usize,
