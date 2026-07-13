@@ -553,9 +553,15 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
                 continue;
             }
             let value_offset = token_offset + token.length;
-            let value_end = named
+            let mut value_end = named
                 .get(position + 1)
                 .map_or(record_end, |(_, next)| close + 2 + next.offset);
+            if let Some(compound_close) = psb::tokens(&payload[value_offset..value_end])
+                .into_iter()
+                .find(|token| token.kind == psb::TokenKind::CompoundClose)
+            {
+                value_end = value_offset + compound_close.offset;
+            }
             let body = payload[value_offset..value_end].to_vec();
             parameters.push(SurfaceNamedParameter {
                 name: name.into_owned(),
@@ -1006,6 +1012,20 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn bounds_last_named_prototype_field_at_compound_close() {
+        let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius2\0\x2e\x05\x33\xf1\xf7\x0e\xe3\
+                        \x07\x26\x04\x01\0\0";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].parameters.len(), 1);
+        let field = &records[0].parameters[0];
+        assert_eq!(field.name, "radius2");
+        assert_eq!(field.body, [0x2e, 0x05, 0x33, 0xf1, 0xf7, 0x0e]);
+        assert_eq!(field.value, SurfaceNamedValue::ScalarSequence(vec![2.65]));
     }
 
     #[test]
