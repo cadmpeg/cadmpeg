@@ -34,6 +34,9 @@ pub struct B5Graph {
     /// each edge's pcurve endpoints through its surface and matching them
     /// to a unique vertex point.
     pub edge_vertices: BTreeMap<u32, [usize; 2]>,
+    /// Tolerance of each representative logical vertex formed by a
+    /// noncoincident serialized loop join, keyed by `vertex_points` index.
+    pub vertex_tolerances: BTreeMap<usize, f64>,
     /// `b5 03 0e`/`0f` line and arc profile curves, keyed by `object_id`;
     /// referenced by `B5Surface::Revolution::profile_curve`.
     pub profiles: BTreeMap<u32, B5Profile>,
@@ -236,7 +239,8 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         return None;
     }
     let vertex_points = vertex_points(bytes);
-    let edge_vertices = bind_edge_vertices(&loops, &pcurves, &vertex_points)?;
+    let mut edge_vertices = bind_edge_vertices(&loops, &pcurves, &vertex_points)?;
+    let vertex_tolerances = collapse_loop_vertices(&loops, &mut edge_vertices, &vertex_points);
     let referenced_loops: std::collections::HashSet<u32> = faces
         .iter()
         .flat_map(|face| face.loops.iter().copied())
@@ -266,8 +270,111 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         surfaces,
         vertex_points,
         edge_vertices,
+        vertex_tolerances,
         profiles,
     })
+}
+
+const LOOP_VERTEX_TOLERANCE: f64 = 5e-3;
+
+fn collapse_loop_vertices(
+    loops: &BTreeMap<u32, B5Loop>,
+    edge_vertices: &mut BTreeMap<u32, [usize; 2]>,
+    points: &[[f64; 3]],
+) -> BTreeMap<usize, f64> {
+    let mut parent: Vec<usize> = (0..points.len()).collect();
+    let mut joined = Vec::new();
+    for loop_ in loops.values() {
+        if unique_loop_chain(loop_, edge_vertices) {
+            continue;
+        }
+        let solutions = tolerant_loop_solutions(loop_, edge_vertices, points);
+        if solutions.len() == 1 {
+            joined.extend(solutions.into_iter().next().unwrap_or_default());
+        }
+    }
+    for [left, right] in &joined {
+        union(&mut parent, *left, *right);
+    }
+    for index in 0..parent.len() {
+        parent[index] = representative(&mut parent, index);
+    }
+    for endpoints in edge_vertices.values_mut() {
+        *endpoints = endpoints.map(|endpoint| parent[endpoint]);
+    }
+    joined
+        .into_iter()
+        .filter(|[left, right]| left != right)
+        .map(|[left, _]| (parent[left], LOOP_VERTEX_TOLERANCE))
+        .collect()
+}
+
+fn tolerant_loop_solutions(
+    loop_: &B5Loop,
+    edge_vertices: &BTreeMap<u32, [usize; 2]>,
+    points: &[[f64; 3]],
+) -> Vec<Vec<[usize; 2]>> {
+    let Some(first) = loop_.edges.first().and_then(|edge| edge_vertices.get(edge)) else {
+        return Vec::new();
+    };
+    let within = |left: usize, right: usize| {
+        distance_squared(points[left], points[right])
+            <= (LOOP_VERTEX_TOLERANCE + 1e-12) * (LOOP_VERTEX_TOLERANCE + 1e-12)
+    };
+    let mut solutions = Vec::new();
+    for first_reversed in [false, true] {
+        let initial = first[usize::from(first_reversed)];
+        let mut current = first[usize::from(!first_reversed)];
+        let mut joins = Vec::new();
+        let mut valid = true;
+        for edge_id in &loop_.edges[1..] {
+            let Some(endpoints) = edge_vertices.get(edge_id) else {
+                valid = false;
+                break;
+            };
+            let matches = if current == endpoints[0] {
+                [true, false]
+            } else if current == endpoints[1] {
+                [false, true]
+            } else {
+                [within(current, endpoints[0]), within(current, endpoints[1])]
+            };
+            match matches {
+                [true, false] => {
+                    joins.push([current, endpoints[0]]);
+                    current = endpoints[1];
+                }
+                [false, true] => {
+                    joins.push([current, endpoints[1]]);
+                    current = endpoints[0];
+                }
+                _ => {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+        if valid && within(current, initial) {
+            joins.push([current, initial]);
+            solutions.push(joins);
+        }
+    }
+    solutions
+}
+
+fn representative(parent: &mut [usize], index: usize) -> usize {
+    if parent[index] != index {
+        parent[index] = representative(parent, parent[index]);
+    }
+    parent[index]
+}
+
+fn union(parent: &mut [usize], left: usize, right: usize) {
+    let left = representative(parent, left);
+    let right = representative(parent, right);
+    let root = left.min(right);
+    parent[left] = root;
+    parent[right] = root;
 }
 
 fn unique_loop_chain(loop_: &B5Loop, edge_vertices: &BTreeMap<u32, [usize; 2]>) -> bool {
@@ -1166,5 +1273,57 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(1, 0x27), (3, 0x5e)]
         );
+    }
+
+    #[test]
+    fn loop_local_tolerance_identifies_only_the_required_join() {
+        let loop_ = B5Loop {
+            object_id: 10,
+            pcurves: vec![20, 21, 22],
+            edges: vec![30, 31, 32],
+            surface: 40,
+        };
+        let loops = BTreeMap::from([(10, loop_)]);
+        let points = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, LOOP_VERTEX_TOLERANCE, 0.0],
+            [0.0, LOOP_VERTEX_TOLERANCE, 0.0],
+        ];
+        let mut edges = BTreeMap::from([(30, [0, 1]), (31, [2, 3]), (32, [3, 0])]);
+
+        let tolerances = collapse_loop_vertices(&loops, &mut edges, &points);
+
+        assert_eq!(edges[&30], [0, 1]);
+        assert_eq!(edges[&31], [1, 3]);
+        assert_eq!(edges[&32], [3, 0]);
+        assert_eq!(tolerances, BTreeMap::from([(1, LOOP_VERTEX_TOLERANCE)]));
+        assert!(unique_loop_chain(&loops[&10], &edges));
+    }
+
+    #[test]
+    fn loop_local_tolerance_rejects_out_of_range_and_ambiguous_joins() {
+        let triangle = B5Loop {
+            object_id: 10,
+            pcurves: vec![20, 21, 22],
+            edges: vec![30, 31, 32],
+            surface: 40,
+        };
+        let points = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, LOOP_VERTEX_TOLERANCE + 1e-6, 0.0],
+            [0.0, LOOP_VERTEX_TOLERANCE + 1e-6, 0.0],
+        ];
+        let edges = BTreeMap::from([(30, [0, 1]), (31, [2, 3]), (32, [3, 0])]);
+        assert!(tolerant_loop_solutions(&triangle, &edges, &points).is_empty());
+
+        let digon = B5Loop {
+            object_id: 11,
+            pcurves: vec![23, 24],
+            edges: vec![30, 30],
+            surface: 40,
+        };
+        assert_eq!(tolerant_loop_solutions(&digon, &edges, &points).len(), 2);
     }
 }

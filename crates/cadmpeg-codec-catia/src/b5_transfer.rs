@@ -213,7 +213,7 @@ pub(crate) fn transfer(
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
-            tolerance: None,
+            tolerance: graph.vertex_tolerances.get(&index).copied(),
         });
     }
 
