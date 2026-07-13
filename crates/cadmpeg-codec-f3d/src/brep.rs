@@ -18,8 +18,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::records::{
-    CreationTimestamp, EdgeContinuity, FaceContainment, FaceSidedness, PersistentDesignLink,
-    SketchCurveLink, TolerantVertexTail, TransformHints, VertexOwnership,
+    BodyNativeKey, CreationTimestamp, EdgeContinuity, FaceContainment, FaceSidedness,
+    PersistentDesignLink, SketchCurveLink, TolerantVertexTail, TransformHints, VertexOwnership,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
@@ -107,6 +107,8 @@ pub struct Brep {
     pub transform_hints: Vec<TransformHints>,
     /// Native ASM body key by emitted body id, used by Design-side joins.
     pub body_keys: HashMap<BodyId, u64>,
+    /// Native Design-join key field for every emitted body, including null keys.
+    pub body_native_keys: Vec<BodyNativeKey>,
     /// Linked source-native attributes.
     pub attributes: Vec<SourceAttribute>,
     /// Undecoded carrier records preserved verbatim.
@@ -3934,6 +3936,12 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 let regions = region_chain(r, &by_index);
                 let body_id = BodyId(id(i));
                 if let Some(Token::Long(key)) = r.chunk(1) {
+                    out.body_native_keys.push(BodyNativeKey {
+                        id: format!("f3d:asm:body-native-key#{i}"),
+                        body: body_id.clone(),
+                        record_index: r.index as u32,
+                        asm_body_key: (*key >= 0).then_some(*key as u64),
+                    });
                     if *key >= 0 {
                         out.body_keys.insert(body_id.clone(), *key as u64);
                     }

@@ -490,13 +490,14 @@ pub(crate) fn decode_design_assignments(
             let visual_preset_field = strings
                 .get(ba5e_index + 1)
                 .filter(|(_, value)| value.starts_with("Prism-"));
-            if let Some((&asm_body_key, &(_, suffix_offset))) = body_map
+            if let Some((&asm_body_key, &(_, key_offset, suffix_offset))) = body_map
                 .iter()
-                .find(|(_, (suffix, _))| *suffix == entity_suffix)
+                .find(|(_, (suffix, _, _))| *suffix == entity_suffix)
             {
                 out.push(DesignMaterialAssignment {
                     id: format!("f3d:{}:material-assignment#{entity_offset}", entry.name),
                     asm_body_key,
+                    asm_body_key_offset: key_offset as u64,
                     entity_suffix,
                     entity_suffix_offset: suffix_offset as u64,
                     entity_id: entity_id.clone(),
@@ -544,7 +545,7 @@ pub(crate) fn decode_body_appearance_overrides(
         for (entity_suffix, visual_guid) in browser_body_appearances(bytes) {
             if let Some((&asm_body_key, _)) = body_map
                 .iter()
-                .find(|(_, (suffix, _))| *suffix == entity_suffix)
+                .find(|(_, (suffix, _, _))| *suffix == entity_suffix)
             {
                 out.push(BodyAppearanceOverride {
                     asm_body_key,
@@ -989,13 +990,17 @@ fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
     Some((value, 4 + byte_len))
 }
 
-fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize)> {
+fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize, usize)> {
     crate::design::body_bindings(bytes)
         .into_iter()
         .map(|binding| {
             (
                 binding.asm_key,
-                (binding.entity_suffix, binding.entity_suffix_offset),
+                (
+                    binding.entity_suffix,
+                    binding.asm_key_offset,
+                    binding.entity_suffix_offset,
+                ),
             )
         })
         .collect()

@@ -61,6 +61,7 @@ pub fn decode(
                         body: body.id.clone(),
                         stream: visibility.stream.clone(),
                         byte_offset: visibility.byte_offset,
+                        asm_body_key_offset: visibility.asm_body_key_offset,
                         asm_body_key,
                         entity_suffix: visibility.entity_suffix,
                         visible: visibility.visible,
@@ -461,6 +462,7 @@ fn build_geometry_ir(
     ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.procedural_curves = brep.procedural_curves;
     let native = F3dNative {
+        body_native_keys: brep.body_native_keys,
         sketch_curve_links: brep.sketch_curve_links,
         persistent_design_links: brep.persistent_design_links,
         edge_continuities: brep.edge_continuities,

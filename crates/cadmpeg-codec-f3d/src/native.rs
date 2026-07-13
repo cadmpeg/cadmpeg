@@ -6,11 +6,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::history_records::AsmHistory;
 use crate::records::{
-    ActEntity, ActGuid, ActRootComponent, BodyVisibility, ConstructionRecipe, CreationTimestamp,
-    DesignBodyMember, DesignConfiguration, DesignEntityHeader, DesignMaterialAssignment,
-    DesignObject, DesignRecordHeader, EdgeContinuity, FaceSidedness, LostEdgeReference,
-    PersistentDesignLink, PersistentReference, SketchCurveIdentity, SketchCurveLink, SketchPoint,
-    SketchRelation, TolerantVertexTail, TransformHints, VertexOwnership,
+    ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
+    CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignEntityHeader,
+    DesignMaterialAssignment, DesignObject, DesignRecordHeader, EdgeContinuity, FaceSidedness,
+    LostEdgeReference, PersistentDesignLink, PersistentReference, SketchCurveIdentity,
+    SketchCurveLink, SketchPoint, SketchRelation, TolerantVertexTail, TransformHints,
+    VertexOwnership,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -25,6 +26,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "asm_entity_changes",
     "asm_histories",
     "asm_history_records",
+    "body_native_keys",
     "body_visibilities",
     "construction_recipes",
     "creation_timestamps",
@@ -54,6 +56,7 @@ macro_rules! f3d_arenas {
             act_entities: ActEntity;
             act_guids: ActGuid;
             act_root_components: ActRootComponent;
+            body_native_keys: BodyNativeKey;
             body_visibilities: BodyVisibility;
             design_objects: DesignObject;
             design_entity_headers: DesignEntityHeader;
@@ -137,6 +140,9 @@ pub struct F3dNative {
     /// Fusion ACT document-root-to-registry links.
     #[serde(default)]
     pub act_root_components: Vec<ActRootComponent>,
+    /// Native Design-join keys stored on ASM bodies.
+    #[serde(default)]
+    pub body_native_keys: Vec<BodyNativeKey>,
     /// Design browser-node visibility joined to solved ASM bodies.
     #[serde(default)]
     pub body_visibilities: Vec<BodyVisibility>,
@@ -212,6 +218,7 @@ impl Default for F3dNative {
             act_entities: Vec::new(),
             act_guids: Vec::new(),
             act_root_components: Vec::new(),
+            body_native_keys: Vec::new(),
             body_visibilities: Vec::new(),
             design_objects: Vec::new(),
             design_entity_headers: Vec::new(),

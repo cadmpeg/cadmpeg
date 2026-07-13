@@ -220,7 +220,7 @@ Every `Entity` record begins with an `attrib` ref (chain head, `-1` if none) and
 
 All records of a given class are fixed-size on Fusion files. Offsets are record-relative from the leading `0x11`; ref/int chunks are 9 bytes. On `BinaryFile4` streams ref/int chunks are 5 bytes and the offsets scale accordingly.
 
-**Body (61 B):** `chunk[1]` (@+16, i64) is `history / body flags`, the **`asm_body_key`** joined to the design-side body map (§8). `chunk[3]` @+34 = first_lump, `chunk[4]` @+43 = first_wire or `-1`, `chunk[5]` @+52 = transform or `-1`.
+**Body (61 B):** `chunk[1]` (@+16, i64) is `history / body flags`, the **`asm_body_key`** joined to the design-side body map (§8). A value of `-1` denotes a sub-body without its own Design record. The key field is retained for every body independently of whether a Design join resolves, and native writing preserves or patches it directly. `chunk[3]` @+34 = first_lump, `chunk[4]` @+43 = first_wire or `-1`, `chunk[5]` @+52 = transform or `-1`.
 
 **Lump (61 B):** `chunk[4]` @+43 = first_shell, `chunk[5]` @+52 = owner_body. (The @+27 slot is reserved `-1`, not the first shell.)
 
@@ -531,7 +531,7 @@ The two offsets and fit tolerance are lengths. `ENUM_VALUE -1` selects the absen
 
 The design `BulkStream` caches each body's axis-aligned bounding box as six f64 values in centimetres, ordered `(xmax, ymax, zmax, xmin, ymin, zmin)`. The cache occurs three times in consecutive sub-entity records following the body's assignment container.
 
-The design BulkStream BREP body map is `u32 count`, followed by `count` pairs of `u64 asm_body_key, u64 entity_suffix`, then `u64 trailing_record_ref`, `u32 pad`, `u32 char_count`, and UTF-16LE `BREP.<uuid>.smbh`. `asm_body_key` is the ASM body `flags` field. `entity_suffix` is the numeric suffix of the design entity ID.
+The design BulkStream BREP body map is `u32 count`, followed by `count` pairs of `u64 asm_body_key, u64 entity_suffix`, then `u64 trailing_record_ref`, `u32 pad`, `u32 char_count`, and UTF-16LE `BREP.<uuid>.smbh`. `asm_body_key` is the ASM body `flags` field. `entity_suffix` is the numeric suffix of the design entity ID. Retained body-key edits update the ASM field and every joined Design body-map occurrence atomically.
 
 A construction-recipe record places its i32 record index at 16 bytes before the recipe-family name, eight zero bytes at `name−12`, and the u32 byte length of the ASCII family name at `name−4`. The family name selects `body_recipe_data`, `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`, or `vertex_recipe_data`; the preceding record index is not a family discriminator. The common payload begins with an i64 `−1` null sentinel followed by the five i32 values `[2, 0, −1, 1, −1]`.
 

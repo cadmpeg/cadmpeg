@@ -2661,6 +2661,17 @@ fn source_less_body_key(
     body_ordinal: usize,
 ) -> Result<i64, CodecError> {
     let native = f3d_native(target)?;
+    if let Some(key) = native.as_ref().and_then(|native| {
+        native
+            .body_native_keys
+            .iter()
+            .find(|key| key.body == body.id)
+    }) {
+        return key.asm_body_key.map_or(Ok(-1), |key| {
+            i64::try_from(key)
+                .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
+        });
+    }
     let assigned = target
         .model
         .appearance_bindings
@@ -8109,6 +8120,7 @@ pub fn write_semantic(
     let body_transform_edits =
         validate_body_transform_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
     let body_visibility_edits = validate_body_visibility_edits(&baseline.ir, target)?;
+    let body_native_key_edits = validate_body_native_key_edits(&baseline.ir, target)?;
     let transform_hint_edits = validate_transform_hint_edits(&baseline.ir, target)?;
     let mut entity_color_edits =
         validate_body_color_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
@@ -8204,6 +8216,9 @@ pub fn write_semantic(
     if let (Some(mut supported), Some(target_native)) =
         (f3d_native(&supported_target)?, f3d_native(target)?)
     {
+        supported
+            .body_native_keys
+            .clone_from(&target_native.body_native_keys);
         supported
             .sketch_points
             .clone_from(&target_native.sketch_points);
@@ -8474,6 +8489,7 @@ pub fn write_semantic(
                 &tolerant_vertex_edits,
             )?;
             patch_transform_hints(&mut bytes, &transform_hint_edits)?;
+            patch_body_native_keys(&mut bytes, &body_native_key_edits.asm)?;
             if let Some(edits) = history_state_edits.get(&name) {
                 patch_history_states(&mut bytes, edits)?;
             }
@@ -8504,6 +8520,9 @@ pub fn write_semantic(
             }
             if let Some(edits) = body_visibility_edits.get(&name) {
                 patch_body_visibilities(&mut bytes, edits)?;
+            }
+            if let Some(edits) = body_native_key_edits.design.get(&name) {
+                patch_design_body_keys(&mut bytes, edits)?;
             }
             if let Some(edits) = entity_header_edits.get(&name) {
                 patch_entity_headers(&mut bytes, edits)?;
@@ -10213,6 +10232,137 @@ fn validate_transform_hint_edits(
         }
     }
     Ok(edits)
+}
+
+fn validate_body_native_key_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BodyNativeKeyEdits, CodecError> {
+    let baseline_native = f3d_native(baseline)?.unwrap_or_default();
+    let target_native = f3d_native(target)?.unwrap_or_default();
+    let baseline = baseline_native
+        .body_native_keys
+        .iter()
+        .map(|key| (key.id.as_str(), key))
+        .collect::<BTreeMap<_, _>>();
+    let target = target_native
+        .body_native_keys
+        .iter()
+        .map(|key| (key.id.as_str(), key))
+        .collect::<BTreeMap<_, _>>();
+    if baseline.keys().ne(target.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D body-key regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BodyNativeKeyEdits::default();
+    for (id, before) in baseline {
+        let after = target[id];
+        let mut normalized = after.clone();
+        normalized.asm_body_key = before.asm_body_key;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D body-key edit changes structural fields: {id}"
+            )));
+        }
+        if after.asm_body_key != before.asm_body_key {
+            let key = after.asm_body_key.map_or(Ok(-1), |key| {
+                i64::try_from(key).map_err(|_| {
+                    CodecError::Malformed(format!("F3D ASM body key exceeds i64::MAX: {key}"))
+                })
+            })?;
+            edits.asm.insert(after.record_index as usize, key);
+            let mut joined = Vec::new();
+            joined.extend(
+                baseline_native
+                    .body_visibilities
+                    .iter()
+                    .filter(|visibility| visibility.body == before.body)
+                    .map(|visibility| (visibility.stream.clone(), visibility.asm_body_key_offset)),
+            );
+            if let Some(old_key) = before.asm_body_key {
+                joined.extend(
+                    baseline_native
+                        .design_material_assignments
+                        .iter()
+                        .filter(|assignment| assignment.asm_body_key == old_key)
+                        .map(|assignment| {
+                            Ok((
+                                native_stream(&assignment.id, ":material-assignment#")?,
+                                assignment.asm_body_key_offset,
+                            ))
+                        })
+                        .collect::<Result<Vec<_>, CodecError>>()?,
+                );
+            }
+            if !joined.is_empty() {
+                let design_key = after.asm_body_key.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "cannot remove joined F3D ASM body key: {id}"
+                    ))
+                })?;
+                for (stream, offset) in joined {
+                    edits
+                        .design
+                        .entry(stream)
+                        .or_default()
+                        .insert((offset, design_key));
+                }
+            }
+        }
+    }
+    Ok(edits)
+}
+
+#[derive(Default)]
+struct BodyNativeKeyEdits {
+    asm: BTreeMap<usize, i64>,
+    design: BTreeMap<String, BTreeSet<(u64, u64)>>,
+}
+
+fn patch_design_body_keys(
+    bytes: &mut [u8],
+    edits: &BTreeSet<(u64, u64)>,
+) -> Result<(), CodecError> {
+    for &(offset, key) in edits {
+        let at = usize::try_from(offset).map_err(|_| {
+            CodecError::Malformed("Design body-key offset exceeds address space".into())
+        })?;
+        bytes
+            .get_mut(at..at + 8)
+            .ok_or_else(|| CodecError::Malformed("Design body-map key is truncated".into()))?
+            .copy_from_slice(&key.to_le_bytes());
+    }
+    Ok(())
+}
+
+fn patch_body_native_keys(
+    bytes: &mut [u8],
+    edits: &BTreeMap<usize, i64>,
+) -> Result<(), CodecError> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+    let start = asm_header::record_stream_start(bytes)
+        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
+    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let records = sab::frame(bytes, start, limit, 8)
+        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
+    for (record_index, key) in edits {
+        let record = records
+            .iter()
+            .find(|record| record.index == *record_index)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("F3D body-key record {record_index} is missing"))
+            })?;
+        if record.head != "body" {
+            return Err(CodecError::Malformed(format!(
+                "F3D body-key record {record_index} is not a body"
+            )));
+        }
+        patch_integer_token(bytes, record, 0x04, 0, *key)?;
+    }
+    Ok(())
 }
 
 fn patch_transform_hints(

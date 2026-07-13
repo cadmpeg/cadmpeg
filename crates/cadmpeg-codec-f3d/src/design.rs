@@ -1365,6 +1365,8 @@ pub(crate) struct BodyBinding {
     pub blob_name: String,
     /// The referenced ASM body key.
     pub asm_key: u64,
+    /// Byte offset of `asm_key` within the stream.
+    pub asm_key_offset: usize,
     /// The body's design-entity suffix.
     pub entity_suffix: u64,
     /// Byte offset of `entity_suffix` within the stream.
@@ -1417,6 +1419,7 @@ pub(crate) fn body_bindings(bytes: &[u8]) -> Vec<BodyBinding> {
                     out.push(BodyBinding {
                         blob_name: blob_name.clone(),
                         asm_key: key,
+                        asm_key_offset: at,
                         entity_suffix: suffix,
                         entity_suffix_offset: at + 8,
                     });
@@ -1440,6 +1443,7 @@ pub(crate) fn body_bindings(bytes: &[u8]) -> Vec<BodyBinding> {
 pub(crate) struct DecodedBodyVisibility {
     pub stream: String,
     pub byte_offset: u64,
+    pub asm_body_key_offset: u64,
     pub entity_suffix: u64,
     pub visible: bool,
 }
@@ -1474,6 +1478,7 @@ pub(crate) fn decode_body_visibility(
                     DecodedBodyVisibility {
                         stream: entry.name.clone(),
                         byte_offset: node.byte_offset,
+                        asm_body_key_offset: binding.asm_key_offset as u64,
                         entity_suffix: binding.entity_suffix,
                         visible: !node.hidden,
                     },

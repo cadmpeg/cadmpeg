@@ -228,6 +228,8 @@ pub struct DesignMaterialAssignment {
     pub id: String,
     /// ASM body key resolved through the Design body map.
     pub asm_body_key: u64,
+    /// Byte offset of the body-map ASM key.
+    pub asm_body_key_offset: u64,
     /// Numeric suffix of `entity_id`.
     pub entity_suffix: u64,
     /// Byte offset of the body-map entity suffix.
@@ -605,12 +607,28 @@ pub struct BodyVisibility {
     pub stream: String,
     /// Byte offset of the browser node's hidden flag within `stream`.
     pub byte_offset: u64,
+    /// Byte offset of the joined body-map ASM key within `stream`.
+    pub asm_body_key_offset: u64,
     /// ASM body key used by the BREP body-map join.
     pub asm_body_key: u64,
     /// Numeric Design entity suffix stored by both joined records.
     pub entity_suffix: u64,
     /// Display visibility after inverting the native hidden flag.
     pub visible: bool,
+}
+
+/// Native Design-join key stored on one ASM body record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BodyNativeKey {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved body carrying the key.
+    pub body: BodyId,
+    /// Source SAB body record index.
+    pub record_index: u32,
+    /// Non-negative Design-join key; absence is the native `-1` sub-body sentinel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asm_body_key: Option<u64>,
 }
 
 /// Native rotation, reflection, and shear classifications on an ASM transform.

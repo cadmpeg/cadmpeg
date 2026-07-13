@@ -3706,6 +3706,10 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .expect("source-less F3D round trip");
 
     assert_eq!(round_trip.ir.model.bodies.len(), 1);
+    assert_eq!(
+        f3d_native(&round_trip.ir).body_native_keys[0].asm_body_key,
+        Some(42)
+    );
     assert_eq!(round_trip.ir.model.bodies[0].visible, Some(false));
     assert_eq!(f3d_native(&round_trip.ir).body_visibilities.len(), 1);
     assert!(!f3d_native(&round_trip.ir).body_visibilities[0].visible);
@@ -3751,6 +3755,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     edited.model.vertices[0].tolerance = Some(0.05);
     {
         let mut native = f3d_native_mut(&mut edited);
+        native.body_native_keys[0].asm_body_key = Some(84);
         native.face_sidedness[0].containment = Some(crate::records::FaceContainment::Out);
         native.tolerant_vertex_tails[0].trailing_floats = [3.5, -4.5];
     }
@@ -3767,6 +3772,14 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     );
     assert_eq!(retained.ir.model.vertices[0].tolerance, Some(0.05));
     assert_eq!(retained.ir.model.bodies[0].visible, Some(true));
+    assert_eq!(
+        f3d_native(&retained.ir).body_native_keys[0].asm_body_key,
+        Some(84)
+    );
+    assert_eq!(
+        f3d_native(&retained.ir).body_visibilities[0].asm_body_key,
+        84
+    );
     assert!(f3d_native(&retained.ir).body_visibilities[0].visible);
     assert_eq!(
         f3d_native(&retained.ir).tolerant_vertex_tails[0].trailing_floats,
@@ -6111,6 +6124,7 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
     native.design_material_assignments = vec![DesignMaterialAssignment {
         id: "generated:material-assignment#0".into(),
         asm_body_key: 42,
+        asm_body_key_offset: 0,
         entity_suffix: 985,
         entity_suffix_offset: 0,
         entity_id: "0_985".into(),
@@ -6329,6 +6343,7 @@ fn generated_f3d_rewrites_body_transform() {
     transform.rows[3][3] = 2.0;
     let expected = *transform;
     f3d_native_mut(&mut edited).transform_hints[0].reflection = true;
+    f3d_native_mut(&mut edited).body_native_keys[0].asm_body_key = Some(84);
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -6340,6 +6355,10 @@ fn generated_f3d_rewrites_body_transform() {
     assert_eq!(round_trip.ir.model.bodies[0].transform, Some(expected));
     assert!(!f3d_native(&round_trip.ir).transform_hints[0].rotation);
     assert!(f3d_native(&round_trip.ir).transform_hints[0].reflection);
+    assert_eq!(
+        f3d_native(&round_trip.ir).body_native_keys[0].asm_body_key,
+        Some(84)
+    );
 }
 
 #[test]
@@ -6427,10 +6446,12 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     lost_edge.record_index = 4_700;
     let assignment = &mut native.design_material_assignments[0];
     assert!(assignment.entity_id_offset > 0);
+    assert!(assignment.asm_body_key_offset > 0);
     assignment.entity_id = "0_986".into();
     assignment.entity_suffix = 986;
     assignment.physical_token = Some("PrismMaterial-019".into());
     assignment.visual_preset = Some("Prism-002".into());
+    native.body_native_keys[0].asm_body_key = Some(84);
     edited.model.appearances[0].physical_token = Some("PrismMaterial-019".into());
     edited.model.appearances[0].base_color = Some(cadmpeg_ir::topology::Color {
         r: 0.8,
@@ -6458,6 +6479,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated Design decode");
+    assert_eq!(
+        f3d_native(&round_trip.ir).design_material_assignments[0].asm_body_key,
+        84
+    );
     assert!(f3d_native(&round_trip.ir)
         .persistent_references
         .iter()
