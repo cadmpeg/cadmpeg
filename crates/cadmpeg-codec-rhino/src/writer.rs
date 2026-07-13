@@ -387,23 +387,38 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
         .iter()
         .find(|surface| surface.id == face.surface)
         .ok_or_else(|| CodecError::Malformed("planar triangle surface is missing".into()))?;
-    let SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = surface.geometry
-    else {
-        return Err(CodecError::NotImplemented(
-            "triangle sheet surface must be planar".into(),
-        ));
-    };
     if surface.source_object.is_some() {
         return Err(CodecError::NotImplemented(
             "sheet surface source-object state is not writable".into(),
         ));
     }
-    check_frame(&surface.id.0, origin, normal, u_axis, "plane")?;
-    let v_axis = cross(normal, u_axis);
+    let (plane_frame, nurbs_patch) = match &surface.geometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            check_frame(&surface.id.0, *origin, *normal, *u_axis, "plane")?;
+            (
+                Some((*origin, *normal, *u_axis, cross(*normal, *u_axis))),
+                None,
+            )
+        }
+        SurfaceGeometry::Nurbs(nurbs) => {
+            check_nurbs_surface(&surface.id.0, nurbs)?;
+            if nurbs.u_periodic || nurbs.v_periodic {
+                return Err(CodecError::NotImplemented(
+                    "rectangular Brep patch surface must be nonperiodic".into(),
+                ));
+            }
+            (None, Some(nurbs))
+        }
+        _ => {
+            return Err(CodecError::NotImplemented(
+                "single-face Brep surface is not a plane or NURBS patch".into(),
+            ))
+        }
+    };
 
     let mut ordered_coedges = Vec::with_capacity(edge_count);
     let mut loop_ranges = Vec::with_capacity(model.loops.len());
@@ -510,49 +525,62 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
     for edge in &ordered_edges {
         validate_planar_edge(model, edge, ir.tolerances.linear)?;
     }
-    let plane_tolerance = face.tolerance.unwrap_or(ir.tolerances.linear).max(1.0e-10);
-    for point in &ordered_points {
-        let distance = (point.x - origin.x) * normal.x
-            + (point.y - origin.y) * normal.y
-            + (point.z - origin.z) * normal.z;
-        if distance.abs() > plane_tolerance {
-            return Err(CodecError::Malformed(
-                "planar loop vertex is outside its face plane tolerance".into(),
-            ));
+    if let Some((origin, normal, _, _)) = plane_frame {
+        let plane_tolerance = face.tolerance.unwrap_or(ir.tolerances.linear).max(1.0e-10);
+        for point in &ordered_points {
+            let distance = (point.x - origin.x) * normal.x
+                + (point.y - origin.y) * normal.y
+                + (point.z - origin.z) * normal.z;
+            if distance.abs() > plane_tolerance {
+                return Err(CodecError::Malformed(
+                    "planar loop vertex is outside its face plane tolerance".into(),
+                ));
+            }
         }
-    }
-    for edge in &ordered_edges {
-        let curve = model
-            .curves
-            .iter()
-            .find(|curve| edge.curve.as_ref() == Some(&curve.id))
-            .expect("validated edge curve");
-        if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
-            for point in &nurbs.control_points {
-                let distance = (point.x - origin.x) * normal.x
-                    + (point.y - origin.y) * normal.y
-                    + (point.z - origin.z) * normal.z;
-                if distance.abs() > plane_tolerance {
-                    return Err(CodecError::Malformed(format!(
-                        "edge curve {} is outside its face plane tolerance",
-                        curve.id.0
-                    )));
+        for edge in &ordered_edges {
+            let curve = model
+                .curves
+                .iter()
+                .find(|curve| edge.curve.as_ref() == Some(&curve.id))
+                .expect("validated edge curve");
+            if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
+                for point in &nurbs.control_points {
+                    let distance = (point.x - origin.x) * normal.x
+                        + (point.y - origin.y) * normal.y
+                        + (point.z - origin.z) * normal.z;
+                    if distance.abs() > plane_tolerance {
+                        return Err(CodecError::Malformed(format!(
+                            "edge curve {} is outside its face plane tolerance",
+                            curve.id.0
+                        )));
+                    }
                 }
             }
         }
+    } else {
+        validate_nurbs_patch_boundaries(
+            model,
+            nurbs_patch.expect("non-plane patch"),
+            &ordered_edges,
+            &ordered_coedges,
+        )?;
     }
 
     let mut payload = vec![0x32];
     let c2 = (0..edge_count)
         .map(|index| {
-            brep_c2_curve(
-                model,
-                ordered_edges[index],
-                ordered_coedges[index],
-                origin,
-                u_axis,
-                v_axis,
-            )
+            if let Some((origin, _, u_axis, v_axis)) = plane_frame {
+                brep_c2_curve(
+                    model,
+                    ordered_edges[index],
+                    ordered_coedges[index],
+                    origin,
+                    u_axis,
+                    v_axis,
+                )
+            } else {
+                explicit_brep_c2_curve(model, ordered_edges[index], ordered_coedges[index])
+            }
         })
         .collect::<Result<Vec<_>, _>>()?;
     payload.extend(polymorphic_array(&c2));
@@ -561,10 +589,18 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
         .map(|edge| brep_c3_curve(model, edge))
         .collect::<Vec<_>>();
     payload.extend(polymorphic_array(&c3));
-    payload.extend(polymorphic_array(&[(
-        PLANE_SURFACE_CLASS,
-        plane_surface_payload(origin, normal, u_axis),
-    )]));
+    let surface_record = if let Some((origin, normal, u_axis, _)) = plane_frame {
+        (
+            PLANE_SURFACE_CLASS,
+            plane_surface_payload(origin, normal, u_axis),
+        )
+    } else {
+        (
+            NURBS_SURFACE_CLASS,
+            nurbs_surface_payload(nurbs_patch.expect("non-plane patch")),
+        )
+    };
+    payload.extend(polymorphic_array(&[surface_record]));
 
     let edge_index = ordered_edges
         .iter()
@@ -1494,9 +1530,28 @@ fn brep_c2_curve(
 ) -> Result<([u8; 16], Vec<u8>), CodecError> {
     let generated =
         generated_projected_brep_c2_curve(model, edge, coedge.sense, origin, u_axis, v_axis);
-    let Some(pcurve_id) = &coedge.pcurve else {
+    if coedge.pcurve.is_none() {
         return Ok(generated);
-    };
+    }
+    let explicit = explicit_brep_c2_curve(model, edge, coedge)?;
+    if explicit != generated {
+        let id = coedge.pcurve.as_ref().expect("explicit pcurve");
+        return Err(CodecError::Malformed(format!(
+            "pcurve {} does not exactly match its directed planar C3 projection",
+            id.0
+        )));
+    }
+    Ok(explicit)
+}
+
+fn explicit_brep_c2_curve(
+    model: &cadmpeg_ir::document::Model,
+    edge: &cadmpeg_ir::topology::Edge,
+    coedge: &cadmpeg_ir::topology::Coedge,
+) -> Result<([u8; 16], Vec<u8>), CodecError> {
+    let pcurve_id = coedge.pcurve.as_ref().ok_or_else(|| {
+        CodecError::NotImplemented(format!("coedge {} has no explicit pcurve", coedge.id.0))
+    })?;
     let pcurve = model
         .pcurves
         .iter()
@@ -1517,7 +1572,7 @@ fn brep_c2_curve(
         )));
     }
     let domain = edge.param_range.expect("validated edge domain");
-    let explicit = match &pcurve.geometry {
+    match &pcurve.geometry {
         cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } => {
             if !origin.u.is_finite()
                 || !origin.v.is_finite()
@@ -1540,7 +1595,7 @@ fn brep_c2_curve(
                 origin.v + direction.v * domain[1],
                 0.0,
             ];
-            (LINE_CLASS, bounded_line_payload(from, to, domain, 2))
+            Ok((LINE_CLASS, bounded_line_payload(from, to, domain, 2)))
         }
         cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
             degree,
@@ -1568,16 +1623,9 @@ fn brep_c2_curve(
                     pcurve.id.0
                 )));
             }
-            (NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2))
+            Ok((NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)))
         }
-    };
-    if explicit != generated {
-        return Err(CodecError::Malformed(format!(
-            "pcurve {} does not exactly match its directed planar C3 projection",
-            pcurve.id.0
-        )));
     }
-    Ok(explicit)
 }
 
 fn validate_brep_pcurve_ownership(
@@ -1616,6 +1664,171 @@ fn brep_pcurve_fit_tolerance(
         .and_then(|id| model.pcurves.iter().find(|pcurve| pcurve.id == *id))
         .and_then(|pcurve| pcurve.fit_tolerance)
         .unwrap_or(0.0)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum NurbsPatchBoundary {
+    UMinimum,
+    UMaximum,
+    VMinimum,
+    VMaximum,
+}
+
+fn validate_nurbs_patch_boundaries(
+    model: &cadmpeg_ir::document::Model,
+    surface: &cadmpeg_ir::geometry::NurbsSurface,
+    edges: &[&cadmpeg_ir::topology::Edge],
+    coedges: &[&cadmpeg_ir::topology::Coedge],
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::topology::Sense;
+
+    if edges.len() != 4 || coedges.len() != 4 {
+        return Err(CodecError::NotImplemented(
+            "rectangular NURBS patch writing requires one four-edge loop".into(),
+        ));
+    }
+    let u_count = surface.u_count as usize;
+    let v_count = surface.v_count as usize;
+    let u_domain = [
+        surface.u_knots[surface.u_degree as usize],
+        surface.u_knots[u_count],
+    ];
+    let v_domain = [
+        surface.v_knots[surface.v_degree as usize],
+        surface.v_knots[v_count],
+    ];
+    let mut used = std::collections::BTreeSet::new();
+    for (edge, coedge) in edges.iter().zip(coedges) {
+        explicit_brep_c2_curve(model, edge, coedge)?;
+        let pcurve_id = coedge.pcurve.as_ref().expect("explicit patch pcurve");
+        let pcurve = model
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id == *pcurve_id)
+            .expect("validated patch pcurve");
+        let PcurveGeometry::Line { origin, direction } = pcurve.geometry else {
+            return Err(CodecError::NotImplemented(format!(
+                "NURBS patch boundary pcurve {} is not a line",
+                pcurve.id.0
+            )));
+        };
+        let domain = edge.param_range.expect("validated edge domain");
+        let from = [
+            origin.u + direction.u * domain[0],
+            origin.v + direction.v * domain[0],
+        ];
+        let to = [
+            origin.u + direction.u * domain[1],
+            origin.v + direction.v * domain[1],
+        ];
+        let (boundary, surface_domain, decreasing) = if from[0] == u_domain[0]
+            && to[0] == u_domain[0]
+            && (from[1] == v_domain[0] && to[1] == v_domain[1]
+                || from[1] == v_domain[1] && to[1] == v_domain[0])
+        {
+            (NurbsPatchBoundary::UMinimum, v_domain, from[1] > to[1])
+        } else if from[0] == u_domain[1]
+            && to[0] == u_domain[1]
+            && (from[1] == v_domain[0] && to[1] == v_domain[1]
+                || from[1] == v_domain[1] && to[1] == v_domain[0])
+        {
+            (NurbsPatchBoundary::UMaximum, v_domain, from[1] > to[1])
+        } else if from[1] == v_domain[0]
+            && to[1] == v_domain[0]
+            && (from[0] == u_domain[0] && to[0] == u_domain[1]
+                || from[0] == u_domain[1] && to[0] == u_domain[0])
+        {
+            (NurbsPatchBoundary::VMinimum, u_domain, from[0] > to[0])
+        } else if from[1] == v_domain[1]
+            && to[1] == v_domain[1]
+            && (from[0] == u_domain[0] && to[0] == u_domain[1]
+                || from[0] == u_domain[1] && to[0] == u_domain[0])
+        {
+            (NurbsPatchBoundary::VMaximum, u_domain, from[0] > to[0])
+        } else {
+            return Err(CodecError::Malformed(format!(
+                "pcurve {} is not a complete rectangular surface boundary",
+                pcurve.id.0
+            )));
+        };
+        if !used.insert(boundary) {
+            return Err(CodecError::Malformed(
+                "rectangular NURBS patch repeats a surface boundary".into(),
+            ));
+        }
+        let mut expected = nurbs_patch_boundary(surface, boundary);
+        let scale = (domain[1] - domain[0]) / (surface_domain[1] - surface_domain[0]);
+        expected.knots = expected
+            .knots
+            .iter()
+            .map(|knot| domain[0] + (*knot - surface_domain[0]) * scale)
+            .collect();
+        if decreasing != (coedge.sense == Sense::Reversed) {
+            reverse_nurbs_curve(&mut expected);
+        }
+        let curve = model
+            .curves
+            .iter()
+            .find(|curve| edge.curve.as_ref() == Some(&curve.id))
+            .expect("validated edge curve");
+        if curve.geometry != CurveGeometry::Nurbs(expected) {
+            return Err(CodecError::Malformed(format!(
+                "edge curve {} is not the exact directed NURBS surface boundary",
+                curve.id.0
+            )));
+        }
+    }
+    if used.len() != 4 {
+        return Err(CodecError::Malformed(
+            "rectangular NURBS patch does not cover all four boundaries".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn nurbs_patch_boundary(
+    surface: &cadmpeg_ir::geometry::NurbsSurface,
+    boundary: NurbsPatchBoundary,
+) -> cadmpeg_ir::geometry::NurbsCurve {
+    let u_count = surface.u_count as usize;
+    let v_count = surface.v_count as usize;
+    let indices = match boundary {
+        NurbsPatchBoundary::UMinimum => (0..v_count).collect::<Vec<_>>(),
+        NurbsPatchBoundary::UMaximum => (0..v_count).map(|v| (u_count - 1) * v_count + v).collect(),
+        NurbsPatchBoundary::VMinimum => (0..u_count).map(|u| u * v_count).collect(),
+        NurbsPatchBoundary::VMaximum => (0..u_count).map(|u| u * v_count + v_count - 1).collect(),
+    };
+    let (degree, knots) = match boundary {
+        NurbsPatchBoundary::UMinimum | NurbsPatchBoundary::UMaximum => {
+            (surface.v_degree, surface.v_knots.clone())
+        }
+        NurbsPatchBoundary::VMinimum | NurbsPatchBoundary::VMaximum => {
+            (surface.u_degree, surface.u_knots.clone())
+        }
+    };
+    cadmpeg_ir::geometry::NurbsCurve {
+        degree,
+        knots,
+        control_points: indices
+            .iter()
+            .map(|index| surface.control_points[*index])
+            .collect(),
+        weights: surface
+            .weights
+            .as_ref()
+            .map(|weights| indices.iter().map(|index| weights[*index]).collect()),
+        periodic: false,
+    }
+}
+
+fn reverse_nurbs_curve(curve: &mut cadmpeg_ir::geometry::NurbsCurve) {
+    curve.control_points.reverse();
+    if let Some(weights) = &mut curve.weights {
+        weights.reverse();
+    }
+    let sum = curve.knots[curve.degree as usize] + curve.knots[curve.control_points.len()];
+    curve.knots = curve.knots.iter().rev().map(|knot| sum - knot).collect();
 }
 
 fn vertex_point(
@@ -3269,6 +3482,71 @@ mod tests {
     }
 
     #[test]
+    fn rational_nurbs_surface_patch_round_trips_exact_boundaries() {
+        let ir = rectangular_nurbs_patch();
+        let expected_surface = ir.model.surfaces[0].geometry.clone();
+        let expected_curves = ir
+            .model
+            .curves
+            .iter()
+            .map(|curve| curve.geometry.clone())
+            .collect::<Vec<_>>();
+        for version in [
+            RhinoArchiveVersion::V5,
+            RhinoArchiveVersion::V6,
+            RhinoArchiveVersion::V7,
+            RhinoArchiveVersion::V8,
+        ] {
+            let mut bytes = Vec::new();
+            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
+            assert_eq!(
+                decoded.ir.model.bodies[0].kind,
+                cadmpeg_ir::topology::BodyKind::Sheet,
+                "{version:?}"
+            );
+            assert_eq!(decoded.ir.model.surfaces[0].geometry, expected_surface);
+            assert_eq!(
+                decoded
+                    .ir
+                    .model
+                    .curves
+                    .iter()
+                    .map(|curve| curve.geometry.clone())
+                    .collect::<Vec<_>>(),
+                expected_curves,
+                "{version:?}"
+            );
+            assert_eq!(decoded.ir.model.pcurves.len(), 4, "{version:?}");
+            assert!(decoded
+                .ir
+                .model
+                .pcurves
+                .iter()
+                .all(|pcurve| pcurve.fit_tolerance == Some(0.001)));
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+        }
+    }
+
+    #[test]
+    fn nurbs_surface_patch_without_boundary_pcurves_is_rejected_atomically() {
+        let mut ir = rectangular_nurbs_patch();
+        ir.model.pcurves.clear();
+        for coedge in &mut ir.model.coedges {
+            coedge.pcurve = None;
+        }
+        let mut output = vec![0xaa];
+        let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&ir, &mut output)
+            .unwrap_err();
+        assert!(error.to_string().contains("explicit pcurve"));
+        assert_eq!(output, [0xaa]);
+    }
+
+    #[test]
     fn planar_tetrahedron_round_trips_as_closed_solid() {
         let ir = planar_tetrahedron();
         for version in [
@@ -3920,6 +4198,86 @@ mod tests {
                 .collect::<Vec<_>>();
             ir.model.coedges[uses[0]].radial_next = coedge_ids[uses[1]].clone();
             ir.model.coedges[uses[1]].radial_next = coedge_ids[uses[0]].clone();
+        }
+        ir.finalize();
+        ir
+    }
+
+    fn rectangular_nurbs_patch() -> CadIr {
+        use cadmpeg_ir::geometry::{
+            CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, SurfaceGeometry,
+        };
+
+        let points = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+            Point3::new(3.0, 2.0, 1.0),
+            Point3::new(0.0, 2.0, 0.0),
+        ];
+        let mut ir = polygon_sheet(&points);
+        ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![2.0, 2.0, 5.0, 5.0],
+            v_knots: vec![7.0, 7.0, 11.0, 11.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![points[0], points[3], points[1], points[2]],
+            weights: Some(vec![1.0, 0.8, 1.2, 1.0]),
+            u_periodic: false,
+            v_periodic: false,
+        });
+        let edge_data = [
+            (
+                [20.0, 23.0],
+                vec![points[0], points[1]],
+                vec![1.0, 1.2],
+                cadmpeg_ir::math::Point2::new(-18.0, 7.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            ),
+            (
+                [30.0, 32.0],
+                vec![points[1], points[2]],
+                vec![1.2, 1.0],
+                cadmpeg_ir::math::Point2::new(5.0, -53.0),
+                cadmpeg_ir::math::Point2::new(0.0, 2.0),
+            ),
+            (
+                [40.0, 43.0],
+                vec![points[2], points[3]],
+                vec![1.0, 0.8],
+                cadmpeg_ir::math::Point2::new(45.0, 11.0),
+                cadmpeg_ir::math::Point2::new(-1.0, 0.0),
+            ),
+            (
+                [50.0, 52.0],
+                vec![points[3], points[0]],
+                vec![0.8, 1.0],
+                cadmpeg_ir::math::Point2::new(2.0, 111.0),
+                cadmpeg_ir::math::Point2::new(0.0, -2.0),
+            ),
+        ];
+        for (index, (domain, control_points, weights, origin, direction)) in
+            edge_data.into_iter().enumerate()
+        {
+            ir.model.edges[index].param_range = Some(domain);
+            ir.model.curves[index].geometry = CurveGeometry::Nurbs(NurbsCurve {
+                degree: 1,
+                knots: vec![domain[0], domain[0], domain[1], domain[1]],
+                control_points,
+                weights: Some(weights),
+                periodic: false,
+            });
+            let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#patch.{index}").into();
+            ir.model.pcurves.push(Pcurve {
+                id: id.clone(),
+                geometry: PcurveGeometry::Line { origin, direction },
+                wrapper_reversed: None,
+                native_tail_flags: None,
+                parameter_range: Some(domain),
+                fit_tolerance: Some(0.001),
+            });
+            ir.model.coedges[index].pcurve = Some(id);
         }
         ir.finalize();
         ir
