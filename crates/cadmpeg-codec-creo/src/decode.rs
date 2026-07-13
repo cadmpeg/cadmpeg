@@ -939,6 +939,10 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         scan.feature_definitions.len().to_string(),
     );
     attributes.insert(
+        "decoded_feature_section_transform_count".to_string(),
+        scan.feature_section_transforms.len().to_string(),
+    );
+    attributes.insert(
         "decoded_feature_operation_count".to_string(),
         scan.feature_operations.len().to_string(),
     );

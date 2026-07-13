@@ -291,6 +291,20 @@ In a round-feature generated-entity table, a rowless face-use entry is a cylinde
 
 In `gsec3d` placement, project the referenced datum normal into the sketch plane to obtain the in-plane sketch `u` direction, then derive `v` as `n × u`. The resulting section-to-model transform is a proper rigid transform and is not a stored global matrix.
 
+When the sketch plane is a placed plane carrier or axis-aligned `ActDatums`
+plane, the reference plane is a perpendicular axis-aligned `ActDatums` plane,
+and the flip fields are clear, their section transform is:
+
+```text
+n      = sketch_plane.normal
+u      = reference_plane.normal
+v      = cross(n, u)
+origin = sketch_plane.offset * n + reference_plane.offset * u
+model([s, t, 0]) = origin + s*u + t*v
+```
+
+Parallel plane references and set flip fields do not use this transform case.
+
 ## 7. DEPDB layout
 
 DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They do not encode final loops or trim topology. Reconstruct the final B-rep by evaluating the profile and its `protextrude` or `protrevolve` operation. Embedded `1f 9d 10` streams use Unix-compress LZW with header flag `10` and block mode `0`; they contain display, XML, color, and shader data.

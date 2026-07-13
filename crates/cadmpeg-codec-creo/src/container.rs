@@ -27,6 +27,7 @@ use crate::feature::{
     FeatureDirectionByte, FeatureEntity, FeatureEntityReference, FeatureEntityTable,
     FeatureGeometryTable, FeatureOperation, FeatureReplayAffectedIds, FeatureRow,
 };
+use crate::placement::{self, FeatureSectionTransform};
 use crate::psb;
 use crate::surface::{
     self, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceParameterRecord, SurfacePrototype,
@@ -209,6 +210,8 @@ pub struct ContainerScan {
     pub feature_direction_bytes: Vec<FeatureDirectionByte>,
     /// Byte-bounded `FeatDefs` records and definition-space parameter frames.
     pub feature_definitions: Vec<FeatureDefinition>,
+    /// Section-to-model frames resolved from perpendicular active datums.
+    pub feature_section_transforms: Vec<FeatureSectionTransform>,
     /// Ordered feature-operation names from `MdlStatus`.
     pub feature_operations: Vec<FeatureOperation>,
     /// Named records in the implicit `AllFeatur` walker-order entity table.
@@ -951,6 +954,8 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
     let feature_direction_bytes = feature::direction_bytes(&feature_rows);
     let feature_definitions = feature_definitions(&data, &sections);
+    let feature_section_transforms =
+        placement::resolve(&feature_definitions, &datum_planes, &plane_local_systems);
     let feature_operations = feature_operations(&data, &sections);
     let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections);
     let feature_entity_tables =
@@ -996,6 +1001,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         feature_replay_affected_ids,
         feature_direction_bytes,
         feature_definitions,
+        feature_section_transforms,
         feature_operations,
         feature_entities,
         feature_entity_references,
