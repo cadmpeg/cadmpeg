@@ -247,7 +247,7 @@ Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a bod
 | `fc 08` | World-coordinate control-polyline family |
 | `fc 13` | Held-cap-ordinate control polyline       |
 
-`fc 05` records can store cap-circle control points in the order `X`, `Z`, `t`, `Y`, where `X` and `Y` use eight-byte world-coordinate tokens and `Z` and `t` use DICT or standalone-zero scalar tokens. `fc 13` stores a control polyline rather than an analytic circle.
+`fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and `C` use eight-byte world-coordinate tokens and `B` and `t` use DICT or standalone-zero scalar tokens. `C` is the cap ordinate along the owning cylinder axis. For a model-X axis, `(A, B, C)` maps to `(Z, Y, X)`; for a model-Y axis it maps to `(X, Z, Y)`. `fc 13` stores a control polyline rather than an analytic circle.
 
 An `fc 05` cap pair belongs to one cylinder when each curve suffix binds one
 side to the same `geom_type = 24` face and the other side to a `geom_type = 22`
@@ -255,6 +255,10 @@ face. The records must have equal radii and equal in-plane centers at distinct
 constant cap ordinates. This binding establishes the cylinder radius and its
 axis line in the owning feature's row frame. Model-space placement additionally
 requires that feature's row-frame transform.
+
+When both cap-plane outlines establish parallel model-X or model-Y planes, the
+axis direction and cap offsets supply that transform directly. Model-Z cap-pair
+coordinate permutation is not defined by this grammar.
 
 ## 5. Topology and section records
 

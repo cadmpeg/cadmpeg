@@ -562,6 +562,94 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
     }
 }
 
+fn transfer_cap_pair_cylinders(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) {
+    let planes = scan
+        .outline_planes
+        .iter()
+        .map(|plane| (plane.surface_id, plane))
+        .collect::<BTreeMap<_, _>>();
+    for pair in &scan.fc05_cylinder_cap_pairs {
+        let placed_caps = pair
+            .cap_plane_ids
+            .iter()
+            .zip(&pair.curve_cap_ordinates_row_frame)
+            .filter_map(|(id, ordinate)| planes.get(id).map(|plane| (*plane, *ordinate)))
+            .collect::<Vec<_>>();
+        let Some((first_cap, first_ordinate)) = placed_caps.first().copied() else {
+            continue;
+        };
+        let Some(axis_index) = (0..3).find(|axis| first_cap.normal[*axis].abs() == 1.0) else {
+            continue;
+        };
+        if axis_index == 2
+            || placed_caps
+                .iter()
+                .any(|(plane, _)| plane.normal != first_cap.normal)
+        {
+            continue;
+        }
+        let translations = placed_caps
+            .iter()
+            .map(|(plane, ordinate)| plane.origin[axis_index] - ordinate)
+            .collect::<Vec<_>>();
+        if translations
+            .iter()
+            .any(|translation| (translation - translations[0]).abs() > 1e-9)
+        {
+            continue;
+        }
+        let axis_origin = first_ordinate + translations[0];
+        let [first, second] = pair.center_row_frame;
+        let (origin, axis, ref_direction) = if axis_index == 0 {
+            (
+                [axis_origin, second, first],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+            )
+        } else {
+            (
+                [first, axis_origin, second],
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+            )
+        };
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", pair.surface_id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            pair.offset as u64,
+            "fc05_cap_pair_cylinder",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(origin[0], origin[1], origin[2]),
+                axis: Vector3::new(axis[0], axis[1], axis[2]),
+                ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                radius: pair.radius_mm,
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", pair.surface_id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+    }
+}
+
 /// Decode a `.prt` stream into an IR document and loss report.
 ///
 /// The stream is read from its beginning. `options.container_only` is reflected
@@ -710,6 +798,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             }),
         });
     }
+    transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
     transfer_plane_brep(scan, &mut ir, &mut annotations);
     for (ordinal, operation) in scan.feature_operations.iter().enumerate() {
         let id = IrFeatureId(format!("creo:mdlstatus:feature#{}", operation.feature_id));
@@ -1152,8 +1241,9 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
             "PSB container decoded structurally: {} section(s), {} layout, VisibGeom namespace \
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
-             Complete plane support frames transfer as placed carriers; other parameter bodies \
-             remain structural records.",
+             Outline-backed planes, guarded non-axis support frames, and topology-bound `fc 05` \
+             cylinders with a placed cap transfer as carriers; other parameter bodies remain \
+             structural records.",
             scan.sections.len(),
             scan.layout.token(),
             scan.surface_rows.len(),
@@ -1170,7 +1260,9 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
         severity: Severity::Blocking,
         message: format!(
             "General model B-rep transfer remains incomplete. Exact single-loop plane components \
-             transfer when their vertices are determined by placed-plane intersections. VisibGeom \
+             transfer when their vertices are determined by placed-plane intersections. Selected \
+             cylinders transfer when an exact `fc 05` cap pair and placed cap outline establish the \
+             complete equation. VisibGeom \
              stores one surface prototype per family (a first-instance template), not per-instance \
              located geometry, so other prototype scalars cannot be emitted as model surfaces \
              without mislabeling most instances \
@@ -1212,7 +1304,7 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
         message: "Additional model-space carriers are gated by unresolved lane-specific scalar \
                   prefixes, feature-local transform bindings, the `0x26` per-instance torus/sphere \
                   override region, and the round/fillet feature evaluator. These gaps prevent \
-                  transfer of non-plane per-instance surfaces, curves, and vertices."
+                  transfer of the remaining non-plane per-instance surfaces, curves, and vertices."
             .to_string(),
         provenance: None,
     });

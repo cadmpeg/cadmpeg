@@ -150,6 +150,10 @@ pub struct Fc05CylinderCapPair {
     pub surface_id: u32,
     /// Curve identifiers of the agreeing cap circles in source order.
     pub curve_ids: Vec<u32>,
+    /// Plane surface identifier opposite the cylinder on each cap edge.
+    pub cap_plane_ids: Vec<u32>,
+    /// Cap ordinate aligned with each `curve_ids`/`cap_plane_ids` entry.
+    pub curve_cap_ordinates_row_frame: Vec<f64>,
     /// Shared center in the owning feature's row frame.
     pub center_row_frame: [f64; 2],
     /// Shared exact radius in mm.
@@ -625,7 +629,7 @@ pub fn fc05_cylinder_cap_pairs(
         .iter()
         .map(|row| (row.id, row.faces))
         .collect::<BTreeMap<_, _>>();
-    let mut groups = BTreeMap::<u32, Vec<&Fc05Circle>>::new();
+    let mut groups = BTreeMap::<u32, Vec<(&Fc05Circle, u32)>>::new();
     for circle in circles {
         let Some(adjacent) = faces.get(&circle.curve_id) else {
             continue;
@@ -635,21 +639,25 @@ pub fn fc05_cylinder_cap_pairs(
             .filter(|face| kinds.get(face) == Some(&crate::surface::SurfaceKind::Cylinder))
             .copied()
             .collect::<Vec<_>>();
-        let plane_count = adjacent
+        let planes = adjacent
             .iter()
             .filter(|face| kinds.get(face) == Some(&crate::surface::SurfaceKind::Plane))
-            .count();
-        if cylinders.len() == 1 && plane_count == 1 && circle.cap_ordinate_row_frame.is_some() {
-            groups.entry(cylinders[0]).or_default().push(circle);
+            .copied()
+            .collect::<Vec<_>>();
+        if cylinders.len() == 1 && planes.len() == 1 && circle.cap_ordinate_row_frame.is_some() {
+            groups
+                .entry(cylinders[0])
+                .or_default()
+                .push((circle, planes[0]));
         }
     }
 
     let mut result = Vec::new();
     for (surface_id, mut group) in groups {
-        group.sort_by_key(|circle| circle.offset);
-        let first = group[0];
+        group.sort_by_key(|(circle, _)| circle.offset);
+        let first = group[0].0;
         let tolerance = 1e-9 * first.radius_mm.max(1.0);
-        if !group.iter().all(|circle| {
+        if !group.iter().all(|(circle, _)| {
             (circle.radius_mm - first.radius_mm).abs() <= tolerance
                 && (circle.center_row_frame[0] - first.center_row_frame[0]).abs() <= tolerance
                 && (circle.center_row_frame[1] - first.center_row_frame[1]).abs() <= tolerance
@@ -659,7 +667,7 @@ pub fn fc05_cylinder_cap_pairs(
         let mut ordinates = Vec::new();
         for ordinate in group
             .iter()
-            .filter_map(|circle| circle.cap_ordinate_row_frame)
+            .filter_map(|(circle, _)| circle.cap_ordinate_row_frame)
         {
             if ordinates
                 .iter()
@@ -673,7 +681,12 @@ pub fn fc05_cylinder_cap_pairs(
         }
         result.push(Fc05CylinderCapPair {
             surface_id,
-            curve_ids: group.iter().map(|circle| circle.curve_id).collect(),
+            curve_ids: group.iter().map(|(circle, _)| circle.curve_id).collect(),
+            cap_plane_ids: group.iter().map(|(_, plane)| *plane).collect(),
+            curve_cap_ordinates_row_frame: group
+                .iter()
+                .filter_map(|(circle, _)| circle.cap_ordinate_row_frame)
+                .collect(),
             center_row_frame: first.center_row_frame,
             radius_mm: first.radius_mm,
             cap_ordinates_row_frame: ordinates,
@@ -961,6 +974,8 @@ mod tests {
             vec![Fc05CylinderCapPair {
                 surface_id: 10,
                 curve_ids: vec![20, 21],
+                cap_plane_ids: vec![11, 12],
+                curve_cap_ordinates_row_frame: vec![-5.0, 7.0],
                 center_row_frame: [3.0, 4.0],
                 radius_mm: 2.0,
                 cap_ordinates_row_frame: vec![-5.0, 7.0],

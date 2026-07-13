@@ -1223,6 +1223,72 @@ fn scan_validates_fc05_circle_from_record_points() {
 }
 
 #[test]
+fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
+    fn world(payload: &mut Vec<u8>, value: f64) {
+        let raw = value.to_be_bytes();
+        payload.push(match raw[0] {
+            0x40 => 0x46,
+            0xc0 => 0x2d,
+            _ => panic!("generated FC05 value must use a world-token exponent"),
+        });
+        payload.extend_from_slice(&raw[1..]);
+    }
+    fn plane_row(payload: &mut Vec<u8>, id: u8, next: u8, x: f64) {
+        payload.extend_from_slice(&[id, 0x22, 4, 0x01, 0, next]);
+        for value in [0.0, 1.0, 0.0, 1.0, x, -1.0, -1.0, x, 1.0, 2.0] {
+            push_generated_scalar(payload, value);
+        }
+        payload.push(0xe3);
+    }
+    fn circle_row(payload: &mut Vec<u8>, curve: u8, plane: u8, ordinate: f64) {
+        payload.extend_from_slice(&[curve, 0x09, 4, 0x01, 0xf6, 0xfc, 0x05]);
+        for [a, b, parameter] in [
+            [4.0, 5.0, 2.0],
+            [3.0, 6.0, 3.0],
+            [2.0, 5.0, 4.0],
+            [3.0, 4.0, 3.0],
+        ] {
+            world(payload, a);
+            world(payload, b);
+            world(payload, parameter);
+            world(payload, ordinate);
+        }
+        payload.push(0xff);
+        payload.extend_from_slice(&[10, plane, curve, curve, 0, 0, 0xe3]);
+        payload.extend_from_slice(&[0xe1, 0xf5, 0x05, 0xf6, 0xe3]);
+    }
+
+    let mut payload = b"srf_array\0\xf8\x03".to_vec();
+    payload.extend_from_slice(&[10, 0x24, 4, 0x01, 0, 11]);
+    plane_row(&mut payload, 11, 12, 2.0);
+    plane_row(&mut payload, 12, 0, -2.0);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\x02topol_ref_data\0");
+    circle_row(&mut payload, 20, 11, 2.0);
+    circle_row(&mut payload, 21, 12, -2.0);
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+    let cylinder = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#10")
+        .expect("placed cylinder");
+    assert_eq!(
+        cylinder.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+            origin: cadmpeg_ir::math::Point3::new(2.0, 5.0, 3.0),
+            axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            radius: 1.0,
+        }
+    );
+}
+
+#[test]
 fn scan_decodes_labeled_prototype_pcurve_uvs() {
     let mut payload = visibgeom_payload(0, 0);
     payload.extend_from_slice(b"crv_id\0\x2c type\0\x00 crv_pnt_arr\0\xf9\x02\x04");

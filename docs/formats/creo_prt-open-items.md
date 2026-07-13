@@ -8,6 +8,7 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - Per-instance overrides for cone half-angle and `geom_type = 26` torus/sphere radii are unspecified.
 - Packed B-spline surface bodies and surface-intersection curves are unspecified.
 - The remaining `fc` curve-body grammars are unspecified, including `fc 05` variants, `fc 08`, `fc 13` field roles, `fc 02` slot semantics, and `fc 04`, `fc 07`, `fc 09`, and `fc 0a`.
+- The `fc 05` cap-pair coordinate permutation for a model-Z cylinder axis is unspecified.
 - The fields binding each `surface_of_extrusion` face to its sweep feature and direction are unspecified.
 - Model-space analytic equations for non-plane surface rows are unspecified, including cylinder axis and location, cone apex and axis, and the `geom_type = 29` fillet/spline split.
 - Round and fillet byte semantics are unspecified, including non-prismatic radii, flank geometry, and generated face bindings.
