@@ -441,6 +441,10 @@ impl<'a> DecodeContext<'a> {
                 self.decode_morph(source_order, object);
                 continue;
             }
+            if object.class_uuid == crate::curve_on_surface::CLASS {
+                self.decode_curve_on_surface(source_order, object);
+                continue;
+            }
             if !crate::curves::supported_class(object.class_uuid)
                 && !crate::mesh::supported_class(object.class_uuid)
             {
@@ -1060,6 +1064,163 @@ impl<'a> DecodeContext<'a> {
             }
             Err(error) => {
                 self.scan_warning(source_order, &format!("morph candidate rejected: {error}"));
+                self.mark_failed(source_order);
+            }
+        }
+    }
+
+    fn decode_curve_on_surface(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let Some(scale) = self.unit_scale() else {
+            self.scan_warning(
+                source_order,
+                "curve-on-surface retained because document units are unavailable",
+            );
+            return;
+        };
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "curve-on-surface retained because identity is unavailable",
+            );
+            return;
+        };
+        let construction = match crate::curve_on_surface::decode(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            scale,
+            self.archive(),
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                let future = matches!(
+                    error,
+                    crate::curves::GeometryError::UnsupportedVersion { .. }
+                );
+                self.scan_warning(
+                    source_order,
+                    &format!(
+                        "curve-on-surface {}: {error}",
+                        if future { "retained" } else { "failed" }
+                    ),
+                );
+                if !future {
+                    self.mark_failed(source_order);
+                }
+                return;
+            }
+        };
+        let entity_count = decoded_curve_entity_count(&construction.parameter_curve)
+            .saturating_add(
+                construction
+                    .model_curve
+                    .as_ref()
+                    .map_or(0, decoded_curve_entity_count),
+            )
+            .saturating_add(2);
+        if !self.charge_entities(source_order, entity_count) {
+            return;
+        }
+        let key = self.object_key(identity, source_order);
+        let association = self.source_association(identity);
+        let parameter_id = format!("rhino:object:curve#{key}.curve-on-surface-c2");
+        let model_id = construction
+            .model_curve
+            .as_ref()
+            .map(|_| format!("rhino:object:curve#{key}.curve-on-surface-c3"));
+        let surface_id: cadmpeg_ir::ids::SurfaceId =
+            format!("rhino:object:surface#{key}.curve-on-surface-support").into();
+        let feature_id = FeatureId(format!("rhino:curve-on-surface:feature#{key}"));
+        let feature = Feature {
+            id: feature_id.clone(),
+            ordinal: u64::try_from(construction.source_range.start)
+                .expect("source offset fits u64"),
+            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("RhinoCurveOnSurface".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "curve_on_surface".to_string(),
+                parameters: BTreeMap::from([
+                    ("parameter_curve".to_string(), parameter_id.clone()),
+                    ("support_surface".to_string(), surface_id.to_string()),
+                ]),
+                properties: model_id
+                    .as_ref()
+                    .map(|id| BTreeMap::from([("model_curve".to_string(), id.clone())]))
+                    .unwrap_or_default(),
+            },
+            native_ref: Some(self.unknowns[source_order].id.to_string()),
+        };
+        let parameter_curve = construction.parameter_curve;
+        let model_curve = construction.model_curve;
+        let (surface_geometry, surface_derived) = match construction.surface {
+            crate::surfaces::DecodedSurface::Typed { geometry, derived } => (geometry, derived),
+            crate::surfaces::DecodedSurface::Procedural { geometry, .. } => {
+                (SurfaceGeometry::Nurbs(geometry), true)
+            }
+        };
+        let result = self.validate_candidate(|candidate| {
+            commit_curve_tree(
+                candidate,
+                parameter_curve,
+                &key,
+                &association,
+                None,
+                "curve-on-surface-c2",
+            );
+            if let Some(model_curve) = model_curve {
+                commit_curve_tree(
+                    candidate,
+                    model_curve,
+                    &key,
+                    &association,
+                    None,
+                    "curve-on-surface-c3",
+                );
+            }
+            candidate.model.surfaces.push(Surface {
+                id: surface_id.clone(),
+                geometry: surface_geometry,
+                source_object: Some(association),
+            });
+            candidate.annotations.exactness.insert(
+                surface_id.to_string(),
+                ExactnessNote {
+                    entity: if surface_derived {
+                        Exactness::Derived
+                    } else {
+                        Exactness::ByteExact
+                    },
+                    fields: BTreeMap::new(),
+                },
+            );
+            candidate.model.features.push(feature);
+        });
+        match result {
+            Ok(()) => {
+                for warning in construction.warnings {
+                    self.scan_warning(source_order, &warning);
+                }
+                let mut links = vec![parameter_id, surface_id.to_string(), feature_id.to_string()];
+                if let Some(model_id) = model_id {
+                    links.push(model_id);
+                }
+                self.append_links(source_order, &links);
+                self.geometry_transferred = true;
+                self.mark_decoded(source_order);
+            }
+            Err(error) => {
+                self.scan_warning(
+                    source_order,
+                    &format!("curve-on-surface candidate rejected: {error}"),
+                );
                 self.mark_failed(source_order);
             }
         }

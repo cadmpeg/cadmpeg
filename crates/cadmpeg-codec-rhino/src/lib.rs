@@ -12,6 +12,7 @@ pub(crate) mod brep;
 pub(crate) mod cage;
 pub(crate) mod chunks;
 pub(crate) mod container;
+pub(crate) mod curve_on_surface;
 pub(crate) mod curves;
 pub(crate) mod decode;
 pub(crate) mod detail;

@@ -1103,6 +1103,24 @@ segment count × polymorphic ON_Curve
 Parameter count is segment count plus one. Segment parameters are finite and
 nondecreasing. Each child is a curve.
 
+### 12.7 Curve on surface
+
+`ON_CurveOnSurface` has no version prefix. Its bounded class payload is:
+
+```text
+polymorphic two-dimensional ON_Curve
+i32 model-curve-present
+if present: polymorphic model-space ON_Curve
+polymorphic ON_Surface
+```
+
+The presence value is zero or one. The first curve is in support-surface
+parameter space and remains unscaled. The optional model curve and support
+surface use document length conversion. All three child objects must derive
+from their declared curve or surface families. The model curve is the exact
+stored solved carrier when present; the parameter curve and support surface
+retain the construction relationship independently.
+
 ## 13. NURBS curves and surfaces
 
 ### 13.1 NURBS curve

@@ -145,6 +145,7 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
         uuid,
         POINT
             | POINT_CLOUD
+            | CURVE_ON_SURFACE
             | LINE
             | ARC
             | POLYLINE
@@ -244,6 +245,17 @@ fn decode_inner(
 ) -> Result<DecodedGeometry, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
         return Err(malformed(range.start, "curve recursion limit exceeded"));
+    }
+    if class_uuid == CURVE_ON_SURFACE {
+        let construction = crate::curve_on_surface::decode(data, range, scale, archive)?;
+        let Some(mut curve) = construction.model_curve else {
+            return Err(unsupported(
+                construction.source_range.start,
+                "curve-on-surface has no stored model-space carrier",
+            ));
+        };
+        curve.warnings.splice(0..0, construction.warnings);
+        return Ok(DecodedGeometry::Curve { curve });
     }
     if matches!(
         class_uuid,
