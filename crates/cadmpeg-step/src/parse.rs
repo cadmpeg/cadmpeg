@@ -234,6 +234,35 @@ impl Parser {
         if self.at != self.tokens.len() {
             return self.err("tokens after exchange terminator");
         }
+        let anchor_bindings = anchors
+            .iter()
+            .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
+            .collect::<BTreeMap<_, _>>();
+        if anchor_bindings.len() != anchors.len() {
+            return self.err("duplicate anchor name");
+        }
+        for anchor in &mut anchors {
+            anchor.value = resolve_anchor_value(&anchor.value, &anchor_bindings, &mut Vec::new())
+                .map_err(|message| ParseError::Syntax { offset: 0, message })?;
+        }
+        for record in records.values_mut() {
+            for partial in &mut record.partials {
+                for value in &mut partial.parameters {
+                    *value = resolve_anchor_value(value, &anchor_bindings, &mut Vec::new())
+                        .map_err(|message| ParseError::Syntax {
+                            offset: record.span.start,
+                            message,
+                        })?;
+                }
+            }
+        }
+        for anchor in &anchors {
+            let mut refs = Vec::new();
+            references(&anchor.value, &mut refs);
+            if refs.into_iter().any(|id| !records.contains_key(&id)) {
+                return self.err("unresolved instance reference in anchor binding");
+            }
+        }
         for record in records.values() {
             let mut refs = Vec::new();
             for partial in &record.partials {
@@ -394,6 +423,32 @@ impl Parser {
             offset,
             message: message.into(),
         })
+    }
+}
+
+fn resolve_anchor_value(
+    value: &Value,
+    anchors: &BTreeMap<String, Value>,
+    stack: &mut Vec<String>,
+) -> Result<Value, String> {
+    match value {
+        Value::Resource(name) if anchors.contains_key(name) => {
+            if stack.contains(name) {
+                return Err(format!("cyclic anchor binding <{name}>"));
+            }
+            stack.push(name.clone());
+            let resolved = resolve_anchor_value(&anchors[name], anchors, stack);
+            stack.pop();
+            resolved
+        }
+        Value::List(values) => values
+            .iter()
+            .map(|value| resolve_anchor_value(value, anchors, stack))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::List),
+        Value::Typed(name, value) => resolve_anchor_value(value, anchors, stack)
+            .map(|value| Value::Typed(name.clone(), Box::new(value))),
+        value => Ok(value.clone()),
     }
 }
 

@@ -6,6 +6,7 @@ FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 
 ENDSEC;
 ANCHOR;
 <root>=#1;
+<alias>=<root>;
 ENDSEC;
 REFERENCE;
 <#ext>=<https://example.invalid/external-part>;
@@ -14,7 +15,7 @@ DATA('AP242');
 #1=PRODUCT('P1','Part','',());
 ENDSEC;
 DATA('AP242');
-#2=EXAMPLE_RECORD(#1);
+#2=EXAMPLE_RECORD(<alias>);
 ENDSEC;
 SIGNATURE;
 opaque signature bytes: @%[]{}=deadbeef

@@ -159,6 +159,10 @@ fn codec_inspects_edition3_sections_and_external_references() {
     let exchange = crate::parse::parse(bytes).expect("parse opaque signature payload");
     let signature = exchange.signature.expect("signature byte span");
     assert!(bytes[signature].windows(2).any(|bytes| bytes == b"@%"));
+    assert_eq!(
+        exchange.records[&2].partials[0].parameters,
+        vec![crate::parse::Value::Reference(1)]
+    );
 }
 
 #[test]
