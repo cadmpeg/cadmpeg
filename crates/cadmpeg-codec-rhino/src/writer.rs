@@ -5,6 +5,7 @@ use std::io::Write;
 
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::CurveGeometry;
 
 use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
 
@@ -24,11 +25,14 @@ const TCODE_CLASS_END: u32 = 0x0002_7fff;
 const POINT_CLASS: [u8; 16] = [
     0x1d, 0x1a, 0x10, 0xc3, 0x57, 0xf1, 0xd3, 0x11, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
+const ARC_CLASS: [u8; 16] = [
+    0x2a, 0xbe, 0x33, 0xcf, 0xb4, 0x09, 0xd4, 0x11, 0xbf, 0xfb, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+];
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
     check_representable(ir)?;
 
-    let objects = ir
+    let mut objects = ir
         .model
         .points
         .iter()
@@ -41,6 +45,22 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             object_record(1, POINT_CLASS, &payload)
         })
         .collect::<Vec<_>>();
+    for curve in &ir.model.curves {
+        let CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } = &curve.geometry
+        else {
+            unreachable!("representability checked before serialization")
+        };
+        objects.push(object_record(
+            4,
+            ARC_CLASS,
+            &circle_payload(*center, *axis, *ref_direction, *radius),
+        ));
+    }
 
     let mut bytes = header(version)?;
     bytes.extend(long_chunk(1, b"cadmpeg"));
@@ -74,7 +94,6 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
         ("edges", model.edges.len()),
         ("vertices", model.vertices.len()),
         ("surfaces", model.surfaces.len()),
-        ("curves", model.curves.len()),
         ("subds", model.subds.len()),
         ("pcurves", model.pcurves.len()),
         ("procedural_surfaces", model.procedural_surfaces.len()),
@@ -99,6 +118,39 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
             "Rhino writer cannot yet represent arenas: {}",
             unsupported.join(", ")
         )));
+    }
+    for curve in &model.curves {
+        let CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } = curve.geometry
+        else {
+            return Err(CodecError::NotImplemented(format!(
+                "Rhino writer cannot represent curve {} as a native object",
+                curve.id.0
+            )));
+        };
+        let axis_norm = axis.norm();
+        let reference_norm = ref_direction.norm();
+        let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
+        if !center.x.is_finite()
+            || !center.y.is_finite()
+            || !center.z.is_finite()
+            || !radius.is_finite()
+            || radius <= 0.0
+            || !axis_norm.is_finite()
+            || !reference_norm.is_finite()
+            || (axis_norm - 1.0).abs() > 1.0e-10
+            || (reference_norm - 1.0).abs() > 1.0e-10
+            || dot.abs() > 1.0e-10
+        {
+            return Err(CodecError::Malformed(format!(
+                "curve {} has an invalid circle frame",
+                curve.id.0
+            )));
+        }
     }
     if ir.native.namespace("rhino").is_some() {
         return Err(CodecError::NotImplemented(
@@ -153,6 +205,57 @@ fn units_record(linear: f64, angular: f64) -> Vec<u8> {
     body.extend(angular.to_le_bytes());
     body.extend(linear.to_le_bytes());
     crc_chunk(TCODE_UNITS_AND_TOLERANCES, &body)
+}
+
+fn circle_payload(
+    center: cadmpeg_ir::math::Point3,
+    axis: cadmpeg_ir::math::Vector3,
+    x: cadmpeg_ir::math::Vector3,
+    radius: f64,
+) -> Vec<u8> {
+    let y = cadmpeg_ir::math::Vector3::new(
+        axis.y * x.z - axis.z * x.y,
+        axis.z * x.x - axis.x * x.z,
+        axis.x * x.y - axis.y * x.x,
+    );
+    let equation_d = -(axis.x * center.x + axis.y * center.y + axis.z * center.z);
+    let mut payload = vec![0x10];
+    for value in [
+        center.x,
+        center.y,
+        center.z,
+        x.x,
+        x.y,
+        x.z,
+        y.x,
+        y.y,
+        y.z,
+        axis.x,
+        axis.y,
+        axis.z,
+        axis.x,
+        axis.y,
+        axis.z,
+        equation_d,
+        radius,
+        center.x + radius * x.x,
+        center.y + radius * x.y,
+        center.z + radius * x.z,
+        center.x + radius * y.x,
+        center.y + radius * y.y,
+        center.z + radius * y.z,
+        center.x - radius * x.x,
+        center.y - radius * x.y,
+        center.z - radius * x.z,
+        0.0,
+        std::f64::consts::TAU,
+        0.0,
+        std::f64::consts::TAU,
+    ] {
+        payload.extend(value.to_le_bytes());
+    }
+    payload.extend(3_i32.to_le_bytes());
+    payload
 }
 
 fn object_record(object_type: i64, class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
@@ -226,5 +329,32 @@ mod tests {
             .encode(&ir, &mut output)
             .is_err());
         assert_eq!(output, [0xaa]);
+    }
+
+    #[test]
+    fn source_less_circle_round_trips_with_its_frame() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+            id: cadmpeg_ir::ids::CurveId("curve:circle".into()),
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Circle {
+                center: Point3::new(1.0, 2.0, 3.0),
+                axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                radius: 4.0,
+            },
+            source_object: None,
+        });
+        let mut bytes = Vec::new();
+        RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&ir, &mut bytes)
+            .unwrap();
+        let decoded = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(decoded.ir.model.curves.len(), 1);
+        assert_eq!(
+            decoded.ir.model.curves[0].geometry,
+            ir.model.curves[0].geometry
+        );
     }
 }
