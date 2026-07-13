@@ -4550,6 +4550,33 @@ fn native_validation_requires_complete_ordered_sketch_markers() {
 }
 
 #[test]
+fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_resolved_features(
+                &triangle_body(),
+                &[0, 1, 2],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_input_lanes[0].sketch_entities.remove(1);
+    });
+    decoded.ir.annotations = Default::default();
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("has 3 markers but 2 native records"),
+        "{error}"
+    );
+}
+
+#[test]
 fn semantic_writer_preserves_idless_feature_tree_nodes() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

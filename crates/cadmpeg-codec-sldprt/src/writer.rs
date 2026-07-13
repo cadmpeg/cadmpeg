@@ -575,6 +575,35 @@ fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
+    let expected_offsets = lane
+        .native_payload
+        .windows(MARKER.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == MARKER).then_some(offset))
+        .collect::<Vec<_>>();
+    if expected_offsets.len() != lane.sketch_entities.len() {
+        return Err(CodecError::Malformed(format!(
+            "feature-input lane {} has {} markers but {} native records",
+            lane.id,
+            expected_offsets.len(),
+            lane.sketch_entities.len()
+        )));
+    }
+    for (ordinal, (entity, expected_offset)) in lane
+        .sketch_entities
+        .iter()
+        .zip(&expected_offsets)
+        .enumerate()
+    {
+        if entity.ordinal != ordinal as u32
+            || usize::try_from(entity.offset) != Ok(*expected_offset)
+        {
+            return Err(CodecError::Malformed(format!(
+                "feature-input lane {} has inconsistent marker order",
+                lane.id
+            )));
+        }
+    }
     let mut payload = lane.native_payload.clone();
     for entity in &lane.sketch_entities {
         let offset = usize::try_from(entity.offset).map_err(|_| {
