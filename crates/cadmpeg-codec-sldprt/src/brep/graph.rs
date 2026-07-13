@@ -219,6 +219,12 @@ fn id_vertex(a: u16) -> String {
 fn id_point(a: u16) -> String {
     format!("sldprt:brep:point#{a}")
 }
+fn id_closed_point(edge: u16) -> String {
+    format!("sldprt:brep:point#closed-circle-{edge}")
+}
+fn id_closed_vertex(edge: u16) -> String {
+    format!("sldprt:brep:vertex#closed-circle-{edge}")
+}
 
 /// One face-use's decoded loops: ordered coedge rings, keyed by loop attr.
 struct WalkedFace {
@@ -444,9 +450,50 @@ fn decode_graph(
     edge_attrs.sort_unstable();
     for e in edge_attrs {
         let (start_v, end_v, curve_attr) = edge_ends[&e];
-        if !kept_vertices.contains(&start_v) || !kept_vertices.contains(&end_v) {
+        let resolved_endpoints = kept_vertices.contains(&start_v) && kept_vertices.contains(&end_v);
+        let closed_circle_point = (!resolved_endpoints && start_v <= 1 && end_v <= 1)
+            .then(|| carriers.get(&curve_attr))
+            .flatten()
+            .and_then(|carrier| match &carrier.geometry {
+                CarrierGeometry::Curve(CurveGeometry::Circle {
+                    center,
+                    ref_direction,
+                    radius,
+                    ..
+                }) => Some(cadmpeg_ir::math::Point3::new(
+                    center.x + ref_direction.x * radius,
+                    center.y + ref_direction.y * radius,
+                    center.z + ref_direction.z * radius,
+                )),
+                _ => None,
+            });
+        if !resolved_endpoints && closed_circle_point.is_none() {
             continue;
         }
+        let (start_id, end_id) = if let Some(position) = closed_circle_point {
+            let point_id = id_closed_point(e);
+            let vertex_id = id_closed_vertex(e);
+            annotations
+                .note(&point_id, source_stream, 0)
+                .tag("derived_closed_circle_seam");
+            annotations.exactness(&point_id, Exactness::Derived);
+            annotations
+                .note(&vertex_id, source_stream, 0)
+                .tag("derived_closed_circle_seam");
+            annotations.exactness(&vertex_id, Exactness::Derived);
+            out.points.push(Point {
+                id: PointId(point_id.clone()),
+                position,
+            });
+            out.vertices.push(Vertex {
+                id: VertexId(vertex_id.clone()),
+                point: PointId(point_id),
+                tolerance: None,
+            });
+            (VertexId(vertex_id.clone()), VertexId(vertex_id))
+        } else {
+            (VertexId(id_vertex(start_v)), VertexId(id_vertex(end_v)))
+        };
         let eu = t.edge_uses.get(&e);
         let mut curve = None;
         if curve_attr != 0 {
@@ -482,8 +529,8 @@ fn decode_graph(
         out.edges.push(Edge {
             id: EdgeId(id_edge(e)),
             curve,
-            start: VertexId(id_vertex(start_v)),
-            end: VertexId(id_vertex(end_v)),
+            start: start_id,
+            end: end_id,
             param_range: None,
             tolerance: None,
         });

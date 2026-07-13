@@ -3781,6 +3781,53 @@ fn closed_cylinder_gets_derived_seam() {
 }
 
 #[test]
+fn closed_circle_edge_gets_a_derived_seam_vertex() {
+    let mut body = Vec::new();
+    body.extend(plane_carrier(
+        100,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    body.extend(circle_carrier(200, [1.0, 2.0, 3.0], [0.0, 0.0, 1.0], 0.5));
+    body.extend(bridge(10, 20, 100));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 30, 1, 0, 40, false));
+    body.extend(edge_use(40, 200));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    assert_eq!(decoded.ir.model.loops[0].coedges.len(), 1);
+    let edge = &decoded.ir.model.edges[0];
+    assert_eq!(edge.start, edge.end);
+    let vertex = decoded
+        .ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == edge.start)
+        .unwrap();
+    let point = decoded
+        .ir
+        .model
+        .points
+        .iter()
+        .find(|point| point.id == vertex.point)
+        .unwrap();
+    assert_eq!(
+        [point.position.x, point.position.y, point.position.z],
+        [1500.0, 2000.0, 3000.0]
+    );
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn sphere_patch_gets_degenerate_meridian_seam() {
     let mut cur = Cursor::new(sldprt_with_body(&sphere_patch_body()));
     let result = SldprtCodec
