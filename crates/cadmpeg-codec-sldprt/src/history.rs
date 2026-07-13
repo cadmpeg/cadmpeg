@@ -419,7 +419,7 @@ fn project_definition(
     if feature.kind.eq_ignore_ascii_case("ReferencePoint") {
         return project_datum_point(feature).unwrap_or_else(|| native_definition(feature));
     }
-    if extrude_op(&feature.kind).is_some() {
+    if is_extrude(feature) {
         project_extrude(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Fillet") {
         project_fillet(feature).unwrap_or_else(|| native_definition(feature))
@@ -452,6 +452,16 @@ fn project_definition(
     } else {
         native_definition(feature)
     }
+}
+
+fn is_extrude(feature: &Feature) -> bool {
+    extrude_op(&feature.kind).is_some()
+        || feature.xml_tag.eq_ignore_ascii_case("Extrusion")
+            && feature
+                .properties
+                .get("Operation")
+                .and_then(|operation| parse_boolean_op(operation))
+                .is_some()
 }
 
 fn project_extrude(

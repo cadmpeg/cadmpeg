@@ -4520,6 +4520,31 @@ fn decode_projects_cut_extrude_with_canonical_length() {
 }
 
 #[test]
+fn decode_projects_generic_extrusion_with_explicit_operation() {
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Generic" Type="Extrusion" id="10" Operation="NewBody"><Dimension Name="Depth">6mm</Dimension></Extrusion></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::Blind {
+                length: Length(6.0),
+            },
+            op: BooleanOp::NewBody,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_all_extrusion_forms() {
     use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FeatureDefinition, Length, ProfileRef};
     use cadmpeg_ir::math::Vector3;
