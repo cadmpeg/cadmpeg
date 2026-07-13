@@ -1480,6 +1480,7 @@ fn encoder_writes_source_less_line_sketches() {
         name: Some("Profile".into()),
         suppressed: false,
         parent: None,
+        dependencies: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: Some(sketch_id.clone()),
@@ -1525,6 +1526,7 @@ fn encoder_writes_source_less_line_sketches() {
             name: Some(format!("Profile op {index}")),
             suppressed: false,
             parent: None,
+            dependencies: Vec::new(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -1536,6 +1538,7 @@ fn encoder_writes_source_less_line_sketches() {
         name: Some("Boss".into()),
         suppressed: false,
         parent: Some(sketch_feature_id),
+        dependencies: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id),
@@ -1836,6 +1839,7 @@ fn encoder_binds_multiple_source_less_sketches_by_name() {
             name: Some(name.into()),
             suppressed: false,
             parent: None,
+            dependencies: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
                 sketch: Some(sketch_id),
@@ -1900,6 +1904,7 @@ fn encoder_writes_source_less_native_features() {
         name: Some("Boss".into()),
         suppressed: false,
         parent: None,
+        dependencies: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "BossExtrude".into(),
@@ -1987,6 +1992,7 @@ fn encoder_writes_source_less_native_features() {
             name: Some(format!("Direct {index}")),
             suppressed: false,
             parent: None,
+            dependencies: Vec::new(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -2016,6 +2022,7 @@ fn encoder_writes_source_less_native_features() {
             name: Some(format!("Pattern {index}")),
             suppressed: false,
             parent: None,
+            dependencies: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: vec![seed_id.clone()],
@@ -2545,6 +2552,7 @@ fn encoder_writes_source_less_datum_features() {
             name: Some(format!("Datum {ordinal}")),
             suppressed: false,
             parent: None,
+            dependencies: Vec::new(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -2959,6 +2967,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         name: Some("Equation".into()),
         suppressed: false,
         parent: None,
+        dependencies: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "EquationDriven".into(),
@@ -5712,7 +5721,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         br#"<Keywords>
             <Sketch Name="Profile" Type="CustomSketch" id="51"/>
             <ReferencePoint Name="Origin" Type="CustomDatum" id="52" Position="1mm,2mm,3mm"/>
-            <Fillet Name="Round" Type="CustomFillet" id="53"><Dimension Name="Radius">2mm</Dimension></Fillet>
+            <Fillet Name="Round" Type="CustomFillet" id="53" Dependencies="51,52,51"><Dimension Name="Radius">2mm</Dimension></Fillet>
             <Chamfer Name="Bevel" Type="CustomChamfer" id="54"><Dimension Name="Distance">3mm</Dimension></Chamfer>
             <Hole Name="Drill" Type="CustomHole" id="55"><Dimension Name="Diameter">4mm</Dimension><Dimension Name="Depth">5mm</Dimension></Hole>
         </Keywords>"#,
@@ -5737,6 +5746,13 @@ fn decode_dispatches_typed_features_by_xml_family() {
             ..
         }
     ));
+    assert_eq!(
+        decoded.ir.model.features[2].dependencies,
+        vec![
+            decoded.ir.model.features[0].id.clone(),
+            decoded.ir.model.features[1].id.clone(),
+        ]
+    );
     assert!(matches!(
         decoded.ir.model.features[3].definition,
         FeatureDefinition::Chamfer {
@@ -5767,12 +5783,26 @@ fn decode_dispatches_typed_features_by_xml_family() {
     SldprtCodec
         .write_preserved(&decoded.ir, &mut encoded)
         .unwrap();
-    let regenerated = SldprtCodec
+    let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
     assert_eq!(native[2].kind, "CustomFillet");
     assert_eq!(native[2].parameters["Radius"], "2.5mm");
+    assert_eq!(
+        regenerated.ir.model.features[2].dependencies,
+        vec![
+            regenerated.ir.model.features[0].id.clone(),
+            regenerated.ir.model.features[1].id.clone(),
+        ]
+    );
+    regenerated.ir.model.features[2].dependencies.pop();
+    let error = SldprtCodec
+        .write_preserved(&regenerated.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("dependencies are inconsistent with its operands"));
 }
 
 #[test]

@@ -142,6 +142,9 @@ pub struct Feature {
     /// Containing or logically preceding feature, when represented by the source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<FeatureId>,
+    /// Earlier features consumed during regeneration, in source operand order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<FeatureId>,
     /// Bodies produced or modified by the feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outputs: Vec<BodyId>,

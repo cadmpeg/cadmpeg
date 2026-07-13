@@ -1011,6 +1011,31 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 Some(_) => {}
             }
         }
+        let mut dependencies = HashSet::new();
+        for dependency in &feature.dependencies {
+            if !dependencies.insert(dependency) {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!("feature repeats dependency `{}`", dependency.0),
+                    entity: Some(feature.id.0.clone()),
+                });
+                continue;
+            }
+            match features.get(dependency.0.as_str()) {
+                None => ref_error(findings, &feature.id.0, "dependency feature", &dependency.0),
+                Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!(
+                        "dependency feature `{}` does not precede its consumer",
+                        dependency.0
+                    ),
+                    entity: Some(feature.id.0.clone()),
+                }),
+                Some(_) => {}
+            }
+        }
         for body in &feature.outputs {
             if !ids.bodies.contains(&body.0) {
                 ref_error(findings, &feature.id.0, "output body", &body.0);

@@ -304,11 +304,44 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                                 .as_deref()
                                 .and_then(|source| by_source.get(source).cloned())
                         }),
+                    dependencies: project_feature_dependencies(feature, &by_source),
                     outputs: Vec::new(),
                     definition: project_definition(feature, &by_source, &native_by_source),
                     native_ref: Some(feature.id.clone()),
                 })
         })
+        .collect()
+}
+
+fn project_feature_dependencies(
+    feature: &Feature,
+    by_source: &HashMap<&str, FeatureId>,
+) -> Vec<FeatureId> {
+    const REFERENCE_PROPERTIES: &[&str] = &[
+        "Profile",
+        "Path",
+        "Profiles",
+        "Guides",
+        "Seeds",
+        "Dependency",
+        "Dependencies",
+        "ParentFeatures",
+    ];
+    let owner = neutral_feature_id(&feature.id);
+    let mut seen = std::collections::HashSet::new();
+    REFERENCE_PROPERTIES
+        .iter()
+        .filter_map(|name| feature.properties.get(*name))
+        .flat_map(|value| {
+            value
+                .split(|character: char| {
+                    character == ',' || character == ';' || character.is_whitespace()
+                })
+                .filter(|reference| !reference.is_empty())
+        })
+        .filter_map(|reference| by_source.get(reference).cloned())
+        .filter(|dependency| dependency != &owner)
+        .filter(|dependency| seen.insert(dependency.clone()))
         .collect()
 }
 
@@ -518,24 +551,38 @@ pub fn bind_unique_sketch_feature(
             continue;
         };
         if let Some(native_ref) = features[*index].native_ref.clone() {
-            bindings.push((*index, native_ref, sketch.id.clone()));
+            bindings.push((
+                *index,
+                features[*index].id.clone(),
+                native_ref,
+                sketch.id.clone(),
+            ));
         }
     }
     if bindings.is_empty() {
         if let ([index], [sketch]) = (feature_indices.as_slice(), sketches) {
             if let Some(native_ref) = features[*index].native_ref.clone() {
-                bindings.push((*index, native_ref, sketch.id.clone()));
+                bindings.push((
+                    *index,
+                    features[*index].id.clone(),
+                    native_ref,
+                    sketch.id.clone(),
+                ));
             }
         }
     }
-    for (index, _, sketch) in &bindings {
+    for (index, _, _, sketch) in &bindings {
         features[*index].definition = FeatureDefinition::Sketch {
             sketch: Some(sketch.clone()),
         };
     }
     for feature in features {
-        for (_, native_ref, sketch) in &bindings {
-            bind_definition_sketch(&mut feature.definition, native_ref, sketch);
+        for (_, dependency, native_ref, sketch) in &bindings {
+            if bind_definition_sketch(&mut feature.definition, native_ref, sketch)
+                && !feature.dependencies.contains(dependency)
+            {
+                feature.dependencies.push(dependency.clone());
+            }
         }
     }
 }
@@ -740,32 +787,42 @@ fn bind_definition_sketch(
     definition: &mut FeatureDefinition,
     native_ref: &str,
     sketch: &cadmpeg_ir::sketches::SketchId,
-) {
+) -> bool {
     let bind_profile = |profile: &mut ProfileRef| {
         if matches!(profile, ProfileRef::Native(value) if value == native_ref) {
             *profile = ProfileRef::Sketch(sketch.clone());
+            true
+        } else {
+            false
         }
     };
     let bind_path = |path: &mut PathRef| {
         if matches!(path, PathRef::Native(value) if value == native_ref) {
             *path = PathRef::Sketch(sketch.clone());
+            true
+        } else {
+            false
         }
     };
     match definition {
         FeatureDefinition::Extrude { profile, .. }
         | FeatureDefinition::Revolve { profile, .. }
         | FeatureDefinition::Rib { profile, .. } => bind_profile(profile),
-        FeatureDefinition::Sweep { profile, path, .. } => {
-            bind_profile(profile);
-            bind_path(path);
-        }
+        FeatureDefinition::Sweep { profile, path, .. } => bind_profile(profile) | bind_path(path),
         FeatureDefinition::Loft {
             profiles, guides, ..
         } => {
-            profiles.iter_mut().for_each(bind_profile);
-            guides.iter_mut().for_each(bind_path);
+            let mut profile_bound = false;
+            for profile in profiles {
+                profile_bound |= bind_profile(profile);
+            }
+            let mut guide_bound = false;
+            for path in guides {
+                guide_bound |= bind_path(path);
+            }
+            profile_bound || guide_bound
         }
-        _ => {}
+        _ => false,
     }
 }
 
@@ -3656,9 +3713,78 @@ pub fn sync_neutral_features(
             });
         }
     }
+    let projected_features = project_features(&native.feature_histories);
+    let desired_sketches = features
+        .iter()
+        .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
+        .map(|feature| feature.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let projected_sketches = projected_features
+        .iter()
+        .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
+        .map(|feature| feature.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let projected_features = projected_features
+        .into_iter()
+        .map(|feature| (feature.id.clone(), feature))
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        let projected_id = neutral_feature_id(&record_ids[&feature.id]);
+        let expected = feature
+            .dependencies
+            .iter()
+            .map(|dependency| {
+                record_ids
+                    .get(dependency)
+                    .map_or_else(|| dependency.clone(), |record| neutral_feature_id(record))
+            })
+            .collect::<Vec<_>>();
+        let expected = dependency_residual(feature, expected, &desired_sketches);
+        let consistent = projected_features
+            .get(&projected_id)
+            .is_some_and(|projected| {
+                let projected_dependencies = dependency_residual(
+                    projected,
+                    projected.dependencies.clone(),
+                    &projected_sketches,
+                );
+                if feature.native_ref.is_some() {
+                    projected_dependencies == expected
+                } else {
+                    expected
+                        .iter()
+                        .all(|dependency| projected_dependencies.contains(dependency))
+                }
+            });
+        if !consistent {
+            return Err(CodecError::Malformed(format!(
+                "SLDPRT feature {} dependencies are inconsistent with its operands",
+                feature.id
+            )));
+        }
+    }
     synchronize_feature_content_order(native);
     synchronize_history_content_order(native);
     Ok(())
+}
+
+fn dependency_residual(
+    feature: &cadmpeg_ir::features::Feature,
+    dependencies: Vec<FeatureId>,
+    sketch_features: &std::collections::HashSet<FeatureId>,
+) -> Vec<FeatureId> {
+    match feature.definition {
+        FeatureDefinition::Extrude { .. }
+        | FeatureDefinition::Revolve { .. }
+        | FeatureDefinition::Sweep { .. }
+        | FeatureDefinition::Loft { .. }
+        | FeatureDefinition::Rib { .. } => dependencies
+            .into_iter()
+            .filter(|dependency| !sketch_features.contains(dependency))
+            .collect(),
+        FeatureDefinition::Pattern { .. } => Vec::new(),
+        _ => dependencies,
+    }
 }
 
 fn synchronize_history_content_order(native: &mut crate::native::SldprtNative) {
