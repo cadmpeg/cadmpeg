@@ -125,6 +125,25 @@ fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
 }
 
 #[test]
+fn decode_accounts_for_every_part21_byte() {
+    let bytes = include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode byte-accounting fixture");
+    let attributes = &result.ir.source.as_ref().unwrap().attributes;
+    let count = |name: &str| attributes[name].parse::<usize>().unwrap();
+
+    assert!(count("bytes_structural") > 0);
+    assert!(count("bytes_typed") > 0);
+    assert!(count("bytes_named_opaque") > 0);
+    assert_eq!(count("bytes_unclassified"), 0);
+    assert_eq!(
+        count("bytes_structural") + count("bytes_typed") + count("bytes_named_opaque"),
+        bytes.len()
+    );
+}
+
+#[test]
 fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 

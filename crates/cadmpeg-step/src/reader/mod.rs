@@ -162,6 +162,26 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
         });
     }
     ir.set_native_unknowns("step", &opaque)?;
+    let accounting = byte_accounting(input.len(), &exchange, &typed_records);
+    if let Some(source) = &mut ir.source {
+        source
+            .attributes
+            .insert("bytes_structural".into(), accounting.structural.to_string());
+        source
+            .attributes
+            .insert("bytes_typed".into(), accounting.typed.to_string());
+        source
+            .attributes
+            .insert("bytes_named_opaque".into(), accounting.opaque.to_string());
+        source.attributes.insert(
+            "bytes_unclassified".into(),
+            accounting.unclassified.to_string(),
+        );
+    }
+    report.notes.push(format!(
+        "byte accounting: {} structural, {} typed, {} named opaque, {} unclassified",
+        accounting.structural, accounting.typed, accounting.opaque, accounting.unclassified
+    ));
     report
         .losses
         .extend(counts.into_iter().map(|(name, count)| LossNote {
@@ -171,6 +191,44 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
             provenance: None,
         }));
     Ok(DecodeResult::new(ir, report))
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct ByteAccounting {
+    structural: usize,
+    typed: usize,
+    opaque: usize,
+    unclassified: usize,
+}
+
+fn byte_accounting(
+    input_len: usize,
+    exchange: &Exchange,
+    typed_records: &BTreeSet<u64>,
+) -> ByteAccounting {
+    const STRUCTURAL: u8 = 1;
+    const TYPED: u8 = 2;
+    const OPAQUE: u8 = 3;
+    let mut classes = vec![STRUCTURAL; input_len];
+    for record in exchange.records.values() {
+        let class = if typed_records.contains(&record.id) {
+            TYPED
+        } else {
+            OPAQUE
+        };
+        classes[record.span.clone()].fill(class);
+    }
+    classes
+        .into_iter()
+        .fold(ByteAccounting::default(), |mut counts, class| {
+            match class {
+                STRUCTURAL => counts.structural += 1,
+                TYPED => counts.typed += 1,
+                OPAQUE => counts.opaque += 1,
+                _ => counts.unclassified += 1,
+            }
+            counts
+        })
 }
 
 fn schema_name(exchange: &Exchange) -> String {
