@@ -10,8 +10,10 @@ use std::collections::BTreeMap;
 
 use crate::topology::Graph;
 use cadmpeg_ir::be::{u16_at as be_u16, u32_at as be_u32};
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::geometry::{
+    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
+};
+use cadmpeg_ir::math::{Point2, Point3};
 
 /// A decoded NURBS surface and its source descriptor offset.
 #[derive(Debug, Clone)]
@@ -29,6 +31,15 @@ pub struct Curve {
     pub pos: usize,
     /// Reconstructed curve geometry.
     pub geometry: CurveGeometry,
+}
+
+/// A decoded parameter-space NURBS curve and its source wrapper offset.
+#[derive(Debug, Clone)]
+pub struct Pcurve {
+    /// Byte offset of the tag-134 wrapper record within the input stream.
+    pub pos: usize,
+    /// Reconstructed parameter-space geometry.
+    pub geometry: PcurveGeometry,
 }
 
 /// Decode valid NURBS surface record families in source order.
@@ -97,6 +108,57 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
         .collect()
 }
 
+/// Decode dimension-2 `B_CURVE` families as surface parameter-space curves.
+pub fn pcurves(bytes: &[u8]) -> Vec<Pcurve> {
+    let arrays = arrays(bytes);
+    let controls = curve_payloads(bytes);
+    let descriptors = curve_descriptors(bytes);
+    Graph::parse(bytes)
+        .of_kind(134)
+        .filter_map(|node| {
+            let refs = node.compact_tail_references(2)?;
+            let descriptor = descriptors.get(&u16::try_from(refs[0]).ok()?)?;
+            (descriptor.dimension == 2).then_some(())?;
+            let control = controls.get(&u16::try_from(refs[1]).ok()?)?;
+            let mult = arrays
+                .u16s
+                .get(&descriptor.mult)?
+                .get(..descriptor.distinct)?;
+            let distinct = arrays
+                .f64s
+                .get(&descriptor.knots)?
+                .get(..descriptor.distinct)?;
+            let knots = expand_knots(distinct, mult)?;
+            let stride = control.values.len().checked_div(descriptor.poles)?;
+            if !(stride == 2 || stride == 3) || control.values.len() != descriptor.poles * stride {
+                return None;
+            }
+            let mut control_points = Vec::with_capacity(descriptor.poles);
+            let mut weights = (stride == 3).then(Vec::new);
+            for pole in control.values.chunks_exact(stride) {
+                let weight = if stride == 3 { pole[2] } else { 1.0 };
+                if !weight.is_finite() || weight == 0.0 {
+                    return None;
+                }
+                control_points.push(Point2::new(pole[0] / weight, pole[1] / weight));
+                if let Some(weights) = &mut weights {
+                    weights.push(weight);
+                }
+            }
+            Some(Pcurve {
+                pos: node.pos,
+                geometry: PcurveGeometry::Nurbs {
+                    degree: descriptor.degree as u32,
+                    knots,
+                    control_points,
+                    weights,
+                    periodic: descriptor.form == 6,
+                },
+            })
+        })
+        .collect()
+}
+
 /// Decode valid NURBS curve record families in source order.
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
@@ -112,6 +174,7 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
             let descriptor = u16::try_from(refs[0]).ok()?;
             let control = u16::try_from(refs[1]).ok()?;
             let descriptor = descriptors.get(&descriptor)?;
+            (descriptor.dimension == 3).then_some(())?;
             let control = controls.get(&control)?;
             let mult = arrays
                 .u16s
@@ -297,6 +360,7 @@ fn surface_descriptors(bytes: &[u8]) -> BTreeMap<u16, SurfaceDescriptor> {
 struct CurveDescriptor {
     degree: u16,
     poles: usize,
+    dimension: u16,
     distinct: usize,
     form: u8,
     mult: u16,
@@ -312,6 +376,7 @@ fn curve_descriptors(bytes: &[u8]) -> BTreeMap<u16, CurveDescriptor> {
                 CurveDescriptor {
                     degree: be_u16(bytes, pos + 4)?,
                     poles: be_u16(bytes, pos + 8)? as usize,
+                    dimension: be_u16(bytes, pos + 10)?,
                     distinct: be_u16(bytes, pos + 14)? as usize,
                     form: *bytes.get(pos + 16)?,
                     mult: be_u16(bytes, pos + 23)?,

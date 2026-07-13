@@ -13,9 +13,10 @@ use flate2::Compression;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralSurfaceDefinition,
+    SurfaceGeometry,
 };
-use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::Exactness;
 
 use crate::container;
@@ -301,7 +302,8 @@ fn decode_retains_connected_topology_with_unknown_surface_carrier() {
         .find(|surface| surface.id == result.ir.model.faces[0].surface)
         .expect("unknown face carrier");
     assert!(matches!(surface.geometry, SurfaceGeometry::Unknown { .. }));
-    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
@@ -324,6 +326,46 @@ fn decode_retains_unknown_non_null_edge_curve_carrier() {
         .expect("unknown edge carrier");
     assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
+    let stream = pcurve_topology_partition_stream();
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.pcurves.len(), 1);
+    assert_eq!(
+        result.ir.model.coedges[0].pcurve.as_ref(),
+        Some(&result.ir.model.pcurves[0].id)
+    );
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    } = &result.ir.model.pcurves[0].geometry
+    else {
+        panic!("expected NURBS pcurve");
+    };
+    assert_eq!(*degree, 1);
+    assert_eq!(knots, &[0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(
+        control_points,
+        &[Point2::new(10.0, 20.0), Point2::new(10.0, 20.0)]
+    );
+    assert!(weights.is_none());
+    assert!(!periodic);
+    assert_eq!(result.ir.model.pcurves[0].fit_tolerance, Some(0.01));
+    assert_eq!(
+        result.ir.model.points[0].position,
+        cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0)
+    );
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 fn offset_surface_topology_partition_stream() -> Vec<u8> {
@@ -360,6 +402,70 @@ fn surface_curve_topology_partition_stream() -> Vec<u8> {
     surface_curve[18] = b'+';
     put_ref(&mut surface_curve, 19, 6);
     put_ref(&mut surface_curve, 21, 9);
+    put_ref(&mut surface_curve, 23, 9);
+    put_f64(&mut surface_curve, 25, 0.000_01);
+    stream.extend(surface_curve);
+    stream
+}
+
+fn pcurve_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 18, 25);
+    let point = stream
+        .windows(4)
+        .position(|window| window == [0, 29, 0, 11])
+        .expect("point record");
+    put_vec3(&mut stream, point + 16, [0.01, 0.02, 0.0]);
+
+    let mut wrapper = record(134, 23);
+    put_ref(&mut wrapper, 2, 20);
+    wrapper[18] = b'+';
+    put_ref(&mut wrapper, 19, 21);
+    put_ref(&mut wrapper, 21, 22);
+    stream.extend(wrapper);
+
+    let mut descriptor = record(136, 27);
+    put_ref(&mut descriptor, 2, 21);
+    put_ref(&mut descriptor, 4, 1);
+    put_ref(&mut descriptor, 8, 2);
+    put_ref(&mut descriptor, 10, 2);
+    put_ref(&mut descriptor, 14, 2);
+    descriptor[16] = 5;
+    put_ref(&mut descriptor, 23, 23);
+    put_ref(&mut descriptor, 25, 24);
+    stream.extend(descriptor);
+
+    let mut payload = record(135, 15 + 4 * 8);
+    put_ref(&mut payload, 2, 22);
+    payload[9..13].copy_from_slice(&4u32.to_be_bytes());
+    for (index, value) in [0.01, 0.02, 0.01, 0.02].into_iter().enumerate() {
+        put_f64(&mut payload, 15 + index * 8, value);
+    }
+    stream.extend(payload);
+
+    let mut multiplicities = record(127, 12);
+    multiplicities[4..6].copy_from_slice(&2u16.to_be_bytes());
+    put_ref(&mut multiplicities, 6, 23);
+    put_ref(&mut multiplicities, 8, 2);
+    put_ref(&mut multiplicities, 10, 2);
+    stream.extend(multiplicities);
+
+    let mut knots = record(128, 24);
+    knots[4..6].copy_from_slice(&2u16.to_be_bytes());
+    put_ref(&mut knots, 6, 24);
+    put_f64(&mut knots, 8, 0.0);
+    put_f64(&mut knots, 16, 1.0);
+    stream.extend(knots);
+
+    let mut surface_curve = record(137, 33);
+    put_ref(&mut surface_curve, 2, 25);
+    surface_curve[18] = b'+';
+    put_ref(&mut surface_curve, 19, 6);
+    put_ref(&mut surface_curve, 21, 20);
     put_ref(&mut surface_curve, 23, 9);
     put_f64(&mut surface_curve, 25, 0.000_01);
     stream.extend(surface_curve);
@@ -1986,7 +2092,10 @@ fn decode_tracks_fully_extended_compact_geometry_headers() {
 
     let mut surface_curve = surface_curve_topology_partition_stream();
     fully_extend_common_header(&mut surface_curve, [0, 137, 0, 12]);
-    assert_eq!(crate::topology::surface_curves(&surface_curve), [(12, 9)]);
+    let surface_curves = crate::topology::surface_curves(&surface_curve);
+    assert_eq!(surface_curves.len(), 1);
+    assert_eq!(surface_curves[0].xmt, 12);
+    assert_eq!(surface_curves[0].pcurve, 9);
 
     let mut trimmed = trimmed_topology_partition_stream();
     fully_extend_common_header(&mut trimmed, [0, 133, 0, 12]);

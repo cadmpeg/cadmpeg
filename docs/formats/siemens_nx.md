@@ -308,6 +308,8 @@ torus:    Y = A×X;  P = C_mm + (R + r·cos v)·(cos u · X + sin u · Y) + r·s
 
 **SP_CURVE (137):** surface ref `+19`, b_curve ref `+21`, original ref `+23`, `tolerance_to_original:f64 +25` (after ref shifts). It represents a curve-on-surface: a 2D B-curve in the surface parameter space.
 
+A B_CURVE descriptor with `dimension = 2` stores `(u,v)` control points rather than model-space coordinates. Rational payloads store homogeneous `(u·w,v·w,w)` triples. The coordinates use the supporting surface's native parameter units. Transfer to canonical IR multiplies both plane parameters by 1000 and multiplies the axial parameter of cylinders and cones by 1000; angular parameters and NURBS knot-space parameters remain unchanged. The SP_CURVE tolerance is a model-space distance in meters and transfers to millimeters.
+
 ### 6.5 Rolling-ball blend surface (BLEND_SURF 56)
 
 A BLEND_SURF FACE is a procedural canal or envelope surface. Record layout:

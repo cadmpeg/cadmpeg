@@ -294,6 +294,21 @@ pub struct TrimmedCurve {
     pub parameters: [f64; 2],
 }
 
+/// A type-137 curve-on-surface wrapper.
+#[derive(Debug, Clone, Copy)]
+pub struct SurfaceCurve {
+    /// Cross-reference index of the `SP_CURVE` record.
+    pub xmt: u32,
+    /// Supporting surface reference.
+    pub surface: u32,
+    /// Dimension-2 `B_CURVE` reference.
+    pub pcurve: u32,
+    /// Original model-space curve reference.
+    pub original: u32,
+    /// Fit tolerance to the original curve, in Parasolid metres.
+    pub tolerance: f64,
+}
+
 /// A type-60 offset surface referencing its support carrier.
 #[derive(Debug, Clone, Copy)]
 pub struct OffsetSurface {
@@ -468,14 +483,20 @@ pub fn offset_surfaces(stream: &[u8]) -> Vec<OffsetSurface> {
 }
 
 /// Decode type-137 surface-curve records as aliases of their 3D basis curves.
-pub fn surface_curves(stream: &[u8]) -> Vec<(u32, u32)> {
+pub fn surface_curves(stream: &[u8]) -> Vec<SurfaceCurve> {
     Graph::parse(stream)
         .of_kind(137)
         .filter_map(|node| {
             let mut at = node.compact_tail_offset()?;
             let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
             let tolerance = be::f64_at(&node.bytes, at)?;
-            (refs[0] > 1 && refs[1] > 1 && tolerance.is_finite()).then_some((node.xmt, refs[1]))
+            (refs[0] > 1 && refs[1] > 1 && tolerance.is_finite()).then_some(SurfaceCurve {
+                xmt: node.xmt,
+                surface: refs[0],
+                pcurve: refs[1],
+                original: refs[2],
+                tolerance,
+            })
         })
         .collect()
 }
