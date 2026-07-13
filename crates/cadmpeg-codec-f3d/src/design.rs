@@ -108,10 +108,11 @@ pub fn decode_persistent_references(
     scan: &ContainerScan,
 ) -> Result<Vec<PersistentReference>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
+    for (entry_ordinal, entry) in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .enumerate()
+        .filter(|(_, entry)| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         for &(name, kind) in &[
@@ -161,20 +162,23 @@ pub fn decode_persistent_references(
                 let Some(raw) = bytes.get(value_offset..value_offset + 8) else {
                     continue;
                 };
-                out.push(PersistentReference {
-                    id: format!("f3d:{}:persistent-reference#{offset}", entry.name),
-                    byte_offset: offset as u64,
-                    value_offset: (value_offset - offset) as u32,
-                    kind,
-                    value: u64::from_le_bytes(raw.try_into().expect(
-                        "invariant: raw is an 8-byte slice from bytes.get(range) of length 8",
-                    )),
-                });
+                out.push((
+                    entry_ordinal,
+                    PersistentReference {
+                        id: format!("f3d:{}:persistent-reference#{offset}", entry.name),
+                        byte_offset: offset as u64,
+                        value_offset: (value_offset - offset) as u32,
+                        kind,
+                        value: u64::from_le_bytes(raw.try_into().expect(
+                            "invariant: raw is an 8-byte slice from bytes.get(range) of length 8",
+                        )),
+                    },
+                ));
             }
         }
     }
-    out.sort_by_key(|reference| reference.value);
-    Ok(out)
+    out.sort_by_key(|(entry_ordinal, reference)| (*entry_ordinal, reference.byte_offset));
+    Ok(out.into_iter().map(|(_, reference)| reference).collect())
 }
 
 /// Decode every `EDGE_REFERENCE_LOST` marker record from each design

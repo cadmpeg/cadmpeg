@@ -5394,21 +5394,21 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
             byte_offset: 0,
             value_offset: 0,
             kind: PersistentReferenceKind::Point,
-            value: 700,
+            value: 900,
         },
         PersistentReference {
             id: "generated:persistent-reference#1".into(),
             byte_offset: 0,
             value_offset: 0,
             kind: PersistentReferenceKind::CurvePrimary,
-            value: 701,
+            value: 100,
         },
         PersistentReference {
             id: "generated:persistent-reference#2".into(),
             byte_offset: 0,
             value_offset: 0,
             kind: PersistentReferenceKind::CurveSecondary,
-            value: 702,
+            value: 500,
         },
     ];
     native.lost_edge_references = vec![LostEdgeReference {
@@ -5503,7 +5503,14 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         .iter()
         .any(|recipe| recipe.kind == ConstructionRecipeKind::BoundedFace));
     assert_eq!(native.persistent_references.len(), 3);
-    assert_eq!(native.persistent_references[0].value, 700);
+    assert_eq!(
+        native
+            .persistent_references
+            .iter()
+            .map(|reference| reference.value)
+            .collect::<Vec<_>>(),
+        [900, 100, 500]
+    );
     assert_eq!(
         native.persistent_references[1].kind,
         PersistentReferenceKind::CurvePrimary
