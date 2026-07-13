@@ -7,10 +7,11 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, ConfigurationId,
-    DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection,
-    FeatureDefinition, FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterId,
-    ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, RuledSurfaceMode, ScaleCenter,
-    SketchSpace, SurfaceContinuity, SurfaceExtension, TrimRegion, VariableRadius, WrapMode,
+    DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent, FaceMotion,
+    FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length,
+    ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, RuledSurfaceMode,
+    ScaleCenter, SketchSpace, SurfaceContinuity, SurfaceExtension, TrimRegion, VariableRadius,
+    WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -444,15 +445,21 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                 .enumerate()
                 .map(move |(ordinal, name)| {
                     let expression = &feature.parameters[&name];
+                    let display = dimension_display(expression);
                     let properties = feature
                         .dimension_properties
                         .get(&name)
                         .cloned()
                         .unwrap_or_default();
+                    let parse_value = |value: &str| match display {
+                        Some(DimensionDisplay::Diameter) => parse_dimension_display_length(value)
+                            .map(|value| ParameterValue::Length(Length(value))),
+                        None => parse_native_parameter_literal(feature, &name, value),
+                    };
                     let value = properties
                         .get("Value")
-                        .and_then(|value| parse_native_parameter_literal(feature, &name, value))
-                        .or_else(|| parse_native_parameter_literal(feature, &name, expression));
+                        .and_then(|value| parse_value(value))
+                        .or_else(|| parse_value(expression));
                     DesignParameter {
                         id: neutral_parameter_id(feature, ordinal),
                         owner: neutral_feature_id(&feature.id),
@@ -460,6 +467,7 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                         properties,
                         name,
                         expression: expression.clone(),
+                        display,
                         value,
                         dependencies: Vec::new(),
                     }
@@ -2658,6 +2666,10 @@ fn parse_bool(value: &str) -> Option<bool> {
 }
 
 fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
+    if dimension_display(expression) == Some(DimensionDisplay::Diameter) {
+        return parse_dimension_display_length(expression)
+            .map(|value| ParameterValue::Length(Length(value)));
+    }
     if let Some(value) = parse_bool(expression.trim()) {
         return Some(ParameterValue::Boolean(value));
     }
@@ -2675,6 +2687,22 @@ fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
         .parse::<f64>()
         .ok()
         .map(ParameterValue::Real)
+}
+
+fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
+    expression
+        .trim()
+        .starts_with("<MOD-DIAM>")
+        .then_some(DimensionDisplay::Diameter)
+}
+
+fn parse_dimension_display_length(expression: &str) -> Option<f64> {
+    let value = expression
+        .trim()
+        .strip_prefix("<MOD-DIAM>")
+        .unwrap_or(expression)
+        .trim();
+    parse_dimension_length_mm(value)
 }
 
 fn parse_neutral_parameter_literal(
@@ -2991,6 +3019,12 @@ fn sync_neutral_parameters(
                 parameter.id.0
             )));
         };
+        if parameter.display != dimension_display(&parameter.expression) {
+            return Err(CodecError::Malformed(format!(
+                "SLDPRT parameter {} has display semantics inconsistent with its expression",
+                parameter.id.0
+            )));
+        }
         if parse_neutral_parameter_literal(owner, &parameter.name, &parameter.expression)
             .is_some_and(|literal| parameter.value.as_ref() != Some(&literal))
         {

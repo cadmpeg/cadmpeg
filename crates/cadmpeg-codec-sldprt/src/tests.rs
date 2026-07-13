@@ -3154,6 +3154,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         ordinal: 0,
         name: "Pitch".into(),
         expression: "D1@Sketch1 * 2".into(),
+        display: None,
         value: None,
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
@@ -5133,7 +5134,7 @@ fn semantic_writer_rejects_conflicting_configuration_edits() {
 
 #[test]
 fn decode_projects_every_dimension_as_a_neutral_parameter() {
-    use cadmpeg_ir::features::{Angle, Length, ParameterValue};
+    use cadmpeg_ir::features::{Angle, DimensionDisplay, Length, ParameterValue};
 
     let mut source = sldprt_with_body(&triangle_body());
     let keywords = format!(
@@ -5142,6 +5143,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             <Dimension Name="DisplayAngle">45.00{degree}</Dimension>
             <Dimension Name="Count">4</Dimension>
             <Dimension Name="Diameter">{diameter}2.5</Dimension>
+            <Dimension Name="ModifiedDiameter">&lt;MOD-DIAM&gt;3.18</Dimension>
             <Dimension Name="Enabled">true</Dimension>
             <Dimension Name="Expression">D1@Sketch1 * 2</Dimension>
             <Dimension Name="Length">0.5in</Dimension>
@@ -5156,7 +5158,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let parameters = &decoded.ir.model.parameters;
-    assert_eq!(parameters.len(), 9);
+    assert_eq!(parameters.len(), 10);
     assert_eq!(
         parameters
             .iter()
@@ -5167,11 +5169,12 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             (1, "DisplayAngle"),
             (2, "Count"),
             (3, "Diameter"),
-            (4, "Enabled"),
-            (5, "Expression"),
-            (6, "Length"),
-            (7, "Radius"),
-            (8, "Ratio"),
+            (4, "ModifiedDiameter"),
+            (5, "Enabled"),
+            (6, "Expression"),
+            (7, "Length"),
+            (8, "Radius"),
+            (9, "Ratio"),
         ]
     );
     let value = |name: &str| {
@@ -5195,6 +5198,17 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
         value("Diameter"),
         Some(&ParameterValue::Length(Length(2.5)))
     );
+    assert_eq!(
+        value("ModifiedDiameter"),
+        Some(&ParameterValue::Length(Length(3.18)))
+    );
+    assert_eq!(
+        parameters
+            .iter()
+            .find(|parameter| parameter.name == "ModifiedDiameter")
+            .and_then(|parameter| parameter.display),
+        Some(DimensionDisplay::Diameter)
+    );
     assert_eq!(value("Enabled"), Some(&ParameterValue::Boolean(true)));
     assert_eq!(value("Expression"), None);
     assert_eq!(value("Length"), Some(&ParameterValue::Length(Length(12.7))));
@@ -5213,6 +5227,15 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
         .unwrap();
     radius.expression = "R2".into();
     radius.value = Some(ParameterValue::Length(Length(2.0)));
+    let modified_diameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "ModifiedDiameter")
+        .unwrap();
+    modified_diameter.expression = "<MOD-DIAM>4".into();
+    modified_diameter.value = Some(ParameterValue::Length(Length(4.0)));
     let display_angle = decoded
         .ir
         .model
@@ -5233,6 +5256,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     let native_parameters =
         &sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters;
     assert_eq!(native_parameters["Radius"], "R2");
+    assert_eq!(native_parameters["ModifiedDiameter"], "<MOD-DIAM>4");
     assert_eq!(
         native_parameters["DisplayAngle"],
         format!("30{}", '\u{00b0}')
@@ -5258,6 +5282,19 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
         Some(ParameterValue::Angle(Angle(angle)))
             if (*angle - std::f64::consts::FRAC_PI_6).abs() < 1e-12
     ));
+    assert_eq!(
+        regenerated
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == "ModifiedDiameter")
+            .map(|parameter| (parameter.display, parameter.value.as_ref())),
+        Some((
+            Some(DimensionDisplay::Diameter),
+            Some(&ParameterValue::Length(Length(4.0)))
+        ))
+    );
 }
 
 #[test]

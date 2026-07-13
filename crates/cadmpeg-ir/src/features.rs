@@ -92,6 +92,9 @@ pub struct DesignParameter {
     pub name: String,
     /// Literal or expression text used by the source system.
     pub expression: String,
+    /// Geometric display semantics carried by the dimension expression.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<DimensionDisplay>,
     /// Evaluated scalar when available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<ParameterValue>,
@@ -101,6 +104,14 @@ pub struct DesignParameter {
     /// Source dimension properties not represented by another field.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
+}
+
+/// Geometric interpretation requested by a dimension display modifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DimensionDisplay {
+    /// Displays the dimension as a diameter.
+    Diameter,
 }
 
 /// Canonical scalar value of a literal design parameter.
