@@ -486,7 +486,11 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
         return SurfaceNamedValue::ScalarArray {
             dimensions,
             count,
-            values: scalar_slots(&body[3..], slot_count, cache),
+            values: if name == "local_sys" {
+                row_scalar_slots(&body[3..], slot_count, cache)
+            } else {
+                scalar_slots(&body[3..], slot_count, cache)
+            },
         };
     }
     let mut values = Vec::new();
@@ -1147,6 +1151,36 @@ mod tests {
         );
         assert_eq!(slot_equality(&slots[0], &slots[1]), Some(true));
         assert_eq!(slot_equality(&slots[1], &slots[2]), Some(false));
+    }
+
+    #[test]
+    fn named_local_system_expands_row_lane_zero_forms() {
+        let body = [
+            0xf9, 0x04, 0x03, 0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4, 0x43, 0xe0,
+            0x00, 0x18, 0xe4,
+        ];
+
+        assert_eq!(
+            named_surface_value("local_sys", &body, &scalar::ScalarCache::default()),
+            SurfaceNamedValue::ScalarArray {
+                dimensions: 4,
+                count: 3,
+                values: vec![
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(1.0),
+                    Some(-0.5),
+                    Some(0.0),
+                    Some(1.0),
+                ],
+            }
+        );
     }
 
     #[test]
