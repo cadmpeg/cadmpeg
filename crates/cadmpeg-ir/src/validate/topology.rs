@@ -406,6 +406,112 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralSurfaceDefinition::Skin { construction } => {
+                fn check_law_curves(
+                    expression: &crate::geometry::LawExpression,
+                    ids: &IdSets,
+                    procedural: &crate::geometry::ProceduralSurface,
+                    findings: &mut Vec<Finding>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            if !ids.curves.contains(&curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            }
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                check_law_curves(operand, ids, procedural, findings);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                };
+                match &construction.layout {
+                    crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
+                        check_curve(path, findings);
+                        for profile in profiles {
+                            check_curve(&profile.curve, findings);
+                            if !ids.surfaces.contains(&profile.data.surface.0) {
+                                ref_error(
+                                    findings,
+                                    &procedural.id.0,
+                                    "surface",
+                                    &profile.data.surface.0,
+                                );
+                            }
+                        }
+                    }
+                    crate::geometry::SkinSurfaceLayout::Compact {
+                        curve,
+                        secondary_curve,
+                        ..
+                    } => {
+                        check_curve(curve, findings);
+                        check_curve(secondary_curve, findings);
+                    }
+                }
+                check_curve(&construction.parameter_curve, findings);
+                for variable in &construction.formula.variables {
+                    check_law_curves(variable, ids, procedural, findings);
+                }
+            }
+            ProceduralSurfaceDefinition::Net { construction } => {
+                fn check_law_curves(
+                    expression: &crate::geometry::LawExpression,
+                    ids: &IdSets,
+                    procedural: &crate::geometry::ProceduralSurface,
+                    findings: &mut Vec<Finding>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            if !ids.curves.contains(&curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            }
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                check_law_curves(operand, ids, procedural, findings);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for entry in construction
+                    .sections
+                    .iter()
+                    .flat_map(|section| &section.entries)
+                {
+                    for curve in std::iter::once(&entry.path.curve)
+                        .chain(entry.path.auxiliaries.iter())
+                        .chain(entry.profile.iter().map(|member| &member.curve))
+                    {
+                        if !ids.curves.contains(&curve.0) {
+                            ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                        }
+                    }
+                    for member in &entry.profile {
+                        if !ids.surfaces.contains(&member.data.surface.0) {
+                            ref_error(
+                                findings,
+                                &procedural.id.0,
+                                "surface",
+                                &member.data.surface.0,
+                            );
+                        }
+                    }
+                }
+                for formula in construction.formulas.iter() {
+                    for variable in &formula.variables {
+                        check_law_curves(variable, ids, procedural, findings);
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::G2Blend { construction } => {
                 for surface in [&construction.first.surface, &construction.second.surface]
                     .into_iter()
@@ -479,10 +585,89 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ref_error(findings, &procedural.id.0, "curve", &directrix.0);
                 }
             }
-            ProceduralSurfaceDefinition::Sweep { profile, spine } => {
+            ProceduralSurfaceDefinition::Sweep {
+                profile,
+                spine,
+                native,
+            } => {
+                fn check_law_curves(
+                    expression: &crate::geometry::LawExpression,
+                    ids: &IdSets,
+                    procedural: &crate::geometry::ProceduralSurface,
+                    findings: &mut Vec<Finding>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            if !ids.curves.contains(&curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            }
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                check_law_curves(operand, ids, procedural, findings);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 for curve in [profile, spine] {
                     if !ids.curves.contains(&curve.0) {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                }
+                if let Some(native) = native {
+                    let formulas: Vec<_> = match &native.layout {
+                        crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } => {
+                            formulas.iter().collect()
+                        }
+                        crate::geometry::SweepSurfaceLayout::ExplicitFormula {
+                            formula, ..
+                        } => {
+                            vec![formula]
+                        }
+                        crate::geometry::SweepSurfaceLayout::ExplicitGuide {
+                            guide_curve, ..
+                        } => {
+                            if !ids.curves.contains(&guide_curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &guide_curve.0);
+                            }
+                            Vec::new()
+                        }
+                        crate::geometry::SweepSurfaceLayout::ExplicitSurface {
+                            support_surface,
+                            auxiliary_curve,
+                            ..
+                        } => {
+                            if !ids.surfaces.contains(&support_surface.0) {
+                                ref_error(
+                                    findings,
+                                    &procedural.id.0,
+                                    "surface",
+                                    &support_surface.0,
+                                );
+                            }
+                            if let Some(curve) = auxiliary_curve {
+                                if !ids.curves.contains(&curve.0) {
+                                    ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                                }
+                            }
+                            Vec::new()
+                        }
+                        crate::geometry::SweepSurfaceLayout::LawDriven {
+                            first_law,
+                            second_law,
+                            formula,
+                            ..
+                        } => {
+                            check_law_curves(first_law, ids, procedural, findings);
+                            check_law_curves(second_law, ids, procedural, findings);
+                            vec![formula]
+                        }
+                    };
+                    for formula in formulas {
+                        for variable in &formula.variables {
+                            check_law_curves(variable, ids, procedural, findings);
+                        }
                     }
                 }
             }
@@ -556,7 +741,32 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ref_error(findings, &procedural.id.0, "unknown record", &record.0);
                 }
             }
-            ProceduralSurfaceDefinition::Unknown { record: None } => {}
+            ProceduralSurfaceDefinition::Helix { .. }
+            | ProceduralSurfaceDefinition::TSpline { .. }
+            | ProceduralSurfaceDefinition::Unknown { record: None } => {}
+            ProceduralSurfaceDefinition::Deformable { construction } => {
+                if !ids.surfaces.contains(&construction.support.0) {
+                    ref_error(
+                        findings,
+                        &procedural.id.0,
+                        "surface",
+                        &construction.support.0,
+                    );
+                }
+                if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
+                    surface, curve, ..
+                }
+                | crate::geometry::DeformableSurfaceData::Full { surface, curve, .. } =
+                    &construction.data
+                {
+                    if !ids.surfaces.contains(&surface.0) {
+                        ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                    }
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                }
+            }
         }
     }
     for procedural in &ir.model.procedural_curves {
@@ -565,6 +775,45 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         }
         match &procedural.definition {
             ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
+            ProceduralCurveDefinition::Law {
+                context,
+                primary,
+                additional,
+                ..
+            } => {
+                fn check(
+                    expression: &crate::geometry::LawExpression,
+                    ids: &IdSets,
+                    procedural: &crate::geometry::ProceduralCurve,
+                    findings: &mut Vec<Finding>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            if !ids.curves.contains(&curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            }
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                check(operand, ids, procedural, findings);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
+                    }
+                }
+                for formula in std::iter::once(primary).chain(additional) {
+                    for variable in &formula.variables {
+                        check(variable, ids, procedural, findings);
+                    }
+                }
+            }
             ProceduralCurveDefinition::Compound { components, .. } => {
                 for component in components {
                     if !ids.curves.contains(&component.0) {
@@ -572,7 +821,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
-            ProceduralCurveDefinition::Intersection { context } => {
+            ProceduralCurveDefinition::Intersection { context, .. } => {
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
                         if !ids.surfaces.contains(&surface.0) {

@@ -1879,6 +1879,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                 periodic: false,
             },
             wrapper_reversed: None,
+            native_tail_flags: None,
             parameter_range: None,
             fit_tolerance: None,
         });

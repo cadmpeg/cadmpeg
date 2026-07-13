@@ -250,6 +250,7 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
             axis,
             ref_direction,
             radius,
+            ratio,
             half_angle,
         } => {
             let local_radius = radius + v * half_angle.tan();
@@ -257,7 +258,7 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
                 *origin,
                 &[
                     (local_radius * u.cos(), *ref_direction),
-                    (local_radius * u.sin(), cross(*axis, *ref_direction)),
+                    (local_radius * ratio * u.sin(), cross(*axis, *ref_direction)),
                     (v, *axis),
                 ],
             ))

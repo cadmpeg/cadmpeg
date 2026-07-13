@@ -276,6 +276,7 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<CarrierGeometry> {
                 axis: unit(&v[3..6]),
                 ref_direction: unit(&v[9..12]),
                 radius: v[6] * LEN_TO_MM,
+                ratio: 1.0,
                 half_angle: sin.abs().clamp(0.0, 1.0).asin(),
             }));
         }
@@ -414,6 +415,7 @@ mod tests {
             axis,
             ref_direction,
             radius,
+            ratio,
             half_angle,
         }) = carrier.geometry
         else {
@@ -423,6 +425,7 @@ mod tests {
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
         assert!((radius - 1.5).abs() < 1e-12);
+        assert_eq!(ratio, 1.0);
         assert!((half_angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
     }
 

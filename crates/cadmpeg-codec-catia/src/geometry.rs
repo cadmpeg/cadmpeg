@@ -1530,6 +1530,7 @@ pub fn b2_cone_geometry(cone: &B2Cone) -> SurfaceGeometry {
         axis: Vector3::new(cone.axis[0], cone.axis[1], cone.axis[2]),
         ref_direction: Vector3::new(cone.t1[0], cone.t1[1], cone.t1[2]),
         radius: slant * cone.half_angle.sin(),
+        ratio: 1.0,
         half_angle: cone.half_angle,
     }
 }
@@ -2834,6 +2835,7 @@ fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
         axis,
         ref_direction: ref_direction?,
         radius,
+        ratio: 1.0,
         half_angle,
     })
 }
@@ -2981,6 +2983,7 @@ fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
         axis,
         ref_direction: ref_direction?,
         radius,
+        ratio: 1.0,
         half_angle,
     })
 }
@@ -3088,6 +3091,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                     ax, ay, semi,
                 )),
                 radius: 0.0,
+                ratio: 1.0,
                 half_angle: semi.abs() as f64,
             })
         }

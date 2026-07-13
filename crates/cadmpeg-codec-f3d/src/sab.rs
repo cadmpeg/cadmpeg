@@ -86,6 +86,116 @@ impl Record {
     }
 }
 
+/// Return the bytes inside payload subtype `token_index` when its immediately
+/// following identifier is `expected`.
+pub(crate) fn payload_subtype_span<'a>(
+    bytes: &'a [u8],
+    record: &Record,
+    token_index: usize,
+    ref_width: usize,
+    expected: &str,
+) -> Option<&'a [u8]> {
+    let range = payload_subtype_range(bytes, record, token_index, ref_width, expected)?;
+    bytes.get(range)
+}
+
+/// Return the absolute byte range inside payload subtype `token_index` when
+/// its immediately following identifier is `expected`.
+pub(crate) fn payload_subtype_range(
+    bytes: &[u8],
+    record: &Record,
+    token_index: usize,
+    ref_width: usize,
+    expected: &str,
+) -> Option<std::ops::Range<usize>> {
+    let limit = record.offset.checked_add(record.len)?;
+    let mut pos = record.offset;
+    let mut name_done = false;
+    let mut payload_index = 0usize;
+    while pos < limit {
+        let Ok((lexed, next)) = lex(bytes, pos, ref_width) else {
+            return None;
+        };
+        pos = next;
+        match lexed {
+            Lexed::SubIdent(_) if !name_done => {}
+            Lexed::Ident(_) if !name_done => name_done = true,
+            Lexed::Value(token) => {
+                name_done = true;
+                if payload_index == token_index {
+                    if !matches!(token, Token::SubtypeOpen) {
+                        return None;
+                    }
+                    let Ok((Lexed::Ident(name) | Lexed::SubIdent(name), start)) =
+                        lex(bytes, pos, ref_width)
+                    else {
+                        return None;
+                    };
+                    if name != expected {
+                        return None;
+                    }
+                    pos = start;
+                    let mut depth = 1usize;
+                    while pos < limit {
+                        let token_start = pos;
+                        let Ok((nested, next)) = lex(bytes, pos, ref_width) else {
+                            return None;
+                        };
+                        pos = next;
+                        match nested {
+                            Lexed::Value(Token::SubtypeOpen) => depth += 1,
+                            Lexed::Value(Token::SubtypeClose) => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    return Some(start..token_start);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    return None;
+                }
+                payload_index += 1;
+            }
+            Lexed::Terminator => return None,
+            Lexed::Ident(_) | Lexed::SubIdent(_) => {}
+        }
+    }
+    None
+}
+
+/// Return the absolute byte offset of one payload token by its framed index.
+pub(crate) fn payload_token_offset(
+    bytes: &[u8],
+    record: &Record,
+    ref_width: usize,
+    token_index: usize,
+) -> Option<usize> {
+    let limit = record.offset.checked_add(record.len)?;
+    let mut position = record.offset;
+    let mut name_done = false;
+    let mut payload_index = 0usize;
+    while position < limit {
+        let token_offset = position;
+        let (lexed, next) = lex(bytes, position, ref_width).ok()?;
+        position = next;
+        match lexed {
+            Lexed::SubIdent(_) if !name_done => {}
+            Lexed::Ident(_) if !name_done => name_done = true,
+            Lexed::Value(_) => {
+                name_done = true;
+                if payload_index == token_index {
+                    return Some(token_offset);
+                }
+                payload_index += 1;
+            }
+            Lexed::Terminator => return None,
+            Lexed::Ident(_) | Lexed::SubIdent(_) => {}
+        }
+    }
+    None
+}
+
 /// A framing error: an unrecognized tag or a truncated token payload leaves the
 /// stream un-synchronizable, so the caller falls back to metadata-only decode.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -259,6 +369,8 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
 }
 
 /// Byte offsets of payload tokens with `tag` inside one framed record.
+#[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn payload_token_offsets(
     bytes: &[u8],
     record: &Record,
@@ -367,4 +479,706 @@ pub fn frame(
     }
 
     Ok(records)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{frame, payload_subtype_span, payload_token_offset};
+
+    fn generated_pcurve_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 6];
+        bytes.extend_from_slice(b"pcurve");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1), (0x04, 0)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.extend_from_slice(&[0x0b, 0x0f, 0x0d, 11]);
+        bytes.extend_from_slice(b"exp_par_cur");
+        bytes.extend_from_slice(&[0x02, 0x7f, 0x10, 0x11]);
+        bytes
+    }
+
+    fn generated_ref_pcurve_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 6];
+        bytes.extend_from_slice(b"pcurve");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1), (0x04, 2), (0x0c, 20)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        for value in [-2.0f64, 4.0] {
+            bytes.push(0x06);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_cone_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 4];
+        bytes.extend_from_slice(b"cone");
+        bytes.extend_from_slice(&[0x0d, 7]);
+        bytes.extend_from_slice(b"surface");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        for (tag, values) in [
+            (0x13, [1.0f64, 2.0, 3.0]),
+            (0x14, [0.0, 0.0, 1.0]),
+            (0x14, [4.0, 0.0, 0.0]),
+        ] {
+            bytes.push(tag);
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes.push(0x06);
+        bytes.extend_from_slice(&0.5f64.to_le_bytes());
+        bytes.extend_from_slice(&[0x0b, 0x0b]);
+        for value in [-0.25f64, 0.75, 4.0] {
+            bytes.push(0x06);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0x0b; 5]);
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_sphere_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 6];
+        bytes.extend_from_slice(b"sphere");
+        bytes.extend_from_slice(&[0x0d, 7]);
+        bytes.extend_from_slice(b"surface");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x13);
+        for value in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x06);
+        bytes.extend_from_slice(&(-2.5f64).to_le_bytes());
+        for values in [[1.0f64, 0.0, 0.0], [0.0, 0.0, 1.0]] {
+            bytes.push(0x14);
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&[0x0b; 5]);
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_torus_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 5];
+        bytes.extend_from_slice(b"torus");
+        bytes.extend_from_slice(&[0x0d, 7]);
+        bytes.extend_from_slice(b"surface");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        for (tag, values) in [(0x13, [1.0f64, 2.0, 3.0]), (0x14, [0.0, 0.0, 1.0])] {
+            bytes.push(tag);
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        for value in [4.0f64, -5.0] {
+            bytes.push(0x06);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x14);
+        for value in [1.0f64, 0.0, 0.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0x0b; 5]);
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_plane_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 5];
+        bytes.extend_from_slice(b"plane");
+        bytes.extend_from_slice(&[0x0d, 7]);
+        bytes.extend_from_slice(b"surface");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        for (tag, values) in [
+            (0x13, [1.0f64, 2.0, 3.0]),
+            (0x14, [0.0, 0.0, 1.0]),
+            (0x14, [1.0, 0.0, 0.0]),
+        ] {
+            bytes.push(tag);
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&[0x0b, 0x11]);
+        bytes
+    }
+
+    fn generated_ellipse_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 7];
+        bytes.extend_from_slice(b"ellipse");
+        bytes.extend_from_slice(&[0x0d, 5]);
+        bytes.extend_from_slice(b"curve");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        for (tag, values) in [
+            (0x13, [1.0f64, 2.0, 3.0]),
+            (0x14, [0.0, 0.0, 1.0]),
+            (0x14, [4.0, 0.0, 0.0]),
+        ] {
+            bytes.push(tag);
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes.push(0x06);
+        bytes.extend_from_slice(&(-0.5f64).to_le_bytes());
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_straight_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 8];
+        bytes.extend_from_slice(b"straight");
+        bytes.extend_from_slice(&[0x0d, 5]);
+        bytes.extend_from_slice(b"curve");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        for (tag, values) in [(0x13, [1.0f64, 2.0, 3.0]), (0x14, [4.0, 5.0, 6.0])] {
+            bytes.push(tag);
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_degenerate_curve_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 16];
+        bytes.extend_from_slice(b"degenerate_curve");
+        bytes.extend_from_slice(&[0x0d, 5]);
+        bytes.extend_from_slice(b"curve");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x13);
+        for value in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0x0b, 0x0b, 0x11]);
+        bytes
+    }
+
+    fn generated_point_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 5];
+        bytes.extend_from_slice(b"point");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x13);
+        for value in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_edge_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 4];
+        bytes.extend_from_slice(b"edge");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1), (0x0c, 10)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x06);
+        bytes.extend_from_slice(&(-2.0f64).to_le_bytes());
+        bytes.push(0x0c);
+        bytes.extend_from_slice(&11i64.to_le_bytes()[..ref_width]);
+        bytes.push(0x06);
+        bytes.extend_from_slice(&3.0f64.to_le_bytes());
+        for value in [-1i64, 12] {
+            bytes.push(0x0c);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.extend_from_slice(&[0x0b, 0x07, 7]);
+        bytes.extend_from_slice(b"unknown");
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_tcoedge_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 7];
+        bytes.extend_from_slice(b"tcoedge");
+        for (tag, value) in [
+            (0x0c, -1i64),
+            (0x04, -1),
+            (0x0c, -1),
+            (0x0c, 1),
+            (0x0c, 2),
+            (0x0c, 3),
+            (0x0c, 4),
+        ] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x0b);
+        for (tag, value) in [(0x0c, 5i64), (0x04, 0), (0x0c, 6)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        for value in [-2.0f64, 3.0] {
+            bytes.push(0x06);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_face_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 4];
+        bytes.extend_from_slice(b"face");
+        for (tag, value) in [
+            (0x0c, -1i64),
+            (0x04, -1),
+            (0x0c, -1),
+            (0x0c, -1),
+            (0x0c, 1),
+            (0x0c, 2),
+            (0x04, 0),
+            (0x0c, 3),
+        ] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.extend_from_slice(&[0x0b, 0x0a, 0x0b, 0x11]);
+        bytes
+    }
+
+    fn generated_tvertex_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 7];
+        bytes.extend_from_slice(b"tvertex");
+        for (tag, value) in [
+            (0x0c, -1i64),
+            (0x04, -1),
+            (0x0c, -1),
+            (0x0c, 10),
+            (0x04, 1),
+            (0x0c, 11),
+        ] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x06);
+        bytes.extend_from_slice(&0.001f64.to_le_bytes());
+        for value in [2.0f32, 3.0] {
+            bytes.push(0x05);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_body_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 4];
+        bytes.extend_from_slice(b"body");
+        for (tag, value) in [
+            (0x0c, -1i64),
+            (0x04, 42),
+            (0x0c, -1),
+            (0x0c, 1),
+            (0x0c, -1),
+            (0x0c, -1),
+        ] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_transform_record() -> Vec<u8> {
+        let mut bytes = vec![0x0d, 9];
+        bytes.extend_from_slice(b"transform");
+        for vector in [
+            [1.0f64, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [2.0, 3.0, 4.0],
+        ] {
+            bytes.push(0x14);
+            for value in vector {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes.push(0x06);
+        bytes.extend_from_slice(&1.0f64.to_le_bytes());
+        bytes.extend_from_slice(&[0x0b, 0x0a, 0x0b, 0x11]);
+        bytes
+    }
+
+    fn generated_wire_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 4];
+        bytes.extend_from_slice(b"wire");
+        for (tag, value) in [
+            (0x0c, -1i64),
+            (0x04, -1),
+            (0x0c, -1),
+            (0x0c, -1),
+            (0x0c, 1),
+            (0x0c, 2),
+            (0x0c, -1),
+        ] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.extend_from_slice(&[0x0b, 0x11]);
+        bytes
+    }
+
+    fn generated_rgb_attribute_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 9];
+        bytes.extend_from_slice(b"rgb_color");
+        bytes.extend_from_slice(&[0x0e, 2]);
+        bytes.extend_from_slice(b"st");
+        bytes.extend_from_slice(&[0x0d, 6]);
+        bytes.extend_from_slice(b"attrib");
+        bytes.push(0x0c);
+        bytes.extend_from_slice(&(-1i64).to_le_bytes()[..ref_width]);
+        for value in [0.1f64, 0.2, 0.3] {
+            bytes.push(0x06);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_timestamp_attribute_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 13];
+        bytes.extend_from_slice(b"ATTRIB_CUSTOM");
+        bytes.extend_from_slice(&[0x0d, 6]);
+        bytes.extend_from_slice(b"attrib");
+        bytes.push(0x0c);
+        bytes.extend_from_slice(&(-1i64).to_le_bytes()[..ref_width]);
+        bytes.extend_from_slice(&[0x07, 20]);
+        bytes.extend_from_slice(b"Timestamp_attrib_def");
+        bytes.push(0x04);
+        bytes.extend_from_slice(&1i64.to_le_bytes()[..ref_width]);
+        bytes.push(0x06);
+        bytes.extend_from_slice(&1_579_392_000_000_007.0f64.to_le_bytes());
+        bytes.push(0x11);
+        bytes
+    }
+
+    #[test]
+    fn generated_payload_subtype_lookup_uses_declared_integer_width() {
+        for ref_width in [4, 8] {
+            let bytes = generated_pcurve_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated record");
+            let record = records.first().expect("generated pcurve");
+            assert!(payload_subtype_span(&bytes, record, 5, ref_width, "exp_par_cur").is_some());
+            assert!(payload_subtype_span(&bytes, record, 4, ref_width, "exp_par_cur").is_none());
+            assert!(payload_subtype_span(&bytes, record, 5, ref_width, "bad_par_cur").is_none());
+            assert_eq!(
+                bytes[payload_token_offset(&bytes, record, ref_width, 4).unwrap()],
+                0x0b
+            );
+            assert_eq!(
+                bytes[payload_token_offset(&bytes, record, ref_width, 5).unwrap()],
+                0x0f
+            );
+            assert!(payload_token_offset(&bytes, record, ref_width, 8).is_none());
+        }
+    }
+
+    #[test]
+    fn generated_ref_pcurve_range_has_fixed_payload_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_ref_pcurve_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated ref pcurve");
+            let record = &records[0];
+            for (index, expected) in [(5usize, -2.0f64), (6, 4.0)] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("range field offset");
+                assert_eq!(bytes[offset], 0x06);
+                assert_eq!(
+                    f64::from_le_bytes(bytes[offset + 1..offset + 9].try_into().unwrap()),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn generated_cone_geometry_has_fixed_payload_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_cone_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated cone");
+            let record = &records[0];
+            for (index, tag) in [
+                (3usize, 0x13),
+                (4, 0x14),
+                (5, 0x14),
+                (6, 0x06),
+                (9, 0x06),
+                (10, 0x06),
+                (11, 0x06),
+            ] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("cone field offset");
+                assert_eq!(bytes[offset], tag);
+            }
+        }
+    }
+
+    #[test]
+    fn generated_sphere_geometry_has_fixed_payload_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_sphere_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated sphere");
+            let record = &records[0];
+            for (index, tag) in [(3usize, 0x13), (4, 0x06), (5, 0x14), (6, 0x14)] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("sphere field offset");
+                assert_eq!(bytes[offset], tag);
+            }
+        }
+    }
+
+    #[test]
+    fn generated_torus_geometry_has_fixed_payload_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_torus_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated torus");
+            let record = &records[0];
+            for (index, tag) in [(3usize, 0x13), (4, 0x14), (5, 0x06), (6, 0x06), (7, 0x14)] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("torus field offset");
+                assert_eq!(bytes[offset], tag);
+            }
+        }
+    }
+
+    #[test]
+    fn generated_plane_geometry_has_fixed_payload_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_plane_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated plane");
+            let record = &records[0];
+            for (index, tag) in [(3usize, 0x13), (4, 0x14), (5, 0x14)] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("plane field offset");
+                assert_eq!(bytes[offset], tag);
+            }
+        }
+    }
+
+    #[test]
+    fn generated_ellipse_geometry_has_fixed_payload_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_ellipse_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated ellipse");
+            let record = &records[0];
+            for (index, tag) in [(3usize, 0x13), (4, 0x14), (5, 0x14), (6, 0x06)] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("ellipse field offset");
+                assert_eq!(bytes[offset], tag);
+            }
+        }
+    }
+
+    #[test]
+    fn generated_straight_geometry_has_fixed_payload_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_straight_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated straight");
+            let record = &records[0];
+            for (index, tag) in [(3usize, 0x13), (4, 0x14)] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("straight field offset");
+                assert_eq!(bytes[offset], tag);
+            }
+        }
+    }
+
+    #[test]
+    fn generated_degenerate_curve_has_fixed_point_field_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_degenerate_curve_record(ref_width);
+            let records =
+                frame(&bytes, 0, bytes.len(), ref_width).expect("generated degenerate curve");
+            let record = &records[0];
+            let offset = payload_token_offset(&bytes, record, ref_width, 3)
+                .expect("degenerate point offset");
+            assert_eq!(bytes[offset], 0x13);
+        }
+    }
+
+    #[test]
+    fn generated_point_has_fixed_position_field_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_point_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated point");
+            let record = &records[0];
+            let offset =
+                payload_token_offset(&bytes, record, ref_width, 3).expect("point position offset");
+            assert_eq!(bytes[offset], 0x13);
+        }
+    }
+
+    #[test]
+    fn generated_topology_ranges_have_fixed_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let edge = generated_edge_record(ref_width);
+            let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
+            for index in [4usize, 6] {
+                let offset = payload_token_offset(&edge, &records[0], ref_width, index)
+                    .expect("edge range offset");
+                assert_eq!(edge[offset], 0x06);
+            }
+
+            let coedge = generated_tcoedge_record(ref_width);
+            let records =
+                frame(&coedge, 0, coedge.len(), ref_width).expect("generated tolerant coedge");
+            for index in [11usize, 12] {
+                let offset = payload_token_offset(&coedge, &records[0], ref_width, index)
+                    .expect("tolerant coedge parameter offset");
+                assert_eq!(coedge[offset], 0x06);
+            }
+        }
+    }
+
+    #[test]
+    fn generated_topology_senses_have_fixed_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let face = generated_face_record(ref_width);
+            let records = frame(&face, 0, face.len(), ref_width).expect("generated face");
+            for index in [8usize, 9, 10] {
+                let offset = payload_token_offset(&face, &records[0], ref_width, index)
+                    .expect("face sense field");
+                assert!(matches!(face[offset], 0x0a | 0x0b));
+            }
+
+            let coedge = generated_tcoedge_record(ref_width);
+            let records =
+                frame(&coedge, 0, coedge.len(), ref_width).expect("generated tolerant coedge");
+            let offset = payload_token_offset(&coedge, &records[0], ref_width, 7)
+                .expect("coedge sense field");
+            assert_eq!(coedge[offset], 0x0b);
+
+            let edge = generated_edge_record(ref_width);
+            let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
+            let sense =
+                payload_token_offset(&edge, &records[0], ref_width, 9).expect("edge sense field");
+            let continuity = payload_token_offset(&edge, &records[0], ref_width, 10)
+                .expect("edge continuity field");
+            assert_eq!(edge[sense], 0x0b);
+            assert_eq!(edge[continuity], 0x07);
+        }
+    }
+
+    #[test]
+    fn generated_tolerant_vertex_has_fixed_metadata_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_tvertex_record(ref_width);
+            let records =
+                frame(&bytes, 0, bytes.len(), ref_width).expect("generated tolerant vertex");
+            let record = &records[0];
+            for (index, tag) in [
+                (3usize, 0x0c),
+                (4, 0x04),
+                (5, 0x0c),
+                (6, 0x06),
+                (7, 0x05),
+                (8, 0x05),
+            ] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("tolerant vertex metadata field");
+                assert_eq!(bytes[offset], tag);
+            }
+        }
+    }
+
+    #[test]
+    fn generated_ownership_keys_have_fixed_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let body = generated_body_record(ref_width);
+            let records = frame(&body, 0, body.len(), ref_width).expect("generated body");
+            let key =
+                payload_token_offset(&body, &records[0], ref_width, 1).expect("body key field");
+            assert_eq!(body[key], 0x04);
+
+            let edge = generated_edge_record(ref_width);
+            let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
+            let owner =
+                payload_token_offset(&edge, &records[0], ref_width, 7).expect("edge owner field");
+            assert_eq!(edge[owner], 0x0c);
+        }
+    }
+
+    #[test]
+    fn generated_transform_has_fixed_matrix_and_hint_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_transform_record();
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated transform");
+            let record = &records[0];
+            for (index, tag) in [(0usize, 0x14), (1, 0x14), (2, 0x14), (3, 0x14), (4, 0x06)] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("transform numeric field");
+                assert_eq!(bytes[offset], tag);
+            }
+            for index in 5..=7 {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("transform hint field");
+                assert!(matches!(bytes[offset], 0x0a | 0x0b));
+            }
+        }
+    }
+
+    #[test]
+    fn generated_wire_has_fixed_side_field_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_wire_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated wire");
+            let offset =
+                payload_token_offset(&bytes, &records[0], ref_width, 7).expect("wire side field");
+            assert_eq!(bytes[offset], 0x0b);
+        }
+    }
+
+    #[test]
+    fn generated_attribute_values_have_semantic_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let color = generated_rgb_attribute_record(ref_width);
+            let records =
+                frame(&color, 0, color.len(), ref_width).expect("generated RGB attribute");
+            for index in 1..=3 {
+                let offset = payload_token_offset(&color, &records[0], ref_width, index)
+                    .expect("RGB channel field");
+                assert_eq!(color[offset], 0x06);
+            }
+
+            let timestamp = generated_timestamp_attribute_record(ref_width);
+            let records = frame(&timestamp, 0, timestamp.len(), ref_width)
+                .expect("generated timestamp attribute");
+            for (index, tag) in [(1usize, 0x07), (2, 0x04), (3, 0x06)] {
+                let offset = payload_token_offset(&timestamp, &records[0], ref_width, index)
+                    .expect("timestamp semantic field");
+                assert_eq!(timestamp[offset], tag);
+            }
+        }
+    }
 }

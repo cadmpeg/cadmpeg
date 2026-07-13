@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::ids::CoedgeId;
+use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 /// Provenance link from a solved B-rep coedge to its source sketch curve.
@@ -38,11 +38,149 @@ pub struct PersistentDesignLink {
     pub target: AttributeTarget,
     /// Fusion persistent design-entity id string, stable across regeneration.
     pub design_id: String,
+    /// Native entity-class discriminator: body `3`, face `2`, or edge `1`.
+    pub entity_kind: i64,
+    /// Design-stream reference paired with this persistent identifier.
+    pub design_reference: i64,
     /// Position of this id in the entity's persistent-id history, in assignment order.
     pub ordinal: u32,
     /// Whether this is the active persistent id for `target`, as opposed to a
     /// superseded historical id retained for provenance.
     pub is_current: bool,
+}
+
+/// Original authoring time attached to a solved ASM entity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CreationTimestamp {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep entity carrying the timestamp attribute.
+    pub target: AttributeTarget,
+    /// Source SAB record index of the timestamp attribute.
+    pub record_index: u32,
+    /// Creation time as microseconds since the Unix epoch.
+    pub unix_microseconds: f64,
+}
+
+/// Kernel continuity classification stored on one solved ASM edge record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EdgeContinuity {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep edge carrying the classification.
+    pub edge: EdgeId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Native curve-parameterization sense before IR carrier normalization.
+    pub sense: cadmpeg_ir::topology::Sense,
+    /// Native continuity token, normally `tangent` or `unknown`.
+    pub continuity: String,
+}
+
+/// Native owner-coedge selector stored on one ASM edge record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EdgeOwnership {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep edge carrying the selector.
+    pub edge: EdgeId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Selected coedge, or null when the native edge has no owner back-reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_coedge: Option<CoedgeId>,
+}
+
+/// Native owner-edge and endpoint-slot fields stored on one ASM vertex.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VertexOwnership {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep vertex carrying the fields.
+    pub vertex: VertexId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Edge selected as this vertex record's native owner.
+    pub owning_edge: EdgeId,
+    /// Endpoint slot on `owning_edge`: `0` for start, `1` for end.
+    pub endpoint_index: u8,
+}
+
+/// Conditional containment direction on a double-sided ASM face.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FaceContainment {
+    /// The face bounds the inside side of its surface.
+    In,
+    /// The face bounds the outside side of its surface.
+    Out,
+}
+
+/// Native sidedness fields stored on one ASM face record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FaceSidedness {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep face carrying the fields.
+    pub face: FaceId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Sense token stored in the native face record before carrier normalization.
+    pub native_sense: cadmpeg_ir::topology::Sense,
+    /// IR sense produced when `native_sense` was decoded.
+    pub normalized_sense: cadmpeg_ir::topology::Sense,
+    /// Conditional containment direction; absence denotes a single-sided face.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containment: Option<FaceContainment>,
+}
+
+/// Native f32 tail retained from one tolerant ASM vertex record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TolerantVertexTail {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep vertex carrying the tolerant record.
+    pub vertex: VertexId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Two trailing f32 slots following the model-space tolerance.
+    pub trailing_floats: [f32; 2],
+}
+
+/// Parameter interval stored by one tolerant ASM coedge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TolerantCoedgeParameters {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep coedge carrying the tolerant interval.
+    pub coedge: CoedgeId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Native start and end parameters following the base coedge fields.
+    pub parameter_range: [f64; 2],
+}
+
+/// Native side classification stored on an ASM wire record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WireSide {
+    /// Wire bounds the inside side.
+    In,
+    /// Wire bounds the outside side.
+    Out,
+}
+
+/// Native wire record projected onto one neutral-IR shell.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WireTopology {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Neutral shell containing the wire's edge ring.
+    pub shell: ShellId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Native side classification.
+    pub side: WireSide,
 }
 
 /// Design `BulkStream` regeneration-recipe family.
@@ -140,6 +278,8 @@ pub struct DesignMaterialAssignment {
     pub id: String,
     /// ASM body key resolved through the Design body map.
     pub asm_body_key: u64,
+    /// Byte offset of the body-map ASM key.
+    pub asm_body_key_offset: u64,
     /// Numeric suffix of `entity_id`.
     pub entity_suffix: u64,
     /// Byte offset of the body-map entity suffix.
@@ -190,6 +330,29 @@ pub enum DesignObjectKind {
     CommonData,
 }
 
+/// JSON configuration payload stored in a Fusion design-configuration entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignConfiguration {
+    /// Stable identity derived from the ZIP entry name.
+    pub id: String,
+    /// Complete ZIP entry name used for native regeneration.
+    pub entry_name: String,
+    /// Native configuration entry family.
+    pub kind: DesignConfigurationKind,
+    /// Complete decoded JSON payload, including unrecognized fields.
+    pub payload: serde_json::Value,
+}
+
+/// Native Fusion design-configuration entry family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignConfigurationKind {
+    /// A `.dsgcfg` configuration table.
+    Table,
+    /// A `.dsgcfgrule` configuration rule.
+    Rule,
+}
+
 /// One GUID-owned object-table record from the Design `MetaStream`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignObject {
@@ -208,6 +371,10 @@ pub struct DesignObject {
     pub self_guid: String,
     /// Byte offset of the self-GUID bytes in the Design `MetaStream`.
     pub self_guid_offset: u64,
+    /// Number of zero delimiter bytes between the self GUID and the optional
+    /// parent GUID.
+    #[serde(default)]
+    pub zero_run_length: u32,
     /// GUID of the owning object, when the source record carried a secondary GUID
     /// after the zero-run delimiter; `None` for root-level objects.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -288,8 +455,17 @@ pub struct SketchRelation {
     /// Nullable or role-specific references stored before the owner reference.
     #[serde(default)]
     pub auxiliary_references: Vec<u32>,
+    /// Payload offsets parallel to `auxiliary_references`, relative to the record.
+    #[serde(default)]
+    pub auxiliary_reference_offsets: Vec<u32>,
     /// Record indices of the entities related by this relation.
     pub members: Vec<u32>,
+    /// Payload offsets parallel to `members`, relative to the record.
+    #[serde(default)]
+    pub member_offsets: Vec<u32>,
+    /// Payload offset of `owner_reference`, relative to the record.
+    #[serde(default)]
+    pub owner_reference_offset: u32,
     /// Source sketch-constraint bitmask.
     pub state: u32,
     /// Constraint kinds selected by `state`.
@@ -300,6 +476,9 @@ pub struct SketchRelation {
     /// Record indices of entities returned or affected by this relation, distinct
     /// from `members`.
     pub return_members: Vec<u32>,
+    /// Payload offsets parallel to `return_members`, relative to the record.
+    #[serde(default)]
+    pub return_member_offsets: Vec<u32>,
     /// Complete 101-byte source record for native replay/write.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
@@ -355,6 +534,9 @@ pub struct SketchPoint {
     pub byte_offset: u64,
     /// Byte offset of the first coordinate relative to the record start.
     pub coordinate_offset: u32,
+    /// Optional persistent genesis identity carried ahead of the point identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_genesis: Option<u64>,
     /// Persistent Fusion identifier for this sketch point, stable across regeneration.
     pub persistent_id: u64,
     /// Record index of a paired/companion record (e.g. the owning sketch curve),
@@ -381,6 +563,9 @@ pub struct SketchCurveIdentity {
     pub byte_offset: u64,
     /// Byte offset of the fixed analytic geometry payload relative to the record start.
     pub geometry_offset: u32,
+    /// Optional persistent genesis identity carried ahead of the curve identities.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_genesis: Option<u64>,
     /// Primary persistent identifier of the source sketch curve.
     pub primary_id: u64,
     /// Secondary persistent identifier of the source sketch curve (e.g. its
@@ -459,6 +644,58 @@ pub struct DesignBodyMember {
     pub entity_suffix: u64,
     /// Source per-member flag word from the `BodiesRoot` list entry.
     pub flags: u16,
+}
+
+/// Design browser-node visibility joined to one solved ASM body.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BodyVisibility {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep body controlled by the browser node.
+    pub body: BodyId,
+    /// Design `BulkStream` ZIP entry containing the browser node.
+    pub stream: String,
+    /// Byte offset of the browser node's hidden flag within `stream`.
+    pub byte_offset: u64,
+    /// Byte offset of the joined body-map ASM key within `stream`.
+    pub asm_body_key_offset: u64,
+    /// ASM body key used by the BREP body-map join.
+    pub asm_body_key: u64,
+    /// Numeric Design entity suffix stored by both joined records.
+    pub entity_suffix: u64,
+    /// Display visibility after inverting the native hidden flag.
+    pub visible: bool,
+}
+
+/// Native Design-join key stored on one ASM body record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BodyNativeKey {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved body carrying the key.
+    pub body: BodyId,
+    /// Source SAB body record index.
+    pub record_index: u32,
+    /// Non-negative Design-join key; absence is the native `-1` sub-body sentinel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asm_body_key: Option<u64>,
+}
+
+/// Native rotation, reflection, and shear classifications on an ASM transform.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TransformHints {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved body referencing the transform record.
+    pub body: BodyId,
+    /// Source SAB transform record index.
+    pub record_index: u32,
+    /// The linear transform includes rotation.
+    pub rotation: bool,
+    /// The linear transform includes reflection.
+    pub reflection: bool,
+    /// The linear transform includes shear.
+    pub shear: bool,
 }
 
 /// One entity in the Fusion ACT change-tracking table.

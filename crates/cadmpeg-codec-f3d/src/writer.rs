@@ -10,9 +10,9 @@ use crate::history_records::{
 };
 use crate::native::F3dNative;
 use crate::records::{
-    ActEntity, ActGuid, ActRootComponent, ConstructionRecipeKind, DesignMaterialAssignment,
-    DesignObjectKind, LostEdgeReference, PersistentDesignLink, PersistentReferenceKind,
-    SketchCurveGeometry, SketchCurveLink,
+    ActEntity, ActGuid, ActRootComponent, ConstructionRecipeKind, CreationTimestamp,
+    DesignMaterialAssignment, DesignObjectKind, LostEdgeReference, PersistentDesignLink,
+    PersistentReferenceKind, SketchCurveGeometry, SketchCurveLink,
 };
 use cadmpeg_ir::codec::{Codec, CodecError, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
@@ -20,6 +20,7 @@ use cadmpeg_ir::geometry::{
     BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
     ProceduralCurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
+use cadmpeg_ir::ids::{CoedgeId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -43,14 +44,144 @@ fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
         .map_err(Into::into)
 }
 
+fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
+    let mut surface_owners = BTreeSet::new();
+    for procedural in &target.model.procedural_surfaces {
+        if !surface_owners.insert(&procedural.surface) {
+            return Err(CodecError::Malformed(format!(
+                "surface {} has multiple procedural constructions",
+                procedural.surface
+            )));
+        }
+        let surface = target
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == procedural.surface)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "procedural surface {} references missing carrier {}",
+                    procedural.id, procedural.surface
+                ))
+            })?;
+        if !matches!(
+            surface.geometry,
+            SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. }
+        ) {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural surface {} cannot retain its construction on analytic carrier {}",
+                procedural.id, surface.id
+            )));
+        }
+    }
+
+    let mut curve_owners = BTreeSet::new();
+    for procedural in &target.model.procedural_curves {
+        if !curve_owners.insert(&procedural.curve) {
+            return Err(CodecError::Malformed(format!(
+                "curve {} has multiple procedural constructions",
+                procedural.curve
+            )));
+        }
+        let curve = target
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == procedural.curve)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "procedural curve {} references missing carrier {}",
+                    procedural.id, procedural.curve
+                ))
+            })?;
+        if !matches!(curve.geometry, CurveGeometry::Nurbs(_)) {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural curve {} cannot retain its construction on non-NURBS carrier {}",
+                procedural.id, curve.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_source_less_topology_tolerances(target: &CadIr) -> Result<(), CodecError> {
+    if let Some(face) = target
+        .model
+        .faces
+        .iter()
+        .find(|face| face.tolerance.is_some())
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize face {} tolerance losslessly",
+            face.id
+        )));
+    }
+    if let Some(edge) = target
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.tolerance.is_some())
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize edge {} tolerance until the tedge tolerance grammar is defined",
+            edge.id
+        )));
+    }
+    Ok(())
+}
+
+fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<(), CodecError> {
+    if let Some(tessellation) = target.model.tessellations.first() {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize neutral tessellation {} losslessly",
+            tessellation.id
+        )));
+    }
+    if let Some(surface) = target
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.source_object.is_some())
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize source-object association on surface {} losslessly",
+            surface.id
+        )));
+    }
+    if let Some(curve) = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.source_object.is_some())
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize source-object association on curve {} losslessly",
+            curve.id
+        )));
+    }
+    Ok(())
+}
+
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
 pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-    let _ = f3d_native(target)?;
+    let native = f3d_native(target)?;
     if !target.model.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "source-less F3D generation does not support SubD surfaces".into(),
         ));
+    }
+    validate_source_less_procedural_carriers(target)?;
+    validate_source_less_topology_tolerances(target)?;
+    validate_source_less_auxiliary_geometry(target)?;
+    if let Some(native) = &native {
+        validate_source_less_history_graph(target, native)?;
+        validate_source_less_act(native)?;
+        validate_source_less_design_bindings(native)?;
+        validate_source_less_design_ownership(native)?;
+        validate_source_less_sketch_graph(native)?;
+        validate_source_less_recipes(native)?;
+        validate_source_less_design_links(target, native)?;
     }
     let smbh = encode_planar_triangle_smbh(target)?;
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -60,12 +191,59 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D manifest: {error}")))?;
     archive.write_all(b"cadmpeg-generated-f3d")?;
     archive
+        .start_file("Properties.dat", options)
+        .map_err(|error| CodecError::Malformed(format!("cannot create F3D properties: {error}")))?;
+    archive.write_all(&0u32.to_le_bytes())?;
+    archive
         .start_file(
-            "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+            "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
             options,
         )
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D BREP entry: {error}")))?;
     archive.write_all(&smbh)?;
+    if let Some(native) = &native {
+        let mut configuration_names = BTreeSet::new();
+        let mut configuration_ids = BTreeSet::new();
+        for configuration in &native.design_configurations {
+            if !configuration_names.insert(configuration.entry_name.as_str())
+                || !configuration_ids.insert(configuration.id.as_str())
+            {
+                return Err(CodecError::Malformed(format!(
+                    "duplicate F3D configuration identity: {}",
+                    configuration.entry_name
+                )));
+            }
+            if !configuration.payload.is_object() {
+                return Err(CodecError::Malformed(format!(
+                    "F3D configuration JSON must be an object: {}",
+                    configuration.entry_name
+                )));
+            }
+            let valid_name = match configuration.kind {
+                crate::records::DesignConfigurationKind::Table => {
+                    configuration.entry_name.ends_with(".dsgcfg")
+                }
+                crate::records::DesignConfigurationKind::Rule => {
+                    configuration.entry_name.ends_with(".dsgcfgrule")
+                }
+            };
+            if !valid_name {
+                return Err(CodecError::Malformed(format!(
+                    "F3D configuration kind conflicts with entry name: {}",
+                    configuration.entry_name
+                )));
+            }
+            archive
+                .start_file(&configuration.entry_name, options)
+                .map_err(|error| {
+                    CodecError::Malformed(format!("cannot create F3D configuration entry: {error}"))
+                })?;
+            let payload = serde_json::to_vec(&configuration.payload).map_err(|error| {
+                CodecError::Malformed(format!("cannot encode F3D configuration JSON: {error}"))
+            })?;
+            archive.write_all(&payload)?;
+        }
+    }
     if let Some(bulk_stream) = encode_design_bulkstream(target)? {
         archive
             .start_file("FusionAssetName[Active]/Design1/BulkStream.dat", options)
@@ -113,6 +291,655 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         .into_inner();
     writer.write_all(&bytes)?;
     Ok(())
+}
+
+fn validate_source_less_recipes(native: &F3dNative) -> Result<(), CodecError> {
+    if native
+        .construction_recipes
+        .windows(2)
+        .any(|pair| pair[0].record_index > pair[1].record_index)
+    {
+        return Err(CodecError::Malformed(
+            "F3D construction recipes must be ordered by record index".into(),
+        ));
+    }
+    let mut record_indices = BTreeSet::new();
+    let mut group_counts = HashMap::new();
+    for recipe in &native.construction_recipes {
+        if !record_indices.insert(recipe.record_index) {
+            return Err(CodecError::Malformed(format!(
+                "multiple F3D construction recipes use record index {}",
+                recipe.record_index
+            )));
+        }
+        let expected = group_counts
+            .entry((recipe.kind, recipe.design_id.as_deref()))
+            .or_insert(0u32);
+        if recipe.recipe_index != *expected {
+            return Err(CodecError::Malformed(format!(
+                "F3D construction recipe {} has noncontiguous group index {}",
+                recipe.id, recipe.recipe_index
+            )));
+        }
+        *expected += 1;
+        if recipe.design_id_binary_u32 {
+            let binary_id = recipe
+                .design_id
+                .as_deref()
+                .and_then(|id| id.parse::<u32>().ok());
+            if recipe.kind != ConstructionRecipeKind::BoundedFace
+                || binary_id.is_none_or(|id| !(100..100_000).contains(&id))
+                || binary_id.and_then(|id| i32::try_from(id).ok()) != Some(recipe.record_index)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D binary bounded-face recipe {} requires design id == record index in [100, 100000)",
+                    recipe.id
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecError> {
+    let sketch_owners = native
+        .design_entity_headers
+        .iter()
+        .filter(|header| header.object_kind == Some(DesignObjectKind::Sketch))
+        .map(|header| header.entity_suffix)
+        .collect::<BTreeSet<_>>();
+    let root_indices = native
+        .design_entity_headers
+        .iter()
+        .filter(|header| header.object_kind == Some(DesignObjectKind::Sketch))
+        .flat_map(|header| header.reference_indices.iter().copied())
+        .collect::<BTreeSet<_>>();
+    let mut typed_indices = BTreeMap::<u32, &str>::new();
+    for (record_index, id) in native
+        .sketch_points
+        .iter()
+        .map(|record| (record.record_index, record.id.as_str()))
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|record| (record.record_index, record.id.as_str())),
+        )
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .map(|record| (record.record_index, record.id.as_str())),
+        )
+    {
+        if let Some(before) = typed_indices.insert(record_index, id) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch records {before} and {id} share record index {record_index}"
+            )));
+        }
+    }
+    for relation in &native.sketch_relations {
+        if !root_indices.contains(&relation.record_index) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch relation {} is not reachable from a sketch header",
+                relation.id
+            )));
+        }
+        if !sketch_owners.contains(&u64::from(relation.owner_reference)) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch relation {} references missing sketch owner {}",
+                relation.id, relation.owner_reference
+            )));
+        }
+    }
+    let mut reachable_headers = root_indices;
+    for relation in &native.sketch_relations {
+        reachable_headers.extend(relation.members.iter().copied());
+        reachable_headers.extend(relation.return_members.iter().copied());
+    }
+    let mut explicit_headers = BTreeSet::new();
+    for header in &native.design_record_headers {
+        if !explicit_headers.insert(header.record_index) {
+            return Err(CodecError::Malformed(format!(
+                "multiple F3D Design record headers use index {}",
+                header.record_index
+            )));
+        }
+        if typed_indices.contains_key(&header.record_index) {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design record header {} shadows a typed sketch record",
+                header.id
+            )));
+        }
+        if !reachable_headers.contains(&header.record_index) {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design record header {} is unreachable from the sketch graph",
+                header.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), CodecError> {
+    let mut objects_by_guid = BTreeMap::new();
+    let mut entity_kinds = BTreeMap::new();
+    for object in &native.design_objects {
+        if objects_by_guid
+            .insert(object.self_guid.as_str(), object)
+            .is_some()
+        {
+            return Err(CodecError::Malformed(format!(
+                "duplicate F3D Design object GUID: {}",
+                object.self_guid
+            )));
+        }
+        for entity_id in &object.entity_ids {
+            if entity_kinds
+                .insert(*entity_id, object.kind)
+                .is_some_and(|before| before != object.kind)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Design entity {entity_id} is owned by conflicting object kinds"
+                )));
+            }
+        }
+    }
+    for object in &native.design_objects {
+        if object.parent_guid.as_deref().is_some_and(|parent| {
+            parent == object.self_guid || !objects_by_guid.contains_key(parent)
+        }) {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design object {} has a missing or self parent",
+                object.id
+            )));
+        }
+        let mut ancestors = BTreeSet::new();
+        let mut cursor = object;
+        while let Some(parent) = cursor.parent_guid.as_deref() {
+            if !ancestors.insert(parent) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Design object hierarchy contains a cycle at {parent}"
+                )));
+            }
+            cursor = objects_by_guid[parent];
+        }
+    }
+    for header in &native.design_entity_headers {
+        let suffix = header
+            .entity_id
+            .rsplit('_')
+            .next()
+            .and_then(|suffix| suffix.parse::<u64>().ok());
+        if suffix != Some(header.entity_suffix) {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design header {} entity id conflicts with suffix {}",
+                header.id, header.entity_suffix
+            )));
+        }
+        let owned_kind = entity_kinds.get(&header.entity_suffix).copied();
+        if header.object_kind != owned_kind {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design header {} object kind conflicts with MetaStream ownership",
+                header.id
+            )));
+        }
+        if header.object_kind == Some(DesignObjectKind::Sketch) {
+            if header.record_reference.is_none()
+                || header.declared_reference_count
+                    != u32::try_from(header.reference_indices.len()).ok()
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Design sketch header {} has an inconsistent reference list",
+                    header.id
+                )));
+            }
+        } else if header.record_reference.is_some()
+            || header.declared_reference_count.is_some()
+            || !header.reference_indices.is_empty()
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D non-sketch Design header {} carries discarded sketch references",
+                header.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_source_less_design_bindings(native: &F3dNative) -> Result<(), CodecError> {
+    let mut by_key = BTreeMap::new();
+    let mut by_suffix = BTreeMap::new();
+    let mut insert = |key: u64, suffix: u64, id: &str| -> Result<(), CodecError> {
+        if by_key
+            .insert(key, suffix)
+            .is_some_and(|before| before != suffix)
+            || by_suffix
+                .insert(suffix, key)
+                .is_some_and(|before| before != key)
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design body binding {id} conflicts with the body-map key/suffix bijection"
+            )));
+        }
+        Ok(())
+    };
+    for assignment in &native.design_material_assignments {
+        if assignment.physical_token.is_none() {
+            return Err(CodecError::Malformed(format!(
+                "F3D material assignment {} requires its physical-material token",
+                assignment.id
+            )));
+        }
+        let parsed_suffix = assignment
+            .entity_id
+            .rsplit('_')
+            .next()
+            .and_then(|suffix| suffix.parse::<u64>().ok());
+        if parsed_suffix != Some(assignment.entity_suffix) {
+            return Err(CodecError::Malformed(format!(
+                "F3D material assignment {} entity id conflicts with suffix {}",
+                assignment.id, assignment.entity_suffix
+            )));
+        }
+        insert(
+            assignment.asm_body_key,
+            assignment.entity_suffix,
+            &assignment.id,
+        )?;
+    }
+    for visibility in &native.body_visibilities {
+        insert(
+            visibility.asm_body_key,
+            visibility.entity_suffix,
+            &visibility.id,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_source_less_act(native: &F3dNative) -> Result<(), CodecError> {
+    let mut entity_keys = BTreeSet::new();
+    for entity in &native.act_entities {
+        if !entity_keys.insert((entity.record_index, entity.entity_id.as_str())) {
+            return Err(CodecError::Malformed(format!(
+                "duplicate F3D ACT entity identity: {}:{}",
+                entity.record_index, entity.entity_id
+            )));
+        }
+        if !entity.in_table && entity.channels.is_empty() {
+            return Err(CodecError::Malformed(format!(
+                "F3D ACT entity {} has neither a table row nor channels",
+                entity.id
+            )));
+        }
+        if entity.channels.is_empty() != entity.channel_class_tag.is_none() {
+            return Err(CodecError::Malformed(format!(
+                "F3D ACT entity {} requires a class tag exactly when channels are present",
+                entity.id
+            )));
+        }
+    }
+    let mut channel_counts = BTreeMap::<&str, usize>::new();
+    for guid in native
+        .act_entities
+        .iter()
+        .flat_map(|entity| entity.channels.values())
+    {
+        *channel_counts.entry(guid).or_default() += 1;
+    }
+    let mut predicted = Vec::new();
+    for (ordinal, guid) in native.act_guids.iter().enumerate() {
+        if guid.ordinal != ordinal as u32 {
+            return Err(CodecError::Malformed(
+                "F3D ACT GUID ordinals must be contiguous in stream order".into(),
+            ));
+        }
+        let remaining = channel_counts.entry(guid.guid.as_str()).or_default();
+        if *remaining > 0 {
+            *remaining -= 1;
+        } else {
+            predicted.push(guid.guid.as_str());
+        }
+    }
+    predicted.extend(
+        native
+            .act_entities
+            .iter()
+            .flat_map(|entity| entity.channels.values().map(String::as_str)),
+    );
+    if predicted
+        .into_iter()
+        .ne(native.act_guids.iter().map(|guid| guid.guid.as_str()))
+    {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D generation cannot preserve this ACT GUID pool ordering".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_source_less_history_graph(
+    target: &CadIr,
+    native: &F3dNative,
+) -> Result<(), CodecError> {
+    let Some(namespace) = target.native.namespace("f3d") else {
+        return Ok(());
+    };
+    let stored_count = |arena: &str| namespace.arenas.get(arena).map_or(0, Vec::len);
+    for arena in [
+        "asm_histories",
+        "asm_delta_states",
+        "asm_bulletin_boards",
+        "asm_entity_changes",
+        "asm_history_records",
+    ] {
+        if let Some(records) = namespace.arenas.get(arena) {
+            let unique = records
+                .iter()
+                .map(|record| record.id.as_str())
+                .collect::<BTreeSet<_>>();
+            if unique.len() != records.len() {
+                return Err(CodecError::Malformed(format!(
+                    "F3D {arena} contains duplicate record ids"
+                )));
+            }
+        }
+    }
+    let states = native
+        .asm_histories
+        .iter()
+        .flat_map(|history| &history.states)
+        .collect::<Vec<_>>();
+    let boards = states
+        .iter()
+        .flat_map(|state| &state.bulletin_boards)
+        .collect::<Vec<_>>();
+    let changes = boards.iter().flat_map(|board| &board.changes).count();
+    let records = states.iter().flat_map(|state| &state.records).count();
+    let reconstructed = [
+        ("asm_histories", native.asm_histories.len()),
+        ("asm_delta_states", states.len()),
+        ("asm_bulletin_boards", boards.len()),
+        ("asm_entity_changes", changes),
+        ("asm_history_records", records),
+    ];
+    if reconstructed
+        .iter()
+        .any(|(arena, count)| stored_count(arena) != *count)
+    {
+        return Err(CodecError::Malformed(
+            "F3D ASM history graph contains orphaned or ambiguously parented records".into(),
+        ));
+    }
+    for state in states {
+        for record in &state.records {
+            if record.raw_bytes.is_empty() {
+                return Err(CodecError::Malformed(format!(
+                    "F3D ASM history record {} has an empty native payload",
+                    record.id
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Result<(), CodecError> {
+    let coedges = target
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| &coedge.id)
+        .collect::<BTreeSet<_>>();
+    let mut linked_coedges = BTreeSet::new();
+    for link in &native.sketch_curve_links {
+        if !coedges.contains(&link.coedge) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch-curve link {} targets a missing coedge {}",
+                link.id, link.coedge.0
+            )));
+        }
+        if !linked_coedges.insert(&link.coedge) {
+            return Err(CodecError::Malformed(format!(
+                "source-less F3D generation supports one sketch-curve link per coedge: {}",
+                link.coedge.0
+            )));
+        }
+    }
+
+    let bodies = target
+        .model
+        .bodies
+        .iter()
+        .map(|item| &item.id)
+        .collect::<BTreeSet<_>>();
+    let faces = target
+        .model
+        .faces
+        .iter()
+        .map(|item| &item.id)
+        .collect::<BTreeSet<_>>();
+    let edges = target
+        .model
+        .edges
+        .iter()
+        .map(|item| &item.id)
+        .collect::<BTreeSet<_>>();
+    let mut groups: BTreeMap<(u8, String), Vec<&PersistentDesignLink>> = BTreeMap::new();
+    for link in &native.persistent_design_links {
+        let target_key = match &link.target {
+            cadmpeg_ir::attributes::AttributeTarget::Body(id) if bodies.contains(id) => {
+                Some((3, id.0.clone()))
+            }
+            cadmpeg_ir::attributes::AttributeTarget::Face(id) if faces.contains(id) => {
+                Some((2, id.0.clone()))
+            }
+            cadmpeg_ir::attributes::AttributeTarget::Edge(id) if edges.contains(id) => {
+                Some((1, id.0.clone()))
+            }
+            _ => None,
+        };
+        let Some(target_key) = target_key else {
+            return Err(CodecError::Malformed(format!(
+                "F3D persistent design link {} has an unsupported or missing target",
+                link.id
+            )));
+        };
+        groups.entry(target_key).or_default().push(link);
+    }
+    for (target, mut links) in groups {
+        links.sort_by_key(|link| link.ordinal);
+        for (ordinal, link) in links.iter().enumerate() {
+            if link.ordinal != ordinal as u32 || link.is_current != (ordinal + 1 == links.len()) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D persistent design links for {target:?} require contiguous ordinals and only the final link current"
+                )));
+            }
+        }
+    }
+
+    let coedge_ids = target
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| &coedge.id)
+        .collect::<BTreeSet<_>>();
+    let mut tolerant_coedges = BTreeSet::new();
+    for parameters in &native.tolerant_coedge_parameters {
+        if !coedge_ids.contains(&parameters.coedge) {
+            return Err(CodecError::Malformed(format!(
+                "F3D tolerant-coedge metadata {} targets missing coedge {}",
+                parameters.id, parameters.coedge
+            )));
+        }
+        if !tolerant_coedges.insert(&parameters.coedge) {
+            return Err(CodecError::Malformed(format!(
+                "multiple F3D tolerant-coedge records target {}",
+                parameters.coedge
+            )));
+        }
+        if parameters
+            .parameter_range
+            .iter()
+            .any(|value| !value.is_finite())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D tolerant-coedge metadata {} has non-finite parameters",
+                parameters.id
+            )));
+        }
+    }
+
+    let vertices = target
+        .model
+        .vertices
+        .iter()
+        .map(|item| &item.id)
+        .collect::<BTreeSet<_>>();
+    let shells = target
+        .model
+        .shells
+        .iter()
+        .map(|item| &item.id)
+        .collect::<BTreeSet<_>>();
+    macro_rules! validate_unique_targets {
+        ($items:expr, $field:ident, $valid:expr, $label:literal) => {{
+            let mut seen = BTreeSet::new();
+            for item in $items {
+                if !$valid.contains(&item.$field) {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D {} metadata {} targets missing entity {}",
+                        $label, item.id, item.$field
+                    )));
+                }
+                if !seen.insert(&item.$field) {
+                    return Err(CodecError::Malformed(format!(
+                        "multiple F3D {} records target {}",
+                        $label, item.$field
+                    )));
+                }
+            }
+        }};
+    }
+    validate_unique_targets!(&native.body_native_keys, body, bodies, "body-native-key");
+    validate_unique_targets!(&native.body_visibilities, body, bodies, "body-visibility");
+    validate_unique_targets!(&native.transform_hints, body, bodies, "transform-hint");
+    validate_unique_targets!(&native.edge_continuities, edge, edges, "edge-continuity");
+    validate_unique_targets!(&native.edge_ownerships, edge, edges, "edge-ownership");
+    validate_unique_targets!(
+        &native.vertex_ownerships,
+        vertex,
+        vertices,
+        "vertex-ownership"
+    );
+    validate_unique_targets!(&native.face_sidedness, face, faces, "face-sidedness");
+    validate_unique_targets!(
+        &native.tolerant_vertex_tails,
+        vertex,
+        vertices,
+        "tolerant-vertex"
+    );
+    validate_unique_targets!(&native.wire_topologies, shell, shells, "wire-topology");
+
+    for visibility in &native.body_visibilities {
+        let body = target
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.id == visibility.body)
+            .expect("validated body-visibility target");
+        if body.visible != Some(visibility.visible) {
+            return Err(CodecError::Malformed(format!(
+                "F3D body visibility {} conflicts with body {} visibility",
+                visibility.id, visibility.body
+            )));
+        }
+        let ordinal = target
+            .model
+            .bodies
+            .iter()
+            .position(|body| body.id == visibility.body)
+            .expect("validated body-visibility target");
+        let emitted_key = source_less_body_key(target, body, ordinal)?;
+        if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key) {
+            return Err(CodecError::Malformed(format!(
+                "F3D body visibility {} uses an ASM key different from body {}",
+                visibility.id, visibility.body
+            )));
+        }
+    }
+    for hints in &native.transform_hints {
+        if target
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.id == hints.body)
+            .is_none_or(|body| body.transform.is_none())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D transform hints {} target a body without a transform",
+                hints.id
+            )));
+        }
+    }
+    for tail in &native.tolerant_vertex_tails {
+        if tail.trailing_floats.iter().any(|value| !value.is_finite())
+            || target
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| vertex.id == tail.vertex)
+                .is_none_or(|vertex| vertex.tolerance.is_none())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",
+                tail.id
+            )));
+        }
+    }
+    for wire in &native.wire_topologies {
+        if target
+            .model
+            .shells
+            .iter()
+            .find(|shell| shell.id == wire.shell)
+            .is_none_or(|shell| shell.wire_edges.is_empty())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D wire metadata {} targets a shell without wire edges",
+                wire.id
+            )));
+        }
+    }
+    for sidedness in &native.face_sidedness {
+        let face = target
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id == sidedness.face)
+            .expect("validated face-sidedness target");
+        if sidedness.normalized_sense != face.sense {
+            return Err(CodecError::Malformed(format!(
+                "F3D face sidedness {} normalized sense conflicts with face {}",
+                sidedness.id, sidedness.face
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn tolerant_coedge_range(
+    target: &CadIr,
+    coedge: &CoedgeId,
+) -> Result<Option<[f64; 2]>, CodecError> {
+    Ok(f3d_native(target)?.and_then(|native| {
+        native
+            .tolerant_coedge_parameters
+            .into_iter()
+            .find(|parameters| parameters.coedge == *coedge)
+            .map(|parameters| parameters.parameter_range)
+    }))
 }
 
 fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
@@ -212,9 +1039,12 @@ fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
 }
 
 fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
-    let Some(native) = f3d_native(target)? else {
-        return Ok(None);
-    };
+    let native = f3d_native(target)?.unwrap_or_default();
+    let has_body_visibility = target
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.visible.is_some());
     if native.construction_recipes.is_empty()
         && native.persistent_references.is_empty()
         && native.lost_edge_references.is_empty()
@@ -225,63 +1055,104 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         && native.sketch_points.is_empty()
         && native.sketch_curve_identities.is_empty()
         && native.sketch_relations.is_empty()
+        && !has_body_visibility
     {
         return Ok(None);
     }
 
     let mut out = Vec::new();
-    if !native.design_material_assignments.is_empty() {
-        let unique = native
-            .design_material_assignments
+    let mut body_map = native
+        .design_material_assignments
+        .iter()
+        .map(|assignment| (assignment.asm_body_key, assignment.entity_suffix))
+        .collect::<BTreeMap<_, _>>();
+    let mut visibility_rows = Vec::new();
+    for (ordinal, body) in target.model.bodies.iter().enumerate() {
+        let Some(visible) = body.visible else {
+            continue;
+        };
+        let metadata = native
+            .body_visibilities
             .iter()
-            .map(|assignment| (assignment.asm_body_key, assignment.entity_suffix))
-            .collect::<BTreeSet<_>>();
-        let count = u32::try_from(unique.len())
+            .find(|metadata| metadata.body == body.id);
+        let asm_body_key = match metadata {
+            Some(metadata) => metadata.asm_body_key,
+            None => u64::try_from(source_less_body_key(target, body, ordinal)?).map_err(|_| {
+                CodecError::Malformed("source-less ASM body key is negative".into())
+            })?,
+        };
+        let entity_suffix = metadata
+            .map(|metadata| metadata.entity_suffix)
+            .or_else(|| body_map.get(&asm_body_key).copied())
+            .unwrap_or(asm_body_key);
+        body_map.insert(asm_body_key, entity_suffix);
+        visibility_rows.push((entity_suffix, visible));
+    }
+    if !body_map.is_empty() {
+        let count = u32::try_from(body_map.len())
             .map_err(|_| CodecError::Malformed("Design body map exceeds u32::MAX".into()))?;
         out.extend_from_slice(&count.to_le_bytes());
-        for (body_key, entity_suffix) in unique {
+        for (body_key, entity_suffix) in body_map {
             out.extend_from_slice(&body_key.to_le_bytes());
             out.extend_from_slice(&entity_suffix.to_le_bytes());
         }
         out.extend_from_slice(&0u64.to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
         native_lp_utf16(&mut out, "BREP.generated.smbh")?;
-        for assignment in &native.design_material_assignments {
-            native_lp_utf16(&mut out, &assignment.entity_id)?;
-            native_lp_utf16(&mut out, &assignment.visual_guid)?;
-            native_lp_utf16(
-                &mut out,
-                assignment
-                    .physical_token
-                    .as_deref()
-                    .unwrap_or("PrismMaterial-Generated"),
-            )?;
-            native_lp_utf16(&mut out, "Body")?;
-            native_lp_utf16(&mut out, "00000000-0000-0000-0000-000000000000")?;
-            native_lp_utf16(&mut out, "BA5EE55E-9982-449B-9D66-9F036540E140")?;
-            native_lp_utf16(
-                &mut out,
-                assignment
-                    .visual_preset
-                    .as_deref()
-                    .unwrap_or("Prism-Generated"),
-            )?;
+    }
+    for assignment in &native.design_material_assignments {
+        native_lp_utf16(&mut out, &assignment.entity_id)?;
+        native_lp_utf16(
+            &mut out,
+            assignment
+                .physical_token
+                .as_deref()
+                .expect("validated source-less material token"),
+        )?;
+        native_lp_utf16(&mut out, "Body")?;
+        native_lp_utf16(&mut out, "00000000-0000-0000-0000-000000000000")?;
+        native_lp_utf16(&mut out, &assignment.visual_guid)?;
+        native_lp_utf16(&mut out, "BA5EE55E-9982-449B-9D66-9F036540E140")?;
+        if let Some(visual_preset) = &assignment.visual_preset {
+            native_lp_utf16(&mut out, visual_preset)?;
         }
     }
+    for (ordinal, (entity_suffix, visible)) in visibility_rows.into_iter().enumerate() {
+        native_lp_utf16(
+            &mut out,
+            &format!("00000000-0000-0000-0000-{:012X}", ordinal + 1),
+        )?;
+        out.push(u8::from(!visible));
+        out.extend_from_slice(&[0x01, 0x01]);
+        out.extend_from_slice(&entity_suffix.to_le_bytes());
+    }
     for recipe in &native.construction_recipes {
+        let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
         if let Some(design_id) = &recipe.design_id {
-            if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
+            if recipe.design_id_binary_u32 {
+                // The binary bounded-face layout aliases the record-index slot.
+            } else if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
                 return Err(CodecError::Malformed(format!(
                     "source-less Design recipe id must be three ASCII digits: {design_id}"
                 )));
+            } else {
+                prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
+                prefix[4..7].copy_from_slice(design_id.as_bytes());
             }
-            prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
-            prefix[4..7].copy_from_slice(design_id.as_bytes());
         }
         prefix[11..15].copy_from_slice(&recipe.record_index.to_le_bytes());
+        prefix[23..27].copy_from_slice(
+            &u32::try_from(name.len())
+                .map_err(|_| CodecError::Malformed("Design recipe name exceeds u32::MAX".into()))?
+                .to_le_bytes(),
+        );
         out.extend_from_slice(&prefix);
-        out.extend_from_slice(construction_recipe_name(recipe.kind));
+        out.extend_from_slice(name);
+        out.extend_from_slice(&(-1i64).to_le_bytes());
+        for value in [2i32, 0, -1, 1, -1] {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
     }
     if !native.design_body_members.is_empty() {
         native_lp_ascii(&mut out, "BodiesRoot")?;
@@ -343,6 +1214,9 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
     }
     for reference in &native.persistent_references {
         out.extend_from_slice(persistent_reference_name(reference.kind));
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.extend_from_slice(&14u32.to_le_bytes());
+        out.extend_from_slice(&[0; 14]);
         out.extend_from_slice(&23u32.to_le_bytes());
         out.extend_from_slice(b"IntrinsicMetaTypeuint64");
         out.extend_from_slice(&reference.value.to_le_bytes());
@@ -378,19 +1252,23 @@ fn encode_sketch_point(
             "source-less sketch point coordinates must be finite".into(),
         ));
     }
-    let mut record = [0u8; 112];
+    let shift = usize::from(point.entity_genesis.is_some()) * 52;
+    let mut record = vec![0u8; 112 + shift];
     encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
     record[20] = 1;
-    record[21..25].copy_from_slice(&1u32.to_le_bytes());
-    record[25..29].copy_from_slice(&6u32.to_le_bytes());
-    record[29..35].copy_from_slice(b"pt_tag");
-    record[35..39].copy_from_slice(&23u32.to_le_bytes());
-    record[39..62].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[62..70].copy_from_slice(&point.persistent_id.to_le_bytes());
-    record[70] = 1;
-    record[71..75].copy_from_slice(&point.paired_reference.to_le_bytes());
-    record[89..97].copy_from_slice(&(point.coordinates.u / 10.0).to_le_bytes());
-    record[97..105].copy_from_slice(&(point.coordinates.v / 10.0).to_le_bytes());
+    record[21..25].copy_from_slice(&(1 + u32::from(point.entity_genesis.is_some())).to_le_bytes());
+    if let Some(entity_genesis) = point.entity_genesis {
+        encode_entity_genesis(&mut record, entity_genesis);
+    }
+    record[25 + shift..29 + shift].copy_from_slice(&6u32.to_le_bytes());
+    record[29 + shift..35 + shift].copy_from_slice(b"pt_tag");
+    record[35 + shift..39 + shift].copy_from_slice(&23u32.to_le_bytes());
+    record[39 + shift..62 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    record[62 + shift..70 + shift].copy_from_slice(&point.persistent_id.to_le_bytes());
+    record[70 + shift] = 1;
+    record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
+    record[89 + shift..97 + shift].copy_from_slice(&(point.coordinates.u / 10.0).to_le_bytes());
+    record[97 + shift..105 + shift].copy_from_slice(&(point.coordinates.v / 10.0).to_le_bytes());
     out.extend_from_slice(&record);
     Ok(())
 }
@@ -399,20 +1277,24 @@ fn encode_sketch_curve_identity(
     out: &mut Vec<u8>,
     curve: &crate::records::SketchCurveIdentity,
 ) -> Result<(), CodecError> {
-    let mut record = vec![0u8; 133];
+    let shift = usize::from(curve.entity_genesis.is_some()) * 52;
+    let mut record = vec![0u8; 133 + shift];
     encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index)?;
     record[20] = 1;
-    record[21..25].copy_from_slice(&2u32.to_le_bytes());
-    record[25..29].copy_from_slice(&14u32.to_le_bytes());
-    record[29..43].copy_from_slice(b"crv_primary_id");
-    record[43..47].copy_from_slice(&23u32.to_le_bytes());
-    record[47..70].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[70..78].copy_from_slice(&curve.primary_id.to_le_bytes());
-    record[78..82].copy_from_slice(&16u32.to_le_bytes());
-    record[82..98].copy_from_slice(b"crv_secondary_id");
-    record[98..102].copy_from_slice(&23u32.to_le_bytes());
-    record[102..125].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[125..133].copy_from_slice(&curve.secondary_id.to_le_bytes());
+    record[21..25].copy_from_slice(&(2 + u32::from(curve.entity_genesis.is_some())).to_le_bytes());
+    if let Some(entity_genesis) = curve.entity_genesis {
+        encode_entity_genesis(&mut record, entity_genesis);
+    }
+    record[25 + shift..29 + shift].copy_from_slice(&14u32.to_le_bytes());
+    record[29 + shift..43 + shift].copy_from_slice(b"crv_primary_id");
+    record[43 + shift..47 + shift].copy_from_slice(&23u32.to_le_bytes());
+    record[47 + shift..70 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    record[70 + shift..78 + shift].copy_from_slice(&curve.primary_id.to_le_bytes());
+    record[78 + shift..82 + shift].copy_from_slice(&16u32.to_le_bytes());
+    record[82 + shift..98 + shift].copy_from_slice(b"crv_secondary_id");
+    record[98 + shift..102 + shift].copy_from_slice(&23u32.to_le_bytes());
+    record[102 + shift..125 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    record[125 + shift..133 + shift].copy_from_slice(&curve.secondary_id.to_le_bytes());
     match curve.geometry.as_ref() {
         Some(SketchCurveGeometry::Line {
             start,
@@ -486,6 +1368,14 @@ fn encode_sketch_curve_identity(
     }
     out.extend_from_slice(&record);
     Ok(())
+}
+
+fn encode_entity_genesis(record: &mut [u8], entity_genesis: u64) {
+    record[25..29].copy_from_slice(&13u32.to_le_bytes());
+    record[29..42].copy_from_slice(b"EntityGenesis");
+    record[42..46].copy_from_slice(&23u32.to_le_bytes());
+    record[46..69].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    record[69..77].copy_from_slice(&entity_genesis.to_le_bytes());
 }
 
 fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) -> Result<(), CodecError> {
@@ -565,6 +1455,16 @@ fn encode_sketch_relation(
     out: &mut Vec<u8>,
     relation: &crate::records::SketchRelation,
 ) -> Result<(), CodecError> {
+    let (constraint_kinds, unknown_constraint_bits) =
+        crate::design::decode_constraint_kinds(relation.state);
+    if constraint_kinds != relation.constraint_kinds
+        || unknown_constraint_bits != relation.unknown_constraint_bits
+    {
+        return Err(CodecError::Malformed(format!(
+            "F3D sketch relation {} has a mask inconsistent with its typed constraint kinds",
+            relation.id
+        )));
+    }
     let mut record = vec![0u8; 101];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index)?;
     record[19] = 1;
@@ -665,6 +1565,15 @@ fn encode_design_metastream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         }
         validate_guid(&object.self_guid, "Design object self GUID")?;
         native_lp_ascii(&mut out, &object.self_guid)?;
+        let zero_run_length = usize::try_from(object.zero_run_length).map_err(|_| {
+            CodecError::Malformed("Design object zero-run length exceeds address space".into())
+        })?;
+        out.resize(
+            out.len().checked_add(zero_run_length).ok_or_else(|| {
+                CodecError::Malformed("Design MetaStream zero run exceeds address space".into())
+            })?,
+            0,
+        );
         if let Some(parent_guid) = &object.parent_guid {
             validate_guid(parent_guid, "Design object parent GUID")?;
             native_lp_ascii(&mut out, parent_guid)?;
@@ -828,7 +1737,20 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
 
     let curve_start = 7i64;
     let pcurve_start = native_record_index(curve_start, model.curves.len())?;
-    let coedge_start = native_record_index(pcurve_start, model.pcurves.len())?;
+    let ref_pcurve_count = model
+        .pcurves
+        .iter()
+        .map(pcurve_uses_ref_form)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|uses_ref_form| *uses_ref_form)
+        .count();
+    let pcurve_record_count = model
+        .pcurves
+        .len()
+        .checked_add(ref_pcurve_count)
+        .ok_or_else(|| CodecError::Malformed("pcurve record count overflows usize".into()))?;
+    let coedge_start = native_record_index(pcurve_start, pcurve_record_count)?;
     let edge_start = native_record_index(coedge_start, coedges.len())?;
     let vertex_start = native_record_index(edge_start, model.edges.len())?;
     let point_start = native_record_index(vertex_start, model.vertices.len())?;
@@ -876,8 +1798,10 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     native_ref(&mut records, 3);
     native_ref(&mut records, -1);
     native_ref(&mut records, 6);
-    records.push(native_bool(face.sense == Sense::Reversed));
-    records.push(0x0b);
+    records.push(native_bool(
+        native_face_sense(target, face)? == Sense::Reversed,
+    ));
+    native_face_sidedness(&mut records, target, face)?;
     records.push(0x11);
 
     native_ident(&mut records, "loop")?;
@@ -936,6 +1860,7 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             axis,
             ref_direction,
             radius,
+            ratio,
             half_angle,
         } => {
             native_surface_base(&mut records, "cone")?;
@@ -952,7 +1877,7 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                     ref_direction.z * radius / 10.0,
                 ],
             );
-            native_f64(&mut records, 1.0);
+            native_f64(&mut records, ratio);
             records.extend_from_slice(&[0x0b, 0x0b]);
             native_f64(&mut records, half_angle.sin());
             native_f64(&mut records, half_angle.cos());
@@ -1098,8 +2023,22 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         records.push(0x11);
     }
 
+    let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
+    let mut ref_pcurve_ordinal = 0usize;
     for pcurve in &model.pcurves {
-        native_pcurve(&mut records, pcurve)?;
+        let companion_ref = pcurve_uses_ref_form(pcurve)?
+            .then(|| native_record_index(ref_pcurve_start, ref_pcurve_ordinal))
+            .transpose()?;
+        native_pcurve(&mut records, pcurve, companion_ref)?;
+        ref_pcurve_ordinal += usize::from(companion_ref.is_some());
+        records.push(0x11);
+    }
+    for pcurve in model
+        .pcurves
+        .iter()
+        .filter(|pcurve| pcurve_uses_ref_form(pcurve).is_ok_and(|value| value))
+    {
+        native_ref_pcurve_companion(&mut records, pcurve)?;
         records.push(0x11);
     }
 
@@ -1111,7 +2050,15 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .ok_or_else(|| {
                 CodecError::Malformed(format!("coedge references missing edge {}", coedge.edge))
             })?;
-        native_ident(&mut records, "coedge")?;
+        let tolerant_range = tolerant_coedge_range(target, &coedge.id)?;
+        native_ident(
+            &mut records,
+            if tolerant_range.is_some() {
+                "tcoedge"
+            } else {
+                "coedge"
+            },
+        )?;
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
@@ -1146,9 +2093,15 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .transpose()?
             .unwrap_or(-1);
         native_ref(&mut records, pcurve_ref);
+        if let Some(range) = tolerant_range {
+            native_f64(&mut records, range[0]);
+            native_f64(&mut records, range[1]);
+        }
         records.push(0x11);
     }
 
+    let mut edge_owners = BTreeMap::new();
+    apply_native_edge_owners(target, coedge_start, &mut edge_owners)?;
     for edge in &model.edges {
         let start = model
             .vertices
@@ -1199,14 +2152,18 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         native_f64(&mut records, range[0]);
         native_ref(&mut records, native_record_index(vertex_start, end)?);
         native_f64(&mut records, range[1]);
-        native_ref(&mut records, -1);
+        native_ref(
+            &mut records,
+            edge_owners.get(&edge.id).copied().unwrap_or(-1),
+        );
         native_ref(&mut records, curve_ref);
-        records.push(0x0b);
-        native_string(&mut records, "unknown")?;
+        let (sense, continuity) = edge_record_metadata(target, edge)?;
+        records.push(native_bool(sense == Sense::Reversed));
+        native_string(&mut records, &continuity)?;
         records.push(0x11);
     }
 
-    for (vertex_index, vertex) in model.vertices.iter().enumerate() {
+    for vertex in &model.vertices {
         let point = model
             .points
             .iter()
@@ -1214,22 +2171,22 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .ok_or_else(|| {
                 CodecError::Malformed(format!("vertex references missing point {}", vertex.point))
             })?;
-        let owning_edge = model
-            .edges
-            .iter()
-            .position(|edge| edge.start == vertex.id || edge.end == vertex.id)
-            .ok_or_else(|| CodecError::Malformed(format!("vertex {} has no edge", vertex.id)))?;
-        native_ident(&mut records, "vertex")?;
+        let (owning_edge, endpoint_index) = vertex_ownership(target, vertex)?;
+        native_ident(
+            &mut records,
+            if vertex.tolerance.is_some() {
+                "tvertex"
+            } else {
+                "vertex"
+            },
+        )?;
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
         native_ref(&mut records, native_record_index(edge_start, owning_edge)?);
-        native_i64(
-            &mut records,
-            i64::try_from(vertex_index)
-                .map_err(|_| CodecError::NotImplemented("F3D vertex ordinal exceeds i64".into()))?,
-        );
+        native_i64(&mut records, i64::from(endpoint_index));
         native_ref(&mut records, native_record_index(point_start, point)?);
+        native_tolerant_vertex_tail(&mut records, target, vertex)?;
         records.push(0x11);
     }
 
@@ -1246,7 +2203,6 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 point.position.z / 10.0,
             ],
         );
-        native_i64(&mut records, 1);
         records.push(0x11);
     }
     native_history_tail(&mut records, target)?;
@@ -1292,7 +2248,20 @@ impl NativeRecordPlan {
         let surface_start = native_record_index(loop_start, model.loops.len())?;
         let curve_start = native_record_index(surface_start, model.surfaces.len())?;
         let pcurve_start = native_record_index(curve_start, model.curves.len())?;
-        let coedge_start = native_record_index(pcurve_start, model.pcurves.len())?;
+        let ref_pcurve_count = model
+            .pcurves
+            .iter()
+            .map(pcurve_uses_ref_form)
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|uses_ref_form| *uses_ref_form)
+            .count();
+        let pcurve_record_count = model
+            .pcurves
+            .len()
+            .checked_add(ref_pcurve_count)
+            .ok_or_else(|| CodecError::Malformed("pcurve record count overflows usize".into()))?;
+        let coedge_start = native_record_index(pcurve_start, pcurve_record_count)?;
         let wire_coedge_start = native_record_index(coedge_start, model.coedges.len())?;
         let wire_edge_count = model
             .shells
@@ -1584,7 +2553,7 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             native_record_index(shell_start, shell_ordinal)?,
         );
         native_ref(&mut records, -1);
-        records.push(0x0b);
+        records.push(native_wire_side(target, &shell.id)?);
         records.push(0x11);
         edge_base += shell.wire_edges.len();
     }
@@ -1618,7 +2587,7 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         edge_base += shell.wire_edges.len();
     }
     encode_source_less_curves(&mut records, target)?;
-    let wire_edge_owners = model
+    let mut wire_edge_owners = model
         .edges
         .iter()
         .enumerate()
@@ -1626,6 +2595,7 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             native_record_index(wire_coedge_start, ordinal).map(|owner| (edge.id.clone(), owner))
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
+    apply_native_edge_owners(target, wire_coedge_start, &mut wire_edge_owners)?;
     encode_source_less_edges_vertices_points(
         &mut records,
         target,
@@ -1638,7 +2608,7 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     )?;
     for body in &model.bodies {
         if let Some(transform) = body.transform {
-            native_transform(&mut records, transform)?;
+            native_transform(&mut records, target, body, transform)?;
             records.push(0x11);
         }
     }
@@ -1991,7 +2961,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             native_record_index(shell_start, shell_ordinal)?,
         );
         native_ref(&mut records, -1);
-        records.push(0x0b);
+        records.push(native_wire_side(target, &shell.id)?);
         records.push(0x11);
         wire_edge_base += shell.wire_edges.len();
     }
@@ -2063,8 +3033,10 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             &mut records,
             native_record_index(surface_start, surface_position)?,
         );
-        records.push(native_bool(face.sense == Sense::Reversed));
-        records.push(0x0b);
+        records.push(native_bool(
+            native_face_sense(target, face)? == Sense::Reversed,
+        ));
+        native_face_sidedness(&mut records, target, face)?;
         records.push(0x11);
     }
 
@@ -2172,6 +3144,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 axis,
                 ref_direction,
                 radius,
+                ratio,
                 half_angle,
             } => {
                 native_surface_base(&mut records, "cone")?;
@@ -2188,7 +3161,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                         ref_direction.z * radius / 10.0,
                     ],
                 );
-                native_f64(&mut records, 1.0);
+                native_f64(&mut records, ratio);
                 records.extend_from_slice(&[0x0b, 0x0b]);
                 native_f64(&mut records, half_angle.sin());
                 native_f64(&mut records, half_angle.cos());
@@ -2336,8 +3309,22 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         records.push(0x11);
     }
 
+    let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
+    let mut ref_pcurve_ordinal = 0usize;
     for pcurve in &model.pcurves {
-        native_pcurve(&mut records, pcurve)?;
+        let companion_ref = pcurve_uses_ref_form(pcurve)?
+            .then(|| native_record_index(ref_pcurve_start, ref_pcurve_ordinal))
+            .transpose()?;
+        native_pcurve(&mut records, pcurve, companion_ref)?;
+        ref_pcurve_ordinal += usize::from(companion_ref.is_some());
+        records.push(0x11);
+    }
+    for pcurve in model
+        .pcurves
+        .iter()
+        .filter(|pcurve| pcurve_uses_ref_form(pcurve).is_ok_and(|value| value))
+    {
+        native_ref_pcurve_companion(&mut records, pcurve)?;
         records.push(0x11);
     }
 
@@ -2355,7 +3342,15 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 coedge.id
             )));
         };
-        native_ident(&mut records, "coedge")?;
+        let tolerant_range = tolerant_coedge_range(target, &coedge.id)?;
+        native_ident(
+            &mut records,
+            if tolerant_range.is_some() {
+                "tcoedge"
+            } else {
+                "coedge"
+            },
+        )?;
         native_ref(
             &mut records,
             sketch_link_attribute_ref(target, coedge, coedge_ordinal, attribute_start)?,
@@ -2393,6 +3388,10 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .transpose()?
             .unwrap_or(-1);
         native_ref(&mut records, pcurve_ref);
+        if let Some(range) = tolerant_range {
+            native_f64(&mut records, range[0]);
+            native_f64(&mut records, range[1]);
+        }
         records.push(0x11);
     }
 
@@ -2436,6 +3435,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         }
         wire_edge_base += shell.wire_edges.len();
     }
+    apply_native_edge_owners(target, coedge_start, &mut wire_edge_owners)?;
 
     encode_source_less_edges_vertices_points(
         &mut records,
@@ -2447,9 +3447,11 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         attribute_start,
         Some(&wire_edge_owners),
     )?;
-    for transform in model.bodies.iter().filter_map(|body| body.transform) {
-        native_transform(&mut records, transform)?;
-        records.push(0x11);
+    for body in &model.bodies {
+        if let Some(transform) = body.transform {
+            native_transform(&mut records, target, body, transform)?;
+            records.push(0x11);
+        }
     }
     encode_source_less_attributes(&mut records, target, attribute_start)?;
     native_history_tail(&mut records, target)?;
@@ -2522,6 +3524,17 @@ fn source_less_body_key(
     body_ordinal: usize,
 ) -> Result<i64, CodecError> {
     let native = f3d_native(target)?;
+    if let Some(key) = native.as_ref().and_then(|native| {
+        native
+            .body_native_keys
+            .iter()
+            .find(|key| key.body == body.id)
+    }) {
+        return key.asm_body_key.map_or(Ok(-1), |key| {
+            i64::try_from(key)
+                .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
+        });
+    }
     let assigned = target
         .model
         .appearance_bindings
@@ -2595,6 +3608,92 @@ fn persistent_links(
         .collect::<Vec<_>>();
     links.sort_by_key(|link| link.ordinal);
     links
+}
+
+fn creation_timestamp(
+    target: &CadIr,
+    entity: &cadmpeg_ir::attributes::AttributeTarget,
+) -> Option<CreationTimestamp> {
+    f3d_native(target)
+        .ok()
+        .flatten()?
+        .creation_timestamps
+        .into_iter()
+        .find(|timestamp| &timestamp.target == entity)
+}
+
+fn timestamp_attribute_ordinal(
+    target: &CadIr,
+    entity: &cadmpeg_ir::attributes::AttributeTarget,
+) -> Option<usize> {
+    let model = &target.model;
+    let targets = model
+        .bodies
+        .iter()
+        .map(|item| cadmpeg_ir::attributes::AttributeTarget::Body(item.id.clone()))
+        .chain(
+            model
+                .faces
+                .iter()
+                .map(|item| cadmpeg_ir::attributes::AttributeTarget::Face(item.id.clone())),
+        )
+        .chain(
+            model
+                .edges
+                .iter()
+                .map(|item| cadmpeg_ir::attributes::AttributeTarget::Edge(item.id.clone())),
+        )
+        .chain(
+            model
+                .coedges
+                .iter()
+                .map(|item| cadmpeg_ir::attributes::AttributeTarget::Coedge(item.id.clone())),
+        )
+        .chain(
+            model
+                .vertices
+                .iter()
+                .map(|item| cadmpeg_ir::attributes::AttributeTarget::Vertex(item.id.clone())),
+        );
+    let mut ordinal = 0;
+    for candidate in targets {
+        if creation_timestamp(target, &candidate).is_some() {
+            if &candidate == entity {
+                return Some(ordinal);
+            }
+            ordinal += 1;
+        }
+    }
+    None
+}
+
+fn existing_source_less_attribute_count(target: &CadIr) -> usize {
+    source_less_color_count(target)
+        + source_less_name_count(target)
+        + persistent_body_group_count(target)
+        + persistent_face_group_count(target)
+        + persistent_edge_group_count(target)
+        + target
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| sketch_link(target, coedge).is_some())
+            .count()
+}
+
+fn timestamp_attribute_ref(
+    target: &CadIr,
+    entity: &cadmpeg_ir::attributes::AttributeTarget,
+    attribute_start: i64,
+) -> Result<Option<i64>, CodecError> {
+    timestamp_attribute_ordinal(target, entity)
+        .map(|ordinal| {
+            native_record_index(
+                attribute_start,
+                existing_source_less_attribute_count(target) + ordinal,
+            )
+        })
+        .transpose()
 }
 
 fn body_persistent_links(target: &CadIr, body: &Body) -> Vec<PersistentDesignLink> {
@@ -2687,7 +3786,29 @@ fn body_persistent_attribute_ref(
             .iter()
             .filter(|face| face.color.is_some())
             .count();
-    native_record_index(attribute_start, color_count + ordinal).map(Some)
+    native_record_index(
+        attribute_start,
+        color_count + source_less_name_count(target) + ordinal,
+    )
+    .map(Some)
+}
+
+fn body_name_attribute_ref(
+    target: &CadIr,
+    body: &Body,
+    attribute_start: i64,
+) -> Result<Option<i64>, CodecError> {
+    if body.name.is_none() {
+        return Ok(None);
+    }
+    let ordinal = target
+        .model
+        .bodies
+        .iter()
+        .take_while(|candidate| candidate.id != body.id)
+        .filter(|candidate| candidate.name.is_some())
+        .count();
+    native_record_index(attribute_start, source_less_color_count(target) + ordinal).map(Some)
 }
 
 fn owner_color_or_body_tag_ref(
@@ -2705,7 +3826,18 @@ fn owner_color_or_body_tag_ref(
             attribute_start,
         );
     }
-    Ok(body_persistent_attribute_ref(target, body, attribute_start)?.unwrap_or(-1))
+    if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)? {
+        return Ok(reference);
+    }
+    if let Some(reference) = body_persistent_attribute_ref(target, body, attribute_start)? {
+        return Ok(reference);
+    }
+    Ok(timestamp_attribute_ref(
+        target,
+        &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
+        attribute_start,
+    )?
+    .unwrap_or(-1))
 }
 
 fn face_persistent_attribute_ref(
@@ -2725,7 +3857,38 @@ fn face_persistent_attribute_ref(
         .count();
     native_record_index(
         attribute_start,
-        source_less_color_count(target) + persistent_body_group_count(target) + ordinal,
+        source_less_color_count(target)
+            + source_less_name_count(target)
+            + persistent_body_group_count(target)
+            + ordinal,
+    )
+    .map(Some)
+}
+
+fn face_name_attribute_ref(
+    target: &CadIr,
+    face: &Face,
+    attribute_start: i64,
+) -> Result<Option<i64>, CodecError> {
+    if face.name.is_none() {
+        return Ok(None);
+    }
+    let ordinal = target
+        .model
+        .faces
+        .iter()
+        .take_while(|candidate| candidate.id != face.id)
+        .filter(|candidate| candidate.name.is_some())
+        .count();
+    let body_name_count = target
+        .model
+        .bodies
+        .iter()
+        .filter(|body| body.name.is_some())
+        .count();
+    native_record_index(
+        attribute_start,
+        source_less_color_count(target) + body_name_count + ordinal,
     )
     .map(Some)
 }
@@ -2745,7 +3908,18 @@ fn owner_color_or_face_tag_ref(
             attribute_start,
         );
     }
-    Ok(face_persistent_attribute_ref(target, face, attribute_start)?.unwrap_or(-1))
+    if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)? {
+        return Ok(reference);
+    }
+    if let Some(reference) = face_persistent_attribute_ref(target, face, attribute_start)? {
+        return Ok(reference);
+    }
+    Ok(timestamp_attribute_ref(
+        target,
+        &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
+        attribute_start,
+    )?
+    .unwrap_or(-1))
 }
 
 fn edge_persistent_attribute_ref(
@@ -2764,6 +3938,7 @@ fn edge_persistent_attribute_ref(
     native_record_index(
         attribute_start,
         source_less_color_count(target)
+            + source_less_name_count(target)
             + persistent_body_group_count(target)
             + persistent_face_group_count(target)
             + ordinal,
@@ -2786,6 +3961,21 @@ fn source_less_color_count(target: &CadIr) -> usize {
             .count()
 }
 
+fn source_less_name_count(target: &CadIr) -> usize {
+    target
+        .model
+        .bodies
+        .iter()
+        .filter(|body| body.name.is_some())
+        .count()
+        + target
+            .model
+            .faces
+            .iter()
+            .filter(|face| face.name.is_some())
+            .count()
+}
+
 fn sketch_link(target: &CadIr, coedge: &Coedge) -> Option<SketchCurveLink> {
     f3d_native(target)
         .ok()
@@ -2802,7 +3992,12 @@ fn sketch_link_attribute_ref(
     attribute_start: i64,
 ) -> Result<i64, CodecError> {
     if sketch_link(target, coedge).is_none() {
-        return Ok(-1);
+        return Ok(timestamp_attribute_ref(
+            target,
+            &cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge.id.clone()),
+            attribute_start,
+        )?
+        .unwrap_or(-1));
     }
     let preceding = target.model.coedges[..coedge_ordinal]
         .iter()
@@ -2812,6 +4007,7 @@ fn sketch_link_attribute_ref(
     native_record_index(
         attribute_start,
         color_count
+            + source_less_name_count(target)
             + persistent_body_group_count(target)
             + persistent_face_group_count(target)
             + persistent_edge_group_count(target)
@@ -2823,10 +4019,11 @@ fn native_persistent_design_attribute(
     records: &mut Vec<u8>,
     links: &[PersistentDesignLink],
     kind: i64,
+    next: i64,
 ) -> Result<(), CodecError> {
     native_subident(records, "ATTRIB_CUSTOM")?;
     native_ident(records, "attrib")?;
-    native_ref(records, -1);
+    native_ref(records, next);
     native_string(records, "generic_tag_attrib_def")?;
     for value in [kind, kind, -1] {
         native_i64(records, value);
@@ -2838,9 +4035,15 @@ fn native_persistent_design_attribute(
             .map_err(|_| CodecError::NotImplemented("too many persistent body IDs".into()))?,
     );
     for link in links {
-        native_i64(records, kind);
+        if link.entity_kind != kind {
+            return Err(CodecError::Malformed(format!(
+                "persistent design link {} has entity kind {}, expected {kind}",
+                link.id, link.entity_kind
+            )));
+        }
+        native_i64(records, link.entity_kind);
         native_string(records, &link.design_id)?;
-        for value in [0, 0, 0] {
+        for value in [link.design_reference, 0, 0] {
             native_i64(records, value);
         }
     }
@@ -2850,10 +4053,11 @@ fn native_persistent_design_attribute(
 fn native_sketch_link_attribute(
     records: &mut Vec<u8>,
     link: &SketchCurveLink,
+    next: i64,
 ) -> Result<(), CodecError> {
     native_subident(records, "ATTRIB_CUSTOM")?;
     native_ident(records, "attrib")?;
-    native_ref(records, -1);
+    native_ref(records, next);
     native_string(records, "sketch_attrib_def")?;
     for value in [1, 1, 3] {
         native_i64(records, value);
@@ -2876,15 +4080,108 @@ fn encode_source_less_attributes(
     attribute_start: i64,
 ) -> Result<(), CodecError> {
     let model = &target.model;
+    if let Some(native) = f3d_native(target)? {
+        for (ordinal, timestamp) in native.creation_timestamps.iter().enumerate() {
+            if !timestamp.unix_microseconds.is_finite() {
+                return Err(CodecError::Malformed(format!(
+                    "F3D creation timestamp {} is non-finite",
+                    timestamp.id
+                )));
+            }
+            if native.creation_timestamps[..ordinal]
+                .iter()
+                .any(|before| before.target == timestamp.target)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "multiple F3D creation timestamps target the same entity: {}",
+                    timestamp.id
+                )));
+            }
+            if timestamp_attribute_ordinal(target, &timestamp.target).is_none() {
+                return Err(CodecError::NotImplemented(format!(
+                    "F3D creation timestamp has an unsupported or missing target: {}",
+                    timestamp.id
+                )));
+            }
+        }
+    }
     for body in model.bodies.iter().filter(|body| body.color.is_some()) {
         let color = body.color.expect("filtered colored body");
-        let next = body_persistent_attribute_ref(target, body, attribute_start)?.unwrap_or(-1);
+        let next = if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)?
+        {
+            reference
+        } else if let Some(reference) =
+            body_persistent_attribute_ref(target, body, attribute_start)?
+        {
+            reference
+        } else {
+            timestamp_attribute_ref(
+                target,
+                &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
+                attribute_start,
+            )?
+            .unwrap_or(-1)
+        };
         native_color_attribute(records, color, next)?;
         records.push(0x11);
     }
     for face in model.faces.iter().filter(|face| face.color.is_some()) {
-        let next = face_persistent_attribute_ref(target, face, attribute_start)?.unwrap_or(-1);
+        let next = if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)?
+        {
+            reference
+        } else if let Some(reference) =
+            face_persistent_attribute_ref(target, face, attribute_start)?
+        {
+            reference
+        } else {
+            timestamp_attribute_ref(
+                target,
+                &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
+                attribute_start,
+            )?
+            .unwrap_or(-1)
+        };
         native_color_attribute(records, face.color.expect("filtered colored face"), next)?;
+        records.push(0x11);
+    }
+    for body in model.bodies.iter().filter(|body| body.name.is_some()) {
+        let next = if let Some(reference) =
+            body_persistent_attribute_ref(target, body, attribute_start)?
+        {
+            reference
+        } else {
+            timestamp_attribute_ref(
+                target,
+                &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
+                attribute_start,
+            )?
+            .unwrap_or(-1)
+        };
+        native_name_attribute(
+            records,
+            body.name.as_deref().expect("filtered named body"),
+            next,
+        )?;
+        records.push(0x11);
+    }
+    for face in model.faces.iter().filter(|face| face.name.is_some()) {
+        let next = if let Some(reference) =
+            face_persistent_attribute_ref(target, face, attribute_start)?
+        {
+            reference
+        } else {
+            timestamp_attribute_ref(
+                target,
+                &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
+                attribute_start,
+            )?
+            .unwrap_or(-1)
+        };
+        native_name_attribute(
+            records,
+            face.name.as_deref().expect("filtered named face"),
+            next,
+        )?;
         records.push(0x11);
     }
     for body in &model.bodies {
@@ -2892,7 +4189,13 @@ fn encode_source_less_attributes(
         if links.is_empty() {
             continue;
         }
-        native_persistent_design_attribute(records, &links, 3)?;
+        let next = timestamp_attribute_ref(
+            target,
+            &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
+            attribute_start,
+        )?
+        .unwrap_or(-1);
+        native_persistent_design_attribute(records, &links, 3, next)?;
         records.push(0x11);
     }
     for face in &model.faces {
@@ -2900,7 +4203,13 @@ fn encode_source_less_attributes(
         if links.is_empty() {
             continue;
         }
-        native_persistent_design_attribute(records, &links, 2)?;
+        let next = timestamp_attribute_ref(
+            target,
+            &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
+            attribute_start,
+        )?
+        .unwrap_or(-1);
+        native_persistent_design_attribute(records, &links, 2, next)?;
         records.push(0x11);
     }
     for edge in &model.edges {
@@ -2908,17 +4217,87 @@ fn encode_source_less_attributes(
         if links.is_empty() {
             continue;
         }
-        native_persistent_design_attribute(records, &links, 1)?;
+        let next = timestamp_attribute_ref(
+            target,
+            &cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone()),
+            attribute_start,
+        )?
+        .unwrap_or(-1);
+        native_persistent_design_attribute(records, &links, 1, next)?;
         records.push(0x11);
     }
     for coedge in &model.coedges {
         let Some(link) = sketch_link(target, coedge) else {
             continue;
         };
-        native_sketch_link_attribute(records, &link)?;
+        let next = timestamp_attribute_ref(
+            target,
+            &cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge.id.clone()),
+            attribute_start,
+        )?
+        .unwrap_or(-1);
+        native_sketch_link_attribute(records, &link, next)?;
+        records.push(0x11);
+    }
+    for entity in model
+        .bodies
+        .iter()
+        .map(|item| cadmpeg_ir::attributes::AttributeTarget::Body(item.id.clone()))
+        .chain(
+            model
+                .faces
+                .iter()
+                .map(|item| cadmpeg_ir::attributes::AttributeTarget::Face(item.id.clone())),
+        )
+        .chain(
+            model
+                .edges
+                .iter()
+                .map(|item| cadmpeg_ir::attributes::AttributeTarget::Edge(item.id.clone())),
+        )
+        .chain(
+            model
+                .coedges
+                .iter()
+                .map(|item| cadmpeg_ir::attributes::AttributeTarget::Coedge(item.id.clone())),
+        )
+        .chain(
+            model
+                .vertices
+                .iter()
+                .map(|item| cadmpeg_ir::attributes::AttributeTarget::Vertex(item.id.clone())),
+        )
+    {
+        let Some(timestamp) = creation_timestamp(target, &entity) else {
+            continue;
+        };
+        native_subident(records, "ATTRIB_CUSTOM")?;
+        native_ident(records, "attrib")?;
+        native_ref(records, -1);
+        native_string(records, "Timestamp_attrib_def")?;
+        native_i64(records, 1);
+        native_f64(records, timestamp.unix_microseconds);
         records.push(0x11);
     }
     Ok(())
+}
+
+fn native_name_attribute(records: &mut Vec<u8>, name: &str, next: i64) -> Result<(), CodecError> {
+    if name.is_empty() {
+        return Err(CodecError::Malformed(
+            "source-less F3D display name must not be empty".into(),
+        ));
+    }
+    native_subident(records, "string_attrib")?;
+    native_subident(records, "name_attrib")?;
+    native_subident(records, "gen")?;
+    native_ident(records, "attrib")?;
+    native_ref(records, next);
+    for flag in [1, 1, 1, 1] {
+        native_i64(records, flag);
+    }
+    native_string(records, "name")?;
+    native_string(records, name)
 }
 
 fn native_color_attribute(
@@ -2991,11 +4370,6 @@ fn encode_source_less_edges_vertices_points(
         .enumerate()
         .map(|(ordinal, point)| (&point.id, ordinal))
         .collect();
-    let mut vertex_edges = HashMap::new();
-    for (ordinal, edge) in model.edges.iter().enumerate() {
-        vertex_edges.entry(&edge.start).or_insert(ordinal);
-        vertex_edges.entry(&edge.end).or_insert(ordinal);
-    }
     for (edge_ordinal, edge) in model.edges.iter().enumerate() {
         let start = vertex_ordinals.get(&edge.start).copied();
         let end = vertex_ordinals.get(&edge.end).copied();
@@ -3032,10 +4406,20 @@ fn encode_source_less_edges_vertices_points(
             range[1] /= 10.0;
         }
         native_ident(records, "edge")?;
+        let persistent =
+            edge_persistent_attribute_ref(target, edge, edge_ordinal, attribute_start)?;
         native_ref(
             records,
-            edge_persistent_attribute_ref(target, edge, edge_ordinal, attribute_start)?
-                .unwrap_or(-1),
+            if let Some(reference) = persistent {
+                reference
+            } else {
+                timestamp_attribute_ref(
+                    target,
+                    &cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone()),
+                    attribute_start,
+                )?
+                .unwrap_or(-1)
+            },
         );
         native_i64(records, -1);
         native_ref(records, -1);
@@ -3051,26 +4435,43 @@ fn encode_source_less_edges_vertices_points(
                 .unwrap_or(-1),
         );
         native_ref(records, curve_ref);
-        records.push(0x0b);
-        native_string(records, "unknown")?;
+        let (sense, continuity) = edge_record_metadata(target, edge)?;
+        records.push(native_bool(sense == Sense::Reversed));
+        native_string(records, &continuity)?;
         records.push(0x11);
     }
     for vertex in &model.vertices {
         let point = point_ordinals.get(&vertex.point).copied();
-        let edge = vertex_edges.get(&vertex.id).copied();
-        let (Some(point), Some(edge)) = (point, edge) else {
+        let Some(point) = point else {
             return Err(CodecError::Malformed(format!(
                 "vertex {} has an unresolved carrier",
                 vertex.id
             )));
         };
-        native_ident(records, "vertex")?;
-        native_ref(records, -1);
+        let (edge, endpoint_index) = vertex_ownership(target, vertex)?;
+        native_ident(
+            records,
+            if vertex.tolerance.is_some() {
+                "tvertex"
+            } else {
+                "vertex"
+            },
+        )?;
+        native_ref(
+            records,
+            timestamp_attribute_ref(
+                target,
+                &cadmpeg_ir::attributes::AttributeTarget::Vertex(vertex.id.clone()),
+                attribute_start,
+            )?
+            .unwrap_or(-1),
+        );
         native_i64(records, -1);
         native_ref(records, -1);
         native_ref(records, native_record_index(edge_start, edge)?);
-        native_i64(records, 0);
+        native_i64(records, i64::from(endpoint_index));
         native_ref(records, native_record_index(point_start, point)?);
+        native_tolerant_vertex_tail(records, target, vertex)?;
         records.push(0x11);
     }
     for point in &model.points {
@@ -3086,8 +4487,247 @@ fn encode_source_less_edges_vertices_points(
                 point.position.z / 10.0,
             ],
         );
-        native_i64(records, 1);
         records.push(0x11);
+    }
+    Ok(())
+}
+
+fn vertex_ownership(
+    target: &CadIr,
+    vertex: &cadmpeg_ir::topology::Vertex,
+) -> Result<(usize, u8), CodecError> {
+    let model = &target.model;
+    if let Some(metadata) = f3d_native(target)?.and_then(|native| {
+        native
+            .vertex_ownerships
+            .into_iter()
+            .find(|metadata| metadata.vertex == vertex.id)
+    }) {
+        let ordinal = model
+            .edges
+            .iter()
+            .position(|edge| edge.id == metadata.owning_edge)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "vertex {} references missing owning edge {}",
+                    vertex.id, metadata.owning_edge
+                ))
+            })?;
+        let edge = &model.edges[ordinal];
+        let valid = match metadata.endpoint_index {
+            0 => edge.start == vertex.id,
+            1 => edge.end == vertex.id,
+            _ => false,
+        };
+        if !valid {
+            return Err(CodecError::Malformed(format!(
+                "vertex {} endpoint slot {} conflicts with owning edge {}",
+                vertex.id, metadata.endpoint_index, metadata.owning_edge
+            )));
+        }
+        return Ok((ordinal, metadata.endpoint_index));
+    }
+    model
+        .edges
+        .iter()
+        .enumerate()
+        .find_map(|(ordinal, edge)| {
+            if edge.start == vertex.id {
+                Some((ordinal, 0))
+            } else if edge.end == vertex.id {
+                Some((ordinal, 1))
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| CodecError::Malformed(format!("vertex {} has no edge", vertex.id)))
+}
+
+fn native_face_sidedness(
+    records: &mut Vec<u8>,
+    target: &CadIr,
+    face: &cadmpeg_ir::topology::Face,
+) -> Result<(), CodecError> {
+    let containment = f3d_native(target)?.and_then(|native| {
+        native
+            .face_sidedness
+            .into_iter()
+            .find(|metadata| metadata.face == face.id)
+            .and_then(|metadata| metadata.containment)
+    });
+    records.push(native_bool(containment.is_some()));
+    if let Some(containment) = containment {
+        records.push(match containment {
+            crate::records::FaceContainment::In => 0x0a,
+            crate::records::FaceContainment::Out => 0x0b,
+        });
+    }
+    Ok(())
+}
+
+fn native_face_sense(
+    target: &CadIr,
+    face: &cadmpeg_ir::topology::Face,
+) -> Result<Sense, CodecError> {
+    Ok(f3d_native(target)?
+        .and_then(|native| {
+            native
+                .face_sidedness
+                .into_iter()
+                .find(|metadata| metadata.face == face.id)
+                .map(|metadata| {
+                    normalized_face_sense_to_native(
+                        face.sense,
+                        metadata.native_sense,
+                        metadata.normalized_sense,
+                    )
+                })
+        })
+        .unwrap_or(face.sense))
+}
+
+fn native_wire_side(target: &CadIr, shell: &ShellId) -> Result<u8, CodecError> {
+    let matches = f3d_native(target)?
+        .map(|native| {
+            native
+                .wire_topologies
+                .into_iter()
+                .filter(|wire| wire.shell == *shell)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let side = match matches.as_slice() {
+        [] => crate::records::WireSide::Out,
+        [wire] => wire.side,
+        _ => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D generation cannot collapse multiple native wires on shell {shell}"
+            )))
+        }
+    };
+    Ok(match side {
+        crate::records::WireSide::In => 0x0a,
+        crate::records::WireSide::Out => 0x0b,
+    })
+}
+
+fn normalized_face_sense_to_native(
+    desired: Sense,
+    native_at_decode: Sense,
+    normalized_at_decode: Sense,
+) -> Sense {
+    if native_at_decode == normalized_at_decode {
+        desired
+    } else {
+        match desired {
+            Sense::Forward => Sense::Reversed,
+            Sense::Reversed => Sense::Forward,
+        }
+    }
+}
+
+fn native_tolerant_vertex_tail(
+    records: &mut Vec<u8>,
+    target: &CadIr,
+    vertex: &cadmpeg_ir::topology::Vertex,
+) -> Result<(), CodecError> {
+    let Some(tolerance) = vertex.tolerance else {
+        return Ok(());
+    };
+    if !tolerance.is_finite() || tolerance < 0.0 {
+        return Err(CodecError::Malformed(format!(
+            "F3D vertex {} tolerance must be finite and non-negative",
+            vertex.id
+        )));
+    }
+    native_f64(records, tolerance / 10.0);
+    let trailing = f3d_native(target)?
+        .and_then(|native| {
+            native
+                .tolerant_vertex_tails
+                .into_iter()
+                .find(|tail| tail.vertex == vertex.id)
+        })
+        .map_or([0.0; 2], |tail| tail.trailing_floats);
+    for value in trailing {
+        native_f32(records, value);
+    }
+    Ok(())
+}
+
+fn edge_record_metadata(
+    target: &CadIr,
+    edge: &cadmpeg_ir::topology::Edge,
+) -> Result<(Sense, String), CodecError> {
+    let metadata = f3d_native(target)?.and_then(|native| {
+        native
+            .edge_continuities
+            .into_iter()
+            .find(|metadata| metadata.edge == edge.id)
+    });
+    let sense = metadata
+        .as_ref()
+        .map_or(Sense::Forward, |metadata| metadata.sense);
+    let continuity = metadata.map_or_else(|| "unknown".to_owned(), |metadata| metadata.continuity);
+    if continuity != "tangent" && continuity != "unknown" {
+        return Err(CodecError::Malformed(format!(
+            "F3D edge {} has unsupported continuity token {continuity}",
+            edge.id
+        )));
+    }
+    Ok((sense, continuity))
+}
+
+fn apply_native_edge_owners(
+    target: &CadIr,
+    coedge_start: i64,
+    owners: &mut BTreeMap<cadmpeg_ir::ids::EdgeId, i64>,
+) -> Result<(), CodecError> {
+    let metadata = f3d_native(target)?
+        .map(|native| native.edge_ownerships)
+        .unwrap_or_default();
+    for ownership in metadata {
+        if !target
+            .model
+            .edges
+            .iter()
+            .any(|edge| edge.id == ownership.edge)
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D edge ownership {} references missing edge {}",
+                ownership.id, ownership.edge
+            )));
+        }
+        let owner = match ownership.owner_coedge {
+            None => -1,
+            Some(owner) => {
+                if let Some((ordinal, coedge)) = target
+                    .model
+                    .coedges
+                    .iter()
+                    .enumerate()
+                    .find(|(_, coedge)| coedge.id == owner)
+                {
+                    if coedge.edge != ownership.edge {
+                        return Err(CodecError::Malformed(format!(
+                            "F3D edge ownership {} selects a coedge of another edge",
+                            ownership.id
+                        )));
+                    }
+                    native_record_index(coedge_start, ordinal)?
+                } else if owners.contains_key(&ownership.edge) {
+                    // Wire coedges are native-only and are reconstructed from
+                    // the shell's wire-edge list before this override runs.
+                    continue;
+                } else {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D edge ownership {} references missing coedge {owner}",
+                        ownership.id
+                    )));
+                }
+            }
+        };
+        owners.insert(ownership.edge, owner);
     }
     Ok(())
 }
@@ -3132,6 +4772,9 @@ fn native_curve_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), CodecError> 
     native_ref(bytes, -1);
     native_i64(bytes, -1);
     native_ref(bytes, -1);
+    if kind == "intcurve" {
+        bytes.push(native_bool(false));
+    }
     Ok(())
 }
 
@@ -3141,6 +4784,9 @@ fn native_surface_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), CodecError
     native_ref(bytes, -1);
     native_i64(bytes, -1);
     native_ref(bytes, -1);
+    if kind == "spline" {
+        bytes.push(native_bool(false));
+    }
     Ok(())
 }
 
@@ -3197,24 +4843,331 @@ fn native_procedural_surface(
     solved_surface: &Surface,
     solved_cache: &NurbsSurface,
 ) -> Result<bool, CodecError> {
-    let Some(procedural) = target
+    let mut definitions = target
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.surface == solved_surface.id)
-    else {
+        .filter(|procedural| procedural.surface == solved_surface.id);
+    let Some(procedural) = definitions.next() else {
         return Ok(false);
     };
+    if definitions.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "surface {} has multiple procedural constructions",
+            solved_surface.id
+        )));
+    }
     match &procedural.definition {
+        ProceduralSurfaceDefinition::Deformable { construction } => {
+            use cadmpeg_ir::geometry::DeformableSurfaceData;
+            let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+                CodecError::Malformed(
+                    "deformable surface requires a native cache-fit tolerance".into(),
+                )
+            })?;
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "defm_spl_sur")?;
+            let support = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == construction.support)
+                .ok_or_else(|| CodecError::Malformed("deformable support is missing".into()))?;
+            native_embedded_surface(bytes, &support.geometry)?;
+            let write_frame =
+                |bytes: &mut Vec<u8>, frame: &cadmpeg_ir::geometry::DeformableSurfaceFrame| {
+                    for vector in frame.leading_vectors {
+                        native_vector(bytes, [vector.x, vector.y, vector.z]);
+                    }
+                    native_f64(bytes, frame.leading_parameter);
+                    for flag in frame.leading_flags {
+                        bytes.push(native_bool(flag));
+                    }
+                    for vector in frame.secondary_vectors {
+                        native_vector(bytes, [vector.x, vector.y, vector.z]);
+                    }
+                    native_f64(bytes, frame.secondary_parameter);
+                    for flag in frame.secondary_flags {
+                        bytes.push(native_bool(flag));
+                    }
+                    native_point(
+                        bytes,
+                        [
+                            frame.point.x / 10.0,
+                            frame.point.y / 10.0,
+                            frame.point.z / 10.0,
+                        ],
+                    );
+                    for flag in frame.trailing_flags {
+                        bytes.push(native_bool(flag));
+                    }
+                };
+            match &construction.data {
+                DeformableSurfaceData::Full {
+                    leading_vectors,
+                    leading_parameter,
+                    leading_flags,
+                    selector,
+                    surface,
+                    native_id,
+                    flag,
+                    first_parameter,
+                    version_value,
+                    second_parameter,
+                    curve,
+                    frames,
+                    trailing_value,
+                } => {
+                    native_i64(bytes, 6);
+                    for vector in leading_vectors {
+                        native_vector(bytes, [vector.x, vector.y, vector.z]);
+                    }
+                    native_f64(bytes, *leading_parameter);
+                    for flag in leading_flags {
+                        bytes.push(native_bool(*flag));
+                    }
+                    native_i64(bytes, *selector);
+                    let secondary = target
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|candidate| candidate.id == *surface)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("deformable secondary surface is missing".into())
+                        })?;
+                    native_embedded_surface(bytes, &secondary.geometry)?;
+                    native_i64(bytes, *native_id);
+                    bytes.push(native_bool(*flag));
+                    native_f64(bytes, *first_parameter);
+                    if let Some(value) = version_value {
+                        native_i64(bytes, *value);
+                    }
+                    native_f64(bytes, *second_parameter);
+                    let curve = native_loft_curve_in_range(
+                        target,
+                        curve,
+                        Some([*first_parameter, *second_parameter]),
+                    )?;
+                    native_nurbs_curve(bytes, &curve)?;
+                    for frame in frames.iter() {
+                        for vector in frame.vectors {
+                            native_vector(bytes, [vector.x, vector.y, vector.z]);
+                        }
+                        native_f64(bytes, frame.parameter);
+                        for flag in frame.flags {
+                            bytes.push(native_bool(flag));
+                        }
+                    }
+                    native_i64(bytes, *trailing_value);
+                }
+                DeformableSurfaceData::SurfaceCurve {
+                    surface,
+                    native_id,
+                    flag,
+                    first_parameter,
+                    selector,
+                    second_parameter,
+                    curve,
+                    vectors,
+                    frame_parameter,
+                    flags,
+                    parameter_triples,
+                } => {
+                    native_i64(bytes, 5);
+                    let secondary = target
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|candidate| candidate.id == *surface)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("deformable secondary surface is missing".into())
+                        })?;
+                    native_embedded_surface(bytes, &secondary.geometry)?;
+                    native_i64(bytes, *native_id);
+                    bytes.push(native_bool(*flag));
+                    native_f64(bytes, *first_parameter);
+                    native_i64(bytes, *selector);
+                    native_f64(bytes, *second_parameter);
+                    let curve = native_loft_curve_in_range(
+                        target,
+                        curve,
+                        Some([*first_parameter, *second_parameter]),
+                    )?;
+                    native_nurbs_curve(bytes, &curve)?;
+                    for vector in vectors {
+                        native_vector(bytes, [vector.x, vector.y, vector.z]);
+                    }
+                    native_f64(bytes, *frame_parameter);
+                    for flag in flags {
+                        bytes.push(native_bool(*flag));
+                    }
+                    native_i64(
+                        bytes,
+                        i64::try_from(parameter_triples.len()).map_err(|_| {
+                            CodecError::NotImplemented("deformable triple count exceeds i64".into())
+                        })?,
+                    );
+                    for triple in parameter_triples {
+                        for value in triple {
+                            native_f64(bytes, *value);
+                        }
+                    }
+                }
+                DeformableSurfaceData::Plain {
+                    frame,
+                    parameter_triples,
+                } => {
+                    native_i64(bytes, 1);
+                    write_frame(bytes, frame);
+                    native_i64(
+                        bytes,
+                        i64::try_from(parameter_triples.len()).map_err(|_| {
+                            CodecError::NotImplemented("deformable triple count exceeds i64".into())
+                        })?,
+                    );
+                    for triple in parameter_triples {
+                        for value in triple {
+                            native_f64(bytes, *value);
+                        }
+                    }
+                }
+                DeformableSurfaceData::Guided {
+                    frame,
+                    selector,
+                    guide_parameter,
+                } => {
+                    native_i64(bytes, 3);
+                    write_frame(bytes, frame);
+                    native_i64(bytes, *selector);
+                    native_f64(bytes, *guide_parameter);
+                }
+                DeformableSurfaceData::Minimal { vectors, selector } => {
+                    native_i64(bytes, 8);
+                    for vector in vectors {
+                        native_vector(bytes, [vector.x, vector.y, vector.z]);
+                    }
+                    native_i64(bytes, *selector);
+                }
+            }
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, cache_fit_tolerance / 10.0);
+            for values in &construction.discontinuities {
+                native_compound_loft_float_array(bytes, values)?;
+            }
+            bytes.push(native_bool(construction.discontinuity_flag));
+            bytes.push(0x10);
+        }
+        ProceduralSurfaceDefinition::TSpline { construction } => {
+            use cadmpeg_ir::geometry::TSplineSubtransform;
+            let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+                CodecError::Malformed(
+                    "T-spline surface requires a native cache-fit tolerance".into(),
+                )
+            })?;
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "t_spl_sur")?;
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, cache_fit_tolerance / 10.0);
+            for values in &construction.discontinuities {
+                native_compound_loft_float_array(bytes, values)?;
+            }
+            bytes.push(native_bool(construction.discontinuity_flag));
+            for range in &construction.parameter_ranges {
+                for value in range {
+                    native_f64(bytes, *value / 10.0);
+                }
+            }
+            native_i64(bytes, construction.type_code);
+            bytes.push(0x0f);
+            match &construction.subtransform {
+                TSplineSubtransform::Inline {
+                    program,
+                    separator,
+                    values,
+                } => {
+                    let parsed = cadmpeg_ir::geometry::TSplineProgram::parse(program);
+                    if construction.program_graph.as_ref() != Some(&parsed) {
+                        return Err(CodecError::Malformed(
+                            "T-spline parsed program graph diverges from its native program".into(),
+                        ));
+                    }
+                    if construction.values_graph.as_ref()
+                        != Some(&cadmpeg_ir::geometry::TSplineProgram::parse(values))
+                    {
+                        return Err(CodecError::Malformed(
+                            "T-spline parsed values graph diverges from its native program".into(),
+                        ));
+                    }
+                    native_ident(bytes, "t_spl_subtrans_object")?;
+                    native_u16_string(bytes, program)?;
+                    if let Some(separator) = separator {
+                        bytes.push(native_bool(*separator));
+                    }
+                    native_u16_string(bytes, values)?;
+                }
+                TSplineSubtransform::Reference {
+                    resolved: Some(resolved),
+                    ..
+                } => {
+                    let TSplineSubtransform::Inline {
+                        program,
+                        separator,
+                        values,
+                    } = resolved.as_ref()
+                    else {
+                        return Err(CodecError::Malformed(
+                            "resolved T-spline subtransform must be inline".into(),
+                        ));
+                    };
+                    let parsed = cadmpeg_ir::geometry::TSplineProgram::parse(program);
+                    if construction.program_graph.as_ref() != Some(&parsed) {
+                        return Err(CodecError::Malformed(
+                            "T-spline parsed program graph diverges from its resolved program"
+                                .into(),
+                        ));
+                    }
+                    if construction.values_graph.as_ref()
+                        != Some(&cadmpeg_ir::geometry::TSplineProgram::parse(values))
+                    {
+                        return Err(CodecError::Malformed(
+                            "T-spline parsed values graph diverges from its resolved program"
+                                .into(),
+                        ));
+                    }
+                    native_ident(bytes, "t_spl_subtrans_object")?;
+                    native_u16_string(bytes, program)?;
+                    if let Some(separator) = separator {
+                        bytes.push(native_bool(*separator));
+                    }
+                    native_u16_string(bytes, values)?;
+                }
+                TSplineSubtransform::Reference { resolved: None, .. } => {
+                    return Err(CodecError::NotImplemented(
+                        "source-less referenced t_spl_subtrans_object has no resolved target"
+                            .into(),
+                    ));
+                }
+            }
+            bytes.push(0x10);
+            native_i64(bytes, construction.trailing_value);
+            bytes.push(0x10);
+        }
         ProceduralSurfaceDefinition::Exact {
             parameter_ranges,
             extension,
         } => {
+            let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+                CodecError::Malformed(
+                    "exact spline surface requires a native cache-fit tolerance".into(),
+                )
+            })?;
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "exact_spl_sur")?;
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            native_f64(bytes, cache_fit_tolerance / 10.0);
             for range in parameter_ranges {
                 for value in range {
                     native_f64(bytes, *value);
@@ -3236,7 +5189,9 @@ fn native_procedural_surface(
             bytes.push(0x0f);
             native_ident(bytes, "comp_spl_sur")?;
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+                native_f64(bytes, cache_fit_tolerance / 10.0);
+            }
             native_i64(
                 bytes,
                 i64::try_from(parameters.len()).map_err(|_| {
@@ -3281,11 +5236,10 @@ fn native_procedural_surface(
                 .iter()
                 .find(|curve| curve.id == *reference)
                 .ok_or_else(|| CodecError::Malformed("taper reference curve is missing".into()))?;
-            let CurveGeometry::Nurbs(reference) = &reference.geometry else {
-                return Err(CodecError::NotImplemented(
-                    "source-less F3D taper requires a NURBS reference curve".into(),
-                ));
-            };
+            let reference = native_spline_field_curve(
+                &reference.geometry,
+                native_pcurve_knot_domain(pcurve.as_ref())?,
+            )?;
             let subtype = match taper {
                 cadmpeg_ir::geometry::TaperSurfaceKind::Standard => "taper_spl_sur",
                 cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. } => "ortho_spl_sur",
@@ -3298,7 +5252,7 @@ fn native_procedural_surface(
             bytes.push(0x0f);
             native_ident(bytes, subtype)?;
             native_embedded_surface(bytes, &support.geometry)?;
-            native_nurbs_curve(bytes, reference)?;
+            native_nurbs_curve(bytes, &reference)?;
             if let Some(pcurve) = pcurve {
                 native_nurbs_pcurve_block(bytes, pcurve)?;
             } else {
@@ -3306,7 +5260,9 @@ fn native_procedural_surface(
             }
             native_f64(bytes, *parameter);
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+                native_f64(bytes, cache_fit_tolerance / 10.0);
+            }
             let write_draft = |bytes: &mut Vec<u8>, draft: Vector3| {
                 native_vector(bytes, [draft.x, draft.y, draft.z]);
             };
@@ -3377,6 +5333,31 @@ fn native_procedural_surface(
                 Some(solved_cache),
             )?;
         }
+        ProceduralSurfaceDefinition::Skin { construction } => {
+            encode_native_skin_surface(bytes, target, procedural, construction, solved_cache)?;
+        }
+        ProceduralSurfaceDefinition::Net { construction } => {
+            encode_native_net_surface(bytes, target, procedural, construction, solved_cache)?;
+        }
+        ProceduralSurfaceDefinition::Sweep {
+            profile,
+            spine,
+            native: Some(construction),
+        } => encode_native_sweep_surface(
+            bytes,
+            target,
+            procedural,
+            profile,
+            spine,
+            construction,
+            solved_cache,
+        )?,
+        ProceduralSurfaceDefinition::Sweep { native: None, .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D sweep surface {} lacks its native construction graph",
+                procedural.id
+            )))
+        }
         ProceduralSurfaceDefinition::G2Blend { construction } => {
             encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
         }
@@ -3406,16 +5387,22 @@ fn native_procedural_surface(
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "rule_sur")?;
+            let profile_range = [
+                solved_cache.u_knots.first().copied().ok_or_else(|| {
+                    CodecError::Malformed("ruled solved surface has no U knot domain".into())
+                })?,
+                solved_cache.u_knots.last().copied().ok_or_else(|| {
+                    CodecError::Malformed("ruled solved surface has no U knot domain".into())
+                })?,
+            ];
             for profile in profiles {
-                let CurveGeometry::Nurbs(profile) = &profile.geometry else {
-                    return Err(CodecError::NotImplemented(
-                        "source-less F3D rule_sur requires NURBS profiles".into(),
-                    ));
-                };
-                native_nurbs_curve(bytes, profile)?;
+                let profile = native_interval_curve(&profile.geometry, profile_range)?;
+                native_nurbs_curve(bytes, &profile)?;
             }
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+                native_f64(bytes, cache_fit_tolerance / 10.0);
+            }
             bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::Sum {
@@ -3442,20 +5429,35 @@ fn native_procedural_surface(
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "sum_spl_sur")?;
-            for curve in curves {
-                let CurveGeometry::Nurbs(curve) = &curve.geometry else {
-                    return Err(CodecError::NotImplemented(
-                        "source-less F3D sum_spl_sur requires NURBS curves".into(),
-                    ));
-                };
-                native_nurbs_curve(bytes, curve)?;
+            let ranges = [&solved_cache.u_knots, &solved_cache.v_knots]
+                .into_iter()
+                .map(|knots| {
+                    Ok::<_, CodecError>([
+                        knots.first().copied().ok_or_else(|| {
+                            CodecError::Malformed(
+                                "sum solved surface has an empty knot domain".into(),
+                            )
+                        })?,
+                        knots.last().copied().ok_or_else(|| {
+                            CodecError::Malformed(
+                                "sum solved surface has an empty knot domain".into(),
+                            )
+                        })?,
+                    ])
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            for (curve, range) in curves.into_iter().zip(ranges) {
+                let curve = native_interval_curve(&curve.geometry, range)?;
+                native_nurbs_curve(bytes, &curve)?;
             }
             native_point(
                 bytes,
                 [basepoint.x / 10.0, basepoint.y / 10.0, basepoint.z / 10.0],
             );
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+                native_f64(bytes, cache_fit_tolerance / 10.0);
+            }
             bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::Revolution {
@@ -3477,11 +5479,7 @@ fn native_procedural_surface(
                         procedural.id
                     ))
                 })?;
-            let CurveGeometry::Nurbs(directrix) = &directrix.geometry else {
-                return Err(CodecError::NotImplemented(
-                    "source-less F3D rot_spl_sur requires a NURBS directrix".into(),
-                ));
-            };
+            let directrix = native_interval_curve(&directrix.geometry, *parameter_interval)?;
             let native_parameter_interval = [
                 directrix.knots.first().copied().unwrap_or(0.0),
                 directrix.knots.last().copied().unwrap_or(0.0),
@@ -3501,7 +5499,7 @@ fn native_procedural_surface(
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "rot_spl_sur")?;
-            native_nurbs_curve(bytes, directrix)?;
+            native_nurbs_curve(bytes, &directrix)?;
             native_point(
                 bytes,
                 [
@@ -3515,7 +5513,9 @@ fn native_procedural_surface(
                 [axis_direction.x, axis_direction.y, axis_direction.z],
             );
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+                native_f64(bytes, cache_fit_tolerance / 10.0);
+            }
             bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::Offset {
@@ -3563,18 +5563,28 @@ fn native_procedural_surface(
                 bytes.push(native_bool(*flag));
             }
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+                native_f64(bytes, cache_fit_tolerance / 10.0);
+            }
             bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::Extrusion {
             directrix,
+            parameter_interval,
             direction,
+            native_position,
         } => encode_native_extrusion(
             bytes,
             target,
             procedural,
             directrix,
+            parameter_interval.ok_or_else(|| {
+                CodecError::Malformed("source-less F3D extrusion lacks its native interval".into())
+            })?,
             *direction,
+            native_position.ok_or_else(|| {
+                CodecError::Malformed("source-less F3D extrusion lacks its native position".into())
+            })?,
             solved_cache,
         )?,
         ProceduralSurfaceDefinition::Blend {
@@ -3605,9 +5615,15 @@ fn native_procedural_surface(
                 )?;
             }
         }
-        _ => {
+        ProceduralSurfaceDefinition::Helix { .. } => {
+            return Err(CodecError::Malformed(format!(
+                "source-less F3D helix surface {} must use its cacheless native carrier",
+                procedural.id
+            )))
+        }
+        ProceduralSurfaceDefinition::Unknown { .. } => {
             return Err(CodecError::NotImplemented(format!(
-                "source-less F3D procedural surface {} is not yet writable",
+                "source-less F3D unknown procedural surface {} cannot be regenerated losslessly",
                 procedural.id
             )))
         }
@@ -3655,7 +5671,19 @@ fn native_g2_side(
         .find(|surface| surface.id == side.surface)
         .ok_or_else(|| CodecError::Malformed(format!("G2 support {} is missing", side.surface)))?;
     native_embedded_surface(bytes, &surface.geometry)?;
-    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    let curve = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == side.curve)
+        .ok_or_else(|| CodecError::Malformed(format!("G2 side curve {} is missing", side.curve)))?;
+    let pcurve = side
+        .pcurves
+        .iter()
+        .flatten()
+        .find(|pcurve| matches!(pcurve, PcurveGeometry::Nurbs { .. }));
+    let curve = native_spline_field_curve(&curve.geometry, native_pcurve_knot_domain(pcurve)?)?;
+    native_nurbs_curve(bytes, &curve)?;
     native_g2_pcurve(bytes, side.pcurves[0].as_ref())?;
     native_vector(
         bytes,
@@ -3734,10 +5762,12 @@ fn encode_native_g2_blend(
         ));
     };
     native_nurbs_surface(bytes, second_exact)?;
-    native_nurbs_curve(
-        bytes,
-        native_loft_curve(target, &construction.center_curve)?,
+    let center_curve = native_loft_curve_in_range(
+        target,
+        &construction.center_curve,
+        Some(construction.center_parameters),
     )?;
+    native_nurbs_curve(bytes, &center_curve)?;
     for value in construction.center_parameters {
         native_f64(bytes, value);
     }
@@ -3750,7 +5780,9 @@ fn encode_native_g2_blend(
         native_f64(bytes, value);
     }
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+        native_f64(bytes, cache_fit_tolerance / 10.0);
+    }
     for discontinuities in &construction.discontinuities {
         native_i64(
             bytes,
@@ -3766,22 +5798,21 @@ fn encode_native_g2_blend(
     Ok(())
 }
 
-fn native_loft_curve<'a>(
-    target: &'a CadIr,
+fn native_loft_curve(
+    target: &CadIr,
     id: &cadmpeg_ir::ids::CurveId,
-) -> Result<&'a NurbsCurve, CodecError> {
+) -> Result<NurbsCurve, CodecError> {
     let curve = target
         .model
         .curves
         .iter()
         .find(|curve| curve.id == *id)
         .ok_or_else(|| CodecError::Malformed(format!("loft references missing curve {id}")))?;
-    let CurveGeometry::Nurbs(curve) = &curve.geometry else {
-        return Err(CodecError::NotImplemented(format!(
-            "source-less F3D loft requires NURBS curve {id}"
-        )));
-    };
-    Ok(curve)
+    native_spline_field_curve(&curve.geometry, None).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "source-less F3D loft requires a NURBS, circle, or ellipse curve {id}"
+        ))
+    })
 }
 
 fn native_loft_subdata(
@@ -3826,6 +5857,7 @@ fn native_loft_section(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     section: &cadmpeg_ir::geometry::LoftSection,
+    parameter_range: Option<[f64; 2]>,
 ) -> Result<(), CodecError> {
     native_i64(
         bytes,
@@ -3841,7 +5873,8 @@ fn native_loft_section(
         );
         for member in &entry.profile {
             native_i64(bytes, member.type_code);
-            native_nurbs_curve(bytes, native_loft_curve(target, &member.curve)?)?;
+            let curve = native_loft_curve_in_range(target, &member.curve, parameter_range)?;
+            native_nurbs_curve(bytes, &curve)?;
             let surface = target
                 .model
                 .surfaces
@@ -3867,7 +5900,8 @@ fn native_loft_section(
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
         }
-        native_nurbs_curve(bytes, native_loft_curve(target, &entry.path.curve)?)?;
+        let path = native_loft_curve_in_range(target, &entry.path.curve, parameter_range)?;
+        native_nurbs_curve(bytes, &path)?;
         native_i64(
             bytes,
             i64::try_from(entry.path.auxiliaries.len()).map_err(|_| {
@@ -3875,11 +5909,30 @@ fn native_loft_section(
             })?,
         );
         for auxiliary in &entry.path.auxiliaries {
-            native_nurbs_curve(bytes, native_loft_curve(target, auxiliary)?)?;
+            let auxiliary = native_loft_curve_in_range(target, auxiliary, parameter_range)?;
+            native_nurbs_curve(bytes, &auxiliary)?;
         }
         native_i64(bytes, entry.path.flag);
     }
     Ok(())
+}
+
+fn native_loft_curve_in_range(
+    target: &CadIr,
+    id: &cadmpeg_ir::ids::CurveId,
+    parameter_range: Option<[f64; 2]>,
+) -> Result<NurbsCurve, CodecError> {
+    let curve = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *id)
+        .ok_or_else(|| CodecError::Malformed(format!("loft references missing curve {id}")))?;
+    native_spline_field_curve(&curve.geometry, parameter_range).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "source-less F3D loft requires NURBS curve {id} without a section domain"
+        ))
+    })
 }
 
 fn native_compound_loft_scale(
@@ -3895,7 +5948,22 @@ fn native_compound_loft_scale(
     );
     for member in &scale.members {
         native_i64(bytes, member.type_code);
-        native_nurbs_curve(bytes, native_loft_curve(target, &member.curve)?)?;
+        let curve = target
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == member.curve)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "compound loft references missing member curve {}",
+                    member.curve
+                ))
+            })?;
+        let curve = native_spline_field_curve(
+            &curve.geometry,
+            native_pcurve_knot_domain(member.data.pcurve.as_ref())?,
+        )?;
+        native_nurbs_curve(bytes, &curve)?;
         let surface = target
             .model
             .surfaces
@@ -3917,7 +5985,7 @@ fn native_compound_loft_scale(
             native_vector(bytes, [direction.x, direction.y, direction.z]);
         }
     }
-    native_nurbs_curve(bytes, native_loft_curve(target, &scale.path)?)?;
+    native_nurbs_curve(bytes, &native_loft_curve(target, &scale.path)?)?;
     native_i64(
         bytes,
         i64::try_from(scale.auxiliaries.len()).map_err(|_| {
@@ -3925,7 +5993,7 @@ fn native_compound_loft_scale(
         })?,
     );
     for auxiliary in &scale.auxiliaries {
-        native_nurbs_curve(bytes, native_loft_curve(target, auxiliary)?)?;
+        native_nurbs_curve(bytes, &native_loft_curve(target, auxiliary)?)?;
     }
     for value in scale.tail {
         native_i64(bytes, value);
@@ -3941,6 +6009,10 @@ fn encode_native_compound_loft(
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::geometry::{CompoundLoftDirection, CompoundLoftTail};
+
+    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+        CodecError::Malformed("compound-loft surface requires a native cache-fit tolerance".into())
+    })?;
 
     let first_absent = construction.scales.iter().position(Option::is_none);
     if first_absent
@@ -3960,7 +6032,7 @@ fn encode_native_compound_loft(
     bytes.push(0x0f);
     native_ident(bytes, "cl_loft_spl_sur")?;
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    native_f64(bytes, cache_fit_tolerance / 10.0);
     for scale in construction.scales.iter().flatten() {
         native_compound_loft_scale(bytes, target, scale)?;
     }
@@ -3989,7 +6061,8 @@ fn encode_native_compound_loft(
             for value in parameter_range {
                 native_f64(bytes, *value);
             }
-            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            let curve = native_loft_curve_in_range(target, curve, Some(*parameter_range))?;
+            native_nurbs_curve(bytes, &curve)?;
         }
         CompoundLoftTail::Seven {
             first_flag,
@@ -4029,7 +6102,7 @@ fn encode_native_compound_loft(
                     native_vector(bytes, [value.x, value.y, value.z]);
                 }
                 CompoundLoftDirection::Curve { curve } if *selector != 0 => {
-                    native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+                    native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
                 }
                 _ => {
                     return Err(CodecError::Malformed(
@@ -4089,13 +6162,23 @@ fn encode_native_scaled_compound_loft(
                     "scaled compound-loft full shape requires a solved NURBS cache".into(),
                 )
             })?;
+            let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+                CodecError::Malformed(
+                    "scaled compound-loft full shape requires a native cache-fit tolerance".into(),
+                )
+            })?;
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+            native_f64(bytes, cache_fit_tolerance / 10.0);
         }
         ScaledCompoundLoftShape::None {
             parameter_ranges,
             parameters,
         } => {
+            if procedural.cache_fit_tolerance.is_some() {
+                return Err(CodecError::Malformed(
+                    "scaled compound-loft none shape cannot carry a cache-fit tolerance".into(),
+                ));
+            }
             for range in parameter_ranges {
                 for value in range {
                     native_f64(bytes, *value);
@@ -4146,7 +6229,7 @@ fn encode_native_scaled_compound_loft(
             bytes.push(native_bool(false));
             bytes.push(native_bool(*flag));
             native_enum(bytes, *singularity);
-            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
         }
         ScaledCompoundLoftBranch::Direct {
             flag,
@@ -4161,7 +6244,7 @@ fn encode_native_scaled_compound_loft(
                     native_vector(bytes, [value.x, value.y, value.z]);
                 }
                 CompoundLoftDirection::Curve { curve } if *selector != 0 => {
-                    native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+                    native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
                 }
                 _ => {
                     return Err(CodecError::Malformed(
@@ -4179,7 +6262,7 @@ fn encode_native_scaled_compound_loft(
         native_vector(bytes, [direction.x, direction.y, direction.z]);
     }
     native_enum(bytes, construction.tail_singularity);
-    native_nurbs_curve(bytes, native_loft_curve(target, &construction.tail_curve)?)?;
+    native_nurbs_curve(bytes, &native_loft_curve(target, &construction.tail_curve)?)?;
     bytes.push(0x10);
     Ok(())
 }
@@ -4189,26 +6272,631 @@ fn native_cacheless_procedural_surface(
     target: &CadIr,
     surface: &Surface,
 ) -> Result<bool, CodecError> {
-    let Some(procedural) = target
+    let mut definitions = target
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.surface == surface.id)
-    else {
+        .filter(|procedural| procedural.surface == surface.id);
+    let Some(procedural) = definitions.next() else {
         return Ok(false);
     };
-    let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } = &procedural.definition
-    else {
-        return Ok(false);
-    };
-    if !matches!(
-        construction.shape,
-        cadmpeg_ir::geometry::ScaledCompoundLoftShape::None { .. }
-    ) {
-        return Ok(false);
+    if definitions.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "surface {} has multiple procedural constructions",
+            surface.id
+        )));
     }
-    encode_native_scaled_compound_loft(bytes, target, procedural, construction, None)?;
-    Ok(true)
+    if let ProceduralSurfaceDefinition::Helix { construction } = &procedural.definition {
+        use cadmpeg_ir::geometry::HelixSurfaceProfile;
+        native_surface_base(bytes, "spline")?;
+        bytes.push(0x0f);
+        let circular = matches!(construction.profile, HelixSurfaceProfile::Circle { .. });
+        native_ident(
+            bytes,
+            if circular {
+                "helix_spl_circ"
+            } else {
+                "helix_spl_line"
+            },
+        )?;
+        for value in construction.angle_range {
+            native_f64(bytes, value);
+        }
+        for value in construction.dimension_range {
+            native_f64(bytes, if circular { value / 10.0 } else { value });
+        }
+        if let HelixSurfaceProfile::Circle { length, .. } = construction.profile {
+            native_f64(bytes, length / 10.0);
+        }
+        for value in construction.path.angle_range {
+            native_f64(bytes, value);
+        }
+        native_point(
+            bytes,
+            [
+                construction.path.center.x / 10.0,
+                construction.path.center.y / 10.0,
+                construction.path.center.z / 10.0,
+            ],
+        );
+        for vector in [
+            construction.path.major,
+            construction.path.minor,
+            construction.path.pitch,
+        ] {
+            native_point(bytes, [vector.x / 10.0, vector.y / 10.0, vector.z / 10.0]);
+        }
+        native_f64(bytes, construction.path.apex_factor);
+        native_vector(
+            bytes,
+            [
+                construction.path.axis.x,
+                construction.path.axis.y,
+                construction.path.axis.z,
+            ],
+        );
+        for sentinel in ["null_surface", "null_surface", "nullbs", "nullbs"] {
+            native_ident(bytes, sentinel)?;
+        }
+        match construction.profile {
+            HelixSurfaceProfile::Circle { radius, .. } => native_f64(bytes, radius / 10.0),
+            HelixSurfaceProfile::Line { origin } => {
+                native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            }
+        }
+        bytes.push(0x10);
+        return Ok(true);
+    }
+    if let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } = &procedural.definition
+    {
+        if matches!(
+            construction.shape,
+            cadmpeg_ir::geometry::ScaledCompoundLoftShape::None { .. }
+        ) {
+            encode_native_scaled_compound_loft(bytes, target, procedural, construction, None)?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn native_law_expression(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    expression: &cadmpeg_ir::geometry::LawExpression,
+    depth: usize,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::LawExpression;
+    if depth > 64 {
+        return Err(CodecError::Malformed(
+            "native law expression exceeds 64 recursive levels".into(),
+        ));
+    }
+    match expression {
+        LawExpression::Null => native_string(bytes, "null_law")?,
+        LawExpression::Integer { value } => native_i64(bytes, *value),
+        LawExpression::Double { value } => native_f64(bytes, *value),
+        LawExpression::Point { value } => {
+            native_point(bytes, [value.x / 10.0, value.y / 10.0, value.z / 10.0]);
+        }
+        LawExpression::Vector { value } => {
+            native_vector(bytes, [value.x, value.y, value.z]);
+        }
+        LawExpression::Transform { scalars, enums } => {
+            native_string(bytes, "TRANS")?;
+            for scalar in scalars {
+                native_f64(bytes, *scalar);
+            }
+            for value in enums {
+                native_enum(bytes, *value);
+            }
+        }
+        LawExpression::Edge { curve, parameters } => {
+            native_string(bytes, "EDGE")?;
+            let curve = target
+                .model
+                .curves
+                .iter()
+                .find(|candidate| candidate.id == *curve)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("law edge curve {curve} is missing"))
+                })?;
+            let curve = native_interval_curve(&curve.geometry, *parameters)?;
+            native_nurbs_curve(bytes, &curve)?;
+            for parameter in parameters {
+                native_f64(bytes, *parameter);
+            }
+        }
+        LawExpression::Spline {
+            native_id,
+            knots,
+            controls,
+            point,
+        } => {
+            native_string(bytes, "SPLINE_LAW")?;
+            native_i64(bytes, *native_id);
+            native_compound_loft_float_array(bytes, knots)?;
+            native_compound_loft_float_array(bytes, controls)?;
+            native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+        }
+        LawExpression::Algebraic { operator, operands } => {
+            let arity = match operator.as_str() {
+                "COS" | "SIN" | "TAN" | "COT" | "SEC" | "CSC" | "COSH" | "SINH" | "TANH"
+                | "COTH" | "SECH" | "CSCH" | "ARCCOS" | "ARCSIN" | "ARCTAN" | "ARCOT"
+                | "ARCSEC" | "ARCCSC" | "ARCCOSH" | "ARCSINH" | "ARCTANH" | "ARCOTH"
+                | "ARCSECH" | "ARCCSCH" | "ABS" | "EXP" | "LN" | "LOG" | "SIGN" | "SIZE"
+                | "TERM" | "SQRT" | "NORM" | "NOT" => 1,
+                "CROSS" | "DOT" | "DCUR" => 2,
+                "VEC" | "DSURF" => 3,
+                "MIN" | "MAX" | "SET" | "ROTATE" | "STEP" => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "source-less F3D law operator {operator} has unresolved variable arity"
+                    )));
+                }
+                _ => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "source-less F3D law operator {operator} has no defined byte grammar"
+                    )));
+                }
+            };
+            if operands.len() != arity {
+                return Err(CodecError::Malformed(format!(
+                    "F3D law operator {operator} requires {arity} operands, got {}",
+                    operands.len()
+                )));
+            }
+            native_string(bytes, operator)?;
+            for operand in operands {
+                native_law_expression(bytes, target, operand, depth + 1)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn native_law_formula(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    formula: &cadmpeg_ir::geometry::LawFormula,
+) -> Result<(), CodecError> {
+    native_string(bytes, &formula.name)?;
+    if formula.name == "null_law" {
+        if !formula.variables.is_empty() {
+            return Err(CodecError::Malformed(
+                "null_law formula cannot carry variables".into(),
+            ));
+        }
+        return Ok(());
+    }
+    native_i64(
+        bytes,
+        i64::try_from(formula.variables.len())
+            .map_err(|_| CodecError::NotImplemented("law variable count exceeds i64".into()))?,
+    );
+    for variable in &formula.variables {
+        native_law_expression(bytes, target, variable, 0)?;
+    }
+    Ok(())
+}
+
+fn native_skin_profile_data(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    data: &cadmpeg_ir::geometry::LoftProfileData,
+) -> Result<(), CodecError> {
+    let surface = target
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == data.surface)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("skin references missing surface {}", data.surface))
+        })?;
+    native_embedded_surface(bytes, &surface.geometry)?;
+    native_optional_pcurve(bytes, data.pcurve.as_ref())?;
+    bytes.push(native_bool(data.first_flag));
+    native_i64(bytes, data.asm_extension);
+    native_loft_subdata(bytes, &data.subdata)?;
+    bytes.push(native_bool(data.direction.is_some()));
+    if let Some(direction) = data.direction {
+        native_vector(bytes, [direction.x, direction.y, direction.z]);
+    }
+    Ok(())
+}
+
+fn encode_native_skin_surface(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::SkinSurfaceConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::SkinSurfaceLayout;
+    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+        CodecError::Malformed("skin surface requires a native cache-fit tolerance".into())
+    })?;
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "skin_spl_sur")?;
+    native_enum(bytes, construction.surface_boolean);
+    native_enum(bytes, construction.surface_normal);
+    native_enum(bytes, construction.surface_direction);
+    native_i64(bytes, construction.count);
+    native_f64(bytes, construction.parameter);
+    native_i64(bytes, construction.inner_count);
+    match &construction.layout {
+        SkinSurfaceLayout::Profiles {
+            profiles,
+            path,
+            tail,
+        } => {
+            if usize::try_from(construction.inner_count).ok() != Some(profiles.len()) {
+                return Err(CodecError::Malformed(
+                    "skin profile count conflicts with its inner count".into(),
+                ));
+            }
+            for profile in profiles {
+                native_i64(bytes, profile.type_code);
+                let curve = target
+                    .model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == profile.curve)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "skin references missing profile curve {}",
+                            profile.curve
+                        ))
+                    })?;
+                let curve = native_spline_field_curve(
+                    &curve.geometry,
+                    native_pcurve_knot_domain(profile.data.pcurve.as_ref())?,
+                )?;
+                native_nurbs_curve(bytes, &curve)?;
+                native_skin_profile_data(bytes, target, &profile.data)?;
+            }
+            native_nurbs_curve(bytes, &native_loft_curve(target, path)?)?;
+            for value in tail {
+                native_i64(bytes, *value);
+            }
+        }
+        SkinSurfaceLayout::Compact {
+            curve,
+            subdata,
+            first_tail,
+            secondary_curve,
+            second_tail,
+        } => {
+            native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
+            native_loft_subdata(bytes, subdata)?;
+            native_i64(bytes, *first_tail);
+            native_nurbs_curve(bytes, &native_loft_curve(target, secondary_curve)?)?;
+            native_i64(bytes, *second_tail);
+        }
+    }
+    native_vector(
+        bytes,
+        [
+            construction.direction.x,
+            construction.direction.y,
+            construction.direction.z,
+        ],
+    );
+    native_f64(bytes, construction.trailing_parameter);
+    native_law_formula(bytes, target, &construction.formula)?;
+    native_nurbs_curve(
+        bytes,
+        &native_loft_curve(target, &construction.parameter_curve)?,
+    )?;
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, cache_fit_tolerance / 10.0);
+    for values in &construction.discontinuities {
+        native_compound_loft_float_array(bytes, values)?;
+    }
+    bytes.push(native_bool(construction.discontinuity_flag));
+    bytes.push(0x10);
+    Ok(())
+}
+
+fn encode_native_net_surface(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::NetSurfaceConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+        CodecError::Malformed("net surface requires a native cache-fit tolerance".into())
+    })?;
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "net_spl_sur")?;
+    for section in construction.sections.iter() {
+        native_loft_section(bytes, target, section, None)?;
+    }
+    for parameter in construction.frame_parameters {
+        native_f64(bytes, parameter);
+    }
+    native_i64(bytes, construction.flag);
+    for direction in construction.directions {
+        native_vector(bytes, [direction.x, direction.y, direction.z]);
+    }
+    for formula in construction.formulas.iter() {
+        native_law_formula(bytes, target, formula)?;
+    }
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, cache_fit_tolerance / 10.0);
+    for values in &construction.discontinuities {
+        native_compound_loft_float_array(bytes, values)?;
+    }
+    bytes.push(native_bool(construction.discontinuity_flag));
+    bytes.push(0x10);
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn encode_native_sweep_surface(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    profile: &cadmpeg_ir::ids::CurveId,
+    spine: &cadmpeg_ir::ids::CurveId,
+    construction: &cadmpeg_ir::geometry::SweepSurfaceConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::SweepSurfaceLayout;
+    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+        CodecError::Malformed("sweep surface requires a native cache-fit tolerance".into())
+    })?;
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "sweep_spl_sur")?;
+    native_enum(bytes, construction.primary_kind);
+    match &construction.layout {
+        SweepSurfaceLayout::ProfileFirst {
+            secondary_kind,
+            directions,
+            origin,
+            parameters,
+            formulas,
+        } => {
+            native_nurbs_curve(bytes, &native_loft_curve(target, profile)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, spine)?)?;
+            native_enum(bytes, *secondary_kind);
+            for direction in directions {
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            for parameter in parameters {
+                native_f64(bytes, *parameter);
+            }
+            for formula in formulas.iter() {
+                native_law_formula(bytes, target, formula)?;
+            }
+        }
+        SweepSurfaceLayout::ExplicitFormula {
+            mode,
+            profile_range,
+            profile_frame,
+            origin,
+            directions,
+            trajectory_flag,
+            path_range,
+            path_parameter,
+            formula_flag,
+            formula,
+            trailing_flag,
+        } => {
+            native_i64(bytes, *mode);
+            let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+            native_nurbs_curve(bytes, &profile)?;
+            for value in profile_range {
+                native_f64(bytes, *value);
+            }
+            bytes.push(native_bool(profile_frame.is_some()));
+            if let Some((point, direction)) = profile_frame {
+                native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            for direction in directions {
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_i64(bytes, 1);
+            bytes.push(native_bool(*trajectory_flag));
+            let native_path_range = [path_range[0] / 10.0, path_range[1] / 10.0];
+            let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
+            native_nurbs_curve(bytes, &spine)?;
+            for value in path_range {
+                native_f64(bytes, *value / 10.0);
+            }
+            native_f64(bytes, *path_parameter);
+            bytes.push(native_bool(*formula_flag));
+            native_law_formula(bytes, target, formula)?;
+            bytes.push(native_bool(*trailing_flag));
+        }
+        SweepSurfaceLayout::ExplicitGuide {
+            mode,
+            profile_range,
+            profile_frame,
+            origin,
+            directions,
+            trajectory_flag,
+            path_range,
+            path_parameter,
+            guide_flags,
+            guide_curve,
+            guide_range,
+            guide_modes,
+            guide_parameters,
+            trailing_flags,
+        } => {
+            native_i64(bytes, *mode);
+            let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+            native_nurbs_curve(bytes, &profile)?;
+            for value in profile_range {
+                native_f64(bytes, *value);
+            }
+            bytes.push(native_bool(profile_frame.is_some()));
+            if let Some((point, direction)) = profile_frame {
+                native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            for direction in directions {
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_i64(bytes, 2);
+            bytes.push(native_bool(*trajectory_flag));
+            let native_path_range = [path_range[0] / 10.0, path_range[1] / 10.0];
+            let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
+            native_nurbs_curve(bytes, &spine)?;
+            for value in path_range {
+                native_f64(bytes, *value / 10.0);
+            }
+            native_f64(bytes, *path_parameter);
+            for flag in guide_flags {
+                bytes.push(native_bool(*flag));
+            }
+            let guide_curve = native_loft_curve_in_range(target, guide_curve, Some(*guide_range))?;
+            native_nurbs_curve(bytes, &guide_curve)?;
+            for value in guide_range {
+                native_f64(bytes, *value);
+            }
+            for mode in guide_modes {
+                native_i64(bytes, *mode);
+            }
+            for parameter in guide_parameters {
+                native_f64(bytes, *parameter);
+            }
+            for flag in trailing_flags {
+                bytes.push(native_bool(*flag));
+            }
+        }
+        SweepSurfaceLayout::ExplicitSurface {
+            mode,
+            profile_range,
+            profile_frame,
+            origin,
+            directions,
+            trajectory_flag,
+            path_range,
+            path_parameter,
+            singularity,
+            support_surface,
+            auxiliary_curve,
+            support_flag,
+            legacy_flag,
+        } => {
+            native_i64(bytes, *mode);
+            let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+            native_nurbs_curve(bytes, &profile)?;
+            for value in profile_range {
+                native_f64(bytes, *value);
+            }
+            bytes.push(native_bool(profile_frame.is_some()));
+            if let Some((point, direction)) = profile_frame {
+                native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            for direction in directions {
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_i64(bytes, 3);
+            bytes.push(native_bool(*trajectory_flag));
+            let native_path_range = [path_range[0] / 10.0, path_range[1] / 10.0];
+            let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
+            native_nurbs_curve(bytes, &spine)?;
+            for value in path_range {
+                native_f64(bytes, *value / 10.0);
+            }
+            native_f64(bytes, *path_parameter);
+            native_enum(bytes, *singularity);
+            let support = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == *support_surface)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "sweep references missing support surface {support_surface}"
+                    ))
+                })?;
+            native_embedded_surface(bytes, &support.geometry)?;
+            bytes.push(native_bool(auxiliary_curve.is_some()));
+            if let Some(curve) = auxiliary_curve {
+                native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
+            }
+            bytes.push(native_bool(*support_flag));
+            if let Some(flag) = legacy_flag {
+                bytes.push(native_bool(*flag));
+            }
+        }
+        SweepSurfaceLayout::LawDriven {
+            mode,
+            profile_range,
+            profile_frame,
+            origin,
+            directions,
+            first_law,
+            first_mode,
+            first_range,
+            law_direction,
+            path_mode,
+            path_flag,
+            path_range,
+            path_parameter,
+            second_law_flag,
+            second_law,
+            formula_mode,
+            formula,
+            trailing_flag,
+        } => {
+            native_i64(bytes, *mode);
+            let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+            native_nurbs_curve(bytes, &profile)?;
+            for value in profile_range {
+                native_f64(bytes, *value);
+            }
+            bytes.push(native_bool(profile_frame.is_some()));
+            if let Some((point, direction)) = profile_frame {
+                native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            for direction in directions {
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_law_expression(bytes, target, first_law, 0)?;
+            native_i64(bytes, *first_mode);
+            for value in first_range {
+                native_f64(bytes, *value);
+            }
+            native_vector(bytes, [law_direction.x, law_direction.y, law_direction.z]);
+            native_i64(bytes, *path_mode);
+            bytes.push(native_bool(*path_flag));
+            let spine = native_loft_curve_in_range(target, spine, Some(*path_range))?;
+            native_nurbs_curve(bytes, &spine)?;
+            for value in path_range {
+                native_f64(bytes, *value);
+            }
+            native_f64(bytes, *path_parameter);
+            bytes.push(native_bool(*second_law_flag));
+            native_law_expression(bytes, target, second_law, 0)?;
+            native_i64(bytes, *formula_mode);
+            native_law_formula(bytes, target, formula)?;
+            bytes.push(native_bool(*trailing_flag));
+        }
+    }
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, cache_fit_tolerance / 10.0);
+    for values in &construction.discontinuities {
+        native_compound_loft_float_array(bytes, values)?;
+    }
+    bytes.push(native_bool(construction.discontinuity_flag));
+    bytes.push(0x10);
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4227,8 +6915,8 @@ fn encode_native_loft(
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "loft_spl_sur")?;
-    for section in sections {
-        native_loft_section(bytes, target, section)?;
+    for (section, range) in sections.iter().zip(parameter_ranges) {
+        native_loft_section(bytes, target, section, Some(*range))?;
     }
     for range in parameter_ranges {
         native_f64(bytes, range[0]);
@@ -4253,17 +6941,22 @@ fn encode_native_loft(
         }
     }
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+        native_f64(bytes, cache_fit_tolerance / 10.0);
+    }
     bytes.push(0x10);
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn encode_native_extrusion(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     directrix: &cadmpeg_ir::ids::CurveId,
+    parameter_interval: [f64; 2],
     direction: Vector3,
+    native_position: cadmpeg_ir::math::Point3,
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
     let directrix = target
@@ -4277,32 +6970,46 @@ fn encode_native_extrusion(
                 procedural.id
             ))
         })?;
-    let CurveGeometry::Nurbs(directrix_cache) = &directrix.geometry else {
-        return Err(CodecError::NotImplemented(
-            "source-less cyl_spl_sur requires a NURBS directrix cache".into(),
-        ));
-    };
-    if [direction.x, direction.y, direction.z]
-        .into_iter()
-        .any(|component| !component.is_finite())
+    let directrix_cache = native_interval_curve(&directrix.geometry, parameter_interval)?;
+    if [
+        parameter_interval[0],
+        parameter_interval[1],
+        direction.x,
+        direction.y,
+        direction.z,
+        native_position.x,
+        native_position.y,
+        native_position.z,
+    ]
+    .into_iter()
+    .any(|component| !component.is_finite())
     {
         return Err(CodecError::Malformed(
-            "source-less extrusion direction must be finite".into(),
+            "source-less extrusion fields must be finite".into(),
         ));
     }
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "cyl_spl_sur")?;
-    native_f64(bytes, directrix_cache.knots.first().copied().unwrap_or(0.0));
-    native_f64(bytes, directrix_cache.knots.last().copied().unwrap_or(0.0));
+    native_f64(bytes, parameter_interval[0]);
+    native_f64(bytes, parameter_interval[1]);
     native_vector(
         bytes,
         [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
     );
-    native_point(bytes, [0.0, 0.0, 0.0]);
-    native_nurbs_curve(bytes, directrix_cache)?;
+    native_point(
+        bytes,
+        [
+            native_position.x / 10.0,
+            native_position.y / 10.0,
+            native_position.z / 10.0,
+        ],
+    );
+    native_nurbs_curve(bytes, &directrix_cache)?;
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+        native_f64(bytes, cache_fit_tolerance / 10.0);
+    }
     bytes.push(0x10);
     Ok(())
 }
@@ -4501,7 +7208,8 @@ fn native_vertex_blend_boundary(
                     "vertex-blend circle twist count conflicts with its form".into(),
                 ));
             }
-            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            let curve = native_loft_curve_in_range(target, curve, Some(*parameters))?;
+            native_nurbs_curve(bytes, &curve)?;
             native_enum(bytes, *form);
             for twist in twists {
                 native_point(bytes, [twist.x / 10.0, twist.y / 10.0, twist.z / 10.0]);
@@ -4546,7 +7254,8 @@ fn native_vertex_blend_boundary(
             native_vector(bytes, [normal.x, normal.y, normal.z]);
             native_f64(bytes, parameters[0]);
             native_f64(bytes, parameters[1]);
-            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            let curve = native_loft_curve_in_range(target, curve, Some(*parameters))?;
+            native_nurbs_curve(bytes, &curve)?;
         }
     }
     Ok(())
@@ -4593,7 +7302,19 @@ fn native_variable_blend_side(
             CodecError::Malformed(format!("variable support {} is missing", side.surface))
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
-    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    let curve = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == side.curve)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("variable side curve {} is missing", side.curve))
+        })?;
+    let curve = native_spline_field_curve(
+        &curve.geometry,
+        native_pcurve_knot_domain(side.pcurve.as_ref())?,
+    )?;
+    native_nurbs_curve(bytes, &curve)?;
     native_optional_pcurve(bytes, side.pcurve.as_ref())?;
     native_point(
         bytes,
@@ -4617,16 +7338,21 @@ fn encode_native_variable_blend(
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
+    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+        CodecError::Malformed("variable blend requires a native cache-fit tolerance".into())
+    })?;
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "var_blend_spl_sur")?;
     for side in construction.sides.iter() {
         native_variable_blend_side(bytes, target, side)?;
     }
-    native_nurbs_curve(
-        bytes,
-        native_loft_curve(target, &construction.primary_curve)?,
+    let primary_curve = native_loft_curve_in_range(
+        target,
+        &construction.primary_curve,
+        Some(construction.u_range),
     )?;
+    native_nurbs_curve(bytes, &primary_curve)?;
     for offset in construction.offsets {
         native_f64(bytes, offset / 10.0);
     }
@@ -4675,20 +7401,25 @@ fn encode_native_variable_blend(
     native_f64(bytes, construction.shape_length / 10.0);
     native_i64(bytes, construction.shape_tail);
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    native_f64(bytes, cache_fit_tolerance / 10.0);
     for extension in construction.shape_extensions {
         native_i64(bytes, extension);
     }
     native_nurbs_curve(
         bytes,
-        native_loft_curve(target, &construction.secondary_curve)?,
+        &native_loft_curve(target, &construction.secondary_curve)?,
     )?;
     bytes.push(native_bool(construction.convexity != 0));
     bytes.push(native_bool(construction.render_blend != 0));
     for value in construction.post_range {
         native_f64(bytes, value);
     }
-    native_nurbs_curve(bytes, native_loft_curve(target, &construction.post_curve)?)?;
+    let post_curve = native_loft_curve_in_range(
+        target,
+        &construction.post_curve,
+        Some(construction.post_range),
+    )?;
+    native_nurbs_curve(bytes, &post_curve)?;
     native_optional_pcurve(bytes, construction.post_pcurve.as_ref())?;
     bytes.push(0x10);
     Ok(())
@@ -4713,7 +7444,19 @@ fn native_rolling_ball_side(
     } else {
         native_ident(bytes, "null_surface")?;
     }
-    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    let curve = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == side.curve)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("rolling-ball side curve {} is missing", side.curve))
+        })?;
+    let curve = native_spline_field_curve(
+        &curve.geometry,
+        native_pcurve_knot_domain(side.pcurve.as_ref())?,
+    )?;
+    native_nurbs_curve(bytes, &curve)?;
     native_optional_pcurve(bytes, side.pcurve.as_ref())?;
     native_point(
         bytes,
@@ -4764,7 +7507,27 @@ fn native_rolling_ball_third_side(
             ))
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
-    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    let curve = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == side.curve)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "rolling-ball third-side curve {} is missing",
+                side.curve
+            ))
+        })?;
+    let pcurve = [
+        side.pcurve.as_ref(),
+        side.secondary_pcurve.as_ref(),
+        side.tertiary_pcurve.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|pcurve| matches!(pcurve, PcurveGeometry::Nurbs { .. }));
+    let curve = native_spline_field_curve(&curve.geometry, native_pcurve_knot_domain(pcurve)?)?;
+    native_nurbs_curve(bytes, &curve)?;
     native_optional_pcurve(bytes, side.pcurve.as_ref())?;
     native_vector(
         bytes,
@@ -4784,6 +7547,9 @@ fn encode_complete_native_rolling_ball(
     construction: &cadmpeg_ir::geometry::RollingBallConstruction,
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
+    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+        CodecError::Malformed("rolling-ball blend requires a native cache-fit tolerance".into())
+    })?;
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(
@@ -4797,7 +7563,9 @@ fn encode_complete_native_rolling_ball(
     for side in construction.sides.iter() {
         native_rolling_ball_side(bytes, target, side)?;
     }
-    native_nurbs_curve(bytes, native_loft_curve(target, &construction.slice)?)?;
+    let slice =
+        native_loft_curve_in_range(target, &construction.slice, Some(construction.u_range))?;
+    native_nurbs_curve(bytes, &slice)?;
     for offset in construction.offsets {
         native_f64(bytes, offset / 10.0);
     }
@@ -4816,7 +7584,7 @@ fn encode_complete_native_rolling_ball(
     }
     native_i64(bytes, construction.tail);
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    native_f64(bytes, cache_fit_tolerance / 10.0);
     for values in &construction.discontinuities {
         native_i64(
             bytes,
@@ -4872,14 +7640,9 @@ fn encode_native_rolling_ball(
                     procedural.id, support.surface
                 ))
             })?;
-        let SurfaceGeometry::Nurbs(cache) = &carrier.geometry else {
-            return Err(CodecError::NotImplemented(
-                "source-less rb_blend_spl_sur requires NURBS support caches".into(),
-            ));
-        };
         native_string(bytes, "blend_support_surface")?;
         native_subident(bytes, if side == 0 { "plane" } else { "sphere" })?;
-        native_nurbs_surface(bytes, cache)?;
+        native_embedded_surface(bytes, &carrier.geometry)?;
     }
     let spine = spine.ok_or_else(|| {
         CodecError::Malformed("source-less rb_blend_spl_sur lacks a spine".into())
@@ -4890,12 +7653,16 @@ fn encode_native_rolling_ball(
         .iter()
         .find(|curve| curve.id == *spine)
         .ok_or_else(|| CodecError::Malformed(format!("blend references missing spine {spine}")))?;
-    let CurveGeometry::Nurbs(spine) = &spine.geometry else {
-        return Err(CodecError::NotImplemented(
-            "source-less rb_blend_spl_sur requires a NURBS spine cache".into(),
-        ));
-    };
-    native_nurbs_curve(bytes, spine)?;
+    let spine_range = [
+        solved_cache.u_knots.first().copied().ok_or_else(|| {
+            CodecError::Malformed("rolling-ball solved surface has no U knot domain".into())
+        })?,
+        solved_cache.u_knots.last().copied().ok_or_else(|| {
+            CodecError::Malformed("rolling-ball solved surface has no U knot domain".into())
+        })?,
+    ];
+    let spine = native_interval_curve(&spine.geometry, spine_range)?;
+    native_nurbs_curve(bytes, &spine)?;
     let (start, end) = match radius {
         BlendRadiusLaw::Constant { signed_radius } => (*signed_radius, *signed_radius),
         BlendRadiusLaw::Linear { start, end } => (*start, *end),
@@ -4909,7 +7676,9 @@ fn encode_native_rolling_ball(
     native_f64(bytes, end / 10.0);
     native_enum(bytes, -1);
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+        native_f64(bytes, cache_fit_tolerance / 10.0);
+    }
     bytes.push(0x10);
     Ok(())
 }
@@ -4954,6 +7723,289 @@ fn native_nurbs_curve(bytes: &mut Vec<u8>, curve: &NurbsCurve) -> Result<(), Cod
     Ok(())
 }
 
+fn native_spline_field_curve(
+    geometry: &CurveGeometry,
+    parameter_range: Option<[f64; 2]>,
+) -> Result<NurbsCurve, CodecError> {
+    match (geometry, parameter_range) {
+        (CurveGeometry::Nurbs(curve), _) => Ok(curve.clone()),
+        (_, Some(range)) => native_interval_curve(geometry, range),
+        (CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }, None) => {
+            native_interval_curve(geometry, [0.0, std::f64::consts::TAU])
+        }
+        _ => Err(CodecError::NotImplemented(
+            "source-less F3D spline field lacks a finite curve domain".into(),
+        )),
+    }
+}
+
+fn native_pcurve_knot_domain(
+    pcurve: Option<&PcurveGeometry>,
+) -> Result<Option<[f64; 2]>, CodecError> {
+    let Some(PcurveGeometry::Nurbs { knots, .. }) = pcurve else {
+        return Ok(None);
+    };
+    Ok(Some([
+        *knots
+            .first()
+            .ok_or_else(|| CodecError::Malformed("pcurve has no knot domain".into()))?,
+        *knots
+            .last()
+            .ok_or_else(|| CodecError::Malformed("pcurve has no knot domain".into()))?,
+    ]))
+}
+
+fn native_interval_curve(
+    geometry: &CurveGeometry,
+    parameter_range: [f64; 2],
+) -> Result<NurbsCurve, CodecError> {
+    if !parameter_range.into_iter().all(f64::is_finite) || parameter_range[0] >= parameter_range[1]
+    {
+        return Err(CodecError::Malformed(
+            "source-less F3D interval curve requires a finite ordered range".into(),
+        ));
+    }
+    match geometry {
+        CurveGeometry::Nurbs(curve) => Ok(curve.clone()),
+        CurveGeometry::Line { origin, direction } => {
+            if !finite_point(*origin) || !finite_vector(*direction) || direction.norm() == 0.0 {
+                return Err(CodecError::Malformed(
+                    "source-less F3D interval line requires finite nonzero geometry".into(),
+                ));
+            }
+            let point = |parameter: f64| {
+                Point3::new(
+                    origin.x + parameter * direction.x,
+                    origin.y + parameter * direction.y,
+                    origin.z + parameter * direction.z,
+                )
+            };
+            Ok(NurbsCurve {
+                degree: 1,
+                knots: vec![
+                    parameter_range[0],
+                    parameter_range[0],
+                    parameter_range[1],
+                    parameter_range[1],
+                ],
+                control_points: vec![point(parameter_range[0]), point(parameter_range[1])],
+                weights: None,
+                periodic: false,
+            })
+        }
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => native_conic_interval_curve(
+            *center,
+            *axis,
+            *ref_direction,
+            *radius,
+            *radius,
+            parameter_range,
+        ),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => native_conic_interval_curve(
+            *center,
+            *axis,
+            *major_direction,
+            *major_radius,
+            *minor_radius,
+            parameter_range,
+        ),
+        _ => Err(CodecError::NotImplemented(
+            "source-less F3D interval construction requires a NURBS, line, circle, or ellipse source curve".into(),
+        )),
+    }
+}
+
+fn native_conic_interval_curve(
+    center: Point3,
+    axis: Vector3,
+    major_direction: Vector3,
+    major_radius: f64,
+    minor_radius: f64,
+    parameter_range: [f64; 2],
+) -> Result<NurbsCurve, CodecError> {
+    if !finite_point(center)
+        || !finite_vector(axis)
+        || !finite_vector(major_direction)
+        || !major_radius.is_finite()
+        || !minor_radius.is_finite()
+        || axis.norm() == 0.0
+        || major_direction.norm() == 0.0
+        || major_radius <= 0.0
+        || minor_radius <= 0.0
+    {
+        return Err(CodecError::Malformed(
+            "source-less F3D conic interval requires finite nondegenerate geometry".into(),
+        ));
+    }
+    let axis_norm = axis.norm();
+    let axis = Vector3::new(axis.x / axis_norm, axis.y / axis_norm, axis.z / axis_norm);
+    let major_norm = major_direction.norm();
+    let major_direction = Vector3::new(
+        major_direction.x / major_norm,
+        major_direction.y / major_norm,
+        major_direction.z / major_norm,
+    );
+    let minor_direction = Vector3::new(
+        axis.y * major_direction.z - axis.z * major_direction.y,
+        axis.z * major_direction.x - axis.x * major_direction.z,
+        axis.x * major_direction.y - axis.y * major_direction.x,
+    );
+    let minor_norm = minor_direction.norm();
+    if !minor_norm.is_finite() || minor_norm == 0.0 {
+        return Err(CodecError::Malformed(
+            "source-less F3D conic axis and major direction must not be parallel".into(),
+        ));
+    }
+    let minor_direction = Vector3::new(
+        minor_direction.x / minor_norm,
+        minor_direction.y / minor_norm,
+        minor_direction.z / minor_norm,
+    );
+    let delta = parameter_range[1] - parameter_range[0];
+    let spans = (delta / std::f64::consts::FRAC_PI_2).ceil().max(1.0) as usize;
+    let step = delta / spans as f64;
+    let mut control_points = Vec::with_capacity(spans * 2 + 1);
+    let mut weights = Vec::with_capacity(spans * 2 + 1);
+    let mut knots = Vec::with_capacity(spans * 2 + 4);
+    let point = |angle: f64, scale: f64| {
+        let major_scale = major_radius * angle.cos() * scale;
+        let minor_scale = minor_radius * angle.sin() * scale;
+        Point3::new(
+            center.x + major_direction.x * major_scale + minor_direction.x * minor_scale,
+            center.y + major_direction.y * major_scale + minor_direction.y * minor_scale,
+            center.z + major_direction.z * major_scale + minor_direction.z * minor_scale,
+        )
+    };
+    for span in 0..spans {
+        let start = parameter_range[0] + step * span as f64;
+        let end = start + step;
+        let middle = (start + end) * 0.5;
+        let weight = (step * 0.5).cos();
+        if !weight.is_finite() || weight <= 0.0 {
+            return Err(CodecError::Malformed(
+                "source-less F3D conic interval has an invalid rational span".into(),
+            ));
+        }
+        if span == 0 {
+            control_points.push(point(start, 1.0));
+            weights.push(1.0);
+            knots.extend([start, start, start]);
+        } else {
+            knots.extend([start, start]);
+        }
+        control_points.push(point(middle, 1.0 / weight));
+        weights.push(weight);
+        control_points.push(point(end, 1.0));
+        weights.push(1.0);
+        if span + 1 == spans {
+            knots.extend([end, end, end]);
+        }
+    }
+    Ok(NurbsCurve {
+        degree: 2,
+        knots,
+        control_points,
+        weights: Some(weights),
+        periodic: false,
+    })
+}
+
+#[cfg(test)]
+mod native_interval_curve_tests {
+    use super::*;
+
+    #[test]
+    fn generated_circle_interval_lowers_to_exact_rational_nurbs() {
+        let curve = native_interval_curve(
+            &CurveGeometry::Circle {
+                center: Point3::new(2.0, 3.0, 4.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 5.0,
+            },
+            [0.0, std::f64::consts::PI],
+        )
+        .expect("generated circle interval");
+        let midpoint = cadmpeg_ir::eval::nurbs_curve_point(
+            curve.degree,
+            &curve.knots,
+            &curve.control_points,
+            curve.weights.as_deref(),
+            std::f64::consts::FRAC_PI_2,
+        )
+        .expect("evaluate generated circle interval");
+        assert!((midpoint.x - 2.0).abs() < 1.0e-12);
+        assert!((midpoint.y - 8.0).abs() < 1.0e-12);
+        assert!((midpoint.z - 4.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn generated_ellipse_interval_preserves_both_radii() {
+        let curve = native_interval_curve(
+            &CurveGeometry::Ellipse {
+                center: Point3::new(-1.0, 2.0, 0.5),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                major_direction: Vector3::new(1.0, 0.0, 0.0),
+                major_radius: 6.0,
+                minor_radius: 2.0,
+            },
+            [0.0, std::f64::consts::FRAC_PI_2],
+        )
+        .expect("generated ellipse interval");
+        assert_eq!(curve.control_points[0], Point3::new(5.0, 2.0, 0.5));
+        assert!((curve.control_points[2].x + 1.0).abs() < 1.0e-12);
+        assert_eq!(curve.control_points[2].y, 4.0);
+        assert_eq!(curve.control_points[2].z, 0.5);
+        assert_eq!(
+            curve.knots,
+            vec![
+                0.0,
+                0.0,
+                0.0,
+                std::f64::consts::FRAC_PI_2,
+                std::f64::consts::FRAC_PI_2,
+                std::f64::consts::FRAC_PI_2,
+            ]
+        );
+    }
+
+    #[test]
+    fn generated_domainless_circle_uses_its_full_natural_domain() {
+        let geometry = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 3.0,
+        };
+        let curve = native_spline_field_curve(&geometry, None)
+            .expect("generated domainless circle spline field");
+        assert_eq!(curve.knots.first().copied(), Some(0.0));
+        assert_eq!(curve.knots.last().copied(), Some(std::f64::consts::TAU));
+        assert_eq!(curve.control_points.len(), 9);
+        assert_eq!(curve.weights.as_ref().map(Vec::len), Some(9));
+    }
+
+    #[test]
+    fn generated_domainless_line_remains_rejected() {
+        let geometry = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        };
+        assert!(native_spline_field_curve(&geometry, None).is_err());
+    }
+}
+
 fn native_procedural_curve(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -4977,8 +8029,16 @@ fn native_procedural_curve(
         procedural.definition,
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. }
     ) {
-        return Ok(false);
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D unknown procedural curve {} cannot be regenerated losslessly",
+            procedural.id
+        )));
     }
+    let write_cache_fit_tolerance = |bytes: &mut Vec<u8>| {
+        if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+            native_f64(bytes, cache_fit_tolerance / 10.0);
+        }
+    };
     if matches!(
         procedural.definition,
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
@@ -4987,7 +8047,33 @@ fn native_procedural_curve(
         bytes.push(0x0f);
         native_ident(bytes, "exact_int_cur")?;
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
+        bytes.push(0x10);
+        return Ok(true);
+    }
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
+        context,
+        extension,
+        primary,
+        additional,
+    } = &procedural.definition
+    {
+        native_curve_base(bytes, "intcurve")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "law_int_cur")?;
+        native_nurbs_curve(bytes, solved_cache)?;
+        write_cache_fit_tolerance(bytes);
+        native_intcurve_support_context(bytes, target, context)?;
+        native_i64(bytes, *extension);
+        native_law_formula(bytes, target, primary)?;
+        native_i64(
+            bytes,
+            i64::try_from(additional.len())
+                .map_err(|_| CodecError::NotImplemented("law formula count exceeds i64".into()))?,
+        );
+        for formula in additional {
+            native_law_formula(bytes, target, formula)?;
+        }
         bytes.push(0x10);
         return Ok(true);
     }
@@ -5003,16 +8089,20 @@ fn native_procedural_curve(
             .iter()
             .find(|curve| curve.id == *bend)
             .ok_or_else(|| CodecError::Malformed("deformable bend curve is missing".into()))?;
-        let CurveGeometry::Nurbs(bend) = &bend.geometry else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D defm_int_cur requires a NURBS bend curve".into(),
-            ));
-        };
+        let bend_range = [
+            solved_cache.knots.first().copied().ok_or_else(|| {
+                CodecError::Malformed("deformable solved curve has no knot domain".into())
+            })?,
+            solved_cache.knots.last().copied().ok_or_else(|| {
+                CodecError::Malformed("deformable solved curve has no knot domain".into())
+            })?,
+        ];
+        let bend = native_interval_curve(&bend.geometry, bend_range)?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "defm_int_cur")?;
         native_i64(bytes, *extension);
-        native_nurbs_curve(bytes, bend)?;
+        native_nurbs_curve(bytes, &bend)?;
         match data {
             cadmpeg_ir::geometry::DeformableCurveData::VectorField {
                 vectors,
@@ -5049,12 +8139,13 @@ fn native_procedural_curve(
             }
         }
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
         context,
+        discontinuity_flag,
         source,
         tail,
     } = &procedural.definition
@@ -5065,23 +8156,19 @@ fn native_procedural_curve(
             .iter()
             .find(|curve| curve.id == *source)
             .ok_or_else(|| CodecError::Malformed("projection source curve is missing".into()))?;
-        let CurveGeometry::Nurbs(source) = &source.geometry else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D projection requires a NURBS source curve".into(),
-            ));
-        };
+        let source = native_interval_curve(&source.geometry, context.parameter_range)?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "proj_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
-        bytes.push(0x0b);
-        native_nurbs_curve(bytes, source)?;
+        bytes.push(native_bool(*discontinuity_flag));
+        native_nurbs_curve(bytes, &source)?;
         match tail {
             cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag } => {
                 bytes.push(native_bool(*flag));
                 bytes.push(0x10);
                 native_nurbs_curve(bytes, solved_cache)?;
-                native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+                write_cache_fit_tolerance(bytes);
             }
             cadmpeg_ir::geometry::ProjectionTail::Ranged {
                 flag,
@@ -5094,7 +8181,7 @@ fn native_procedural_curve(
                 }
                 native_string(bytes, role)?;
                 native_nurbs_curve(bytes, solved_cache)?;
-                native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+                write_cache_fit_tolerance(bytes);
                 bytes.push(0x10);
             }
         }
@@ -5128,7 +8215,7 @@ fn native_procedural_curve(
             native_f64(bytes, *value);
         }
         bytes.push(0x0b);
-        for component in components {
+        for (ordinal, component) in components.iter().enumerate() {
             let component = target
                 .model
                 .curves
@@ -5139,28 +8226,34 @@ fn native_procedural_curve(
                         "compound curve references missing component {component}"
                     ))
                 })?;
-            let CurveGeometry::Nurbs(component) = &component.geometry else {
-                return Err(CodecError::NotImplemented(
-                    "source-less F3D compound curves require NURBS components".into(),
-                ));
+            let parameter_range = if matches!(component.geometry, CurveGeometry::Nurbs(_)) {
+                None
+            } else {
+                let range = parameters.get(ordinal..ordinal + 2).ok_or_else(|| {
+                    CodecError::Malformed("compound component has no construction interval".into())
+                })?;
+                Some([range[0], range[1]])
             };
-            native_nurbs_curve(bytes, component)?;
+            let component = native_spline_field_curve(&component.geometry, parameter_range)?;
+            native_nurbs_curve(bytes, &component)?;
         }
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context } =
-        &procedural.definition
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+        context,
+        discontinuity_flag,
+    } = &procedural.definition
     {
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "int_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
-        bytes.push(0x0b);
+        bytes.push(native_bool(*discontinuity_flag));
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -5178,7 +8271,7 @@ fn native_procedural_curve(
         native_ident(bytes, name)?;
         native_intcurve_support_context(bytes, target, context)?;
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -5215,12 +8308,13 @@ fn native_procedural_curve(
             native_f64(bytes, draft_factor);
         }
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
         context,
+        discontinuity_flag,
         base_u_range,
         base_v_range,
         base,
@@ -5236,22 +8330,18 @@ fn native_procedural_curve(
             .iter()
             .find(|curve| curve.id == *base)
             .ok_or_else(|| CodecError::Malformed("surface-offset base curve is missing".into()))?;
-        let CurveGeometry::Nurbs(base) = &base.geometry else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D off_surf_int_cur requires a NURBS base curve".into(),
-            ));
-        };
+        let base = native_interval_curve(&base.geometry, *base_range)?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "off_surf_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
-        bytes.push(0x0b);
+        bytes.push(native_bool(*discontinuity_flag));
         for range in [base_u_range, base_v_range] {
             for value in *range {
                 native_f64(bytes, value);
             }
         }
-        native_nurbs_curve(bytes, base)?;
+        native_nurbs_curve(bytes, &base)?;
         for value in base_range {
             native_f64(bytes, *value);
         }
@@ -5259,7 +8349,7 @@ fn native_procedural_curve(
         native_f64(bytes, *shift);
         native_f64(bytes, *scale);
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -5267,6 +8357,7 @@ fn native_procedural_curve(
         context,
         surface_parameter_ranges,
         first_pcurve_parameter_range,
+        discontinuity_flag,
         direction,
     } = &procedural.definition
     {
@@ -5341,10 +8432,10 @@ fn native_procedural_curve(
                 native_f64(bytes, *value);
             }
         }
-        bytes.push(0x0b);
+        bytes.push(native_bool(*discontinuity_flag));
         native_enum(bytes, *direction);
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -5382,23 +8473,26 @@ fn native_procedural_curve(
         native_embedded_surface(bytes, &surface.geometry)?;
         native_nurbs_pcurve_block(bytes, pcurve)?;
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
-        &procedural.definition
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
+        context,
+        discontinuity_flag,
+        offsets,
+    } = &procedural.definition
     {
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "off_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
-        bytes.push(0x0b);
+        bytes.push(native_bool(*discontinuity_flag));
         for offset in offsets {
             native_f64(bytes, *offset / 10.0);
         }
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -5416,16 +8510,12 @@ fn native_procedural_curve(
             .iter()
             .find(|curve| curve.id == *source)
             .ok_or_else(|| CodecError::Malformed("vector offset source curve is missing".into()))?;
-        let CurveGeometry::Nurbs(source) = &source.geometry else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D vector offset requires a NURBS source curve".into(),
-            ));
-        };
+        let source = native_interval_curve(&source.geometry, *parameter_range)?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "offset_int_cur")?;
         bytes.push(0x0b);
-        native_nurbs_curve(bytes, source)?;
+        native_nurbs_curve(bytes, &source)?;
         native_f64(bytes, parameter_range[0]);
         native_f64(bytes, parameter_range[1]);
         native_vector(bytes, [offset.x / 10.0, offset.y / 10.0, offset.z / 10.0]);
@@ -5434,7 +8524,7 @@ fn native_procedural_curve(
         native_string(bytes, labels_1)?;
         native_i64(bytes, codes[1]);
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -5449,36 +8539,58 @@ fn native_procedural_curve(
             .iter()
             .find(|curve| curve.id == *source)
             .ok_or_else(|| CodecError::Malformed("subset source curve is missing".into()))?;
-        let CurveGeometry::Nurbs(source) = &source.geometry else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D subset requires a NURBS source curve".into(),
-            ));
-        };
+        let source = native_interval_curve(&source.geometry, *parameter_range)?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "subset_int_cur")?;
-        native_nurbs_curve(bytes, source)?;
+        native_nurbs_curve(bytes, &source)?;
         native_f64(bytes, parameter_range[0]);
         native_f64(bytes, parameter_range[1]);
         native_nurbs_curve(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = &procedural.definition
-    else {
-        return Err(CodecError::NotImplemented(format!(
-            "source-less F3D does not support procedural curve definition {}",
-            procedural.id
-        )));
+    let (angle_range, center, major, minor, pitch, apex_factor, axis) = match &procedural.definition
+    {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+            angle_range,
+            center,
+            major,
+            minor,
+            pitch,
+            apex_factor,
+            axis,
+        } => (angle_range, center, major, minor, pitch, apex_factor, axis),
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D offset curve {} lacks a defined native offset-law grammar",
+                procedural.id
+            )))
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::BlendSpine { .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D blend-spine curve {} lacks its native blend construction",
+                procedural.id
+            )))
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. } => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
     };
     native_curve_base(bytes, "intcurve")?;
     bytes.push(0x0f);
@@ -5494,7 +8606,7 @@ fn native_procedural_curve(
     native_f64(bytes, *apex_factor);
     native_vector(bytes, [axis.x, axis.y, axis.z]);
     native_nurbs_curve(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    write_cache_fit_tolerance(bytes);
     bytes.push(0x10);
     Ok(true)
 }
@@ -5520,14 +8632,23 @@ fn native_embedded_surface(
             axis,
             ref_direction,
             radius,
-        } => native_embedded_cone(bytes, *origin, *axis, *ref_direction, *radius, 0.0)?,
+        } => native_embedded_cone(bytes, *origin, *axis, *ref_direction, *radius, 1.0, 0.0)?,
         SurfaceGeometry::Cone {
             origin,
             axis,
             ref_direction,
             radius,
+            ratio,
             half_angle,
-        } => native_embedded_cone(bytes, *origin, *axis, *ref_direction, *radius, *half_angle)?,
+        } => native_embedded_cone(
+            bytes,
+            *origin,
+            *axis,
+            *ref_direction,
+            *radius,
+            *ratio,
+            *half_angle,
+        )?,
         SurfaceGeometry::Sphere {
             center,
             axis,
@@ -5574,26 +8695,8 @@ fn native_intcurve_support_context(
     target: &CadIr,
     context: &cadmpeg_ir::geometry::IntcurveSupportContext,
 ) -> Result<(), CodecError> {
-    let null_supports = context
-        .sides
-        .iter()
-        .all(|side| side.surface.is_none() && side.pcurve.is_none());
-    if null_supports {
-        for name in ["null_surface", "null_surface", "nullbs", "nullbs"] {
-            native_ident(bytes, name)?;
-        }
-    } else {
-        if context
-            .sides
-            .iter()
-            .any(|side| side.surface.is_none() || side.pcurve.is_none())
-        {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D mixed null/non-null intcurve supports are not yet writable".into(),
-            ));
-        }
-        for side in &context.sides {
-            let surface_id = side.surface.as_ref().expect("non-null supports checked");
+    for side in &context.sides {
+        if let Some(surface_id) = &side.surface {
             let surface = target
                 .model
                 .surfaces
@@ -5605,12 +8708,15 @@ fn native_intcurve_support_context(
                     ))
                 })?;
             native_embedded_surface(bytes, &surface.geometry)?;
+        } else {
+            native_ident(bytes, "null_surface")?;
         }
-        for side in &context.sides {
-            native_nurbs_pcurve_block(
-                bytes,
-                side.pcurve.as_ref().expect("non-null supports checked"),
-            )?;
+    }
+    for side in &context.sides {
+        if let Some(pcurve) = &side.pcurve {
+            native_nurbs_pcurve_block(bytes, pcurve)?;
+        } else {
+            native_ident(bytes, "nullbs")?;
         }
     }
     for value in context.parameter_range {
@@ -5636,6 +8742,7 @@ fn native_embedded_cone(
     axis: Vector3,
     ref_direction: Vector3,
     radius: f64,
+    ratio: f64,
     half_angle: f64,
 ) -> Result<(), CodecError> {
     native_ident(bytes, "cone")?;
@@ -5649,7 +8756,7 @@ fn native_embedded_cone(
             ref_direction.z * radius / 10.0,
         ],
     );
-    native_f64(bytes, 1.0);
+    native_f64(bytes, ratio);
     bytes.extend_from_slice(&[0x0b, 0x0b]);
     native_f64(bytes, half_angle.sin());
     native_f64(bytes, half_angle.cos());
@@ -5658,20 +8765,64 @@ fn native_embedded_cone(
     Ok(())
 }
 
-fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError> {
-    let PcurveGeometry::Nurbs {
+fn pcurve_uses_ref_form(pcurve: &Pcurve) -> Result<bool, CodecError> {
+    match (
+        pcurve.wrapper_reversed,
+        pcurve.native_tail_flags,
+        pcurve.fit_tolerance,
+    ) {
+        (None, None, None) => Ok(true),
+        (Some(_), Some(_), Some(_)) => Ok(false),
+        _ => Err(CodecError::Malformed(format!(
+            "pcurve {} mixes inline and ref-form native fields",
+            pcurve.id
+        ))),
+    }
+}
+
+fn native_pcurve(
+    bytes: &mut Vec<u8>,
+    pcurve: &Pcurve,
+    companion_ref: Option<i64>,
+) -> Result<(), CodecError> {
+    if pcurve_uses_ref_form(pcurve)? {
+        let companion_ref = companion_ref.ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "ref-form pcurve {} has no companion record",
+                pcurve.id
+            ))
+        })?;
+        let range = pcurve.parameter_range.ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "ref-form pcurve {} has no parameter range",
+                pcurve.id
+            ))
+        })?;
+        native_ident(bytes, "pcurve")?;
+        native_ref(bytes, -1);
+        native_i64(bytes, -1);
+        native_ref(bytes, -1);
+        native_i64(bytes, 2);
+        native_ref(bytes, companion_ref);
+        native_f64(bytes, range[0]);
+        native_f64(bytes, range[1]);
+        return Ok(());
+    }
+    if companion_ref.is_some() {
+        return Err(CodecError::Malformed(format!(
+            "inline pcurve {} unexpectedly has a companion record",
+            pcurve.id
+        )));
+    }
+    let range = pcurve.parameter_range.unwrap_or([0.0, 1.0]);
+    let NativePcurveGeometry {
         degree,
         knots,
         control_points,
         weights,
         periodic,
-    } = &pcurve.geometry
-    else {
-        return Err(CodecError::NotImplemented(
-            "source-less F3D analytic pcurves are unsupported".into(),
-        ));
-    };
-    let degree_usize = usize::try_from(*degree)
+    } = native_pcurve_geometry(&pcurve.geometry, range)?;
+    let degree_usize = usize::try_from(degree)
         .map_err(|_| CodecError::NotImplemented("F3D pcurve degree exceeds usize".into()))?;
     if knots.len() != control_points.len() + degree_usize + 1
         || weights
@@ -5691,15 +8842,15 @@ fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError>
     bytes.push(0x0f);
     native_ident(bytes, "exp_par_cur")?;
     native_ident(bytes, if weights.is_some() { "nurbs" } else { "nubs" })?;
-    native_i64(bytes, i64::from(*degree));
-    native_enum(bytes, if *periodic { 2 } else { 0 });
+    native_i64(bytes, i64::from(degree));
+    native_enum(bytes, if periodic { 2 } else { 0 });
     native_i64(
         bytes,
-        i64::try_from(unique_knot_count(knots)).map_err(|_| {
+        i64::try_from(unique_knot_count(&knots)).map_err(|_| {
             CodecError::NotImplemented("F3D pcurve unique-knot count exceeds i64".into())
         })?,
     );
-    native_nurbs_knots(bytes, knots)?;
+    native_nurbs_knots(bytes, &knots)?;
     for (index, point) in control_points.iter().enumerate() {
         native_f64(bytes, point.u);
         native_f64(bytes, point.v);
@@ -5709,7 +8860,9 @@ fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError>
     }
     native_f64(bytes, pcurve.fit_tolerance.unwrap_or(0.0));
     bytes.push(0x10);
-    bytes.extend_from_slice(&[0x0b; 4]);
+    for flag in pcurve.native_tail_flags.unwrap_or([true; 4]) {
+        bytes.push(native_bool(flag));
+    }
     let range = pcurve.parameter_range.unwrap_or_else(|| {
         [
             knots.first().copied().unwrap_or(0.0),
@@ -5721,23 +8874,101 @@ fn native_pcurve(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError>
     Ok(())
 }
 
+fn native_ref_pcurve_companion(bytes: &mut Vec<u8>, pcurve: &Pcurve) -> Result<(), CodecError> {
+    if !pcurve_uses_ref_form(pcurve)? {
+        return Err(CodecError::Malformed(format!(
+            "inline pcurve {} cannot emit a ref-form companion",
+            pcurve.id
+        )));
+    }
+    let range = pcurve.parameter_range.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "ref-form pcurve {} has no parameter range",
+            pcurve.id
+        ))
+    })?;
+    let native = native_pcurve_geometry(&pcurve.geometry, range)?;
+    let lifted = NurbsCurve {
+        degree: native.degree,
+        knots: native.knots,
+        control_points: native
+            .control_points
+            .into_iter()
+            .map(|point| Point3::new(point.u * 10.0, point.v * 10.0, 0.0))
+            .collect(),
+        weights: native.weights,
+        periodic: native.periodic,
+    };
+    native_curve_base(bytes, "intcurve")?;
+    native_nurbs_curve(bytes, &lifted)?;
+    native_nurbs_pcurve_block(bytes, &pcurve.geometry)?;
+    Ok(())
+}
+
+struct NativePcurveGeometry {
+    degree: u32,
+    knots: Vec<f64>,
+    control_points: Vec<cadmpeg_ir::math::Point2>,
+    weights: Option<Vec<f64>>,
+    periodic: bool,
+}
+
+fn native_pcurve_geometry(
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+) -> Result<NativePcurveGeometry, CodecError> {
+    match geometry {
+        PcurveGeometry::Line { origin, direction } => {
+            if !range.iter().all(|value| value.is_finite()) || range[0] >= range[1] {
+                return Err(CodecError::Malformed(
+                    "source-less F3D line pcurve requires an ordered finite range".into(),
+                ));
+            }
+            Ok(NativePcurveGeometry {
+                degree: 1,
+                knots: vec![range[0], range[0], range[1], range[1]],
+                control_points: vec![
+                    cadmpeg_ir::math::Point2::new(
+                        origin.u + range[0] * direction.u,
+                        origin.v + range[0] * direction.v,
+                    ),
+                    cadmpeg_ir::math::Point2::new(
+                        origin.u + range[1] * direction.u,
+                        origin.v + range[1] * direction.v,
+                    ),
+                ],
+                weights: None,
+                periodic: false,
+            })
+        }
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        } => Ok(NativePcurveGeometry {
+            degree: *degree,
+            knots: knots.clone(),
+            control_points: control_points.clone(),
+            weights: weights.clone(),
+            periodic: *periodic,
+        }),
+    }
+}
+
 fn native_nurbs_pcurve_block(
     bytes: &mut Vec<u8>,
     geometry: &PcurveGeometry,
 ) -> Result<(), CodecError> {
-    let PcurveGeometry::Nurbs {
+    let NativePcurveGeometry {
         degree,
         knots,
         control_points,
         weights,
         periodic,
-    } = geometry
-    else {
-        return Err(CodecError::NotImplemented(
-            "embedded F3D support pcurves require NURBS geometry".into(),
-        ));
-    };
-    let degree_usize = usize::try_from(*degree)
+    } = native_pcurve_geometry(geometry, [0.0, 1.0])?;
+    let degree_usize = usize::try_from(degree)
         .map_err(|_| CodecError::NotImplemented("F3D pcurve degree exceeds usize".into()))?;
     if knots.len() != control_points.len() + degree_usize + 1
         || weights
@@ -5749,15 +8980,15 @@ fn native_nurbs_pcurve_block(
         ));
     }
     native_ident(bytes, if weights.is_some() { "nurbs" } else { "nubs" })?;
-    native_i64(bytes, i64::from(*degree));
-    native_enum(bytes, if *periodic { 2 } else { 0 });
+    native_i64(bytes, i64::from(degree));
+    native_enum(bytes, if periodic { 2 } else { 0 });
     native_i64(
         bytes,
-        i64::try_from(unique_knot_count(knots)).map_err(|_| {
+        i64::try_from(unique_knot_count(&knots)).map_err(|_| {
             CodecError::NotImplemented("F3D pcurve unique-knot count exceeds i64".into())
         })?,
     );
-    native_nurbs_knots(bytes, knots)?;
+    native_nurbs_knots(bytes, &knots)?;
     for (index, point) in control_points.iter().enumerate() {
         native_f64(bytes, point.u);
         native_f64(bytes, point.v);
@@ -5815,6 +9046,15 @@ fn native_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     native_text(bytes, 0x07, value)
 }
 
+fn native_u16_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+    let length = u16::try_from(value.len())
+        .map_err(|_| CodecError::NotImplemented("F3D native text exceeds u16".into()))?;
+    bytes.push(0x08);
+    bytes.extend_from_slice(&length.to_le_bytes());
+    bytes.extend_from_slice(value.as_bytes());
+    Ok(())
+}
+
 fn native_text(bytes: &mut Vec<u8>, tag: u8, value: &str) -> Result<(), CodecError> {
     let length = u8::try_from(value.len())
         .map_err(|_| CodecError::NotImplemented("F3D native text exceeds 255 bytes".into()))?;
@@ -5850,6 +9090,11 @@ fn native_f64(bytes: &mut Vec<u8>, value: f64) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
+fn native_f32(bytes: &mut Vec<u8>, value: f32) {
+    bytes.push(0x05);
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
 fn native_point(bytes: &mut Vec<u8>, point: [f64; 3]) {
     bytes.push(0x13);
     for value in point {
@@ -5864,7 +9109,12 @@ fn native_vector(bytes: &mut Vec<u8>, vector: [f64; 3]) {
     }
 }
 
-fn native_transform(bytes: &mut Vec<u8>, transform: Transform) -> Result<(), CodecError> {
+fn native_transform(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    body: &Body,
+    transform: Transform,
+) -> Result<(), CodecError> {
     native_ident(bytes, "transform")?;
     for vector in [
         [
@@ -5891,7 +9141,60 @@ fn native_transform(bytes: &mut Vec<u8>, transform: Transform) -> Result<(), Cod
         native_vector(bytes, vector);
     }
     native_f64(bytes, transform.rows[3][3]);
+    let hints = f3d_native(target)?
+        .and_then(|native| {
+            native
+                .transform_hints
+                .into_iter()
+                .find(|hints| hints.body == body.id)
+        })
+        .map_or_else(
+            || derived_transform_hints(transform),
+            |hints| [hints.rotation, hints.reflection, hints.shear],
+        );
+    for hint in hints {
+        bytes.push(native_bool(hint));
+    }
     Ok(())
+}
+
+fn derived_transform_hints(transform: Transform) -> [bool; 3] {
+    let linear = [
+        [
+            transform.rows[0][0],
+            transform.rows[0][1],
+            transform.rows[0][2],
+        ],
+        [
+            transform.rows[1][0],
+            transform.rows[1][1],
+            transform.rows[1][2],
+        ],
+        [
+            transform.rows[2][0],
+            transform.rows[2][1],
+            transform.rows[2][2],
+        ],
+    ];
+    let determinant = linear[0][0] * (linear[1][1] * linear[2][2] - linear[1][2] * linear[2][1])
+        - linear[0][1] * (linear[1][0] * linear[2][2] - linear[1][2] * linear[2][0])
+        + linear[0][2] * (linear[1][0] * linear[2][1] - linear[1][1] * linear[2][0]);
+    let reflection = determinant.is_sign_negative();
+    let columns = [
+        [linear[0][0], linear[1][0], linear[2][0]],
+        [linear[0][1], linear[1][1], linear[2][1]],
+        [linear[0][2], linear[1][2], linear[2][2]],
+    ];
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let scale = columns
+        .iter()
+        .map(|column| dot(*column, *column))
+        .fold(1.0f64, f64::max);
+    let shear = dot(columns[0], columns[1]).abs() > f64::EPSILON * scale
+        || dot(columns[0], columns[2]).abs() > f64::EPSILON * scale
+        || dot(columns[1], columns[2]).abs() > f64::EPSILON * scale;
+    let rotation = linear != [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    [rotation, reflection, shear]
 }
 
 fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
@@ -5909,22 +9212,41 @@ fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecE
         ));
     }
     let history = &histories[0];
-    for name in ["Begin", "of", "ASM", "History"] {
-        native_subident(bytes, name)?;
+    match (history.stream_size, history.high_water_mark) {
+        (Some(stream_size), Some(high_water_mark)) => {
+            if history
+                .states
+                .first()
+                .is_none_or(|state| state.state_id != stream_size)
+                || high_water_mark < stream_size
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D history {} requires head state_id == stream_size <= high_water_mark",
+                    history.id
+                )));
+            }
+            for name in ["Begin", "of", "ASM", "History"] {
+                native_subident(bytes, name)?;
+            }
+            native_ident(bytes, "Data")?;
+            native_ident(bytes, "history_stream")?;
+            native_i64(bytes, stream_size);
+            native_i64(bytes, stream_size);
+            native_i64(bytes, 0);
+            native_i64(bytes, high_water_mark);
+            for reference in [-1, 0, 1, -1] {
+                native_ref(bytes, reference);
+            }
+            bytes.push(0x11);
+        }
+        (None, None) => {}
+        _ => {
+            return Err(CodecError::Malformed(format!(
+                "F3D history {} has an incomplete history-stream preamble",
+                history.id
+            )));
+        }
     }
-    native_ident(bytes, "Data")?;
-    native_ident(bytes, "history_stream")?;
-    native_i64(
-        bytes,
-        history.states.first().map_or(0, |state| state.state_id),
-    );
-    native_i64(bytes, history.stream_size.unwrap_or(0));
-    native_i64(bytes, 0);
-    native_i64(bytes, history.high_water_mark.unwrap_or(0));
-    for reference in [-1, 0, 1, -1] {
-        native_ref(bytes, reference);
-    }
-    bytes.push(0x11);
     for state in &history.states {
         native_ident(bytes, "delta_state")?;
         native_i64(bytes, state.state_id);
@@ -5941,6 +9263,12 @@ fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecE
             native_ref(bytes, board.owner_ref);
             native_i64(bytes, board.number);
             for change in &board.changes {
+                if change.kind != history_change_kind(change.old_ref, change.new_ref)? {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D entity change {} has a kind inconsistent with its references",
+                        change.id
+                    )));
+                }
                 native_i64(bytes, 1);
                 native_ref(bytes, change.old_ref.unwrap_or(-1));
                 native_ref(bytes, change.new_ref.unwrap_or(-1));
@@ -6080,9 +9408,13 @@ pub fn write_semantic(
     let act_guid_edits = validate_act_guid_edits(&baseline.ir, target)?;
     let act_root_edits = validate_act_root_edits(&baseline.ir, target)?;
     let act_entity_edits = validate_act_entity_edits(&baseline.ir, target)?;
+    let configuration_edits = validate_configuration_edits(&baseline.ir, target)?;
     validate_act_appearance_bindings(&baseline.ir, target)?;
     let body_transform_edits =
         validate_body_transform_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
+    let body_visibility_edits = validate_body_visibility_edits(&baseline.ir, target)?;
+    let body_native_key_edits = validate_body_native_key_edits(&baseline.ir, target)?;
+    let transform_hint_edits = validate_transform_hint_edits(&baseline.ir, target)?;
     let mut entity_color_edits =
         validate_body_color_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
     entity_color_edits.extend(validate_face_color_edits(
@@ -6110,11 +9442,18 @@ pub fn write_semantic(
             range[1] /= 10.0;
         }
     }
-    let face_sense_edits =
-        validate_face_sense_edits(&baseline.ir.model.faces, &target.model.faces)?;
+    let face_sense_edits = validate_face_sense_edits(&baseline.ir, target)?;
     let coedge_sense_edits =
         validate_coedge_sense_edits(&baseline.ir.model.coedges, &target.model.coedges)?;
     let history_state_edits = validate_history_state_edits(&baseline.ir, target)?;
+    let creation_timestamp_edits = validate_creation_timestamp_edits(&baseline.ir, target)?;
+    let edge_continuity_edits = validate_edge_continuity_edits(&baseline.ir, target)?;
+    let edge_ownership_edits = validate_edge_ownership_edits(&baseline.ir, target)?;
+    let vertex_ownership_edits = validate_vertex_ownership_edits(&baseline.ir, target)?;
+    let face_sidedness_edits = validate_face_sidedness_edits(&baseline.ir, target)?;
+    let tolerant_vertex_edits = validate_tolerant_vertex_edits(&baseline.ir, target)?;
+    let tolerant_coedge_edits = validate_tolerant_coedge_edits(&baseline.ir, target)?;
+    let wire_topology_edits = validate_wire_topology_edits(&baseline.ir, target)?;
     let mut supported_target = baseline.ir.clone();
     supported_target
         .model
@@ -6141,9 +9480,14 @@ pub fn write_semantic(
         {
             body.transform = candidate.transform;
             body.color = candidate.color;
+            body.visible = candidate.visible;
         }
     }
     supported_target.model.edges.clone_from(&target.model.edges);
+    supported_target
+        .model
+        .vertices
+        .clone_from(&target.model.vertices);
     supported_target.model.faces.clone_from(&target.model.faces);
     supported_target
         .model
@@ -6169,6 +9513,9 @@ pub fn write_semantic(
         (f3d_native(&supported_target)?, f3d_native(target)?)
     {
         supported
+            .body_native_keys
+            .clone_from(&target_native.body_native_keys);
+        supported
             .sketch_points
             .clone_from(&target_native.sketch_points);
         supported
@@ -6186,6 +9533,9 @@ pub fn write_semantic(
         supported
             .design_body_members
             .clone_from(&target_native.design_body_members);
+        supported
+            .design_configurations
+            .clone_from(&target_native.design_configurations);
         supported
             .design_entity_headers
             .clone_from(&target_native.design_entity_headers);
@@ -6208,6 +9558,33 @@ pub fn write_semantic(
         supported
             .asm_histories
             .clone_from(&target_native.asm_histories);
+        supported
+            .creation_timestamps
+            .clone_from(&target_native.creation_timestamps);
+        supported
+            .edge_continuities
+            .clone_from(&target_native.edge_continuities);
+        supported
+            .edge_ownerships
+            .clone_from(&target_native.edge_ownerships);
+        supported
+            .vertex_ownerships
+            .clone_from(&target_native.vertex_ownerships);
+        supported
+            .face_sidedness
+            .clone_from(&target_native.face_sidedness);
+        supported
+            .tolerant_coedge_parameters
+            .clone_from(&target_native.tolerant_coedge_parameters);
+        supported
+            .tolerant_vertex_tails
+            .clone_from(&target_native.tolerant_vertex_tails);
+        supported
+            .transform_hints
+            .clone_from(&target_native.transform_hints);
+        supported
+            .wire_topologies
+            .clone_from(&target_native.wire_topologies);
         supported.store(supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::semantic_hash(&supported_target) != decode::semantic_hash(target) {
@@ -6343,16 +9720,25 @@ pub fn write_semantic(
                 axis,
                 ref_direction,
                 radius,
-            }
-            | SurfaceGeometry::Cone {
+            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
+                (
+                    surface.id.0.clone(),
+                    (origin, axis, ref_direction, radius, 1.0, 0.0),
+                )
+            }),
+            SurfaceGeometry::Cone {
                 origin,
                 axis,
                 ref_direction,
                 radius,
-                ..
-            } => edited_surfaces
-                .contains(surface.id.as_str())
-                .then(|| (surface.id.0.clone(), (origin, axis, ref_direction, radius))),
+                ratio,
+                half_angle,
+            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
+                (
+                    surface.id.0.clone(),
+                    (origin, axis, ref_direction, radius, ratio, half_angle),
+                )
+            }),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -6376,6 +9762,9 @@ pub fn write_semantic(
         }
         let mut bytes = Vec::with_capacity(entry.size() as usize);
         entry.read_to_end(&mut bytes)?;
+        if let Some(configuration) = configuration_edits.get(&name) {
+            bytes.clone_from(configuration);
+        }
         if name == *active_brep {
             patch_geometry(
                 &mut bytes,
@@ -6398,7 +9787,17 @@ pub fn write_semantic(
                 &pcurve_edits,
                 &procedural_curve_edits,
                 &procedural_surface_fit_edits,
+                &creation_timestamp_edits,
+                &edge_continuity_edits,
+                &vertex_ownership_edits,
+                &face_sidedness_edits,
+                &tolerant_vertex_edits,
             )?;
+            patch_transform_hints(&mut bytes, &transform_hint_edits)?;
+            patch_tolerant_coedge_parameters(&mut bytes, &tolerant_coedge_edits)?;
+            patch_wire_topologies(&mut bytes, &wire_topology_edits)?;
+            patch_edge_ownerships(&mut bytes, &edge_ownership_edits)?;
+            patch_body_native_keys(&mut bytes, &body_native_key_edits.asm)?;
             if let Some(edits) = history_state_edits.get(&name) {
                 patch_history_states(&mut bytes, edits)?;
             }
@@ -6426,6 +9825,12 @@ pub fn write_semantic(
             }
             if let Some(edits) = body_member_edits.get(&name) {
                 patch_body_members(&mut bytes, edits)?;
+            }
+            if let Some(edits) = body_visibility_edits.get(&name) {
+                patch_body_visibilities(&mut bytes, edits)?;
+            }
+            if let Some(edits) = body_native_key_edits.design.get(&name) {
+                patch_design_body_keys(&mut bytes, edits)?;
             }
             if let Some(edits) = entity_header_edits.get(&name) {
                 patch_entity_headers(&mut bytes, edits)?;
@@ -6470,8 +9875,496 @@ type SketchPointEdit = (u64, u32, cadmpeg_ir::math::Point2);
 type PersistentReferenceEdit = (u64, u32, u64);
 type BodyMemberEdit = (u64, u64, u16);
 
+fn validate_creation_timestamp_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, f64>, CodecError> {
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
+        .as_ref()
+        .map_or(&[][..], |native| native.creation_timestamps.as_slice());
+    let target = target_native
+        .as_ref()
+        .map_or(&[][..], |native| native.creation_timestamps.as_slice());
+    let by_id = baseline
+        .iter()
+        .map(|timestamp| (timestamp.id.as_str(), timestamp))
+        .collect::<BTreeMap<_, _>>();
+    if by_id
+        .keys()
+        .copied()
+        .ne(target.iter().map(|timestamp| timestamp.id.as_str()))
+    {
+        return Err(CodecError::NotImplemented(
+            "F3D timestamp regeneration requires the unchanged timestamp-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for timestamp in target {
+        let before = by_id[timestamp.id.as_str()];
+        let mut normalized = timestamp.clone();
+        normalized.unix_microseconds = before.unix_microseconds;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D timestamp edit changes structural fields: {}",
+                timestamp.id
+            )));
+        }
+        if timestamp.unix_microseconds == before.unix_microseconds {
+            continue;
+        }
+        if !timestamp.unix_microseconds.is_finite() {
+            return Err(CodecError::Malformed(format!(
+                "F3D creation timestamp {} is non-finite",
+                timestamp.id
+            )));
+        }
+        let record_index = usize::try_from(timestamp.record_index).map_err(|_| {
+            CodecError::Malformed(format!(
+                "F3D timestamp record index exceeds usize: {}",
+                timestamp.id
+            ))
+        })?;
+        edits.insert(record_index, timestamp.unix_microseconds);
+    }
+    Ok(edits)
+}
+
+fn validate_edge_continuity_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, (Sense, String)>, CodecError> {
+    let baseline = f3d_native(baseline)?
+        .map(|native| native.edge_continuities)
+        .unwrap_or_default();
+    let target = f3d_native(target)?
+        .map(|native| native.edge_continuities)
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|metadata| (metadata.id.as_str(), metadata))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target
+        .iter()
+        .map(|metadata| (metadata.id.as_str(), metadata))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D edge-continuity regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.sense = before.sense;
+        normalized.continuity.clone_from(&before.continuity);
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D edge-continuity edit changes structural fields: {id}"
+            )));
+        }
+        if after.continuity == before.continuity && after.sense == before.sense {
+            continue;
+        }
+        if !matches!(after.continuity.as_str(), "tangent" | "unknown") {
+            return Err(CodecError::Malformed(format!(
+                "F3D edge continuity {id} has unsupported token {}",
+                after.continuity
+            )));
+        }
+        edits.insert(
+            after.record_index as usize,
+            (after.sense, after.continuity.clone()),
+        );
+    }
+    Ok(edits)
+}
+
+fn validate_edge_ownership_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, i64>, CodecError> {
+    let baseline = f3d_native(baseline)?
+        .map(|native| native.edge_ownerships)
+        .unwrap_or_default();
+    let target_ownerships = f3d_native(target)?
+        .map(|native| native.edge_ownerships)
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|ownership| (ownership.id.as_str(), ownership))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target_ownerships
+        .iter()
+        .map(|ownership| (ownership.id.as_str(), ownership))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D edge-ownership regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.owner_coedge.clone_from(&before.owner_coedge);
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D edge-ownership edit changes structural fields: {id}"
+            )));
+        }
+        if after.owner_coedge == before.owner_coedge {
+            continue;
+        }
+        let owner = if let Some(owner) = &after.owner_coedge {
+            let coedge = target
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *owner)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "F3D edge ownership {id} references missing coedge {owner}"
+                    ))
+                })?;
+            if coedge.edge != after.edge {
+                return Err(CodecError::Malformed(format!(
+                    "F3D edge ownership {id} selects a coedge of another edge"
+                )));
+            }
+            owner
+                .as_str()
+                .rsplit_once('#')
+                .and_then(|(_, index)| index.parse::<i64>().ok())
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "F3D owning coedge {owner} has no native record index"
+                    ))
+                })?
+        } else {
+            -1
+        };
+        edits.insert(after.record_index as usize, owner);
+    }
+    Ok(edits)
+}
+
+fn validate_vertex_ownership_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, (i64, u8)>, CodecError> {
+    let baseline = f3d_native(baseline)?
+        .map(|native| native.vertex_ownerships)
+        .unwrap_or_default();
+    let target_native = f3d_native(target)?
+        .map(|native| native.vertex_ownerships)
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|metadata| (metadata.id.as_str(), metadata))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target_native
+        .iter()
+        .map(|metadata| (metadata.id.as_str(), metadata))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D vertex-ownership regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.owning_edge.clone_from(&before.owning_edge);
+        normalized.endpoint_index = before.endpoint_index;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D vertex-ownership edit changes structural fields: {id}"
+            )));
+        }
+        if after.owning_edge == before.owning_edge && after.endpoint_index == before.endpoint_index
+        {
+            continue;
+        }
+        let edge = target
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.id == after.owning_edge)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D vertex ownership {id} references missing edge {}",
+                    after.owning_edge
+                ))
+            })?;
+        let valid = match after.endpoint_index {
+            0 => edge.start == after.vertex,
+            1 => edge.end == after.vertex,
+            _ => false,
+        };
+        if !valid {
+            return Err(CodecError::Malformed(format!(
+                "F3D vertex ownership {id} has an inconsistent endpoint slot"
+            )));
+        }
+        let edge_record = after
+            .owning_edge
+            .as_str()
+            .rsplit_once('#')
+            .and_then(|(_, index)| index.parse::<i64>().ok())
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D owning edge {} has no native record index",
+                    after.owning_edge
+                ))
+            })?;
+        edits.insert(
+            after.record_index as usize,
+            (edge_record, after.endpoint_index),
+        );
+    }
+    Ok(edits)
+}
+
+fn validate_face_sidedness_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, crate::records::FaceContainment>, CodecError> {
+    let baseline = f3d_native(baseline)?
+        .map(|native| native.face_sidedness)
+        .unwrap_or_default();
+    let target = f3d_native(target)?
+        .map(|native| native.face_sidedness)
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|metadata| (metadata.id.as_str(), metadata))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target
+        .iter()
+        .map(|metadata| (metadata.id.as_str(), metadata))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D face-sidedness regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.containment = before.containment;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D face-sidedness edit changes structural fields: {id}"
+            )));
+        }
+        if after.containment == before.containment {
+            continue;
+        }
+        match (before.containment, after.containment) {
+            (Some(_), Some(containment)) => {
+                edits.insert(after.record_index as usize, containment);
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "F3D face sidedness {id} cannot change record width"
+                )));
+            }
+        }
+    }
+    Ok(edits)
+}
+
+fn validate_tolerant_vertex_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, (f64, [f32; 2])>, CodecError> {
+    let baseline_vertices = baseline
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| (vertex.id.as_str(), vertex))
+        .collect::<BTreeMap<_, _>>();
+    let target_vertices = target
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| (vertex.id.as_str(), vertex))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_vertices.keys().ne(target_vertices.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D tolerant-vertex regeneration requires the unchanged vertex-id set".into(),
+        ));
+    }
+    for (id, before) in &baseline_vertices {
+        let after = target_vertices[id];
+        let mut normalized = after.clone();
+        normalized.tolerance = before.tolerance;
+        if &normalized != *before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D vertex edit changes fields other than tolerance: {id}"
+            )));
+        }
+        if after.tolerance != before.tolerance
+            && (before.tolerance.is_none() || after.tolerance.is_none())
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D vertex tolerance {id} cannot change record width"
+            )));
+        }
+    }
+    let baseline_tails = f3d_native(baseline)?
+        .map(|native| native.tolerant_vertex_tails)
+        .unwrap_or_default();
+    let target_tails = f3d_native(target)?
+        .map(|native| native.tolerant_vertex_tails)
+        .unwrap_or_default();
+    let baseline_by_id = baseline_tails
+        .iter()
+        .map(|tail| (tail.id.as_str(), tail))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target_tails
+        .iter()
+        .map(|tail| (tail.id.as_str(), tail))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D tolerant-vertex regeneration requires the unchanged tail-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.trailing_floats = before.trailing_floats;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D tolerant-vertex tail edit changes structural fields: {id}"
+            )));
+        }
+        let tolerance = target_vertices[after.vertex.as_str()]
+            .tolerance
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("tolerant vertex {id} has no tolerance"))
+            })?;
+        if !tolerance.is_finite()
+            || tolerance < 0.0
+            || after.trailing_floats.iter().any(|value| !value.is_finite())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D tolerant vertex {id} has non-finite fields"
+            )));
+        }
+        if tolerance
+            != baseline_vertices[after.vertex.as_str()]
+                .tolerance
+                .unwrap_or(tolerance)
+            || after.trailing_floats != before.trailing_floats
+        {
+            edits.insert(
+                after.record_index as usize,
+                (tolerance / 10.0, after.trailing_floats),
+            );
+        }
+    }
+    Ok(edits)
+}
+
+fn validate_tolerant_coedge_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, [f64; 2]>, CodecError> {
+    let baseline_parameters = f3d_native(baseline)?
+        .map(|native| native.tolerant_coedge_parameters)
+        .unwrap_or_default();
+    let target_parameters = f3d_native(target)?
+        .map(|native| native.tolerant_coedge_parameters)
+        .unwrap_or_default();
+    let baseline_by_id = baseline_parameters
+        .iter()
+        .map(|parameters| (parameters.id.as_str(), parameters))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target_parameters
+        .iter()
+        .map(|parameters| (parameters.id.as_str(), parameters))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D tolerant-coedge regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.parameter_range = before.parameter_range;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D tolerant-coedge edit changes structural fields: {id}"
+            )));
+        }
+        if after.parameter_range.iter().any(|value| !value.is_finite()) {
+            return Err(CodecError::Malformed(format!(
+                "F3D tolerant coedge {id} has non-finite parameters"
+            )));
+        }
+        if after.parameter_range != before.parameter_range {
+            edits.insert(after.record_index as usize, after.parameter_range);
+        }
+    }
+    Ok(edits)
+}
+
+fn validate_wire_topology_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, crate::records::WireSide>, CodecError> {
+    let baseline_wires = f3d_native(baseline)?
+        .map(|native| native.wire_topologies)
+        .unwrap_or_default();
+    let target_wires = f3d_native(target)?
+        .map(|native| native.wire_topologies)
+        .unwrap_or_default();
+    let baseline_by_id = baseline_wires
+        .iter()
+        .map(|wire| (wire.id.as_str(), wire))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target_wires
+        .iter()
+        .map(|wire| (wire.id.as_str(), wire))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D wire regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.side = before.side;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D wire edit changes structural fields: {id}"
+            )));
+        }
+        if after.side != before.side {
+            edits.insert(after.record_index as usize, after.side);
+        }
+    }
+    Ok(edits)
+}
+
 enum ProceduralSurfaceEdit {
-    ExtrusionDirection(Vector3),
+    Extrusion {
+        parameter_interval: [f64; 2],
+        direction: Vector3,
+        native_position: Point3,
+    },
     BlendRadii([f64; 2]),
 }
 
@@ -6490,6 +10383,7 @@ struct NurbsPcurveEdit {
     geometry: PcurveGeometry,
     periodic: Option<bool>,
     wrapper_reversed: Option<bool>,
+    native_tail_flags: Option<[bool; 4]>,
     parameter_range: Option<[f64; 2]>,
     fit_tolerance: Option<f64>,
 }
@@ -7438,6 +11332,51 @@ fn validate_fixed_design_string(id: &str, before: &str, after: &str) -> Result<(
     Ok(())
 }
 
+fn validate_configuration_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<String, Vec<u8>>, CodecError> {
+    let baseline = f3d_native(baseline)?
+        .map(|native| native.design_configurations)
+        .unwrap_or_default();
+    let target = f3d_native(target)?
+        .map(|native| native.design_configurations)
+        .unwrap_or_default();
+    let baseline = baseline
+        .iter()
+        .map(|configuration| (configuration.entry_name.as_str(), configuration))
+        .collect::<BTreeMap<_, _>>();
+    let target = target
+        .iter()
+        .map(|configuration| (configuration.entry_name.as_str(), configuration))
+        .collect::<BTreeMap<_, _>>();
+    if baseline.keys().ne(target.keys()) {
+        return Err(CodecError::NotImplemented(
+            "retained F3D configuration editing requires the unchanged entry-name set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (name, before) in baseline {
+        let after = target[name];
+        if before.id != after.id || before.kind != after.kind {
+            return Err(CodecError::NotImplemented(format!(
+                "retained F3D configuration edit changes entry identity: {name}"
+            )));
+        }
+        if before.payload != after.payload {
+            edits.insert(
+                name.to_owned(),
+                serde_json::to_vec(&after.payload).map_err(|error| {
+                    CodecError::Malformed(format!(
+                        "cannot encode retained F3D configuration {name}: {error}"
+                    ))
+                })?,
+            );
+        }
+    }
+    Ok(edits)
+}
+
 fn patch_design_objects(bytes: &mut [u8], edits: &[DesignObjectEdit]) -> Result<(), CodecError> {
     for edit in edits {
         for (offset, encoded) in edit.integers.iter().chain(&edit.strings) {
@@ -7645,6 +11584,404 @@ fn patch_body_members(bytes: &mut [u8], edits: &[BodyMemberEdit]) -> Result<(), 
     }
     Ok(())
 }
+
+fn validate_body_visibility_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<String, Vec<(u64, bool)>>, CodecError> {
+    let baseline_bodies = baseline
+        .model
+        .bodies
+        .iter()
+        .map(|body| (&body.id, body))
+        .collect::<BTreeMap<_, _>>();
+    let target_bodies = target
+        .model
+        .bodies
+        .iter()
+        .map(|body| (&body.id, body))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_bodies.keys().ne(target_bodies.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D body-visibility regeneration requires the unchanged body-id set".into(),
+        ));
+    }
+    let metadata = f3d_native(baseline)?
+        .map(|native| {
+            native
+                .body_visibilities
+                .into_iter()
+                .map(|item| (item.body.clone(), item))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let mut edits = BTreeMap::<String, Vec<(u64, bool)>>::new();
+    for (id, before) in baseline_bodies {
+        let after = target_bodies[id];
+        if after.visible == before.visible {
+            continue;
+        }
+        let visible = after.visible.ok_or_else(|| {
+            CodecError::NotImplemented(format!("cannot remove F3D body visibility: {id}"))
+        })?;
+        let record = metadata.get(id).ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "F3D body visibility {id} has no joined Design browser node"
+            ))
+        })?;
+        edits
+            .entry(record.stream.clone())
+            .or_default()
+            .push((record.byte_offset, visible));
+    }
+    Ok(edits)
+}
+
+fn patch_body_visibilities(bytes: &mut [u8], edits: &[(u64, bool)]) -> Result<(), CodecError> {
+    for &(offset, visible) in edits {
+        let at = usize::try_from(offset).map_err(|_| {
+            CodecError::Malformed("body-visibility offset exceeds address space".into())
+        })?;
+        let flag = bytes
+            .get_mut(at)
+            .filter(|flag| **flag <= 1)
+            .ok_or_else(|| {
+                CodecError::Malformed("body-visibility flag is missing or invalid".into())
+            })?;
+        *flag = u8::from(!visible);
+    }
+    Ok(())
+}
+
+fn validate_transform_hint_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, [bool; 3]>, CodecError> {
+    let baseline = f3d_native(baseline)?
+        .map(|native| native.transform_hints)
+        .unwrap_or_default();
+    let target = f3d_native(target)?
+        .map(|native| native.transform_hints)
+        .unwrap_or_default();
+    let baseline = baseline
+        .iter()
+        .map(|hints| (hints.id.as_str(), hints))
+        .collect::<BTreeMap<_, _>>();
+    let target = target
+        .iter()
+        .map(|hints| (hints.id.as_str(), hints))
+        .collect::<BTreeMap<_, _>>();
+    if baseline.keys().ne(target.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D transform-hint regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline {
+        let after = target[id];
+        let mut normalized = after.clone();
+        normalized.rotation = before.rotation;
+        normalized.reflection = before.reflection;
+        normalized.shear = before.shear;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D transform-hint edit changes structural fields: {id}"
+            )));
+        }
+        let flags = [after.rotation, after.reflection, after.shear];
+        if flags != [before.rotation, before.reflection, before.shear] {
+            edits.insert(after.record_index as usize, flags);
+        }
+    }
+    Ok(edits)
+}
+
+fn validate_body_native_key_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BodyNativeKeyEdits, CodecError> {
+    let baseline_native = f3d_native(baseline)?.unwrap_or_default();
+    let target_native = f3d_native(target)?.unwrap_or_default();
+    let baseline = baseline_native
+        .body_native_keys
+        .iter()
+        .map(|key| (key.id.as_str(), key))
+        .collect::<BTreeMap<_, _>>();
+    let target = target_native
+        .body_native_keys
+        .iter()
+        .map(|key| (key.id.as_str(), key))
+        .collect::<BTreeMap<_, _>>();
+    if baseline.keys().ne(target.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D body-key regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BodyNativeKeyEdits::default();
+    for (id, before) in baseline {
+        let after = target[id];
+        let mut normalized = after.clone();
+        normalized.asm_body_key = before.asm_body_key;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D body-key edit changes structural fields: {id}"
+            )));
+        }
+        if after.asm_body_key != before.asm_body_key {
+            let key = after.asm_body_key.map_or(Ok(-1), |key| {
+                i64::try_from(key).map_err(|_| {
+                    CodecError::Malformed(format!("F3D ASM body key exceeds i64::MAX: {key}"))
+                })
+            })?;
+            edits.asm.insert(after.record_index as usize, key);
+            let mut joined = Vec::new();
+            joined.extend(
+                baseline_native
+                    .body_visibilities
+                    .iter()
+                    .filter(|visibility| visibility.body == before.body)
+                    .map(|visibility| (visibility.stream.clone(), visibility.asm_body_key_offset)),
+            );
+            if let Some(old_key) = before.asm_body_key {
+                joined.extend(
+                    baseline_native
+                        .design_material_assignments
+                        .iter()
+                        .filter(|assignment| assignment.asm_body_key == old_key)
+                        .map(|assignment| {
+                            Ok((
+                                native_stream(&assignment.id, ":material-assignment#")?,
+                                assignment.asm_body_key_offset,
+                            ))
+                        })
+                        .collect::<Result<Vec<_>, CodecError>>()?,
+                );
+            }
+            if !joined.is_empty() {
+                let design_key = after.asm_body_key.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "cannot remove joined F3D ASM body key: {id}"
+                    ))
+                })?;
+                for (stream, offset) in joined {
+                    edits
+                        .design
+                        .entry(stream)
+                        .or_default()
+                        .insert((offset, design_key));
+                }
+            }
+        }
+    }
+    Ok(edits)
+}
+
+#[derive(Default)]
+struct BodyNativeKeyEdits {
+    asm: BTreeMap<usize, i64>,
+    design: BTreeMap<String, BTreeSet<(u64, u64)>>,
+}
+
+fn patch_design_body_keys(
+    bytes: &mut [u8],
+    edits: &BTreeSet<(u64, u64)>,
+) -> Result<(), CodecError> {
+    for &(offset, key) in edits {
+        let at = usize::try_from(offset).map_err(|_| {
+            CodecError::Malformed("Design body-key offset exceeds address space".into())
+        })?;
+        bytes
+            .get_mut(at..at + 8)
+            .ok_or_else(|| CodecError::Malformed("Design body-map key is truncated".into()))?
+            .copy_from_slice(&key.to_le_bytes());
+    }
+    Ok(())
+}
+
+fn patch_body_native_keys(
+    bytes: &mut [u8],
+    edits: &BTreeMap<usize, i64>,
+) -> Result<(), CodecError> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+    let start = asm_header::record_stream_start(bytes)
+        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
+    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
+    let records = sab::frame(bytes, start, limit, ref_width)
+        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
+    for (record_index, key) in edits {
+        let record = records
+            .iter()
+            .find(|record| record.index == *record_index)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("F3D body-key record {record_index} is missing"))
+            })?;
+        if record.head != "body" {
+            return Err(CodecError::Malformed(format!(
+                "F3D body-key record {record_index} is not a body"
+            )));
+        }
+        patch_integer_field(bytes, record, ref_width, 1, 0x04, *key)?;
+    }
+    Ok(())
+}
+
+fn patch_transform_hints(
+    bytes: &mut [u8],
+    edits: &BTreeMap<usize, [bool; 3]>,
+) -> Result<(), CodecError> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+    let start = asm_header::record_stream_start(bytes)
+        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
+    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let ref_width = active_ref_width(bytes);
+    let records = sab::frame(bytes, start, limit, ref_width)
+        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
+    for (record_index, flags) in edits {
+        let record = records
+            .iter()
+            .find(|record| record.index == *record_index)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D transform-hint record {record_index} is missing"
+                ))
+            })?;
+        if !record.name.ends_with("transform") {
+            return Err(CodecError::Malformed(format!(
+                "F3D transform-hint record {record_index} is {}, not a transform",
+                record.head
+            )));
+        }
+        for (index, flag) in (5usize..=7).zip(flags) {
+            let offset =
+                sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "F3D transform record {record_index} lacks hint field {index}"
+                    ))
+                })?;
+            if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D transform record {record_index} field {index} is not a hint flag"
+                )));
+            }
+            bytes[offset] = native_bool(*flag);
+        }
+    }
+    Ok(())
+}
+
+fn patch_tolerant_coedge_parameters(
+    bytes: &mut [u8],
+    edits: &BTreeMap<usize, [f64; 2]>,
+) -> Result<(), CodecError> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+    let start = asm_header::record_stream_start(bytes)
+        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
+    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let ref_width = active_ref_width(bytes);
+    let records = sab::frame(bytes, start, limit, ref_width)
+        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
+    for (record_index, range) in edits {
+        let record = records
+            .iter()
+            .find(|record| record.index == *record_index)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D tolerant-coedge record {record_index} is missing"
+                ))
+            })?;
+        if record.head != "tcoedge" {
+            return Err(CodecError::Malformed(format!(
+                "F3D tolerant-coedge record {record_index} is {}",
+                record.head
+            )));
+        }
+        for (index, value) in [(11usize, range[0]), (12, range[1])] {
+            let offset = required_payload_field(bytes, record, ref_width, index, 0x06)?;
+            bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    Ok(())
+}
+
+fn patch_wire_topologies(
+    bytes: &mut [u8],
+    edits: &BTreeMap<usize, crate::records::WireSide>,
+) -> Result<(), CodecError> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+    let start = asm_header::record_stream_start(bytes)
+        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
+    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let ref_width = active_ref_width(bytes);
+    let records = sab::frame(bytes, start, limit, ref_width)
+        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
+    for (record_index, side) in edits {
+        let record = records
+            .iter()
+            .find(|record| record.index == *record_index)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("F3D wire record {record_index} is missing"))
+            })?;
+        if record.head != "wire" {
+            return Err(CodecError::Malformed(format!(
+                "F3D wire record {record_index} is {}",
+                record.head
+            )));
+        }
+        let offset = sab::payload_token_offset(bytes, record, ref_width, 7).ok_or_else(|| {
+            CodecError::Malformed(format!("F3D wire record {record_index} lacks side field 7"))
+        })?;
+        if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
+            return Err(CodecError::Malformed(format!(
+                "F3D wire record {record_index} field 7 is not a side token"
+            )));
+        }
+        bytes[offset] = match side {
+            crate::records::WireSide::In => 0x0a,
+            crate::records::WireSide::Out => 0x0b,
+        };
+    }
+    Ok(())
+}
+
+fn patch_edge_ownerships(bytes: &mut [u8], edits: &BTreeMap<usize, i64>) -> Result<(), CodecError> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+    let start = asm_header::record_stream_start(bytes)
+        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
+    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let ref_width = active_ref_width(bytes);
+    let records = sab::frame(bytes, start, limit, ref_width)
+        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
+    for (record_index, owner) in edits {
+        let record = records
+            .iter()
+            .find(|record| record.index == *record_index)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D edge-ownership record {record_index} is missing"
+                ))
+            })?;
+        if !matches!(record.head.as_str(), "edge" | "tedge") {
+            return Err(CodecError::Malformed(format!(
+                "F3D edge-ownership record {record_index} is {}",
+                record.head
+            )));
+        }
+        patch_integer_field(bytes, record, ref_width, 7, 0x0c, *owner)?;
+    }
+    Ok(())
+}
+
 struct ConstructionRecipeEdit {
     record_index: Option<(u64, i32)>,
     design_id: Option<(u64, Vec<u8>)>,
@@ -8498,7 +12835,7 @@ fn patch_sketch_nurbs(
     Ok(())
 }
 
-type SketchRelationEdit = (u64, u32, u32);
+type SketchRelationEdit = Vec<(u64, u32)>;
 
 fn validate_sketch_relation_edits(
     baseline: &CadIr,
@@ -8531,18 +12868,29 @@ fn validate_sketch_relation_edits(
     for relation in target {
         let before = by_id[relation.id.as_str()];
         let mut normalized = relation.clone();
+        normalized.owner_reference = before.owner_reference;
+        normalized
+            .auxiliary_references
+            .clone_from(&before.auxiliary_references);
+        normalized.members.clone_from(&before.members);
         normalized.state = before.state;
         normalized
             .constraint_kinds
             .clone_from(&before.constraint_kinds);
         normalized.unknown_constraint_bits = before.unknown_constraint_bits;
+        normalized.return_members.clone_from(&before.return_members);
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
-                "F3D sketch-relation edit changes fields other than its constraint mask: {}",
+                "F3D sketch-relation edit changes fields outside its writable references and constraint mask: {}",
                 relation.id
             )));
         }
-        if relation.state == before.state {
+        if relation.state == before.state
+            && relation.owner_reference == before.owner_reference
+            && relation.auxiliary_references == before.auxiliary_references
+            && relation.members == before.members
+            && relation.return_members == before.return_members
+        {
             continue;
         }
         let (kinds, unknown) = crate::design::decode_constraint_kinds(relation.state);
@@ -8560,11 +12908,41 @@ fn validate_sketch_relation_edits(
             .ok_or_else(|| {
                 CodecError::Malformed(format!("invalid sketch-relation id {}", relation.id))
             })?;
-        edits.entry(stream).or_default().push((
-            relation.byte_offset,
-            relation.state_offset,
-            relation.state,
-        ));
+        let mut values = Vec::new();
+        collect_sketch_reference_edits(
+            relation,
+            &before.members,
+            &relation.members,
+            &relation.member_offsets,
+            &mut values,
+        )?;
+        collect_sketch_reference_edits(
+            relation,
+            &before.auxiliary_references,
+            &relation.auxiliary_references,
+            &relation.auxiliary_reference_offsets,
+            &mut values,
+        )?;
+        if relation.owner_reference != before.owner_reference {
+            values.push((
+                relation.byte_offset + u64::from(relation.owner_reference_offset),
+                relation.owner_reference,
+            ));
+        }
+        collect_sketch_reference_edits(
+            relation,
+            &before.return_members,
+            &relation.return_members,
+            &relation.return_member_offsets,
+            &mut values,
+        )?;
+        if relation.state != before.state {
+            values.push((
+                relation.byte_offset + u64::from(relation.state_offset),
+                relation.state,
+            ));
+        }
+        edits.entry(stream).or_default().push(values);
     }
     Ok(edits)
 }
@@ -8573,18 +12951,40 @@ fn patch_sketch_relations(
     bytes: &mut [u8],
     edits: &[SketchRelationEdit],
 ) -> Result<(), CodecError> {
-    for (record_offset, state_offset, state) in edits {
-        let start = usize::try_from(*record_offset)
-            .ok()
-            .and_then(|record| record.checked_add(*state_offset as usize))
-            .ok_or_else(|| {
-                CodecError::Malformed("sketch-relation offset exceeds address space".into())
-            })?;
-        let payload = bytes.get_mut(start..start + 4).ok_or_else(|| {
-            CodecError::Malformed("sketch-relation mask is outside BulkStream".into())
-        })?;
-        payload.copy_from_slice(&state.to_le_bytes());
+    for edit in edits {
+        for (offset, value) in edit {
+            patch_bytes_at(
+                bytes,
+                *offset,
+                &value.to_le_bytes(),
+                "sketch-relation value",
+            )?;
+        }
     }
+    Ok(())
+}
+
+fn collect_sketch_reference_edits(
+    relation: &crate::records::SketchRelation,
+    before: &[u32],
+    after: &[u32],
+    offsets: &[u32],
+    edits: &mut Vec<(u64, u32)>,
+) -> Result<(), CodecError> {
+    if before.len() != after.len() || after.len() != offsets.len() {
+        return Err(CodecError::NotImplemented(format!(
+            "F3D sketch relation {} must retain reference cardinality and offsets",
+            relation.id
+        )));
+    }
+    edits.extend(
+        before
+            .iter()
+            .zip(after)
+            .zip(offsets)
+            .filter(|((before, after), _)| before != after)
+            .map(|((_, after), offset)| (relation.byte_offset + u64::from(*offset), *after)),
+    );
     Ok(())
 }
 
@@ -8611,9 +13011,10 @@ fn validate_body_transform_edits(
         let mut normalized = after.clone();
         normalized.transform = before.transform;
         normalized.color = before.color;
+        normalized.visible = before.visible;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
-                "F3D body edit changes fields other than transform: {id}"
+                "F3D body edit changes fields other than transform, color, or visibility: {id}"
             )));
         }
         if after.transform == before.transform {
@@ -8655,9 +13056,10 @@ fn validate_body_color_edits(
         let mut normalized = after.clone();
         normalized.color = before.color;
         normalized.transform = before.transform;
+        normalized.visible = before.visible;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
-                "F3D body edit changes fields other than transform or color: {id}"
+                "F3D body edit changes fields other than transform, color, or visibility: {id}"
             )));
         }
         if after.color == before.color {
@@ -8729,9 +13131,25 @@ fn validate_edge_range_edits(
 }
 
 fn validate_face_sense_edits(
-    baseline: &[Face],
-    target: &[Face],
+    baseline_ir: &CadIr,
+    target_ir: &CadIr,
 ) -> Result<BTreeMap<String, Sense>, CodecError> {
+    let baseline = &baseline_ir.model.faces;
+    let target = &target_ir.model.faces;
+    let native_senses = f3d_native(baseline_ir)?
+        .map(|native| {
+            native
+                .face_sidedness
+                .into_iter()
+                .map(|metadata| {
+                    (
+                        metadata.face,
+                        (metadata.native_sense, metadata.normalized_sense),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
     let baseline = baseline
         .iter()
         .map(|face| (face.id.as_str(), face))
@@ -8757,7 +13175,13 @@ fn validate_face_sense_edits(
             )));
         }
         if after.sense != before.sense {
-            edits.insert(id.to_owned(), after.sense);
+            let (native_before, normalized_before) = native_senses
+                .get(&before.id)
+                .copied()
+                .unwrap_or((before.sense, before.sense));
+            let native_after =
+                normalized_face_sense_to_native(after.sense, native_before, normalized_before);
+            edits.insert(id.to_owned(), native_after);
         }
     }
     Ok(edits)
@@ -8883,7 +13307,9 @@ fn validate_curve_edits(
         }
         edited.insert(id.to_owned());
         let valid = match after {
-            CurveGeometry::Line { origin, direction } => {
+            CurveGeometry::Line { origin, direction }
+                if matches!(before, CurveGeometry::Line { .. }) =>
+            {
                 finite_point(*origin)
                     && finite_vector(*direction)
                     && (direction.norm() - 1.0).abs() <= 1e-9
@@ -9017,6 +13443,7 @@ fn validate_pcurve_edits(
                 .iter()
                 .all(|point| point.u.is_finite() && point.v.is_finite());
         let contract_valid = before.wrapper_reversed.is_some() == after.wrapper_reversed.is_some()
+            && before.native_tail_flags.is_some() == after.native_tail_flags.is_some()
             && before.parameter_range.is_some() == after.parameter_range.is_some()
             && before.fit_tolerance.is_some() == after.fit_tolerance.is_some()
             && after
@@ -9037,6 +13464,9 @@ fn validate_pcurve_edits(
                 periodic: (before_periodic != after_periodic).then_some(*after_periodic),
                 wrapper_reversed: (before.wrapper_reversed != after.wrapper_reversed)
                     .then_some(after.wrapper_reversed)
+                    .flatten(),
+                native_tail_flags: (before.native_tail_flags != after.native_tail_flags)
+                    .then_some(after.native_tail_flags)
                     .flatten(),
                 parameter_range: (before.parameter_range != after.parameter_range)
                     .then_some(after.parameter_range)
@@ -9078,13 +13508,15 @@ fn validate_surface_edits(
                 origin,
                 normal,
                 u_axis,
-            } => finite_point(*origin) && orthonormal_pair(*normal, *u_axis),
+            } if matches!(before, SurfaceGeometry::Plane { .. }) => {
+                finite_point(*origin) && orthonormal_pair(*normal, *u_axis)
+            }
             SurfaceGeometry::Sphere {
                 center,
                 axis,
                 ref_direction,
                 radius,
-            } => {
+            } if matches!(before, SurfaceGeometry::Sphere { .. }) => {
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
@@ -9096,7 +13528,7 @@ fn validate_surface_edits(
                 ref_direction,
                 major_radius,
                 minor_radius,
-            } => {
+            } if matches!(before, SurfaceGeometry::Torus { .. }) => {
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && major_radius.is_finite()
@@ -9120,20 +13552,18 @@ fn validate_surface_edits(
                 axis,
                 ref_direction,
                 radius,
+                ratio,
                 half_angle,
-            } => {
-                let unchanged_angle = matches!(
-                    before,
-                    SurfaceGeometry::Cone {
-                        half_angle: old,
-                        ..
-                    } if old == half_angle
-                );
-                unchanged_angle
-                    && finite_point(*origin)
+            } if matches!(before, SurfaceGeometry::Cone { .. }) => {
+                finite_point(*origin)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
                     && *radius != 0.0
+                    && ratio.is_finite()
+                    && *ratio > 0.0
+                    && half_angle.is_finite()
+                    && *half_angle >= 0.0
+                    && *half_angle < std::f64::consts::FRAC_PI_2
             }
             SurfaceGeometry::Nurbs(after) => {
                 let SurfaceGeometry::Nurbs(before) = before else {
@@ -9228,20 +13658,49 @@ fn validate_procedural_surface_edits(
             (
                 ProceduralSurfaceDefinition::Extrusion {
                     directrix: before_directrix,
+                    parameter_interval: before_parameter_interval,
                     direction: before_direction,
+                    native_position: before_native_position,
                 },
                 ProceduralSurfaceDefinition::Extrusion {
                     directrix: after_directrix,
+                    parameter_interval: after_parameter_interval,
                     direction: after_direction,
+                    native_position: after_native_position,
                 },
             ) if before_directrix == after_directrix => {
+                let interval = after_parameter_interval.ok_or_else(|| {
+                    CodecError::Malformed(format!("F3D extrusion interval is missing: {id}"))
+                })?;
+                let position = after_native_position.ok_or_else(|| {
+                    CodecError::Malformed(format!("F3D extrusion native position is missing: {id}"))
+                })?;
+                if !interval.into_iter().all(f64::is_finite) || interval[0] >= interval[1] {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D extrusion interval must be finite and ordered: {id}"
+                    )));
+                }
                 if !finite_vector(*after_direction) || after_direction.norm() == 0.0 {
                     return Err(CodecError::Malformed(format!(
                         "F3D extrusion direction must be finite and nonzero: {id}"
                     )));
                 }
-                (before_direction != after_direction)
-                    .then_some(ProceduralSurfaceEdit::ExtrusionDirection(*after_direction))
+                if ![position.x, position.y, position.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D extrusion native position must be finite: {id}"
+                    )));
+                }
+                (before_parameter_interval != after_parameter_interval
+                    || before_direction != after_direction
+                    || before_native_position != after_native_position)
+                    .then_some(ProceduralSurfaceEdit::Extrusion {
+                        parameter_interval: interval,
+                        direction: *after_direction,
+                        native_position: position,
+                    })
             }
             (
                 ProceduralSurfaceDefinition::Blend {
@@ -9411,6 +13870,177 @@ fn validate_procedural_curve_edits(
                 Some(after.definition.clone())
             }
             (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+                    context: before_context,
+                    base: before_base,
+                    ..
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+                    context: after_context,
+                    base: after_base,
+                    ..
+                },
+            ) if before_context.sides == after_context.sides
+                && before_context
+                    .discontinuities
+                    .iter()
+                    .map(Vec::len)
+                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                && before_base == after_base
+                && before.definition != after.definition =>
+            {
+                Some(after.definition.clone())
+            }
+            (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
+                    context: before_context,
+                    surface_parameter_ranges: before_surface_ranges,
+                    first_pcurve_parameter_range: before_pcurve_range,
+                    ..
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
+                    context: after_context,
+                    surface_parameter_ranges: after_surface_ranges,
+                    first_pcurve_parameter_range: after_pcurve_range,
+                    ..
+                },
+            ) if before_context.sides == after_context.sides
+                && before_context
+                    .discontinuities
+                    .iter()
+                    .map(Vec::len)
+                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                && before_surface_ranges == after_surface_ranges
+                && before_pcurve_range == after_pcurve_range
+                && before.definition != after.definition =>
+            {
+                Some(after.definition.clone())
+            }
+            (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
+                    context: before_context,
+                    source: before_source,
+                    tail: before_tail,
+                    ..
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
+                    context: after_context,
+                    source: after_source,
+                    tail: after_tail,
+                    ..
+                },
+            ) if before_context.sides == after_context.sides
+                && before_context
+                    .discontinuities
+                    .iter()
+                    .map(Vec::len)
+                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                && before_source == after_source
+                && match (before_tail, after_tail) {
+                    (
+                        cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
+                        cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
+                    ) => true,
+                    (
+                        cadmpeg_ir::geometry::ProjectionTail::Ranged {
+                            role: before_role, ..
+                        },
+                        cadmpeg_ir::geometry::ProjectionTail::Ranged {
+                            role: after_role, ..
+                        },
+                    ) => {
+                        before_role.len() == after_role.len()
+                            && matches!(after_role.as_str(), "surf1" | "surf2")
+                    }
+                    _ => false,
+                }
+                && before.definition != after.definition =>
+            {
+                Some(after.definition.clone())
+            }
+            (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+                    context: before_context,
+                    ..
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+                    context: after_context,
+                    ..
+                },
+            ) if before_context.sides == after_context.sides
+                && before_context
+                    .discontinuities
+                    .iter()
+                    .map(Vec::len)
+                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                && before.definition != after.definition =>
+            {
+                Some(after.definition.clone())
+            }
+            (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
+                    context: before_context,
+                    third: before_third,
+                    ..
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
+                    context: after_context,
+                    third: after_third,
+                    ..
+                },
+            ) if before_context.sides == after_context.sides
+                && before_context
+                    .discontinuities
+                    .iter()
+                    .map(Vec::len)
+                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                && before_third == after_third
+                && before.definition != after.definition =>
+            {
+                Some(after.definition.clone())
+            }
+            (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+                    family: before_family,
+                    context: before_context,
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+                    family: after_family,
+                    context: after_context,
+                },
+            ) if before_family == after_family
+                && before_context.sides == after_context.sides
+                && before_context
+                    .discontinuities
+                    .iter()
+                    .map(Vec::len)
+                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                && before.definition != after.definition =>
+            {
+                Some(after.definition.clone())
+            }
+            (
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
+                    context: before_context,
+                    silhouette: before_silhouette,
+                    cast_surface: before_cast,
+                    ..
+                },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
+                    context: after_context,
+                    silhouette: after_silhouette,
+                    cast_surface: after_cast,
+                    ..
+                },
+            ) if before_context == after_context
+                && std::mem::discriminant(before_silhouette)
+                    == std::mem::discriminant(after_silhouette)
+                && before_cast == after_cast
+                && before.definition != after.definition =>
+            {
+                Some(after.definition.clone())
+            }
+            (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
                     components: before_components,
                     ..
@@ -9516,7 +14146,7 @@ fn patch_geometry(
     planes: &BTreeMap<String, (Point3, Vector3, Vector3)>,
     spheres: &BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
     tori: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
+    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64, f64)>,
     body_transforms: &BTreeMap<String, Transform>,
     entity_colors: &BTreeMap<String, Color>,
     edge_ranges: &BTreeMap<String, [f64; 2]>,
@@ -9528,11 +14158,17 @@ fn patch_geometry(
     pcurves: &BTreeMap<String, NurbsPcurveEdit>,
     procedural_curve_edits: &BTreeMap<String, ProceduralCurveEdit>,
     procedural_surface_fits: &BTreeMap<String, f64>,
+    creation_timestamps: &BTreeMap<usize, f64>,
+    edge_continuities: &BTreeMap<usize, (Sense, String)>,
+    vertex_ownerships: &BTreeMap<usize, (i64, u8)>,
+    face_sidedness: &BTreeMap<usize, crate::records::FaceContainment>,
+    tolerant_vertices: &BTreeMap<usize, (f64, [f32; 2])>,
 ) -> Result<(), CodecError> {
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let records = sab::frame(bytes, start, limit, 8)
+    let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
+    let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     let header_scale = asm_header::parse(bytes)
         .and_then(|header| header.scale)
@@ -9559,6 +14195,11 @@ fn patch_geometry(
         pcurves,
         procedural_curve_edits,
         procedural_surface_fits,
+        creation_timestamps,
+        edge_continuities,
+        vertex_ownerships,
+        face_sidedness,
+        tolerant_vertices,
         header_scale,
     )
 }
@@ -9574,7 +14215,7 @@ fn patch_framed_geometry(
     planes: &BTreeMap<String, (Point3, Vector3, Vector3)>,
     spheres: &BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
     tori: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
+    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64, f64)>,
     body_transforms: &BTreeMap<String, Transform>,
     entity_colors: &BTreeMap<String, Color>,
     edge_ranges: &BTreeMap<String, [f64; 2]>,
@@ -9586,6 +14227,11 @@ fn patch_framed_geometry(
     pcurves: &BTreeMap<String, NurbsPcurveEdit>,
     procedural_curve_edits: &BTreeMap<String, ProceduralCurveEdit>,
     procedural_surface_fits: &BTreeMap<String, f64>,
+    creation_timestamps: &BTreeMap<usize, f64>,
+    edge_continuities: &BTreeMap<usize, (Sense, String)>,
+    vertex_ownerships: &BTreeMap<usize, (i64, u8)>,
+    face_sidedness: &BTreeMap<usize, crate::records::FaceContainment>,
+    tolerant_vertices: &BTreeMap<usize, (f64, [f32; 2])>,
     header_scale: f64,
 ) -> Result<(), CodecError> {
     let records_by_index = records
@@ -9612,6 +14258,7 @@ fn patch_framed_geometry(
             let target = usize::try_from(record.ref_at(4)?).ok()?;
             let mut geometry = edit.clone();
             geometry.wrapper_reversed = None;
+            geometry.native_tail_flags = None;
             geometry.parameter_range = None;
             geometry.fit_tolerance = None;
             Some((target, geometry))
@@ -9646,10 +14293,100 @@ fn patch_framed_geometry(
         }
     }
     for record in records {
+        if let Some(timestamp) = creation_timestamps.get(&record.index) {
+            if !record.head.contains("ATTRIB_CUSTOM")
+                || !record.tokens.iter().any(
+                    |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
+                )
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D timestamp record {} has the wrong attribute family",
+                    record.index
+                )));
+            }
+            let family = record
+                .tokens
+                .iter()
+                .position(
+                    |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
+                )
+                .expect("timestamp family was checked");
+            if !matches!(record.chunk(family + 1), Some(sab::Token::Long(1))) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D timestamp record {} lacks marker 1 after its family",
+                    record.index
+                )));
+            }
+            let offset =
+                required_payload_field(bytes, record, active_ref_width(bytes), family + 2, 0x06)?;
+            bytes[offset + 1..offset + 9].copy_from_slice(&timestamp.to_le_bytes());
+            continue;
+        }
+        if let Some((sense, continuity)) = edge_continuities.get(&record.index) {
+            if !matches!(record.head.as_str(), "edge" | "tedge") {
+                return Err(CodecError::Malformed(format!(
+                    "F3D edge-continuity record {} is not an edge",
+                    record.index
+                )));
+            }
+            let ref_width = active_ref_width(bytes);
+            patch_sense_field(bytes, record, ref_width, 9, *sense)?;
+            patch_ascii_field(bytes, record, ref_width, 10, continuity)?;
+        }
+        if let Some((owning_edge, endpoint_index)) = vertex_ownerships.get(&record.index) {
+            if !matches!(record.head.as_str(), "vertex" | "tvertex") {
+                return Err(CodecError::Malformed(format!(
+                    "F3D vertex-ownership record {} is not a vertex",
+                    record.index
+                )));
+            }
+            let ref_width = active_ref_width(bytes);
+            for (index, tag, value) in [
+                (3usize, 0x0c, *owning_edge),
+                (4, 0x04, i64::from(*endpoint_index)),
+            ] {
+                patch_integer_field(bytes, record, ref_width, index, tag, value)?;
+            }
+        }
+        if let Some(containment) = face_sidedness.get(&record.index) {
+            if record.head != "face" || !matches!(record.chunk(9), Some(sab::Token::True)) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D face-sidedness record {} is not double-sided",
+                    record.index
+                )));
+            }
+            let sense = match containment {
+                crate::records::FaceContainment::In => Sense::Reversed,
+                crate::records::FaceContainment::Out => Sense::Forward,
+            };
+            patch_sense_field(bytes, record, active_ref_width(bytes), 10, sense)?;
+        }
+        if let Some((tolerance, trailing)) = tolerant_vertices.get(&record.index) {
+            if record.head != "tvertex" {
+                return Err(CodecError::Malformed(format!(
+                    "F3D tolerant-vertex record {} is not a tvertex",
+                    record.index
+                )));
+            }
+            let ref_width = active_ref_width(bytes);
+            let tolerance_offset = required_payload_field(bytes, record, ref_width, 6, 0x06)?;
+            bytes[tolerance_offset + 1..tolerance_offset + 9]
+                .copy_from_slice(&tolerance.to_le_bytes());
+            for (index, value) in [(7usize, trailing[0]), (8, trailing[1])] {
+                let offset = required_payload_field(bytes, record, ref_width, index, 0x05)?;
+                bytes[offset + 1..offset + 5].copy_from_slice(&value.to_le_bytes());
+            }
+        }
         if let Some(color) = color_records.get(&record.index) {
-            patch_double_token(bytes, record, 0, f64::from(color.r))?;
-            patch_double_token(bytes, record, 1, f64::from(color.g))?;
-            patch_double_token(bytes, record, 2, f64::from(color.b))?;
+            let ref_width = active_ref_width(bytes);
+            for (index, value) in [
+                (1usize, f64::from(color.r)),
+                (2, f64::from(color.g)),
+                (3, f64::from(color.b)),
+            ] {
+                let offset = required_payload_field(bytes, record, ref_width, index, 0x06)?;
+                bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+            }
             continue;
         }
         if let Some(transform) = transform_records.get(&record.index) {
@@ -9692,6 +14429,27 @@ fn patch_framed_geometry(
                     cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { .. } => {
                         patch_two_sided_offset_definition(bytes, record, definition)?;
                     }
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset { .. } => {
+                        patch_surface_offset_definition(bytes, record, definition)?;
+                    }
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring { .. } => {
+                        patch_spring_definition(bytes, record, definition)?;
+                    }
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection { .. } => {
+                        patch_projection_definition(bytes, record, definition)?;
+                    }
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. } => {
+                        patch_intersection_definition(bytes, record, definition)?;
+                    }
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
+                        ..
+                    } => patch_three_surface_intersection_definition(bytes, record, definition)?,
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { .. } => {
+                        patch_surface_curve_definition(bytes, record, definition)?;
+                    }
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette { .. } => {
+                        patch_silhouette_definition(bytes, record, definition)?;
+                    }
                     _ => unreachable!("procedural edit validation limits writable definitions"),
                 }
             }
@@ -9724,13 +14482,19 @@ fn patch_framed_geometry(
                 )));
             }
             match edit {
-                ProceduralSurfaceEdit::ExtrusionDirection(direction) => patch_vec3_token(
-                    bytes,
-                    record,
-                    0x14,
-                    0,
-                    [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
-                )?,
+                ProceduralSurfaceEdit::Extrusion {
+                    parameter_interval,
+                    direction,
+                    native_position,
+                } => {
+                    patch_extrusion_definition(
+                        bytes,
+                        record,
+                        *parameter_interval,
+                        *direction,
+                        *native_position,
+                    )?;
+                }
                 ProceduralSurfaceEdit::BlendRadii(radii) => {
                     patch_blend_radius_tokens(bytes, record, *radii)?;
                 }
@@ -9738,202 +14502,407 @@ fn patch_framed_geometry(
         }
         if record.head == "face" {
             if let Some(sense) = face_senses.get(&id) {
-                patch_sense_token(bytes, record, 0, *sense)?;
+                patch_sense_field(bytes, record, active_ref_width(bytes), 8, *sense)?;
             }
-        } else if record.head == "coedge" {
+        } else if matches!(record.head.as_str(), "coedge" | "tcoedge") {
             if let Some(sense) = coedge_senses.get(&id) {
-                patch_sense_token(bytes, record, 0, *sense)?;
+                patch_sense_field(bytes, record, active_ref_width(bytes), 7, *sense)?;
             }
-        } else if record.head == "edge" {
+        } else if matches!(record.head.as_str(), "edge" | "tedge") {
             if let Some(range) = edge_ranges.get(&id) {
-                patch_double_token(bytes, record, 0, range[0])?;
-                patch_double_token(bytes, record, 1, range[1])?;
+                let ref_width = active_ref_width(bytes);
+                for (index, value) in [(4usize, range[0]), (6, range[1])] {
+                    let offset = required_payload_field(bytes, record, ref_width, index, 0x06)?;
+                    bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+                }
             }
         } else if record.head == "point" {
             if let Some(position) = positions.get(&id) {
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
-                    [position.x / 10.0, position.y / 10.0, position.z / 10.0],
-                )?;
+                let offset =
+                    required_payload_field(bytes, record, active_ref_width(bytes), 3, 0x13)?;
+                for (component, value) in [position.x / 10.0, position.y / 10.0, position.z / 10.0]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let at = offset + 1 + component * 8;
+                    bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                }
             }
         } else if record.head == "straight" {
             if let Some((origin, direction)) = lines.get(&id) {
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
+                let field_indices = match record.name.as_str() {
+                    "straight" => [0, 1],
+                    "straight-curve" => [3, 4],
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "straight record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let ref_width = active_ref_width(bytes);
+                let fields = [
+                    required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
+                ];
+                for (offset, values) in fields.into_iter().zip([
                     [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
-                )?;
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x14,
-                    0,
                     [direction.x, direction.y, direction.z],
-                )?;
+                ]) {
+                    for (component, value) in values.into_iter().enumerate() {
+                        let at = offset + 1 + component * 8;
+                        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
             }
         } else if record.head == "degenerate_curve" {
             if let Some(point) = degenerate_curves.get(&id) {
-                patch_vec3_token(
+                let field_index = match record.name.as_str() {
+                    "degenerate_curve" => 0,
+                    "degenerate_curve-curve" => 3,
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "degenerate-curve record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let offset = required_payload_field(
                     bytes,
                     record,
+                    active_ref_width(bytes),
+                    field_index,
                     0x13,
-                    0,
-                    [point.x / 10.0, point.y / 10.0, point.z / 10.0],
                 )?;
+                for (component, value) in [point.x / 10.0, point.y / 10.0, point.z / 10.0]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let at = offset + 1 + component * 8;
+                    bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                }
             }
         } else if record.head == "ellipse" {
             if let Some((center, axis, direction, major_radius, minor_radius)) = conics.get(&id) {
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
-                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
-                )?;
-                patch_vec3_token(bytes, record, 0x14, 0, [axis.x, axis.y, axis.z])?;
+                let field_indices = match record.name.as_str() {
+                    "ellipse" => [0, 1, 2, 3],
+                    "ellipse-curve" => [3, 4, 5, 6],
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "ellipse record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let ref_width = active_ref_width(bytes);
+                let fields = [
+                    required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[2], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[3], 0x06)?,
+                ];
                 let major = major_radius / 10.0;
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x14,
-                    1,
+                for (offset, values) in fields[..3].iter().zip([
+                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                    [axis.x, axis.y, axis.z],
                     [
                         direction.x * major,
                         direction.y * major,
                         direction.z * major,
                     ],
-                )?;
-                patch_signed_ratio_token(bytes, record, minor_radius / major_radius)?;
+                ]) {
+                    for (component, value) in values.into_iter().enumerate() {
+                        let at = offset + 1 + component * 8;
+                        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
+                let ratio = minor_radius / major_radius;
+                let old_ratio = f64::from_le_bytes(
+                    bytes[fields[3] + 1..fields[3] + 9]
+                        .try_into()
+                        .expect("framed ellipse ratio has eight payload bytes"),
+                );
+                let signed_ratio = if old_ratio.is_sign_negative() {
+                    -ratio
+                } else {
+                    ratio
+                };
+                bytes[fields[3] + 1..fields[3] + 9].copy_from_slice(&signed_ratio.to_le_bytes());
             }
         } else if record.head == "plane" {
             if let Some((origin, normal, u_axis)) = planes.get(&id) {
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
+                let field_indices = match record.name.as_str() {
+                    "plane" => [0, 1, 2],
+                    "plane-surface" => [3, 4, 5],
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "plane record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let ref_width = active_ref_width(bytes);
+                let fields = [
+                    required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[2], 0x14)?,
+                ];
+                for (offset, values) in fields.into_iter().zip([
                     [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
-                )?;
-                patch_vec3_token(bytes, record, 0x14, 0, [normal.x, normal.y, normal.z])?;
-                patch_vec3_token(bytes, record, 0x14, 1, [u_axis.x, u_axis.y, u_axis.z])?;
+                    [normal.x, normal.y, normal.z],
+                    [u_axis.x, u_axis.y, u_axis.z],
+                ]) {
+                    for (component, value) in values.into_iter().enumerate() {
+                        let at = offset + 1 + component * 8;
+                        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
             }
         } else if record.head == "sphere" {
             if let Some((center, axis, ref_direction, radius)) = spheres.get(&id) {
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
+                let field_indices = match record.name.as_str() {
+                    "sphere" => [0, 1, 2, 3],
+                    "sphere-surface" => [3, 4, 5, 6],
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "sphere record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let ref_width = active_ref_width(bytes);
+                let fields = [
+                    required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[1], 0x06)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[2], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[3], 0x14)?,
+                ];
+                for (offset, values) in [fields[0], fields[2], fields[3]].into_iter().zip([
                     [center.x / 10.0, center.y / 10.0, center.z / 10.0],
-                )?;
-                patch_double_token(bytes, record, 0, radius / 10.0)?;
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x14,
-                    0,
                     [ref_direction.x, ref_direction.y, ref_direction.z],
-                )?;
-                patch_vec3_token(bytes, record, 0x14, 1, [axis.x, axis.y, axis.z])?;
+                    [axis.x, axis.y, axis.z],
+                ]) {
+                    for (component, value) in values.into_iter().enumerate() {
+                        let at = offset + 1 + component * 8;
+                        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
+                bytes[fields[1] + 1..fields[1] + 9].copy_from_slice(&(radius / 10.0).to_le_bytes());
             }
         } else if record.head == "torus" {
             if let Some((center, axis, ref_direction, major_radius, minor_radius)) = tori.get(&id) {
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
+                let field_indices = match record.name.as_str() {
+                    "torus" => [0, 1, 2, 3, 4],
+                    "torus-surface" => [3, 4, 5, 6, 7],
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "torus record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let ref_width = active_ref_width(bytes);
+                let fields = [
+                    required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[2], 0x06)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[3], 0x06)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[4], 0x14)?,
+                ];
+                for (offset, values) in [fields[0], fields[1], fields[4]].into_iter().zip([
                     [center.x / 10.0, center.y / 10.0, center.z / 10.0],
-                )?;
-                patch_vec3_token(bytes, record, 0x14, 0, [axis.x, axis.y, axis.z])?;
-                patch_double_token(bytes, record, 0, major_radius / 10.0)?;
-                patch_double_token(bytes, record, 1, minor_radius / 10.0)?;
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x14,
-                    1,
+                    [axis.x, axis.y, axis.z],
                     [ref_direction.x, ref_direction.y, ref_direction.z],
-                )?;
+                ]) {
+                    for (component, value) in values.into_iter().enumerate() {
+                        let at = offset + 1 + component * 8;
+                        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
+                for (offset, value) in [fields[2], fields[3]]
+                    .into_iter()
+                    .zip([major_radius / 10.0, minor_radius / 10.0])
+                {
+                    bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+                }
             }
         } else if record.head == "cone" {
-            if let Some((origin, axis, ref_direction, radius)) = cones.get(&id) {
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
-                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
-                )?;
-                patch_vec3_token(bytes, record, 0x14, 0, [axis.x, axis.y, axis.z])?;
+            if let Some((origin, axis, ref_direction, radius, ratio, half_angle)) = cones.get(&id) {
+                let ref_width = active_ref_width(bytes);
+                let field_indices = match record.name.as_str() {
+                    "cone" => [0, 1, 2, 3, 4, 5, 6],
+                    "cone-surface" => [3, 4, 5, 6, 9, 10, 11],
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "cone record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let fields = [
+                    required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[2], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[3], 0x06)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[4], 0x06)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[5], 0x06)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[6], 0x06)?,
+                ];
+                let old_sine = f64::from_le_bytes(
+                    bytes[fields[4] + 1..fields[4] + 9]
+                        .try_into()
+                        .expect("framed cone sine has eight payload bytes"),
+                );
+                let old_cosine = f64::from_le_bytes(
+                    bytes[fields[5] + 1..fields[5] + 9]
+                        .try_into()
+                        .expect("framed cone cosine has eight payload bytes"),
+                );
+                let sine_sign = if old_sine < 0.0 { -1.0 } else { 1.0 };
+                let cosine_sign = if old_cosine < 0.0 { -1.0 } else { 1.0 };
+                let native_axis = if *half_angle > 0.0 && sine_sign * cosine_sign < 0.0 {
+                    Vector3::new(-axis.x, -axis.y, -axis.z)
+                } else {
+                    *axis
+                };
                 let scaled_radius = radius / 10.0;
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x14,
-                    1,
+                for (offset, values) in fields[..3].iter().zip([
+                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                    [native_axis.x, native_axis.y, native_axis.z],
                     [
                         ref_direction.x * scaled_radius,
                         ref_direction.y * scaled_radius,
                         ref_direction.z * scaled_radius,
                     ],
-                )?;
-                patch_double_token(bytes, record, 3, scaled_radius)?;
+                ]) {
+                    for (component, value) in values.into_iter().enumerate() {
+                        let at = offset + 1 + component * 8;
+                        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
+                for (offset, value) in fields[3..].iter().zip([
+                    *ratio,
+                    sine_sign * half_angle.sin(),
+                    cosine_sign * half_angle.cos(),
+                    scaled_radius,
+                ]) {
+                    bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+                }
             }
         }
     }
     Ok(())
 }
 
-fn patch_double_token(
+fn required_payload_field(
+    bytes: &[u8],
+    record: &sab::Record,
+    ref_width: usize,
+    index: usize,
+    tag: u8,
+) -> Result<usize, CodecError> {
+    let offset = sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "{} record {} lacks payload field {index}",
+            record.head, record.index
+        ))
+    })?;
+    if bytes.get(offset) != Some(&tag) {
+        return Err(CodecError::Malformed(format!(
+            "{} record {} payload field {index} is not tag {tag:#04x}",
+            record.head, record.index
+        )));
+    }
+    Ok(offset)
+}
+
+fn patch_extrusion_definition(
     bytes: &mut [u8],
     record: &sab::Record,
-    ordinal: usize,
-    value: f64,
+    parameter_interval: [f64; 2],
+    direction: Vector3,
+    native_position: cadmpeg_ir::math::Point3,
 ) -> Result<(), CodecError> {
-    let offset = *sab::payload_token_offsets(bytes, record, 8, 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .get(ordinal)
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("extrusion record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("extrusion record is truncated".into()))?;
+    let layout = crate::nurbs::extrusion_patch_layout(record_bytes, active_ref_width(bytes))
         .ok_or_else(|| {
             CodecError::Malformed(format!(
-                "{} record {} lacks double token [{ordinal}]",
-                record.head, record.index
+                "spline record {} lacks writable extrusion fields",
+                record.index
             ))
         })?;
-    bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+    for (offset, value) in layout
+        .parameter_interval
+        .into_iter()
+        .zip(parameter_interval)
+    {
+        let at = record.offset + offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    for (base, values) in [
+        (
+            layout.direction,
+            [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
+        ),
+        (
+            layout.native_position,
+            [
+                native_position.x / 10.0,
+                native_position.y / 10.0,
+                native_position.z / 10.0,
+            ],
+        ),
+    ] {
+        for (component, value) in values.into_iter().enumerate() {
+            let at = record.offset + base + component * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+    }
     Ok(())
 }
 
-fn patch_signed_ratio_token(
+fn patch_ascii_field(
     bytes: &mut [u8],
     record: &sab::Record,
-    magnitude: f64,
+    ref_width: usize,
+    index: usize,
+    value: &str,
 ) -> Result<(), CodecError> {
-    let offset = *sab::payload_token_offsets(bytes, record, 8, 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .first()
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "{} record {} lacks ratio token",
-                record.head, record.index
-            ))
-        })?;
-    let raw = f64::from_le_bytes(
-        bytes[offset + 1..offset + 9]
-            .try_into()
-            .expect("framed double token contains eight payload bytes"),
-    );
-    let signed = if raw.is_sign_negative() {
-        -magnitude
-    } else {
-        magnitude
-    };
-    bytes[offset + 1..offset + 9].copy_from_slice(&signed.to_le_bytes());
+    let offset = required_payload_field(bytes, record, ref_width, index, 0x07)?;
+    let encoded_length = bytes.get(offset + 1).copied().ok_or_else(|| {
+        CodecError::Malformed(format!("{} record string is truncated", record.head))
+    })? as usize;
+    if value.len() != encoded_length || !value.is_ascii() {
+        return Err(CodecError::NotImplemented(format!(
+            "{} record {} string edit must retain its encoded ASCII length",
+            record.head, record.index
+        )));
+    }
+    bytes[offset + 2..offset + 2 + encoded_length].copy_from_slice(value.as_bytes());
+    Ok(())
+}
+
+fn patch_integer_field(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    ref_width: usize,
+    index: usize,
+    tag: u8,
+    value: i64,
+) -> Result<(), CodecError> {
+    let offset = required_payload_field(bytes, record, ref_width, index, tag)?;
+    if ref_width == 4 && i64::from(value as i32) != value {
+        return Err(CodecError::NotImplemented(format!(
+            "{} record {} integer edit exceeds BinaryFile4 range",
+            record.head, record.index
+        )));
+    }
+    bytes[offset + 1..offset + 1 + ref_width].copy_from_slice(&value.to_le_bytes()[..ref_width]);
     Ok(())
 }
 
@@ -9943,19 +14912,13 @@ fn patch_transform_record(
     transform: Transform,
     header_scale: f64,
 ) -> Result<(), CodecError> {
-    let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x13)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    offsets.extend(
-        sab::payload_token_offsets(bytes, record, 8, 0x14)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?,
-    );
-    offsets.sort_unstable();
-    if offsets.len() != 4 || header_scale == 0.0 {
+    if header_scale == 0.0 {
         return Err(CodecError::Malformed(format!(
-            "transform record {} does not contain four vectors or has zero header scale",
+            "transform record {} has zero header scale",
             record.index
         )));
     }
+    let ref_width = active_ref_width(bytes);
     let vectors = [
         [
             transform.rows[0][0],
@@ -9978,40 +14941,37 @@ fn patch_transform_record(
             transform.rows[2][3] / (header_scale * 10.0),
         ],
     ];
-    for (offset, vector) in offsets.into_iter().zip(vectors) {
+    for (index, vector) in vectors.into_iter().enumerate() {
+        let offset = required_payload_field(bytes, record, ref_width, index, 0x14)?;
         for (component, value) in vector.into_iter().enumerate() {
             let at = offset + 1 + component * 8;
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
     }
-    let scale_offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    let scale = *scale_offsets.last().ok_or_else(|| {
-        CodecError::Malformed(format!("transform record {} lacks scale", record.index))
-    })?;
+    let scale = required_payload_field(bytes, record, ref_width, 4, 0x06)?;
     bytes[scale + 1..scale + 9].copy_from_slice(&transform.rows[3][3].to_le_bytes());
     Ok(())
 }
 
-fn patch_sense_token(
+fn patch_sense_field(
     bytes: &mut [u8],
     record: &sab::Record,
-    ordinal: usize,
+    ref_width: usize,
+    index: usize,
     sense: Sense,
 ) -> Result<(), CodecError> {
-    let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x0a)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    offsets.extend(
-        sab::payload_token_offsets(bytes, record, 8, 0x0b)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?,
-    );
-    offsets.sort_unstable();
-    let offset = *offsets.get(ordinal).ok_or_else(|| {
+    let offset = sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
         CodecError::Malformed(format!(
-            "{} record {} lacks sense token [{ordinal}]",
+            "{} record {} lacks payload field {index}",
             record.head, record.index
         ))
     })?;
+    if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
+        return Err(CodecError::Malformed(format!(
+            "{} record {} payload field {index} is not a sense token",
+            record.head, record.index
+        )));
+    }
     bytes[offset] = match sense {
         Sense::Forward => 0x0b,
         Sense::Reversed => 0x0a,
@@ -10019,27 +14979,8 @@ fn patch_sense_token(
     Ok(())
 }
 
-fn patch_vec3_token(
-    bytes: &mut [u8],
-    record: &sab::Record,
-    tag: u8,
-    ordinal: usize,
-    values: [f64; 3],
-) -> Result<(), CodecError> {
-    let offset = *sab::payload_token_offsets(bytes, record, 8, tag)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .get(ordinal)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "{} record {} lacks payload token {tag:#04x}[{ordinal}]",
-                record.head, record.index,
-            ))
-        })?;
-    for (component, value) in values.into_iter().enumerate() {
-        let at = offset + 1 + component * 8;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
-    Ok(())
+fn active_ref_width(bytes: &[u8]) -> usize {
+    asm_header::parse(bytes).map_or(8, |header| usize::from(header.width))
 }
 
 fn patch_blend_radius_tokens(
@@ -10047,43 +14988,22 @@ fn patch_blend_radius_tokens(
     record: &sab::Record,
     radii: [f64; 2],
 ) -> Result<(), CodecError> {
-    let boundary = sab::payload_token_offsets(bytes, record, 8, 0x15)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .into_iter()
-        .find(|offset| {
-            bytes
-                .get(offset + 1..offset + 9)
-                .and_then(|value| value.try_into().ok())
-                .map(i64::from_le_bytes)
-                == Some(-1)
-        })
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("rolling-ball record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("rolling-ball record is truncated".into()))?;
+    let layout = crate::nurbs::rolling_ball_patch_layout(record_bytes, active_ref_width(bytes))
         .ok_or_else(|| {
             CodecError::Malformed(format!(
-                "spline record {} lacks the blend-radius boundary",
+                "spline record {} lacks a writable rolling-ball radius pair",
                 record.index
             ))
         })?;
-    let offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .into_iter()
-        .filter(|offset| *offset < boundary)
-        .collect::<Vec<_>>();
-    let pair = offsets
-        .get(offsets.len().saturating_sub(2)..)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "spline record {} lacks rolling-ball radius doubles",
-                record.index
-            ))
-        })?;
-    if pair.len() != 2 {
-        return Err(CodecError::Malformed(format!(
-            "spline record {} has an incomplete rolling-ball radius pair",
-            record.index
-        )));
-    }
-    for (offset, radius) in pair.iter().zip(radii) {
-        bytes[*offset + 1..*offset + 9].copy_from_slice(&(radius / 10.0).to_le_bytes());
+    for (offset, radius) in layout.radii.into_iter().zip(radii) {
+        let payload = record.offset + offset;
+        bytes[payload..payload + 8].copy_from_slice(&(radius / 10.0).to_le_bytes());
     }
     Ok(())
 }
@@ -10125,21 +15045,33 @@ fn patch_nurbs_surface_record(
             record.index
         )));
     }
-    patch_knot_structure(bytes, record.offset, &layout.u_knots, &surface.u_knots)?;
-    patch_knot_structure(bytes, record.offset, &layout.v_knots, &surface.v_knots)?;
+    patch_knot_structure(
+        bytes,
+        record.offset,
+        &layout.u_knots,
+        &surface.u_knots,
+        layout.int_width,
+    )?;
+    patch_knot_structure(
+        bytes,
+        record.offset,
+        &layout.v_knots,
+        &surface.v_knots,
+        layout.int_width,
+    )?;
     for (offset, degree) in layout
         .degree_value_offsets
         .into_iter()
         .zip([surface.u_degree, surface.v_degree])
     {
         let at = record.offset + offset;
-        bytes[at..at + 8].copy_from_slice(&i64::from(degree).to_le_bytes());
+        patch_layout_integer(bytes, at, layout.int_width, i64::from(degree))?;
     }
     if let Some(periodic) = edit.periodic {
         for (offset, periodic) in layout.periodic_value_offsets.into_iter().zip(periodic) {
             let at = record.offset + offset;
             let value = if periodic { 2i64 } else { 0i64 };
-            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+            patch_layout_integer(bytes, at, layout.int_width, value)?;
         }
     }
     let components = if layout.rational { 4 } else { 3 };
@@ -10231,13 +15163,19 @@ fn patch_nurbs_curve_record(
             record.index
         )));
     }
-    patch_knot_structure(bytes, record.offset, &layout.knots, &curve.knots)?;
+    patch_knot_structure(
+        bytes,
+        record.offset,
+        &layout.knots,
+        &curve.knots,
+        layout.int_width,
+    )?;
     let degree_at = record.offset + layout.degree_value_offset;
-    bytes[degree_at..degree_at + 8].copy_from_slice(&i64::from(curve.degree).to_le_bytes());
+    patch_layout_integer(bytes, degree_at, layout.int_width, i64::from(curve.degree))?;
     if let Some(periodic) = edit.periodic {
         let periodic = if periodic { 2i64 } else { 0i64 };
         let periodic_at = record.offset + layout.periodic_value_offset;
-        bytes[periodic_at..periodic_at + 8].copy_from_slice(&periodic.to_le_bytes());
+        patch_layout_integer(bytes, periodic_at, layout.int_width, periodic)?;
     }
     let components = if layout.rational { 4 } else { 3 };
     if layout.control_value_offsets.len() != curve.control_points.len() * components {
@@ -10311,32 +15249,40 @@ fn patch_helix_definition(
             "helix patch received a non-helix definition".into(),
         ));
     };
-    let end = record.offset + record.len;
-    if !bytes[record.offset..end]
-        .windows(b"helix_int_cur".len())
-        .any(|window| window == b"helix_int_cur")
-    {
-        return Err(CodecError::Malformed(format!(
-            "procedural curve record {} is not a helix",
-            record.index
-        )));
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("helix record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("helix record is truncated".into()))?;
+    let layout = crate::nurbs::helix_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "procedural curve record {} lacks writable helix fields",
+                record.index
+            ))
+        })?;
+    for (offset, value) in layout.angle_range.into_iter().zip(*angle_range) {
+        let at = record.offset + offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
-    for (ordinal, value) in angle_range.iter().copied().enumerate() {
-        patch_double_token(bytes, record, ordinal, value)?;
-    }
-    for (ordinal, value) in [
+    for (offset, value) in layout.frame_vectors.into_iter().zip([
         [center.x / 10.0, center.y / 10.0, center.z / 10.0],
         [major.x / 10.0, major.y / 10.0, major.z / 10.0],
         [minor.x / 10.0, minor.y / 10.0, minor.z / 10.0],
         [pitch.x / 10.0, pitch.y / 10.0, pitch.z / 10.0],
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        patch_vec3_token(bytes, record, 0x13, ordinal, value)?;
+    ]) {
+        for (component, value) in value.into_iter().enumerate() {
+            let at = record.offset + offset + component * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
     }
-    patch_double_token(bytes, record, 2, *apex_factor)?;
-    patch_vec3_token(bytes, record, 0x14, 0, [axis.x, axis.y, axis.z])?;
+    let apex_at = record.offset + layout.apex_factor;
+    bytes[apex_at..apex_at + 8].copy_from_slice(&apex_factor.to_le_bytes());
+    for (component, value) in [axis.x, axis.y, axis.z].into_iter().enumerate() {
+        let at = record.offset + layout.axis + component * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
     Ok(())
 }
 
@@ -10359,38 +15305,25 @@ fn patch_vector_offset_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("vector-offset record is truncated".into()))?;
-    if !record_bytes
-        .windows(b"offset_int_cur".len())
-        .any(|window| window == b"offset_int_cur")
-    {
-        return Err(CodecError::Malformed(format!(
-            "procedural curve record {} is not a vector offset",
-            record.index
-        )));
-    }
-    let source = crate::nurbs::first_curve_patch_layout(record_bytes).ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "vector-offset record {} has no source curve",
-            record.index
-        ))
-    })?;
-    for (ordinal, value) in parameter_range.iter().copied().enumerate() {
-        let tag = record.offset + source.end + ordinal * 9;
-        if bytes.get(tag) != Some(&0x06) {
-            return Err(CodecError::Malformed(format!(
-                "vector-offset record {} has no parameter range",
+    let layout = crate::nurbs::vector_offset_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "vector-offset record {} lacks writable construction fields",
                 record.index
-            )));
-        }
-        bytes[tag + 1..tag + 9].copy_from_slice(&value.to_le_bytes());
+            ))
+        })?;
+    for (offset, value) in layout.parameter_range.into_iter().zip(*parameter_range) {
+        let at = record.offset + offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
-    patch_vec3_token(
-        bytes,
-        record,
-        0x14,
-        0,
-        [offset.x / 10.0, offset.y / 10.0, offset.z / 10.0],
-    )
+    for (component, value) in [offset.x / 10.0, offset.y / 10.0, offset.z / 10.0]
+        .into_iter()
+        .enumerate()
+    {
+        let at = record.offset + layout.offset + component * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    Ok(())
 }
 
 fn patch_subset_definition(
@@ -10410,30 +15343,16 @@ fn patch_subset_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("subset record is truncated".into()))?;
-    if !record_bytes
-        .windows(b"subset_int_cur".len())
-        .any(|window| window == b"subset_int_cur")
-    {
-        return Err(CodecError::Malformed(format!(
-            "procedural curve record {} is not a subset",
-            record.index
-        )));
-    }
-    let source = crate::nurbs::first_curve_patch_layout(record_bytes).ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "subset record {} has no parent curve",
-            record.index
-        ))
-    })?;
-    for (ordinal, value) in parameter_range.iter().copied().enumerate() {
-        let tag = record.offset + source.end + ordinal * 9;
-        if bytes.get(tag) != Some(&0x06) {
-            return Err(CodecError::Malformed(format!(
-                "subset record {} has no parameter range",
+    let layout = crate::nurbs::subset_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "subset record {} lacks writable construction fields",
                 record.index
-            )));
-        }
-        bytes[tag + 1..tag + 9].copy_from_slice(&value.to_le_bytes());
+            ))
+        })?;
+    for (offset, value) in layout.parameter_range.into_iter().zip(*parameter_range) {
+        let at = record.offset + offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
 }
@@ -10453,50 +15372,34 @@ fn patch_compound_definition(
             "compound patch received another definition".into(),
         ));
     };
-    let end = record.offset + record.len;
-    let (mut position, int_width) = {
-        let record_bytes = bytes
-            .get(record.offset..end)
-            .ok_or_else(|| CodecError::Malformed("compound record is truncated".into()))?;
-        let name = b"comp_int_cur";
-        let marker = record_bytes
-            .windows(name.len())
-            .position(|window| window == name)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "procedural curve record {} is not compound",
-                    record.index
-                ))
-            })?;
-        let mut position = marker + name.len();
-        let int_width = [8usize, 4]
-            .into_iter()
-            .find(|width| {
-                record_bytes.get(position) == Some(&0x04)
-                    && record_bytes
-                        .get(position + 1..position + 1 + width)
-                        .and_then(|raw| match width {
-                            8 => raw.try_into().ok().map(i64::from_le_bytes),
-                            4 => raw.try_into().ok().map(i32::from_le_bytes).map(i64::from),
-                            _ => None,
-                        })
-                        == i64::try_from(parameters.len()).ok()
-            })
-            .ok_or_else(|| CodecError::Malformed("compound parameter count is malformed".into()))?;
-        position += 1 + int_width;
-        (position, int_width)
-    };
-    for value in parameters {
-        patch_compound_double(bytes, record, &mut position, *value)?;
-    }
-    if bytes.get(record.offset + position) != Some(&0x04) {
-        return Err(CodecError::Malformed(
-            "compound component count is malformed".into(),
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("compound record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("compound record is truncated".into()))?;
+    let layout = crate::nurbs::compound_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "compound record {} lacks writable parameter arrays",
+                record.index
+            ))
+        })?;
+    if layout.parameters.len() != parameters.len()
+        || layout.component_parameters.len() != component_parameters.len()
+    {
+        return Err(CodecError::NotImplemented(
+            "compound edit changes native parameter cardinality".into(),
         ));
     }
-    position += 1 + int_width;
-    for value in component_parameters {
-        patch_compound_double(bytes, record, &mut position, *value)?;
+    for (offset, value) in layout
+        .parameters
+        .into_iter()
+        .chain(layout.component_parameters)
+        .zip(parameters.iter().chain(component_parameters))
+    {
+        let at = record.offset + offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
 }
@@ -10506,105 +15409,561 @@ fn patch_two_sided_offset_definition(
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
-        definition
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
+        context,
+        discontinuity_flag,
+        offsets,
+    } = definition
     else {
         return Err(CodecError::Malformed(
             "two-sided offset patch received another definition".into(),
         ));
     };
-    let end = record.offset + record.len;
-    let (mut position, int_width) = {
-        let record_bytes = bytes
-            .get(record.offset..end)
-            .ok_or_else(|| CodecError::Malformed("two-sided offset record is truncated".into()))?;
-        let name = b"off_int_cur";
-        let marker = record_bytes
-            .windows(name.len())
-            .position(|window| window == name)
-            .ok_or_else(|| CodecError::Malformed("record is not an off_int_cur".into()))?;
-        let mut position = marker + name.len();
-        for expected in ["null_surface", "null_surface", "nullbs", "nullbs"] {
-            if record_bytes.get(position) != Some(&0x0d) {
-                return Err(CodecError::Malformed(
-                    "two-sided offset support prefix is malformed".into(),
-                ));
-            }
-            let length = usize::from(*record_bytes.get(position + 1).ok_or_else(|| {
-                CodecError::Malformed("two-sided offset support prefix is truncated".into())
-            })?);
-            let start = position + 2;
-            let stop = start + length;
-            if record_bytes.get(start..stop) != Some(expected.as_bytes()) {
-                return Err(CodecError::NotImplemented(
-                    "retained editing of non-null two-sided offset supports is not yet writable"
-                        .into(),
-                ));
-            }
-            position = stop;
-        }
-        position += 18;
-        let int_width = [8usize, 4]
-            .into_iter()
-            .find(|width| {
-                record_bytes.get(position) == Some(&0x04)
-                    && read_native_int(record_bytes, position + 1, *width)
-                        == i64::try_from(context.discontinuities[0].len()).ok()
-            })
-            .ok_or_else(|| {
-                CodecError::Malformed("two-sided offset discontinuity count is malformed".into())
-            })?;
-        (position, int_width)
-    };
-    let mut parameter_position = position - 18;
-    for value in context.parameter_range {
-        patch_compound_double(bytes, record, &mut parameter_position, value)?;
+    let record_bytes = bytes
+        .get(record.offset..record.offset + record.len)
+        .ok_or_else(|| CodecError::Malformed("two-sided offset record is truncated".into()))?;
+    let layout = [8usize, 4]
+        .into_iter()
+        .filter_map(|width| crate::nurbs::two_sided_offset_patch_layout(record_bytes, width))
+        .find(|layout| {
+            layout
+                .discontinuities
+                .iter()
+                .map(Vec::len)
+                .eq(context.discontinuities.iter().map(Vec::len))
+        })
+        .ok_or_else(|| CodecError::Malformed("two-sided offset layout is malformed".into()))?;
+    for (at, value) in layout
+        .parameter_range
+        .into_iter()
+        .zip(context.parameter_range)
+    {
+        patch_f64_payload(bytes, record.offset + at, value)?;
     }
-    for discontinuities in &context.discontinuities {
-        position += 1 + int_width;
-        for value in discontinuities {
-            patch_compound_double(bytes, record, &mut position, *value)?;
+    for (locations, values) in layout.discontinuities.iter().zip(&context.discontinuities) {
+        for (at, value) in locations.iter().zip(values) {
+            patch_f64_payload(bytes, record.offset + *at, *value)?;
         }
     }
-    position += 1;
-    for offset in offsets {
-        patch_compound_double(bytes, record, &mut position, *offset / 10.0)?;
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    for (at, value) in layout.offsets.into_iter().zip(offsets) {
+        patch_f64_payload(bytes, record.offset + at, *value / 10.0)?;
     }
     Ok(())
 }
 
-fn read_native_int(bytes: &[u8], position: usize, width: usize) -> Option<i64> {
-    match width {
-        8 => bytes
-            .get(position..position + 8)?
-            .try_into()
-            .ok()
-            .map(i64::from_le_bytes),
-        4 => bytes
-            .get(position..position + 4)?
-            .try_into()
-            .ok()
-            .map(i32::from_le_bytes)
-            .map(i64::from),
-        _ => None,
-    }
+fn patch_f64_payload(bytes: &mut [u8], at: usize, value: f64) -> Result<(), CodecError> {
+    let payload = bytes
+        .get_mut(at..at + 8)
+        .ok_or_else(|| CodecError::Malformed("native double payload is truncated".into()))?;
+    payload.copy_from_slice(&value.to_le_bytes());
+    Ok(())
 }
 
-fn patch_compound_double(
+fn patch_surface_offset_definition(
     bytes: &mut [u8],
     record: &sab::Record,
-    position: &mut usize,
-    value: f64,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
-    let tag = record.offset + *position;
-    if bytes.get(tag) != Some(&0x06) {
-        return Err(CodecError::Malformed(format!(
-            "compound record {} parameter payload is malformed",
-            record.index
-        )));
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+        context,
+        discontinuity_flag,
+        base_u_range,
+        base_v_range,
+        base_range,
+        distance,
+        shift,
+        scale,
+        ..
+    } = definition
+    else {
+        return Err(CodecError::Malformed(
+            "surface-offset patch received another definition".into(),
+        ));
+    };
+    if !distance.is_finite() || !shift.is_finite() || !scale.is_finite() {
+        return Err(CodecError::Malformed(
+            "surface-offset scalars must be finite".into(),
+        ));
     }
-    bytes[tag + 1..tag + 9].copy_from_slice(&value.to_le_bytes());
-    *position += 9;
+    if [base_u_range, base_v_range, base_range]
+        .into_iter()
+        .flatten()
+        .any(|value| !value.is_finite())
+    {
+        return Err(CodecError::Malformed(
+            "surface-offset ranges must be finite".into(),
+        ));
+    }
+    if context
+        .parameter_range
+        .into_iter()
+        .chain(context.discontinuities.iter().flatten().copied())
+        .any(|value| !value.is_finite())
+    {
+        return Err(CodecError::Malformed(
+            "surface-offset context values must be finite".into(),
+        ));
+    }
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("surface-offset record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("surface-offset record is truncated".into()))?;
+    let layout = crate::nurbs::surface_offset_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| {
+        CodecError::Malformed("surface-offset construction is malformed".into())
+    })?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities.iter().map(Vec::len))
+    {
+        return Err(CodecError::Malformed(
+            "surface-offset context is incomplete".into(),
+        ));
+    }
+    for (offset, value) in layout
+        .parameter_range
+        .into_iter()
+        .chain(layout.discontinuities.into_iter().flatten())
+        .chain(layout.base_u_range)
+        .chain(layout.base_v_range)
+        .chain(layout.base_range)
+        .chain([layout.distance, layout.shift, layout.scale])
+        .zip(
+            context
+                .parameter_range
+                .into_iter()
+                .chain(context.discontinuities.iter().flatten().copied())
+                .chain(base_u_range.iter().copied())
+                .chain(base_v_range.iter().copied())
+                .chain(
+                    base_range
+                        .iter()
+                        .copied()
+                        .chain([distance / 10.0, *shift, *scale]),
+                ),
+        )
+    {
+        let offset = record.offset + offset;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    Ok(())
+}
+
+fn patch_spring_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> Result<(), CodecError> {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
+        context,
+        discontinuity_flag,
+        direction,
+        ..
+    } = definition
+    else {
+        return Err(CodecError::Malformed(
+            "spring patch received another definition".into(),
+        ));
+    };
+    if context
+        .parameter_range
+        .into_iter()
+        .chain(context.discontinuities.iter().flatten().copied())
+        .any(|value| !value.is_finite())
+    {
+        return Err(CodecError::Malformed(
+            "spring context values must be finite".into(),
+        ));
+    }
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("spring record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("spring record is truncated".into()))?;
+    let int_width = active_ref_width(bytes);
+    let layout = crate::nurbs::spring_patch_layout(record_bytes, int_width)
+        .ok_or_else(|| CodecError::Malformed("spring construction is malformed".into()))?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities.iter().map(Vec::len))
+    {
+        return Err(CodecError::Malformed("spring context is incomplete".into()));
+    }
+    for (offset, value) in layout
+        .parameter_range
+        .into_iter()
+        .chain(layout.discontinuities.into_iter().flatten())
+        .zip(
+            context
+                .parameter_range
+                .into_iter()
+                .chain(context.discontinuities.iter().flatten().copied()),
+        )
+    {
+        let offset = record.offset + offset;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    patch_tagged_integer_at(
+        bytes,
+        record.offset + layout.direction,
+        int_width,
+        *direction,
+    )?;
+    Ok(())
+}
+
+fn patch_projection_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> Result<(), CodecError> {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
+        context,
+        discontinuity_flag,
+        tail,
+        ..
+    } = definition
+    else {
+        return Err(CodecError::Malformed(
+            "projection patch received another definition".into(),
+        ));
+    };
+    if context
+        .parameter_range
+        .into_iter()
+        .chain(context.discontinuities.iter().flatten().copied())
+        .any(|value| !value.is_finite())
+    {
+        return Err(CodecError::Malformed(
+            "projection context values must be finite".into(),
+        ));
+    }
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("projection record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("projection record is truncated".into()))?;
+    let layout = crate::nurbs::projection_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities.iter().map(Vec::len))
+    {
+        return Err(CodecError::Malformed(
+            "projection context is incomplete".into(),
+        ));
+    }
+    match (&layout.tail, tail) {
+        (
+            crate::nurbs::ProjectionTailPatchLayout::EarlyClose { flag: offset },
+            cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag },
+        ) => bytes[record.offset + offset] = native_bool(*flag),
+        (
+            crate::nurbs::ProjectionTailPatchLayout::Ranged {
+                flag: flag_offset,
+                parameter_range: range_offsets,
+                role: role_range,
+            },
+            cadmpeg_ir::geometry::ProjectionTail::Ranged {
+                flag,
+                parameter_range,
+                role,
+            },
+        ) => {
+            if !parameter_range.iter().copied().all(f64::is_finite) {
+                return Err(CodecError::Malformed(
+                    "projection tail range must be finite".into(),
+                ));
+            }
+            if !role.is_ascii() || role.len() != role_range.len() {
+                return Err(CodecError::NotImplemented(
+                    "projection role edit must retain its encoded ASCII length".into(),
+                ));
+            }
+            bytes[record.offset + flag_offset] = native_bool(*flag);
+            for (offset, value) in range_offsets.iter().zip(parameter_range) {
+                let offset = record.offset + offset;
+                bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+            }
+            let role_target = record.offset + role_range.start..record.offset + role_range.end;
+            bytes[role_target].copy_from_slice(role.as_bytes());
+        }
+        _ => {
+            return Err(CodecError::NotImplemented(
+                "projection edit cannot change native tail form".into(),
+            ))
+        }
+    }
+    for (offset, value) in layout
+        .parameter_range
+        .into_iter()
+        .chain(layout.discontinuities.into_iter().flatten())
+        .zip(
+            context
+                .parameter_range
+                .into_iter()
+                .chain(context.discontinuities.iter().flatten().copied()),
+        )
+    {
+        let offset = record.offset + offset;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    Ok(())
+}
+
+fn patch_intersection_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> Result<(), CodecError> {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+        context,
+        discontinuity_flag,
+    } = definition
+    else {
+        return Err(CodecError::Malformed(
+            "intersection patch received another definition".into(),
+        ));
+    };
+    if context
+        .parameter_range
+        .into_iter()
+        .chain(context.discontinuities.iter().flatten().copied())
+        .any(|value| !value.is_finite())
+    {
+        return Err(CodecError::Malformed(
+            "intersection context values must be finite".into(),
+        ));
+    }
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("intersection record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("intersection record is truncated".into()))?;
+    let layout = crate::nurbs::intersection_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| CodecError::Malformed("intersection construction is malformed".into()))?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities.iter().map(Vec::len))
+    {
+        return Err(CodecError::Malformed(
+            "intersection context is incomplete".into(),
+        ));
+    }
+    for (offset, value) in layout
+        .parameter_range
+        .into_iter()
+        .chain(layout.discontinuities.into_iter().flatten())
+        .zip(
+            context
+                .parameter_range
+                .into_iter()
+                .chain(context.discontinuities.iter().flatten().copied()),
+        )
+    {
+        let offset = record.offset + offset;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    Ok(())
+}
+
+fn patch_three_surface_intersection_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> Result<(), CodecError> {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
+        context,
+        selector,
+        ..
+    } = definition
+    else {
+        return Err(CodecError::Malformed(
+            "three-surface intersection patch received another definition".into(),
+        ));
+    };
+    if context
+        .parameter_range
+        .into_iter()
+        .chain(context.discontinuities.iter().flatten().copied())
+        .any(|value| !value.is_finite())
+    {
+        return Err(CodecError::Malformed(
+            "three-surface intersection context values must be finite".into(),
+        ));
+    }
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed(
+            "three-surface intersection record extent overflows address space".into(),
+        )
+    })?;
+    let record_bytes = bytes.get(record.offset..end).ok_or_else(|| {
+        CodecError::Malformed("three-surface intersection record is truncated".into())
+    })?;
+    let int_width = active_ref_width(bytes);
+    let layout = crate::nurbs::three_surface_patch_layout(record_bytes, int_width)
+        .ok_or_else(|| CodecError::Malformed("three-surface construction is malformed".into()))?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities.iter().map(Vec::len))
+    {
+        return Err(CodecError::Malformed(
+            "three-surface intersection context is incomplete".into(),
+        ));
+    }
+    for (offset, value) in layout
+        .parameter_range
+        .into_iter()
+        .chain(layout.discontinuities.into_iter().flatten())
+        .zip(
+            context
+                .parameter_range
+                .into_iter()
+                .chain(context.discontinuities.iter().flatten().copied()),
+        )
+    {
+        let offset = record.offset + offset;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    patch_tagged_integer_at(bytes, record.offset + layout.selector, int_width, *selector)?;
+    Ok(())
+}
+
+fn patch_surface_curve_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> Result<(), CodecError> {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { family, context } =
+        definition
+    else {
+        return Err(CodecError::Malformed(
+            "surface-curve patch received another definition".into(),
+        ));
+    };
+    if context
+        .parameter_range
+        .into_iter()
+        .chain(context.discontinuities.iter().flatten().copied())
+        .any(|value| !value.is_finite())
+    {
+        return Err(CodecError::Malformed(
+            "surface-curve context values must be finite".into(),
+        ));
+    }
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("surface-curve record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("surface-curve record is truncated".into()))?;
+    let layout =
+        crate::nurbs::surface_curve_patch_layout(record_bytes, active_ref_width(bytes), family)
+            .ok_or_else(|| {
+                CodecError::Malformed("surface-curve construction is malformed".into())
+            })?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities.iter().map(Vec::len))
+    {
+        return Err(CodecError::Malformed(
+            "surface-curve context is incomplete".into(),
+        ));
+    }
+    for (offset, value) in layout
+        .parameter_range
+        .into_iter()
+        .chain(layout.discontinuities.into_iter().flatten())
+        .zip(
+            context
+                .parameter_range
+                .into_iter()
+                .chain(context.discontinuities.iter().flatten().copied()),
+        )
+    {
+        let offset = record.offset + offset;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    Ok(())
+}
+
+fn patch_silhouette_definition(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> Result<(), CodecError> {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
+        silhouette,
+        light_direction,
+        ..
+    } = definition
+    else {
+        return Err(CodecError::Malformed(
+            "silhouette patch received another definition".into(),
+        ));
+    };
+    if !finite_vector(*light_direction) {
+        return Err(CodecError::Malformed(
+            "silhouette light direction must be finite".into(),
+        ));
+    }
+    let draft_factor = match silhouette {
+        cadmpeg_ir::geometry::SilhouetteKind::Standard
+        | cadmpeg_ir::geometry::SilhouetteKind::Parametric => None,
+        cadmpeg_ir::geometry::SilhouetteKind::Taper { draft_factor } => {
+            if !draft_factor.is_finite() {
+                return Err(CodecError::Malformed(
+                    "silhouette draft factor must be finite".into(),
+                ));
+            }
+            Some(*draft_factor)
+        }
+    };
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed("silhouette record extent overflows address space".into())
+    })?;
+    let record_bytes = bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed("silhouette record is truncated".into()))?;
+    let layout =
+        crate::nurbs::silhouette_patch_layout(record_bytes, active_ref_width(bytes), silhouette)
+            .ok_or_else(|| CodecError::Malformed("silhouette construction is malformed".into()))?;
+    for (component, value) in [light_direction.x, light_direction.y, light_direction.z]
+        .into_iter()
+        .enumerate()
+    {
+        let start = record.offset + layout.light_direction + component * 8;
+        bytes[start..start + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    if let Some(draft_factor) = draft_factor {
+        let draft_offset = layout
+            .draft_factor
+            .ok_or_else(|| CodecError::Malformed("silhouette draft factor is missing".into()))?;
+        let draft_offset = record.offset + draft_offset;
+        bytes[draft_offset..draft_offset + 8].copy_from_slice(&draft_factor.to_le_bytes());
+    }
     Ok(())
 }
 
@@ -10626,20 +15985,34 @@ fn patch_nurbs_pcurve_record(
             record.index
         )));
     };
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("NURBS pcurve record extent overflows address space".into())
-    })?;
-    let layout = crate::nurbs::final_pcurve_patch_layout(
-        bytes
-            .get(record.offset..end)
-            .ok_or_else(|| CodecError::Malformed("NURBS pcurve record is truncated".into()))?,
-    )
-    .ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "pcurve record {} has no writable UV cache",
+    let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
+    let scope = if record.head == "pcurve" {
+        sab::payload_subtype_range(bytes, record, 5, ref_width, "exp_par_cur").ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "pcurve record {} has no exp_par_cur payload",
+                record.index
+            ))
+        })?
+    } else if record.head == "intcurve" {
+        record.offset..record.offset.checked_add(record.len).ok_or_else(|| {
+            CodecError::Malformed("NURBS pcurve record extent overflows address space".into())
+        })?
+    } else {
+        return Err(CodecError::Malformed(format!(
+            "record {} is not a pcurve carrier",
             record.index
-        ))
-    })?;
+        )));
+    };
+    let layout =
+        crate::nurbs::final_pcurve_patch_layout(bytes.get(scope.clone()).ok_or_else(|| {
+            CodecError::Malformed("NURBS pcurve subtype extent is truncated".into())
+        })?)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "pcurve record {} has no writable UV cache",
+                record.index
+            ))
+        })?;
     if layout.control_count != control_points.len()
         || layout.control_value_offsets.len() != control_points.len() * 2
         || layout.weight_value_offsets.len() != weights.as_ref().map_or(0, Vec::len)
@@ -10652,59 +16025,93 @@ fn patch_nurbs_pcurve_record(
     let PcurveGeometry::Nurbs { knots, .. } = geometry else {
         unreachable!()
     };
-    patch_knot_structure(bytes, record.offset, &layout.knots, knots)?;
-    let at = record.offset + layout.degree_value_offset;
-    bytes[at..at + 8].copy_from_slice(&i64::from(*degree).to_le_bytes());
+    patch_knot_structure(bytes, scope.start, &layout.knots, knots, layout.int_width)?;
+    let at = scope.start + layout.degree_value_offset;
+    patch_layout_integer(bytes, at, layout.int_width, i64::from(*degree))?;
     if let Some(periodic) = edit.periodic {
         let value = if periodic { 2i64 } else { 0i64 };
-        let at = record.offset + layout.periodic_value_offset;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        let at = scope.start + layout.periodic_value_offset;
+        patch_layout_integer(bytes, at, layout.int_width, value)?;
     }
-    if let Some(reversed) = edit.wrapper_reversed {
-        let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x0a)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?;
-        offsets.extend(
-            sab::payload_token_offsets(bytes, record, 8, 0x0b)
-                .map_err(|error| CodecError::Malformed(error.to_string()))?,
-        );
-        offsets.sort_unstable();
-        let offset = *offsets.first().ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "pcurve record {} lacks wrapper-reversal carrier",
-                record.index
-            ))
-        })?;
-        bytes[offset] = if reversed { 0x0a } else { 0x0b };
-    }
-    if let Some(range) = edit.parameter_range {
-        let offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?;
-        let pair = offsets
-            .get(offsets.len().saturating_sub(2)..)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "pcurve record {} lacks parameter-range carriers",
+    if record.head == "pcurve" {
+        if let Some(reversed) = edit.wrapper_reversed {
+            let offset =
+                sab::payload_token_offset(bytes, record, ref_width, 4).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "pcurve record {} lacks wrapper-reversal carrier",
+                        record.index
+                    ))
+                })?;
+            if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
+                return Err(CodecError::Malformed(format!(
+                    "pcurve record {} has a non-boolean wrapper-reversal carrier",
                     record.index
-                ))
-            })?;
-        if pair.len() != 2 {
+                )));
+            }
+            bytes[offset] = if reversed { 0x0a } else { 0x0b };
+        }
+        if bytes.get(scope.end) != Some(&0x10) {
             return Err(CodecError::Malformed(format!(
-                "pcurve record {} has an incomplete parameter range",
+                "pcurve record {} lacks the exp_par_cur close",
                 record.index
             )));
         }
-        for (offset, value) in pair.iter().zip(range) {
-            bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+        let suffix_start = record.tokens.len().checked_sub(6).ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "pcurve record {} lacks its native metadata suffix",
+                record.index
+            ))
+        })?;
+        let suffix_offsets = (suffix_start..record.tokens.len())
+            .map(|index| {
+                sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "pcurve record {} has an incomplete native metadata suffix",
+                        record.index
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some(flags) = edit.native_tail_flags {
+            for (offset, flag) in suffix_offsets[..4].iter().zip(flags) {
+                if !matches!(bytes.get(*offset), Some(0x0a | 0x0b)) {
+                    return Err(CodecError::Malformed(format!(
+                        "pcurve record {} has an incomplete native boolean tail",
+                        record.index
+                    )));
+                }
+                bytes[*offset] = native_bool(flag);
+            }
+        } else {
+            for offset in &suffix_offsets[..4] {
+                if !matches!(bytes.get(*offset), Some(0x0a | 0x0b)) {
+                    return Err(CodecError::Malformed(format!(
+                        "pcurve record {} has an incomplete native boolean tail",
+                        record.index
+                    )));
+                }
+            }
+        }
+        if let Some(range) = edit.parameter_range {
+            for (offset, value) in suffix_offsets[4..].iter().zip(range) {
+                if bytes.get(*offset) != Some(&0x06) {
+                    return Err(CodecError::Malformed(format!(
+                        "pcurve record {} has an incomplete parameter range",
+                        record.index
+                    )));
+                }
+                bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+            }
         }
     }
     if let Some(tolerance) = edit.fit_tolerance {
-        if bytes.get(record.offset + layout.control_end) != Some(&0x06) {
+        if bytes.get(scope.start + layout.control_end) != Some(&0x06) {
             return Err(CodecError::NotImplemented(format!(
                 "pcurve record {} has no writable fit-tolerance carrier",
                 record.index
             )));
         }
-        let at = record.offset + layout.control_end + 1;
+        let at = scope.start + layout.control_end + 1;
         bytes[at..at + 8].copy_from_slice(&tolerance.to_le_bytes());
     }
     for (point, offsets) in control_points
@@ -10712,13 +16119,13 @@ fn patch_nurbs_pcurve_record(
         .zip(layout.control_value_offsets.chunks_exact(2))
     {
         for (value, offset) in [point.u, point.v].into_iter().zip(offsets) {
-            let at = record.offset + offset;
+            let at = scope.start + offset;
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
     }
     if let Some(weights) = weights {
         for (weight, offset) in weights.iter().zip(&layout.weight_value_offsets) {
-            let at = record.offset + offset;
+            let at = scope.start + offset;
             bytes[at..at + 8].copy_from_slice(&weight.to_le_bytes());
         }
     }
@@ -10730,7 +16137,10 @@ fn patch_ref_pcurve_contract(
     record: &sab::Record,
     edit: &NurbsPcurveEdit,
 ) -> Result<(), CodecError> {
-    if edit.wrapper_reversed.is_some() || edit.fit_tolerance.is_some() {
+    if edit.wrapper_reversed.is_some()
+        || edit.native_tail_flags.is_some()
+        || edit.fit_tolerance.is_some()
+    {
         return Err(CodecError::NotImplemented(format!(
             "ref-form pcurve record {} cannot carry wrapper or inline fit edits",
             record.index
@@ -10739,15 +16149,21 @@ fn patch_ref_pcurve_contract(
     let Some(range) = edit.parameter_range else {
         return Ok(());
     };
-    let offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    if offsets.len() != 2 {
-        return Err(CodecError::Malformed(format!(
-            "ref-form pcurve record {} lacks its two-value parameter range",
-            record.index
-        )));
-    }
-    for (offset, value) in offsets.into_iter().zip(range) {
+    let ref_width = active_ref_width(bytes);
+    for (index, value) in [5usize, 6].into_iter().zip(range) {
+        let offset =
+            sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "ref-form pcurve record {} lacks parameter-range field {index}",
+                    record.index
+                ))
+            })?;
+        if bytes.get(offset) != Some(&0x06) {
+            return Err(CodecError::Malformed(format!(
+                "ref-form pcurve record {} parameter-range field {index} is not a double",
+                record.index
+            )));
+        }
         bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
@@ -10758,6 +16174,7 @@ fn patch_knot_structure(
     record_offset: usize,
     layout: &crate::nurbs::KnotPatchLayout,
     knots: &[f64],
+    int_width: usize,
 ) -> Result<(), CodecError> {
     let mut runs: Vec<(f64, usize)> = Vec::new();
     for knot in knots {
@@ -10799,14 +16216,58 @@ fn patch_knot_structure(
         let value_at = record_offset + *value_offset;
         bytes[value_at..value_at + 8].copy_from_slice(&value.to_le_bytes());
         let multiplicity_at = record_offset + *multiplicity_offset;
-        bytes[multiplicity_at..multiplicity_at + 8].copy_from_slice(&stored.to_le_bytes());
+        patch_layout_integer(bytes, multiplicity_at, int_width, stored)?;
     }
     Ok(())
+}
+
+fn patch_layout_integer(
+    bytes: &mut [u8],
+    offset: usize,
+    width: usize,
+    value: i64,
+) -> Result<(), CodecError> {
+    if width == 4 && i64::from(value as i32) != value {
+        return Err(CodecError::NotImplemented(
+            "F3D NURBS integer edit exceeds BinaryFile4 range".into(),
+        ));
+    }
+    let target = bytes
+        .get_mut(offset..offset + width)
+        .ok_or_else(|| CodecError::Malformed("F3D NURBS integer payload is truncated".into()))?;
+    target.copy_from_slice(&value.to_le_bytes()[..width]);
+    Ok(())
+}
+
+fn patch_tagged_integer_at(
+    bytes: &mut [u8],
+    tag_offset: usize,
+    width: usize,
+    value: i64,
+) -> Result<(), CodecError> {
+    if !matches!(bytes.get(tag_offset), Some(0x04 | 0x0c | 0x15)) {
+        return Err(CodecError::Malformed(
+            "F3D tagged integer carrier is missing".into(),
+        ));
+    }
+    patch_layout_integer(bytes, tag_offset + 1, width, value)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_face_sense_edit_preserves_native_normalization_relation() {
+        assert_eq!(
+            normalized_face_sense_to_native(Sense::Reversed, Sense::Forward, Sense::Forward,),
+            Sense::Reversed
+        );
+        assert_eq!(
+            normalized_face_sense_to_native(Sense::Reversed, Sense::Reversed, Sense::Forward,),
+            Sense::Forward
+        );
+    }
 
     #[test]
     fn generated_straight_record_patches_by_token_boundaries() {
@@ -10831,6 +16292,11 @@ mod tests {
             &records,
             &BTreeMap::new(),
             &lines,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -10897,6 +16363,11 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &spheres,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -10978,6 +16449,11 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated torus edit");
@@ -11026,6 +16502,8 @@ mod tests {
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 40.0,
+                1.0,
+                0.0,
             ),
         )]);
         patch_framed_geometry(
@@ -11039,6 +16517,11 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &cones,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -11121,6 +16604,11 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated ellipse edit");
@@ -11150,5 +16638,17 @@ mod tests {
                     && major_radius == 40.0
                     && minor_radius == 10.0
         ));
+    }
+
+    #[test]
+    fn generated_binaryfile4_integer_patch_preserves_following_token() {
+        let mut bytes = vec![0x15];
+        bytes.extend_from_slice(&(-3i32).to_le_bytes());
+        bytes.extend_from_slice(&[0x0d, 0x03, b'n', b'e', b'x']);
+
+        patch_tagged_integer_at(&mut bytes, 0, 4, 7).expect("width-4 enum patch");
+
+        assert_eq!(&bytes[1..5], &7i32.to_le_bytes());
+        assert_eq!(&bytes[5..], &[0x0d, 0x03, b'n', b'e', b'x']);
     }
 }

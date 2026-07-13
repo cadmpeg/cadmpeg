@@ -5,13 +5,13 @@
 //! selected by [`crate::container`]. Returned records retain source offsets and
 //! stable identifiers for native regeneration.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignEntityHeader, DesignObject,
-    DesignObjectKind, DesignRecordHeader, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchRelation,
+    ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
+    DesignConfigurationKind, DesignEntityHeader, DesignObject, DesignObjectKind,
+    DesignRecordHeader, LostEdgeReference, PersistentReference, PersistentReferenceKind,
+    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -31,6 +31,53 @@ const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
     (b"edge_recipe_data", ConstructionRecipeKind::Edge),
     (b"vertex_recipe_data", ConstructionRecipeKind::Vertex),
 ];
+
+/// Decode every JSON design-configuration table and rule entry.
+pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfiguration>, CodecError> {
+    let configurations = scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::DESIGN_CONFIG)
+        .map(|entry| {
+            let bytes = scan.entry_bytes(&entry.name)?;
+            let payload: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
+                CodecError::Malformed(format!(
+                    "invalid F3D configuration JSON {}: {error}",
+                    entry.name
+                ))
+            })?;
+            if !payload.is_object() {
+                return Err(CodecError::Malformed(format!(
+                    "F3D configuration JSON must be an object: {}",
+                    entry.name
+                )));
+            }
+            Ok(DesignConfiguration {
+                id: format!("f3d:configuration:{}", entry.name),
+                entry_name: entry.name.clone(),
+                kind: if entry.name.ends_with(".dsgcfgrule") {
+                    DesignConfigurationKind::Rule
+                } else {
+                    DesignConfigurationKind::Table
+                },
+                payload,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut names = HashSet::new();
+    let mut ids = HashSet::new();
+    for configuration in &configurations {
+        if !names.insert(configuration.entry_name.as_str())
+            || !ids.insert(configuration.id.as_str())
+        {
+            return Err(CodecError::Malformed(format!(
+                "duplicate F3D configuration identity: {}",
+                configuration.entry_name
+            )));
+        }
+    }
+    Ok(configurations)
+}
 
 /// Decode every parametric construction-recipe record (`body_recipe_data`,
 /// `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`,
@@ -61,10 +108,11 @@ pub fn decode_persistent_references(
     scan: &ContainerScan,
 ) -> Result<Vec<PersistentReference>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
+    for (entry_ordinal, entry) in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .enumerate()
+        .filter(|(_, entry)| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         for &(name, kind) in &[
@@ -82,7 +130,20 @@ pub fn decode_persistent_references(
             while let Some(relative) = bytes[cursor..].windows(name.len()).position(|w| w == name) {
                 let offset = cursor + relative;
                 cursor = offset + name.len();
-                let type_offset = offset + name.len();
+                let compact_type_offset = offset + name.len();
+                let type_offset = if u32_at(bytes, compact_type_offset) == Some(23) {
+                    compact_type_offset
+                } else if u32_at(bytes, compact_type_offset) == Some(2)
+                    && u32_at(bytes, compact_type_offset + 4) == Some(14)
+                    && bytes
+                        .get(compact_type_offset + 8..compact_type_offset + 22)
+                        .is_some()
+                    && u32_at(bytes, compact_type_offset + 22) == Some(23)
+                {
+                    compact_type_offset + 22
+                } else {
+                    continue;
+                };
                 let Some(length_bytes) = bytes.get(type_offset..type_offset + 4) else {
                     continue;
                 };
@@ -101,20 +162,23 @@ pub fn decode_persistent_references(
                 let Some(raw) = bytes.get(value_offset..value_offset + 8) else {
                     continue;
                 };
-                out.push(PersistentReference {
-                    id: format!("f3d:{}:persistent-reference#{offset}", entry.name),
-                    byte_offset: offset as u64,
-                    value_offset: (value_offset - offset) as u32,
-                    kind,
-                    value: u64::from_le_bytes(raw.try_into().expect(
-                        "invariant: raw is an 8-byte slice from bytes.get(range) of length 8",
-                    )),
-                });
+                out.push((
+                    entry_ordinal,
+                    PersistentReference {
+                        id: format!("f3d:{}:persistent-reference#{offset}", entry.name),
+                        byte_offset: offset as u64,
+                        value_offset: (value_offset - offset) as u32,
+                        kind,
+                        value: u64::from_le_bytes(raw.try_into().expect(
+                            "invariant: raw is an 8-byte slice from bytes.get(range) of length 8",
+                        )),
+                    },
+                ));
             }
         }
     }
-    out.sort_by_key(|reference| reference.value);
-    Ok(out)
+    out.sort_by_key(|(entry_ordinal, reference)| (*entry_ordinal, reference.byte_offset));
+    Ok(out.into_iter().map(|(_, reference)| reference).collect())
 }
 
 /// Decode every `EDGE_REFERENCE_LOST` marker record from each design
@@ -237,6 +301,7 @@ pub fn decode_objects(
             while bytes.get(tail) == Some(&0) {
                 tail += 1;
             }
+            let zero_run_length = u32::try_from(tail - after_self).unwrap_or(u32::MAX);
             let (parent_guid, parent_guid_offset, revision_offset) = lp_ascii(bytes, tail)
                 .filter(|(guid, _)| is_guid(guid))
                 .map_or((None, None, tail), |(guid, end)| {
@@ -261,6 +326,7 @@ pub fn decode_objects(
                 entity_id_offsets,
                 self_guid,
                 self_guid_offset: (ids_end + 4) as u64,
+                zero_run_length,
                 parent_guid,
                 parent_guid_offset,
                 revision,
@@ -498,11 +564,15 @@ pub fn decode_sketch_relations(
             };
             let Some((
                 members,
+                member_offsets,
                 auxiliary_references,
+                auxiliary_reference_offsets,
                 owner_reference,
+                owner_reference_offset,
                 state,
                 state_offset,
                 return_members,
+                return_member_offsets,
             )) = parse_sketch_relation(payload, &owners)
             else {
                 continue;
@@ -515,12 +585,25 @@ pub fn decode_sketch_relations(
                 byte_offset: record.byte_offset,
                 state_offset: state_offset as u32,
                 owner_reference,
+                owner_reference_offset: owner_reference_offset as u32,
                 auxiliary_references,
+                auxiliary_reference_offsets: auxiliary_reference_offsets
+                    .into_iter()
+                    .map(|offset| offset as u32)
+                    .collect(),
                 members,
+                member_offsets: member_offsets
+                    .into_iter()
+                    .map(|offset| offset as u32)
+                    .collect(),
                 state,
                 constraint_kinds,
                 unknown_constraint_bits,
                 return_members,
+                return_member_offsets: return_member_offsets
+                    .into_iter()
+                    .map(|offset| offset as u32)
+                    .collect(),
                 raw_bytes: payload.to_vec(),
             });
         }
@@ -587,7 +670,8 @@ pub fn decode_sketch_points(
                 break;
             };
             let payload = &bytes[at..];
-            let Some((persistent_id, paired_reference, x, y, shift)) = decode_sketch_point(payload)
+            let Some((persistent_id, paired_reference, x, y, shift, entity_genesis)) =
+                decode_sketch_point(payload)
             else {
                 at += 1;
                 continue;
@@ -604,6 +688,7 @@ pub fn decode_sketch_points(
                     class_tag,
                     byte_offset: at as u64,
                     coordinate_offset: (89 + shift) as u32,
+                    entity_genesis,
                     persistent_id,
                     paired_reference,
                     coordinates: Point2::new(u, v),
@@ -616,9 +701,9 @@ pub fn decode_sketch_points(
     Ok(out)
 }
 
-fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64, usize)> {
+fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64, usize, Option<u64>)> {
     if let Some(point) = decode_sketch_point_variant(payload, 0, 1) {
-        return Some((point.0, point.1, point.2, point.3, 0));
+        return Some((point.0, point.1, point.2, point.3, 0, None));
     }
     if u32_at(payload, 25) != Some(13)
         || payload.get(29..42) != Some(b"EntityGenesis")
@@ -627,8 +712,9 @@ fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64, usize)> {
     {
         return None;
     }
+    let entity_genesis = u64::from_le_bytes(payload.get(69..77)?.try_into().ok()?);
     decode_sketch_point_variant(payload, 52, 2)
-        .map(|point| (point.0, point.1, point.2, point.3, 52))
+        .map(|point| (point.0, point.1, point.2, point.3, 52, Some(entity_genesis)))
 }
 
 fn decode_sketch_point_variant(
@@ -688,7 +774,7 @@ pub fn decode_sketch_curve_identities(
                 break;
             };
             let payload = &bytes[at..];
-            let Some((primary_id, secondary_id, geometry_shift)) =
+            let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
                 decode_sketch_curve_identity(payload)
             else {
                 at += 1;
@@ -704,6 +790,7 @@ pub fn decode_sketch_curve_identities(
                     class_tag,
                     byte_offset: at as u64,
                     geometry_offset: (133 + geometry_shift) as u32,
+                    entity_genesis,
                     primary_id,
                     secondary_id,
                     geometry: decode_sketch_nurbs(geometry_payload)
@@ -718,9 +805,9 @@ pub fn decode_sketch_curve_identities(
     Ok(out)
 }
 
-fn decode_sketch_curve_identity(payload: &[u8]) -> Option<(u64, u64, usize)> {
+fn decode_sketch_curve_identity(payload: &[u8]) -> Option<(u64, u64, usize, Option<u64>)> {
     if let Some((primary, secondary)) = decode_sketch_curve_identity_variant(payload, 0, 2) {
-        return Some((primary, secondary, 0));
+        return Some((primary, secondary, 0, None));
     }
     if u32_at(payload, 25) != Some(13)
         || payload.get(29..42) != Some(b"EntityGenesis")
@@ -729,8 +816,9 @@ fn decode_sketch_curve_identity(payload: &[u8]) -> Option<(u64, u64, usize)> {
     {
         return None;
     }
+    let entity_genesis = u64::from_le_bytes(payload.get(69..77)?.try_into().ok()?);
     decode_sketch_curve_identity_variant(payload, 52, 3)
-        .map(|(primary, secondary)| (primary, secondary, 52))
+        .map(|(primary, secondary)| (primary, secondary, 52, Some(entity_genesis)))
 }
 
 fn decode_sketch_curve_identity_variant(
@@ -912,7 +1000,18 @@ fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     })
 }
 
-type ParsedSketchRelation = (Vec<u32>, Vec<u32>, u32, u32, usize, Vec<u32>);
+type ParsedSketchRelation = (
+    Vec<u32>,
+    Vec<usize>,
+    Vec<u32>,
+    Vec<usize>,
+    u32,
+    usize,
+    u32,
+    usize,
+    Vec<u32>,
+    Vec<usize>,
+);
 
 fn parse_sketch_relation(
     payload: &[u8],
@@ -927,18 +1026,22 @@ fn parse_sketch_relation(
     }
     let mut cursor = 24;
     let mut members = Vec::with_capacity(member_count);
+    let mut member_offsets = Vec::with_capacity(member_count);
     for _ in 0..member_count {
         let (value, end) = marked_u32(payload, cursor)?;
         members.push(value);
+        member_offsets.push(cursor + 1);
         cursor = next_reference_marker(payload, end)?;
     }
     let mut auxiliary_references = Vec::new();
-    let (owner_reference, end) = loop {
+    let mut auxiliary_reference_offsets = Vec::new();
+    let (owner_reference, owner_reference_offset, end) = loop {
         let (reference, end) = marked_u32(payload, cursor)?;
         if owners.contains(&reference) {
-            break (reference, end);
+            break (reference, cursor + 1, end);
         }
         auxiliary_references.push(reference);
+        auxiliary_reference_offsets.push(cursor + 1);
         cursor = next_reference_marker(payload, end)?;
     };
     cursor = next_nonzero(payload, end)?;
@@ -955,10 +1058,12 @@ fn parse_sketch_relation(
     }
     cursor += 4;
     let mut return_members = Vec::with_capacity(return_count);
+    let mut return_member_offsets = Vec::with_capacity(return_count);
     for ordinal in 0..return_count {
         cursor = next_reference_marker(payload, cursor)?;
         let (value, end) = marked_u32(payload, cursor)?;
         return_members.push(value);
+        return_member_offsets.push(cursor + 1);
         cursor = end;
         if ordinal + 1 < return_count {
             cursor = next_reference_marker(payload, cursor)?;
@@ -966,11 +1071,15 @@ fn parse_sketch_relation(
     }
     Some((
         members,
+        member_offsets,
         auxiliary_references,
+        auxiliary_reference_offsets,
         owner_reference,
+        owner_reference_offset,
         state,
         state_offset,
         return_members,
+        return_member_offsets,
     ))
 }
 
@@ -1163,6 +1272,14 @@ fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) 
             {
                 continue;
             }
+            let framed_name = offset
+                .checked_sub(4)
+                .and_then(|at| u32_at(bytes, at))
+                .and_then(|length| usize::try_from(length).ok())
+                == Some(name.len());
+            if !framed_name {
+                continue;
+            }
             let design_id_field = recipe_design_id(bytes, offset, name);
             let design_id = design_id_field.as_ref().map(|field| field.0.clone());
             let key = (kind, design_id.clone());
@@ -1248,6 +1365,8 @@ pub(crate) struct BodyBinding {
     pub blob_name: String,
     /// The referenced ASM body key.
     pub asm_key: u64,
+    /// Byte offset of `asm_key` within the stream.
+    pub asm_key_offset: usize,
     /// The body's design-entity suffix.
     pub entity_suffix: u64,
     /// Byte offset of `entity_suffix` within the stream.
@@ -1300,6 +1419,7 @@ pub(crate) fn body_bindings(bytes: &[u8]) -> Vec<BodyBinding> {
                     out.push(BodyBinding {
                         blob_name: blob_name.clone(),
                         asm_key: key,
+                        asm_key_offset: at,
                         entity_suffix: suffix,
                         entity_suffix_offset: at + 8,
                     });
@@ -1319,11 +1439,20 @@ pub(crate) fn body_bindings(bytes: &[u8]) -> Vec<BodyBinding> {
 /// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
 /// The result maps each ASM body key to its display visibility; bodies
 /// without records are absent.
-pub fn decode_body_visibility(
+#[derive(Debug, Clone)]
+pub(crate) struct DecodedBodyVisibility {
+    pub stream: String,
+    pub byte_offset: u64,
+    pub asm_body_key_offset: u64,
+    pub entity_suffix: u64,
+    pub visible: bool,
+}
+
+pub(crate) fn decode_body_visibility(
     _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     active_brep_entry: &str,
-) -> Result<HashMap<u64, bool>, CodecError> {
+) -> Result<HashMap<u64, DecodedBodyVisibility>, CodecError> {
     let Some(basename) = active_brep_entry
         .rsplit('/')
         .next()
@@ -1343,8 +1472,17 @@ pub fn decode_body_visibility(
             if binding.blob_name != basename {
                 continue;
             }
-            if let Some(hidden) = hidden_by_entity.get(&binding.entity_suffix) {
-                out.insert(binding.asm_key, !hidden);
+            if let Some(node) = hidden_by_entity.get(&binding.entity_suffix) {
+                out.insert(
+                    binding.asm_key,
+                    DecodedBodyVisibility {
+                        stream: entry.name.clone(),
+                        byte_offset: node.byte_offset,
+                        asm_body_key_offset: binding.asm_key_offset as u64,
+                        entity_suffix: binding.entity_suffix,
+                        visible: !node.hidden,
+                    },
+                );
             }
         }
     }
@@ -1354,7 +1492,13 @@ pub fn decode_body_visibility(
 /// Scan for browser-node records: a length-prefixed 36-character UTF-16 GUID,
 /// one hidden-flag byte, the `01 01` marker, and the `u64` design-entity
 /// suffix.
-fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, bool> {
+#[derive(Debug, Clone, Copy)]
+struct BrowserNodeVisibility {
+    byte_offset: u64,
+    hidden: bool,
+}
+
+fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, BrowserNodeVisibility> {
     const GUID_CHARS: usize = 36;
     const GUID_BYTES: usize = GUID_CHARS * 2;
     let mut out = HashMap::new();
@@ -1369,7 +1513,13 @@ fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, bool> {
         let flag_at = at + 4 + GUID_BYTES;
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
             if let (flag @ (0 | 1), Some(member)) = (bytes[flag_at], read_u64(bytes, flag_at + 3)) {
-                out.insert(member, flag == 1);
+                out.insert(
+                    member,
+                    BrowserNodeVisibility {
+                        byte_offset: flag_at as u64,
+                        hidden: flag == 1,
+                    },
+                );
             }
         }
         at += 1;

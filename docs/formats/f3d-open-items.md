@@ -4,9 +4,10 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Geometry carriers
 
-- A rational `exp_par_cur` pcurve byte grammar is not defined. Explicit F3D pcurves use the non-rational `nubs` carrier; analytic-face coedges store a null pcurve reference.
-- Law, skin, net, sweep, and helix-surface families lack complete carrier semantics. The primitive-reduction paths `plane/plane -> cylinder`, `plane/cylinder perpendicular -> torus`, and exact-circle-directrix cylinder also lack defined carrier semantics.
-- Algebraic `readLaw` nodes have a settled token vocabulary but no defined serialized child-count/arity field for each token. Without that framing, recursive formula boundaries cannot be decoded or written losslessly for law, net, skin, and sweep payloads.
+- The `law_spl_sur` family lacks complete carrier semantics. The primitive-reduction paths `plane/plane -> cylinder`, `plane/cylinder perpendicular -> torus`, and exact-circle-directrix cylinder also lack defined carrier semantics.
+- The payload grammars for `crv_crv_v_bl_spl_sur`, `crv_srf_v_bl_spl_sur`, `sfcv_free_bl_spl_sur`, `VBL_OFFSURF` / `offsetvbsur`, `skin_spl_sur2`, and `sub_spl_sur` / `subsur` are undefined. These names cannot select the existing variable-blend, skin, or offset layouts without subtype-specific field boundaries.
+- The basic surface record names `offset`, `mesh-surface`, and `sur-sur-int` are registered carrier names, but their record payloads and exact-geometry relations are undefined. They remain unknown surface carriers unless a spline subtype supplies a solved cache and construction graph.
+- Variable-arity algebraic `readLaw` operators `MIN`, `MAX`, `SET`, `ROTATE`, and `STEP` have no defined serialized child-count or terminating delimiter. Their recursive boundaries cannot yet be decoded or written losslessly inside law, net, skin, and sweep payloads.
 - The full closed-sphere and closed-torus seam conventions remain unspecified.
 - The semantic role of the `POSITION` field after `cyl_spl_sur.extrusion_direction` is unresolved.
 - The `subset_int_cur`, `comp_int_cur`, and labelled two-curve `offset_int_cur` field sequences with source curve blocks serialized flat before the cache lack real-stream confirmation. The observed `offset_int_cur` form opens with its cache and nests the progenitor curve in a trailing subtype scope, and its offset-law fields are unresolved.
@@ -14,6 +15,7 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Container, header, and design records
 
+- The top-level `Manifest.dat` field meanings and string records are defined, but the flag and padding bytes between `SimStructuralAttributes`, the asset-folder UUID, `FusionAssetName`, and `NA_EXPORT` have conflicting published offsets and no complete byte grammar. Canonical source-less manifest generation requires those bytes to be defined.
 - The manifest relation that selects one asset folder when several asset folders are present is unresolved.
 - The authoritative B-rep entry relation among multiple `.smb` or `.smbh` entries is unresolved. Filename extension, archive order, face count, and the relative size of the history partition do not define that relation.
 - The relation between `.smb` and `.smbh` stream forms, including the presence of a history partition, is unresolved.
@@ -22,12 +24,17 @@ This document records F3D semantics that the format specification does not yet d
 - The release word (both widths) encodes the ASM major release ×100 (`22700` on ASM 227.5, `23000` on ASM 230.5 streams); whether the minor release is ever encoded is unresolved.
 - The entity-count word's counting rule (which records it counts) is unresolved in both widths.
 - The semantic meaning of `design_record_header_flag` is unspecified. Its relationship to UI visibility and explicit appearance assignment is unresolved.
-- The storage location of per-body UI visibility is unresolved. The `BodiesRoot` member `u16` flag word is zero for a shown body and for a hidden body in the same stream, so it does not carry visibility. A B-rep stream can contain solid bodies that Fusion does not display; without the visibility relation every body in the active stream decodes as model geometry.
 - The semantic role of the second `0x01`-marker u32 in an ACT counter/registry record is unresolved.
 - The terminating-group framing of multi-token `generic_tag_attrib_def` records is unresolved.
 - The Design `MetaStream` Dimension object is a registry with no owned entity IDs. The location and byte grammar of concrete dimensional constraints and parameter expressions are unresolved.
 - Text-frame (`0x10000000000`) and text-path (`0x20000000000`) constraint bits exceed the settled u32 mask in the 101-byte sketch-relation record. The side-stream record carrying those 64-bit text-constraint masks is unresolved.
 - The class-specific fields after the fixed `*_recipe_data` null sentinel and integer prologue are unresolved; their feature-operation, profile, extent, and dependency semantics are not assigned.
+- The three Design body-bounding-box sextuples are value- and unit-defined, but the dynamic-class subrecord grammar that bounds each repetition and associates the repetition with its body is unresolved. Approximate offsets after an assignment container are not a structural decoder.
+
+## Tolerant topology variants
+
+- The `tedge` record inherits the base edge fields, but the byte position and unit semantics of its additional tolerance carrier are undefined.
+- The `tcoedge` record carries `tStart` and `tEnd`, then version-selected boolean/reference fields and a variable tail containing integers or embedded curve records. The tail termination and embedded-record boundaries are undefined.
 
 ## Material assets
 

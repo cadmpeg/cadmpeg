@@ -503,6 +503,7 @@ fn transfer_e5_topology(
             wrapper_reversed: None,
             parameter_range: Some(range),
             fit_tolerance: None,
+            native_tail_flags: None,
         });
     }
 

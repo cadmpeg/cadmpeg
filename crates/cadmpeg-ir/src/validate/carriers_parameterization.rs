@@ -133,6 +133,80 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
+            ProceduralSurfaceDefinition::Skin { construction } => {
+                fn collect_law_curves<'a>(
+                    expression: &'a crate::geometry::LawExpression,
+                    curves: &mut HashSet<&'a str>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            curves.insert(&curve.0);
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                collect_law_curves(operand, curves);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                match &construction.layout {
+                    crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
+                        curves.insert(&path.0);
+                        for profile in profiles {
+                            curves.insert(&profile.curve.0);
+                            surfaces.insert(&profile.data.surface.0);
+                        }
+                    }
+                    crate::geometry::SkinSurfaceLayout::Compact {
+                        curve,
+                        secondary_curve,
+                        ..
+                    } => {
+                        curves.insert(&curve.0);
+                        curves.insert(&secondary_curve.0);
+                    }
+                }
+                curves.insert(&construction.parameter_curve.0);
+                for variable in &construction.formula.variables {
+                    collect_law_curves(variable, &mut curves);
+                }
+            }
+            ProceduralSurfaceDefinition::Net { construction } => {
+                fn collect_law_curves<'a>(
+                    expression: &'a crate::geometry::LawExpression,
+                    curves: &mut HashSet<&'a str>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            curves.insert(&curve.0);
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                collect_law_curves(operand, curves);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for entry in construction
+                    .sections
+                    .iter()
+                    .flat_map(|section| &section.entries)
+                {
+                    curves.insert(&entry.path.curve.0);
+                    curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.0.as_str()));
+                    for member in &entry.profile {
+                        curves.insert(&member.curve.0);
+                        surfaces.insert(&member.data.surface.0);
+                    }
+                }
+                for formula in construction.formulas.iter() {
+                    for variable in &formula.variables {
+                        collect_law_curves(variable, &mut curves);
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::G2Blend { construction } => {
                 for side in [&construction.first, &construction.second] {
                     surfaces.insert(&side.surface.0);
@@ -179,8 +253,72 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
                 curves.insert(&directrix.0);
             }
-            ProceduralSurfaceDefinition::Sweep { profile, spine } => {
+            ProceduralSurfaceDefinition::Sweep {
+                profile,
+                spine,
+                native,
+            } => {
+                fn collect_law_curves<'a>(
+                    expression: &'a crate::geometry::LawExpression,
+                    curves: &mut HashSet<&'a str>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            curves.insert(&curve.0);
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                collect_law_curves(operand, curves);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 curves.extend([profile.0.as_str(), spine.0.as_str()]);
+                if let Some(native) = native {
+                    let formulas: Vec<_> = match &native.layout {
+                        crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } => {
+                            formulas.iter().collect()
+                        }
+                        crate::geometry::SweepSurfaceLayout::ExplicitFormula {
+                            formula, ..
+                        } => {
+                            vec![formula]
+                        }
+                        crate::geometry::SweepSurfaceLayout::ExplicitGuide {
+                            guide_curve, ..
+                        } => {
+                            curves.insert(&guide_curve.0);
+                            Vec::new()
+                        }
+                        crate::geometry::SweepSurfaceLayout::ExplicitSurface {
+                            support_surface,
+                            auxiliary_curve,
+                            ..
+                        } => {
+                            surfaces.insert(&support_surface.0);
+                            if let Some(curve) = auxiliary_curve {
+                                curves.insert(&curve.0);
+                            }
+                            Vec::new()
+                        }
+                        crate::geometry::SweepSurfaceLayout::LawDriven {
+                            first_law,
+                            second_law,
+                            formula,
+                            ..
+                        } => {
+                            collect_law_curves(first_law, &mut curves);
+                            collect_law_curves(second_law, &mut curves);
+                            vec![formula]
+                        }
+                    };
+                    for formula in formulas {
+                        for variable in &formula.variables {
+                            collect_law_curves(variable, &mut curves);
+                        }
+                    }
+                }
             }
             ProceduralSurfaceDefinition::Offset { support, .. } => {
                 surfaces.insert(&support.0);
@@ -220,17 +358,64 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralSurfaceDefinition::Unknown { .. } => {}
+            ProceduralSurfaceDefinition::Helix { .. }
+            | ProceduralSurfaceDefinition::TSpline { .. }
+            | ProceduralSurfaceDefinition::Unknown { .. } => {}
+            ProceduralSurfaceDefinition::Deformable { construction } => {
+                surfaces.insert(&construction.support.0);
+                if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
+                    surface, curve, ..
+                }
+                | crate::geometry::DeformableSurfaceData::Full { surface, curve, .. } =
+                    &construction.data
+                {
+                    surfaces.insert(&surface.0);
+                    curves.insert(&curve.0);
+                }
+            }
         }
     }
     for procedural in &ir.model.procedural_curves {
         curves.insert(&procedural.curve.0);
         match &procedural.definition {
             ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
+            ProceduralCurveDefinition::Law {
+                context,
+                primary,
+                additional,
+                ..
+            } => {
+                fn collect<'a>(
+                    expression: &'a crate::geometry::LawExpression,
+                    curves: &mut HashSet<&'a str>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            curves.insert(&curve.0);
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                collect(operand, curves);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                }
+                for formula in std::iter::once(primary).chain(additional) {
+                    for variable in &formula.variables {
+                        collect(variable, &mut curves);
+                    }
+                }
+            }
             ProceduralCurveDefinition::Compound { components, .. } => {
                 curves.extend(components.iter().map(|component| component.0.as_str()));
             }
-            ProceduralCurveDefinition::Intersection { context } => {
+            ProceduralCurveDefinition::Intersection { context, .. } => {
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(&surface.0);

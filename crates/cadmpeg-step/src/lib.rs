@@ -828,6 +828,27 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let elliptical_cones = self
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| {
+                matches!(
+                    surface.geometry,
+                    SurfaceGeometry::Cone { ratio, .. } if ratio != 1.0
+                )
+            })
+            .count();
+        if elliptical_cones > 0 {
+            self.loss(
+                LossCategory::Geometry,
+                Severity::Warning,
+                format!(
+                    "{elliptical_cones} elliptical cone surface(s) were reduced to circular STEP CONICAL_SURFACE carriers"
+                ),
+            );
+        }
         if !self.curveless_edges.is_empty() {
             self.loss(
                 LossCategory::Geometry,
@@ -997,6 +1018,8 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Loft { .. }
                 | ProceduralSurfaceDefinition::CompoundLoft { .. }
                 | ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
+                | ProceduralSurfaceDefinition::Skin { .. }
+                | ProceduralSurfaceDefinition::Net { .. }
                 | ProceduralSurfaceDefinition::G2Blend { .. }
                 | ProceduralSurfaceDefinition::VariableBlend { .. }
                 | ProceduralSurfaceDefinition::VertexBlend { .. }
@@ -1004,6 +1027,9 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Revolution { .. }
                 | ProceduralSurfaceDefinition::Sum { .. }
                 | ProceduralSurfaceDefinition::Sweep { .. }
+                | ProceduralSurfaceDefinition::Helix { .. }
+                | ProceduralSurfaceDefinition::Deformable { .. }
+                | ProceduralSurfaceDefinition::TSpline { .. }
                 | ProceduralSurfaceDefinition::Offset { .. }
                 | ProceduralSurfaceDefinition::Ruled { .. }
                 | ProceduralSurfaceDefinition::Blend { .. }

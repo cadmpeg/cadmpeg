@@ -1559,7 +1559,9 @@ impl<'a> DecodeContext<'a> {
                 surface: surface_id.clone(),
                 definition: ProceduralSurfaceDefinition::Extrusion {
                     directrix: directrices[index].clone(),
+                    parameter_interval: None,
                     direction: extrusion.direction,
+                    native_position: None,
                 },
                 cache_fit_tolerance: None,
             });
@@ -2086,6 +2088,7 @@ fn stage_extrusion_caps(
                     periodic: pcurve.periodic,
                 },
                 wrapper_reversed: None,
+                native_tail_flags: None,
                 parameter_range: Some(parameter_range),
                 fit_tolerance: None,
             });
@@ -2994,6 +2997,7 @@ fn decode_pcurves(
                 periodic: nurbs.periodic,
             },
             wrapper_reversed: Some(trim.proxy_reversed != 0),
+            native_tail_flags: None,
             parameter_range: Some(trim.domain.0),
             fit_tolerance: finite_tolerance(trim.tolerances[0]),
         });

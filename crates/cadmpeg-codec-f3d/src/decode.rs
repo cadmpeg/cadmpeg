@@ -46,17 +46,31 @@ pub fn decode(
             let decoded_materials = materials::decode_with_bodies(reader, &scan, &brep.body_keys)?;
             let body_visibility =
                 crate::design::decode_body_visibility(reader, &scan, &active.name)?;
+            let mut body_visibilities = Vec::new();
             for body in &mut brep.bodies {
-                if let Some(visible) = brep
-                    .body_keys
-                    .get(&body.id)
-                    .and_then(|key| body_visibility.get(key))
+                if let Some((asm_body_key, visibility)) =
+                    brep.body_keys.get(&body.id).and_then(|key| {
+                        body_visibility
+                            .get(key)
+                            .map(|visibility| (*key, visibility))
+                    })
                 {
-                    body.visible = Some(*visible);
+                    body.visible = Some(visibility.visible);
+                    body_visibilities.push(crate::records::BodyVisibility {
+                        id: format!("f3d:{}:body-visibility#{}", visibility.stream, body.id),
+                        body: body.id.clone(),
+                        stream: visibility.stream.clone(),
+                        byte_offset: visibility.byte_offset,
+                        asm_body_key_offset: visibility.asm_body_key_offset,
+                        asm_body_key,
+                        entity_suffix: visibility.entity_suffix,
+                        visible: visibility.visible,
+                    });
                 }
             }
             let annotation_records = std::mem::take(&mut brep.annotation_records);
             let (mut ir, mut native) = build_geometry_ir(&scan, &active, brep)?;
+            native.body_visibilities = body_visibilities;
             if let Some(history) = decode_asm_history(&scan, &active)? {
                 native.asm_histories.push(history);
             }
@@ -85,6 +99,7 @@ pub fn decode(
             native.sketch_curve_identities =
                 crate::design::decode_sketch_curve_identities(reader, &scan)?;
             native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
+            native.design_configurations = crate::design::decode_configurations(&scan)?;
             let act = crate::act::decode(reader, &scan)?;
             native.act_entities = act.entities;
             native.act_guids = act.guids;
@@ -164,6 +179,7 @@ pub fn decode(
     native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
     native.sketch_curve_identities = crate::design::decode_sketch_curve_identities(reader, &scan)?;
     native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
+    native.design_configurations = crate::design::decode_configurations(&scan)?;
     let act = crate::act::decode(reader, &scan)?;
     native.act_entities = act.entities;
     native.act_guids = act.guids;
@@ -446,8 +462,18 @@ fn build_geometry_ir(
     ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.procedural_curves = brep.procedural_curves;
     let native = F3dNative {
+        body_native_keys: brep.body_native_keys,
         sketch_curve_links: brep.sketch_curve_links,
         persistent_design_links: brep.persistent_design_links,
+        edge_continuities: brep.edge_continuities,
+        edge_ownerships: brep.edge_ownerships,
+        vertex_ownerships: brep.vertex_ownerships,
+        face_sidedness: brep.face_sidedness,
+        tolerant_vertex_tails: brep.tolerant_vertex_tails,
+        tolerant_coedge_parameters: brep.tolerant_coedge_parameters,
+        wire_topologies: brep.wire_topologies,
+        transform_hints: brep.transform_hints,
+        creation_timestamps: brep.creation_timestamps,
         ..F3dNative::default()
     };
     ir.model.attributes = brep.attributes;

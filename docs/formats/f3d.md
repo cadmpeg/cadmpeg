@@ -24,15 +24,17 @@
 
 `<folder>` is an asset-folder path component.
 
-### 1.2 Small stored placeholder entries
+### 1.2 Stored property and configuration entries
 
 The following small entries are STORED:
 
 | Entry                                           | Bytes                   | Meaning                                      |
 | ----------------------------------------------- | ----------------------- | -------------------------------------------- |
 | `Properties.dat`                                | `00 00 00 00` (u32 `0`) | empty document-properties slot               |
-| `.../DesignConfigurationTable.<uuid>.dsgcfg`    | `7B 7D` (`{}`)          | single-configuration model (no config table) |
-| `.../DesignConfigurationRule.<uuid>.dsgcfgrule` | `7B 7D` (`{}`)          | no configuration rules                       |
+| `.../DesignConfigurationTable.<uuid>.dsgcfg`    | JSON object             | configuration table, including parameter and suppression overrides |
+| `.../DesignConfigurationRule.<uuid>.dsgcfgrule` | JSON object             | configuration activation rules                 |
+
+Configuration tables and rules are complete JSON objects. Table objects carry named configurations, parameter overrides, suppression sets, and the active configuration. Rule objects carry activation conditions and targets. Unknown object members remain part of the configuration document. ZIP entry name and extension select table versus rule; duplicate entry names are invalid.
 
 ### 1.3 `Manifest.dat` grammar
 
@@ -218,11 +220,24 @@ Every `Entity` record begins with an `attrib` ref (chain head, `-1` if none) and
 
 All records of a given class are fixed-size on Fusion files. Offsets are record-relative from the leading `0x11`; ref/int chunks are 9 bytes. On `BinaryFile4` streams ref/int chunks are 5 bytes and the offsets scale accordingly.
 
-**Body (61 B):** `chunk[1]` (@+16, i64) is `history / body flags`, the **`asm_body_key`** joined to the design-side body map (§8). `chunk[3]` @+34 = first_lump, `chunk[4]` @+43 = first_wire or `-1`, `chunk[5]` @+52 = transform or `-1`.
+**Body (61 B):** `chunk[1]` (@+16, i64) is `history / body flags`, the **`asm_body_key`** joined to the design-side body map (§8). A value of `-1` denotes a sub-body without its own Design record. The key field is retained for every body independently of whether a Design join resolves, and native writing preserves or patches it directly. `chunk[3]` @+34 = first_lump, `chunk[4]` @+43 = first_wire or `-1`, `chunk[5]` @+52 = transform or `-1`.
 
 **Lump (61 B):** `chunk[4]` @+43 = first_shell, `chunk[5]` @+52 = owner_body. (The @+27 slot is reserved `-1`, not the first shell.)
 
 **Shell (80 B):** `chunk[5]` @+53 = first_face, `chunk[6]` = wire, `chunk[7]` = owner.
+
+**Subshell:** after the entity base header, `chunk[3]` = owner shell or parent subshell,
+`chunk[4]` = next sibling subshell, `chunk[5]` = first child subshell,
+`chunk[6]` = first face, and `chunk[7]` = wire. Subshell faces are projected onto
+their nearest shell ancestor in the neutral IR; retained-source writing preserves
+the native subshell records and ownership references byte-for-byte.
+
+**Wire:** `chunk[3]` = next sibling wire, `chunk[4]` = first coedge,
+`chunk[5]` = owner shell/body/subshell, `chunk[6]` = reserved reference, and
+`chunk[7]` = side (`0x0a` in, `0x0b` out). Each wire record is retained as typed
+metadata on its normalized shell. Retained writing patches the side token in place;
+source-less writing emits the stored side and rejects multiple native wire records
+that would otherwise collapse into one neutral shell edge list.
 
 **Face (81 B; +1 chunk if double-sided):**
 
@@ -237,6 +252,7 @@ All records of a given class are fixed-size on Fusion files. Offsets are record-
 ```
 
 `sides` and `containment` are separate enum chunks. Single-sided faces end after `sides`; double-sided faces carry `containment`.
+The sense token is relative to the native surface carrier. Decoding a reversed spline carrier or an inward-normal cone carrier reverses the sense in the normalized B-rep while retaining the native token; writing applies the same reversal back to the token.
 
 **Loop (61 B):** `chunk[3]` @+34 = next_loop (`-1` terminates the chain), `chunk[4]` @+43 = first_coedge, `chunk[5]` @+52 = owner_face. Loop order is defined by the `next_loop` references, not stream position; the first loop is not an outer-loop marker.
 
@@ -251,6 +267,8 @@ All records of a given class are fixed-size on Fusion files. Offsets are record-
 
 The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partner symmetry** is a manifold invariant: every coedge's partner's partner is itself, and every shell edge is shared by exactly two mutually-referencing coedges of opposite sense.
 
+`tcoedge` inherits this complete base field sequence. `chunk[11]` and `chunk[12]` are its native start and end parameters and are retained as typed coedge metadata. Retained native writing patches either parameter independently without changing the record tail. Its version-selected tail fields do not change the offsets or meanings of the base topology links.
+
 **Edge (98 B):**
 
 ```
@@ -260,15 +278,19 @@ The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partn
 +89 chunk[9] sense byte     +90 0x07 'tangent'|'unknown' continuity text
 ```
 
-`+52` is end_vertex and `+79` is curve, not the other way round. `t_start`/`t_end` are stored parameters on the edge's own parameterization: the referenced curve itself when the sense byte is forward (`0x0b`), its reverse `E(t) = C(−t)` when reversed (`0x0a`). A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`; the shared vertex lies at the `t_start` angle from the major axis, so a full period's phase is significant, not a free normalization. The continuity text is descriptive metadata, **not** a curve-type discriminator.
+`+52` is end_vertex and `+79` is curve, not the other way round. `owner_coedge` is a nullable back-reference selecting one use of the edge; it is retained independently of the radial-ring topology, validated against the selected coedge's edge, and written in both retained and source-less output. `t_start`/`t_end` are stored parameters on the edge's own parameterization: the referenced curve itself when the sense byte is forward (`0x0b`), its reverse `E(t) = C(−t)` when reversed (`0x0a`). A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`; the shared vertex lies at the `t_start` angle from the major axis, so a full period's phase is significant, not a free normalization. The continuity text is descriptive metadata, **not** a curve-type discriminator.
+
+`tedge` inherits this complete base field sequence. Its additional tolerance carrier does not change the base endpoint, curve, sense, or continuity fields.
 
 **Vertex (63 B):** `chunk[3]` @+36 = owning_edge, `chunk[4]` @+45 = index_flag (`0` = this is the owning edge's START vertex, `1` = its END vertex), `chunk[5]` @+54 = point ref. Each vertex has its own point entity; no deduplication.
 
-**Transform (142 B):** 13×f64 (@+18..117): `a[0..8]` 3×3 rotation, `a[9..11]` translation, `a[12]` overall scale; then 3 flag bytes (ROTATION/REFLECTION/SHEAR enums). Column mapping: `a[0..2]`→col0, `a[3..5]`→col1, `a[6..8]`→col2, `a[9..11]`→col3. The body references its transform through `body.chunk[5]`; null denotes no body transform.
+**Tolerant vertex:** `tvertex` carries the complete vertex field sequence followed by `chunk[6]` as an f64 model-space tolerance and `chunk[7..=8]` as two f32 tail slots. The tolerance converts from native centimetres to document millimetres; the f32 slots are retained verbatim.
+
+**Transform (142 B):** 13×f64 (@+18..117): `a[0..8]` 3×3 rotation, `a[9..11]` translation, `a[12]` overall scale; then ROTATION, REFLECTION, and SHEAR boolean-enum bytes in that order (`0x0a` selects the named property, `0x0b` selects `no_*`). Column mapping: `a[0..2]`→col0, `a[3..5]`→col1, `a[6..8]`→col2, `a[9..11]`→col3. The body references its transform through `body.chunk[5]`; null denotes no body transform. Native writing retains the three classifications independently of the matrix and emits all three fields.
 
 ### 6.3 Point records and coordinate authority
 
-A `point` record carries a model-space `POSITION`. `vertex.chunk[5]` references the point record. NURBS control grids independently carry their model-space poles.
+A BinaryFile8 `point` record is 60 bytes: the 8-byte record head, three 9-byte entity-base fields, and one 25-byte model-space `POSITION`. The record terminates immediately after the position and carries no trailing reference-count integer. `vertex.chunk[5]` references the point record. NURBS control grids independently carry their model-space poles.
 
 ### 6.4 Sense semantics
 
@@ -290,9 +312,13 @@ An edge with `owner_coedge_ref == -1` and no reference from a reachable coedge i
 
 Every entity carries an `attrib` ref-chain. `Entity.attrib` is the chain head, each record carries `next` and `previous` references, and `-1` terminates the chain. Color and feature-tag attributes can coexist on one chain. `ATTRIB_CUSTOM-attrib` records carry an owner ref at record-relative `+60..68` and a family name (`generic_tag_attrib_def`, `sketch_attrib_def`, `Timestamp_attrib_def`, `FPM_tracked_attrib_def`). Attribute records are variable-width.
 
+`string_attrib-name_attrib-gen-attrib` stores the four ASM keep/copy/ignore/copy integer flags, a tagged attribute-name string, and a tagged value string. Attribute name `name` assigns the value as the owning body or face display name. The record participates in the ordinary attribute-ref chain between direct-color attributes and persistent-design attributes.
+
 `generic_tag_attrib_def` stores a count followed by repeated `(kind, token string, design reference, 0, 0)` groups. `kind` identifies the labelled entity class: `3` for body, `2` for face, and `1` for edge. Each token/reference pair binds a persistent Fusion design ID to an ASM entity reference.
 
 `sketch_attrib_def` is coedge-owned source-link metadata. After its three-integer attribute header, a tagged UTF-8 field stores the six-integer ASCII tuple `(sketch_curve_id, 0, signed_ref, 0, enum_a, enum_b)`, where `signed_ref` uses `-1` as null. It links a B-rep coedge to a sketch curve and does not define analytic geometry.
+
+`Timestamp_attrib_def` stores an integer marker `1` followed by one tagged f64. The f64 is the original authoring time in microseconds since the Unix epoch. It is distinct from the ASM header save time and participates in the owning entity's ordinary attribute-ref chain.
 
 ---
 
@@ -302,7 +328,7 @@ All model-space lengths are cm→mm ×10; unit vectors/ratios/angles/knots are n
 
 ### 7.1 Surface vocabulary
 
-`plane`, `cone` (covers cylinders: `sin(half_angle)==0` ⇒ cylinder), `sphere`, `torus`, `spline` (procedural/NURBS, dispatched by nested subtype), `mesh` (not the exact carrier when analytic/spline carriers exist). Curve vocabulary: `straight`, `ellipse` (covers circles: `ratio==1` ⇒ circle), `intcurve`, `pcurve`, plus `null_*` sentinels.
+`plane`, `cone` (covers circular and elliptical cylinders when `sin(half_angle)==0`), `sphere`, `torus`, `spline` (procedural/NURBS, dispatched by nested subtype), `mesh` (not the exact carrier when analytic/spline carriers exist). Curve vocabulary: `straight`, `ellipse` (covers circles: `ratio==1` ⇒ circle), `intcurve`, `pcurve`, plus `null_*` sentinels.
 
 ### 7.2 Analytic surface byte layouts
 
@@ -310,7 +336,7 @@ Each layout is fixed-size. Offsets are record-relative from the `0x11` byte.
 
 **`plane`**: origin (`0x13`) + unit normal (`0x14`) + unit UV-reference direction (`0x14`). Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`, `v_dir = normal × u_dir`.
 
-**`cone` (161 B, covers cylinders)**: order: origin (`0x13`), axis (`0x14`), `ref × r_major` (`0x14`, magnitude = base radius), `ratio` (f64, 1.0 = circular), `0x0b 0x0b`, `sin(half_angle)` (f64, 0 ⇒ cylinder), `cos(half_angle)` (f64), `u_scale` u-parameter scale (f64), 5×`0x0b`. **Half-angle rule:** `half_angle = asin(|sine|)`. The angle is the acute branch even when both stored sine and cosine are negative. **Sign rules:** the base radius is the major-axis vector's magnitude; `u_scale` usually equals it but diverges on offset-derived surfaces and is not a radius. The signed slope `sine / cosine` is the radius change per unit axis distance: `r(d) = r_base + d · sine / cosine` at signed distance `d` along the axis from the origin. A negative `cosine` points the surface normal toward the axis; face senses are stored relative to that inward normal.
+**`cone` (161 B, covers cylinders)**: order: origin (`0x13`), axis (`0x14`), `ref × r_major` (`0x14`, magnitude = base major radius), `ratio = r_minor/r_major` (f64, 1.0 = circular), `0x0b 0x0b`, `sin(half_angle)` (f64, 0 ⇒ cylinder), `cos(half_angle)` (f64), `u_scale` u-parameter scale (f64), 5×`0x0b`. A non-unit ratio defines an elliptical cone whose minor radius is `r_major · ratio`; zero sine with a non-unit ratio is an elliptical cylinder. **Half-angle rule:** `half_angle = asin(|sine|)`. The angle is the acute branch even when both stored sine and cosine are negative. **Sign rules:** the base major radius is the major-axis vector's magnitude; `u_scale` usually equals it but diverges on offset-derived surfaces and is not a radius. The signed major-radius slope `sine / cosine` is the radius change per unit axis distance: `r_major(d) = r_base + d · sine / cosine` at signed distance `d` along the axis from the origin. A negative `cosine` points the surface normal toward the axis; face senses are stored relative to that inward normal.
 
 **`sphere` (134 B)**: center (`0x13`), **signed** radius (f64), dir1 (equator), dir2 (polar axis). **Signed-radius rule:** a negative radius identifies an inward-facing, concave feature; the sign is part of the carrier.
 
@@ -382,6 +408,36 @@ Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus
 
 **`scaled_cloft_spl_sur`**: a singularity enum and singularity-selected shape payload precede six discontinuity arrays, one discontinuity flag, three scale slots, two flags, and an integer. The full shape payload is the solved NURBS surface and fit tolerance. The none shape payload replaces that cache with two intervals and two scalar arrays; the owning face retains an unknown evaluated carrier and the procedural graph supplies its exact construction. The three leading scales form a contiguous prefix under the same zero-token absence rule as `cl_loft_spl_sur`. A false branch flag selects a flag, integer, and selector-zero direction vector or selector-nonzero BS3 curve. A true branch flag selects an optional scale and a second flag. A true second flag requires another scale, integer, and direction vector; a false second flag stores another boolean, singularity enum, and BS3 curve. Every branch rejoins at two flags, an integer, two vectors, a singularity enum, and a BS3 curve. Native generation uses `scaled_cloft_spl_sur`.
 
+**`skin_spl_sur`**: three surface enums, an integer, a scalar, and an inner count precede a structurally selected skin layout. The compact layout begins directly with a curve, loft subdata, integer, second curve, and final integer. The expanded layout contains `inner_count` entries, each comprising a type integer, curve, and loft profile data, followed by a path curve and two integers. Both layouts rejoin at a direction vector, scalar, recursive law formula, parameter curve, solved NURBS surface and fit tolerance, six discontinuity arrays, and a boolean. Native generation retains the selected layout.
+
+**`net_spl_sur`**: two ordered loft-section graphs precede twelve frame scalars, one integer, four direction vectors, and four recursive law formulas. The solved NURBS surface and fit tolerance, six discontinuity arrays, and one boolean complete the payload. Native generation retains every section member, support, pcurve, constraint table, auxiliary path, frame value, and formula.
+
+**`sweep_spl_sur` profile-first layout**: a primary enum precedes the profile curve and spine curve. A secondary enum, five direction vectors, one model-space point, four scalars, and three recursive law formulas follow. The solved NURBS surface and fit tolerance, six discontinuity arrays, and one boolean complete the payload. Native generation retains both curves and the complete construction graph.
+
+**`sweep_spl_sur` explicit formula layout**: a primary enum and integer precede a profile curve, its two-scalar parameter interval, and an optional point-vector profile frame. A frame point and three vectors follow. Branch integer `1` then stores a boolean, path curve, model-length interval, scalar, boolean, recursive formula, and trailing boolean. The common solved-surface cache and discontinuity tail complete the payload. Native generation retains the complete construction graph.
+
+**`sweep_spl_sur` explicit guide layout**: the explicit prefix matches the formula layout. Branch integer `2` stores a boolean, path curve, model-length interval, and scalar, followed by two booleans, an auxiliary guide curve, its two-scalar parameter interval, two integers, six scalars, and three booleans. The common solved-surface cache and discontinuity tail complete the payload. Native generation retains all three curves and the complete construction graph.
+
+**`sweep_spl_sur` explicit support-surface layout**: the explicit prefix matches the other explicit layouts. Branch integer `3` stores a boolean, path curve, model-length interval, scalar, singularity enum, and support surface. A boolean gates an auxiliary curve. A support boolean and an optional legacy boolean precede the common solved-surface cache and discontinuity tail. Native generation retains the support surface, optional curve, and complete construction graph.
+
+**`sweep_spl_sur` law-driven layout**: the explicit profile and frame prefix is followed directly by a recursive law instead of a branch integer. An integer, two-scalar interval, vector, integer, boolean, path curve, two-scalar interval, scalar, and boolean precede a second recursive law. A final integer, recursive formula, and boolean precede the common solved-surface cache and discontinuity tail. Native generation retains both law trees, the formula, both curves, and the complete construction graph.
+
+**`t_spl_sur`**: the solved NURBS surface, fit tolerance, and discontinuity tail precede model-length U and V intervals and a type integer. A nested subtype scope contains either an inline `t_spl_subtrans_object` program with an optional boolean separator and companion values program, or a subtype-table `ref`. A trailing integer follows the nested scope. Both inline strings are line-oriented. Header tokens and topology, geometry, material, grouping, symmetry, annotation, knot, and grip record tokens select ordered field vectors; comments and unrecognized lines do not contribute typed records. A referenced subtransform resolves through the per-stream subtype table with cycle rejection. Native generation retains both programs byte-for-text, requires both parsed graphs to agree with their programs, inlines resolved shared programs into self-contained output, and uses the solved NURBS surface as the face carrier.
+
+**Law formulas**: a text name begins each formula. `null_law` has no following payload. Every other formula carries a variable count followed by that many recursively framed law expressions. Integer, double, model-space point, and vector tags are terminal constants. `SPLINE_LAW` stores an integer, a knot float array, a control float array, and a model-space point. `TRANS` stores thirteen scalars and three enums. `EDGE` stores a curve and two parameters. Algebraic operator tokens are followed directly by their recursively framed operands. Trigonometric, hyperbolic, inverse-trigonometric, inverse-hyperbolic, `ABS`, `EXP`, `LN`, `LOG`, `SIGN`, `SIZE`, `TERM`, `SQRT`, `NORM`, and `NOT` operators are unary. `CROSS`, `DOT`, and `DCUR` are binary. `VEC` and `DSURF` are ternary. Native generation requires the exact fixed arity and rejects operators without a defined recursive boundary.
+
+**`law_int_cur` / `lawintcur`**: the solved NURBS curve and fit tolerance precede the shared two-surface/two-pcurve support prefix, parameter interval, and three discontinuity arrays. The modern layout then stores an extension integer, one primary recursive formula, a formula count, and that many additional recursive formulas. Native generation uses `law_int_cur` and retains every support carrier and recursively referenced EDGE curve.
+
+**`helix_spl_circ` / `helix_spl_line`**: an angular interval and secondary interval precede an inline helix path. The circular form length-scales the secondary interval and stores a length before the path and a circle radius after it. The linear form leaves the secondary interval unscaled and stores a model-space origin after the path. The inline path stores an angular interval, axis origin, length-bearing major, minor, and pitch vectors, apex factor, unit axis, two null surfaces, and two null pcurves. Native generation reconstructs the exact cacheless procedural surface.
+
+**`defm_spl_sur` / `defmsur`, mode 8**: a support surface and discriminator `8` precede four deformation vectors and one selector integer. The solved NURBS surface, fit tolerance, and discontinuity tail complete the payload. Native generation retains the support and minimal deformation scaffold.
+
+**`defm_spl_sur` / `defmsur`, modes 1 and 3**: both modes store four vectors, a scalar, three booleans, three vectors, a scalar, two booleans, a model-space point, and five booleans after the support surface and discriminator. Mode 1 appends a count and that many scalar triples. Mode 3 appends an integer and one guide scalar. The solved NURBS surface, fit tolerance, and discontinuity tail complete both payloads.
+
+**`defm_spl_sur` / `defmsur`, mode 5**: a secondary surface, native long, boolean, scalar, integer, scalar, and deformation intcurve follow the initial support and discriminator. Four vectors, a scalar, three booleans, and a counted table of scalar triples precede the solved NURBS surface, fit tolerance, and discontinuity tail. Native generation retains both surfaces and the deformation curve.
+
+**`defm_spl_sur` / `defmsur`, mode 6**: four vectors, a scalar, three booleans, an integer selector, a secondary surface, a native long, a boolean, and a scalar follow the initial support and discriminator. ASM versions above 225 then store one version-gated long. A second scalar, a deformation intcurve, two frames of four vectors plus a scalar and three booleans, and a trailing long precede the solved NURBS surface, fit tolerance, and discontinuity tail. Native generation retains both surfaces, the deformation curve, both vector frames, and the version-gated field.
+
 **`g2_blend_spl_sur` / `g2blnsur`**: two ordered side graphs surround the first-side singularity payload. Each side stores a label, support surface, curve, two nullable BS2 pcurves, and a direction. The first side then stores a singularity enum. The full branch carries an optional BS3 support surface and paired tolerance. The none branch carries nine frame scalars, a tolerance, an optional intervening typed token, and a tertiary nullable BS2 pcurve. The second side is followed by an exact spline support, center curve, two center scalars, center integer, U/V intervals, four trailing scalars, the solved NURBS surface and fit tolerance, and three discontinuity arrays. Branch shape is structural; the singularity enum value is retained without assigning undocumented numeric meanings.
 
 **`var_blend_spl_sur` / `srf_srf_v_bl_spl_sur`**: two ordered side graphs precede the primary curve, two signed offsets, and a radius-kind enum (`0` single radius, `1` two radii). Each side stores a label, support surface, curve, primary BS2 pcurve, model-space location, secondary BS2 pcurve, scalar, and tertiary BS2 pcurve. Radius controls use recursive blend-value payloads: `two_ends`, `edge_offset`, `functional`, `const`, or `interp`. Modern ASM blend values carry a boolean, optional discriminator, and calibrated enum. `const` recursively contains another blend value; `functional` stores a `(u,radius)` BS2 pcurve and numeric or symbolic terminal; `interp` stores counted parameter/radius/tangent/location/normal controls and an optional scalar-pair tail. Two-radii blends may append rounded-chamfer enums and a third blend value. Single-radius blends may append selector `1` or `7` and two scalars. U/V intervals, a shape integer/scalar/length/integer prologue, solved NURBS cache and fit tolerance, three ASM integers, secondary curve, convexity and render enums, post interval, BS3 curve, and nullable BS2 pcurve complete the graph. Native generation uses `var_blend_spl_sur`.
@@ -397,7 +453,7 @@ A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at r
 
 UV poles are dimensionless surface parameters. `wrapper_reversed` is the inline curve's fit-convention bit, independent of coedge sense and of the parameter-interval sign.
 
-The inline control polygon is followed by a `DOUBLE` parameter-space fit tolerance. After the nested support-surface scope and four trailing booleans, two final `DOUBLE` values store the pcurve parameter interval `(t_start, t_end)`. Ref-form pcurves store the same interval immediately after their intcurve reference and have no wrapper or inline fit-tolerance carrier.
+The inline control polygon is followed by a `DOUBLE` parameter-space fit tolerance. After the nested support-surface scope, four ordered trailing booleans precede two final `DOUBLE` values storing the pcurve parameter interval `(t_start, t_end)`. The four booleans are retained and regenerated independently. Ref-form pcurves store the same interval immediately after their intcurve reference and have no wrapper, boolean tail, or inline fit-tolerance carrier.
 
 Coedge sense is the edge-use orientation for a pcurve inherited from its surface: `effective_pcurve = flip_pcurve(surface_pcurve, coedge.sense)`. The stored 2D B-spline poles and knots retain their native order. `wrapper_reversed` is separate from coedge sense.
 
@@ -416,6 +472,8 @@ Native ASM NURBS control grids are the per-face cache. `surface_fit_tolerance ==
 Procedural intcurve subtypes (`exact_int_cur`, `off_int_cur`, `proj_int_cur`, `int_int_cur`, `sss_int_cur`, …) and spline-surface subtypes (`rb_blend_spl_sur`, `sss_blend_spl_sur`, `var_blend_spl_sur`, `loft_spl_sur`, `sweep_spl_sur`, `net_spl_sur`, VBL/taper families, …) each carry per-subtype field tails and version/`asm_major` gates. A `ref N` nested inside a surface, curve, or pcurve body indexes a per-file subtype table, not a byte offset. Each subtype definition — a `0x0F` opening followed by a `0x0d`/`0x0e` name token other than `ref` — contributes one table entry in stream order. Definitions are recognized at token boundaries only: the same byte pattern inside a token payload (an `f64`, a string body) is data, not a table entry.
 
 Legacy intcurve subtype names select the same layouts as their modern names: `bldcur`→`blend_int_cur`, `blndsprngcur`→`spring_int_cur`, `exactcur`→`exact_int_cur`, `lawintcur`→`law_int_cur`, `offintcur`→`off_int_cur`, `offsetintcur`→`offset_int_cur`, `offsurfintcur`→`off_surf_int_cur`, `parasil`→`para_silh_int_cur`, `parcur`→`par_int_cur`, `projcur`→`proj_int_cur`, `surfcur`→`surf_int_cur`, `surfintcur`→`int_int_cur`, `d5c2_cur`→`skin_int_cur`, and `subsetintcur`→`subset_int_cur`. Native generation uses the modern spelling.
+
+Legacy spline-surface subtype names select the same layouts as their modern names. This includes `cylsur`→`cyl_spl_sur`, `skinsur`→`skin_spl_sur`, `netsur`→`net_spl_sur`, `sweepsur`→`sweep_spl_sur`, `sclclftsur`→`scaled_cloft_spl_sur`, `varblendsplsur`→`var_blend_spl_sur`, and `srfsrfblndsur`→`srf_srf_v_bl_spl_sur`. Native generation uses the modern spelling.
 
 An `intcurve` or `spline` record carries a record-level sense boolean immediately before its subtype scope (`0x0a` reversed, `0x0b` forward). A reversed record's geometry is the reverse of its subtype definition: a reversed intcurve parameterizes as the negation of its cache (`C(t) = cache(−t)`; the owning edge's `t_start`/`t_end` are on the reversed parameterization), and a reversed spline surface's normal is the reverse of the cache normal (the face's sense field composes on the reversed surface).
 
@@ -438,7 +496,7 @@ cyl_spl_sur :=
   0x10
 ```
 
-`u_start` and `u_end` are directrix parameters. `extrusion_direction` is length-bearing. The final `surface-cache` is the solved NURBS surface, and `cache_fit_tolerance` is a length.
+`u_start` and `u_end` are directrix parameters. `extrusion_direction` is length-bearing. `POSITION` is stored in model-space length units and is retained independently of the directrix. The final `surface-cache` is the solved NURBS surface, and `cache_fit_tolerance` is a length. Native generation writes the stored interval and position without deriving or replacing either field.
 
 ```
 rb_blend_spl_sur :=
@@ -492,9 +550,13 @@ The two offsets and fit tolerance are lengths. `ENUM_VALUE -1` selects the absen
 
 The design `BulkStream` caches each body's axis-aligned bounding box as six f64 values in centimetres, ordered `(xmax, ymax, zmax, xmin, ymin, zmin)`. The cache occurs three times in consecutive sub-entity records following the body's assignment container.
 
-The design BulkStream BREP body map is `u32 count`, followed by `count` pairs of `u64 asm_body_key, u64 entity_suffix`, then `u64 trailing_record_ref`, `u32 pad`, `u32 char_count`, and UTF-16LE `BREP.<uuid>.smbh`. `asm_body_key` is the ASM body `flags` field. `entity_suffix` is the numeric suffix of the design entity ID.
+The design BulkStream BREP body map is `u32 count`, followed by `count` pairs of `u64 asm_body_key, u64 entity_suffix`, then `u64 trailing_record_ref`, `u32 pad`, `u32 char_count`, and UTF-16LE `BREP.<uuid>.smbh`. `asm_body_key` is the ASM body `flags` field. `entity_suffix` is the numeric suffix of the design entity ID. Retained body-key edits update the ASM field and every joined Design body-map occurrence atomically.
 
-A browser-node record stores a length-prefixed 36-character UTF-16LE node GUID, a one-byte hidden flag, the `0x01 0x01` marker, and the node's `u64` design-entity suffix. Flag `1` hides the entity in the document display; `0` shows it. **Body visibility join:** ASM `asm_body_key` → BREP body map `entity_suffix` → browser-node hidden flag.
+A construction-recipe record places its i32 record index at 16 bytes before the recipe-family name, eight zero bytes at `name−12`, and the u32 byte length of the ASCII family name at `name−4`. The family name selects `body_recipe_data`, `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`, or `vertex_recipe_data`; the preceding record index is not a family discriminator. The common payload begins with an i64 `−1` null sentinel followed by the five i32 values `[2, 0, −1, 1, −1]`.
+
+Standalone persistent-reference properties named `pt_tag`, `crv_primary_id`, and `crv_secondary_id` store the u32 pair `(2, 14)`, a 14-byte property slot, LP-ASCII `IntrinsicMetaTypeuint64`, and the referenced u64. The compact properties embedded in sketch point and curve records omit the `(2, 14)` pair and property slot.
+
+A browser-node record stores a length-prefixed 36-character UTF-16LE node GUID, a one-byte hidden flag, the `0x01 0x01` marker, and the node's `u64` design-entity suffix. Flag `1` hides the entity in the document display; `0` shows it. **Body visibility join:** ASM `asm_body_key` → BREP body map `entity_suffix` → browser-node hidden flag. Native writing emits this join for every body with explicit visibility and retained writing patches the hidden flag in place.
 
 A browser body record carries the body's appearance binding. The record head references the body's design entity with the `299` class tag (`u32 3`, ASCII `299`, `u64 entity`). The appearance fields open with the marker GUID pair `D87FBE62-3B12-4CA8-9014-BAD31ABDB101` and `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C` as consecutive length-prefixed 36-character UTF-16LE strings, then in order: the LP-UTF16 physical-material token (`PrismMaterial-###`) with `0x01 + u64` entity reference, the LP-UTF16 36-character browser-node GUID with `0x01 + u64` node entity, an optional LP-UTF16 display name, zero padding, an f32 opacity, the `0x01 0x01` marker, zero padding, and the LP-UTF16 visual GUID (a 36-character GUID with `_Post2015` repeats). The node entity equals the body's design entity plus one. **Body appearance join:** `299`-tag entity → BREP body map `entity_suffix` → ASM `asm_body_key`; the visual GUID's 36-character prefix selects the appearance asset. ASM body records whose key field is null (`-1`) are sub-bodies of the stream's keyed body and carry no design records of their own.
 
@@ -504,9 +566,9 @@ An indexed Design record header is `u32 class_tag_length`, a three-digit ASCII d
 
 A sketch relation stores counted member references, zero or more auxiliary references, the owning sketch reference, a u32 constraint mask, and a counted return-reference list. References use `0x01 + u32 record_index` with zero padding; direct u32 role fields may occur between references. Constraint bits are `0x1` coincident, `0x2` colinear, `0x4` concentric, `0x10` parallel, `0x20` perpendicular, `0x40` horizontal, `0x80` vertical, `0x100` tangent, `0x200` curvature, `0x400` symmetry, `0x800` equal, `0x1000` midpoint, `0x2000` polygon, `0x10000000` circular pattern, and `0x20000000` rectangular pattern.
 
-A sketch-point record contains one typed property named `pt_tag`: `u32 property_count=1`, LP-ASCII `pt_tag`, LP-ASCII `IntrinsicMetaTypeuint64`, and the persistent u64 point id. The record then stores `0x01`, a u32 paired record reference, a 14-byte flag area whose bytes are each `0x00` or `0x01`, and two f64 sketch coordinates in centimetres at record offsets 89 and 97. The alternate form sets `property_count=2` and prefixes `pt_tag` with an `EntityGenesis` `IntrinsicMetaTypeuint64` property; all subsequent fields shift by 52 bytes.
+A sketch-point record contains one typed property named `pt_tag`: `u32 property_count=1`, LP-ASCII `pt_tag`, LP-ASCII `IntrinsicMetaTypeuint64`, and the persistent u64 point id. The record then stores `0x01`, a u32 paired record reference, a 14-byte flag area whose bytes are each `0x00` or `0x01`, and two f64 sketch coordinates in centimetres at record offsets 89 and 97. The alternate form sets `property_count=2` and prefixes `pt_tag` with an `EntityGenesis` `IntrinsicMetaTypeuint64` property whose u64 value is the persistent genesis identity; all subsequent fields shift by 52 bytes.
 
-A sketch-curve record contains two typed properties in order: `crv_primary_id` and `crv_secondary_id`, both `IntrinsicMetaTypeuint64`. The primary id is the curve's persistent identity; zero in the secondary slot is null. The alternate form sets `property_count=3` and prefixes these properties with `EntityGenesis`, shifting the curve identity and geometry fields by 52 bytes. The analytic payload following the identity properties is twelve f64 values. A line stores `(start point xyz, displacement xyz, unit direction xyz, unit sketch normal xyz)`. A circular arc stores `(center xyz, unit normal xyz, in-plane unit reference direction xyz, radius, start angle, end angle)`. Points, displacements, and radii are in centimetres; angles are radians. A referenced analytic wrapper prefixes this payload with `0x01 + u32 record_ref + six zero bytes`.
+A sketch-curve record contains two typed properties in order: `crv_primary_id` and `crv_secondary_id`, both `IntrinsicMetaTypeuint64`. The primary id is the curve's persistent identity; zero in the secondary slot is null. The alternate form sets `property_count=3` and prefixes these properties with an `EntityGenesis` `IntrinsicMetaTypeuint64` property whose u64 value is the persistent genesis identity, shifting the curve identity and geometry fields by 52 bytes. The analytic payload following the identity properties is twelve f64 values. A line stores `(start point xyz, displacement xyz, unit direction xyz, unit sketch normal xyz)`. A circular arc stores `(center xyz, unit normal xyz, in-plane unit reference direction xyz, radius, start angle, end angle)`. Points, displacements, and radii are in centimetres; angles are radians. A referenced analytic wrapper prefixes this payload with `0x01 + u32 record_ref + six zero bytes`.
 
 A sketch NURBS payload begins with either an eight-byte all-`0xff` null sentinel or a non-null u64 carrier reference, then a nested dynamic-class record header, the degree marker, f64 fit tolerance, and three arrays. Each array header is `(u32 count, u32 duplicate_count, u32 scalar_width=8)`. The arrays are the nondecreasing f64 knot vector, positive f64 weights, and xyz f64 control points. A non-rational curve stores a zero-length weight array; otherwise weight and control-point counts are equal. In both forms, `knot_count = control_point_count + degree + 1`. Fit tolerance and control points are in centimetres.
 

@@ -273,6 +273,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 axis,
                 ref_direction,
                 radius,
+                ratio,
                 ..
             } => {
                 if degenerate(axis) {
@@ -283,6 +284,9 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 if *radius < 0.0 {
                     bounds_err(findings, &s.id.0, "cone radius is negative");
+                }
+                if !ratio.is_finite() || *ratio <= 0.0 {
+                    bounds_err(findings, &s.id.0, "cone ratio is not positive and finite");
                 }
             }
             SurfaceGeometry::Sphere {
@@ -345,6 +349,28 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for procedural in &ir.model.procedural_surfaces {
+        if let ProceduralSurfaceDefinition::Extrusion {
+            parameter_interval,
+            direction,
+            native_position,
+            ..
+        } = &procedural.definition
+        {
+            if parameter_interval.is_some_and(|range| !range.iter().all(|value| value.is_finite()))
+                || ![direction.x, direction.y, direction.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                || native_position.is_some_and(|point| {
+                    ![point.x, point.y, point.z].into_iter().all(f64::is_finite)
+                })
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "extrusion interval, direction, or native position is non-finite",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Exact {
             parameter_ranges, ..
         } = &procedural.definition
@@ -610,6 +636,538 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     findings,
                     &procedural.id.0,
                     "scaled compound loft construction payload is invalid",
+                );
+            }
+        }
+        if let ProceduralSurfaceDefinition::Skin { construction } = &procedural.definition {
+            fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
+                if depth > 64 {
+                    return false;
+                }
+                match expression {
+                    crate::geometry::LawExpression::Null => true,
+                    crate::geometry::LawExpression::Integer { .. } => true,
+                    crate::geometry::LawExpression::Double { value } => value.is_finite(),
+                    crate::geometry::LawExpression::Point { value } => {
+                        value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Vector { value } => {
+                        value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Transform { scalars, .. } => {
+                        scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Edge { parameters, .. } => {
+                        parameters.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Spline {
+                        knots,
+                        controls,
+                        point,
+                        ..
+                    } => {
+                        knots.iter().chain(controls).all(|value| value.is_finite())
+                            && point.x.is_finite()
+                            && point.y.is_finite()
+                            && point.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                        operands.iter().all(|operand| law_valid(operand, depth + 1))
+                    }
+                }
+            }
+            let vector_finite = |vector: &Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let layout_valid = match &construction.layout {
+                crate::geometry::SkinSurfaceLayout::Profiles { profiles, .. } => {
+                    usize::try_from(construction.inner_count).ok() == Some(profiles.len())
+                        && profiles.iter().all(|profile| {
+                            let table = &profile.data.subdata;
+                            let expected_rows = if table.type_code == 211 {
+                                1
+                            } else {
+                                usize::try_from(table.row_count).unwrap_or(usize::MAX)
+                            };
+                            table.rows.len() == expected_rows
+                                && table.rows.iter().all(|row| {
+                                    row.parameters.iter().all(|value| value.is_finite())
+                                        && row
+                                            .columns
+                                            .iter()
+                                            .flatten()
+                                            .all(|value| value.is_finite())
+                                })
+                                && profile.data.direction.as_ref().is_none_or(&vector_finite)
+                        })
+                }
+                crate::geometry::SkinSurfaceLayout::Compact { subdata, .. } => {
+                    let expected_rows = if subdata.type_code == 211 {
+                        1
+                    } else {
+                        usize::try_from(subdata.row_count).unwrap_or(usize::MAX)
+                    };
+                    subdata.rows.len() == expected_rows
+                        && subdata.rows.iter().all(|row| {
+                            row.parameters.iter().all(|value| value.is_finite())
+                                && row.columns.iter().flatten().all(|value| value.is_finite())
+                        })
+                }
+            };
+            let formula_valid = if construction.formula.name == "null_law" {
+                construction.formula.variables.is_empty()
+            } else {
+                construction
+                    .formula
+                    .variables
+                    .iter()
+                    .all(|variable| law_valid(variable, 0))
+            };
+            let scalars_valid = construction.parameter.is_finite()
+                && construction.trailing_parameter.is_finite()
+                && vector_finite(&construction.direction)
+                && construction
+                    .discontinuities
+                    .iter()
+                    .flatten()
+                    .all(|value| value.is_finite());
+            if !layout_valid || !formula_valid || !scalars_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "skin surface construction payload is invalid",
+                );
+            }
+        }
+        if let ProceduralSurfaceDefinition::Net { construction } = &procedural.definition {
+            fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
+                if depth > 64 {
+                    return false;
+                }
+                match expression {
+                    crate::geometry::LawExpression::Null
+                    | crate::geometry::LawExpression::Integer { .. } => true,
+                    crate::geometry::LawExpression::Double { value } => value.is_finite(),
+                    crate::geometry::LawExpression::Point { value } => {
+                        value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Vector { value } => {
+                        value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Transform { scalars, .. } => {
+                        scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Edge { parameters, .. } => {
+                        parameters.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Spline {
+                        knots,
+                        controls,
+                        point,
+                        ..
+                    } => {
+                        knots.iter().chain(controls).all(|value| value.is_finite())
+                            && point.x.is_finite()
+                            && point.y.is_finite()
+                            && point.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                        operands.iter().all(|operand| law_valid(operand, depth + 1))
+                    }
+                }
+            }
+            let sections_valid = construction.sections.iter().all(|section| {
+                section.entries.iter().all(|entry| {
+                    entry.parameter.is_finite()
+                        && entry.profile.iter().all(|member| {
+                            let table = &member.data.subdata;
+                            let expected_rows = if table.type_code == 211 {
+                                1
+                            } else {
+                                usize::try_from(table.row_count).unwrap_or(usize::MAX)
+                            };
+                            table.rows.len() == expected_rows
+                                && table.rows.iter().all(|row| {
+                                    row.parameters.iter().all(|value| value.is_finite())
+                                        && row
+                                            .columns
+                                            .iter()
+                                            .flatten()
+                                            .all(|value| value.is_finite())
+                                })
+                        })
+                })
+            });
+            let formulas_valid = construction.formulas.iter().all(|formula| {
+                if formula.name == "null_law" {
+                    formula.variables.is_empty()
+                } else {
+                    formula
+                        .variables
+                        .iter()
+                        .all(|variable| law_valid(variable, 0))
+                }
+            });
+            let scalars_valid = construction
+                .frame_parameters
+                .iter()
+                .chain(construction.discontinuities.iter().flatten())
+                .all(|value| value.is_finite())
+                && construction.directions.iter().all(|direction| {
+                    direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()
+                });
+            if !sections_valid || !formulas_valid || !scalars_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "net surface construction payload is invalid",
+                );
+            }
+        }
+        if let ProceduralSurfaceDefinition::Sweep {
+            native: Some(construction),
+            ..
+        } = &procedural.definition
+        {
+            fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
+                if depth > 64 {
+                    return false;
+                }
+                match expression {
+                    crate::geometry::LawExpression::Null
+                    | crate::geometry::LawExpression::Integer { .. } => true,
+                    crate::geometry::LawExpression::Double { value } => value.is_finite(),
+                    crate::geometry::LawExpression::Point { value } => {
+                        value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Vector { value } => {
+                        value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Transform { scalars, .. } => {
+                        scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Edge { parameters, .. } => {
+                        parameters.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Spline {
+                        knots,
+                        controls,
+                        point,
+                        ..
+                    } => {
+                        knots.iter().chain(controls).all(|value| value.is_finite())
+                            && point.x.is_finite()
+                            && point.y.is_finite()
+                            && point.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                        operands.iter().all(|operand| law_valid(operand, depth + 1))
+                    }
+                }
+            }
+            let vector_finite = |vector: &Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let point_finite = |point: &crate::math::Point3| {
+                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+            };
+            let formula_valid = |formula: &crate::geometry::LawFormula| {
+                if formula.name == "null_law" {
+                    formula.variables.is_empty()
+                } else {
+                    formula
+                        .variables
+                        .iter()
+                        .all(|variable| law_valid(variable, 0))
+                }
+            };
+            let layout_valid = match &construction.layout {
+                crate::geometry::SweepSurfaceLayout::ProfileFirst {
+                    directions,
+                    origin,
+                    parameters,
+                    formulas,
+                    ..
+                } => {
+                    directions.iter().all(vector_finite)
+                        && point_finite(origin)
+                        && parameters.iter().all(|value| value.is_finite())
+                        && formulas.iter().all(formula_valid)
+                }
+                crate::geometry::SweepSurfaceLayout::ExplicitFormula {
+                    profile_range,
+                    profile_frame,
+                    origin,
+                    directions,
+                    path_range,
+                    path_parameter,
+                    formula,
+                    ..
+                } => {
+                    profile_range
+                        .iter()
+                        .chain(path_range)
+                        .all(|value| value.is_finite())
+                        && profile_frame.as_ref().is_none_or(|(point, vector)| {
+                            point_finite(point) && vector_finite(vector)
+                        })
+                        && point_finite(origin)
+                        && directions.iter().all(vector_finite)
+                        && path_parameter.is_finite()
+                        && formula_valid(formula)
+                }
+                crate::geometry::SweepSurfaceLayout::ExplicitGuide {
+                    profile_range,
+                    profile_frame,
+                    origin,
+                    directions,
+                    path_range,
+                    path_parameter,
+                    guide_range,
+                    guide_parameters,
+                    ..
+                } => {
+                    profile_range
+                        .iter()
+                        .chain(path_range)
+                        .chain(guide_range)
+                        .chain(guide_parameters)
+                        .all(|value| value.is_finite())
+                        && profile_frame.as_ref().is_none_or(|(point, vector)| {
+                            point_finite(point) && vector_finite(vector)
+                        })
+                        && point_finite(origin)
+                        && directions.iter().all(vector_finite)
+                        && path_parameter.is_finite()
+                }
+                crate::geometry::SweepSurfaceLayout::ExplicitSurface {
+                    profile_range,
+                    profile_frame,
+                    origin,
+                    directions,
+                    path_range,
+                    path_parameter,
+                    ..
+                } => {
+                    profile_range
+                        .iter()
+                        .chain(path_range)
+                        .all(|value| value.is_finite())
+                        && profile_frame.as_ref().is_none_or(|(point, vector)| {
+                            point_finite(point) && vector_finite(vector)
+                        })
+                        && point_finite(origin)
+                        && directions.iter().all(vector_finite)
+                        && path_parameter.is_finite()
+                }
+                crate::geometry::SweepSurfaceLayout::LawDriven {
+                    profile_range,
+                    profile_frame,
+                    origin,
+                    directions,
+                    first_law,
+                    first_range,
+                    law_direction,
+                    path_range,
+                    path_parameter,
+                    second_law,
+                    formula,
+                    ..
+                } => {
+                    profile_range
+                        .iter()
+                        .chain(first_range)
+                        .chain(path_range)
+                        .all(|value| value.is_finite())
+                        && profile_frame.as_ref().is_none_or(|(point, vector)| {
+                            point_finite(point) && vector_finite(vector)
+                        })
+                        && point_finite(origin)
+                        && directions.iter().all(vector_finite)
+                        && vector_finite(law_direction)
+                        && path_parameter.is_finite()
+                        && law_valid(first_law, 0)
+                        && law_valid(second_law, 0)
+                        && formula_valid(formula)
+                }
+            };
+            let scalars_valid = layout_valid
+                && construction
+                    .discontinuities
+                    .iter()
+                    .flatten()
+                    .all(|value| value.is_finite());
+            if !scalars_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "sweep surface construction payload is invalid",
+                );
+            }
+        }
+        if let ProceduralSurfaceDefinition::TSpline { construction } = &procedural.definition {
+            let ranges_valid = construction
+                .parameter_ranges
+                .iter()
+                .flatten()
+                .chain(construction.discontinuities.iter().flatten())
+                .all(|value| value.is_finite());
+            let source_valid = match &construction.subtransform {
+                crate::geometry::TSplineSubtransform::Inline {
+                    program, values, ..
+                } => {
+                    !program.is_empty()
+                        && !values.is_empty()
+                        && construction.program_graph.as_ref()
+                            == Some(&crate::geometry::TSplineProgram::parse(program))
+                        && construction.values_graph.as_ref()
+                            == Some(&crate::geometry::TSplineProgram::parse(values))
+                }
+                crate::geometry::TSplineSubtransform::Reference { index, resolved } => {
+                    let resolved_program =
+                        resolved.as_deref().and_then(|resolved| match resolved {
+                            crate::geometry::TSplineSubtransform::Inline { program, .. } => {
+                                Some(program)
+                            }
+                            crate::geometry::TSplineSubtransform::Reference { .. } => None,
+                        });
+                    *index >= 0
+                        && resolved_program.is_some_and(|program| {
+                            construction.program_graph.as_ref()
+                                == Some(&crate::geometry::TSplineProgram::parse(program))
+                        })
+                        && resolved.as_deref().is_some_and(|resolved| match resolved {
+                            crate::geometry::TSplineSubtransform::Inline { values, .. } => {
+                                construction.values_graph.as_ref()
+                                    == Some(&crate::geometry::TSplineProgram::parse(values))
+                            }
+                            crate::geometry::TSplineSubtransform::Reference { .. } => false,
+                        })
+                }
+            };
+            if !ranges_valid || !source_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "T-spline surface construction payload is invalid",
+                );
+            }
+        }
+        if let ProceduralSurfaceDefinition::Helix { construction } = &procedural.definition {
+            let path = &construction.path;
+            let finite = construction
+                .angle_range
+                .iter()
+                .chain(construction.dimension_range.iter())
+                .chain(path.angle_range.iter())
+                .all(|value| value.is_finite())
+                && [path.center.x, path.center.y, path.center.z]
+                    .into_iter()
+                    .chain([path.major.x, path.major.y, path.major.z])
+                    .chain([path.minor.x, path.minor.y, path.minor.z])
+                    .chain([path.pitch.x, path.pitch.y, path.pitch.z])
+                    .chain([path.axis.x, path.axis.y, path.axis.z])
+                    .chain(std::iter::once(path.apex_factor))
+                    .all(f64::is_finite);
+            let major_length =
+                (path.major.x.powi(2) + path.major.y.powi(2) + path.major.z.powi(2)).sqrt();
+            let minor_length =
+                (path.minor.x.powi(2) + path.minor.y.powi(2) + path.minor.z.powi(2)).sqrt();
+            let circular_path = major_length > 0.0
+                && (major_length - minor_length).abs() <= 1.0e-9 * major_length.max(1.0);
+            let profile_valid = match construction.profile {
+                crate::geometry::HelixSurfaceProfile::Circle { length, radius } => {
+                    length.is_finite() && radius.is_finite() && radius != 0.0
+                }
+                crate::geometry::HelixSurfaceProfile::Line { origin } => {
+                    origin.x.is_finite() && origin.y.is_finite() && origin.z.is_finite()
+                }
+            };
+            if !finite || !circular_path || !profile_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "helix surface construction payload is invalid",
+                );
+            }
+        }
+        if let ProceduralSurfaceDefinition::Deformable { construction } = &procedural.definition {
+            let vector_finite = |vector: &Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let frame_valid = |frame: &crate::geometry::DeformableSurfaceFrame| {
+                frame.leading_vectors.iter().all(vector_finite)
+                    && frame.secondary_vectors.iter().all(vector_finite)
+                    && frame.leading_parameter.is_finite()
+                    && frame.secondary_parameter.is_finite()
+                    && frame.point.x.is_finite()
+                    && frame.point.y.is_finite()
+                    && frame.point.z.is_finite()
+            };
+            let data_valid = match &construction.data {
+                crate::geometry::DeformableSurfaceData::Full {
+                    leading_vectors,
+                    leading_parameter,
+                    first_parameter,
+                    second_parameter,
+                    frames,
+                    ..
+                } => {
+                    leading_vectors.iter().all(vector_finite)
+                        && leading_parameter.is_finite()
+                        && first_parameter.is_finite()
+                        && second_parameter.is_finite()
+                        && frames.iter().all(|frame| {
+                            frame.vectors.iter().all(vector_finite) && frame.parameter.is_finite()
+                        })
+                }
+                crate::geometry::DeformableSurfaceData::SurfaceCurve {
+                    first_parameter,
+                    second_parameter,
+                    vectors,
+                    frame_parameter,
+                    parameter_triples,
+                    ..
+                } => {
+                    first_parameter.is_finite()
+                        && second_parameter.is_finite()
+                        && vectors.iter().all(vector_finite)
+                        && frame_parameter.is_finite()
+                        && parameter_triples
+                            .iter()
+                            .flatten()
+                            .all(|value| value.is_finite())
+                }
+                crate::geometry::DeformableSurfaceData::Plain {
+                    frame,
+                    parameter_triples,
+                } => {
+                    frame_valid(frame)
+                        && parameter_triples
+                            .iter()
+                            .flatten()
+                            .all(|value| value.is_finite())
+                }
+                crate::geometry::DeformableSurfaceData::Guided {
+                    frame,
+                    guide_parameter,
+                    ..
+                } => frame_valid(frame) && guide_parameter.is_finite(),
+                crate::geometry::DeformableSurfaceData::Minimal { vectors, .. } => {
+                    vectors.iter().all(vector_finite)
+                }
+            };
+            if !data_valid
+                || !construction
+                    .discontinuities
+                    .iter()
+                    .flatten()
+                    .all(|value| value.is_finite())
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "deformable surface construction payload is invalid",
                 );
             }
         }
@@ -1044,7 +1602,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::Intersection { context } = &procedural.definition {
+        if let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition {
             if !support_context_is_finite(context) {
                 bounds_err(
                     findings,
@@ -1054,8 +1612,9 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::TwoSidedOffset { context, offsets } =
-            &procedural.definition
+        if let ProceduralCurveDefinition::TwoSidedOffset {
+            context, offsets, ..
+        } = &procedural.definition
         {
             let finite =
                 support_context_is_finite(context) && offsets.iter().all(|value| value.is_finite());

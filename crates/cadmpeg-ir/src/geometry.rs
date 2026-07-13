@@ -81,8 +81,9 @@ pub enum SurfaceGeometry {
         /// Cylinder radius, in the document's length unit.
         radius: f64,
     },
-    /// Right circular cone. `radius` is measured at `origin`; `half_angle` is
-    /// the half-angle between the axis and the cone surface, in radians.
+    /// Right elliptical cone. `radius` is the major radius at `origin`;
+    /// `ratio` is the minor-to-major radius ratio; `half_angle` is the major
+    /// half-angle between the axis and the cone surface, in radians.
     Cone {
         /// Reference point on the axis where `radius` is measured.
         origin: Point3,
@@ -92,6 +93,8 @@ pub enum SurfaceGeometry {
         ref_direction: Vector3,
         /// Radius at `origin`.
         radius: f64,
+        /// Minor-to-major radius ratio.
+        ratio: f64,
         /// Half-angle in radians.
         half_angle: f64,
     },
@@ -337,6 +340,16 @@ pub enum ProceduralSurfaceDefinition {
         /// Complete native scaled compound-loft graph.
         construction: Box<ScaledCompoundLoftConstruction>,
     },
+    /// Native skinned spline surface.
+    Skin {
+        /// Complete native skin construction graph.
+        construction: Box<SkinSurfaceConstruction>,
+    },
+    /// Native curve-network spline surface.
+    Net {
+        /// Complete native net construction graph.
+        construction: Box<NetSurfaceConstruction>,
+    },
     /// Native curvature-continuous two-sided blend.
     G2Blend {
         /// Complete native G2 construction graph.
@@ -356,8 +369,14 @@ pub enum ProceduralSurfaceDefinition {
     Extrusion {
         /// Curve swept along `direction` to form the surface.
         directrix: CurveId,
+        /// Stored directrix parameter interval, when carried by the source.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter_interval: Option<[f64; 2]>,
         /// Length-bearing sweep direction, in document length units.
         direction: Vector3,
+        /// Native model-space position following the sweep direction, when carried.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native_position: Option<Point3>,
     },
     /// Revolution of a directrix about an axis.
     Revolution {
@@ -389,6 +408,24 @@ pub enum ProceduralSurfaceDefinition {
         profile: CurveId,
         /// Path curve the profile is swept along.
         spine: CurveId,
+        /// Complete native sweep graph when retained.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native: Option<Box<SweepSurfaceConstruction>>,
+    },
+    /// T-spline face with its shared subtransform program.
+    TSpline {
+        /// Complete native T-spline wrapper construction.
+        construction: Box<TSplineSurfaceConstruction>,
+    },
+    /// Surface generated along an inline circular or linear helix path.
+    Helix {
+        /// Complete native helix-surface construction.
+        construction: Box<HelixSurfaceConstruction>,
+    },
+    /// Native deformable spline surface.
+    Deformable {
+        /// Complete decoded deformable construction.
+        construction: Box<DeformableSurfaceConstruction>,
     },
     /// Offset from a support surface.
     Offset {
@@ -432,6 +469,311 @@ pub enum ProceduralSurfaceDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
     },
+}
+
+/// Structurally selected deformable-surface payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DeformableSurfaceData {
+    /// Mode-6 full embedded deformation payload.
+    Full {
+        /// Four leading deformation vectors.
+        leading_vectors: [Vector3; 4],
+        /// Leading deformation scalar.
+        leading_parameter: f64,
+        /// Three leading flags.
+        leading_flags: [bool; 3],
+        /// Native selector before the secondary support.
+        selector: i64,
+        /// Secondary embedded support surface.
+        surface: SurfaceId,
+        /// Native long after the support.
+        native_id: i64,
+        /// Native support-side flag.
+        flag: bool,
+        /// First scalar after the flag.
+        first_parameter: f64,
+        /// Version-gated ASM long when present.
+        version_value: Option<i64>,
+        /// Second scalar after the optional long.
+        second_parameter: f64,
+        /// Embedded deformation curve.
+        curve: CurveId,
+        /// Two ordered full vector frames.
+        frames: Box<[DeformableVectorFrame; 2]>,
+        /// Native trailing long.
+        trailing_value: i64,
+    },
+    /// Mode-5 surface-and-curve deformation payload.
+    SurfaceCurve {
+        /// Secondary embedded support surface.
+        surface: SurfaceId,
+        /// Native long identifier.
+        native_id: i64,
+        /// Native leading flag.
+        flag: bool,
+        /// First native scalar.
+        first_parameter: f64,
+        /// Native selector integer.
+        selector: i64,
+        /// Second native scalar.
+        second_parameter: f64,
+        /// Embedded deformation curve.
+        curve: CurveId,
+        /// Four ordered deformation vectors.
+        vectors: [Vector3; 4],
+        /// Frame scalar after the vectors.
+        frame_parameter: f64,
+        /// Three frame flags.
+        flags: [bool; 3],
+        /// Counted ordered scalar triples.
+        parameter_triples: Vec<[f64; 3]>,
+    },
+    /// Mode-1 deformation frame with counted parameter triples.
+    Plain {
+        /// Shared full deformation frame.
+        frame: Box<DeformableSurfaceFrame>,
+        /// Ordered native scalar triples.
+        parameter_triples: Vec<[f64; 3]>,
+    },
+    /// Mode-3 deformation frame with a guide scalar.
+    Guided {
+        /// Shared full deformation frame.
+        frame: Box<DeformableSurfaceFrame>,
+        /// Native guide selector.
+        selector: i64,
+        /// Native guide scalar.
+        guide_parameter: f64,
+    },
+    /// Mode-8 minimal four-vector scaffold.
+    Minimal {
+        /// Four ordered deformation vectors.
+        vectors: [Vector3; 4],
+        /// Native trailing selector.
+        selector: i64,
+    },
+}
+
+/// Four-vector frame used by full deformable surfaces.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DeformableVectorFrame {
+    /// Four ordered vectors.
+    pub vectors: [Vector3; 4],
+    /// Frame scalar.
+    pub parameter: f64,
+    /// Three ordered flags.
+    pub flags: [bool; 3],
+}
+
+/// Shared frame payload of deformable-surface modes 1 and 3.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DeformableSurfaceFrame {
+    /// Four leading deformation vectors.
+    pub leading_vectors: [Vector3; 4],
+    /// Leading frame scalar.
+    pub leading_parameter: f64,
+    /// Three leading frame flags.
+    pub leading_flags: [bool; 3],
+    /// Three secondary deformation vectors.
+    pub secondary_vectors: [Vector3; 3],
+    /// Secondary frame scalar.
+    pub secondary_parameter: f64,
+    /// Two secondary frame flags.
+    pub secondary_flags: [bool; 2],
+    /// Native model-space frame point.
+    pub point: Point3,
+    /// Five trailing frame flags.
+    pub trailing_flags: [bool; 5],
+}
+
+/// Complete native deformable-surface construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DeformableSurfaceConstruction {
+    /// Surface being deformed.
+    pub support: SurfaceId,
+    /// Discriminator-selected deformation data.
+    pub data: DeformableSurfaceData,
+    /// Six ordered solved-surface discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
+    pub discontinuity_flag: bool,
+}
+
+/// Inline path shared by helix curves and helix surfaces.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct HelixPathConstruction {
+    /// Native angular path interval.
+    pub angle_range: [f64; 2],
+    /// Axis origin at the path start.
+    pub center: Point3,
+    /// Major profile-radius vector.
+    pub major: Vector3,
+    /// Minor profile-radius vector.
+    pub minor: Vector3,
+    /// Axial rise vector per revolution.
+    pub pitch: Vector3,
+    /// Linear radial growth factor.
+    pub apex_factor: f64,
+    /// Unit helix axis direction.
+    pub axis: Vector3,
+}
+
+/// Profile-specific tail of a helix surface.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HelixSurfaceProfile {
+    /// Circular profile swept along the helix.
+    Circle {
+        /// Native length preceding the inline path.
+        length: f64,
+        /// Circular profile radius.
+        radius: f64,
+    },
+    /// Linear profile anchored at an origin.
+    Line {
+        /// Native model-space profile origin.
+        origin: Point3,
+    },
+}
+
+/// Complete native helix-surface construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct HelixSurfaceConstruction {
+    /// Native surface angular interval.
+    pub angle_range: [f64; 2],
+    /// Native secondary interval.
+    pub dimension_range: [f64; 2],
+    /// Inline helix path.
+    pub path: HelixPathConstruction,
+    /// Circular or linear profile tail.
+    pub profile: HelixSurfaceProfile,
+}
+
+/// Native T-spline subtransform storage form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TSplineSubtransform {
+    /// Inline line-oriented T-spline program and companion values.
+    Inline {
+        /// Line-oriented topology and geometry program.
+        program: String,
+        /// Optional native separator boolean.
+        separator: Option<bool>,
+        /// Companion values program.
+        values: String,
+    },
+    /// Reference to an earlier subtype-table entry.
+    Reference {
+        /// Native subtype-table index.
+        index: i64,
+        /// Resolved shared program when the table target is available.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resolved: Option<Box<TSplineSubtransform>>,
+    },
+}
+
+/// Complete native `t_spl_sur` wrapper.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TSplineSurfaceConstruction {
+    /// Ordered U and V native parameter intervals.
+    pub parameter_ranges: [[f64; 2]; 2],
+    /// Native T-spline type integer.
+    pub type_code: i64,
+    /// Inline or referenced shared subtransform object.
+    pub subtransform: TSplineSubtransform,
+    /// Parsed semantic index of the inline program, absent for references.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program_graph: Option<TSplineProgram>,
+    /// Parsed semantic index of the companion values program.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub values_graph: Option<TSplineProgram>,
+    /// Native trailing integer.
+    pub trailing_value: i64,
+    /// Six ordered solved-surface discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
+    pub discontinuity_flag: bool,
+}
+
+/// Parsed line-oriented T-spline subtransform program.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TSplineProgram {
+    /// Ordered recognized header declarations.
+    pub headers: Vec<TSplineProgramLine>,
+    /// Ordered recognized topology, geometry, and constraint records.
+    pub records: Vec<TSplineProgramLine>,
+    /// Non-comment lines outside the defined vocabulary.
+    pub unparsed_lines: Vec<String>,
+}
+
+/// One tokenized T-spline program line.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TSplineProgramLine {
+    /// Leading record or header token.
+    pub kind: String,
+    /// Ordered remaining fields without interpretation loss.
+    pub fields: Vec<String>,
+}
+
+impl TSplineProgram {
+    /// Parse the defined line vocabulary while retaining every other line.
+    #[must_use]
+    pub fn parse(program: &str) -> Self {
+        const HEADERS: &[&str] = &[
+            "degree",
+            "cap_type",
+            "units",
+            "end_conditions",
+            "star_knot_rule",
+            "star_smoothness",
+            "tol",
+            "ver",
+            "behavior_version",
+            "geom_tol",
+            "compat_version",
+        ];
+        const RECORDS: &[&str] = &[
+            "f",
+            "e",
+            "v",
+            "l",
+            "ec",
+            "0m",
+            "0g",
+            "100edges",
+            "100verts",
+            "105sym",
+            "105plane",
+            "105a",
+            "106ek",
+            "50000grip",
+        ];
+        let mut parsed = Self {
+            headers: Vec::new(),
+            records: Vec::new(),
+            unparsed_lines: Vec::new(),
+        };
+        for line in program.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut fields = line.split_whitespace();
+            let Some(kind) = fields.next() else { continue };
+            let parsed_line = TSplineProgramLine {
+                kind: kind.into(),
+                fields: fields.map(String::from).collect(),
+            };
+            if HEADERS.contains(&kind) {
+                parsed.headers.push(parsed_line);
+            } else if RECORDS.contains(&kind) {
+                parsed.records.push(parsed_line);
+            } else {
+                parsed.unparsed_lines.push(line.into());
+            }
+        }
+        parsed
+    }
 }
 
 /// One oriented support of a procedural blend.
@@ -1207,6 +1549,320 @@ pub struct ScaledCompoundLoftConstruction {
     pub tail_curve: CurveId,
 }
 
+/// One recursively framed native law formula.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LawFormula {
+    /// Native formula name, or `null_law` for the sentinel.
+    pub name: String,
+    /// Ordered recursive variables; empty for `null_law`.
+    pub variables: Vec<LawExpression>,
+}
+
+/// One native law-expression node.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LawExpression {
+    /// Zero-payload `null_law` sentinel.
+    Null,
+    /// Tagged integer constant.
+    Integer {
+        /// Stored integer value.
+        value: i64,
+    },
+    /// Tagged double constant.
+    Double {
+        /// Stored scalar value.
+        value: f64,
+    },
+    /// Tagged model-space point constant.
+    Point {
+        /// Stored point value.
+        value: Point3,
+    },
+    /// Tagged direction-vector constant.
+    Vector {
+        /// Stored vector value.
+        value: Vector3,
+    },
+    /// Inline transform-law payload.
+    Transform {
+        /// Thirteen ordered transform scalars.
+        scalars: [f64; 13],
+        /// Three ordered transform enums.
+        enums: [i64; 3],
+    },
+    /// Curve-backed edge law.
+    Edge {
+        /// Embedded curve carrier.
+        curve: CurveId,
+        /// Two native curve parameters.
+        parameters: [f64; 2],
+    },
+    /// Spline-law payload.
+    Spline {
+        /// Native spline-law integer.
+        native_id: i64,
+        /// Ordered spline-law knots.
+        knots: Vec<f64>,
+        /// Ordered spline-law controls.
+        controls: Vec<f64>,
+        /// Native model-space point.
+        point: Point3,
+    },
+    /// Algebraic operator and its recursively framed operands.
+    Algebraic {
+        /// Native operator token.
+        operator: String,
+        /// Ordered operands.
+        operands: Vec<LawExpression>,
+    },
+}
+
+/// One profile entry in the expanded skin layout.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SkinSurfaceProfile {
+    /// Native profile type integer.
+    pub type_code: i64,
+    /// Profile curve.
+    pub curve: CurveId,
+    /// Native loft constraint data.
+    pub data: LoftProfileData,
+}
+
+/// Structurally selected native skin payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SkinSurfaceLayout {
+    /// Expanded sequence of profile curves and loft constraints.
+    Profiles {
+        /// Ordered profile entries.
+        profiles: Vec<SkinSurfaceProfile>,
+        /// Trailing path curve.
+        path: CurveId,
+        /// Two native trailing integers.
+        tail: [i64; 2],
+    },
+    /// Compact curve/subdata form.
+    Compact {
+        /// Primary curve.
+        curve: CurveId,
+        /// Native loft subdata.
+        subdata: LoftSubdata,
+        /// Integer after the subdata.
+        first_tail: i64,
+        /// Secondary curve.
+        secondary_curve: CurveId,
+        /// Final compact-layout integer.
+        second_tail: i64,
+    },
+}
+
+/// Complete native `skin_spl_sur` construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SkinSurfaceConstruction {
+    /// Native `SURF_BOOL` enum.
+    pub surface_boolean: i64,
+    /// Native `SURF_NORM` enum.
+    pub surface_normal: i64,
+    /// Native `SURF_DIR` enum.
+    pub surface_direction: i64,
+    /// Native leading count.
+    pub count: i64,
+    /// Native leading scalar.
+    pub parameter: f64,
+    /// Native inner count.
+    pub inner_count: i64,
+    /// Structurally selected skin payload.
+    pub layout: SkinSurfaceLayout,
+    /// Stored direction vector.
+    pub direction: Vector3,
+    /// Native scalar before the formula.
+    pub trailing_parameter: f64,
+    /// Recursive parametric law.
+    pub formula: LawFormula,
+    /// Trailing curve after the formula.
+    pub parameter_curve: CurveId,
+    /// Six ordered solved-surface discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
+    pub discontinuity_flag: bool,
+}
+
+/// Complete native `net_spl_sur` construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct NetSurfaceConstruction {
+    /// Two ordered loft-section graphs.
+    pub sections: Box<[LoftSection; 2]>,
+    /// Twelve ordered frame scalars.
+    pub frame_parameters: [f64; 12],
+    /// Native frame integer.
+    pub flag: i64,
+    /// Four ordered frame directions.
+    pub directions: [Vector3; 4],
+    /// Four ordered parameter laws.
+    pub formulas: Box<[LawFormula; 4]>,
+    /// Six ordered solved-surface discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
+    pub discontinuity_flag: bool,
+}
+
+/// Structurally selected native sweep payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SweepSurfaceLayout {
+    /// Profile-first modern ASM sweep layout.
+    ProfileFirst {
+        /// Second native sweep enum.
+        secondary_kind: i64,
+        /// Five ordered frame directions.
+        directions: [Vector3; 5],
+        /// Native model-space frame origin.
+        origin: Point3,
+        /// Four ordered native frame scalars.
+        parameters: [f64; 4],
+        /// Three ordered parametric laws.
+        formulas: Box<[LawFormula; 3]>,
+    },
+    /// Explicit sweep layout whose trajectory is controlled by a formula.
+    ExplicitFormula {
+        /// Native explicit-layout integer.
+        mode: i64,
+        /// Profile parameter interval.
+        profile_range: [f64; 2],
+        /// Optional explicit profile frame.
+        profile_frame: Option<(Point3, Vector3)>,
+        /// Sweep frame origin.
+        origin: Point3,
+        /// Three ordered sweep frame directions.
+        directions: [Vector3; 3],
+        /// Native trajectory boolean.
+        trajectory_flag: bool,
+        /// Path parameter interval in model length units.
+        path_range: [f64; 2],
+        /// Native trajectory scalar.
+        path_parameter: f64,
+        /// Native formula-side boolean.
+        formula_flag: bool,
+        /// Parametric trajectory formula.
+        formula: LawFormula,
+        /// Native trailing boolean.
+        trailing_flag: bool,
+    },
+    /// Explicit sweep layout controlled by an auxiliary guide curve.
+    ExplicitGuide {
+        /// Native explicit-layout integer.
+        mode: i64,
+        /// Profile parameter interval.
+        profile_range: [f64; 2],
+        /// Optional explicit profile frame.
+        profile_frame: Option<(Point3, Vector3)>,
+        /// Sweep frame origin.
+        origin: Point3,
+        /// Three ordered sweep frame directions.
+        directions: [Vector3; 3],
+        /// Native trajectory boolean.
+        trajectory_flag: bool,
+        /// Path parameter interval in model length units.
+        path_range: [f64; 2],
+        /// Native trajectory scalar.
+        path_parameter: f64,
+        /// Two guide-side booleans.
+        guide_flags: [bool; 2],
+        /// Auxiliary guide curve.
+        guide_curve: CurveId,
+        /// Guide parameter interval.
+        guide_range: [f64; 2],
+        /// Two native guide integers.
+        guide_modes: [i64; 2],
+        /// Six ordered guide scalars.
+        guide_parameters: [f64; 6],
+        /// Three trailing guide booleans.
+        trailing_flags: [bool; 3],
+    },
+    /// Explicit sweep layout controlled by a support surface.
+    ExplicitSurface {
+        /// Native explicit-layout integer.
+        mode: i64,
+        /// Profile parameter interval.
+        profile_range: [f64; 2],
+        /// Optional explicit profile frame.
+        profile_frame: Option<(Point3, Vector3)>,
+        /// Sweep frame origin.
+        origin: Point3,
+        /// Three ordered sweep frame directions.
+        directions: [Vector3; 3],
+        /// Native trajectory boolean.
+        trajectory_flag: bool,
+        /// Path parameter interval in model length units.
+        path_range: [f64; 2],
+        /// Native trajectory scalar.
+        path_parameter: f64,
+        /// Native singularity enum.
+        singularity: i64,
+        /// Support surface controlling the sweep.
+        support_surface: SurfaceId,
+        /// Optional auxiliary curve.
+        auxiliary_curve: Option<CurveId>,
+        /// Native support-side boolean.
+        support_flag: bool,
+        /// Legacy pre-219 trailing boolean when present.
+        legacy_flag: Option<bool>,
+    },
+    /// Explicit-prefix sweep layout controlled by recursive laws.
+    LawDriven {
+        /// Native explicit-layout integer.
+        mode: i64,
+        /// Profile parameter interval.
+        profile_range: [f64; 2],
+        /// Optional explicit profile frame.
+        profile_frame: Option<(Point3, Vector3)>,
+        /// Sweep frame origin.
+        origin: Point3,
+        /// Three ordered sweep frame directions.
+        directions: [Vector3; 3],
+        /// Leading recursive sweep law.
+        first_law: Box<LawExpression>,
+        /// Native integer after the leading law.
+        first_mode: i64,
+        /// First law parameter interval.
+        first_range: [f64; 2],
+        /// Native law direction.
+        law_direction: Vector3,
+        /// Native path integer.
+        path_mode: i64,
+        /// Native path boolean.
+        path_flag: bool,
+        /// Path parameter interval.
+        path_range: [f64; 2],
+        /// Native path scalar.
+        path_parameter: f64,
+        /// Native second-law boolean.
+        second_law_flag: bool,
+        /// Trailing recursive sweep law.
+        second_law: Box<LawExpression>,
+        /// Native integer before the formula.
+        formula_mode: i64,
+        /// Parametric trajectory formula.
+        formula: LawFormula,
+        /// Native trailing boolean.
+        trailing_flag: bool,
+    },
+}
+
+/// Complete native `sweep_spl_sur` construction graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SweepSurfaceConstruction {
+    /// Leading native sweep enum.
+    pub primary_kind: i64,
+    /// Structurally selected sweep layout.
+    pub layout: SweepSurfaceLayout,
+    /// Six ordered solved-surface discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
+    pub discontinuity_flag: bool,
+}
+
 /// Radius law for a procedural blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -1339,6 +1995,17 @@ pub enum DeformableCurveData {
 pub enum ProceduralCurveDefinition {
     /// An exact native intcurve whose solved NURBS cache is authoritative.
     Exact,
+    /// Curve defined by recursive native law formulas.
+    Law {
+        /// Shared support surfaces, UV curves, interval, and discontinuities.
+        context: IntcurveSupportContext,
+        /// Native ASM extension integer.
+        extension: i64,
+        /// Primary recursive law formula.
+        primary: LawFormula,
+        /// Counted additional recursive law formulas.
+        additional: Vec<LawFormula>,
+    },
     /// Ordered compound of native child curves with construction parameters.
     Compound {
         /// Leading native parameter array.
@@ -1369,6 +2036,8 @@ pub enum ProceduralCurveDefinition {
     Intersection {
         /// Shared surfaces, UV curves, interval, and discontinuity metadata.
         context: IntcurveSupportContext,
+        /// Native boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
     },
     /// Intersection constrained by a third ordered support surface.
     ThreeSurfaceIntersection {
@@ -1401,6 +2070,8 @@ pub enum ProceduralCurveDefinition {
     SurfaceOffset {
         /// Shared first two support pairs.
         context: IntcurveSupportContext,
+        /// Native boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
         /// Native U interval on the base surface.
         base_u_range: [f64; 2],
         /// Native V interval on the base surface.
@@ -1427,6 +2098,8 @@ pub enum ProceduralCurveDefinition {
         /// is the native `nullbs` sentinel.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         first_pcurve_parameter_range: Option<[f64; 2]>,
+        /// Native boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
         /// Native `CURV_DIR` enum value.
         direction: i64,
     },
@@ -1443,6 +2116,8 @@ pub enum ProceduralCurveDefinition {
     Projection {
         /// Shared surfaces, UV curves, interval, and discontinuity metadata.
         context: IntcurveSupportContext,
+        /// Native boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
         /// Curve being projected.
         source: CurveId,
         /// Native post-source tail form.
@@ -1463,6 +2138,8 @@ pub enum ProceduralCurveDefinition {
     TwoSidedOffset {
         /// Shared surfaces, UV curves, interval, and discontinuity metadata.
         context: IntcurveSupportContext,
+        /// Native boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
         /// Signed offset distance for each support side, in document length units.
         offsets: [f64; 2],
     },
@@ -1540,6 +2217,9 @@ pub struct Pcurve {
     /// Inline `exp_par_cur` parameterization reversal; absent on ref-form pcurves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wrapper_reversed: Option<bool>,
+    /// Four native booleans following the inline subtype scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_tail_flags: Option<[bool; 4]>,
     /// Native parameter interval on which this pcurve is evaluated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_range: Option<[f64; 2]>,

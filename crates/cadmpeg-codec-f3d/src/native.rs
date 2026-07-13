@@ -6,10 +6,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::history_records::AsmHistory;
 use crate::records::{
-    ActEntity, ActGuid, ActRootComponent, ConstructionRecipe, DesignBodyMember, DesignEntityHeader,
-    DesignMaterialAssignment, DesignObject, DesignRecordHeader, LostEdgeReference,
-    PersistentDesignLink, PersistentReference, SketchCurveIdentity, SketchCurveLink, SketchPoint,
-    SketchRelation,
+    ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
+    CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignEntityHeader,
+    DesignMaterialAssignment, DesignObject, DesignRecordHeader, EdgeContinuity, EdgeOwnership,
+    FaceSidedness, LostEdgeReference, PersistentDesignLink, PersistentReference,
+    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters,
+    TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -24,12 +26,19 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "asm_entity_changes",
     "asm_histories",
     "asm_history_records",
+    "body_native_keys",
+    "body_visibilities",
     "construction_recipes",
+    "creation_timestamps",
     "design_body_members",
+    "design_configurations",
     "design_entity_headers",
     "design_material_assignments",
     "design_objects",
     "design_record_headers",
+    "edge_continuities",
+    "edge_ownerships",
+    "face_sidedness",
     "lost_edge_references",
     "persistent_design_links",
     "persistent_references",
@@ -37,6 +46,11 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "sketch_curve_links",
     "sketch_points",
     "sketch_relations",
+    "tolerant_coedge_parameters",
+    "tolerant_vertex_tails",
+    "transform_hints",
+    "vertex_ownerships",
+    "wire_topologies",
 ];
 
 macro_rules! f3d_arenas {
@@ -45,12 +59,19 @@ macro_rules! f3d_arenas {
             act_entities: ActEntity;
             act_guids: ActGuid;
             act_root_components: ActRootComponent;
+            body_native_keys: BodyNativeKey;
+            body_visibilities: BodyVisibility;
             design_objects: DesignObject;
             design_entity_headers: DesignEntityHeader;
             design_record_headers: DesignRecordHeader;
             design_body_members: DesignBodyMember;
+            design_configurations: DesignConfiguration;
             design_material_assignments: DesignMaterialAssignment;
+            edge_continuities: EdgeContinuity;
+            edge_ownerships: EdgeOwnership;
+            face_sidedness: FaceSidedness;
             construction_recipes: ConstructionRecipe;
+            creation_timestamps: CreationTimestamp;
             persistent_design_links: PersistentDesignLink;
             persistent_references: PersistentReference;
             sketch_curve_links: SketchCurveLink;
@@ -58,6 +79,11 @@ macro_rules! f3d_arenas {
             sketch_points: SketchPoint;
             sketch_curve_identities: SketchCurveIdentity;
             lost_edge_references: LostEdgeReference;
+            vertex_ownerships: VertexOwnership;
+            tolerant_coedge_parameters: TolerantCoedgeParameters;
+            tolerant_vertex_tails: TolerantVertexTail;
+            transform_hints: TransformHints;
+            wire_topologies: WireTopology;
             asm_histories: AsmHistory;
         }
     };
@@ -120,6 +146,12 @@ pub struct F3dNative {
     /// Fusion ACT document-root-to-registry links.
     #[serde(default)]
     pub act_root_components: Vec<ActRootComponent>,
+    /// Native Design-join keys stored on ASM bodies.
+    #[serde(default)]
+    pub body_native_keys: Vec<BodyNativeKey>,
+    /// Design browser-node visibility joined to solved ASM bodies.
+    #[serde(default)]
+    pub body_visibilities: Vec<BodyVisibility>,
     /// Design `MetaStream` object-table records.
     #[serde(default)]
     pub design_objects: Vec<DesignObject>,
@@ -132,12 +164,27 @@ pub struct F3dNative {
     /// `BodiesRoot` list members from the Design `BulkStream`.
     #[serde(default)]
     pub design_body_members: Vec<DesignBodyMember>,
+    /// Design configuration tables and rules with complete JSON payloads.
+    #[serde(default)]
+    pub design_configurations: Vec<DesignConfiguration>,
     /// Design entity-to-material assignment records.
     #[serde(default)]
     pub design_material_assignments: Vec<DesignMaterialAssignment>,
+    /// Kernel continuity classifications stored on solved ASM edges.
+    #[serde(default)]
+    pub edge_continuities: Vec<EdgeContinuity>,
+    /// Native owner-coedge selectors stored on ASM edges.
+    #[serde(default)]
+    pub edge_ownerships: Vec<EdgeOwnership>,
+    /// Native single/double-sided classifications stored on ASM faces.
+    #[serde(default)]
+    pub face_sidedness: Vec<FaceSidedness>,
     /// Parametric regeneration recipes from the Design `BulkStream`.
     #[serde(default)]
     pub construction_recipes: Vec<ConstructionRecipe>,
+    /// Original authoring times attached to solved entities.
+    #[serde(default)]
+    pub creation_timestamps: Vec<CreationTimestamp>,
     /// Persistent Fusion design identifiers attached to solved B-rep entities.
     #[serde(default)]
     pub persistent_design_links: Vec<PersistentDesignLink>,
@@ -159,6 +206,21 @@ pub struct F3dNative {
     /// Construction-history edge selections that Fusion could not re-resolve.
     #[serde(default)]
     pub lost_edge_references: Vec<LostEdgeReference>,
+    /// Native owner-edge and endpoint-slot fields stored on ASM vertices.
+    #[serde(default)]
+    pub vertex_ownerships: Vec<VertexOwnership>,
+    /// Native parameter intervals stored on tolerant ASM coedges.
+    #[serde(default)]
+    pub tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
+    /// Native trailing f32 slots stored on tolerant ASM vertices.
+    #[serde(default)]
+    pub tolerant_vertex_tails: Vec<TolerantVertexTail>,
+    /// Native transform rotation/reflection/shear classifications.
+    #[serde(default)]
+    pub transform_hints: Vec<TransformHints>,
+    /// Native wire records and their side classifications.
+    #[serde(default)]
+    pub wire_topologies: Vec<WireTopology>,
     /// ASM construction-history containers and their linked delta states.
     #[serde(default)]
     pub asm_histories: Vec<AsmHistory>,
@@ -171,12 +233,19 @@ impl Default for F3dNative {
             act_entities: Vec::new(),
             act_guids: Vec::new(),
             act_root_components: Vec::new(),
+            body_native_keys: Vec::new(),
+            body_visibilities: Vec::new(),
             design_objects: Vec::new(),
             design_entity_headers: Vec::new(),
             design_record_headers: Vec::new(),
             design_body_members: Vec::new(),
+            design_configurations: Vec::new(),
             design_material_assignments: Vec::new(),
+            edge_continuities: Vec::new(),
+            edge_ownerships: Vec::new(),
+            face_sidedness: Vec::new(),
             construction_recipes: Vec::new(),
+            creation_timestamps: Vec::new(),
             persistent_design_links: Vec::new(),
             persistent_references: Vec::new(),
             sketch_curve_links: Vec::new(),
@@ -184,6 +253,11 @@ impl Default for F3dNative {
             sketch_points: Vec::new(),
             sketch_curve_identities: Vec::new(),
             lost_edge_references: Vec::new(),
+            vertex_ownerships: Vec::new(),
+            tolerant_coedge_parameters: Vec::new(),
+            tolerant_vertex_tails: Vec::new(),
+            transform_hints: Vec::new(),
+            wire_topologies: Vec::new(),
             asm_histories: Vec::new(),
         }
     }
