@@ -4201,22 +4201,25 @@ fn encode_native_g2_blend(
     Ok(())
 }
 
-fn native_loft_curve<'a>(
-    target: &'a CadIr,
+fn native_loft_curve(
+    target: &CadIr,
     id: &cadmpeg_ir::ids::CurveId,
-) -> Result<&'a NurbsCurve, CodecError> {
+) -> Result<NurbsCurve, CodecError> {
     let curve = target
         .model
         .curves
         .iter()
         .find(|curve| curve.id == *id)
         .ok_or_else(|| CodecError::Malformed(format!("loft references missing curve {id}")))?;
-    let CurveGeometry::Nurbs(curve) = &curve.geometry else {
-        return Err(CodecError::NotImplemented(format!(
-            "source-less F3D loft requires NURBS curve {id}"
-        )));
-    };
-    Ok(curve)
+    match &curve.geometry {
+        CurveGeometry::Nurbs(curve) => Ok(curve.clone()),
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            native_interval_curve(&curve.geometry, [0.0, std::f64::consts::TAU])
+        }
+        _ => Err(CodecError::NotImplemented(format!(
+            "source-less F3D loft requires a NURBS, circle, or ellipse curve {id}"
+        ))),
+    }
 }
 
 fn native_loft_subdata(
@@ -4419,7 +4422,7 @@ fn native_compound_loft_scale(
             native_vector(bytes, [direction.x, direction.y, direction.z]);
         }
     }
-    native_nurbs_curve(bytes, native_loft_curve(target, &scale.path)?)?;
+    native_nurbs_curve(bytes, &native_loft_curve(target, &scale.path)?)?;
     native_i64(
         bytes,
         i64::try_from(scale.auxiliaries.len()).map_err(|_| {
@@ -4427,7 +4430,7 @@ fn native_compound_loft_scale(
         })?,
     );
     for auxiliary in &scale.auxiliaries {
-        native_nurbs_curve(bytes, native_loft_curve(target, auxiliary)?)?;
+        native_nurbs_curve(bytes, &native_loft_curve(target, auxiliary)?)?;
     }
     for value in scale.tail {
         native_i64(bytes, value);
@@ -4532,7 +4535,7 @@ fn encode_native_compound_loft(
                     native_vector(bytes, [value.x, value.y, value.z]);
                 }
                 CompoundLoftDirection::Curve { curve } if *selector != 0 => {
-                    native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+                    native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
                 }
                 _ => {
                     return Err(CodecError::Malformed(
@@ -4649,7 +4652,7 @@ fn encode_native_scaled_compound_loft(
             bytes.push(native_bool(false));
             bytes.push(native_bool(*flag));
             native_enum(bytes, *singularity);
-            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
         }
         ScaledCompoundLoftBranch::Direct {
             flag,
@@ -4664,7 +4667,7 @@ fn encode_native_scaled_compound_loft(
                     native_vector(bytes, [value.x, value.y, value.z]);
                 }
                 CompoundLoftDirection::Curve { curve } if *selector != 0 => {
-                    native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+                    native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
                 }
                 _ => {
                     return Err(CodecError::Malformed(
@@ -4682,7 +4685,7 @@ fn encode_native_scaled_compound_loft(
         native_vector(bytes, [direction.x, direction.y, direction.z]);
     }
     native_enum(bytes, construction.tail_singularity);
-    native_nurbs_curve(bytes, native_loft_curve(target, &construction.tail_curve)?)?;
+    native_nurbs_curve(bytes, &native_loft_curve(target, &construction.tail_curve)?)?;
     bytes.push(0x10);
     Ok(())
 }
@@ -4994,7 +4997,7 @@ fn encode_native_skin_surface(
                 native_nurbs_curve(bytes, &curve)?;
                 native_skin_profile_data(bytes, target, &profile.data)?;
             }
-            native_nurbs_curve(bytes, native_loft_curve(target, path)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, path)?)?;
             for value in tail {
                 native_i64(bytes, *value);
             }
@@ -5006,10 +5009,10 @@ fn encode_native_skin_surface(
             secondary_curve,
             second_tail,
         } => {
-            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
             native_loft_subdata(bytes, subdata)?;
             native_i64(bytes, *first_tail);
-            native_nurbs_curve(bytes, native_loft_curve(target, secondary_curve)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, secondary_curve)?)?;
             native_i64(bytes, *second_tail);
         }
     }
@@ -5025,7 +5028,7 @@ fn encode_native_skin_surface(
     native_law_formula(bytes, target, &construction.formula)?;
     native_nurbs_curve(
         bytes,
-        native_loft_curve(target, &construction.parameter_curve)?,
+        &native_loft_curve(target, &construction.parameter_curve)?,
     )?;
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
@@ -5093,8 +5096,8 @@ fn encode_native_sweep_surface(
             parameters,
             formulas,
         } => {
-            native_nurbs_curve(bytes, native_loft_curve(target, profile)?)?;
-            native_nurbs_curve(bytes, native_loft_curve(target, spine)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, profile)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, spine)?)?;
             native_enum(bytes, *secondary_kind);
             for direction in directions {
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
@@ -5259,7 +5262,7 @@ fn encode_native_sweep_surface(
             native_embedded_surface(bytes, &support.geometry)?;
             bytes.push(native_bool(auxiliary_curve.is_some()));
             if let Some(curve) = auxiliary_curve {
-                native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+                native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
             }
             bytes.push(native_bool(*support_flag));
             if let Some(flag) = legacy_flag {
@@ -5855,7 +5858,7 @@ fn encode_native_variable_blend(
     }
     native_nurbs_curve(
         bytes,
-        native_loft_curve(target, &construction.secondary_curve)?,
+        &native_loft_curve(target, &construction.secondary_curve)?,
     )?;
     bytes.push(native_bool(construction.convexity != 0));
     bytes.push(native_bool(construction.render_blend != 0));
