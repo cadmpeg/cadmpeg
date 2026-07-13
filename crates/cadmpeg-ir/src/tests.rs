@@ -2154,7 +2154,7 @@ fn feature_operation_geometry_is_validated() {
         FeatureDefinition::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::Linear {
-                direction: Vector3::new(0.0, 0.0, 0.0),
+                direction: Some(Vector3::new(0.0, 0.0, 0.0)),
                 spacing: Length(-1.0),
                 count: 0,
             },

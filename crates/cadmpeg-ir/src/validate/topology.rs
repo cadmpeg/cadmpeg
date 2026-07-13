@@ -1484,7 +1484,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         spacing,
                         count,
                     } => {
-                        valid_feature_direction(*direction)
+                        direction.is_none_or(valid_feature_direction)
                             && positive_feature_length(*spacing)
                             && *count > 0
                     }

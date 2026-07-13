@@ -1000,8 +1000,9 @@ pub enum FlexMode {
 pub enum PatternKind {
     /// Repeats seeds evenly along a straight direction.
     Linear {
-        /// Repetition direction.
-        direction: Vector3,
+        /// Repetition direction, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
         /// Distance between consecutive instances.
         spacing: Length,
         /// Total number of instances, including the original.

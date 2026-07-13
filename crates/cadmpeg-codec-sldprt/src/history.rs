@@ -485,7 +485,13 @@ fn parse_native_parameter_literal(
                 || feature_family(feature, "Thickness")
         }
         "D2" if is_chamfer(feature) => parse_angle_rad(expression).is_none(),
-        "D3" if pattern_form(feature) == Some(PatternForm::CurveDriven) => true,
+        "D3" if matches!(
+            pattern_form(feature),
+            Some(PatternForm::Linear | PatternForm::CurveDriven)
+        ) =>
+        {
+            true
+        }
         _ => false,
     };
     if positional_length {
@@ -1655,7 +1661,7 @@ enum PatternForm {
 
 fn pattern_form(feature: &Feature) -> Option<PatternForm> {
     let parse = |form: &str| match form.to_ascii_lowercase().as_str() {
-        "linear" | "linearpattern" => Some(PatternForm::Linear),
+        "linear" | "linearpattern" | "matrizl" => Some(PatternForm::Linear),
         "circular" | "circularpattern" => Some(PatternForm::Circular),
         "crvpattern" | "curvepattern" | "curvedrivenpattern" => Some(PatternForm::CurveDriven),
         "mirror" => Some(PatternForm::Mirror),
@@ -1687,22 +1693,30 @@ fn project_pattern(
             .map(str::trim)
             .map(|source| by_source.get(source).cloned())
             .collect::<Option<Vec<_>>>()?,
-        None if form == PatternForm::CurveDriven => Vec::new(),
+        None if matches!(form, PatternForm::Linear | PatternForm::CurveDriven) => Vec::new(),
         None => return None,
     };
-    if seeds.is_empty() && form != PatternForm::CurveDriven {
+    if seeds.is_empty() && !matches!(form, PatternForm::Linear | PatternForm::CurveDriven) {
         return None;
     }
     let pattern = match form {
         PatternForm::Linear => PatternKind::Linear {
-            direction: parse_valid_direction(feature.properties.get("Direction")?)?,
-            spacing: Length(
+            direction: match feature.properties.get("Direction") {
+                Some(value) => Some(parse_valid_direction(value)?),
+                None => None,
+            },
+            spacing: Length(parse_positive_dimension_length_mm(
                 feature
                     .parameters
                     .get("Spacing")
-                    .and_then(|value| parse_positive_length_mm(value))?,
-            ),
-            count: parse_count(feature.parameters.get("Count")?)?,
+                    .or_else(|| feature.parameters.get("D3"))?,
+            )?),
+            count: parse_count(
+                feature
+                    .parameters
+                    .get("Count")
+                    .or_else(|| feature.parameters.get("D1"))?,
+            )?,
         },
         PatternForm::Circular => PatternKind::Circular {
             axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
@@ -2652,7 +2666,7 @@ fn parse_neutral_parameter_literal(
         "D3" => matches!(
             feature.definition,
             FeatureDefinition::Pattern {
-                pattern: PatternKind::CurveDriven { .. },
+                pattern: PatternKind::Linear { .. } | PatternKind::CurveDriven { .. },
                 ..
             }
         ),
@@ -5578,7 +5592,10 @@ pub fn sync_neutral_features(
                         ))
                     })?;
                 if seed_sources.is_empty()
-                    && (expected_form != PatternForm::CurveDriven || existing.is_none())
+                    && (!matches!(
+                        expected_form,
+                        PatternForm::Linear | PatternForm::CurveDriven
+                    ) || existing.is_none())
                 {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has no pattern seeds",
@@ -5599,11 +5616,50 @@ pub fn sync_neutral_features(
                         spacing,
                         count,
                     } => {
-                        require_direction(*direction, &feature.id, "pattern")?;
+                        match direction {
+                            Some(direction) => {
+                                require_direction(*direction, &feature.id, "pattern")?;
+                                properties.insert("Direction".into(), format_vector3(*direction));
+                            }
+                            None if existing.is_some() => {}
+                            None => {
+                                return Err(CodecError::NotImplemented(format!(
+                                    "SLDPRT feature {} has an unresolved pattern direction",
+                                    feature.id
+                                )));
+                            }
+                        }
                         require_count(*count, &feature.id)?;
-                        properties.insert("Direction".into(), format_vector3(*direction));
-                        parameters.insert("Spacing".into(), format_length_mm(spacing.0));
-                        parameters.insert("Count".into(), count.to_string());
+                        if !spacing.0.is_finite() || spacing.0 <= 0.0 {
+                            return Err(CodecError::Malformed(format!(
+                                "SLDPRT feature {} has invalid linear-pattern spacing",
+                                feature.id
+                            )));
+                        }
+                        let spacing_key = if parameters.contains_key("D3")
+                            && !parameters.contains_key("Spacing")
+                        {
+                            "D3"
+                        } else {
+                            "Spacing"
+                        };
+                        let count_key =
+                            if parameters.contains_key("D1") && !parameters.contains_key("Count") {
+                                "D1"
+                            } else {
+                                "Count"
+                            };
+                        parameters.insert(
+                            spacing_key.into(),
+                            format_length_like(
+                                spacing.0,
+                                existing
+                                    .as_deref()
+                                    .and_then(|record| record.parameters.get(spacing_key))
+                                    .map(String::as_str),
+                            ),
+                        );
+                        parameters.insert(count_key.into(), count.to_string());
                     }
                     PatternKind::Circular {
                         axis_origin,

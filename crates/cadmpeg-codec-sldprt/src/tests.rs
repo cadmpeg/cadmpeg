@@ -2036,7 +2036,7 @@ fn encoder_writes_source_less_native_features() {
     }
     let patterns = [
         PatternKind::Linear {
-            direction: Vector3::new(1.0, 0.0, 0.0),
+            direction: Some(Vector3::new(1.0, 0.0, 0.0)),
             spacing: Length(10.0),
             count: 3,
         },
@@ -9182,7 +9182,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
         FeatureDefinition::Pattern {
             seeds,
             pattern: PatternKind::Linear {
-                direction: Vector3 { x: 1.0, y: 0.0, z: 0.0 },
+                direction: Some(Vector3 { x: 1.0, y: 0.0, z: 0.0 }),
                 spacing: Length(10.0),
                 count: 3,
             },
@@ -9231,7 +9231,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
     else {
         panic!("linear pattern");
     };
-    *direction = Vector3::new(0.0, 1.0, 0.0);
+    *direction = Some(Vector3::new(0.0, 1.0, 0.0));
     *spacing = Length(12.0);
     *count = 5;
     let FeatureDefinition::Pattern {
@@ -9346,6 +9346,77 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
                 path: None,
                 spacing: Length(250.0),
                 count: 8,
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
+    use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue, PatternKind};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="MatrizL1" Type="MatrizL" id="132"><Dimension Name="D1">15</Dimension><Dimension Name="D3">2.54</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Pattern {
+            seeds,
+            pattern: PatternKind::Linear {
+                direction: None,
+                spacing: Length(2.54),
+                count: 15,
+            },
+        } if seeds.is_empty()
+    ));
+    assert_eq!(
+        decoded.ir.model.parameters[0].value,
+        Some(ParameterValue::Integer(15))
+    );
+    assert_eq!(
+        decoded.ir.model.parameters[1].value,
+        Some(ParameterValue::Length(Length(2.54)))
+    );
+
+    let FeatureDefinition::Pattern {
+        pattern: PatternKind::Linear { spacing, count, .. },
+        ..
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("localized linear pattern");
+    };
+    *spacing = Length(3.5);
+    *count = 12;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.kind, "MatrizL");
+    assert_eq!(native.parameters["D1"], "12");
+    assert_eq!(native.parameters["D3"], "3.5");
+    assert!(!native.parameters.contains_key("Count"));
+    assert!(!native.parameters.contains_key("Spacing"));
+    assert!(!native.properties.contains_key("Seeds"));
+    assert!(!native.properties.contains_key("Direction"));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Pattern {
+            pattern: PatternKind::Linear {
+                direction: None,
+                spacing: Length(3.5),
+                count: 12,
             },
             ..
         }
