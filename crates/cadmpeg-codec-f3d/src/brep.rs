@@ -377,6 +377,14 @@ fn is_vertex_record(record: &Record) -> bool {
     matches!(record.head.as_str(), "vertex" | "tvertex")
 }
 
+fn is_edge_record(record: &Record) -> bool {
+    matches!(record.head.as_str(), "edge" | "tedge")
+}
+
+fn is_coedge_record(record: &Record) -> bool {
+    matches!(record.head.as_str(), "coedge" | "tcoedge")
+}
+
 /// The millimeter-space position of an edge-record vertex reference.
 fn vertex_position(by_index: &HashMap<i64, &Record>, vertex: i64) -> Option<Point3> {
     let vertex_record = by_index.get(&vertex).filter(|r| is_vertex_record(r))?;
@@ -687,7 +695,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         break;
                     }
                     let Some(ce) = by_index.get(&ci) else { break };
-                    if ce.head != "coedge" {
+                    if !is_coedge_record(ce) {
                         break;
                     }
                     kept_coedges.insert(ci);
@@ -750,7 +758,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             // An edge is shared by two coedges; process (and
                             // count its curve loss) only the first time it is
                             // reached so shared edges are not double-counted.
-                            if edge.head == "edge" && kept_edges.insert(ei) {
+                            if is_edge_record(edge) && kept_edges.insert(ei) {
                                 for slot in [3usize, 5] {
                                     if let Some(vi) = edge.ref_at(slot) {
                                         if let Some(v) = by_index.get(&vi) {
@@ -851,7 +859,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 {
                     let Some(coedge) = by_index
                         .get(&coedge_index)
-                        .filter(|record| record.head == "coedge")
+                        .filter(|record| is_coedge_record(record))
                     else {
                         break;
                     };
@@ -861,7 +869,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             edges.push(edge_index);
                         }
                         if let Some(edge) = by_index.get(&edge_index) {
-                            if edge.head == "edge" && kept_edges.insert(edge_index) {
+                            if is_edge_record(edge) && kept_edges.insert(edge_index) {
                                 for slot in [3usize, 5] {
                                     if let Some(vertex_index) = edge.ref_at(slot) {
                                         if let Some(vertex) = by_index.get(&vertex_index) {
@@ -947,7 +955,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     let mut reversed_curve_refs: HashSet<i64> = HashSet::new();
     let mut forward_curve_refs: HashSet<i64> = HashSet::new();
     for r in records {
-        if r.head != "edge" || !kept_edges.contains(&(r.index as i64)) {
+        if !is_edge_record(r) || !kept_edges.contains(&(r.index as i64)) {
             continue;
         }
         let Some(curve) = r.ref_at(8).filter(|c| kept_curves.contains(c)) else {
@@ -3734,7 +3742,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
 
     for r in records {
         let i = r.index as i64;
-        if r.head == "edge" && kept_edges.contains(&i) {
+        if is_edge_record(r) && kept_edges.contains(&i) {
             let (Some(start), Some(end)) = (r.ref_at(3), r.ref_at(5)) else {
                 continue;
             };
@@ -3806,7 +3814,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
 
     for r in records {
         let i = r.index as i64;
-        if r.head == "coedge" && kept_coedges.contains(&i) {
+        if is_coedge_record(r) && kept_coedges.contains(&i) {
             let (Some(next), Some(prev), Some(edge), Some(owner)) =
                 (r.ref_at(3), r.ref_at(4), r.ref_at(6), r.ref_at(8))
             else {
@@ -4009,10 +4017,12 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 Some(AttributeTarget::Body(BodyId(id(index))))
             }
             "face" if kept_faces.contains(&index) => Some(AttributeTarget::Face(FaceId(id(index)))),
-            "coedge" if kept_coedges.contains(&index) => {
+            "coedge" | "tcoedge" if kept_coedges.contains(&index) => {
                 Some(AttributeTarget::Coedge(CoedgeId(id(index))))
             }
-            "edge" if kept_edges.contains(&index) => Some(AttributeTarget::Edge(EdgeId(id(index)))),
+            "edge" | "tedge" if kept_edges.contains(&index) => {
+                Some(AttributeTarget::Edge(EdgeId(id(index))))
+            }
             "vertex" if kept_vertices.contains(&index) => {
                 Some(AttributeTarget::Vertex(VertexId(id(index))))
             }
@@ -4043,10 +4053,10 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             "face" if kept_faces.contains(&owner_index) => {
                 Some(AttributeTarget::Face(FaceId(id(owner_index))))
             }
-            "coedge" if kept_coedges.contains(&owner_index) => {
+            "coedge" | "tcoedge" if kept_coedges.contains(&owner_index) => {
                 Some(AttributeTarget::Coedge(CoedgeId(id(owner_index))))
             }
-            "edge" if kept_edges.contains(&owner_index) => {
+            "edge" | "tedge" if kept_edges.contains(&owner_index) => {
                 Some(AttributeTarget::Edge(EdgeId(id(owner_index))))
             }
             "vertex" if kept_vertices.contains(&owner_index) => {
@@ -4180,7 +4190,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 }
                 _ => {}
             }
-            if record.head == "edge" {
+            if is_edge_record(record) {
                 if let Some(curve) = record
                     .ref_at(8)
                     .and_then(|reference| by_index.get(&reference))

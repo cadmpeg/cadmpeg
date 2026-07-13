@@ -397,6 +397,38 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
     out
 }
 
+fn replace_generated_record_head(bytes: &mut Vec<u8>, from: &str, to: &str) {
+    let mut needle = vec![0x0d, from.len() as u8];
+    needle.extend_from_slice(from.as_bytes());
+    let mut replacement = vec![0x0d, to.len() as u8];
+    replacement.extend_from_slice(to.as_bytes());
+    let offsets = bytes
+        .windows(needle.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == needle).then_some(offset))
+        .collect::<Vec<_>>();
+    for offset in offsets.into_iter().rev() {
+        bytes.splice(offset..offset + needle.len(), replacement.iter().copied());
+    }
+}
+
+#[test]
+fn decode_transfers_generated_tolerant_edges_and_coedges() {
+    let mut smbh = synthetic_geometry_smbh();
+    replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
+    replace_generated_record_head(&mut smbh, "edge", "tedge");
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("generated tolerant topology must decode");
+
+    assert_eq!(decoded.ir.model.coedges.len(), 3);
+    assert_eq!(decoded.ir.model.edges.len(), 3);
+    assert_eq!(decoded.ir.model.shells[0].faces.len(), 1);
+}
+
 fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let name_tag = bytes
