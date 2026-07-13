@@ -616,6 +616,17 @@ fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
     synthetic_geometry_with_pcurve_block_smbh(generated_pcurve_block())
 }
 
+fn synthetic_geometry_with_short_pcurve_tail_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_pcurve_smbh();
+    let marker = [0x10, 0x0a, 0x0b, 0x0a, 0x0b, 0x06];
+    let tail = bytes
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("generated inline pcurve tail");
+    bytes.remove(tail + 1);
+    bytes
+}
+
 fn synthetic_geometry_with_rational_pcurve_smbh() -> Vec<u8> {
     synthetic_geometry_with_pcurve_block_smbh(generated_rational_pcurve_block())
 }
@@ -15313,6 +15324,32 @@ fn decode_attaches_generated_pcurve_to_its_coedge() {
     );
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
+}
+
+#[test]
+fn generated_inline_pcurve_tail_requires_four_adjacent_booleans() {
+    let decode = |smbh: Vec<u8>| {
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("generated inline pcurve decode")
+            .ir
+            .model
+            .pcurves
+            .into_iter()
+            .next()
+            .expect("generated inline pcurve")
+    };
+
+    let complete = decode(synthetic_geometry_with_pcurve_smbh());
+    assert_eq!(complete.native_tail_flags, Some([true, false, true, false]));
+    assert_eq!(complete.parameter_range, Some([-1.0, 2.0]));
+
+    let short = decode(synthetic_geometry_with_short_pcurve_tail_smbh());
+    assert_eq!(short.native_tail_flags, None);
+    assert_eq!(short.parameter_range, Some([-1.0, 2.0]));
 }
 
 #[test]

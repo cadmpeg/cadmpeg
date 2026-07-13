@@ -566,6 +566,31 @@ fn double_at(rec: &Record, i: usize) -> Option<f64> {
     }
 }
 
+fn pcurve_parameter_range(rec: &Record) -> Option<[f64; 2]> {
+    match rec.tokens.as_slice() {
+        [.., Token::Double(start), Token::Double(end)] => Some([*start, *end]),
+        _ => None,
+    }
+}
+
+fn pcurve_inline_tail_flags(rec: &Record) -> Option<[bool; 4]> {
+    if !matches!(rec.chunk(3), Some(Token::Long(0))) {
+        return None;
+    }
+    let end = rec.tokens.len().checked_sub(2)?;
+    let flags = rec.tokens.get(end.checked_sub(4)?..end)?;
+    flags
+        .iter()
+        .map(|token| match token {
+            Token::True => Some(true),
+            Token::False => Some(false),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()
+}
+
 /// Decode a framed active slice into the IR B-rep graph.
 ///
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
@@ -3665,40 +3690,8 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         }
                         _ => None,
                     },
-                    native_tail_flags: {
-                        let flags = r
-                            .tokens
-                            .iter()
-                            .filter_map(|token| match token {
-                                Token::True => Some(true),
-                                Token::False => Some(false),
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>();
-                        matches!(r.chunk(4), Some(Token::True | Token::False))
-                            .then(|| flags.get(flags.len().saturating_sub(4)..))
-                            .flatten()
-                            .and_then(|flags| flags.try_into().ok())
-                    },
-                    parameter_range: if matches!(
-                        r.chunk(4),
-                        Some(Token::True | Token::False | Token::Ref(_))
-                    ) {
-                        let values = r
-                            .tokens
-                            .iter()
-                            .filter_map(|token| match token {
-                                Token::Double(value) => Some(*value),
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>();
-                        values
-                            .get(values.len().saturating_sub(2)..)
-                            .filter(|values| values.len() == 2)
-                            .map(|values| [values[0], values[1]])
-                    } else {
-                        None
-                    },
+                    native_tail_flags: pcurve_inline_tail_flags(r),
+                    parameter_range: pcurve_parameter_range(r),
                     fit_tolerance: matches!(r.chunk(4), Some(Token::True | Token::False))
                         .then(|| nurbs::decode_pcurve_fit_tolerance(record_slice(r, bytes)))
                         .flatten(),
