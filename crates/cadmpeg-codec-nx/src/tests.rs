@@ -220,6 +220,7 @@ fn topology_partition_stream() -> Vec<u8> {
     put_ref(&mut fin, 8, 7); // next (one-fin ring)
     put_ref(&mut fin, 10, 7); // previous
     put_ref(&mut fin, 12, 10); // vertex
+    put_ref(&mut fin, 14, 1); // no partner fin
     put_ref(&mut fin, 16, 8); // edge
     put_ref(&mut fin, 18, 9); // curve
     fin[22] = b'+';
@@ -299,6 +300,16 @@ fn topology_rejects_nonreciprocal_fin_ring() {
     assert!(result.ir.model.loops.is_empty());
     assert!(result.ir.model.coedges.is_empty());
     assert!(result.ir.model.edges.is_empty());
+
+    let mut broken_partner = topology_partition_stream();
+    let fin = broken_partner
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut broken_partner, fin + 14, 99);
+    assert!(crate::topology::Graph::parse(&broken_partner)
+        .face_loop_rings(4)
+        .is_none());
 }
 
 #[test]
@@ -552,6 +563,7 @@ fn shared_region_shells_partition_stream() -> Vec<u8> {
     put_ref(&mut fin, 8, 16);
     put_ref(&mut fin, 10, 16);
     put_ref(&mut fin, 12, 10);
+    put_ref(&mut fin, 14, 1);
     put_ref(&mut fin, 16, 17);
     put_ref(&mut fin, 18, 9);
     fin[22] = b'+';

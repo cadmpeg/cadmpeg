@@ -636,6 +636,12 @@ impl Graph {
             {
                 return None;
             }
+            if fields.other != 1 {
+                let other = self.get(17, fields.other)?.fin_fields()?;
+                if other.other != current || other.edge != fields.edge {
+                    return None;
+                }
+            }
             if let Some(previous) = previous {
                 if fields.backward != previous {
                     return None;
