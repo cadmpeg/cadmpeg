@@ -1542,9 +1542,9 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             })
             .flat_map(|record| &record.ids)
             .filter(|dependency| {
-                scan.feature_operations[..operation_index]
-                    .iter()
-                    .any(|candidate| candidate.feature_id == **dependency)
+                ir.model.features.iter().any(|feature| {
+                    feature.id.as_str() == format!("creo:model:feature#{dependency}")
+                })
             })
             .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
             .fold(Vec::new(), |mut dependencies, dependency| {
