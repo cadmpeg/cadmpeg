@@ -130,6 +130,52 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .collect::<HashSet<_>>();
     let mut parameter_indices = HashSet::new();
     let mut parameter_ordinals = HashSet::new();
+    let parameters_by_index = native
+        .design_parameters
+        .iter()
+        .map(|parameter| (parameter.record_index, parameter))
+        .collect::<std::collections::HashMap<_, _>>();
+    let owners_by_index = native
+        .design_parameter_owners
+        .iter()
+        .map(|owner| (owner.record_index, owner))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut owner_indices = HashSet::new();
+    let mut owner_ordinals = HashSet::new();
+    let mut owner_local_ordinals = HashSet::new();
+    for owner in &native.design_parameter_owners {
+        let unique_index = owner_indices.insert(owner.record_index);
+        let unique_ordinal = owner_ordinals.insert(owner.owned_ordinal);
+        let unique_local_ordinal =
+            owner_local_ordinals.insert((owner.scope_record_index, owner.local_ordinal));
+        let parameter = parameters_by_index.get(&owner.parameter_record_index);
+        let valid = owner.class_tag.len() == 3
+            && owner.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && owner.variant <= 1
+            && owner.evaluated_value.is_finite()
+            && owner.evaluated_value_offset == owner.byte_offset + 40
+            && owner.parameter_record_index == owner.record_index.saturating_add(1)
+            && owner.companion_record_index == owner.record_index.saturating_add(2)
+            && record_indices.contains(&owner.scope_record_index)
+            && record_indices.contains(&owner.parameter_record_index)
+            && record_indices.contains(&owner.companion_record_index)
+            && parameter.is_some_and(|parameter| {
+                parameter.owner_record_index == Some(owner.record_index)
+                    && parameter.evaluated_value.to_bits() == owner.evaluated_value.to_bits()
+            })
+            && unique_index
+            && unique_ordinal
+            && unique_local_ordinal;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design parameter owner has an invalid frame or indexed link"
+                    .into(),
+                entity: Some(owner.id.clone()),
+            });
+        }
+    }
     for parameter in &native.design_parameters {
         let unique_index = parameter_indices.insert(parameter.record_index);
         let unique_ordinal = parameter_ordinals.insert(parameter.source_ordinal);
@@ -145,7 +191,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             records::DesignParameterKind::Dimension | records::DesignParameterKind::Feature => {
                 parameter
                     .owner_record_index
-                    .is_some_and(|owner| record_indices.contains(&owner))
+                    .is_some_and(|owner| owners_by_index.contains_key(&owner))
             }
         };
         let offsets_ordered = parameter.byte_offset < parameter.expression_offset

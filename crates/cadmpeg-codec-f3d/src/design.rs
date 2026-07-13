@@ -10,9 +10,9 @@ use std::collections::{HashMap, HashSet};
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
     DesignConfigurationKind, DesignEntityHeader, DesignObject, DesignObjectKind, DesignParameter,
-    DesignParameterKind, DesignRecordHeader, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignParameterKind, DesignParameterOwner, DesignRecordHeader, LostEdgeReference,
+    PersistentReference, PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry,
+    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -429,6 +429,104 @@ fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
         name_offset: (name_at + 4) as u64,
         evaluated_value,
         evaluated_value_offset: name_end as u64,
+    })
+}
+
+/// Decode the fixed-width owner frame for every owned Design parameter.
+pub fn decode_parameter_owners(
+    scan: &ContainerScan,
+    parameters: &[DesignParameter],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<DesignParameterOwner>, CodecError> {
+    let headers = headers
+        .iter()
+        .map(|header| (header.record_index, header))
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for parameter in parameters {
+        let Some(owner_index) = parameter.owner_record_index else {
+            continue;
+        };
+        let Some(header) = headers.get(&owner_index) else {
+            continue;
+        };
+        let entry = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && parameter.id.starts_with(&format!("f3d:{}:", entry.name))
+        });
+        let Some(entry) = entry else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let at = usize::try_from(header.byte_offset).ok();
+        let frame = at.and_then(|at| at.checked_add(104).and_then(|end| bytes.get(at..end)));
+        let Some(mut owner) = frame.and_then(parse_parameter_owner) else {
+            continue;
+        };
+        owner.id = format!(
+            "f3d:{}:design-parameter-owner#{}",
+            entry.name, header.byte_offset
+        );
+        owner.byte_offset = header.byte_offset;
+        owner.evaluated_value_offset += header.byte_offset;
+        out.push(owner);
+    }
+    out.sort_by_key(|owner| owner.record_index);
+    Ok(out)
+}
+
+fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
+    let (class_tag, after_tag) = lp_ascii(frame, 0)?;
+    if frame.len() != 104
+        || after_tag != 7
+        || class_tag.len() != 3
+        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || frame.get(11..19) != Some(&[0; 8])
+        || frame.get(19..24) != Some(&[1, 1, 0, 0, 0])
+        || frame.get(24) != Some(&1)
+        || frame.get(29..35) != Some(&[0; 6])
+        || frame.get(39) != Some(&0)
+        || frame.get(48) != Some(&1)
+        || frame.get(53..59) != Some(&[0; 6])
+        || frame.get(63..67) != Some(&[0; 4])
+        || frame.get(67) != Some(&1)
+        || frame.get(72..78) != Some(&[0; 6])
+        || frame.get(78) != Some(&1)
+        || frame.get(80) != Some(&0)
+        || frame.get(81) != Some(&1)
+        || frame.get(86..93) != Some(&[0; 7])
+        || frame.get(93) != Some(&1)
+        || frame.get(98..104) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let record_index = u32_at(frame, 7)?;
+    let scope_record_index = u32_at(frame, 25)?;
+    if u32_at(frame, 68)? != scope_record_index
+        || u32_at(frame, 94)? != scope_record_index
+        || u32_at(frame, 49)? != record_index.checked_add(1)?
+        || u32_at(frame, 82)? != record_index.checked_add(2)?
+    {
+        return None;
+    }
+    let evaluated_value = f64_at(frame, 40)?;
+    if !evaluated_value.is_finite() {
+        return None;
+    }
+    Some(DesignParameterOwner {
+        id: String::new(),
+        byte_offset: 0,
+        class_tag,
+        record_index,
+        scope_record_index,
+        local_ordinal: u32_at(frame, 35)?,
+        evaluated_value,
+        evaluated_value_offset: 40,
+        parameter_record_index: u32_at(frame, 49)?,
+        owned_ordinal: u32_at(frame, 59)?,
+        variant: *frame.get(79)?,
+        companion_record_index: u32_at(frame, 82)?,
     })
 }
 
@@ -2010,8 +2108,8 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod relation_tests {
     use super::{
-        next_indexed_record_offset, parse_design_parameter, parse_sketch_relation,
-        project_user_parameters,
+        next_indexed_record_offset, parse_design_parameter, parse_parameter_owner,
+        parse_sketch_relation, project_user_parameters,
     };
     use crate::records::DesignParameterKind;
     use cadmpeg_ir::features::{Length, ParameterValue};
@@ -2118,6 +2216,48 @@ mod relation_tests {
         );
         *record.last_mut().unwrap() = 1;
         assert!(parse_design_parameter(&record).is_none());
+    }
+
+    fn parameter_owner_frame() -> Vec<u8> {
+        let mut frame = vec![0; 104];
+        frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+        frame[4..7].copy_from_slice(b"292");
+        frame[7..11].copy_from_slice(&44u32.to_le_bytes());
+        frame[19] = 1;
+        frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+        frame[24] = 1;
+        frame[25..29].copy_from_slice(&12u32.to_le_bytes());
+        frame[35..39].copy_from_slice(&2u32.to_le_bytes());
+        frame[40..48].copy_from_slice(&6.0f64.to_le_bytes());
+        frame[48] = 1;
+        frame[49..53].copy_from_slice(&45u32.to_le_bytes());
+        frame[59..63].copy_from_slice(&9u32.to_le_bytes());
+        frame[67] = 1;
+        frame[68..72].copy_from_slice(&12u32.to_le_bytes());
+        frame[78] = 1;
+        frame[79] = 1;
+        frame[81] = 1;
+        frame[82..86].copy_from_slice(&46u32.to_le_bytes());
+        frame[93] = 1;
+        frame[94..98].copy_from_slice(&12u32.to_le_bytes());
+        frame
+    }
+
+    #[test]
+    fn parameter_owner_frame_has_repeated_scope_and_consecutive_records() {
+        let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+        assert_eq!(parsed.record_index, 44);
+        assert_eq!(parsed.scope_record_index, 12);
+        assert_eq!(parsed.local_ordinal, 2);
+        assert_eq!(parsed.evaluated_value, 6.0);
+        assert_eq!(parsed.parameter_record_index, 45);
+        assert_eq!(parsed.owned_ordinal, 9);
+        assert_eq!(parsed.variant, 1);
+        assert_eq!(parsed.companion_record_index, 46);
+
+        let mut malformed = parameter_owner_frame();
+        malformed[94..98].copy_from_slice(&13u32.to_le_bytes());
+        assert!(parse_parameter_owner(&malformed).is_none());
     }
 
     #[test]

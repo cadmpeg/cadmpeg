@@ -310,6 +310,35 @@ pub struct DesignParameter {
     pub evaluated_value_offset: u64,
 }
 
+/// Fixed-width indexed record that owns one Design parameter.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignParameterOwner {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Byte offset of the indexed record header in its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: String,
+    /// Source indexed-record identity.
+    pub record_index: u32,
+    /// Feature or sketch record that scopes this parameter.
+    pub scope_record_index: u32,
+    /// Position among parameters in the same scope.
+    pub local_ordinal: u32,
+    /// Evaluated scalar duplicated from the parameter record.
+    pub evaluated_value: f64,
+    /// Byte offset of `evaluated_value`.
+    pub evaluated_value_offset: u64,
+    /// Indexed parameter record owned by this frame.
+    pub parameter_record_index: u32,
+    /// Position among all feature- and dimension-owned parameters.
+    pub owned_ordinal: u32,
+    /// Source owner-frame variant flag.
+    pub variant: u8,
+    /// Paired indexed record following the parameter record.
+    pub companion_record_index: u32,
+}
+
 /// Persistent-reference channel in the Design construction stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

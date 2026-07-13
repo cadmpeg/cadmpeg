@@ -301,6 +301,9 @@ fn populate_annotations(
         for entity in &native.design_parameters {
             note(&entity.id, "design_parameter");
         }
+        for entity in &native.design_parameter_owners {
+            note(&entity.id, "design_parameter_owner");
+        }
         for entity in &native.design_entity_headers {
             note(&entity.id, "design_entity_header");
         }
@@ -418,6 +421,35 @@ fn extend_related_design_records(
                 .iter()
                 .filter_map(|parameter| parameter.owner_record_index),
         )
+        .collect::<Vec<_>>();
+    let existing = native
+        .design_record_headers
+        .iter()
+        .map(|record| record.record_index)
+        .collect::<std::collections::HashSet<_>>();
+    native.design_record_headers.extend(
+        crate::design::decode_related_record_headers(reader, scan, &indices)?
+            .into_iter()
+            .filter(|record| !existing.contains(&record.record_index)),
+    );
+    native
+        .design_record_headers
+        .sort_by_key(|record| record.record_index);
+    native.design_parameter_owners = crate::design::decode_parameter_owners(
+        scan,
+        &native.design_parameters,
+        &native.design_record_headers,
+    )?;
+    let indices = native
+        .design_parameter_owners
+        .iter()
+        .flat_map(|owner| {
+            [
+                owner.scope_record_index,
+                owner.parameter_record_index,
+                owner.companion_record_index,
+            ]
+        })
         .collect::<Vec<_>>();
     let existing = native
         .design_record_headers
