@@ -10,6 +10,7 @@ use crate::settings::{plane, utf16, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
 
 const SETTINGS: u32 = 0x1000_0015;
+const NAMED_CPLANES: u32 = 0x2000_8035;
 const NAMED_VIEWS: u32 = 0x2000_8036;
 const ACTIVE_VIEWS: u32 = 0x2000_8037;
 const VIEW_RECORD: u32 = 0x2000_803b;
@@ -54,9 +55,7 @@ struct ViewRecord {
     page_height_mm: Option<f64>,
     display_mode_uuid: Option<String>,
     attributes_version: Option<[u8; 2]>,
-    attributes_extension_offset: Option<u64>,
-    attributes_extension_byte_len: Option<u64>,
-    attributes_extension_sha256: Option<String>,
+    attributes: Option<ViewAttributes>,
     construction_plane: Option<ConstructionPlane>,
     viewport: Option<Viewport>,
     children: Vec<ViewChild>,
@@ -75,6 +74,14 @@ struct ConstructionPlane {
     thick_line_frequency: i32,
     name: String,
     depth_buffer: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct NamedConstructionPlane {
+    id: String,
+    source_offset: u64,
+    list_index: usize,
+    value: ConstructionPlane,
 }
 
 #[derive(Debug, Serialize)]
@@ -107,13 +114,43 @@ struct Viewport {
     view_scale: Option<[f64; 3]>,
 }
 
+#[derive(Debug, Serialize)]
+struct PageSettings {
+    page_number: i32,
+    width_mm: f64,
+    height_mm: f64,
+    margins_mm: [f64; 4],
+    printer_name: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ClippingPlane {
+    equation_mm: [f64; 4],
+    plane_uuid: Option<String>,
+    enabled: bool,
+    depth_mm: Option<f64>,
+    depth_enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
 struct ViewAttributes {
     view_type: i32,
     width: f64,
     height: f64,
     display: Option<String>,
     version: [u8; 2],
-    suffix: usize,
+    page_settings: Option<PageSettings>,
+    projection_locked: bool,
+    clipping_planes: Vec<ClippingPlane>,
+    named_view_uuid: Option<String>,
+    show_construction_z_axis: bool,
+    focal_blur_distance_mm: Option<f64>,
+    focal_blur_aperture: Option<f64>,
+    focal_blur_jitter: Option<f64>,
+    focal_blur_sample_count: Option<i32>,
+    focal_blur_mode: Option<i32>,
+    rendering_size_pixels: Option<[i32; 2]>,
+    section_behavior: Option<u8>,
 }
 
 fn structural(offset: usize, message: impl Into<String>) -> FramingError {
@@ -320,6 +357,8 @@ fn child_kind(typecode: u32) -> &'static str {
 fn parse_attributes(
     data: &[u8],
     body: std::ops::Range<usize>,
+    archive: ArchiveVersion,
+    scale: f64,
 ) -> Result<ViewAttributes, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
@@ -354,14 +393,162 @@ fn parse_attributes(
     } else {
         None
     };
-    Ok(ViewAttributes {
+    let mut result = ViewAttributes {
         view_type,
         width,
         height,
         display,
         version,
-        suffix: reader.position(),
-    })
+        page_settings: None,
+        projection_locked: false,
+        clipping_planes: Vec::new(),
+        named_view_uuid: None,
+        show_construction_z_axis: false,
+        focal_blur_distance_mm: None,
+        focal_blur_aperture: None,
+        focal_blur_jitter: None,
+        focal_blur_sample_count: None,
+        focal_blur_mode: None,
+        rendering_size_pixels: None,
+        section_behavior: None,
+    };
+    if version[1] >= 2 {
+        let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+        if chunk.typecode != 0x4000_8000 || chunk.short {
+            return Err(structural(
+                reader.position(),
+                "page-settings wrapper is invalid",
+            ));
+        }
+        let mut page = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+        if (page.i32()?, page.i32()?) != (1, 0) {
+            return Err(structural(
+                page.position(),
+                "page-settings version is unsupported",
+            ));
+        }
+        let page_number = page.i32()?;
+        let width_mm = page.f64()?;
+        let height_mm = page.f64()?;
+        let margins_mm = [page.f64()?, page.f64()?, page.f64()?, page.f64()?];
+        if ![width_mm, height_mm]
+            .into_iter()
+            .chain(margins_mm)
+            .all(f64::is_finite)
+        {
+            return Err(structural(page.position(), "page setting is not finite"));
+        }
+        let printer_name = utf16(&mut page)?;
+        if page.remaining() != 0 {
+            return Err(structural(
+                page.position(),
+                "page settings have trailing bytes",
+            ));
+        }
+        reader.skip(chunk.next_offset - reader.position())?;
+        result.page_settings = Some(PageSettings {
+            page_number,
+            width_mm,
+            height_mm,
+            margins_mm,
+            printer_name,
+        });
+    }
+    if version[1] >= 3 {
+        result.projection_locked = reader.bool()?;
+    }
+    if version[1] >= 4 {
+        let count_offset = reader.position();
+        let count = usize::try_from(reader.i32()?)
+            .ok()
+            .filter(|count| *count <= 1 << 16)
+            .ok_or_else(|| structural(count_offset, "clipping-plane count is invalid"))?;
+        for _ in 0..count {
+            let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+            if chunk.typecode != 0x4000_8000 || chunk.short {
+                return Err(structural(
+                    reader.position(),
+                    "clipping-plane wrapper is invalid",
+                ));
+            }
+            let mut plane = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+            let (major, minor) = (plane.i32()?, plane.i32()?);
+            if major != 1 || !(0..=3).contains(&minor) {
+                return Err(structural(
+                    plane.position(),
+                    "clipping-plane version is unsupported",
+                ));
+            }
+            let mut equation = [plane.f64()?, plane.f64()?, plane.f64()?, plane.f64()?];
+            if !equation.iter().all(|value| value.is_finite()) {
+                return Err(structural(
+                    plane.position() - 32,
+                    "clipping equation is invalid",
+                ));
+            }
+            equation[3] = scaled_coordinate(equation[3], scale)
+                .ok_or_else(|| structural(plane.position() - 8, "clipping equation is invalid"))?;
+            let id = uuid(&mut plane)?;
+            let enabled = plane.bool()?;
+            let depth =
+                if minor >= 1 {
+                    Some(scaled_coordinate(plane.f64()?, scale).ok_or_else(|| {
+                        structural(plane.position() - 8, "clipping depth is invalid")
+                    })?)
+                } else {
+                    None
+                };
+            let depth_enabled = if minor >= 3 {
+                plane.bool()?
+            } else {
+                depth.is_some_and(|value| value >= 0.0)
+            };
+            if plane.remaining() != 0 {
+                return Err(structural(
+                    plane.position(),
+                    "clipping plane has trailing bytes",
+                ));
+            }
+            result.clipping_planes.push(ClippingPlane {
+                equation_mm: equation,
+                plane_uuid: (!id.is_nil()).then(|| id.to_string()),
+                enabled,
+                depth_mm: depth,
+                depth_enabled,
+            });
+            reader.skip(chunk.next_offset - reader.position())?;
+        }
+    }
+    if version[1] >= 5 {
+        let id = uuid(&mut reader)?;
+        result.named_view_uuid = (!id.is_nil()).then(|| id.to_string());
+    }
+    if version[1] >= 6 {
+        result.show_construction_z_axis = reader.bool()?;
+    }
+    if version[1] >= 7 {
+        result.focal_blur_distance_mm = Some(
+            scaled_coordinate(reader.f64()?, scale)
+                .ok_or_else(|| structural(reader.position() - 8, "focal distance is invalid"))?,
+        );
+        result.focal_blur_aperture = Some(reader.f64()?);
+        result.focal_blur_jitter = Some(reader.f64()?);
+        result.focal_blur_sample_count = Some(reader.i32()?);
+        result.focal_blur_mode = Some(reader.i32()?);
+    }
+    if version[1] >= 8 {
+        result.rendering_size_pixels = Some([reader.i32()?, reader.i32()?]);
+    }
+    if version[1] >= 9 {
+        result.section_behavior = Some(reader.u8()?);
+    }
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "view attributes have trailing bytes",
+        ));
+    }
+    Ok(result)
 }
 
 fn parse_view(
@@ -384,9 +571,7 @@ fn parse_view(
     let mut page_height = None;
     let mut display_mode_uuid = None;
     let mut attributes_version = None;
-    let mut extension_offset = None;
-    let mut extension_len = None;
-    let mut extension_sha = None;
+    let mut attributes_detail = None;
     let mut construction_plane = None;
     let mut viewport = None;
     let mut children = Vec::new();
@@ -432,19 +617,13 @@ fn parse_view(
             VIEW_SHOW_WORLD_AXES if child.short => show_world_axes = child.value != 0,
             VIEW_V3_DISPLAY_MODE if child.short => legacy_display_mode = Some(child.value),
             VIEW_ATTRIBUTES if !child.short => {
-                let attributes = parse_attributes(data, child.body.clone())?;
+                let attributes = parse_attributes(data, child.body.clone(), archive, scale)?;
                 view_type = Some(attributes.view_type);
                 page_width = Some(attributes.width);
                 page_height = Some(attributes.height);
-                display_mode_uuid = attributes.display;
+                display_mode_uuid.clone_from(&attributes.display);
                 attributes_version = Some(attributes.version);
-                if attributes.suffix < child.body.end {
-                    extension_offset = Some(attributes.suffix as u64);
-                    extension_len = Some((child.body.end - attributes.suffix) as u64);
-                    extension_sha = Some(cadmpeg_ir::hash::sha256_hex(
-                        &data[attributes.suffix..child.body.end],
-                    ));
-                }
+                attributes_detail = Some(attributes);
             }
             TCODE_ENDOFTABLE => {
                 if !child.short || child.value != 0 || child.next_offset != record.body.end {
@@ -478,9 +657,7 @@ fn parse_view(
         page_height_mm: page_height,
         display_mode_uuid,
         attributes_version,
-        attributes_extension_offset: extension_offset,
-        attributes_extension_byte_len: extension_len,
-        attributes_extension_sha256: extension_sha,
+        attributes: attributes_detail,
         construction_plane,
         viewport,
         children,
@@ -525,6 +702,44 @@ fn parse_list(
     .unwrap_or_default()
 }
 
+fn parse_named_cplanes(
+    data: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+    scale: f64,
+) -> Result<Vec<NamedConstructionPlane>, FramingError> {
+    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let count_offset = reader.position();
+    let count = usize::try_from(reader.i32()?)
+        .ok()
+        .filter(|count| *count <= 1 << 16)
+        .ok_or_else(|| structural(count_offset, "named construction-plane count is invalid"))?;
+    let mut values = Vec::with_capacity(count);
+    for index in 0..count {
+        let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+        if chunk.typecode != VIEW_CPLANE || chunk.short {
+            return Err(structural(
+                reader.position(),
+                "named construction-plane record is invalid",
+            ));
+        }
+        values.push(NamedConstructionPlane {
+            id: format!("rhino:document:construction_plane#{index:04}"),
+            source_offset: chunk.header_start as u64,
+            list_index: index,
+            value: parse_cplane(data, chunk.body.clone(), scale)?,
+        });
+        reader.skip(chunk.next_offset - reader.position())?;
+    }
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "named construction-plane list has trailing bytes",
+        ));
+    }
+    Ok(values)
+}
+
 /// Installs saved and active view records with complete child accounting.
 pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let scale = scan
@@ -535,11 +750,17 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
         .and_then(|value| value.millimeters_per_unit)
         .unwrap_or(1.0);
     let mut views = Vec::new();
+    let mut cplanes = Vec::new();
     for table in &scan.tables {
         if table.typecode & !0x0000_8000 != SETTINGS {
             continue;
         }
         for record in &table.records {
+            if record.typecode == NAMED_CPLANES {
+                if let Ok(values) = parse_named_cplanes(&scan.data, record, scan.archive, scale) {
+                    cplanes.extend(values);
+                }
+            }
             if record.typecode == NAMED_VIEWS {
                 views.extend(parse_list(&scan.data, record, scan.archive, scale, "named"));
             }
@@ -559,6 +780,9 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     namespace
         .set_arena("views", &views)
         .expect("Rhino views serialize");
+    namespace
+        .set_arena("construction_planes", &cplanes)
+        .expect("Rhino construction planes serialize");
 }
 
 #[cfg(test)]
