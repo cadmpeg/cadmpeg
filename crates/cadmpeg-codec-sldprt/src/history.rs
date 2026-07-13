@@ -1227,17 +1227,11 @@ fn is_chamfer(feature: &Feature) -> bool {
 }
 
 fn is_extrude(feature: &Feature) -> bool {
-    extrude_feature_op(feature).is_some()
-        || feature.xml_tag.eq_ignore_ascii_case("Extrusion")
-            && feature
-                .properties
-                .get("Operation")
-                .and_then(|operation| parse_boolean_op(operation))
-                .is_some()
+    extrude_feature_op(feature).is_some() || feature.xml_tag.eq_ignore_ascii_case("Extrusion")
 }
 
 fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
-    extrude_op(&feature.kind).or_else(|| extrude_op(&feature.name))
+    extrude_op(&feature.kind)
 }
 
 fn is_revolve(feature: &Feature) -> bool {
@@ -1301,7 +1295,8 @@ fn project_extrude(
         .properties
         .get("Operation")
         .and_then(|value| parse_boolean_op(value))
-        .or_else(|| extrude_feature_op(feature))?;
+        .or_else(|| extrude_feature_op(feature))
+        .unwrap_or(BooleanOp::Unresolved);
     let length = |name| {
         feature
             .parameters
@@ -2793,13 +2788,22 @@ fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
     }
 }
 
-fn format_boolean_op(value: BooleanOp) -> &'static str {
-    match value {
+fn format_boolean_op(value: BooleanOp) -> Option<&'static str> {
+    Some(match value {
+        BooleanOp::Unresolved => return None,
         BooleanOp::Join => "Join",
         BooleanOp::Cut => "Cut",
         BooleanOp::Intersect => "Intersect",
         BooleanOp::NewBody => "NewBody",
-    }
+    })
+}
+
+fn resolved_boolean_op(value: BooleanOp, feature: &FeatureId) -> Result<&'static str, CodecError> {
+    format_boolean_op(value).ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT feature {feature} has an unresolved boolean operation"
+        ))
+    })
 }
 
 fn parse_bool(value: &str) -> Option<bool> {
@@ -4483,6 +4487,12 @@ pub fn sync_neutral_features(
                 op,
                 draft,
             } => {
+                if *op == BooleanOp::Unresolved && existing.is_none() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires retained extrusion operation data",
+                        feature.id
+                    )));
+                }
                 if existing
                     .as_deref()
                     .is_some_and(|record| !is_extrude(record))
@@ -4501,6 +4511,7 @@ pub fn sync_neutral_features(
                     })?;
                 if let Some(record) = existing.as_deref() {
                     if !record.properties.contains_key("Operation")
+                        && *op != BooleanOp::Unresolved
                         && extrude_feature_op(record).is_some_and(|native_op| native_op != *op)
                     {
                         return Err(CodecError::NotImplemented(format!(
@@ -4583,10 +4594,14 @@ pub fn sync_neutral_features(
                     }
                     parameters.insert("Draft".into(), format_angle_rad(draft.0));
                 }
-                if properties.contains_key("Operation")
-                    || existing.as_deref().and_then(extrude_feature_op).is_none()
+                if *op != BooleanOp::Unresolved
+                    && (properties.contains_key("Operation")
+                        || existing.as_deref().and_then(extrude_feature_op).is_none())
                 {
-                    properties.insert("Operation".into(), format_boolean_op(*op).into());
+                    properties.insert(
+                        "Operation".into(),
+                        resolved_boolean_op(*op, &feature.id)?.into(),
+                    );
                 }
                 let implicit_profile = existing.as_deref().is_some_and(|record| {
                     !record.properties.contains_key("Profile")
@@ -4597,6 +4612,7 @@ pub fn sync_neutral_features(
                 }
                 let kind = existing.as_deref().map_or_else(
                     || match op {
+                        BooleanOp::Unresolved => "Extrusion".into(),
                         BooleanOp::Join => "BossExtrude".into(),
                         BooleanOp::Cut => "CutExtrude".into(),
                         BooleanOp::NewBody | BooleanOp::Intersect => "Extrusion".into(),
@@ -5204,7 +5220,10 @@ pub fn sync_neutral_features(
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Target".into(), target);
                 properties.insert("Tools".into(), tools);
-                properties.insert("Operation".into(), format_boolean_op(*op).into());
+                properties.insert(
+                    "Operation".into(),
+                    resolved_boolean_op(*op, &feature.id)?.into(),
+                );
                 (
                     existing
                         .as_deref()
@@ -5864,7 +5883,10 @@ pub fn sync_neutral_features(
                 }
                 properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
                 properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
-                properties.insert("Operation".into(), format_boolean_op(*op).into());
+                properties.insert(
+                    "Operation".into(),
+                    resolved_boolean_op(*op, &feature.id)?.into(),
+                );
                 properties.insert("Profile".into(), profile_source);
                 (
                     existing
@@ -5959,7 +5981,10 @@ pub fn sync_neutral_features(
                 }
                 match op {
                     Some(op) => {
-                        properties.insert("Operation".into(), format_boolean_op(*op).into());
+                        properties.insert(
+                            "Operation".into(),
+                            resolved_boolean_op(*op, &feature.id)?.into(),
+                        );
                     }
                     None => {
                         properties.remove("Operation");
@@ -6014,7 +6039,10 @@ pub fn sync_neutral_features(
                 } else {
                     properties.insert("Guides".into(), guide_sources.join(","));
                 }
-                properties.insert("Operation".into(), format_boolean_op(*op).into());
+                properties.insert(
+                    "Operation".into(),
+                    resolved_boolean_op(*op, &feature.id)?.into(),
+                );
                 properties.insert("Closed".into(), closed.to_string());
                 (
                     existing
@@ -6069,7 +6097,10 @@ pub fn sync_neutral_features(
                 properties.insert("Profile".into(), profile_source.clone());
                 properties.insert("Direction".into(), format_vector3(*direction));
                 properties.insert("BothSides".into(), both_sides.to_string());
-                properties.insert("Operation".into(), format_boolean_op(*op).into());
+                properties.insert(
+                    "Operation".into(),
+                    resolved_boolean_op(*op, &feature.id)?.into(),
+                );
                 (
                     existing
                         .as_deref()
@@ -6622,15 +6653,9 @@ fn path_source(
 
 fn extrude_op(kind: &str) -> Option<BooleanOp> {
     let kind = kind.trim().to_ascii_lowercase();
-    if kind.starts_with("boss-extrude")
-        || kind.starts_with("bossextrude")
-        || kind.starts_with("saliente-extruir")
-    {
+    if kind == "bossextrude" {
         Some(BooleanOp::Join)
-    } else if kind.starts_with("cut-extrude")
-        || kind.starts_with("cutextrude")
-        || kind.starts_with("cortar-extruir")
-    {
+    } else if kind == "cutextrude" {
         Some(BooleanOp::Cut)
     } else {
         None

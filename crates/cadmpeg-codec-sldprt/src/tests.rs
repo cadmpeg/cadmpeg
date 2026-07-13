@@ -6692,29 +6692,39 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(matches!(
-        decoded.ir.model.features[0].definition,
-        FeatureDefinition::Extrude {
-            extent: Extent::Blind {
-                length: Length(200.0)
-            },
-            op: BooleanOp::Join,
-            ..
-        }
-    ));
+    let first_definition = &decoded.ir.model.features[0].definition;
+    assert!(
+        matches!(
+            first_definition,
+            FeatureDefinition::Extrude {
+                extent: Extent::Blind {
+                    length: Length(200.0)
+                },
+                op: BooleanOp::Unresolved,
+                ..
+            }
+        ),
+        "{first_definition:?}"
+    );
     assert!(matches!(
         decoded.ir.model.features[1].definition,
         FeatureDefinition::Extrude {
             extent: Extent::Blind {
                 length: Length(3.0)
             },
-            op: BooleanOp::Cut,
+            op: BooleanOp::Unresolved,
             ..
         }
     ));
     assert!(matches!(
         decoded.ir.model.features[2].definition,
-        FeatureDefinition::Native { .. }
+        FeatureDefinition::Extrude {
+            extent: Extent::Blind {
+                length: Length(4.0)
+            },
+            op: BooleanOp::Unresolved,
+            ..
+        }
     ));
     assert_eq!(
         decoded.ir.model.parameters[0].value,
@@ -6726,7 +6736,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     );
     assert_eq!(
         decoded.ir.model.parameters[2].value,
-        Some(ParameterValue::Integer(4))
+        Some(ParameterValue::Length(Length(4.0)))
     );
 
     let FeatureDefinition::Extrude {
@@ -6768,7 +6778,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             extent: Extent::Blind {
                 length: Length(250.0)
             },
-            op: BooleanOp::Join,
+            op: BooleanOp::Unresolved,
             ..
         }
     ));
@@ -6778,13 +6788,19 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             extent: Extent::Blind {
                 length: Length(4.5)
             },
-            op: BooleanOp::Cut,
+            op: BooleanOp::Unresolved,
             ..
         }
     ));
     assert!(matches!(
         regenerated.ir.model.features[2].definition,
-        FeatureDefinition::Native { .. }
+        FeatureDefinition::Extrude {
+            extent: Extent::Blind {
+                length: Length(4.0)
+            },
+            op: BooleanOp::Unresolved,
+            ..
+        }
     ));
 
     regenerated.ir.model.parameters[0].expression = "225".into();

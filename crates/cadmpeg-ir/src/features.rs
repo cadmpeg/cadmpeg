@@ -998,6 +998,8 @@ pub enum Extent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BooleanOp {
+    /// Source operation is retained but not semantically resolved.
+    Unresolved,
     /// Union with existing bodies.
     Join,
     /// Subtraction from existing bodies.
