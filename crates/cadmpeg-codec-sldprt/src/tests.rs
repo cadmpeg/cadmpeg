@@ -5474,12 +5474,21 @@ fn decode_types_non_modeling_feature_tree_nodes() {
         0x42,
         "Contents/Keywords",
         br#"<Keywords>
-            <Feature Name="Annotations" Type="Annotations" id="1"/>
-            <Feature Name="Ecuaciones" Type="Ecuaciones" id="2"/>
-            <Feature Name="Bodies" Type="Solid Bodies" id="3"/>
-            <Feature Name="Light" Type="Direccional" id="4"/>
-            <Feature Name="Unknown" Type="CustomOperation" id="5"/>
+            <Feature Name="Annotations" Type="Annotations" id="101"/>
+            <Feature Name="Ecuaciones" Type="Ecuaciones" id="102"/>
+            <Feature Name="Bodies" Type="Solid Bodies" id="103"/>
+            <Feature Name="Light" Type="Direccional" id="104"/>
+            <Feature Name="Unknown" Type="CustomOperation" id="105"/>
         </Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes(&[
+            ("moDetailCabinet_c", "Annotations"),
+            ("moEqnFolder_c", "Ecuaciones"),
+            ("moSolidBodyFolder_c", "Bodies"),
+        ]),
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -5509,12 +5518,7 @@ fn decode_types_non_modeling_feature_tree_nodes() {
             role: FeatureTreeNodeRole::SolidBodies
         }
     ));
-    assert!(matches!(
-        definitions[3],
-        FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::DirectionalLight
-        }
-    ));
+    assert!(matches!(definitions[3], FeatureDefinition::Native { .. }));
     assert!(matches!(definitions[4], FeatureDefinition::Native { .. }));
     decoded.ir.model.features[0].name = Some("Document annotations".into());
     let mut encoded = Vec::new();
@@ -11380,7 +11384,7 @@ fn semantic_writer_rejects_edited_feature_input_class_index() {
 }
 
 #[test]
-fn semantic_writer_rejects_edited_feature_input_name_index() {
+fn semantic_writer_rewrites_feature_input_name_values() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -11388,14 +11392,19 @@ fn semantic_writer_rejects_edited_feature_input_name_index() {
     update_sldprt_native(&mut decoded.ir, |native| {
         native.feature_input_lanes[0].names[1].value = "Depth".into();
     });
-    assert!(crate::validate_native(&decoded.ir)
-        .iter()
-        .any(|finding| finding.message.contains("name index does not match")));
+    assert!(crate::validate_native(&decoded.ir).is_empty());
 
-    let error = SldprtCodec
-        .write_preserved(&decoded.ir, &mut Vec::new())
-        .unwrap_err();
-    assert!(error.to_string().contains("has edited object names"));
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        sldprt_native(&regenerated.ir).feature_input_lanes[0].names[1].value,
+        "Depth"
+    );
 }
 
 #[test]

@@ -746,9 +746,21 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
-    if lane.names != crate::resolved_features::object_names(&lane.native_payload, &lane.id) {
+    let expected_names = crate::resolved_features::object_names(&lane.native_payload, &lane.id);
+    if lane.names.len() != expected_names.len()
+        || lane
+            .names
+            .iter()
+            .zip(&expected_names)
+            .any(|(actual, expected)| {
+                actual.id != expected.id
+                    || actual.parent != expected.parent
+                    || actual.ordinal != expected.ordinal
+                    || actual.offset != expected.offset
+            })
+    {
         return Err(CodecError::NotImplemented(format!(
-            "feature-input lane {} has edited object names",
+            "feature-input lane {} has edited object-name structure",
             lane.id
         )));
     }
@@ -860,6 +872,31 @@ fn resolved_feature_payload(
             })?;
             state.copy_from_slice(&value.to_le_bytes());
         }
+    }
+    for (name, expected) in lane.names.iter().zip(&expected_names).rev() {
+        if name.value == expected.value {
+            continue;
+        }
+        let utf16 = name.value.encode_utf16().collect::<Vec<_>>();
+        let length = u8::try_from(utf16.len()).map_err(|_| {
+            CodecError::NotImplemented("feature-input object name exceeds 255 UTF-16 units".into())
+        })?;
+        let start = usize::try_from(expected.offset).map_err(|_| {
+            CodecError::Malformed("feature-input name offset exceeds address space".into())
+        })?;
+        let end = start
+            .checked_add(6 + expected.value.encode_utf16().count() * 2)
+            .ok_or_else(|| CodecError::Malformed("feature-input name range overflow".into()))?;
+        if payload.get(start..start + 5) != Some(&[0x04, 0x80, 0xff, 0xfe, 0xff]) {
+            return Err(CodecError::Malformed(
+                "feature-input name marker does not match retained payload".into(),
+            ));
+        }
+        let mut replacement = vec![0x04, 0x80, 0xff, 0xfe, 0xff, length];
+        for unit in utf16 {
+            replacement.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.splice(start..end, replacement);
     }
     Ok(payload)
 }

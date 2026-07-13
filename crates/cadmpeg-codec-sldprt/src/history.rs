@@ -1049,7 +1049,7 @@ fn project_definition(
     by_source: &HashMap<&str, FeatureId>,
     native_by_source: &HashMap<&str, &str>,
 ) -> FeatureDefinition {
-    if let Some(role) = feature_tree_node_role(&feature.kind) {
+    if let Some(role) = feature_tree_node_role(feature) {
         return FeatureDefinition::TreeNode { role };
     }
     if feature_family(feature, "Sketch") {
@@ -1170,27 +1170,20 @@ fn project_definition(
     }
 }
 
-fn feature_tree_node_role(kind: &str) -> Option<FeatureTreeNodeRole> {
-    Some(match kind {
-        "Annotations" | "Anotaciones" => FeatureTreeNodeRole::Annotations,
-        "Ambient" | "Ambiental" => FeatureTreeNodeRole::AmbientLight,
-        "Comments" | "Comentarios" => FeatureTreeNodeRole::Comments,
-        "Design Binder" | "Cuaderno de diseño" => FeatureTreeNodeRole::DesignBinder,
-        "Directional" | "Direccional" => FeatureTreeNodeRole::DirectionalLight,
-        "Equations" | "Ecuaciones" => FeatureTreeNodeRole::Equations,
-        "Exploded Views" | "Vistas explosionadas" => FeatureTreeNodeRole::ExplodedViews,
-        "Favorites" | "Favoritos" => FeatureTreeNodeRole::Favorites,
-        "History" | "Historial" => FeatureTreeNodeRole::History,
-        "Lights and Cameras" | "Lights, Cameras and Scene" | "Luces y cámaras" => {
-            FeatureTreeNodeRole::LightsAndCameras
-        }
-        "Markups" => FeatureTreeNodeRole::Markups,
-        "SOLIDWORKS Materials" | "Materiales de SOLIDWORKS" => FeatureTreeNodeRole::Materials,
-        "Notes" | "Notas" => FeatureTreeNodeRole::Notes,
-        "Selection Sets" | "Conjuntos de selecciones" => FeatureTreeNodeRole::SelectionSets,
-        "Sensors" | "Sensores" => FeatureTreeNodeRole::Sensors,
-        "Solid Bodies" | "Sólidos" => FeatureTreeNodeRole::SolidBodies,
-        "Surface Bodies" | "Conjuntos de superficies" => FeatureTreeNodeRole::SurfaceBodies,
+fn feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
+    Some(match feature.input_class.as_deref()? {
+        "moDetailCabinet_c" => FeatureTreeNodeRole::Annotations,
+        "moCommentsFolder_c" => FeatureTreeNodeRole::Comments,
+        "moDocsFolder_c" => FeatureTreeNodeRole::DesignBinder,
+        "moEqnFolder_c" => FeatureTreeNodeRole::Equations,
+        "moFavoriteFolder_c" => FeatureTreeNodeRole::Favorites,
+        "moHistoryFolder_c" => FeatureTreeNodeRole::History,
+        "moMaterialFolder_c" => FeatureTreeNodeRole::Materials,
+        "moNotesAreaFtrFolder_c" => FeatureTreeNodeRole::Notes,
+        "moSelectionSetFolder_c" => FeatureTreeNodeRole::SelectionSets,
+        "moSensorFolder_c" => FeatureTreeNodeRole::Sensors,
+        "moSolidBodyFolder_c" => FeatureTreeNodeRole::SolidBodies,
+        "moSurfaceBodyFolder_c" => FeatureTreeNodeRole::SurfaceBodies,
         _ => return None,
     })
 }
@@ -3508,6 +3501,59 @@ fn sync_neutral_configurations(
     synchronize_history_content_order(native);
 }
 
+fn synchronize_feature_input_names(
+    features: &[cadmpeg_ir::features::Feature],
+    native: &mut crate::native::SldprtNative,
+) -> Result<(), CodecError> {
+    let renames = features
+        .iter()
+        .filter_map(|feature| {
+            let record = native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|record| feature.native_ref.as_deref() == Some(record.id.as_str()))?;
+            let new_name = feature.name.as_deref().unwrap_or_default();
+            if new_name == record.name {
+                return None;
+            }
+            Some((
+                record.name.clone(),
+                new_name.to_string(),
+                record.input_class.clone()?,
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    for (old_name, new_name, input_class) in renames {
+        let mut matches = Vec::<(usize, usize)>::new();
+        for (lane_index, lane) in native.feature_input_lanes.iter().enumerate() {
+            for class in lane
+                .classes
+                .iter()
+                .filter(|class| class.name == input_class)
+            {
+                let name_offset = class.offset + 6 + class.name.len() as u64;
+                if let Some((name_index, _)) = lane
+                    .names
+                    .iter()
+                    .enumerate()
+                    .find(|(_, name)| name.offset == name_offset && name.value == old_name)
+                {
+                    matches.push((lane_index, name_index));
+                }
+            }
+        }
+        let [(lane_index, name_index)] = matches.as_slice() else {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature-input name for {old_name:?} is not uniquely linked"
+            )));
+        };
+        native.feature_input_lanes[*lane_index].names[*name_index].value = new_name;
+    }
+    Ok(())
+}
+
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
 pub fn sync_neutral_features(
     features: &[cadmpeg_ir::features::Feature],
@@ -3549,6 +3595,8 @@ pub fn sync_neutral_features(
             features: Vec::new(),
         });
     }
+
+    synchronize_feature_input_names(features, native)?;
 
     let parent_sources = features
         .iter()
@@ -3643,7 +3691,7 @@ pub fn sync_neutral_features(
             FeatureDefinition::TreeNode { role } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| feature_tree_node_role(&record.kind) != Some(*role))
+                    .is_some_and(|record| feature_tree_node_role(record) != Some(*role))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes feature-tree node role",
