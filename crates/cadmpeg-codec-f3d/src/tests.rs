@@ -6726,6 +6726,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         auxiliary_references: vec![900],
         auxiliary_reference_offsets: Vec::new(),
         members: vec![100, 600],
+        resolved_members: Vec::new(),
         member_offsets: Vec::new(),
         state: 0x11,
         constraint_kinds: vec![
@@ -6734,6 +6735,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         ],
         unknown_constraint_bits: 0,
         return_members: vec![600, 100],
+        resolved_return_members: Vec::new(),
         return_member_offsets: Vec::new(),
         raw_bytes: Vec::new(),
     }];
@@ -6837,7 +6839,44 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert_eq!(native.sketch_relations[0].owner_reference, 277);
     assert_eq!(native.sketch_relations[0].state, 0x11);
     assert_eq!(native.sketch_relations[0].return_members, [600, 100]);
+    assert_eq!(
+        native.sketch_relations[0].resolved_members,
+        [
+            crate::records::SketchRelationOperand::Point {
+                record_index: 100,
+                persistent_id: 500,
+            },
+            crate::records::SketchRelationOperand::Curve {
+                record_index: 600,
+                primary_id: 700,
+                secondary_id: 701,
+            },
+        ]
+    );
+    assert_eq!(
+        native.sketch_relations[0].resolved_return_members,
+        [
+            crate::records::SketchRelationOperand::Curve {
+                record_index: 600,
+                primary_id: 700,
+                secondary_id: 701,
+            },
+            crate::records::SketchRelationOperand::Point {
+                record_index: 100,
+                persistent_id: 500,
+            },
+        ]
+    );
     assert!(crate::validate_native(&round_trip.ir).is_empty());
+
+    let mut inconsistent = round_trip.ir.clone();
+    f3d_native_mut(&mut inconsistent).sketch_relations[0]
+        .resolved_members
+        .swap(0, 1);
+    assert!(crate::validate_native(&inconsistent).iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::NativeLinks
+            && finding.message.contains("typed operands disagree")
+    }));
 
     let mut points = native.sketch_points.clone();
     let mut curves = native.sketch_curve_identities.clone();
@@ -6846,7 +6885,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     conflicting_relation.id = "generated:sketch-relation#1".into();
     conflicting_relation.owner_reference = 278;
     relations.push(conflicting_relation);
-    let error = crate::design::bind_sketch_owners(&mut points, &mut curves, &relations)
+    let error = crate::design::bind_sketch_graph(&mut points, &mut curves, &mut relations)
         .expect_err("typed sketch geometry cannot belong to two sketches");
     assert!(error.to_string().contains("belongs to multiple sketches"));
 }

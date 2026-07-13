@@ -488,6 +488,9 @@ pub struct SketchRelation {
     pub auxiliary_reference_offsets: Vec<u32>,
     /// Record indices of the entities related by this relation.
     pub members: Vec<u32>,
+    /// Member records resolved to typed sketch identities where available.
+    #[serde(default)]
+    pub resolved_members: Vec<SketchRelationOperand>,
     /// Payload offsets parallel to `members`, relative to the record.
     #[serde(default)]
     pub member_offsets: Vec<u32>,
@@ -504,6 +507,9 @@ pub struct SketchRelation {
     /// Record indices of entities returned or affected by this relation, distinct
     /// from `members`.
     pub return_members: Vec<u32>,
+    /// Return-member records resolved to typed sketch identities where available.
+    #[serde(default)]
+    pub resolved_return_members: Vec<SketchRelationOperand>,
     /// Payload offsets parallel to `return_members`, relative to the record.
     #[serde(default)]
     pub return_member_offsets: Vec<u32>,
@@ -511,6 +517,33 @@ pub struct SketchRelation {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub raw_bytes: Vec<u8>,
+}
+
+/// One sketch-relation reference resolved against the indexed Design record graph.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SketchRelationOperand {
+    /// A persistent sketch point.
+    Point {
+        /// Indexed Design record referenced by the relation.
+        record_index: u32,
+        /// Persistent point identity stored by that record.
+        persistent_id: u64,
+    },
+    /// A persistent sketch curve.
+    Curve {
+        /// Indexed Design record referenced by the relation.
+        record_index: u32,
+        /// Primary persistent curve identity.
+        primary_id: u64,
+        /// Nullable secondary persistent curve identity.
+        secondary_id: u64,
+    },
+    /// A referenced indexed record without point or curve identity fields.
+    Record {
+        /// Indexed Design record referenced by the relation.
+        record_index: u32,
+    },
 }
 
 /// One bit in a Fusion sketch-constraint state mask.

@@ -204,8 +204,55 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .map(|curve| curve.record_index),
         )
         .collect::<std::collections::HashSet<_>>();
+    let sketch_operands = native
+        .sketch_points
+        .iter()
+        .map(|point| {
+            (
+                point.record_index,
+                records::SketchRelationOperand::Point {
+                    record_index: point.record_index,
+                    persistent_id: point.persistent_id,
+                },
+            )
+        })
+        .chain(native.sketch_curve_identities.iter().map(|curve| {
+            (
+                curve.record_index,
+                records::SketchRelationOperand::Curve {
+                    record_index: curve.record_index,
+                    primary_id: curve.primary_id,
+                    secondary_id: curve.secondary_id,
+                },
+            )
+        }))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut relation_owners = std::collections::HashMap::new();
     for relation in &native.sketch_relations {
+        let resolve = |indices: &[u32]| {
+            indices
+                .iter()
+                .map(|record_index| {
+                    sketch_operands.get(record_index).cloned().unwrap_or(
+                        records::SketchRelationOperand::Record {
+                            record_index: *record_index,
+                        },
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        if relation.resolved_members != resolve(&relation.members)
+            || relation.resolved_return_members != resolve(&relation.return_members)
+        {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message:
+                    "Fusion sketch relation typed operands disagree with its indexed references"
+                        .into(),
+                entity: Some(relation.id.clone()),
+            });
+        }
         for member in relation.members.iter().chain(&relation.return_members) {
             if !typed_sketch_records.contains(member) {
                 continue;

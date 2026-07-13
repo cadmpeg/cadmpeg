@@ -98,10 +98,10 @@ pub fn decode(
             native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
             native.sketch_curve_identities =
                 crate::design::decode_sketch_curve_identities(reader, &scan)?;
-            crate::design::bind_sketch_owners(
+            crate::design::bind_sketch_graph(
                 &mut native.sketch_points,
                 &mut native.sketch_curve_identities,
-                &native.sketch_relations,
+                &mut native.sketch_relations,
             )?;
             native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
             native.design_configurations = crate::design::decode_configurations(&scan)?;
@@ -185,10 +185,10 @@ pub fn decode(
     extend_related_design_records(reader, &scan, &mut native)?;
     native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
     native.sketch_curve_identities = crate::design::decode_sketch_curve_identities(reader, &scan)?;
-    crate::design::bind_sketch_owners(
+    crate::design::bind_sketch_graph(
         &mut native.sketch_points,
         &mut native.sketch_curve_identities,
-        &native.sketch_relations,
+        &mut native.sketch_relations,
     )?;
     native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
     native.design_configurations = crate::design::decode_configurations(&scan)?;

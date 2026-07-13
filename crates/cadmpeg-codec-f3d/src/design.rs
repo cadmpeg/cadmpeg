@@ -12,6 +12,7 @@ use crate::records::{
     DesignConfigurationKind, DesignEntityHeader, DesignObject, DesignObjectKind,
     DesignRecordHeader, LostEdgeReference, PersistentReference, PersistentReferenceKind,
     SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+    SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -748,6 +749,7 @@ pub fn decode_sketch_relations(
                     .map(|offset| offset as u32)
                     .collect(),
                 members,
+                resolved_members: Vec::new(),
                 member_offsets: member_offsets
                     .into_iter()
                     .map(|offset| offset as u32)
@@ -756,6 +758,7 @@ pub fn decode_sketch_relations(
                 constraint_kinds,
                 unknown_constraint_bits,
                 return_members,
+                resolved_return_members: Vec::new(),
                 return_member_offsets: return_member_offsets
                     .into_iter()
                     .map(|offset| offset as u32)
@@ -972,10 +975,10 @@ pub fn decode_sketch_curve_identities(
 }
 
 /// Bind relation-connected sketch geometry to its unique owning sketch.
-pub(crate) fn bind_sketch_owners(
+pub(crate) fn bind_sketch_graph(
     points: &mut [SketchPoint],
     curves: &mut [SketchCurveIdentity],
-    relations: &[SketchRelation],
+    relations: &mut [SketchRelation],
 ) -> Result<(), CodecError> {
     let typed_records = points
         .iter()
@@ -983,7 +986,7 @@ pub(crate) fn bind_sketch_owners(
         .chain(curves.iter().map(|curve| curve.record_index))
         .collect::<std::collections::HashSet<_>>();
     let mut owners = std::collections::HashMap::new();
-    for relation in relations {
+    for relation in relations.iter() {
         for record_index in relation.members.iter().chain(&relation.return_members) {
             if !typed_records.contains(record_index) {
                 continue;
@@ -998,11 +1001,50 @@ pub(crate) fn bind_sketch_owners(
             }
         }
     }
-    for point in points {
+    for point in points.iter_mut() {
         point.owner_reference = owners.get(&point.record_index).copied();
     }
-    for curve in curves {
+    for curve in curves.iter_mut() {
         curve.owner_reference = owners.get(&curve.record_index).copied();
+    }
+    let operands = points
+        .iter()
+        .map(|point| {
+            (
+                point.record_index,
+                SketchRelationOperand::Point {
+                    record_index: point.record_index,
+                    persistent_id: point.persistent_id,
+                },
+            )
+        })
+        .chain(curves.iter().map(|curve| {
+            (
+                curve.record_index,
+                SketchRelationOperand::Curve {
+                    record_index: curve.record_index,
+                    primary_id: curve.primary_id,
+                    secondary_id: curve.secondary_id,
+                },
+            )
+        }))
+        .collect::<std::collections::HashMap<_, _>>();
+    let resolve = |indices: &[u32]| {
+        indices
+            .iter()
+            .map(|record_index| {
+                operands
+                    .get(record_index)
+                    .cloned()
+                    .unwrap_or(SketchRelationOperand::Record {
+                        record_index: *record_index,
+                    })
+            })
+            .collect()
+    };
+    for relation in relations {
+        relation.resolved_members = resolve(&relation.members);
+        relation.resolved_return_members = resolve(&relation.return_members);
     }
     Ok(())
 }
