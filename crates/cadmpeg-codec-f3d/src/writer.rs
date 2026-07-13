@@ -5837,12 +5837,16 @@ fn encode_native_rolling_ball(
         .iter()
         .find(|curve| curve.id == *spine)
         .ok_or_else(|| CodecError::Malformed(format!("blend references missing spine {spine}")))?;
-    let CurveGeometry::Nurbs(spine) = &spine.geometry else {
-        return Err(CodecError::NotImplemented(
-            "source-less rb_blend_spl_sur requires a NURBS spine cache".into(),
-        ));
-    };
-    native_nurbs_curve(bytes, spine)?;
+    let spine_range = [
+        solved_cache.u_knots.first().copied().ok_or_else(|| {
+            CodecError::Malformed("rolling-ball solved surface has no U knot domain".into())
+        })?,
+        solved_cache.u_knots.last().copied().ok_or_else(|| {
+            CodecError::Malformed("rolling-ball solved surface has no U knot domain".into())
+        })?,
+    ];
+    let spine = native_interval_curve(&spine.geometry, spine_range)?;
+    native_nurbs_curve(bytes, &spine)?;
     let (start, end) = match radius {
         BlendRadiusLaw::Constant { signed_radius } => (*signed_radius, *signed_radius),
         BlendRadiusLaw::Linear { start, end } => (*start, *end),

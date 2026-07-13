@@ -4969,6 +4969,12 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         }
         _ => panic!("expected rolling-ball definition"),
     };
+    let spine = match &source_less.model.procedural_surfaces[0].definition {
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend { spine, .. } => {
+            spine.clone().expect("rolling-ball spine")
+        }
+        _ => unreachable!(),
+    };
     let support_geometries = [
         cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
@@ -4991,6 +4997,16 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
             .expect("rolling-ball support carrier")
             .geometry = geometry.clone();
     }
+    source_less
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == spine)
+        .expect("rolling-ball spine carrier")
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+        origin: cadmpeg_ir::math::Point3::new(-2.0, 4.0, 1.0),
+        direction: cadmpeg_ir::math::Vector3::new(3.0, -1.0, 2.0),
+    };
     let expected = source_less.model.procedural_surfaces[0].clone();
 
     let mut encoded = Vec::new();
@@ -5004,8 +5020,9 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     let actual = &round_trip.ir.model.procedural_surfaces[0];
     assert_eq!(actual.definition, expected.definition);
     assert_eq!(actual.cache_fit_tolerance, expected.cache_fit_tolerance);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend { supports, .. } =
-        &actual.definition
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend {
+        supports, spine, ..
+    } = &actual.definition
     else {
         unreachable!()
     };
@@ -5020,6 +5037,23 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
             .expect("round-trip rolling-ball support carrier");
         assert_eq!(actual.geometry, expected);
     }
+    let spine = spine.as_ref().expect("round-trip rolling-ball spine");
+    assert!(matches!(
+        round_trip
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *spine)
+            .map(|curve| &curve.geometry),
+        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            if curve.degree == 1
+                && curve.knots == [0.0, 0.0, 1.0, 1.0]
+                && curve.control_points == [
+                    cadmpeg_ir::math::Point3::new(-2.0, 4.0, 1.0),
+                    cadmpeg_ir::math::Point3::new(1.0, 3.0, 3.0),
+                ]
+    ));
 }
 
 #[test]
