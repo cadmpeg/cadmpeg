@@ -6106,6 +6106,43 @@ fn semantic_writer_round_trips_all_pattern_forms() {
 }
 
 #[test]
+fn semantic_writer_round_trips_generic_pattern_type() {
+    use cadmpeg_ir::features::{FeatureDefinition, Length, PatternKind};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Seed" Type="NativeSeed" id="61"/><Pattern Name="Rows" Type="CustomPattern" id="62" PatternType="Linear" Seeds="61" Direction="1,0,0"><Dimension Name="Count">2</Dimension><Dimension Name="Spacing">4mm</Dimension></Pattern></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let FeatureDefinition::Pattern {
+        pattern: PatternKind::Linear { spacing, count, .. },
+        ..
+    } = &mut decoded.ir.model.features[1].definition
+    else {
+        panic!("generic linear pattern");
+    };
+    *spacing = Length(6.0);
+    *count = 3;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[1];
+    assert_eq!(feature.kind, "CustomPattern");
+    assert_eq!(feature.properties["PatternType"], "Linear");
+    assert_eq!(feature.parameters["Spacing"], "6mm");
+    assert_eq!(feature.parameters["Count"], "3");
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_sweep() {
     use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, PathRef, ProfileRef};
 
