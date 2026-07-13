@@ -11588,8 +11588,10 @@ fn patch_tolerant_coedge_parameters(
                 record.head
             )));
         }
-        patch_double_token(bytes, record, 0, range[0])?;
-        patch_double_token(bytes, record, 1, range[1])?;
+        for (index, value) in [(11usize, range[0]), (12, range[1])] {
+            let offset = required_payload_field(bytes, record, ref_width, index, 0x06)?;
+            bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+        }
     }
     Ok(())
 }
@@ -14165,8 +14167,11 @@ fn patch_framed_geometry(
             }
         } else if matches!(record.head.as_str(), "edge" | "tedge") {
             if let Some(range) = edge_ranges.get(&id) {
-                patch_double_token(bytes, record, 0, range[0])?;
-                patch_double_token(bytes, record, 1, range[1])?;
+                let ref_width = active_ref_width(bytes);
+                for (index, value) in [(4usize, range[0]), (6, range[1])] {
+                    let offset = required_payload_field(bytes, record, ref_width, index, 0x06)?;
+                    bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+                }
             }
         } else if record.head == "point" {
             if let Some(position) = positions.get(&id) {

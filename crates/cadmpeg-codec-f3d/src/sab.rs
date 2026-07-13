@@ -695,6 +695,57 @@ mod tests {
         bytes
     }
 
+    fn generated_edge_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 4];
+        bytes.extend_from_slice(b"edge");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1), (0x0c, 10)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x06);
+        bytes.extend_from_slice(&(-2.0f64).to_le_bytes());
+        bytes.push(0x0c);
+        bytes.extend_from_slice(&11i64.to_le_bytes()[..ref_width]);
+        bytes.push(0x06);
+        bytes.extend_from_slice(&3.0f64.to_le_bytes());
+        for value in [-1i64, 12] {
+            bytes.push(0x0c);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.extend_from_slice(&[0x0b, 0x07, 7]);
+        bytes.extend_from_slice(b"unknown");
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn generated_tcoedge_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 7];
+        bytes.extend_from_slice(b"tcoedge");
+        for (tag, value) in [
+            (0x0c, -1i64),
+            (0x04, -1),
+            (0x0c, -1),
+            (0x0c, 1),
+            (0x0c, 2),
+            (0x0c, 3),
+            (0x0c, 4),
+        ] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x0b);
+        for (tag, value) in [(0x0c, 5i64), (0x04, 0), (0x0c, 6)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        for value in [-2.0f64, 3.0] {
+            bytes.push(0x06);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
     #[test]
     fn generated_payload_subtype_lookup_uses_declared_integer_width() {
         for ref_width in [4, 8] {
@@ -848,6 +899,28 @@ mod tests {
             let offset =
                 payload_token_offset(&bytes, record, ref_width, 3).expect("point position offset");
             assert_eq!(bytes[offset], 0x13);
+        }
+    }
+
+    #[test]
+    fn generated_topology_ranges_have_fixed_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let edge = generated_edge_record(ref_width);
+            let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
+            for index in [4usize, 6] {
+                let offset = payload_token_offset(&edge, &records[0], ref_width, index)
+                    .expect("edge range offset");
+                assert_eq!(edge[offset], 0x06);
+            }
+
+            let coedge = generated_tcoedge_record(ref_width);
+            let records =
+                frame(&coedge, 0, coedge.len(), ref_width).expect("generated tolerant coedge");
+            for index in [11usize, 12] {
+                let offset = payload_token_offset(&coedge, &records[0], ref_width, index)
+                    .expect("tolerant coedge parameter offset");
+                assert_eq!(coedge[offset], 0x06);
+            }
         }
     }
 }
