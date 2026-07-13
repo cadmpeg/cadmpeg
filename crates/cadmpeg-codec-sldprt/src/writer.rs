@@ -101,8 +101,9 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         .map(|(section, _)| section.clone())
         .unwrap_or_default();
     let mut sections = partition_sections;
-    if let Some((name, color)) = body_material(ir)? {
-        sections.push(("SWObjects".into(), material_payload(&name, color)));
+    let materials = materials_payload(ir)?;
+    if !materials.is_empty() {
+        sections.push(("SWObjects".into(), materials));
     }
     let (objects, units) = metadata_payloads(ir, length_scale)?;
     if !objects.is_empty() {
@@ -1091,6 +1092,34 @@ fn body_material(ir: &CadIr) -> Result<Option<(String, Color)>, CodecError> {
         }
     }
     Ok(selected)
+}
+
+fn materials_payload(ir: &CadIr) -> Result<Vec<u8>, CodecError> {
+    let mut materials = Vec::<(String, Color)>::new();
+    if let Some(material) = body_material(ir)? {
+        materials.push(material);
+    }
+    for appearance in &ir.model.appearances {
+        if appearance.schema.as_deref() != Some("moVisualProperties_c") {
+            continue;
+        }
+        let Some(color) = appearance.base_color else {
+            return Err(CodecError::NotImplemented(
+                "SLDPRT material appearance has no base color".into(),
+            ));
+        };
+        let material = (
+            appearance.name.clone().unwrap_or_else(|| "Material".into()),
+            color,
+        );
+        if !materials.contains(&material) {
+            materials.push(material);
+        }
+    }
+    Ok(materials
+        .into_iter()
+        .flat_map(|(name, color)| material_payload(&name, color))
+        .collect())
 }
 
 fn material_payload(name: &str, color: Color) -> Vec<u8> {

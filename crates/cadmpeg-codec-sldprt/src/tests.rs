@@ -3977,7 +3977,7 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
     materials.extend(material_payload("Aluminum", [160, 170, 180]));
     source.extend(make_block(0x40, "SWObjects", &materials));
 
-    let result = SldprtCodec
+    let mut result = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir.model.appearances.len(), 2);
@@ -3988,6 +3988,27 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
         .bodies
         .iter()
         .all(|body| body.color.is_none() && body.name.is_none()));
+
+    result.ir.model.points[0].position.z += 1.0;
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&result.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(regenerated.ir.model.appearances.len(), 2);
+    assert_eq!(
+        regenerated
+            .ir
+            .model
+            .appearances
+            .iter()
+            .filter_map(|appearance| appearance.name.as_deref())
+            .collect::<Vec<_>>(),
+        vec!["Steel", "Aluminum"]
+    );
+    assert!(regenerated.ir.model.appearance_bindings.is_empty());
 }
 
 #[test]
