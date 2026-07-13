@@ -72,7 +72,7 @@ The repository contains six native-format codecs:
 - **Rhino `.3dm` — [L3](docs/format-support.md#support-ladder) for archive 50/60/70/80:** curves, surfaces, meshes, connected B-rep, SubD, extrusions, and expanded instances; older bands have inspection and metadata support.
 - **Siemens NX `.prt` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology.
 - **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.
-- **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** container mastered; no placed model geometry.
+- **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** structural decode with partial placed geometry, topology, sketches, and design records.
 
 The pure-Rust STEP AP214 writer exports supported analytic and B-spline B-rep geometry and reports loss.
 

@@ -3,7 +3,8 @@
 `cadmpeg-codec-creo` reads PTC Creo Parametric and Pro/ENGINEER `.prt` files
 with the `#UGC:2` PSB container signature. It identifies the container layout,
 lists named sections, reports geometry namespace counts and JPEG preview
-presence, and decodes standard datum planes into [`CadIr`].
+presence, and decodes selected placed geometry, topology, sketches, and design
+records into [`CadIr`].
 
 The `.prt` extension is also used by Siemens NX. Format detection uses the
 `#UGC:2` signature, not the extension.
@@ -37,8 +38,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Call `CreoCodec.decode` when you need a `CadIr` document and a structured loss
 report. Decode preserves recognized PSB geometry sections as unknown records
-and transfers model-space standard datum planes as derived, unbounded plane
-surfaces.
+and transfers every carrier and design record whose byte-backed placement and
+semantics are complete.
 
 ## Data model and limits
 
@@ -47,11 +48,11 @@ sections. The crate recognizes the ND and DEPDB layout families and reads
 surface and curve namespace rows, prototype parameters, native half-edge
 links, active units, feature identifiers, and datum outlines.
 
-Surface prototype parameters are family templates, not placed model
-geometry. Per-instance coordinates, curve geometry, face bindings, and
-feature evaluation remain incomplete, so decode does not emit a body B-rep.
-The [`DecodeReport`] records these losses. Writing `.prt` files is not
-supported.
+Surface prototype parameters are family templates, not placed model geometry.
+Exact plane components and selected cylinders transfer with connected topology;
+other per-instance coordinates, curve families, face bindings, and feature
+evaluation remain incomplete. The [`DecodeReport`] records these losses.
+Writing `.prt` files is not supported.
 
 ## References
 

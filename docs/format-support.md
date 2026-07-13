@@ -198,26 +198,26 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
 
 **Kernel:** Granite, serialized through PSB
 
-**Ladder: L1 claimed.** Prototype geometry lacks model-space placement required by L2. Derived datum planes and the geometry census exceed the L1 gates.
+**Ladder: L1 claimed.** Incomplete model-space coverage across analytic and spline carrier families blocks L2. Exact plane components, selected cylinders, placed sketches, and native design records exceed the L1 gates.
 
 ### Read profile
 
 - **Container and versions: Partial.** The codec detects `#UGC:2`, enumerates sections, identifies ND and DEPDB layouts, and decodes supported PSB compact integers and floats.
-- **Geometry: Partial.** ActDatums plane outlines transfer as derived plane carriers. VisibGeom surfaces and curves remain unplaced prototype records.
-- **Topology: None.** Scanning identifies prototype surface rows, half-edges, and loops. Placed body topology remains outside the IR.
+- **Geometry: Partial.** ActDatums and VisibGeom plane carriers transfer in model space. Topology-bound cylinders transfer when cap records establish their complete placement. Other analytic and spline families remain incomplete.
+- **Topology: Partial.** Native half-edges and closed loops decode. Exact single-loop plane components transfer as connected body, region, shell, face, loop, coedge, edge, and vertex graphs.
 - **Tessellation: None.**
-- **Design intent: None.**
+- **Design intent: Partial.** Named feature operations, dependencies, placed section sketches, line-orientation constraints, dimensions, and curve-equation programs transfer as typed or native design records.
 - **Product structure: None.**
-- **Presentation and metadata: Partial.** Container attributes and geometry censuses transfer as source metadata. Features, materials, and display data remain open.
+- **Presentation and metadata: Partial.** Container attributes and geometry censuses transfer as source metadata. Materials and display data remain open.
 
-`geometry_transferred` is true only when datum-plane carriers transfer. VisibGeom-only files report no transferred model geometry.
+`geometry_transferred` is true when any complete model-space carrier transfers.
 
 ### Write and round trip
 
 - **Native write: None.**
 - **Round trip: None.**
 
-The principal geometry gate is the unresolved general 8-byte PSB float-token formula needed to place prototype geometry in model space.
+The principal geometry gates are per-instance analytic parameter bindings, feature-generated carrier evaluation, dense curve and spline bodies, and complete face-instance placement.
 
 See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-items.md`](formats/creo_prt-open-items.md).
 
