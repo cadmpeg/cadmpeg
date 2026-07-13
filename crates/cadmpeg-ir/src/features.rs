@@ -395,14 +395,8 @@ pub enum FeatureDefinition {
     },
     /// Revolution of a profile around an axis.
     Revolve {
-        /// Profile revolved about the axis.
-        profile: ProfileRef,
-        /// A point on the revolution axis.
-        axis_origin: Point3,
-        /// Unit direction of the revolution axis.
-        axis_dir: Vector3,
-        /// Angular extent of the revolution.
-        angle: Extent,
+        /// Independently resolved construction inputs.
+        construction: RevolutionConstruction,
         /// Boolean combination with existing bodies.
         op: BooleanOp,
     },
@@ -678,6 +672,29 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
     },
+}
+
+/// Independently decoded inputs of a profile revolution.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RevolutionConstruction {
+    /// Profile revolved about the axis, when resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<ProfileRef>,
+    /// Placed revolution axis, when resolved as a complete line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axis: Option<RevolutionAxis>,
+    /// Angular extent, when resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extent: Option<Extent>,
+}
+
+/// Complete line placement used as a revolution axis.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RevolutionAxis {
+    /// A point on the axis.
+    pub origin: Point3,
+    /// Unit axis direction.
+    pub direction: Vector3,
 }
 
 /// Canonical role of a non-modeling feature-tree node.

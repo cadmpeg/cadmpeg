@@ -1137,9 +1137,17 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 profiles.push(profile);
                 extents.push(extent);
             }
-            FeatureDefinition::Revolve { profile, angle, .. } => {
-                profiles.push(profile);
-                extents.push(angle);
+            FeatureDefinition::Revolve { construction, .. } => {
+                profiles.extend(&construction.profile);
+                extents.extend(&construction.extent);
+                if construction.axis.as_ref().is_some_and(|axis| {
+                    !axis.origin.x.is_finite()
+                        || !axis.origin.y.is_finite()
+                        || !axis.origin.z.is_finite()
+                        || !valid_feature_direction(axis.direction)
+                }) {
+                    feature_geometry_error(findings, feature, "revolution axis is invalid");
+                }
             }
             FeatureDefinition::Sweep {
                 profile,
@@ -1858,9 +1866,12 @@ fn check_feature_sketch_references(
         let mut profiles = Vec::new();
         let mut paths = Vec::new();
         match &feature.definition {
-            FeatureDefinition::Extrude { profile, .. }
-            | FeatureDefinition::Revolve { profile, .. }
-            | FeatureDefinition::Rib { profile, .. } => profiles.push(profile),
+            FeatureDefinition::Extrude { profile, .. } | FeatureDefinition::Rib { profile, .. } => {
+                profiles.push(profile);
+            }
+            FeatureDefinition::Revolve { construction, .. } => {
+                profiles.extend(&construction.profile);
+            }
             FeatureDefinition::Sweep { profile, path, .. } => {
                 profiles.extend(profile);
                 paths.extend(path);

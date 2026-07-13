@@ -1714,10 +1714,14 @@ fn encoder_writes_source_less_line_sketches() {
     let path = PathRef::Sketch(sketch_id.clone());
     let generated = [
         FeatureDefinition::Revolve {
-            profile: profile.clone(),
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
-            axis_dir: Vector3::new(0.0, 1.0, 0.0),
-            angle: Extent::Angle { angle: Angle(1.2) },
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                profile: Some(profile.clone()),
+                axis: Some(cadmpeg_ir::features::RevolutionAxis {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    direction: Vector3::new(0.0, 1.0, 0.0),
+                }),
+                extent: Some(Extent::Angle { angle: Angle(1.2) }),
+            },
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::Sweep {
@@ -2594,12 +2598,20 @@ fn decode_retains_nonfinite_feature_dimensions_as_native() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.features.len(), 5);
-    assert!(decoded
-        .ir
-        .model
-        .features
+    assert!(decoded.ir.model.features[..4]
         .iter()
         .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+    assert!(matches!(
+        decoded.ir.model.features[4].definition,
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                profile: None,
+                axis: Some(_),
+                extent: None,
+            },
+            op: cadmpeg_ir::features::BooleanOp::Join,
+        }
+    ));
 }
 
 #[test]
@@ -2662,9 +2674,23 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
             ..
         }
     ));
-    assert!(decoded.ir.model.features[2..]
-        .iter()
-        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+    assert!(matches!(
+        decoded.ir.model.features[4].definition,
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                profile: None,
+                axis: Some(_),
+                extent: None,
+            },
+            op: cadmpeg_ir::features::BooleanOp::Join,
+        }
+    ));
+    for index in [2, 3, 5, 6] {
+        assert!(matches!(
+            decoded.ir.model.features[index].definition,
+            FeatureDefinition::Native { .. }
+        ));
+    }
 }
 
 #[test]
@@ -10333,16 +10359,18 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Revolve {
-            angle: Extent::Angle { angle },
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                extent: Some(Extent::Angle { angle }),
+                ..
+            },
             op: BooleanOp::Cut,
-            ..
         } if (angle.0 - std::f64::consts::PI).abs() < 1e-12
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_typed_revolution() {
-    use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FeatureDefinition};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -10354,36 +10382,34 @@ fn semantic_writer_round_trips_typed_revolution() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native_id = decoded.ir.model.features[0]
-        .native_ref
-        .clone()
-        .expect("native revolution record");
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Revolve {
-            profile: ProfileRef::Native(profile),
-            axis_origin: Point3 { x: 10.0, y: 20.0, z: 30.0 },
-            axis_dir: Vector3 { x: 0.0, y: 1.0, z: 0.0 },
-            angle: Extent::Angle { angle: Angle(value) },
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                profile: None,
+                axis: Some(cadmpeg_ir::features::RevolutionAxis {
+                    origin: Point3 { x: 10.0, y: 20.0, z: 30.0 },
+                    direction: Vector3 { x: 0.0, y: 1.0, z: 0.0 },
+                }),
+                extent: Some(Extent::Angle { angle: Angle(value) }),
+            },
             op: BooleanOp::Join,
-        } if profile == &native_id && (*value - std::f64::consts::PI).abs() < 1e-12
+        } if (*value - std::f64::consts::PI).abs() < 1e-12
     ));
 
-    let FeatureDefinition::Revolve {
-        axis_origin,
-        axis_dir,
-        angle,
-        op,
-        ..
-    } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Revolve { construction, op } =
+        &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed revolution feature");
     };
-    *axis_origin = Point3::new(1.0, 2.0, 3.0);
-    *axis_dir = Vector3::new(0.0, 0.0, 1.0);
-    *angle = Extent::Angle {
-        angle: Angle(std::f64::consts::FRAC_PI_2),
+    let Some(axis) = construction.axis.as_mut() else {
+        panic!("resolved revolution axis");
     };
+    axis.origin = Point3::new(1.0, 2.0, 3.0);
+    axis.direction = Vector3::new(0.0, 0.0, 1.0);
+    construction.extent = Some(Extent::Angle {
+        angle: Angle(std::f64::consts::FRAC_PI_2),
+    });
     *op = BooleanOp::Cut;
 
     let mut encoded = Vec::new();
@@ -10404,6 +10430,80 @@ fn semantic_writer_round_trips_typed_revolution() {
 }
 
 #[test]
+fn semantic_writer_retains_partial_native_revolution_construction() {
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Revolve Name="Unknown turn" Type="Revolve" id="17" AxisOrigin="1mm,2mm,3mm" AxisDirection="0,0,1"/></Keywords>"#,
+    ));
+
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                profile: None,
+                axis: Some(cadmpeg_ir::features::RevolutionAxis {
+                    origin: Point3 {
+                        x: 1.0,
+                        y: 2.0,
+                        z: 3.0
+                    },
+                    direction: Vector3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 1.0
+                    },
+                }),
+                extent: None,
+            },
+            op: BooleanOp::Unresolved,
+        }
+    ));
+    let mut detached = decoded.ir.clone();
+    detached.model.features[0].native_ref = None;
+    let error = SldprtCodec
+        .write_preserved(&detached, &mut Vec::new())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("unresolved revolution construction"));
+    decoded.ir.model.features[0].name = Some("Renamed turn".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.name, "Renamed turn");
+    assert_eq!(native.properties["AxisOrigin"], "1mm,2mm,3mm");
+    assert_eq!(native.properties["AxisDirection"], "0,0,1");
+    assert!(!native.properties.contains_key("Profile"));
+    assert!(!native.properties.contains_key("Operation"));
+    assert!(!native.parameters.contains_key("Angle"));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                axis: Some(_),
+                profile: None,
+                extent: None,
+            },
+            op: BooleanOp::Unresolved,
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_all_revolution_extents() {
     use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FeatureDefinition, ProfileRef};
 
@@ -10420,38 +10520,45 @@ fn semantic_writer_round_trips_all_revolution_extents() {
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
         FeatureDefinition::Revolve {
-            profile: ProfileRef::Native(profile),
-            angle: Extent::Angle { angle: Angle(value) },
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                profile: Some(ProfileRef::Native(profile)),
+                extent: Some(Extent::Angle { angle: Angle(value) }),
+                ..
+            },
             op: BooleanOp::Join,
-            ..
         } if profile == &profile_native && (*value - 90f64.to_radians()).abs() < 1e-12
     ));
     assert!(matches!(
         decoded.ir.model.features[2].definition,
         FeatureDefinition::Revolve {
-            angle: Extent::SymmetricAngle { angle: Angle(value) },
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                extent: Some(Extent::SymmetricAngle { angle: Angle(value) }),
+                ..
+            },
             op: BooleanOp::NewBody,
-            ..
         } if (value - std::f64::consts::PI).abs() < 1e-12
     ));
     assert!(matches!(
         decoded.ir.model.features[3].definition,
         FeatureDefinition::Revolve {
-            angle: Extent::TwoSidedAngles {
-                first: Angle(first),
-                second: Angle(second),
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                extent: Some(Extent::TwoSidedAngles {
+                    first: Angle(first),
+                    second: Angle(second),
+                }),
+                ..
             },
             op: BooleanOp::Cut,
-            ..
         } if (first - 30f64.to_radians()).abs() < 1e-12
             && (second - 60f64.to_radians()).abs() < 1e-12
     ));
 
-    let FeatureDefinition::Revolve { angle, op, .. } = &mut decoded.ir.model.features[3].definition
+    let FeatureDefinition::Revolve { construction, op } =
+        &mut decoded.ir.model.features[3].definition
     else {
         panic!("typed revolution");
     };
-    *angle = Extent::Angle { angle: Angle(0.75) };
+    construction.extent = Some(Extent::Angle { angle: Angle(0.75) });
     *op = BooleanOp::Intersect;
 
     let mut encoded = Vec::new();
