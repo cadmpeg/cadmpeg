@@ -14231,15 +14231,32 @@ fn patch_framed_geometry(
             }
         } else if record.head == "plane" {
             if let Some((origin, normal, u_axis)) = planes.get(&id) {
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
+                let field_indices = match record.name.as_str() {
+                    "plane" => [0, 1, 2],
+                    "plane-surface" => [3, 4, 5],
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "plane record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let ref_width = active_ref_width(bytes);
+                let fields = [
+                    required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[2], 0x14)?,
+                ];
+                for (offset, values) in fields.into_iter().zip([
                     [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
-                )?;
-                patch_vec3_token(bytes, record, 0x14, 0, [normal.x, normal.y, normal.z])?;
-                patch_vec3_token(bytes, record, 0x14, 1, [u_axis.x, u_axis.y, u_axis.z])?;
+                    [normal.x, normal.y, normal.z],
+                    [u_axis.x, u_axis.y, u_axis.z],
+                ]) {
+                    for (component, value) in values.into_iter().enumerate() {
+                        let at = offset + 1 + component * 8;
+                        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
             }
         } else if record.head == "sphere" {
             if let Some((center, axis, ref_direction, radius)) = spheres.get(&id) {

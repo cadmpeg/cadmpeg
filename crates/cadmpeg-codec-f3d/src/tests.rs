@@ -4553,6 +4553,34 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 }
 
 #[test]
+fn generated_f3d_rewrites_plane_frame() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let mut edited = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated planar triangle decode")
+        .ir;
+    let expected = SurfaceGeometry::Plane {
+        origin: cadmpeg_ir::math::Point3::new(10.0, -20.0, 30.0),
+        normal: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+    };
+    edited.model.surfaces[0].geometry = expected.clone();
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("plane frame regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated plane decode");
+    assert_eq!(round_trip.ir.model.surfaces[0].geometry, expected);
+}
+
+#[test]
 fn generated_f3d_rejects_analytic_surface_family_changes() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
