@@ -401,6 +401,11 @@ fn decode_head(bytes: &[u8]) -> Vec<HeadToken> {
                 u32::from(bytes[at + 1].wrapping_sub(0x80)) * 128 + u32::from(bytes[at + 2]),
             ));
             at += 3;
+        } else if (0xd1..=0xe4).contains(&byte) && at + 1 < bytes.len() {
+            tokens.push(HeadToken::Reference(
+                u32::from(byte - 0xd1) * 256 + u32::from(bytes[at + 1]) + 1,
+            ));
+            at += 2;
         } else if byte >= 0x80 {
             tokens.push(HeadToken::Reference(u32::from(byte - 0x80)));
             at += 1;

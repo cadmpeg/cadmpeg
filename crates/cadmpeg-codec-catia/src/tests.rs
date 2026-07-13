@@ -2893,6 +2893,32 @@ fn outer_object_graph_parser_preserves_every_root() {
 }
 
 #[test]
+fn outer_object_graph_resolves_paged_class_ordinals() {
+    let records = [
+        object_graph_record(&[0x14, 0x01, 0x82, 0xd1, 0x88], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x82], &[0xfe]),
+    ];
+    let mut bytes = object_graph_from_records(&records);
+    let mut names = vec!["field"; 138];
+    names[0] = "CATCatalogManager";
+    names[1] = "catalogManager";
+    names[2] = "catalogLinks";
+    names[3] = "";
+    names[137] = "Pad";
+    let mut schema = vec![0x7c, 0x02, 0, 0, 0, 0, 0xd1, 0x8a];
+    for name in names {
+        schema.push(u8::try_from(name.len() + 1).expect("fixture schema name length"));
+        schema.extend_from_slice(name.as_bytes());
+    }
+    let schema_len = u32::try_from(schema.len()).expect("fixture schema length");
+    schema[2..6].copy_from_slice(&schema_len.to_le_bytes());
+    bytes.extend(schema);
+    let graph = crate::object_graph::parse(&bytes).expect("paged class graph");
+    assert_eq!(graph.records[0].class_ref, Some(137));
+    assert_eq!(graph.records[0].class_name.as_deref(), Some("Pad"));
+}
+
+#[test]
 fn catalog_parser_reads_exact_inclusive_length_dictionary() {
     let entries = [
         "CATCatalogManager",
