@@ -293,8 +293,25 @@ fn collapse_loop_vertices(
             joined.extend(solutions.into_iter().next().unwrap_or_default());
         }
     }
-    for [left, right] in &joined {
-        union(&mut parent, *left, *right);
+    let mut accepted = Vec::new();
+    for [left, right] in joined {
+        if left == right {
+            continue;
+        }
+        let left_root = representative(&mut parent, left);
+        let right_root = representative(&mut parent, right);
+        if left_root == right_root
+            || edge_vertices.values().any(|endpoints| {
+                let start = representative(&mut parent, endpoints[0]);
+                let end = representative(&mut parent, endpoints[1]);
+                (start == left_root && end == right_root)
+                    || (start == right_root && end == left_root)
+            })
+        {
+            continue;
+        }
+        union(&mut parent, left_root, right_root);
+        accepted.push(left);
     }
     for index in 0..parent.len() {
         parent[index] = representative(&mut parent, index);
@@ -302,10 +319,9 @@ fn collapse_loop_vertices(
     for endpoints in edge_vertices.values_mut() {
         *endpoints = endpoints.map(|endpoint| parent[endpoint]);
     }
-    joined
+    accepted
         .into_iter()
-        .filter(|[left, right]| left != right)
-        .map(|[left, _]| (parent[left], LOOP_VERTEX_TOLERANCE))
+        .map(|left| (parent[left], LOOP_VERTEX_TOLERANCE))
         .collect()
 }
 
@@ -1325,5 +1341,29 @@ mod tests {
             surface: 40,
         };
         assert_eq!(tolerant_loop_solutions(&digon, &edges, &points).len(), 2);
+    }
+
+    #[test]
+    fn loop_local_tolerance_does_not_collapse_a_physical_edge() {
+        let loop_ = B5Loop {
+            object_id: 10,
+            pcurves: vec![20, 21, 22],
+            edges: vec![30, 31, 32],
+            surface: 40,
+        };
+        let loops = BTreeMap::from([(10, loop_)]);
+        let points = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, LOOP_VERTEX_TOLERANCE, 0.0],
+            [0.0, LOOP_VERTEX_TOLERANCE, 0.0],
+        ];
+        let original = BTreeMap::from([(30, [0, 1]), (31, [2, 3]), (32, [3, 0]), (33, [1, 2])]);
+        let mut edges = original.clone();
+
+        let tolerances = collapse_loop_vertices(&loops, &mut edges, &points);
+
+        assert_eq!(edges, original);
+        assert!(tolerances.is_empty());
     }
 }
