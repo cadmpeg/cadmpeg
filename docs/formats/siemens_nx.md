@@ -251,7 +251,7 @@ Validity gates: CONE satisfies `sin_half² + cos_half² ≈ 1`; SPHERE has `radi
 Pu = (Au·W − A·Wu)/W²,  Pv = (Av·W − A·Wv)/W²,  normal = normalize(Pu × Pv)
 ```
 
-An OFFSET_SURF used by a FACE transfers as a procedural surface carrier. The carrier and offset construction reference each other; the base surface and signed millimeter offset remain in the construction.
+An OFFSET_SURF used by a FACE transfers as a procedural surface carrier. The carrier and offset construction reference each other; the base surface and signed millimeter offset remain in the construction. Model evaluation follows the base reference recursively, computes the normalized parameter-tangent cross product, and applies the signed offset; cyclic base graphs do not evaluate.
 
 ### 6.2 B-spline carriers (B_SURFACE 124 / B_CURVE 134)
 

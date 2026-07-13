@@ -4,7 +4,7 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::eval::{curve_point, pcurve_uv, surface_point};
+use crate::eval::{curve_point, model_surface_point, pcurve_uv};
 use crate::geometry::PcurveGeometry;
 use crate::math::Point3;
 
@@ -112,7 +112,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         .model
         .surfaces
         .iter()
-        .map(|surface| (surface.id.0.as_str(), &surface.geometry))
+        .map(|surface| (surface.id.0.as_str(), surface))
         .collect::<HashMap<_, _>>();
     let pcurves = ir
         .model
@@ -154,7 +154,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         else {
             continue;
         };
-        let Some(geometry) = surfaces.get(face.surface.0.as_str()) else {
+        let Some(surface) = surfaces.get(face.surface.0.as_str()) else {
             continue;
         };
         let Some(edge) = edges.get(coedge.edge.0.as_str()) else {
@@ -176,8 +176,8 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             continue;
         };
         let (Some(p0), Some(p1)) = (
-            surface_point(geometry, uv0.u, uv0.v),
-            surface_point(geometry, uv1.u, uv1.v),
+            model_surface_point(ir, &surface.id, uv0.u, uv0.v),
+            model_surface_point(ir, &surface.id, uv1.u, uv1.v),
         ) else {
             continue;
         };

@@ -8,10 +8,10 @@ use crate::document::Model;
 use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use crate::ids::{
-    CoedgeId, CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SubdId, UnknownId,
+    CoedgeId, CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SubdId, SurfaceId, UnknownId,
 };
 use crate::math::{Point3, Vector3};
 use crate::native::NativeRecord;
@@ -1874,6 +1874,68 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
     .unwrap();
     let radius = (point.x * point.x + point.y * point.y).sqrt();
     assert!((radius - 5.0).abs() < 1e-12, "mid-span radius {radius}");
+}
+
+#[test]
+fn nested_offset_surface_carriers_evaluate_recursively() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    let base = SurfaceId("synthetic:surface#base".into());
+    ir.model.surfaces.push(Surface {
+        id: base.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let first = SurfaceId("synthetic:surface#offset-1".into());
+    let first_construction = ProceduralSurfaceId("synthetic:offset#1".into());
+    ir.model.surfaces.push(Surface {
+        id: first.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: first_construction.clone(),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: first_construction,
+        surface: first.clone(),
+        definition: ProceduralSurfaceDefinition::Offset {
+            support: base,
+            distance: 5.0,
+            u_sense: 0,
+            v_sense: 0,
+            extension_flags: Vec::new(),
+        },
+        cache_fit_tolerance: None,
+    });
+    let second = SurfaceId("synthetic:surface#offset-2".into());
+    let second_construction = ProceduralSurfaceId("synthetic:offset#2".into());
+    ir.model.surfaces.push(Surface {
+        id: second.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: second_construction.clone(),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: second_construction,
+        surface: second.clone(),
+        definition: ProceduralSurfaceDefinition::Offset {
+            support: first,
+            distance: -2.0,
+            u_sense: 0,
+            v_sense: 0,
+            extension_flags: Vec::new(),
+        },
+        cache_fit_tolerance: None,
+    });
+
+    let point = crate::eval::model_surface_point(&ir, &second, 7.0, 11.0).unwrap();
+    assert!((point.x - 7.0).abs() < 1e-9);
+    assert!((point.y - 11.0).abs() < 1e-9);
+    assert!((point.z - 3.0).abs() < 1e-9);
 }
 
 #[test]

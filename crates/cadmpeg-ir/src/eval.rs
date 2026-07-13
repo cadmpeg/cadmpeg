@@ -9,7 +9,13 @@
 //! ([`CurveGeometry::Unknown`], [`SurfaceGeometry::Unknown`], parabolas, and
 //! hyperbolas) evaluate to `None`.
 
-use crate::geometry::{CurveGeometry, NurbsSurface, PcurveGeometry, SurfaceGeometry};
+use std::collections::BTreeSet;
+
+use crate::document::CadIr;
+use crate::geometry::{
+    CurveGeometry, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
+};
+use crate::ids::SurfaceId;
 use crate::math::{Point2, Point3, Vector3};
 
 fn cross(a: Vector3, b: Vector3) -> Vector3 {
@@ -296,6 +302,65 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
         SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point(nurbs, u, v),
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => None,
     }
+}
+
+/// Evaluate a model surface by identity, resolving exact procedural carriers.
+pub fn model_surface_point(ir: &CadIr, surface: &SurfaceId, u: f64, v: f64) -> Option<Point3> {
+    model_surface_point_inner(ir, surface, u, v, &mut BTreeSet::new())
+}
+
+fn model_surface_point_inner(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    u: f64,
+    v: f64,
+    visiting: &mut BTreeSet<SurfaceId>,
+) -> Option<Point3> {
+    visiting.insert(surface.clone()).then_some(())?;
+    let carrier = ir.model.surfaces.iter().find(|item| &item.id == surface)?;
+    let result = match &carrier.geometry {
+        SurfaceGeometry::Procedural { construction } => {
+            let procedural = ir
+                .model
+                .procedural_surfaces
+                .iter()
+                .find(|item| &item.id == construction && &item.surface == surface)?;
+            match &procedural.definition {
+                ProceduralSurfaceDefinition::Offset {
+                    support, distance, ..
+                } => {
+                    let point = model_surface_point_inner(ir, support, u, v, visiting)?;
+                    let normal = model_surface_normal(ir, support, u, v, visiting)?;
+                    Some(offset(point, &[(*distance, normal)]))
+                }
+                _ => None,
+            }
+        }
+        geometry => surface_point(geometry, u, v),
+    };
+    visiting.remove(surface);
+    result
+}
+
+fn model_surface_normal(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    u: f64,
+    v: f64,
+    visiting: &mut BTreeSet<SurfaceId>,
+) -> Option<Vector3> {
+    let step = |parameter: f64| f64::EPSILON.sqrt() * parameter.abs().max(1.0);
+    let (du, dv) = (step(u), step(v));
+    let u0 = model_surface_point_inner(ir, surface, u - du, v, visiting)?;
+    let u1 = model_surface_point_inner(ir, surface, u + du, v, visiting)?;
+    let v0 = model_surface_point_inner(ir, surface, u, v - dv, visiting)?;
+    let v1 = model_surface_point_inner(ir, surface, u, v + dv, visiting)?;
+    let tangent_u = Vector3::new(u1.x - u0.x, u1.y - u0.y, u1.z - u0.z);
+    let tangent_v = Vector3::new(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
+    let normal = cross(tangent_u, tangent_v);
+    let norm = normal.norm();
+    (norm.is_finite() && norm > 0.0)
+        .then(|| Vector3::new(normal.x / norm, normal.y / norm, normal.z / norm))
 }
 
 /// Evaluate a pcurve carrier at parameter `t`, yielding a surface `(u, v)`.
