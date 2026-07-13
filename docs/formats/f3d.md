@@ -266,6 +266,8 @@ The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partn
 
 **Vertex (63 B):** `chunk[3]` @+36 = owning_edge, `chunk[4]` @+45 = index_flag (`0` = this is the owning edge's START vertex, `1` = its END vertex), `chunk[5]` @+54 = point ref. Each vertex has its own point entity; no deduplication.
 
+**Tolerant vertex:** `tvertex` carries the complete vertex field sequence followed by `chunk[6]` as an f64 model-space tolerance and `chunk[7..=8]` as two f32 tail slots. The tolerance converts from native centimetres to document millimetres; the f32 slots are retained verbatim.
+
 **Transform (142 B):** 13×f64 (@+18..117): `a[0..8]` 3×3 rotation, `a[9..11]` translation, `a[12]` overall scale; then 3 flag bytes (ROTATION/REFLECTION/SHEAR enums). Column mapping: `a[0..2]`→col0, `a[3..5]`→col1, `a[6..8]`→col2, `a[9..11]`→col3. The body references its transform through `body.chunk[5]`; null denotes no body transform.
 
 ### 6.3 Point records and coordinate authority
