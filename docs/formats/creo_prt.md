@@ -382,6 +382,8 @@ A class-923 feature with exactly one resolved plane carrier defines that datum p
 
 For a linear section sweep, generated plane carriers parallel to the section normal are cap planes. Let `d0` and `d1` be their signed offsets from the section origin along the section normal. Exactly two distinct cap offsets with opposite signs and equal magnitudes define a symmetric extrusion of total length `|d0| + |d1|`. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain.
 
+Evaluating a closed linear section sweep produces one side face per oriented profile entity. A line produces a planar side face and an arc produces a cylindrical side face. Each profile vertex produces an edge parallel to the sweep direction. The two cap loops use the profile edges in opposite directions, and every cap or longitudinal edge has exactly two face uses.
+
 A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
 
 `strong_parents` is the ordered set of earlier modeling features consumed to

@@ -1072,6 +1072,531 @@ fn transfer_feature_extrusion_surfaces(
     transferred
 }
 
+fn sketch_geometry_endpoints(geometry: &SketchGeometry) -> Option<([f64; 2], [f64; 2])> {
+    match geometry {
+        SketchGeometry::Line { start, end } => Some(([start.u, start.v], [end.u, end.v])),
+        SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => Some((
+            [
+                center.u + radius.0 * start_angle.0.cos(),
+                center.v + radius.0 * start_angle.0.sin(),
+            ],
+            [
+                center.u + radius.0 * end_angle.0.cos(),
+                center.v + radius.0 * end_angle.0.sin(),
+            ],
+        )),
+        _ => None,
+    }
+}
+
+fn oriented_arc_parameterization(reversed: bool, start: f64, end: f64) -> (f64, [f64; 2]) {
+    let (axis_sign, raw_start, raw_end) = if reversed {
+        (-1.0, -end, -start)
+    } else {
+        (1.0, start, end)
+    };
+    let start = raw_start.rem_euclid(std::f64::consts::TAU);
+    let mut end = raw_end.rem_euclid(std::f64::consts::TAU);
+    if end < start {
+        end += std::f64::consts::TAU;
+    }
+    (axis_sign, [start, end])
+}
+
+fn transfer_resolved_extrusion_breps(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut transferred = 0;
+    for transform in &scan.feature_section_transforms {
+        let Some(feature_id) = transform.feature_id else {
+            continue;
+        };
+        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Extrude) {
+            continue;
+        }
+        let Some(operation_index) = scan
+            .feature_operations
+            .iter()
+            .position(|operation| operation.feature_id == feature_id)
+        else {
+            continue;
+        };
+        if scan.feature_operations[..operation_index]
+            .iter()
+            .any(|operation| operation.recipe.is_some())
+        {
+            continue;
+        }
+        let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
+        let Some(sketch) = ir
+            .model
+            .sketches
+            .iter()
+            .find(|sketch| sketch.id == sketch_id)
+        else {
+            continue;
+        };
+        if sketch.profiles.is_empty() {
+            continue;
+        }
+        let cap_origins = scan
+            .surface_rows
+            .iter()
+            .filter(|row| {
+                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+            })
+            .filter_map(|row| {
+                let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+                ir.model.surfaces.iter().find(|surface| surface.id == id)
+            })
+            .filter_map(|surface| match surface.geometry {
+                SurfaceGeometry::Plane { origin, normal, .. } => Some((
+                    [origin.x, origin.y, origin.z],
+                    [normal.x, normal.y, normal.z],
+                )),
+                _ => None,
+            });
+        let Some(Extent::Symmetric { length }) =
+            symmetric_extrusion_extent(transform.origin, transform.normal, cap_origins)
+        else {
+            continue;
+        };
+        let half = length.0 / 2.0;
+        let entities = ir
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| entity.sketch == sketch_id)
+            .map(|entity| (entity.id.clone(), entity))
+            .collect::<BTreeMap<_, _>>();
+        let mut profiles = Vec::new();
+        let mut supported = true;
+        for profile in &sketch.profiles {
+            let mut geometries = Vec::new();
+            for entity_use in profile {
+                let Some(entity) = entities.get(&entity_use.entity) else {
+                    supported = false;
+                    break;
+                };
+                let Some((mut start, mut end)) = sketch_geometry_endpoints(&entity.geometry) else {
+                    supported = false;
+                    break;
+                };
+                if entity_use.reversed {
+                    std::mem::swap(&mut start, &mut end);
+                }
+                geometries.push((entity.geometry.clone(), entity_use.reversed, start, end));
+            }
+            if !supported || geometries.len() < 2 {
+                break;
+            }
+            let scale = geometries
+                .iter()
+                .flat_map(|(_, _, start, end)| start.iter().chain(end))
+                .map(|value| value.abs())
+                .fold(1.0, f64::max);
+            if geometries
+                .iter()
+                .enumerate()
+                .any(|(index, (_, _, _, end))| {
+                    let next = geometries[(index + 1) % geometries.len()].2;
+                    (end[0] - next[0]).hypot(end[1] - next[1]) > 1e-9 * scale
+                })
+            {
+                supported = false;
+                break;
+            }
+            profiles.push(geometries);
+        }
+        if !supported {
+            continue;
+        }
+
+        let prefix = format!("creo:feature:extrusion#{feature_id}");
+        let body_id = BodyId(format!("{prefix}:body"));
+        if ir.model.bodies.iter().any(|body| body.id == body_id) {
+            continue;
+        }
+        let region_id = RegionId(format!("{prefix}:region"));
+        let shell_id = ShellId(format!("{prefix}:shell"));
+        let bottom_surface = SurfaceId(format!("{prefix}:surface:bottom"));
+        let top_surface = SurfaceId(format!("{prefix}:surface:top"));
+        for (id, offset) in [(&bottom_surface, -half), (&top_surface, half)] {
+            annotate(
+                annotations,
+                id,
+                "FeatDefs",
+                transform.offset as u64,
+                "extrusion_cap_plane",
+                Exactness::Derived,
+            );
+            ir.model.surfaces.push(Surface {
+                id: id.clone(),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(
+                        transform.origin[0] + offset * transform.normal[0],
+                        transform.origin[1] + offset * transform.normal[1],
+                        transform.origin[2] + offset * transform.normal[2],
+                    ),
+                    normal: Vector3::new(
+                        transform.normal[0],
+                        transform.normal[1],
+                        transform.normal[2],
+                    ),
+                    u_axis: Vector3::new(
+                        transform.u_axis[0],
+                        transform.u_axis[1],
+                        transform.u_axis[2],
+                    ),
+                },
+                source_object: None,
+            });
+        }
+
+        let bottom_face = FaceId(format!("{prefix}:face:bottom"));
+        let top_face = FaceId(format!("{prefix}:face:top"));
+        let mut shell_faces = vec![bottom_face.clone(), top_face.clone()];
+        let mut bottom_loops = Vec::new();
+        let mut top_loops = Vec::new();
+        for (profile_index, profile) in profiles.iter().enumerate() {
+            let count = profile.len();
+            let mut bottom_vertices = Vec::new();
+            let mut top_vertices = Vec::new();
+            for (index, (_, _, start, _)) in profile.iter().enumerate() {
+                for (side, offset, arena) in [
+                    ("bottom", -half, &mut bottom_vertices),
+                    ("top", half, &mut top_vertices),
+                ] {
+                    let position = section_point_in_model(transform, *start);
+                    let point_id =
+                        PointId(format!("{prefix}:point:{profile_index}:{index}:{side}"));
+                    let vertex_id =
+                        VertexId(format!("{prefix}:vertex:{profile_index}:{index}:{side}"));
+                    ir.model.points.push(Point {
+                        id: point_id.clone(),
+                        position: Point3::new(
+                            position[0] + offset * transform.normal[0],
+                            position[1] + offset * transform.normal[1],
+                            position[2] + offset * transform.normal[2],
+                        ),
+                    });
+                    ir.model.vertices.push(Vertex {
+                        id: vertex_id.clone(),
+                        point: point_id,
+                        tolerance: None,
+                    });
+                    arena.push(vertex_id);
+                }
+            }
+
+            let mut bottom_edges = Vec::new();
+            let mut top_edges = Vec::new();
+            let mut vertical_edges = Vec::new();
+            for (index, (geometry, reversed, start, end)) in profile.iter().enumerate() {
+                let next = (index + 1) % count;
+                for (side, offset, vertices, arena) in [
+                    ("bottom", -half, &bottom_vertices, &mut bottom_edges),
+                    ("top", half, &top_vertices, &mut top_edges),
+                ] {
+                    let curve_id =
+                        CurveId(format!("{prefix}:curve:{profile_index}:{index}:{side}"));
+                    let edge_id = EdgeId(format!("{prefix}:edge:{profile_index}:{index}:{side}"));
+                    let curve = match geometry {
+                        SketchGeometry::Line { .. } => {
+                            let placed_start = section_point_in_model(transform, *start);
+                            let placed_end = section_point_in_model(transform, *end);
+                            let direction = normalized(std::array::from_fn(|axis| {
+                                placed_end[axis] - placed_start[axis]
+                            }))
+                            .expect("closed line segment is nondegenerate");
+                            CurveGeometry::Line {
+                                origin: Point3::new(
+                                    placed_start[0] + offset * transform.normal[0],
+                                    placed_start[1] + offset * transform.normal[1],
+                                    placed_start[2] + offset * transform.normal[2],
+                                ),
+                                direction: Vector3::new(direction[0], direction[1], direction[2]),
+                            }
+                        }
+                        SketchGeometry::Arc { center, radius, .. } => {
+                            let center = section_point_in_model(transform, [center.u, center.v]);
+                            let (axis_sign, _) = oriented_arc_parameterization(*reversed, 0.0, 0.0);
+                            CurveGeometry::Circle {
+                                center: Point3::new(
+                                    center[0] + offset * transform.normal[0],
+                                    center[1] + offset * transform.normal[1],
+                                    center[2] + offset * transform.normal[2],
+                                ),
+                                axis: Vector3::new(
+                                    axis_sign * transform.normal[0],
+                                    axis_sign * transform.normal[1],
+                                    axis_sign * transform.normal[2],
+                                ),
+                                ref_direction: Vector3::new(
+                                    transform.u_axis[0],
+                                    transform.u_axis[1],
+                                    transform.u_axis[2],
+                                ),
+                                radius: radius.0,
+                            }
+                        }
+                        _ => unreachable!("profile family checked above"),
+                    };
+                    ir.model.curves.push(Curve {
+                        id: curve_id.clone(),
+                        geometry: curve,
+                        source_object: None,
+                    });
+                    let param_range = match geometry {
+                        SketchGeometry::Line { .. } => {
+                            Some([0.0, (end[0] - start[0]).hypot(end[1] - start[1])])
+                        }
+                        SketchGeometry::Arc {
+                            start_angle,
+                            end_angle,
+                            ..
+                        } => Some(
+                            oriented_arc_parameterization(*reversed, start_angle.0, end_angle.0).1,
+                        ),
+                        _ => None,
+                    };
+                    ir.model.edges.push(Edge {
+                        id: edge_id.clone(),
+                        curve: Some(curve_id),
+                        start: vertices[index].clone(),
+                        end: vertices[next].clone(),
+                        param_range,
+                        tolerance: None,
+                    });
+                    arena.push(edge_id);
+                }
+                let curve_id = CurveId(format!("{prefix}:curve:{profile_index}:{index}:vertical"));
+                let edge_id = EdgeId(format!("{prefix}:edge:{profile_index}:{index}:vertical"));
+                let origin = section_point_in_model(transform, *start);
+                ir.model.curves.push(Curve {
+                    id: curve_id.clone(),
+                    geometry: CurveGeometry::Line {
+                        origin: Point3::new(
+                            origin[0] - half * transform.normal[0],
+                            origin[1] - half * transform.normal[1],
+                            origin[2] - half * transform.normal[2],
+                        ),
+                        direction: Vector3::new(
+                            transform.normal[0],
+                            transform.normal[1],
+                            transform.normal[2],
+                        ),
+                    },
+                    source_object: None,
+                });
+                ir.model.edges.push(Edge {
+                    id: edge_id.clone(),
+                    curve: Some(curve_id),
+                    start: bottom_vertices[index].clone(),
+                    end: top_vertices[index].clone(),
+                    param_range: Some([0.0, length.0]),
+                    tolerance: None,
+                });
+                vertical_edges.push(edge_id);
+            }
+
+            let bottom_loop = LoopId(format!("{prefix}:loop:{profile_index}:bottom"));
+            let top_loop = LoopId(format!("{prefix}:loop:{profile_index}:top"));
+            bottom_loops.push(bottom_loop.clone());
+            top_loops.push(top_loop.clone());
+            let bottom_coedges = (0..count)
+                .rev()
+                .map(|index| {
+                    CoedgeId(format!(
+                        "{prefix}:coedge:{profile_index}:{index}:bottom-cap"
+                    ))
+                })
+                .collect::<Vec<_>>();
+            let top_coedges = (0..count)
+                .map(|index| CoedgeId(format!("{prefix}:coedge:{profile_index}:{index}:top-cap")))
+                .collect::<Vec<_>>();
+            ir.model.loops.push(IrLoop {
+                id: bottom_loop.clone(),
+                face: bottom_face.clone(),
+                coedges: bottom_coedges.clone(),
+            });
+            ir.model.loops.push(IrLoop {
+                id: top_loop.clone(),
+                face: top_face.clone(),
+                coedges: top_coedges.clone(),
+            });
+            for ring_index in 0..count {
+                let edge_index = count - 1 - ring_index;
+                let id = bottom_coedges[ring_index].clone();
+                ir.model.coedges.push(Coedge {
+                    id,
+                    owner_loop: bottom_loop.clone(),
+                    edge: bottom_edges[edge_index].clone(),
+                    next: bottom_coedges[(ring_index + 1) % count].clone(),
+                    previous: bottom_coedges[(ring_index + count - 1) % count].clone(),
+                    radial_next: CoedgeId(format!(
+                        "{prefix}:coedge:{profile_index}:{edge_index}:side-bottom"
+                    )),
+                    sense: Sense::Reversed,
+                    pcurve: None,
+                });
+                let id = top_coedges[ring_index].clone();
+                ir.model.coedges.push(Coedge {
+                    id,
+                    owner_loop: top_loop.clone(),
+                    edge: top_edges[ring_index].clone(),
+                    next: top_coedges[(ring_index + 1) % count].clone(),
+                    previous: top_coedges[(ring_index + count - 1) % count].clone(),
+                    radial_next: CoedgeId(format!(
+                        "{prefix}:coedge:{profile_index}:{ring_index}:side-top"
+                    )),
+                    sense: Sense::Forward,
+                    pcurve: None,
+                });
+            }
+
+            for (index, (geometry, _, start, _)) in profile.iter().enumerate() {
+                let next = (index + 1) % count;
+                let surface_id =
+                    SurfaceId(format!("{prefix}:surface:{profile_index}:side:{index}"));
+                let section_geometry = match geometry {
+                    SketchGeometry::Line { .. } => SketchGeometry::Line {
+                        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+                        end: cadmpeg_ir::math::Point2::new(
+                            profile[index].3[0],
+                            profile[index].3[1],
+                        ),
+                    },
+                    value => value.clone(),
+                };
+                let Some(surface_geometry) =
+                    extruded_geometry_surface(transform, &section_geometry)
+                else {
+                    supported = false;
+                    break;
+                };
+                ir.model.surfaces.push(Surface {
+                    id: surface_id.clone(),
+                    geometry: surface_geometry,
+                    source_object: None,
+                });
+                let face_id = FaceId(format!("{prefix}:face:{profile_index}:side:{index}"));
+                let loop_id = LoopId(format!("{prefix}:loop:{profile_index}:side:{index}"));
+                let coedges = [
+                    CoedgeId(format!(
+                        "{prefix}:coedge:{profile_index}:{index}:side-bottom"
+                    )),
+                    CoedgeId(format!(
+                        "{prefix}:coedge:{profile_index}:{next}:side-vertical-out"
+                    )),
+                    CoedgeId(format!("{prefix}:coedge:{profile_index}:{index}:side-top")),
+                    CoedgeId(format!(
+                        "{prefix}:coedge:{profile_index}:{index}:side-vertical-in"
+                    )),
+                ];
+                ir.model.loops.push(IrLoop {
+                    id: loop_id.clone(),
+                    face: face_id.clone(),
+                    coedges: coedges.to_vec(),
+                });
+                let edge_uses = [
+                    (bottom_edges[index].clone(), Sense::Forward),
+                    (vertical_edges[next].clone(), Sense::Forward),
+                    (top_edges[index].clone(), Sense::Reversed),
+                    (vertical_edges[index].clone(), Sense::Reversed),
+                ];
+                for use_index in 0..4 {
+                    let radial_next = match use_index {
+                        0 => bottom_coedges[count - 1 - index].clone(),
+                        1 => CoedgeId(format!(
+                            "{prefix}:coedge:{profile_index}:{next}:side-vertical-in"
+                        )),
+                        2 => top_coedges[index].clone(),
+                        3 => CoedgeId(format!(
+                            "{prefix}:coedge:{profile_index}:{index}:side-vertical-out"
+                        )),
+                        _ => unreachable!(),
+                    };
+                    ir.model.coedges.push(Coedge {
+                        id: coedges[use_index].clone(),
+                        owner_loop: loop_id.clone(),
+                        edge: edge_uses[use_index].0.clone(),
+                        next: coedges[(use_index + 1) % 4].clone(),
+                        previous: coedges[(use_index + 3) % 4].clone(),
+                        radial_next,
+                        sense: edge_uses[use_index].1,
+                        pcurve: None,
+                    });
+                }
+                ir.model.faces.push(Face {
+                    id: face_id.clone(),
+                    shell: shell_id.clone(),
+                    surface: surface_id,
+                    sense: Sense::Forward,
+                    loops: vec![loop_id],
+                    name: None,
+                    color: None,
+                    tolerance: None,
+                });
+                shell_faces.push(face_id);
+            }
+        }
+        if !supported {
+            continue;
+        }
+        ir.model.faces.push(Face {
+            id: bottom_face,
+            shell: shell_id.clone(),
+            surface: bottom_surface,
+            sense: Sense::Reversed,
+            loops: bottom_loops,
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        ir.model.faces.push(Face {
+            id: top_face,
+            shell: shell_id.clone(),
+            surface: top_surface,
+            sense: Sense::Forward,
+            loops: top_loops,
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id.clone(),
+            faces: shell_faces,
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id],
+        });
+        ir.model.bodies.push(Body {
+            id: body_id,
+            kind: BodyKind::Solid,
+            regions: vec![region_id],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 fn feature_recipe(
     scan: &ContainerScan,
     feature_id: u32,
@@ -1515,6 +2040,10 @@ fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> V
         .flat_map(|table| &table.surface_ids)
         .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}")));
     let mut outputs = Vec::new();
+    let evaluated = BodyId(format!("creo:feature:extrusion#{feature_id}:body"));
+    if ir.model.bodies.iter().any(|body| body.id == evaluated) {
+        outputs.push(evaluated);
+    }
     for surface in generated_surfaces {
         for face in ir.model.faces.iter().filter(|face| face.surface == surface) {
             let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == face.shell) else {
@@ -1834,7 +2363,13 @@ fn schema_feature_definition(
                             transform.normal[2],
                         )),
                         extent,
-                        op: BooleanOp::Unresolved,
+                        op: if ir.model.bodies.iter().any(|body| {
+                            body.id == BodyId(format!("creo:feature:extrusion#{feature_id}:body"))
+                        }) {
+                            BooleanOp::NewBody
+                        } else {
+                            BooleanOp::Unresolved
+                        },
                         draft: None,
                     };
                 }
@@ -1945,6 +2480,24 @@ fn symmetric_extrusion_extent(
 #[cfg(test)]
 mod resolved_sketch_tests {
     use super::*;
+
+    #[test]
+    fn reversed_arc_uses_opposite_axis_and_canonical_increasing_domain() {
+        let (axis_sign, range) = oriented_arc_parameterization(
+            true,
+            -std::f64::consts::FRAC_PI_2,
+            std::f64::consts::FRAC_PI_2,
+        );
+
+        assert_eq!(axis_sign, -1.0);
+        assert_eq!(
+            range,
+            [
+                3.0 * std::f64::consts::FRAC_PI_2,
+                5.0 * std::f64::consts::FRAC_PI_2
+            ]
+        );
+    }
 
     #[test]
     fn equal_opposite_cap_planes_define_symmetric_extent() {
@@ -3338,10 +3891,16 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     transfer_resolved_sketches(scan, &mut ir, &mut annotations);
     let feature_extrusion_surface_count =
         transfer_feature_extrusion_surfaces(scan, &mut ir, &mut annotations);
+    let feature_extrusion_brep_count =
+        transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "transferred_feature_extrusion_surface_count".to_string(),
             feature_extrusion_surface_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_feature_extrusion_brep_count".to_string(),
+            feature_extrusion_brep_count.to_string(),
         );
     }
     for datum in &scan.datum_planes {
