@@ -378,6 +378,13 @@ pub enum ProceduralSurfaceDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_position: Option<Point3>,
     },
+    /// Unbounded linear sweep of a directrix.
+    LinearSweep {
+        /// Curve swept along `direction`.
+        directrix: CurveId,
+        /// Length-bearing sweep vector.
+        direction: Vector3,
+    },
     /// Revolution of a directrix about an axis.
     Revolution {
         /// Curve revolved about the axis to form the surface.
@@ -392,6 +399,15 @@ pub enum ProceduralSurfaceDefinition {
         parameter_interval: [f64; 2],
         /// Whether the source parameter directions are transposed.
         transposed: bool,
+    },
+    /// Full revolution of a directrix about an axis.
+    AxisRevolution {
+        /// Curve revolved about the axis.
+        directrix: CurveId,
+        /// Point on the revolution axis.
+        axis_origin: Point3,
+        /// Unit revolution-axis direction.
+        axis_direction: Vector3,
     },
     /// Sum of two ordered curves from a base point.
     Sum {

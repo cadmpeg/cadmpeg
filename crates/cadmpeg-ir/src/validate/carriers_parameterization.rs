@@ -250,7 +250,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
-            | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
+            | ProceduralSurfaceDefinition::LinearSweep { directrix, .. }
+            | ProceduralSurfaceDefinition::Revolution { directrix, .. }
+            | ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => {
                 curves.insert(&directrix.0);
             }
             ProceduralSurfaceDefinition::Sweep {

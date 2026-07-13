@@ -580,7 +580,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
             }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
-            | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
+            | ProceduralSurfaceDefinition::LinearSweep { directrix, .. }
+            | ProceduralSurfaceDefinition::Revolution { directrix, .. }
+            | ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => {
                 if !ids.curves.contains(&directrix.0) {
                     ref_error(findings, &procedural.id.0, "curve", &directrix.0);
                 }

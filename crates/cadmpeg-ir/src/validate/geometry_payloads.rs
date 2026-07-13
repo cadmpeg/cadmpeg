@@ -371,6 +371,15 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::LinearSweep { direction, .. } = &procedural.definition {
+            if ![direction.x, direction.y, direction.z]
+                .into_iter()
+                .all(f64::is_finite)
+                || direction.norm() == 0.0
+            {
+                bounds_err(findings, &procedural.id.0, "invalid linear-sweep direction");
+            }
+        }
         if let ProceduralSurfaceDefinition::Exact {
             parameter_ranges, ..
         } = &procedural.definition
