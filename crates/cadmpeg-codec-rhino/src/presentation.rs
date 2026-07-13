@@ -51,6 +51,9 @@ const TEXTURE_MAPPING: Uuid = Uuid::from_canonical([
 const TEXT_STYLE: Uuid = Uuid::from_canonical([
     0x4f, 0x0f, 0x51, 0xfb, 0x35, 0xd0, 0x48, 0x65, 0x99, 0x98, 0x6d, 0x2c, 0x6a, 0x99, 0x72, 0x1d,
 ]);
+const TEXTURE: Uuid = Uuid::from_canonical([
+    0xd6, 0xff, 0x10, 0x6d, 0x32, 0x9b, 0x4f, 0x29, 0x97, 0xe2, 0xfd, 0x28, 0x2a, 0x61, 0x80, 0x20,
+]);
 
 #[derive(Debug)]
 struct Component {
@@ -92,6 +95,7 @@ struct MaterialRecord {
     shine: f64,
     transparency: f64,
     texture_count: usize,
+    textures: Vec<TextureRecord>,
     shareable: bool,
     disable_lighting: bool,
     fresnel_reflections: bool,
@@ -100,6 +104,44 @@ struct MaterialRecord {
     fresnel_index_of_refraction: Option<f64>,
     rdk_instance_uuid: Option<String>,
     diffuse_texture_alpha_transparency: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct TextureFileReference {
+    full_path: String,
+    relative_path: String,
+    referenced_byte_count: u64,
+    hash_time: u64,
+    content_time: u64,
+    name_sha1: String,
+    content_sha1: String,
+    path_status: u32,
+    embedded_file_uuid: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TextureRecord {
+    source_offset: u64,
+    source_uuid: Option<String>,
+    mapping_channel_id: u32,
+    legacy_file_path: String,
+    enabled: bool,
+    texture_type: u32,
+    mode: u32,
+    minification_filter: u32,
+    magnification_filter: u32,
+    wrap: [u32; 3],
+    uvw_transform: [[f64; 4]; 4],
+    border_color: [u8; 4],
+    transparent_color: [u8; 4],
+    transparency_texture_uuid: Option<String>,
+    bump_scale: [f64; 2],
+    alpha_blend: [f64; 5],
+    rgb_blend_constant: [u8; 4],
+    rgb_blend: [f64; 4],
+    blend_order: i32,
+    file_reference: Option<TextureFileReference>,
+    treat_as_linear: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -351,6 +393,16 @@ fn structural(offset: usize, message: impl Into<String>) -> FramingError {
     }
 }
 
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut value, byte| {
+            write!(value, "{byte:02x}").expect("writing to String cannot fail");
+            value
+        })
+}
+
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(reader.array()?))
 }
@@ -396,7 +448,7 @@ fn component(
     archive: ArchiveVersion,
 ) -> Result<Component, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != MODEL_ATTRIBUTES || chunk.short {
+    if !matches!(chunk.typecode, MODEL_ATTRIBUTES | ANONYMOUS) || chunk.short {
         return Err(structural(
             reader.position(),
             "model-component attributes are missing",
@@ -408,6 +460,44 @@ fn component(
             value.position(),
             "model-component version is unsupported",
         ));
+    }
+    if chunk.typecode == ANONYMOUS {
+        let bits = value.u32()?;
+        if bits & !0x1f != 0 {
+            return Err(structural(
+                value.position() - 4,
+                "model-component bits are invalid",
+            ));
+        }
+        let id = if bits & 1 != 0 {
+            uuid(&mut value)?
+        } else {
+            Uuid::nil()
+        };
+        if bits & 2 != 0 {
+            value.skip(16)?;
+        }
+        let index = if bits & 4 != 0 {
+            Some(value.i32()?)
+        } else {
+            None
+        };
+        let name = if bits & 8 != 0 {
+            utf16(&mut value)?
+        } else {
+            String::new()
+        };
+        if bits & 0x10 != 0 {
+            value.skip(8)?;
+        }
+        if value.remaining() != 0 {
+            return Err(structural(
+                value.position(),
+                "model-component attributes have trailing bytes",
+            ));
+        }
+        reader.skip(chunk.next_offset - reader.position())?;
+        return Ok(Component { index, id, name });
     }
     match value.u8()? {
         0 | 2 => {}
@@ -460,11 +550,101 @@ fn class_data(
     Ok(class.class_data_range)
 }
 
-fn skip_objects(
+fn parse_texture(
+    data: &[u8],
+    range: Range<usize>,
+    archive: ArchiveVersion,
+    source_offset: usize,
+) -> Result<TextureRecord, FramingError> {
+    let (mut reader, version) = anonymous(data, range, archive)?;
+    if version.0 != 1 || !(0..=2).contains(&version.1) {
+        return Err(structural(
+            reader.position(),
+            "texture version is unsupported",
+        ));
+    }
+    let id = uuid(&mut reader)?;
+    let mapping_channel_id = reader.u32()?;
+    let legacy_file_path = utf16(&mut reader)?;
+    let enabled = reader.bool()?;
+    let texture_type = reader.u32()?;
+    let mode = reader.u32()?;
+    let minification_filter = reader.u32()?;
+    let magnification_filter = reader.u32()?;
+    let wrap = [reader.u32()?, reader.u32()?, reader.u32()?];
+    let uvw_transform = xform(&mut reader)?;
+    let border_color = reader.array()?;
+    let transparent_color = reader.array()?;
+    let transparency = uuid(&mut reader)?;
+    let bump_scale = [
+        read_finite(&mut reader, "bump scale minimum")?,
+        read_finite(&mut reader, "bump scale maximum")?,
+    ];
+    let alpha_blend = [
+        read_finite(&mut reader, "alpha blend constant")?,
+        read_finite(&mut reader, "alpha blend coefficient")?,
+        read_finite(&mut reader, "alpha blend coefficient")?,
+        read_finite(&mut reader, "alpha blend coefficient")?,
+        read_finite(&mut reader, "alpha blend coefficient")?,
+    ];
+    let rgb_blend_constant = reader.array()?;
+    let rgb_blend = [
+        read_finite(&mut reader, "RGB blend coefficient")?,
+        read_finite(&mut reader, "RGB blend coefficient")?,
+        read_finite(&mut reader, "RGB blend coefficient")?,
+        read_finite(&mut reader, "RGB blend coefficient")?,
+    ];
+    let blend_order = reader.i32()?;
+    let file_reference = if version.1 >= 1 {
+        let value = crate::instances::file_reference(data, &mut reader, archive, &mut Vec::new())?;
+        Some(TextureFileReference {
+            full_path: value.full_path,
+            relative_path: value.relative_path,
+            referenced_byte_count: value.content_hash.byte_count,
+            hash_time: value.content_hash.hash_time,
+            content_time: value.content_hash.content_time,
+            name_sha1: hex(&value.content_hash.name_sha1),
+            content_sha1: hex(&value.content_hash.content_sha1),
+            path_status: value.path_status,
+            embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
+        })
+    } else {
+        None
+    };
+    let treat_as_linear = (version.1 >= 2).then(|| reader.bool()).transpose()?;
+    if reader.remaining() != 0 {
+        return Err(structural(reader.position(), "texture has trailing bytes"));
+    }
+    Ok(TextureRecord {
+        source_offset: source_offset as u64,
+        source_uuid: (!id.is_nil()).then(|| id.to_string()),
+        mapping_channel_id,
+        legacy_file_path,
+        enabled,
+        texture_type,
+        mode,
+        minification_filter,
+        magnification_filter,
+        wrap,
+        uvw_transform,
+        border_color,
+        transparent_color,
+        transparency_texture_uuid: (!transparency.is_nil()).then(|| transparency.to_string()),
+        bump_scale,
+        alpha_blend,
+        rgb_blend_constant,
+        rgb_blend,
+        blend_order,
+        file_reference,
+        treat_as_linear,
+    })
+}
+
+fn texture_array(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-) -> Result<usize, FramingError> {
+) -> Result<Vec<TextureRecord>, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
         return Err(structural(
@@ -488,6 +668,7 @@ fn skip_objects(
             "texture count exceeds limit",
         ));
     }
+    let mut textures = Vec::with_capacity(count);
     for _ in 0..count {
         let object = chunk_at(data, values.position(), values.end(), archive, false)?;
         if object.short {
@@ -496,6 +677,24 @@ fn skip_objects(
                 "texture object is short-framed",
             ));
         }
+        let class = parse_class_wrapper(
+            data,
+            object.header_start..object.next_offset,
+            archive,
+            &mut Vec::new(),
+        )?;
+        if class.class_uuid != TEXTURE {
+            return Err(structural(
+                values.position(),
+                "texture array item has the wrong class",
+            ));
+        }
+        textures.push(parse_texture(
+            data,
+            class.class_data_range,
+            archive,
+            object.header_start,
+        )?);
         values.skip(object.next_offset - values.position())?;
     }
     if values.remaining() != 0 {
@@ -505,7 +704,7 @@ fn skip_objects(
         ));
     }
     reader.skip(chunk.next_offset - reader.position())?;
-    Ok(count)
+    Ok(textures)
 }
 
 fn parse_material(
@@ -514,8 +713,8 @@ fn parse_material(
     archive: ArchiveVersion,
     source_offset: usize,
 ) -> Result<MaterialRecord, FramingError> {
-    let modern = data.get(range.start).copied() == Some(0);
-    let (mut reader, component, minor) = if modern {
+    let framed = data.get(range.start).copied() == Some(0);
+    let (mut reader, component, minor, modern) = if framed {
         let (mut reader, version) = anonymous(data, range, archive)?;
         if version.0 != 1 || version.1 != 0 {
             return Err(structural(
@@ -524,7 +723,7 @@ fn parse_material(
             ));
         }
         let component = component(data, &mut reader, archive)?;
-        (reader, component, 6)
+        (reader, component, 6, true)
     } else {
         let mut outer = BoundedReader::new(data, range.start, range.end)?;
         // The first packed byte is the fixed outer material version 2.0.
@@ -554,6 +753,7 @@ fn parse_material(
                 name,
             },
             version.1,
+            false,
         )
     };
     let plugin = uuid(&mut reader)?;
@@ -567,7 +767,8 @@ fn parse_material(
     let reflectivity = read_finite(&mut reader, "reflectivity")?;
     let shine = read_finite(&mut reader, "shine")?;
     let transparency = read_finite(&mut reader, "transparency")?;
-    let texture_count = skip_objects(data, &mut reader, archive)?;
+    let textures = texture_array(data, &mut reader, archive)?;
+    let texture_count = textures.len();
     if !modern && minor >= 1 {
         let _obsolete_library = utf16(&mut reader)?;
     }
@@ -648,6 +849,7 @@ fn parse_material(
         shine,
         transparency,
         texture_count,
+        textures,
         shareable,
         disable_lighting,
         fresnel_reflections,

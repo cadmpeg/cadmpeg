@@ -819,8 +819,8 @@ fn content_hash(archive: ArchiveVersion) -> Vec<u8> {
     let mut body = 123_u64.to_le_bytes().to_vec();
     body.extend(456_u64.to_le_bytes());
     body.extend(789_u64.to_le_bytes());
-    body.extend([0x11; 20]);
-    body.extend([0x22; 20]);
+    body.extend(anonymous_chunk(archive, 0, &[0x11; 20]));
+    body.extend(anonymous_chunk(archive, 0, &[0x22; 20]));
     anonymous_chunk(archive, 0, &body)
 }
 

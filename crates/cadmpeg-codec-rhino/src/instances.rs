@@ -327,7 +327,7 @@ fn model_component(
     Ok((index, id, name))
 }
 
-fn file_reference<'a>(
+pub(crate) fn file_reference<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -352,12 +352,29 @@ fn file_reference<'a>(
             "unsupported content-hash version",
         ));
     }
+    let byte_count = hash_payload.u64()?;
+    let hash_time = hash_payload.u64()?;
+    let content_time = hash_payload.u64()?;
+    let mut read_sha1 = |payload: &mut BoundedReader<'a>| -> Result<[u8; 20], FramingError> {
+        let digest = chunk_at(data, payload.position(), payload.end(), archive, false)?;
+        if digest.typecode != ANONYMOUS || digest.short {
+            return Err(structural(payload, "missing SHA-1 chunk"));
+        }
+        checksum_warning(data, &digest, "SHA-1 hash", warnings)?;
+        let mut bytes = BoundedReader::new(data, digest.body.start, digest.body.end)?;
+        if (bytes.i32()?, bytes.i32()?) != (1, 0) || bytes.remaining() != 20 {
+            return Err(structural(&bytes, "unsupported SHA-1 version"));
+        }
+        let value = bytes.array()?;
+        payload.skip(digest.next_offset - payload.position())?;
+        Ok(value)
+    };
     let content_hash = ContentHash {
-        byte_count: hash_payload.u64()?,
-        hash_time: hash_payload.u64()?,
-        content_time: hash_payload.u64()?,
-        name_sha1: hash_payload.take(20)?.try_into().expect("length checked"),
-        content_sha1: hash_payload.take(20)?.try_into().expect("length checked"),
+        byte_count,
+        hash_time,
+        content_time,
+        name_sha1: read_sha1(&mut hash_payload)?,
+        content_sha1: read_sha1(&mut hash_payload)?,
     };
     finish(&hash_payload, "content hash")?;
     payload.skip(hash.next_offset - payload.position())?;
