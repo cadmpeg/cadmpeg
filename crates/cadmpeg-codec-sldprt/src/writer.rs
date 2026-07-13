@@ -760,6 +760,13 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
+    if lane.references != crate::resolved_features::reference_cells(&lane.native_payload, &lane.id)
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "feature-input lane {} has edited reference cells",
+            lane.id
+        )));
+    }
     let expected_offsets = lane
         .native_payload
         .windows(MARKER.len())

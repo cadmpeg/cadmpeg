@@ -150,9 +150,29 @@ pub struct FeatureInputLane {
     /// Named scalar values in this lane.
     #[serde(default)]
     pub scalars: Vec<FeatureInputScalar>,
+    /// Native entity-reference cells in byte order.
+    #[serde(default)]
+    pub references: Vec<FeatureInputReference>,
     /// Typed sketch-entity markers located within `native_payload`.
     #[serde(default)]
     pub sketch_entities: Vec<SketchInputEntity>,
+}
+
+/// One native entity-reference cell in a feature-input stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureInputReference {
+    /// Globally unique deterministic identifier for this cell.
+    pub id: String,
+    /// Owning feature-input lane record id.
+    pub parent: String,
+    /// Position among reference cells in stream order.
+    pub ordinal: u32,
+    /// Byte offset of the reference cell.
+    pub offset: u64,
+    /// Native reference-cell family.
+    pub kind: FeatureInputOperandKind,
+    /// Local object index carried by the cell.
+    pub object_index: u16,
 }
 
 /// One serialized UTF-16 object name in a feature-input stream.

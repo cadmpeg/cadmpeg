@@ -10743,6 +10743,13 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     assert_eq!(lane.scalars[0].value, 0.025);
     assert_eq!(lane.scalars[0].object_id, 1);
     assert_eq!(lane.scalars[0].entity_indices, [0, 2]);
+    assert_eq!(lane.references.len(), 2);
+    assert_eq!(lane.references[0].object_index, 0);
+    assert_eq!(lane.references[1].object_index, 2);
+    assert!(lane
+        .references
+        .iter()
+        .all(|reference| reference.kind == crate::records::FeatureInputOperandKind::D6));
     assert_eq!(lane.scalars[0].operands.len(), 2);
     assert_eq!(lane.scalars[0].operands[0].entity_index, 0);
     assert_eq!(lane.scalars[0].operands[1].entity_index, 2);
@@ -10842,6 +10849,10 @@ fn decode_retains_e1_feature_input_operands() {
         .unwrap();
     let native = sldprt_native(&decoded.ir);
     let scalar = &native.feature_input_lanes[0].scalars[0];
+    assert!(native.feature_input_lanes[0]
+        .references
+        .iter()
+        .all(|reference| reference.kind == crate::records::FeatureInputOperandKind::E1));
     assert!(scalar.entity_indices.is_empty());
     assert_eq!(
         scalar

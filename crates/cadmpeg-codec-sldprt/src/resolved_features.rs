@@ -3,8 +3,8 @@
 
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputName,
-    FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole,
-    SketchInputEntity, SketchInputKind,
+    FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference, FeatureInputScalar,
+    FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
@@ -49,6 +49,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
             let classes = class_declarations(&block.payload, &parent);
             let names = object_names(&block.payload, &parent);
             let scalars = named_scalars(&block.payload, &parent, &names);
+            let references = reference_cells(&block.payload, &parent);
             let sketch_entities = block
                 .payload
                 .windows(SKETCH_MARKER.len())
@@ -104,9 +105,40 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 classes,
                 names,
                 scalars,
+                references,
                 sketch_entities,
             })
         })
+        .collect()
+}
+
+pub(crate) fn reference_cells(payload: &[u8], parent: &str) -> Vec<FeatureInputReference> {
+    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    payload
+        .windows(12)
+        .enumerate()
+        .filter_map(|(offset, cell)| {
+            if cell[4..8] != [0xff; 4] || cell[8..12] != [0; 4] {
+                return None;
+            }
+            let kind = match cell[..2] {
+                [0xd6, 0x80] => FeatureInputOperandKind::D6,
+                [0xe1, 0x80] => FeatureInputOperandKind::E1,
+                _ => return None,
+            };
+            Some((offset, kind, u16::from_le_bytes([cell[2], cell[3]])))
+        })
+        .enumerate()
+        .map(
+            |(ordinal, (offset, kind, object_index))| FeatureInputReference {
+                id: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
+                parent: parent.to_string(),
+                ordinal: ordinal as u32,
+                offset: offset as u64,
+                kind,
+                object_index,
+            },
+        )
         .collect()
 }
 
@@ -1225,6 +1257,7 @@ fn source_less_lanes(
                 classes: Vec::new(),
                 names: Vec::new(),
                 scalars: Vec::new(),
+                references: Vec::new(),
                 sketch_entities: Vec::new(),
             });
             lanes.last_mut().expect("lane was inserted")
