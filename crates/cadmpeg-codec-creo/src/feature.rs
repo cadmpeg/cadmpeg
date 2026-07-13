@@ -22,50 +22,41 @@ pub struct FeatureOperation {
     pub offset: usize,
 }
 
-/// Decode `<Kind> id <N>\0` operation names from one `MdlStatus` payload.
+/// Decode NUL-terminated `<Kind> id <N>` operation names from one
+/// `MdlStatus` payload.
 pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
-    const KINDS: &[&[u8]] = &[
-        b"Annotation Feature",
-        b"Cross Section",
-        b"Datum Plane",
-        b"Round",
-        b"Chamfer",
-        b"Protrusion",
-        b"Extrude",
-        b"Revolve",
-        b"Hole",
-        b"Cut",
-        b"Draft",
-        b"Mirror",
-        b"Surface",
-    ];
+    const SEPARATOR: &[u8] = b" id ";
+    let family_byte = |byte: u8| {
+        byte.is_ascii_alphanumeric() || matches!(byte, b' ' | b'_' | b'-' | b'/' | b'(' | b')')
+    };
     let mut result = Vec::new();
-    for offset in 0..payload.len() {
-        for kind in KINDS {
-            let Some(rest) = payload
-                .get(offset..)
-                .and_then(|bytes| bytes.strip_prefix(*kind))
-            else {
-                continue;
-            };
-            let Some(digits) = rest.strip_prefix(b" id ") else {
-                continue;
-            };
-            let Some(end) = digits.iter().position(|byte| *byte == 0) else {
-                continue;
-            };
-            if end == 0 || !digits[..end].iter().all(u8::is_ascii_digit) {
-                continue;
-            }
-            let Ok(feature_id) = String::from_utf8_lossy(&digits[..end]).parse::<u32>() else {
-                continue;
-            };
-            result.push(FeatureOperation {
-                feature_id,
-                kind: String::from_utf8_lossy(kind).into_owned(),
-                offset,
-            });
+    for separator in 0..payload.len().saturating_sub(SEPARATOR.len()) {
+        if payload.get(separator..separator + SEPARATOR.len()) != Some(SEPARATOR) {
+            continue;
         }
+        let mut offset = separator;
+        while offset > 0 && family_byte(payload[offset - 1]) {
+            offset -= 1;
+        }
+        let family = &payload[offset..separator];
+        if family.is_empty() || family.first() == Some(&b' ') || family.last() == Some(&b' ') {
+            continue;
+        }
+        let digits = &payload[separator + SEPARATOR.len()..];
+        let Some(end) = digits.iter().position(|byte| *byte == 0) else {
+            continue;
+        };
+        if end == 0 || !digits[..end].iter().all(u8::is_ascii_digit) {
+            continue;
+        }
+        let Ok(feature_id) = String::from_utf8_lossy(&digits[..end]).parse::<u32>() else {
+            continue;
+        };
+        result.push(FeatureOperation {
+            feature_id,
+            kind: String::from_utf8_lossy(family).into_owned(),
+            offset,
+        });
     }
     result.sort_by_key(|operation| operation.offset);
     result.dedup_by_key(|operation| operation.feature_id);
