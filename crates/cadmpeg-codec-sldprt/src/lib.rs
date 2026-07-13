@@ -240,6 +240,17 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     for lane in &native.feature_input_lanes {
+        let expected_classes =
+            crate::resolved_features::class_declarations(&lane.native_payload, &lane.id);
+        if lane.classes != expected_classes {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "SolidWorks feature-input class index does not match its native payload"
+                    .into(),
+                entity: Some(lane.id.clone()),
+            });
+        }
         let expected_offsets = lane
             .native_payload
             .windows(MARKER.len())

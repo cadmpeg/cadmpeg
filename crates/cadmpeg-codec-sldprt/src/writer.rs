@@ -729,6 +729,14 @@ fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
+    let expected_classes =
+        crate::resolved_features::class_declarations(&lane.native_payload, &lane.id);
+    if lane.classes != expected_classes {
+        return Err(CodecError::NotImplemented(format!(
+            "feature-input lane {} has edited class declarations",
+            lane.id
+        )));
+    }
     let expected_offsets = lane
         .native_payload
         .windows(MARKER.len())

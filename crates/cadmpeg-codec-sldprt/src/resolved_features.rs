@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed views over `SolidWorks` `ResolvedFeatures` sketch records.
 
-use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
+use crate::records::{FeatureInputClass, FeatureInputLane, SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -25,6 +25,7 @@ use std::io::{Read, Write};
 use crate::container::ContainerScan;
 
 const SKETCH_MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
+const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
 const SKETCH_POINT_TOLERANCE: f64 = 1.0e-9;
 
 pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
@@ -36,6 +37,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 return None;
             }
             let parent = format!("sldprt:feature-input:resolved-features#{}", block.offset);
+            let classes = class_declarations(&block.payload, &parent);
             let sketch_entities = block
                 .payload
                 .windows(SKETCH_MARKER.len())
@@ -87,8 +89,42 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 id,
                 configuration: configuration(section),
                 native_payload: block.payload.clone(),
+                classes,
                 sketch_entities,
             })
+        })
+        .collect()
+}
+
+pub(crate) fn class_declarations(payload: &[u8], parent: &str) -> Vec<FeatureInputClass> {
+    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    payload
+        .windows(CLASS_MARKER.len())
+        .enumerate()
+        .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
+        .filter_map(|offset| {
+            let length = usize::from(u16::from_le_bytes(
+                payload.get(offset + 4..offset + 6)?.try_into().ok()?,
+            ));
+            if !(1..=128).contains(&length) {
+                return None;
+            }
+            let bytes = payload.get(offset + 6..offset + 6 + length)?;
+            if !bytes
+                .iter()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+            {
+                return None;
+            }
+            Some((offset, std::str::from_utf8(bytes).ok()?.to_string()))
+        })
+        .enumerate()
+        .map(|(ordinal, (offset, name))| FeatureInputClass {
+            id: format!("sldprt:feature-input:class#{lane_key}:{offset}"),
+            parent: parent.to_string(),
+            ordinal: ordinal as u32,
+            offset: offset as u64,
+            name,
         })
         .collect()
 }
@@ -686,6 +722,7 @@ fn source_less_lanes(
                 id: section,
                 configuration: Some(configuration.clone()),
                 native_payload: Vec::new(),
+                classes: Vec::new(),
                 sketch_entities: Vec::new(),
             });
             lanes.last_mut().expect("lane was inserted")

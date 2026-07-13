@@ -926,7 +926,12 @@ fn sldprt_with_body_and_history(body: &[u8]) -> Vec<u8> {
 }
 
 fn resolved_features_payload(codes: &[u32]) -> Vec<u8> {
-    let mut payload = b"sgPointHandle\0sgLineHandle\0sgArcHandle\0".to_vec();
+    let mut payload = Vec::new();
+    for name in ["sgPointHandle", "sgLineHandle", "sgArcHandle"] {
+        payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
+        payload.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        payload.extend_from_slice(name.as_bytes());
+    }
     for code in codes {
         payload.extend_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
         payload.extend_from_slice(&[0; 12]);
@@ -10680,6 +10685,18 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     assert_eq!(native.feature_input_lanes.len(), 1);
     let lane = &native.feature_input_lanes[0];
     assert_eq!(lane.configuration.as_deref(), Some("0"));
+    assert_eq!(
+        lane.classes
+            .iter()
+            .map(|class| class.name.as_str())
+            .collect::<Vec<_>>(),
+        ["sgPointHandle", "sgLineHandle", "sgArcHandle"]
+    );
+    assert!(lane
+        .classes
+        .iter()
+        .enumerate()
+        .all(|(ordinal, class)| class.ordinal == ordinal as u32));
     assert!(lane
         .sketch_entities
         .windows(2)
@@ -10733,6 +10750,25 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .kind,
         SketchInputKind::Native(5)
     );
+}
+
+#[test]
+fn semantic_writer_rejects_edited_feature_input_class_index() {
+    let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_input_lanes[0].classes[0].name = "sgOtherHandle".into();
+    });
+    assert!(crate::validate_native(&decoded.ir)
+        .iter()
+        .any(|finding| finding.message.contains("class index does not match")));
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("has edited class declarations"));
 }
 
 #[test]

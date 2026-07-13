@@ -141,9 +141,27 @@ pub struct FeatureInputLane {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub native_payload: Vec<u8>,
+    /// Class declarations used by object instances in this lane.
+    #[serde(default)]
+    pub classes: Vec<FeatureInputClass>,
     /// Typed sketch-entity markers located within `native_payload`.
     #[serde(default)]
     pub sketch_entities: Vec<SketchInputEntity>,
+}
+
+/// One class declaration in a native feature-input stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureInputClass {
+    /// Globally unique deterministic identifier for this declaration.
+    pub id: String,
+    /// Owning feature-input lane record id.
+    pub parent: String,
+    /// Position among class declarations in stream order.
+    pub ordinal: u32,
+    /// Byte offset of the `ff ff 01 00` declaration marker.
+    pub offset: u64,
+    /// Declared native class name.
+    pub name: String,
 }
 
 /// One typed sketch-entity marker inside a native feature-input stream.
