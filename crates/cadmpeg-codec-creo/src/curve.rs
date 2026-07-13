@@ -567,24 +567,24 @@ fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Opti
     (parser.cursor == parser.source.len() && value.is_finite()).then_some(value)
 }
 
-fn evaluate_program(
-    record: &CurveExpressionRecord,
-    parameter: f64,
-) -> Option<BTreeMap<String, f64>> {
+fn evaluate_program(record: &CurveExpressionRecord, parameter: f64) -> BTreeMap<String, f64> {
     let mut values = BTreeMap::from([("t".to_string(), parameter)]);
     for assignment in &record.assignments {
-        let value = evaluate_expression(&assignment.expression, &values)?;
-        values.insert(assignment.name.clone(), value);
+        if let Some(value) = evaluate_expression(&assignment.expression, &values) {
+            values.insert(assignment.name.clone(), value);
+        } else {
+            values.remove(&assignment.name);
+        }
     }
-    Some(values)
+    values
 }
 
 /// Recognize an exact cylindrical helix program expressed by the conventional
 /// Creo outputs `r`, `theta` (degrees), and `z` over `t` in `[0, 1]`.
 pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressionHelix> {
-    let start = evaluate_program(record, 0.0)?;
-    let middle = evaluate_program(record, 0.5)?;
-    let end = evaluate_program(record, 1.0)?;
+    let start = evaluate_program(record, 0.0);
+    let middle = evaluate_program(record, 0.5);
+    let end = evaluate_program(record, 1.0);
     let sample = |values: &BTreeMap<String, f64>, name: &str| values.get(name).copied();
     let (radius_start, radius_middle, radius_end) = (
         sample(&start, "r")?,
@@ -1325,6 +1325,27 @@ mod tests {
         assert_eq!(records[0].assignments[2].value, None);
         assert_eq!(records[0].assignments[3].dependencies, ["r"]);
         assert_eq!(records[0].assignments[3].value, Some(11.0));
+    }
+
+    #[test]
+    fn recognizes_only_affine_cylindrical_helix_programs() {
+        let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x0aexpression\0\xf8\x05unused=external\0r=5\0theta=90+t*720\0z=-2+20*t\0note=external+1\0";
+        let records = expression_records(payload);
+        assert_eq!(
+            expression_helix(&records[0]),
+            Some(CurveExpressionHelix {
+                radius: 5.0,
+                height: 20.0,
+                revolutions: 2.0,
+                start_angle: std::f64::consts::FRAC_PI_2,
+                clockwise: false,
+            })
+        );
+
+        let nonlinear = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x08\
+            \xe0\x0aexpression\0\xf8\x03r=5\0theta=t*t*360\0z=20*t\0";
+        assert!(expression_helix(&expression_records(nonlinear)[0]).is_none());
     }
 
     #[test]
