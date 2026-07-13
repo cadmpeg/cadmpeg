@@ -15801,15 +15801,21 @@ fn patch_ref_pcurve_contract(
     let Some(range) = edit.parameter_range else {
         return Ok(());
     };
-    let offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    if offsets.len() != 2 {
-        return Err(CodecError::Malformed(format!(
-            "ref-form pcurve record {} lacks its two-value parameter range",
-            record.index
-        )));
-    }
-    for (offset, value) in offsets.into_iter().zip(range) {
+    let ref_width = active_ref_width(bytes);
+    for (index, value) in [5usize, 6].into_iter().zip(range) {
+        let offset =
+            sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "ref-form pcurve record {} lacks parameter-range field {index}",
+                    record.index
+                ))
+            })?;
+        if bytes.get(offset) != Some(&0x06) {
+            return Err(CodecError::Malformed(format!(
+                "ref-form pcurve record {} parameter-range field {index} is not a double",
+                record.index
+            )));
+        }
         bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
