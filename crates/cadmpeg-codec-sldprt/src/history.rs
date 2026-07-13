@@ -439,7 +439,7 @@ fn project_definition(
         project_dome(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature.kind.eq_ignore_ascii_case("Hole") {
         project_hole(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("Revolve") {
+    } else if is_revolve(feature) {
         project_revolve(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if pattern_form(feature).is_some() {
         project_pattern(feature, by_source).unwrap_or_else(|| native_definition(feature))
@@ -462,6 +462,16 @@ fn is_extrude(feature: &Feature) -> bool {
                 .get("Operation")
                 .and_then(|operation| parse_boolean_op(operation))
                 .is_some()
+}
+
+fn is_revolve(feature: &Feature) -> bool {
+    (feature.xml_tag.eq_ignore_ascii_case("Revolve")
+        || feature.xml_tag.eq_ignore_ascii_case("Revolution"))
+        && feature
+            .properties
+            .get("Operation")
+            .and_then(|operation| parse_boolean_op(operation))
+            .is_some()
 }
 
 fn project_extrude(

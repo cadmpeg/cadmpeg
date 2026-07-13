@@ -5756,6 +5756,29 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
 }
 
 #[test]
+fn decode_projects_generic_revolution_with_explicit_operation() {
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Revolution Name="Generic" Type="GenericRevolution" id="43" Operation="Cut" AxisOrigin="0mm,0mm,0mm" AxisDirection="0,0,1"><Dimension Name="Angle">180deg</Dimension></Revolution></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Revolve {
+            angle: Extent::Angle { angle },
+            op: BooleanOp::Cut,
+            ..
+        } if (angle.0 - std::f64::consts::PI).abs() < 1e-12
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_revolution() {
     use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FeatureDefinition, ProfileRef};
     use cadmpeg_ir::math::{Point3, Vector3};
