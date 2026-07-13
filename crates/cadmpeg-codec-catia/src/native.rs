@@ -99,7 +99,7 @@ pub struct CatiaObjectRecord {
     pub lead: u8,
     /// Decoded head tokens in serialized order.
     pub head: Vec<HeadToken>,
-    /// First head reference, identifying the owner ordinal.
+    /// First head reference, identifying the owner by one-based record ordinal.
     pub owner_ref: Option<u32>,
     /// Second head reference, identifying the per-file class ordinal.
     pub class_ref: Option<u32>,

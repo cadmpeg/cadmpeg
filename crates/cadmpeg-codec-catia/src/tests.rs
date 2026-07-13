@@ -2858,6 +2858,17 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
         ]
     ));
     assert_eq!(graph.records[1].subtype, PayloadSubtype::Blob);
+    assert_eq!(graph.record(1).map(|record| record.index), Some(0));
+    assert_eq!(graph.record(2).map(|record| record.index), Some(1));
+    assert!(graph.record(0).is_none());
+    assert!(graph.record(3).is_none());
+    assert_eq!(
+        graph
+            .children(2)
+            .map(|record| record.index)
+            .collect::<Vec<_>>(),
+        vec![0, 1]
+    );
 }
 
 #[test]
