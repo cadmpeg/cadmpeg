@@ -451,8 +451,8 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                         .unwrap_or_default();
                     let value = properties
                         .get("Value")
-                        .and_then(|value| parse_parameter_literal(value))
-                        .or_else(|| parse_parameter_literal(expression));
+                        .and_then(|value| parse_native_parameter_literal(feature, &name, value))
+                        .or_else(|| parse_native_parameter_literal(feature, &name, expression));
                     DesignParameter {
                         id: neutral_parameter_id(feature, ordinal),
                         owner: neutral_feature_id(&feature.id),
@@ -468,6 +468,30 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
         .collect::<Vec<_>>();
     populate_parameter_dependencies(&mut parameters);
     parameters
+}
+
+fn parse_native_parameter_literal(
+    feature: &Feature,
+    name: &str,
+    expression: &str,
+) -> Option<ParameterValue> {
+    let positional_length = match name {
+        "D1" => {
+            is_extrude(feature)
+                || is_fillet(feature)
+                || is_chamfer(feature)
+                || feature_family(feature, "Shell")
+                || feature_family(feature, "Thicken")
+                || feature_family(feature, "Thickness")
+        }
+        "D2" if is_chamfer(feature) => parse_angle_rad(expression).is_none(),
+        _ => false,
+    };
+    if positional_length {
+        return parse_positive_dimension_length_mm(expression)
+            .map(|value| ParameterValue::Length(Length(value)));
+    }
+    parse_parameter_literal(expression)
 }
 
 fn populate_parameter_dependencies(parameters: &mut [DesignParameter]) {
@@ -2517,6 +2541,36 @@ fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
         .map(ParameterValue::Real)
 }
 
+fn parse_neutral_parameter_literal(
+    feature: &cadmpeg_ir::features::Feature,
+    name: &str,
+    expression: &str,
+) -> Option<ParameterValue> {
+    let positional_length = match name {
+        "D1" => matches!(
+            feature.definition,
+            FeatureDefinition::Extrude { .. }
+                | FeatureDefinition::Fillet { .. }
+                | FeatureDefinition::Chamfer { .. }
+                | FeatureDefinition::Shell { .. }
+                | FeatureDefinition::Thicken { .. }
+        ),
+        "D2" => matches!(
+            feature.definition,
+            FeatureDefinition::Chamfer {
+                spec: ChamferSpec::TwoDistances { .. },
+                ..
+            }
+        ),
+        _ => false,
+    };
+    if positional_length {
+        return parse_positive_dimension_length_mm(expression)
+            .map(|value| ParameterValue::Length(Length(value)));
+    }
+    parse_parameter_literal(expression)
+}
+
 fn format_parameter_value(value: &ParameterValue) -> String {
     match value {
         ParameterValue::Length(Length(value)) => format_length_mm(*value),
@@ -2787,17 +2841,17 @@ fn sync_neutral_parameters(
         .collect::<HashMap<_, _>>();
     let mut desired = HashMap::<FeatureId, Vec<&DesignParameter>>::new();
     for parameter in &parameters {
-        if parse_parameter_literal(&parameter.expression)
+        let Some(owner) = features.get(&parameter.owner) else {
+            return Err(CodecError::Malformed(format!(
+                "SLDPRT parameter {} references a missing feature",
+                parameter.id.0
+            )));
+        };
+        if parse_neutral_parameter_literal(owner, &parameter.name, &parameter.expression)
             .is_some_and(|literal| parameter.value.as_ref() != Some(&literal))
         {
             return Err(CodecError::Malformed(format!(
                 "SLDPRT parameter {} has a value inconsistent with its expression",
-                parameter.id.0
-            )));
-        }
-        if !features.contains_key(&parameter.owner) {
-            return Err(CodecError::Malformed(format!(
-                "SLDPRT parameter {} references a missing feature",
                 parameter.id.0
             )));
         }

@@ -5732,7 +5732,7 @@ fn decode_projects_cut_extrude_with_canonical_length() {
 
 #[test]
 fn semantic_writer_round_trips_sparse_positional_extrusions() {
-    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length};
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length, ParameterValue};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -5771,6 +5771,18 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         decoded.ir.model.features[2].definition,
         FeatureDefinition::Native { .. }
     ));
+    assert_eq!(
+        decoded.ir.model.parameters[0].value,
+        Some(ParameterValue::Length(Length(200.0)))
+    );
+    assert_eq!(
+        decoded.ir.model.parameters[1].value,
+        Some(ParameterValue::Length(Length(3.0)))
+    );
+    assert_eq!(
+        decoded.ir.model.parameters[2].value,
+        Some(ParameterValue::Integer(4))
+    );
 
     let FeatureDefinition::Extrude {
         extent: Extent::Blind { length },
@@ -5793,7 +5805,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     SldprtCodec
         .write_preserved(&decoded.ir, &mut encoded)
         .unwrap();
-    let regenerated = SldprtCodec
+    let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
@@ -5829,6 +5841,27 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         regenerated.ir.model.features[2].definition,
         FeatureDefinition::Native { .. }
     ));
+
+    regenerated.ir.model.parameters[0].expression = "225".into();
+    regenerated.ir.model.parameters[0].value = Some(ParameterValue::Length(Length(225.0)));
+    let mut parameter_encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&regenerated.ir, &mut parameter_encoded)
+        .unwrap();
+    let parameter_regenerated = SldprtCodec
+        .decode(
+            &mut Cursor::new(parameter_encoded),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        sldprt_native(&parameter_regenerated.ir).feature_histories[0].features[0].parameters["D1"],
+        "225"
+    );
+    assert_eq!(
+        parameter_regenerated.ir.model.parameters[0].value,
+        Some(ParameterValue::Length(Length(225.0)))
+    );
 }
 
 #[test]
@@ -6372,7 +6405,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
 #[test]
 fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimensions() {
     use cadmpeg_ir::features::{
-        Angle, ChamferSpec, EdgeSelection, FeatureDefinition, Length, RadiusSpec,
+        Angle, ChamferSpec, EdgeSelection, FeatureDefinition, Length, ParameterValue, RadiusSpec,
     };
 
     let keywords = format!(
@@ -6407,6 +6440,10 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
             }
         } if (angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12
     ));
+    assert_eq!(
+        decoded.ir.model.parameters[1].value,
+        Some(ParameterValue::Length(Length(0.3)))
+    );
 
     let FeatureDefinition::Fillet { radius, .. } = &mut decoded.ir.model.features[0].definition
     else {
@@ -6741,7 +6778,9 @@ fn semantic_writer_round_trips_typed_thicken() {
 
 #[test]
 fn semantic_writer_round_trips_positional_thicken_dimension() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, Length, ParameterValue, ThickenSide,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -6760,6 +6799,10 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
             side: ThickenSide::Forward,
         }
     ));
+    assert_eq!(
+        decoded.ir.model.parameters[0].value,
+        Some(ParameterValue::Length(Length(6.0)))
+    );
 
     let FeatureDefinition::Thicken { thickness, .. } = &mut decoded.ir.model.features[0].definition
     else {
