@@ -15406,6 +15406,11 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
     for smbh in [
         with_pcurve_discriminator(synthetic_geometry_with_pcurve_smbh(), 2),
         with_inline_pcurve_non_boolean_wrapper(synthetic_geometry_with_pcurve_smbh()),
+        renamed_generated_subtype(
+            synthetic_geometry_with_pcurve_smbh(),
+            "exp_par_cur",
+            "bad_par_cur",
+        ),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 0),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 7),
         with_ref_pcurve_companion_name(synthetic_geometry_with_ref_pcurve_smbh(), b"badcurve"),

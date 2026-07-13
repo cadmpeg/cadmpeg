@@ -603,9 +603,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     let by_index: HashMap<i64, &Record> = records.iter().map(|r| (r.index as i64, r)).collect();
     // Subtype-definition positions, built once for every carrier resolution.
     let subtype_tables = nurbs::SubtypeTables::from_records(records, bytes);
-    let header_scale = asm_header::parse(bytes)
-        .and_then(|header| header.scale)
-        .unwrap_or(1.0);
+    let header = asm_header::parse(bytes);
+    let ref_width = header
+        .as_ref()
+        .map_or(8, |header| usize::from(header.width));
+    let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
     let attribute_color = |entity: &Record| attribute_chain_color(entity, &by_index);
 
@@ -742,7 +744,15 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             // land on the edge's vertices through the face
                             // surface.
                             let candidates = match (prec.chunk(3), prec.chunk(4)) {
-                                (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
+                                (Some(Token::Long(0)), Some(Token::True | Token::False))
+                                    if crate::sab::payload_subtype_is(
+                                        bytes,
+                                        prec,
+                                        5,
+                                        ref_width,
+                                        "exp_par_cur",
+                                    ) =>
+                                {
                                     nurbs::decode_pcurve_cache_candidates_resolving_refs(
                                         record_slice(prec, bytes),
                                         bytes,

@@ -86,6 +86,49 @@ impl Record {
     }
 }
 
+/// Return whether payload token `token_index` is a subtype opening immediately
+/// followed by `expected` as its identifier or sub-identifier.
+pub(crate) fn payload_subtype_is(
+    bytes: &[u8],
+    record: &Record,
+    token_index: usize,
+    ref_width: usize,
+    expected: &str,
+) -> bool {
+    let Some(limit) = record.offset.checked_add(record.len) else {
+        return false;
+    };
+    let mut pos = record.offset;
+    let mut name_done = false;
+    let mut payload_index = 0usize;
+    while pos < limit {
+        let Ok((lexed, next)) = lex(bytes, pos, ref_width) else {
+            return false;
+        };
+        pos = next;
+        match lexed {
+            Lexed::SubIdent(_) if !name_done => {}
+            Lexed::Ident(_) if !name_done => name_done = true,
+            Lexed::Value(token) => {
+                name_done = true;
+                if payload_index == token_index {
+                    if !matches!(token, Token::SubtypeOpen) {
+                        return false;
+                    }
+                    return matches!(
+                        lex(bytes, pos, ref_width),
+                        Ok((Lexed::Ident(name) | Lexed::SubIdent(name), _)) if name == expected
+                    );
+                }
+                payload_index += 1;
+            }
+            Lexed::Terminator => return false,
+            Lexed::Ident(_) | Lexed::SubIdent(_) => {}
+        }
+    }
+    false
+}
+
 /// A framing error: an unrecognized tag or a truncated token payload leaves the
 /// stream un-synchronizable, so the caller falls back to metadata-only decode.
 #[derive(Debug, Clone, PartialEq, Eq)]
