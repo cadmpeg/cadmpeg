@@ -79,6 +79,7 @@ fn indexed_om_section() -> Vec<u8> {
     expression.push(0);
     expression.extend_from_slice(b"\x66\x32\x03\x0cSKETCH_001\0");
     expression.extend_from_slice(b"\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0");
+    expression.extend_from_slice(b"\x01\x02\x90\x00\x00");
     let records = [root.as_slice(), expression.as_slice()];
     let table = bytes.len() + 4 * 4;
     let table_end = table + 4 + 3 * 4;
@@ -166,7 +167,7 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
     assert_eq!(sections[0].records[1].object_id, Some(0x102));
     assert_eq!(
         sections[0].records[1].bytes,
-        b"\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00\x66\x32\x03\x0cSKETCH_001\0\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0"
+        b"\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00\x66\x32\x03\x0cSKETCH_001\0\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0\x01\x02\x90\x00\x00"
     );
 }
 
@@ -293,6 +294,20 @@ fn om_tagged_references_preserve_family_value_order_and_bounds() {
     assert_eq!(references[1].offset, 25);
     assert_eq!(references[1].kind, crate::om::ReferenceKind::Tagged28);
     assert_eq!(references[1].value, 0x0abc_def0);
+}
+
+#[test]
+fn om_counted_record_references_require_a_complete_in_bounds_run() {
+    let bytes = b"\xff\x01\x03\x90\x00\x02\x90\x00\x04\x01\x02\x90\x00\x05";
+    let references = crate::om::counted_record_references(bytes, 100, 5);
+    assert_eq!(references.len(), 2);
+    assert_eq!(references[0].offset, 103);
+    assert_eq!(
+        references[0].kind,
+        crate::om::ReferenceKind::RecordOrdinal16
+    );
+    assert_eq!(references[0].value, 2);
+    assert_eq!(references[1].value, 4);
 }
 
 #[test]
@@ -2473,7 +2488,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 3);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 4);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -2534,10 +2549,20 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::ObjectReference>("object_references")
         .unwrap();
-    assert_eq!(references.len(), 1);
+    assert_eq!(references.len(), 2);
     assert_eq!(references[0].record, object_records[1].id);
     assert_eq!(references[0].object_id, Some(0x102));
     assert_eq!(references[0].value, 0x1234_5678);
+    assert_eq!(references[0].target_record, None);
+    assert_eq!(
+        references[1].kind,
+        crate::native::ObjectReferenceKind::RecordOrdinal16
+    );
+    assert_eq!(references[1].value, 0);
+    assert_eq!(
+        references[1].target_record.as_ref(),
+        Some(&object_records[0].id)
+    );
     let handles = result
         .ir
         .native

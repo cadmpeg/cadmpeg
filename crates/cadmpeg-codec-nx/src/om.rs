@@ -55,6 +55,8 @@ pub enum ReferenceKind {
     PersistentHandle,
     /// Four-byte word whose high nibble is `c` and low 28 bits are the value.
     Tagged28,
+    /// `90` marker followed by a 16-bit big-endian record ordinal.
+    RecordOrdinal16,
 }
 
 /// One tagged reference occurrence in an externally bounded OM record.
@@ -177,7 +179,14 @@ impl<'a> IndexedSection<'a> {
             .iter()
             .enumerate()
             .flat_map(|(record_ordinal, record)| {
-                record_references(record.bytes, record.offset)
+                let mut references = record_references(record.bytes, record.offset);
+                references.extend(counted_record_references(
+                    record.bytes,
+                    record.offset,
+                    self.records.len(),
+                ));
+                references.sort_by_key(|reference| reference.offset);
+                references
                     .into_iter()
                     .enumerate()
                     .map(move |(reference_ordinal, reference)| {
@@ -191,6 +200,52 @@ impl<'a> IndexedSection<'a> {
             })
             .collect()
     }
+}
+
+/// Decode count-framed runs of same-section record references.
+pub fn counted_record_references(
+    bytes: &[u8],
+    base_offset: usize,
+    record_count: usize,
+) -> Vec<ReferenceValue> {
+    let mut references = Vec::new();
+    let mut at = 0usize;
+    while at + 5 <= bytes.len() {
+        if bytes[at] != 0x01 || !(2..=64).contains(&bytes[at + 1]) {
+            at += 1;
+            continue;
+        }
+        let count = usize::from(bytes[at + 1] - 1);
+        let Some(end) = at.checked_add(2 + count * 3) else {
+            at += 1;
+            continue;
+        };
+        if end > bytes.len() || (0..count).any(|index| bytes[at + 2 + index * 3] != 0x90) {
+            at += 1;
+            continue;
+        }
+        let mut run = Vec::with_capacity(count);
+        for index in 0..count {
+            let token = at + 2 + index * 3;
+            let value = u16::from_be_bytes([bytes[token + 1], bytes[token + 2]]);
+            if usize::from(value) >= record_count {
+                run.clear();
+                break;
+            }
+            run.push(ReferenceValue {
+                offset: base_offset + token,
+                kind: ReferenceKind::RecordOrdinal16,
+                value: u32::from(value),
+            });
+        }
+        if run.is_empty() {
+            at += 1;
+        } else {
+            references.extend(run);
+            at = end;
+        }
+    }
+    references
 }
 
 /// Decode self-identifying persistent handles plus context-gated tagged refs.
@@ -263,6 +318,7 @@ pub fn dense_reference_suffix(bytes: &[u8], base_offset: usize) -> Vec<Reference
             .map(|reference| match reference.kind {
                 ReferenceKind::PersistentHandle => 5,
                 ReferenceKind::Tagged28 => 4,
+                ReferenceKind::RecordOrdinal16 => 3,
             })
             .sum::<usize>();
         let span = bytes.len().saturating_sub(first.offset);

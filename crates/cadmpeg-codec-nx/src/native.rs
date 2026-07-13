@@ -126,6 +126,8 @@ pub enum ObjectReferenceKind {
     PersistentHandle,
     /// Four-byte `0xC?` tagged 28-bit reference.
     Tagged28,
+    /// Count-framed `90` reference to a record ordinal in the same section.
+    RecordOrdinal16,
 }
 
 /// Ordered tagged-reference occurrence owned by one NX OM record.
@@ -143,6 +145,8 @@ pub struct ObjectReference {
     pub kind: ObjectReferenceKind,
     /// Reference value without marker/tag bits.
     pub value: u32,
+    /// Resolved target in the native OM record directory.
+    pub target_record: Option<String>,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the reference marker.
@@ -387,8 +391,19 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
                                 ObjectReferenceKind::PersistentHandle
                             }
                             crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
+                            crate::om::ReferenceKind::RecordOrdinal16 => {
+                                ObjectReferenceKind::RecordOrdinal16
+                            }
                         },
                         value: reference.value,
+                        target_record: (reference.kind
+                            == crate::om::ReferenceKind::RecordOrdinal16)
+                            .then(|| {
+                                format!(
+                                    "nx:om-record-directory-{section_ordinal}:entry#{}",
+                                    reference.value
+                                )
+                            }),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + reference.offset as u64,
                     }
