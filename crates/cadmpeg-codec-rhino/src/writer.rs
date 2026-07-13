@@ -41,6 +41,10 @@ const PLANE_SURFACE_CLASS: [u8; 16] = [
 const MESH_CLASS: [u8; 16] = [
     0xe4, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
+const CHANNEL_UV: u32 = 0x5248_0001;
+const CHANNEL_COLOR: u32 = 0x5248_0002;
+const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
+const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
     check_representable(ir)?;
@@ -226,9 +230,9 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             mesh.id
         )));
     }
-    if mesh.body.is_some() || !mesh.strip_lengths.is_empty() || !mesh.channels.is_empty() {
+    if mesh.body.is_some() || !mesh.strip_lengths.is_empty() {
         return Err(CodecError::NotImplemented(format!(
-            "mesh {} uses body binding, strips, or channels not yet writable",
+            "mesh {} uses body binding or strips not yet writable",
             mesh.id
         )));
     }
@@ -268,6 +272,31 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             "mesh {} index is out of range",
             mesh.id
         )));
+    }
+    let mut kinds = std::collections::BTreeSet::new();
+    for channel in &mesh.channels {
+        let expected = match channel.kind {
+            CHANNEL_UV => 8,
+            CHANNEL_COLOR => 4,
+            CHANNEL_SURFACE_PARAMETERS | CHANNEL_CURVATURE => 16,
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "mesh {} channel kind {:#x} is not writable",
+                    mesh.id, channel.kind
+                )))
+            }
+        };
+        if !kinds.insert(channel.kind)
+            || channel.flags != 0
+            || channel.item_size != expected
+            || channel.count as usize != vertex_count
+            || channel.data.len() != vertex_count * expected as usize
+        {
+            return Err(CodecError::Malformed(format!(
+                "mesh {} channel {:#x} has invalid metadata",
+                mesh.id, channel.kind
+            )));
+        }
     }
     Ok(())
 }
@@ -641,12 +670,18 @@ fn mesh_payload(mesh: &cadmpeg_ir::tessellation::Tessellation, archive_version: 
                 .flat_map(f32::to_le_bytes)
         })
         .collect::<Vec<_>>();
-    for data in [&float_vertices[..], &normals[..], &[], &[], &[]] {
+    for data in [
+        &float_vertices[..],
+        &normals[..],
+        mesh_channel(mesh, CHANNEL_UV),
+        mesh_channel(mesh, CHANNEL_CURVATURE),
+        mesh_channel(mesh, CHANNEL_COLOR),
+    ] {
         payload.extend(mesh_buffer(data));
     }
     payload.extend(0_i32.to_le_bytes());
     payload.extend([0_u8; 16]);
-    payload.extend(mesh_buffer(&[]));
+    payload.extend(mesh_buffer(mesh_channel(mesh, CHANNEL_SURFACE_PARAMETERS)));
     payload.extend([0_u8; 3]);
     if minor >= 6 {
         payload.push(0);
@@ -669,6 +704,13 @@ fn mesh_payload(mesh: &cadmpeg_ir::tessellation::Tessellation, archive_version: 
         payload.extend(crc_chunk(0x4000_8000, &body));
     }
     payload
+}
+
+fn mesh_channel(mesh: &cadmpeg_ir::tessellation::Tessellation, kind: u32) -> &[u8] {
+    mesh.channels
+        .iter()
+        .find(|channel| channel.kind == kind)
+        .map_or(&[], |channel| channel.data.as_slice())
 }
 
 fn mesh_buffer(data: &[u8]) -> Vec<u8> {
@@ -707,6 +749,7 @@ mod tests {
     use cadmpeg_ir::topology::Point;
     use cadmpeg_ir::units::Units;
 
+    use super::{CHANNEL_COLOR, CHANNEL_CURVATURE, CHANNEL_SURFACE_PARAMETERS, CHANNEL_UV};
     use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
 
     #[test]
@@ -949,5 +992,58 @@ mod tests {
             .decode(&mut Cursor::new(v8), &DecodeOptions::default())
             .unwrap();
         assert_eq!(decoded.ir.model.tessellations[0].vertices[0].x, 0.1);
+    }
+
+    #[test]
+    fn mesh_auxiliary_channels_round_trip_by_kind() {
+        let mut ir = CadIr::empty(Units::default());
+        let vertices = vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        let channels = [
+            (CHANNEL_UV, 8_u32, vec![0_u8; 24]),
+            (CHANNEL_COLOR, 4, vec![0x7f; 12]),
+            (CHANNEL_SURFACE_PARAMETERS, 16, vec![0x11; 48]),
+            (CHANNEL_CURVATURE, 16, vec![0x22; 48]),
+        ]
+        .into_iter()
+        .map(
+            |(kind, item_size, data)| cadmpeg_ir::tessellation::TessellationChannel {
+                item_size,
+                kind,
+                flags: 0,
+                count: 3,
+                data,
+            },
+        )
+        .collect::<Vec<_>>();
+        ir.model
+            .tessellations
+            .push(cadmpeg_ir::tessellation::Tessellation {
+                id: "cadir:model:tessellation#channels".into(),
+                body: None,
+                source_object: None,
+                vertices,
+                triangles: vec![[0, 1, 2]],
+                strip_lengths: Vec::new(),
+                normals: Vec::new(),
+                channels: channels.clone(),
+            });
+        let mut bytes = Vec::new();
+        RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&ir, &mut bytes)
+            .unwrap();
+        let decoded = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let actual = &decoded.ir.model.tessellations[0].channels;
+        for expected in channels {
+            assert_eq!(
+                actual.iter().find(|channel| channel.kind == expected.kind),
+                Some(&expected)
+            );
+        }
     }
 }
