@@ -2158,6 +2158,14 @@ fn feature_operation_geometry_is_validated() {
                 count: 0,
             },
         },
+        FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::CurveDriven {
+                path: None,
+                spacing: Length(0.0),
+                count: 0,
+            },
+        },
     ];
     let expected = [
         "fillet radius is invalid",
@@ -2176,6 +2184,7 @@ fn feature_operation_geometry_is_validated() {
         "helix geometry is invalid",
         "wrap depth is invalid",
         "body motion is invalid",
+        "pattern geometry is invalid",
         "pattern geometry is invalid",
     ];
     let mut ir = unit_cube();

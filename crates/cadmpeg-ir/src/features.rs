@@ -574,7 +574,7 @@ pub enum FeatureDefinition {
     },
     /// Repetition or reflection of existing features.
     Pattern {
-        /// Features being repeated or reflected.
+        /// Features being repeated or reflected; empty when the source selection is unresolved.
         seeds: Vec<FeatureId>,
         /// Spatial transform defining the repetition or reflection.
         pattern: PatternKind,
@@ -1009,6 +1009,16 @@ pub enum PatternKind {
         axis_dir: Vector3,
         /// Angular span covered by the pattern.
         angle: Angle,
+        /// Total number of instances, including the original.
+        count: u32,
+    },
+    /// Repeats seeds at fixed arc-length spacing along a curve.
+    CurveDriven {
+        /// Pattern path, when its native reference is available.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<PathRef>,
+        /// Arc-length spacing between consecutive instances.
+        spacing: Length,
         /// Total number of instances, including the original.
         count: u32,
     },

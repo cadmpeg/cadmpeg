@@ -485,6 +485,7 @@ fn parse_native_parameter_literal(
                 || feature_family(feature, "Thickness")
         }
         "D2" if is_chamfer(feature) => parse_angle_rad(expression).is_none(),
+        "D3" if pattern_form(feature) == Some(PatternForm::CurveDriven) => true,
         _ => false,
     };
     if positional_length {
@@ -794,6 +795,13 @@ pub fn bind_topology_selections(
             FeatureDefinition::DeleteBody { bodies, .. } => {
                 resolve_body_selection(bodies, &body_ids);
             }
+            FeatureDefinition::Pattern {
+                pattern:
+                    PatternKind::CurveDriven {
+                        path: Some(path), ..
+                    },
+                ..
+            } => resolve_path_ref(path, &edge_ids, &curve_ids),
             FeatureDefinition::Scale { bodies, .. } => {
                 resolve_body_selection(bodies, &body_ids);
             }
@@ -1076,7 +1084,8 @@ fn project_definition(
     } else if is_revolve(feature) {
         project_revolve(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if pattern_form(feature).is_some() {
-        project_pattern(feature, by_source).unwrap_or_else(|| native_definition(feature))
+        project_pattern(feature, by_source, native_by_source)
+            .unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Sweep") {
         project_sweep(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if is_loft(feature) {
@@ -1612,6 +1621,7 @@ fn project_sweep(
 enum PatternForm {
     Linear,
     Circular,
+    CurveDriven,
     Mirror,
 }
 
@@ -1619,6 +1629,7 @@ fn pattern_form(feature: &Feature) -> Option<PatternForm> {
     let parse = |form: &str| match form.to_ascii_lowercase().as_str() {
         "linear" | "linearpattern" => Some(PatternForm::Linear),
         "circular" | "circularpattern" => Some(PatternForm::Circular),
+        "crvpattern" | "curvepattern" | "curvedrivenpattern" => Some(PatternForm::CurveDriven),
         "mirror" => Some(PatternForm::Mirror),
         _ => None,
     };
@@ -1639,18 +1650,22 @@ fn pattern_form(feature: &Feature) -> Option<PatternForm> {
 fn project_pattern(
     feature: &Feature,
     by_source: &HashMap<&str, FeatureId>,
+    native_by_source: &HashMap<&str, &str>,
 ) -> Option<FeatureDefinition> {
-    let seeds = feature
-        .properties
-        .get("Seeds")?
-        .split(',')
-        .map(str::trim)
-        .map(|source| by_source.get(source).cloned())
-        .collect::<Option<Vec<_>>>()?;
-    if seeds.is_empty() {
+    let form = pattern_form(feature)?;
+    let seeds = match feature.properties.get("Seeds") {
+        Some(seeds) => seeds
+            .split(',')
+            .map(str::trim)
+            .map(|source| by_source.get(source).cloned())
+            .collect::<Option<Vec<_>>>()?,
+        None if form == PatternForm::CurveDriven => Vec::new(),
+        None => return None,
+    };
+    if seeds.is_empty() && form != PatternForm::CurveDriven {
         return None;
     }
-    let pattern = match pattern_form(feature)? {
+    let pattern = match form {
         PatternForm::Linear => PatternKind::Linear {
             direction: parse_valid_direction(feature.properties.get("Direction")?)?,
             spacing: Length(
@@ -1671,6 +1686,27 @@ fn project_pattern(
                     .and_then(|value| parse_positive_angle_rad(value))?,
             ),
             count: parse_count(feature.parameters.get("Count")?)?,
+        },
+        PatternForm::CurveDriven => PatternKind::CurveDriven {
+            path: feature.properties.get("Path").map(|source| {
+                PathRef::Native(
+                    native_by_source
+                        .get(source.as_str())
+                        .map_or_else(|| source.clone(), |id| (*id).to_string()),
+                )
+            }),
+            spacing: Length(parse_positive_dimension_length_mm(
+                feature
+                    .parameters
+                    .get("Spacing")
+                    .or_else(|| feature.parameters.get("D3"))?,
+            )?),
+            count: parse_count(
+                feature
+                    .parameters
+                    .get("Count")
+                    .or_else(|| feature.parameters.get("D1"))?,
+            )?,
         },
         PatternForm::Mirror => PatternKind::Mirror {
             plane_origin: parse_point3_mm(feature.properties.get("PlaneOrigin")?)?,
@@ -2582,6 +2618,13 @@ fn parse_neutral_parameter_literal(
             feature.definition,
             FeatureDefinition::Chamfer {
                 spec: ChamferSpec::TwoDistances { .. },
+                ..
+            }
+        ),
+        "D3" => matches!(
+            feature.definition,
+            FeatureDefinition::Pattern {
+                pattern: PatternKind::CurveDriven { .. },
                 ..
             }
         ),
@@ -5452,6 +5495,7 @@ pub fn sync_neutral_features(
                 let expected_form = match pattern {
                     PatternKind::Linear { .. } => PatternForm::Linear,
                     PatternKind::Circular { .. } => PatternForm::Circular,
+                    PatternKind::CurveDriven { .. } => PatternForm::CurveDriven,
                     PatternKind::Mirror { .. } => PatternForm::Mirror,
                 };
                 if existing
@@ -5473,7 +5517,9 @@ pub fn sync_neutral_features(
                             feature.id
                         ))
                     })?;
-                if seed_sources.is_empty() {
+                if seed_sources.is_empty()
+                    && (expected_form != PatternForm::CurveDriven || existing.is_none())
+                {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has no pattern seeds",
                         feature.id
@@ -5484,7 +5530,9 @@ pub fn sync_neutral_features(
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
                 let mut properties = feature.source_properties.clone();
-                properties.insert("Seeds".into(), seed_sources.join(","));
+                if !seed_sources.is_empty() {
+                    properties.insert("Seeds".into(), seed_sources.join(","));
+                }
                 match pattern {
                     PatternKind::Linear {
                         direction,
@@ -5510,6 +5558,62 @@ pub fn sync_neutral_features(
                         parameters.insert("Angle".into(), format_angle_rad(angle.0));
                         parameters.insert("Count".into(), count.to_string());
                     }
+                    PatternKind::CurveDriven {
+                        path,
+                        spacing,
+                        count,
+                    } => {
+                        require_count(*count, &feature.id)?;
+                        if !spacing.0.is_finite() || spacing.0 <= 0.0 {
+                            return Err(CodecError::Malformed(format!(
+                                "SLDPRT feature {} has invalid curve-pattern spacing",
+                                feature.id
+                            )));
+                        }
+                        match path {
+                            Some(path) => {
+                                let path = path_source(path, &record_sources, &sketch_sources)
+                                    .ok_or_else(|| {
+                                        CodecError::Malformed(format!(
+                                            "SLDPRT feature {} references a missing pattern path",
+                                            feature.id
+                                        ))
+                                    })?;
+                                properties.insert("Path".into(), path);
+                            }
+                            None if existing.is_some() => {}
+                            None => {
+                                return Err(CodecError::NotImplemented(format!(
+                                    "SLDPRT feature {} has an unresolved curve-pattern path",
+                                    feature.id
+                                )));
+                            }
+                        }
+                        let spacing_key = if parameters.contains_key("D3")
+                            && !parameters.contains_key("Spacing")
+                        {
+                            "D3"
+                        } else {
+                            "Spacing"
+                        };
+                        let count_key =
+                            if parameters.contains_key("D1") && !parameters.contains_key("Count") {
+                                "D1"
+                            } else {
+                                "Count"
+                            };
+                        parameters.insert(
+                            spacing_key.into(),
+                            format_length_like(
+                                spacing.0,
+                                existing
+                                    .as_deref()
+                                    .and_then(|record| record.parameters.get(spacing_key))
+                                    .map(String::as_str),
+                            ),
+                        );
+                        parameters.insert(count_key.into(), count.to_string());
+                    }
                     PatternKind::Mirror {
                         plane_origin,
                         plane_normal,
@@ -5523,6 +5627,7 @@ pub fn sync_neutral_features(
                     || match expected_form {
                         PatternForm::Linear => "LinearPattern".into(),
                         PatternForm::Circular => "CircularPattern".into(),
+                        PatternForm::CurveDriven => "CrvPattern".into(),
                         PatternForm::Mirror => "Mirror".into(),
                     },
                     |record| record.kind.clone(),

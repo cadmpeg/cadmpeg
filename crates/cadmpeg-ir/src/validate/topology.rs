@@ -1452,6 +1452,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
+                if let PatternKind::CurveDriven {
+                    path: Some(path), ..
+                } = pattern
+                {
+                    paths.push(path);
+                }
                 for seed in seeds {
                     match features.get(seed.0.as_str()) {
                         None => ref_error(findings, &feature.id.0, "seed feature", &seed.0),
@@ -1490,6 +1496,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             && angle.0.is_finite()
                             && angle.0 > 0.0
                             && *count > 0
+                    }
+                    PatternKind::CurveDriven { spacing, count, .. } => {
+                        positive_feature_length(*spacing) && *count > 0
                     }
                     PatternKind::Mirror {
                         plane_origin,
@@ -1810,6 +1819,13 @@ fn check_feature_sketch_references(
                 profiles.extend(sections);
                 paths.extend(guides);
             }
+            FeatureDefinition::Pattern {
+                pattern:
+                    PatternKind::CurveDriven {
+                        path: Some(path), ..
+                    },
+                ..
+            } => paths.push(path),
             _ => {}
         }
         for profile in profiles {

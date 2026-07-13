@@ -9281,6 +9281,77 @@ fn semantic_writer_round_trips_all_pattern_forms() {
 }
 
 #[test]
+fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
+    use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue, PatternKind};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Curve Pattern1" Type="CrvPattern" id="169"><Dimension Name="D3">397.6</Dimension><Dimension Name="D1">16</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Pattern {
+            seeds,
+            pattern: PatternKind::CurveDriven {
+                path: None,
+                spacing: Length(397.6),
+                count: 16,
+            },
+        } if seeds.is_empty()
+    ));
+    assert_eq!(
+        decoded.ir.model.parameters[0].value,
+        Some(ParameterValue::Length(Length(397.6)))
+    );
+    assert_eq!(
+        decoded.ir.model.parameters[1].value,
+        Some(ParameterValue::Integer(16))
+    );
+
+    let FeatureDefinition::Pattern {
+        pattern: PatternKind::CurveDriven { spacing, count, .. },
+        ..
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("curve-driven pattern");
+    };
+    *spacing = Length(250.0);
+    *count = 8;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.kind, "CrvPattern");
+    assert_eq!(native.parameters["D3"], "250");
+    assert_eq!(native.parameters["D1"], "8");
+    assert!(!native.parameters.contains_key("Spacing"));
+    assert!(!native.parameters.contains_key("Count"));
+    assert!(!native.properties.contains_key("Seeds"));
+    assert!(!native.properties.contains_key("Path"));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Pattern {
+            pattern: PatternKind::CurveDriven {
+                path: None,
+                spacing: Length(250.0),
+                count: 8,
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_generic_pattern_type() {
     use cadmpeg_ir::features::{FeatureDefinition, Length, PatternKind};
 
