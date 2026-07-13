@@ -1270,15 +1270,32 @@ pub(crate) fn project(
 ) {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
+    #[derive(serde::Serialize)]
+    struct NativeHistoryRecord {
+        id: String,
+        source_offset: u64,
+        source_uuid: Option<String>,
+        command_uuid: String,
+        record_version: i32,
+        record_type: &'static str,
+        copy_on_replace: bool,
+        antecedent_object_uuids: Vec<String>,
+        descendant_object_uuids: Vec<String>,
+        value_count: usize,
+    }
+
     let mut ids = Vec::with_capacity(records.len());
+    let mut native_ids = Vec::with_capacity(records.len());
     let mut seen_record_ids = HashSet::new();
     for record in records {
         let unique = !record.id.is_nil() && seen_record_ids.insert(record.id);
-        ids.push(FeatureId(if unique {
-            format!("rhino:history:feature#{}", record.id)
+        let key = if unique {
+            record.id.to_string()
         } else {
-            format!("rhino:history:feature#offset-{}", record.source_range.start)
-        }));
+            format!("offset-{}", record.source_range.start)
+        };
+        ids.push(FeatureId(format!("rhino:history:feature#{key}")));
+        native_ids.push(format!("rhino:history:record#{key}"));
     }
     let mut producers = HashMap::<Uuid, Option<(usize, FeatureId)>>::new();
     for (index, record) in records.iter().enumerate() {
@@ -1349,9 +1366,32 @@ pub(crate) fn project(
                 parameters,
                 properties,
             },
-            native_ref: Some(format!("rhino:history:record#{}", record.id)),
+            native_ref: Some(native_ids[index].clone()),
         });
     }
+    let native = records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| NativeHistoryRecord {
+            id: native_ids[index].clone(),
+            source_offset: record.source_range.start as u64,
+            source_uuid: (!record.id.is_nil()).then(|| record.id.to_string()),
+            command_uuid: record.command_id.to_string(),
+            record_version: record.version,
+            record_type: match record.record_type {
+                RecordType::HistoryParameters => "history_parameters",
+                RecordType::FeatureParameters => "feature_parameters",
+            },
+            copy_on_replace: record.copy_on_replace,
+            antecedent_object_uuids: record.antecedents.iter().map(ToString::to_string).collect(),
+            descendant_object_uuids: record.descendants.iter().map(ToString::to_string).collect(),
+            value_count: record.values.len(),
+        })
+        .collect::<Vec<_>>();
+    ir.native
+        .namespace_mut("rhino")
+        .set_arena("history_records", &native)
+        .expect("Rhino history records serialize");
 }
 
 #[cfg(test)]
