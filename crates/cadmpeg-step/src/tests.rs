@@ -230,6 +230,15 @@ fn decode_builds_a_valid_connected_sheet_brep() {
         .coedges
         .iter()
         .all(|coedge| coedge.sense == Sense::Forward));
+    assert_eq!(
+        result.ir.model.faces[0].color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 0.2,
+            g: 0.4,
+            b: 0.6,
+            a: 1.0,
+        })
+    );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

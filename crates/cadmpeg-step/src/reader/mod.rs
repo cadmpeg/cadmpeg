@@ -14,6 +14,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use crate::parse::{self, Exchange, Value};
 
 mod geometry;
+mod presentation;
 mod product;
 mod tessellation;
 mod topology;
@@ -51,6 +52,7 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
 
     let geometry = geometry::decode(&exchange, &mut ir);
     let topology = topology::decode(&exchange, &mut ir);
+    let presentation = presentation::decode(&exchange, &mut ir);
     let product = product::decode(&exchange, &geometry, &mut ir);
     let tessellation = tessellation::decode(&exchange, &geometry, &mut ir);
     report.geometry_transferred =
@@ -73,6 +75,14 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
         }));
     report
         .losses
+        .extend(presentation.warnings.into_iter().map(|message| LossNote {
+            category: LossCategory::Material,
+            severity: Severity::Warning,
+            message,
+            provenance: None,
+        }));
+    report
+        .losses
         .extend(product.warnings.into_iter().map(|message| LossNote {
             category: LossCategory::Metadata,
             severity: Severity::Warning,
@@ -89,6 +99,7 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
         }));
     let mut typed_records = geometry.typed_records;
     typed_records.extend(topology.typed_records);
+    typed_records.extend(presentation.typed_records);
     typed_records.extend(product.typed_records);
     typed_records.extend(tessellation.typed_records);
 
