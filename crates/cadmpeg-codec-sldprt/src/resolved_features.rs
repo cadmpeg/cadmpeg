@@ -690,7 +690,7 @@ pub(crate) fn resolve_operand_marker<'a>(
         .filter(|entity| operand_accepts_marker(kind, entity.kind))
         .collect::<Vec<_>>();
     compatible.sort_unstable_by_key(|entity| entity.offset);
-    if kind == FeatureInputOperandKind::Native(0x83fe) {
+    if operand_uses_compatible_ordinal(kind) {
         return compatible.get(usize::from(address)).copied();
     }
     let mut matches = compatible
@@ -828,17 +828,29 @@ pub(crate) fn operand_accepts_marker(
     marker: SketchInputKind,
 ) -> bool {
     match kind {
-        FeatureInputOperandKind::D6 | FeatureInputOperandKind::Native(0x837b | 0xbc7c) => {
+        FeatureInputOperandKind::D6 | FeatureInputOperandKind::Native(0x837b | 0x8dcb | 0xbc7c) => {
             matches!(
                 marker,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
         }
-        FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0xbc87) => {
+        FeatureInputOperandKind::E1
+        | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87) => {
             marker == SketchInputKind::LineOrCircle
         }
         _ => true,
     }
+}
+
+fn operand_uses_compatible_ordinal(kind: FeatureInputOperandKind) -> bool {
+    matches!(
+        kind,
+        FeatureInputOperandKind::D6
+            | FeatureInputOperandKind::E1
+            | FeatureInputOperandKind::Native(
+                0x837b | 0x8386 | 0x83fe | 0x8dcb | 0x8dda | 0xbc7c | 0xbc87
+            )
+    )
 }
 
 fn marker_local_links(payload: &[u8], offset: usize) -> Option<([u16; 2], u16)> {
@@ -4655,11 +4667,23 @@ fn append_generated_sketch_markers(
                 vec![
                     (
                         FeatureInputOperandKind::D6,
-                        unique_generated_locus_marker(ir, sketch, &marker_loci, first)?,
+                        generated_locus_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            first,
+                            FeatureInputOperandKind::D6,
+                        )?,
                     ),
                     (
                         FeatureInputOperandKind::D6,
-                        unique_generated_locus_marker(ir, sketch, &marker_loci, second)?,
+                        generated_locus_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            second,
+                            FeatureInputOperandKind::D6,
+                        )?,
                     ),
                 ],
                 parameter,
@@ -4669,11 +4693,23 @@ fn append_generated_sketch_markers(
                 vec![
                     (
                         FeatureInputOperandKind::D6,
-                        unique_generated_locus_marker(ir, sketch, &marker_loci, point)?,
+                        generated_locus_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            point,
+                            FeatureInputOperandKind::D6,
+                        )?,
                     ),
                     (
                         FeatureInputOperandKind::E1,
-                        unique_generated_entity_marker(ir, sketch, &marker_loci, line)?,
+                        generated_entity_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            line,
+                            FeatureInputOperandKind::E1,
+                        )?,
                     ),
                 ],
                 parameter,
@@ -4683,11 +4719,23 @@ fn append_generated_sketch_markers(
                 vec![
                     (
                         FeatureInputOperandKind::E1,
-                        unique_generated_entity_marker(ir, sketch, &marker_loci, first)?,
+                        generated_entity_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            first,
+                            FeatureInputOperandKind::E1,
+                        )?,
                     ),
                     (
                         FeatureInputOperandKind::E1,
-                        unique_generated_entity_marker(ir, sketch, &marker_loci, second)?,
+                        generated_entity_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            second,
+                            FeatureInputOperandKind::E1,
+                        )?,
                     ),
                 ],
                 parameter,
@@ -4697,11 +4745,23 @@ fn append_generated_sketch_markers(
                 vec![
                     (
                         FeatureInputOperandKind::Native(0x8dcb),
-                        unique_generated_locus_marker(ir, sketch, &marker_loci, first)?,
+                        generated_locus_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            first,
+                            FeatureInputOperandKind::Native(0x8dcb),
+                        )?,
                     ),
                     (
                         FeatureInputOperandKind::Native(0x8dcb),
-                        unique_generated_locus_marker(ir, sketch, &marker_loci, second)?,
+                        generated_locus_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            second,
+                            FeatureInputOperandKind::Native(0x8dcb),
+                        )?,
                     ),
                 ],
                 parameter,
@@ -4711,11 +4771,23 @@ fn append_generated_sketch_markers(
                 vec![
                     (
                         FeatureInputOperandKind::Native(0x8dcb),
-                        unique_generated_locus_marker(ir, sketch, &marker_loci, first)?,
+                        generated_locus_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            first,
+                            FeatureInputOperandKind::Native(0x8dcb),
+                        )?,
                     ),
                     (
                         FeatureInputOperandKind::Native(0x8dcb),
-                        unique_generated_locus_marker(ir, sketch, &marker_loci, second)?,
+                        generated_locus_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            second,
+                            FeatureInputOperandKind::Native(0x8dcb),
+                        )?,
                     ),
                 ],
                 parameter,
@@ -4725,11 +4797,23 @@ fn append_generated_sketch_markers(
                 vec![
                     (
                         FeatureInputOperandKind::Native(0x8dda),
-                        unique_generated_entity_marker(ir, sketch, &marker_loci, first)?,
+                        generated_entity_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            first,
+                            FeatureInputOperandKind::Native(0x8dda),
+                        )?,
                     ),
                     (
                         FeatureInputOperandKind::Native(0x8dda),
-                        unique_generated_entity_marker(ir, sketch, &marker_loci, second)?,
+                        generated_entity_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            second,
+                            FeatureInputOperandKind::Native(0x8dda),
+                        )?,
                     ),
                 ],
                 parameter,
@@ -4738,7 +4822,13 @@ fn append_generated_sketch_markers(
                 "sgCircleDim",
                 vec![(
                     FeatureInputOperandKind::Native(0x83fe),
-                    generated_circle_operand(ir, sketch, &marker_loci, entity)?,
+                    generated_entity_operand(
+                        ir,
+                        sketch,
+                        &marker_loci,
+                        entity,
+                        FeatureInputOperandKind::Native(0x83fe),
+                    )?,
                 )],
                 parameter,
             ),
@@ -4927,26 +5017,46 @@ fn unique_generated_entity_marker(
     )))
 }
 
-fn generated_circle_operand(
+fn generated_entity_operand(
     ir: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
     markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
     entity: &SketchEntityId,
+    kind: FeatureInputOperandKind,
 ) -> Result<u16, cadmpeg_ir::codec::CodecError> {
     let local_id = unique_generated_entity_marker(ir, sketch, markers, entity)?;
+    generated_operand_ordinal(markers, local_id, kind, sketch)
+}
+
+fn generated_locus_operand(
+    ir: &cadmpeg_ir::CadIr,
+    sketch: &Sketch,
+    markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
+    locus: &SketchLocus,
+    kind: FeatureInputOperandKind,
+) -> Result<u16, cadmpeg_ir::codec::CodecError> {
+    let local_id = unique_generated_locus_marker(ir, sketch, markers, locus)?;
+    generated_operand_ordinal(markers, local_id, kind, sketch)
+}
+
+fn generated_operand_ordinal(
+    markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
+    local_id: u16,
+    kind: FeatureInputOperandKind,
+    sketch: &Sketch,
+) -> Result<u16, cadmpeg_ir::codec::CodecError> {
     let ordinal = markers
         .iter()
-        .filter(|(_, _, kind, _)| *kind == SketchInputKind::LineOrCircle)
+        .filter(|(_, _, marker_kind, _)| operand_accepts_marker(kind, *marker_kind))
         .position(|(_, _, _, candidate)| *candidate == local_id)
         .ok_or_else(|| {
             cadmpeg_ir::codec::CodecError::NotImplemented(format!(
-                "source-less SLDPRT circular dimension cannot address entity {} as a line-or-circle handle",
-                entity.0
+                "source-less SLDPRT dimension operand cannot address marker {local_id} with tag {kind:?}"
             ))
         })?;
     u16::try_from(ordinal).map_err(|_| {
         cadmpeg_ir::codec::CodecError::Malformed(format!(
-            "source-less SLDPRT sketch {} exceeds the circular-dimension operand space",
+            "source-less SLDPRT sketch {} exceeds the dimension operand space",
             sketch.id.0
         ))
     })

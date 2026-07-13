@@ -2772,6 +2772,30 @@ fn encoder_writes_source_less_curved_sketches() {
         .expect("resolved diameter marker");
     assert_eq!(marker.kind, crate::records::SketchInputKind::LineOrCircle);
     assert_ne!(marker.local_id, Some(u32::from(operand.entity_index)));
+    assert!(native.feature_input_lanes[0]
+        .relation_instances
+        .iter()
+        .flat_map(|relation| &relation.operands)
+        .all(|operand| operand.entity_ref.is_some()));
+    assert!(native.feature_input_lanes[0]
+        .relation_instances
+        .iter()
+        .flat_map(|relation| &relation.operands)
+        .filter(|operand| {
+            matches!(
+                operand.kind,
+                crate::records::FeatureInputOperandKind::D6
+                    | crate::records::FeatureInputOperandKind::E1
+                    | crate::records::FeatureInputOperandKind::Native(0x8dcb | 0x8dda)
+            )
+        })
+        .any(|operand| {
+            native.feature_input_lanes[0]
+                .sketch_entities
+                .iter()
+                .find(|marker| Some(marker.id.as_str()) == operand.entity_ref.as_deref())
+                .is_some_and(|marker| marker.local_id != Some(u32::from(operand.entity_index)))
+        }));
     assert!(decoded
         .ir
         .model
@@ -13792,7 +13816,7 @@ fn decode_retains_e1_feature_input_operands() {
 }
 
 #[test]
-fn decode_resolves_feature_input_operands_within_sketch() {
+fn decode_resolves_feature_input_operands_by_compatible_ordinal() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -13824,12 +13848,12 @@ fn decode_resolves_feature_input_operands_within_sketch() {
         .iter()
         .all(|reference| reference.feature_ref.as_deref() == Some(feature_ref)));
     assert_eq!(scalar.operands[0].entity_index, 0);
-    assert_eq!(scalar.operands[0].entity_ref, None);
-    assert_eq!(scalar.operands[1].entity_index, 2);
     assert_eq!(
-        scalar.operands[1].entity_ref.as_deref(),
-        Some(lane.sketch_entities[1].id.as_str())
+        scalar.operands[0].entity_ref.as_deref(),
+        Some(lane.sketch_entities[0].id.as_str())
     );
+    assert_eq!(scalar.operands[1].entity_index, 2);
+    assert_eq!(scalar.operands[1].entity_ref, None);
 
     SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
@@ -13850,6 +13874,12 @@ fn decode_uses_operand_tag_to_disambiguate_marker_kind() {
             payload[offset..offset + 2].copy_from_slice(&0x837bu16.to_le_bytes());
         }
     }
+    let operand_cells = payload
+        .windows(2)
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == [0x7b, 0x83]).then_some(offset))
+        .collect::<Vec<_>>();
+    payload[operand_cells[1] + 2..operand_cells[1] + 4].copy_from_slice(&0u16.to_le_bytes());
     let marker = [0xff, 0xff, 0x1f, 0x00, 0x03];
     let first = payload
         .windows(marker.len())
@@ -13867,7 +13897,7 @@ fn decode_uses_operand_tag_to_disambiguate_marker_kind() {
         .unwrap();
     let lane = &sldprt_native(&decoded.ir).feature_input_lanes[0];
     let operand = &lane.scalars[0].operands[1];
-    assert_eq!(operand.entity_index, 2);
+    assert_eq!(operand.entity_index, 0);
     assert_eq!(
         operand.entity_ref.as_deref(),
         Some(lane.sketch_entities[0].id.as_str())
@@ -14501,7 +14531,7 @@ fn decode_projects_owned_native_sketch_relation() {
             && operands.len() == 2
             && operands[0].native_kind == "d6"
             && operands[0].object_index == 0
-            && operands[0].native_ref.is_none()
+            && operands[0].native_ref.is_some()
             && operands[1].native_kind == "d6"
             && operands[1].object_index == 2
             && operands[1].native_ref.is_none()
@@ -14525,8 +14555,11 @@ fn native_store_rejects_missing_sketch_marker_feature_owner() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut native = sldprt_native(&decoded.ir);
-    native.feature_input_lanes[0].sketch_entities[0].feature_ref =
-        Some("sldprt:history:feature#missing".into());
+    native.feature_input_lanes[0]
+        .sketch_entities
+        .last_mut()
+        .expect("sketch marker")
+        .feature_ref = Some("sldprt:history:feature#missing".into());
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
@@ -14620,6 +14653,16 @@ fn native_store_rejects_midpoint_without_point_and_entity_markers() {
         },
     ];
     entities[0].link_selector = Some(0);
+    for scalar in &mut native.feature_input_lanes[0].scalars {
+        for operand in &mut scalar.operands {
+            operand.entity_ref = None;
+        }
+    }
+    for relation in &mut native.feature_input_lanes[0].relation_instances {
+        for operand in &mut relation.operands {
+            operand.entity_ref = None;
+        }
+    }
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
@@ -15057,7 +15100,7 @@ fn native_store_rejects_inconsistent_scalar_marker_target() {
 }
 
 #[test]
-fn native_store_rejects_ambiguous_scalar_marker_target() {
+fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -15074,14 +15117,12 @@ fn native_store_rejects_ambiguous_scalar_marker_target() {
         .unwrap();
     let mut native = sldprt_native(&decoded.ir);
     let lane = &mut native.feature_input_lanes[0];
-    assert_eq!(lane.scalars[0].operands[1].entity_index, 2);
-    assert!(lane.scalars[0].operands[1].entity_ref.is_some());
-    lane.sketch_entities[0].local_id = Some(2);
-    lane.sketch_entities[0].kind = crate::records::SketchInputKind::Point;
+    assert_eq!(lane.scalars[0].operands[0].entity_index, 0);
+    assert!(lane.scalars[0].operands[0].entity_ref.is_some());
+    lane.sketch_entities[1].local_id = lane.sketch_entities[0].local_id;
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&mut namespace).unwrap_err();
-    assert!(error.to_string().contains("inconsistent sketch marker"));
+    native.store(&mut namespace).unwrap();
 }
 
 #[test]
