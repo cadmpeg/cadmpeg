@@ -348,6 +348,27 @@ pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
             ((x != 0.0) || (y != 0.0))
                 .then(|| Point2::new(y.atan2(x), axial_origin + axial_cos * cos + axial_sin * sin))
         }
+        PcurveGeometry::PolarNurbs {
+            degree,
+            knots,
+            radial_control_points,
+            axial_control_points,
+            weights,
+            ..
+        } => {
+            if radial_control_points.len() != axial_control_points.len() {
+                return None;
+            }
+            let radial =
+                nurbs_pcurve_uv(*degree, knots, radial_control_points, weights.as_deref(), t)?;
+            let axial_points = axial_control_points
+                .iter()
+                .map(|value| Point2::new(*value, 0.0))
+                .collect::<Vec<_>>();
+            let axial = nurbs_pcurve_uv(*degree, knots, &axial_points, weights.as_deref(), t)?;
+            ((radial.u != 0.0) || (radial.v != 0.0))
+                .then(|| Point2::new(radial.v.atan2(radial.u), axial.u))
+        }
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -387,13 +408,28 @@ mod tests {
             axial_cos: 4.0,
             axial_sin: 0.0,
         };
+        let polar_nurbs = PcurveGeometry::PolarNurbs {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            radial_control_points: vec![
+                Point2::new(2.0, 0.0),
+                Point2::new(2.0, 2.0),
+                Point2::new(0.0, 2.0),
+            ],
+            axial_control_points: vec![3.0, 4.0, 5.0],
+            weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+            periodic: false,
+        };
 
         let circle = pcurve_uv(&circle, std::f64::consts::FRAC_PI_2).unwrap();
         let ellipse = pcurve_uv(&ellipse, std::f64::consts::FRAC_PI_2).unwrap();
         let polar = pcurve_uv(&polar, std::f64::consts::FRAC_PI_2).unwrap();
+        let polar_nurbs = pcurve_uv(&polar_nurbs, 0.5).unwrap();
         assert!((circle.u - 2.0).abs() < 1e-12 && (circle.v + 1.0).abs() < 1e-12);
         assert!(ellipse.u.abs() < 1e-12 && (ellipse.v - 3.0).abs() < 1e-12);
         assert!((polar.u - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
         assert!((polar.v - 3.0).abs() < 1e-12);
+        assert!((polar_nurbs.u - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
+        assert!((polar_nurbs.v - 4.0).abs() < 1e-12);
     }
 }

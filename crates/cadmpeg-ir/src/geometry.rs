@@ -2215,6 +2215,23 @@ pub enum PcurveGeometry {
         /// Axial coefficient multiplying `sin(t)`.
         axial_sin: f64,
     },
+    /// Polar angle and axial coordinate obtained from a rational NURBS vector.
+    PolarNurbs {
+        /// Polynomial degree shared by every component.
+        degree: u32,
+        /// Expanded nondecreasing knot vector.
+        knots: Vec<f64>,
+        /// Euclidean radial-plane control points.
+        radial_control_points: Vec<Point2>,
+        /// Axial control values paired with `radial_control_points`.
+        axial_control_points: Vec<f64>,
+        /// Optional positive rational weights shared by every component.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        weights: Option<Vec<f64>>,
+        /// Whether the NURBS parameterization is periodic.
+        #[serde(default)]
+        periodic: bool,
+    },
     /// An ellipse in parameter space, evaluated by angle in radians.
     Ellipse {
         /// Ellipse center.

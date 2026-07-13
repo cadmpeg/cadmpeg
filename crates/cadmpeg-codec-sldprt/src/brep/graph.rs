@@ -9,6 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
+use cadmpeg_ir::eval::nurbs_curve_point;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
 };
@@ -1234,6 +1235,7 @@ fn derive_cylindrical_pcurves(
             axis.x * u_reference.y - axis.y * u_reference.x,
         );
         let dot = |a: [f64; 3], b: cadmpeg_ir::math::Vector3| a[0] * b.x + a[1] * b.y + a[2] * b.z;
+        let mut parameter_range = None;
         let geometry = match &curve.geometry {
             CurveGeometry::Circle {
                 center,
@@ -1354,6 +1356,58 @@ fn derive_cylindrical_pcurves(
                     axial_sin: dot(minor, *axis),
                 }
             }
+            CurveGeometry::Nurbs(nurbs) => {
+                let radial_control_points = nurbs
+                    .control_points
+                    .iter()
+                    .map(|point| {
+                        let relative = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
+                        cadmpeg_ir::math::Point2::new(
+                            dot(relative, *u_reference),
+                            dot(relative, cross),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                if !quadratic_nurbs_has_constant_radius(
+                    &radial_control_points,
+                    nurbs.weights.as_deref(),
+                    &nurbs.knots,
+                    radius.abs(),
+                ) {
+                    continue;
+                }
+                let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end)) else {
+                    continue;
+                };
+                let (Some(start_parameter), Some(end_parameter)) = (
+                    nurbs_parameter_at_point(nurbs, start),
+                    nurbs_parameter_at_point(nurbs, end),
+                ) else {
+                    continue;
+                };
+                parameter_range = Some([
+                    start_parameter.min(end_parameter),
+                    start_parameter.max(end_parameter),
+                ]);
+                let axial_control_points = nurbs
+                    .control_points
+                    .iter()
+                    .map(|point| {
+                        dot(
+                            [point.x - origin.x, point.y - origin.y, point.z - origin.z],
+                            *axis,
+                        )
+                    })
+                    .collect();
+                PcurveGeometry::PolarNurbs {
+                    degree: nurbs.degree,
+                    knots: nurbs.knots.clone(),
+                    radial_control_points,
+                    axial_control_points,
+                    weights: nurbs.weights.clone(),
+                    periodic: nurbs.periodic,
+                }
+            }
             _ => continue,
         };
         let id = PcurveId(format!(
@@ -1368,7 +1422,7 @@ fn derive_cylindrical_pcurves(
                 geometry,
                 wrapper_reversed: None,
                 native_tail_flags: None,
-                parameter_range: None,
+                parameter_range,
                 fit_tolerance: None,
             },
         ));
@@ -1389,6 +1443,131 @@ fn derive_cylindrical_pcurves(
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
+}
+
+fn nurbs_parameter_at_point(
+    nurbs: &cadmpeg_ir::geometry::NurbsCurve,
+    target: cadmpeg_ir::math::Point3,
+) -> Option<f64> {
+    let squared_distance = |parameter: f64| {
+        let point = nurbs_curve_point(
+            nurbs.degree,
+            &nurbs.knots,
+            &nurbs.control_points,
+            nurbs.weights.as_deref(),
+            parameter,
+        )?;
+        Some(
+            (point.x - target.x).powi(2)
+                + (point.y - target.y).powi(2)
+                + (point.z - target.z).powi(2),
+        )
+    };
+    let mut best = None::<(f64, f64)>;
+    for span in nurbs.knots.windows(2).filter(|span| span[0] < span[1]) {
+        let (mut left, mut right) = (span[0], span[1]);
+        let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
+        let mut a = right - ratio * (right - left);
+        let mut b = left + ratio * (right - left);
+        let mut da = squared_distance(a)?;
+        let mut db = squared_distance(b)?;
+        for _ in 0..80 {
+            if da <= db {
+                right = b;
+                b = a;
+                db = da;
+                a = right - ratio * (right - left);
+                da = squared_distance(a)?;
+            } else {
+                left = a;
+                a = b;
+                da = db;
+                b = left + ratio * (right - left);
+                db = squared_distance(b)?;
+            }
+        }
+        for parameter in [span[0], (left + right) * 0.5, span[1]] {
+            let distance = squared_distance(parameter)?;
+            if best.is_none_or(|(_, best_distance)| distance < best_distance) {
+                best = Some((parameter, distance));
+            }
+        }
+    }
+    let (parameter, squared_distance) = best?;
+    (squared_distance.sqrt() <= 0.01).then_some(parameter)
+}
+
+fn quadratic_nurbs_has_constant_radius(
+    radial_control_points: &[cadmpeg_ir::math::Point2],
+    weights: Option<&[f64]>,
+    knots: &[f64],
+    radius: f64,
+) -> bool {
+    if radial_control_points.len() < 3
+        || radial_control_points.len() % 2 == 0
+        || knots.len() != radial_control_points.len() + 3
+        || weights.is_some_and(|weights| weights.len() != radial_control_points.len())
+        || !radius.is_finite()
+        || radius <= 0.0
+    {
+        return false;
+    }
+    let mut runs = Vec::new();
+    for knot in knots {
+        if !knot.is_finite() {
+            return false;
+        }
+        if let Some((value, count)) = runs.last_mut() {
+            if *value == *knot {
+                *count += 1;
+                continue;
+            }
+            if *knot <= *value {
+                return false;
+            }
+        }
+        runs.push((*knot, 1usize));
+    }
+    if runs.len() < 2
+        || runs.first().is_none_or(|(_, count)| *count != 3)
+        || runs.last().is_none_or(|(_, count)| *count != 3)
+        || runs[1..runs.len() - 1].iter().any(|(_, count)| *count != 2)
+        || runs.len() - 1 != (radial_control_points.len() - 1) / 2
+    {
+        return false;
+    }
+    let weight = |index: usize| weights.map_or(1.0, |weights| weights[index]);
+    let choose_2 = [1.0, 2.0, 1.0];
+    let choose_4 = [1.0, 4.0, 6.0, 4.0, 1.0];
+    let tolerance = 1e-6_f64.max(radius * radius * 1e-9);
+    for start in (0..radial_control_points.len() - 1).step_by(2) {
+        let homogeneous = (0..3)
+            .map(|offset| {
+                let weight = weight(start + offset);
+                let point = radial_control_points[start + offset];
+                (point.u * weight, point.v * weight, weight)
+            })
+            .collect::<Vec<_>>();
+        for degree in 0usize..=4 {
+            let mut identity = 0.0_f64;
+            for i in 0usize..=2 {
+                let Some(j) = degree.checked_sub(i) else {
+                    continue;
+                };
+                if j > 2 {
+                    continue;
+                }
+                let factor = choose_2[i] * choose_2[j] / choose_4[degree];
+                identity += factor
+                    * (homogeneous[i].0 * homogeneous[j].0 + homogeneous[i].1 * homogeneous[j].1
+                        - radius * radius * homogeneous[i].2 * homogeneous[j].2);
+            }
+            if identity.abs() > tolerance {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 fn circle_azimuth_parameter(
@@ -2334,5 +2513,32 @@ mod tests {
 
         assert!(decoded.faces.is_empty());
         assert!(!decoded.stats.synthetic_body_grouping);
+    }
+
+    #[test]
+    fn homogeneous_quadratic_identity_proves_constant_radius() {
+        let radius = 2.0;
+        let controls = [
+            cadmpeg_ir::math::Point2::new(radius, 0.0),
+            cadmpeg_ir::math::Point2::new(radius, radius),
+            cadmpeg_ir::math::Point2::new(0.0, radius),
+        ];
+        let weights = [1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0];
+        let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        assert!(super::quadratic_nurbs_has_constant_radius(
+            &controls,
+            Some(&weights),
+            &knots,
+            radius,
+        ));
+
+        let mut invalid = controls;
+        invalid[1].u += 0.01;
+        assert!(!super::quadratic_nurbs_has_constant_radius(
+            &invalid,
+            Some(&weights),
+            &knots,
+            radius,
+        ));
     }
 }

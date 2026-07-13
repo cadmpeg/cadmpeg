@@ -1488,6 +1488,26 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && axial_cos.is_finite()
                     && axial_sin.is_finite()
             }
+            crate::geometry::PcurveGeometry::PolarNurbs {
+                degree,
+                knots,
+                radial_control_points,
+                axial_control_points,
+                weights,
+                ..
+            } => {
+                radial_control_points.len() >= *degree as usize + 1
+                    && axial_control_points.len() == radial_control_points.len()
+                    && knots.len() == radial_control_points.len() + *degree as usize + 1
+                    && radial_control_points.iter().all(point_finite)
+                    && axial_control_points.iter().all(|value| value.is_finite())
+                    && weights.as_ref().is_none_or(|weights| {
+                        weights.len() == radial_control_points.len()
+                            && weights
+                                .iter()
+                                .all(|weight| weight.is_finite() && *weight > 0.0)
+                    })
+            }
             crate::geometry::PcurveGeometry::Nurbs {
                 degree,
                 knots,
@@ -1509,7 +1529,9 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if !valid {
             bounds_err(findings, &pcurve.id.0, "pcurve geometry is invalid");
         }
-        if let crate::geometry::PcurveGeometry::Nurbs { knots, .. } = &pcurve.geometry {
+        if let crate::geometry::PcurveGeometry::Nurbs { knots, .. }
+        | crate::geometry::PcurveGeometry::PolarNurbs { knots, .. } = &pcurve.geometry
+        {
             check_knots(findings, &pcurve.id.0, knots, "");
         }
     }
