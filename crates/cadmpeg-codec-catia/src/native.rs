@@ -241,7 +241,7 @@ impl CatiaNative {
 impl From<value_block::ValueBlock> for CatiaValueBlock {
     fn from(block: value_block::ValueBlock) -> Self {
         Self {
-            id: format!("catia:value-block#{:010}", block.pos),
+            id: format!("catia:outer:value-block#{:010}", block.pos),
             byte_offset: block.pos as u64,
             byte_len: block.total_len as u64,
             declared_len: block.declared_len as u64,
@@ -252,12 +252,12 @@ impl From<value_block::ValueBlock> for CatiaValueBlock {
 
 impl From<catalog::Catalog> for CatiaCatalog {
     fn from(catalog: catalog::Catalog) -> Self {
-        let id = format!("catia:catalog#{:010}", catalog.pos);
+        let id = format!("catia:outer:catalog#{:010}", catalog.pos);
         let entries = catalog
             .entries
             .into_iter()
             .map(|entry| CatiaCatalogEntry {
-                id: format!("catia:catalog-entry#{:010}", entry.pos),
+                id: format!("catia:outer:catalog-entry#{:010}", entry.pos),
                 parent: id.clone(),
                 ordinal: entry.ordinal,
                 byte_offset: entry.pos as u64,
@@ -276,12 +276,12 @@ impl From<catalog::Catalog> for CatiaCatalog {
 
 impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
     fn from(graph: object_graph::ObjectGraph) -> Self {
-        let id = format!("catia:object-graph#{:010}", graph.pos);
+        let id = format!("catia:outer:object-graph#{:010}", graph.pos);
         let records = graph
             .records
             .into_iter()
             .map(|record| CatiaObjectRecord {
-                id: format!("catia:object-record#{:010}", record.pos),
+                id: format!("catia:outer:object-record#{:010}", record.pos),
                 parent: id.clone(),
                 ordinal: record.index as u64,
                 byte_offset: record.pos as u64,

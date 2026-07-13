@@ -187,6 +187,20 @@ Each spine edge row is a handle sequence `E = [p0, interior…, p1]` with endpoi
 
 The FBB-spline edge-table handles share the mesh-boundary handle namespace used by the trim packets. Endpoint ports form a larger namespace than the vertex table; a port handle is not a vertex index.
 
+#### 5.4.1 Regular trim-motif vertex allocation
+
+Regular-motif bodies serialize vertex allocation as a walk over the ordered trim packets. A column is `(H[0],H[1])` or `(H[N-2],H[N-1])`. Emitting a handle assigns the next `05 08 01` row on its first occurrence and reuses that row thereafter.
+
+- Three opening `4a` packets emit `(packet2.first, packet0.last, packet0.first, packet2.last)` by column.
+- The first `42,4a,42` group emits `(strip0.last, strip0.first, quad.first, strip1.first)` by column.
+- Each following `4a` transition packet emits its first and last columns.
+- A steady-state `42,4a,42` group with `quad.last == strip0.first` and `strip1.last == quad.first` names columns `strip0=(a0,b0),(a1,b1)`, `quad=(c,d),(a0,b0)`, and `strip1=(e,g),(c,d)` and emits handles `(a1,b1,b0,d,g,a0,c,e)`.
+- A steady-state `4a,4a` connector emits `(packet1.H0, packet0.H2, packet0.H3, packet1.H1)`.
+
+The walk is complete when its first-occurrence population equals the vertex-table count. Each edge-row endpoint port maps through this allocation. The mapping is valid only when every circle row having exactly two on-circle vertex rows maps to that same unordered pair. Face-local edge incidence then comes from the two `0x60` face references; each face decomposes into closed degree-two endpoint cycles.
+
+Each closed face cycle initially has a whole-cycle reversal gauge. Across a shell, the gauge is fixed by requiring the two coedge uses of every shared physical edge to have opposite traversal senses. The resulting Boolean parity system must be consistent across every connected face component; reversing a face reverses its coedge order, toggles every edge-use sense, and swaps each use's endpoints.
+
 ### 5.5 `0x60` curve-support / edge-incidence table
 
 ```text

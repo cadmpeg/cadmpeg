@@ -216,6 +216,7 @@ pub struct CoedgeUse {
 struct TrimRecord {
     triangles: Vec<[u32; 3]>,
     frame_vector: Option<[f64; 3]>,
+    handles: Vec<u32>,
     kind: u8,
     end: usize,
 }
@@ -249,6 +250,309 @@ pub fn parse_standard(bytes: &[u8]) -> Option<StandardTopology> {
     let trims = &trims[trims.len() - face_count..];
 
     reconstruct(edge_rows, vertex_points, trims)
+}
+
+/// Reconstruct regular-motif standard topology by replaying the trim packet's
+/// vertex-allocation program. The allocation is accepted only when it covers
+/// the complete vertex table and reproduces every supplied circle endpoint
+/// anchor.
+#[must_use]
+pub fn parse_standard_motif(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    circle_anchors: &[Option<[usize; 2]>],
+) -> Option<StandardTopology> {
+    let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    let trims = parse_trim_records(&bytes[..face_start]);
+    if trims.len() < face_count
+        || edge_rows.len() != edge_faces.len()
+        || edge_rows.len() != circle_anchors.len()
+    {
+        return None;
+    }
+    let trims = &trims[trims.len() - face_count..];
+    let port_points = motif_port_points(trims, vertex_points.len())?;
+    let edge_points: Vec<[usize; 2]> = edge_rows
+        .iter()
+        .map(|row| {
+            Some([
+                *port_points.get(row.handles.first()?)?,
+                *port_points.get(row.handles.last()?)?,
+            ])
+        })
+        .collect::<Option<_>>()?;
+    let mut anchor_count = 0usize;
+    for (points, anchor) in edge_points.iter().zip(circle_anchors) {
+        if let Some(mut anchor) = *anchor {
+            anchor.sort_unstable();
+            let mut points = *points;
+            points.sort_unstable();
+            if points != anchor {
+                return None;
+            }
+            anchor_count += 1;
+        }
+    }
+    if anchor_count == 0 {
+        return None;
+    }
+    reconstruct_incidence(
+        edge_rows,
+        vertex_points,
+        edge_faces,
+        &edge_points,
+        face_count,
+    )
+}
+
+fn motif_port_points(trims: &[TrimRecord], vertex_count: usize) -> Option<HashMap<u32, usize>> {
+    fn columns(record: &TrimRecord) -> Option<([u32; 2], [u32; 2])> {
+        Some((
+            [*record.handles.first()?, *record.handles.get(1)?],
+            [
+                *record.handles.get(record.handles.len().checked_sub(2)?)?,
+                *record.handles.last()?,
+            ],
+        ))
+    }
+    fn emit(seen: &mut HashMap<u32, usize>, handle: u32) {
+        let next = seen.len();
+        seen.entry(handle).or_insert(next);
+    }
+    fn emit_column(seen: &mut HashMap<u32, usize>, column: [u32; 2]) {
+        emit(seen, column[0]);
+        emit(seen, column[1]);
+    }
+
+    let mut seen = HashMap::new();
+    let mut at = 0usize;
+    if trims.get(0..3)?.iter().all(|record| record.kind == 0x4a) {
+        let (first_a, first_b) = columns(&trims[0])?;
+        let (third_a, third_b) = columns(&trims[2])?;
+        for column in [third_a, first_b, first_a, third_b] {
+            emit_column(&mut seen, column);
+        }
+        at = 3;
+    }
+    if trims.get(at..at + 3).is_some_and(|records| {
+        records[0].kind == 0x42 && records[1].kind == 0x4a && records[2].kind == 0x42
+    }) {
+        let (strip0_first, strip0_last) = columns(&trims[at])?;
+        let (quad_first, _) = columns(&trims[at + 1])?;
+        let (strip1_first, _) = columns(&trims[at + 2])?;
+        for column in [strip0_last, strip0_first, quad_first, strip1_first] {
+            emit_column(&mut seen, column);
+        }
+        at += 3;
+    }
+    while trims.get(at).is_some_and(|record| record.kind == 0x4a) {
+        let (first, last) = columns(&trims[at])?;
+        emit_column(&mut seen, first);
+        emit_column(&mut seen, last);
+        at += 1;
+    }
+    while at < trims.len() {
+        if trims.get(at..at + 3).is_some_and(|records| {
+            records[0].kind == 0x42 && records[1].kind == 0x4a && records[2].kind == 0x42
+        }) {
+            let ([a0, b0], [a1, b1]) = columns(&trims[at])?;
+            let ([c, d], [qa, qb]) = columns(&trims[at + 1])?;
+            let ([e, g], [sc, sd]) = columns(&trims[at + 2])?;
+            if [qa, qb] == [a0, b0] && [sc, sd] == [c, d] {
+                for handle in [a1, b1, b0, d, g, a0, c, e] {
+                    emit(&mut seen, handle);
+                }
+                at += 3;
+                continue;
+            }
+        }
+        if trims
+            .get(at..at + 2)
+            .is_some_and(|records| records[0].kind == 0x4a && records[1].kind == 0x4a)
+            && trims[at].handles.len() >= 4
+            && trims[at + 1].handles.len() >= 2
+        {
+            for handle in [
+                trims[at + 1].handles[0],
+                trims[at].handles[2],
+                trims[at].handles[3],
+                trims[at + 1].handles[1],
+            ] {
+                emit(&mut seen, handle);
+            }
+            at += 2;
+            continue;
+        }
+        at += 1;
+    }
+    (seen.len() == vertex_count
+        && seen.values().copied().collect::<HashSet<_>>().len() == vertex_count)
+        .then_some(seen)
+}
+
+fn reconstruct_incidence(
+    edge_rows: Vec<EdgeRow>,
+    vertex_points: Vec<[f64; 3]>,
+    edge_faces: &[[usize; 2]],
+    edge_points: &[[usize; 2]],
+    face_count: usize,
+) -> Option<StandardTopology> {
+    let mut faces = Vec::with_capacity(face_count);
+    for face in 0..face_count {
+        let incident: Vec<usize> = edge_faces
+            .iter()
+            .enumerate()
+            .filter_map(|(edge, adjacent)| adjacent.contains(&face).then_some(edge))
+            .collect();
+        let cycles = incidence_cycles(&incident, edge_points)?;
+        faces.push(FaceTopology {
+            boundaries: cycles
+                .into_iter()
+                .map(|cycle| Boundary {
+                    coedges: cycle
+                        .into_iter()
+                        .map(|(edge_row, reversed)| {
+                            let [stored_start, stored_end] = edge_points[edge_row];
+                            let [start_vertex, end_vertex] = if reversed {
+                                [stored_end, stored_start]
+                            } else {
+                                [stored_start, stored_end]
+                            };
+                            CoedgeUse {
+                                edge_row,
+                                reversed,
+                                start_vertex,
+                                end_vertex,
+                            }
+                        })
+                        .collect(),
+                })
+                .collect(),
+        });
+    }
+    orient_face_cycles(&mut faces)?;
+    Some(StandardTopology {
+        faces,
+        edge_rows,
+        logical_vertex_count: vertex_points.len(),
+        vertex_points,
+    })
+}
+
+fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
+    let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
+    for (face_index, face) in faces.iter().enumerate() {
+        for boundary in &face.boundaries {
+            for coedge in &boundary.coedges {
+                edge_uses
+                    .entry(coedge.edge_row)
+                    .or_default()
+                    .push((face_index, coedge.reversed));
+            }
+        }
+    }
+    let mut constraints = vec![Vec::<(usize, bool)>::new(); faces.len()];
+    for uses in edge_uses.values() {
+        let [(left_face, left_reversed), (right_face, right_reversed)] = uses.as_slice() else {
+            return None;
+        };
+        let parity = left_reversed == right_reversed;
+        if left_face == right_face {
+            if parity {
+                return None;
+            }
+        } else {
+            constraints[*left_face].push((*right_face, parity));
+            constraints[*right_face].push((*left_face, parity));
+        }
+    }
+
+    let mut flips = vec![None; faces.len()];
+    for root in 0..faces.len() {
+        if flips[root].is_some() {
+            continue;
+        }
+        flips[root] = Some(false);
+        let mut stack = vec![root];
+        while let Some(face) = stack.pop() {
+            let flip = flips[face]?;
+            for &(neighbor, parity) in &constraints[face] {
+                let required = flip ^ parity;
+                match flips[neighbor] {
+                    Some(existing) if existing != required => return None,
+                    Some(_) => {}
+                    None => {
+                        flips[neighbor] = Some(required);
+                        stack.push(neighbor);
+                    }
+                }
+            }
+        }
+    }
+    for (face, flip) in faces.iter_mut().zip(flips) {
+        if flip? {
+            for boundary in &mut face.boundaries {
+                boundary.coedges.reverse();
+                for coedge in &mut boundary.coedges {
+                    coedge.reversed = !coedge.reversed;
+                    std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
+                }
+            }
+        }
+    }
+    Some(())
+}
+
+fn incidence_cycles(
+    incident: &[usize],
+    edge_points: &[[usize; 2]],
+) -> Option<Vec<Vec<(usize, bool)>>> {
+    if incident.is_empty() {
+        return None;
+    }
+    let mut at_vertex = HashMap::<usize, Vec<usize>>::new();
+    for &edge in incident {
+        let [start, end] = edge_points[edge];
+        if start == end {
+            return None;
+        }
+        at_vertex.entry(start).or_default().push(edge);
+        at_vertex.entry(end).or_default().push(edge);
+    }
+    if at_vertex.values().any(|edges| edges.len() != 2) {
+        return None;
+    }
+    let mut unseen: HashSet<usize> = incident.iter().copied().collect();
+    let mut cycles = Vec::new();
+    while let Some(&first) = unseen.iter().min() {
+        let start_vertex = edge_points[first][0];
+        let mut vertex = start_vertex;
+        let mut edge = first;
+        let mut cycle = Vec::new();
+        loop {
+            if !unseen.remove(&edge) {
+                return None;
+            }
+            let endpoints = edge_points[edge];
+            let reversed = endpoints[1] == vertex;
+            if !reversed && endpoints[0] != vertex {
+                return None;
+            }
+            vertex = if reversed { endpoints[0] } else { endpoints[1] };
+            cycle.push((edge, reversed));
+            if vertex == start_vertex {
+                break;
+            }
+            edge = *at_vertex
+                .get(&vertex)?
+                .iter()
+                .find(|candidate| unseen.contains(candidate))?;
+        }
+        cycles.push(cycle);
+    }
+    Some(cycles)
 }
 
 /// Parses the FBB-only spine. Its edge rows and trim handles are `u24be`; its
@@ -569,6 +873,7 @@ fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRec
     Some(TrimRecord {
         triangles,
         frame_vector,
+        handles,
         kind,
         end: position,
     })
@@ -786,6 +1091,41 @@ impl UnionFind {
         let right = self.find(right);
         if left != right {
             self.parents[right] = left;
+        }
+    }
+}
+
+#[cfg(test)]
+mod motif_tests {
+    use super::{motif_port_points, TrimRecord};
+
+    fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
+        TrimRecord {
+            triangles: Vec::new(),
+            frame_vector: None,
+            handles: handles.to_vec(),
+            kind,
+            end: 0,
+        }
+    }
+
+    #[test]
+    fn allocation_program_replays_seed_tooth_and_transition() {
+        let trims = [
+            trim(0x4a, [0, 1, 2, 3]),
+            trim(0x4a, [10, 11, 12, 13]),
+            trim(0x4a, [20, 21, 22, 23]),
+            trim(0x42, [30, 31, 32, 33]),
+            trim(0x4a, [40, 41, 30, 31]),
+            trim(0x42, [50, 51, 40, 41]),
+            trim(0x4a, [60, 61, 62, 63]),
+        ];
+        let points = motif_port_points(&trims, 20).expect("complete motif allocation");
+        let order = [
+            20, 21, 2, 3, 0, 1, 22, 23, 32, 33, 30, 31, 40, 41, 50, 51, 60, 61, 62, 63,
+        ];
+        for (index, handle) in order.into_iter().enumerate() {
+            assert_eq!(points[&handle], index);
         }
     }
 }

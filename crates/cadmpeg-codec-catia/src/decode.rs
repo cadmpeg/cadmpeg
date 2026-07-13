@@ -1140,25 +1140,9 @@ fn attach_standard_topology(
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
 ) -> bool {
-    let Some(topology) = topology::parse_standard(brep) else {
-        return false;
-    };
-    if topology.face_count() != ir.model.faces.len()
-        || topology.vertex_points().len() != ir.model.points.len()
-        || !topology
-            .vertex_points()
-            .iter()
-            .zip(&ir.model.points)
-            .all(|(stored, point)| {
-                stored[0] == point.position.x
-                    && stored[1] == point.position.y
-                    && stored[2] == point.position.z
-            })
-    {
-        return false;
-    }
-    let supports = geometry::standard_curve_supports(brep, topology.face_count());
-    if supports.len() != topology.edge_rows().len() {
+    let face_count = ir.model.faces.len();
+    let supports = geometry::standard_curve_supports(brep, face_count);
+    if supports.is_empty() {
         return false;
     }
     let surface_indices = ir
@@ -1168,7 +1152,7 @@ fn attach_standard_topology(
         .enumerate()
         .map(|(index, surface)| (surface.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let mut endpoint_pairs = Vec::with_capacity(supports.len());
+    let mut endpoint_candidates = Vec::with_capacity(supports.len());
     for support in &supports {
         let Some(surface0) = face_surface(ir, bindings, &surface_indices, support.faces[0]) else {
             return false;
@@ -1187,14 +1171,68 @@ fn attach_standard_topology(
                 .then_some(index)
             })
             .collect();
-        let Ok(pair) = <[usize; 2]>::try_from(candidates) else {
+        endpoint_candidates.push(candidates);
+    }
+    let edge_faces: Vec<[usize; 2]> = supports.iter().map(|support| support.faces).collect();
+    let (topology, point_assignment) = if let Some(topology) = topology::parse_standard(brep) {
+        let endpoint_pairs: Option<Vec<[usize; 2]>> = endpoint_candidates
+            .iter()
+            .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
+            .collect();
+        let Some(endpoint_pairs) = endpoint_pairs else {
             return false;
         };
-        endpoint_pairs.push(pair);
-    }
-    let Some(point_assignment) = topology.bind_vertex_points(&endpoint_pairs) else {
-        return false;
+        let Some(point_assignment) = topology.bind_vertex_points(&endpoint_pairs) else {
+            return false;
+        };
+        (topology, point_assignment)
+    } else {
+        let circle_anchors: Vec<Option<[usize; 2]>> = supports
+            .iter()
+            .map(|support| match &support.geometry {
+                geometry::StandardCurveGeometry::Circle { center, radius } => {
+                    let candidates: Vec<usize> = ir
+                        .model
+                        .points
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(index, point)| {
+                            let dx = point.position.x - center.x;
+                            let dy = point.position.y - center.y;
+                            let dz = point.position.z - center.z;
+                            ((dx.mul_add(dx, dy.mul_add(dy, dz * dz)).sqrt() - *radius).abs()
+                                <= 1e-3)
+                                .then_some(index)
+                        })
+                        .collect();
+                    <[usize; 2]>::try_from(candidates).ok()
+                }
+                geometry::StandardCurveGeometry::Line
+                | geometry::StandardCurveGeometry::Bspline => None,
+            })
+            .collect();
+        let Some(topology) = topology::parse_standard_motif(brep, &edge_faces, &circle_anchors)
+        else {
+            return false;
+        };
+        let point_assignment = (0..ir.model.points.len()).collect();
+        (topology, point_assignment)
     };
+    if topology.face_count() != face_count
+        || topology.edge_rows().len() != supports.len()
+        || topology.vertex_points().len() != ir.model.points.len()
+        || !topology
+            .vertex_points()
+            .iter()
+            .zip(&ir.model.points)
+            .all(|(stored, point)| {
+                stored[0] == point.position.x
+                    && stored[1] == point.position.y
+                    && stored[2] == point.position.z
+            })
+    {
+        return false;
+    }
     let Some(edge_vertices) = topology.edge_vertices() else {
         return false;
     };
