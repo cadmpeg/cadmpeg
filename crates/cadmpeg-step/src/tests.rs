@@ -234,6 +234,18 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
 }
 
 #[test]
+fn decode_resolves_conversion_units_and_linear_uncertainty() {
+    let bytes = include_bytes!("../tests/fixtures/ap242_conversion_units.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode conversion-based units");
+
+    assert_eq!(result.ir.model.points.len(), 1);
+    assert_eq!(result.ir.model.points[0].position.x, 50.8);
+    assert_eq!(result.ir.tolerances.linear, 0.0254);
+}
+
+#[test]
 fn decode_builds_a_valid_connected_sheet_brep() {
     use cadmpeg_ir::topology::{BodyKind, Sense};
 

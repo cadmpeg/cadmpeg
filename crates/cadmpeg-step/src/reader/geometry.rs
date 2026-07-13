@@ -29,6 +29,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     let mut directions = BTreeMap::new();
     let mut vectors = BTreeMap::new();
     let mut placements = BTreeMap::new();
+    if let Some(uncertainty) = linear_uncertainty(exchange) {
+        ir.tolerances.linear = uncertainty;
+    }
 
     for (&id, record) in &exchange.records {
         match record.simple_name() {
@@ -305,8 +308,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 "LENGTH_UNIT"
                     | "NAMED_UNIT"
                     | "SI_UNIT"
+                    | "CONVERSION_BASED_UNIT"
+                    | "MEASURE_WITH_UNIT"
+                    | "LENGTH_MEASURE_WITH_UNIT"
+                    | "UNCERTAINTY_MEASURE_WITH_UNIT"
                     | "GEOMETRIC_REPRESENTATION_CONTEXT"
                     | "GLOBAL_UNIT_ASSIGNED_CONTEXT"
+                    | "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT"
                     | "REPRESENTATION_CONTEXT"
             )
         }) || record.simple_name() == Some("SHAPE_REPRESENTATION")
@@ -323,36 +331,121 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
 }
 
 fn length_scale(exchange: &Exchange) -> Option<f64> {
-    exchange.records.values().find_map(|record| {
-        let unit = record.partial("SI_UNIT")?;
+    let context_units = exchange.records.values().find_map(|record| {
+        record
+            .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")?
+            .parameters
+            .first()?
+            .list()
+    });
+    let unit_id = context_units
+        .into_iter()
+        .flatten()
+        .filter_map(Value::reference)
+        .find(|id| {
+            exchange
+                .records
+                .get(id)
+                .is_some_and(|record| record.partial("LENGTH_UNIT").is_some())
+        })
+        .or_else(|| {
+            exchange
+                .records
+                .iter()
+                .find(|(_, record)| record.partial("LENGTH_UNIT").is_some())
+                .map(|(&id, _)| id)
+        })?;
+    unit_scale_mm(unit_id, exchange, &mut BTreeSet::new())
+}
+
+fn unit_scale_mm(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Option<f64> {
+    if !active.insert(id) {
+        return None;
+    }
+    let record = exchange.records.get(&id)?;
+    let result = if let Some(unit) = record.partial("SI_UNIT") {
         if unit.parameters.get(1)?.enumeration()? != "METRE" {
-            return None;
-        }
-        let prefix = match unit.parameters.first()? {
-            Value::Omitted => 1.0,
-            Value::Enumeration(prefix) => match prefix.as_str() {
-                "EXA" => 1e18,
-                "PETA" => 1e15,
-                "TERA" => 1e12,
-                "GIGA" => 1e9,
-                "MEGA" => 1e6,
-                "KILO" => 1e3,
-                "HECTO" => 1e2,
-                "DECA" => 1e1,
-                "DECI" => 1e-1,
-                "CENTI" => 1e-2,
-                "MILLI" => 1e-3,
-                "MICRO" => 1e-6,
-                "NANO" => 1e-9,
-                "PICO" => 1e-12,
-                "FEMTO" => 1e-15,
-                "ATTO" => 1e-18,
+            None
+        } else {
+            let prefix = match unit.parameters.first()? {
+                Value::Omitted => 1.0,
+                Value::Enumeration(prefix) => si_prefix(prefix)?,
                 _ => return None,
-            },
-            _ => return None,
-        };
-        Some(prefix * 1000.0)
+            };
+            Some(prefix * 1000.0)
+        }
+    } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
+        let factor_id = unit.parameters.get(1)?.reference()?;
+        let factor = exchange.records.get(&factor_id)?;
+        let value = record_values(factor).find_map(measure_number)?;
+        let base = factor
+            .partials
+            .iter()
+            .flat_map(|partial| &partial.parameters)
+            .find_map(Value::reference)
+            .and_then(|base| unit_scale_mm(base, exchange, active))?;
+        Some(value * base)
+    } else {
+        None
+    };
+    active.remove(&id);
+    result.filter(|scale| scale.is_finite() && *scale > 0.0)
+}
+
+fn si_prefix(prefix: &str) -> Option<f64> {
+    Some(match prefix {
+        "EXA" => 1e18,
+        "PETA" => 1e15,
+        "TERA" => 1e12,
+        "GIGA" => 1e9,
+        "MEGA" => 1e6,
+        "KILO" => 1e3,
+        "HECTO" => 1e2,
+        "DECA" => 1e1,
+        "DECI" => 1e-1,
+        "CENTI" => 1e-2,
+        "MILLI" => 1e-3,
+        "MICRO" => 1e-6,
+        "NANO" => 1e-9,
+        "PICO" => 1e-12,
+        "FEMTO" => 1e-15,
+        "ATTO" => 1e-18,
+        _ => return None,
     })
+}
+
+fn linear_uncertainty(exchange: &Exchange) -> Option<f64> {
+    let uncertainty = exchange.records.values().find_map(|record| {
+        record
+            .partial("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")?
+            .parameters
+            .first()?
+            .list()?
+            .iter()
+            .find_map(Value::reference)
+    })?;
+    let measure = exchange.records.get(&uncertainty)?;
+    let value = record_values(measure).find_map(measure_number)?;
+    let unit = record_values(measure).find_map(Value::reference)?;
+    let scale = unit_scale_mm(unit, exchange, &mut BTreeSet::new())?;
+    let result = value * scale;
+    (result.is_finite() && result > 0.0).then_some(result)
+}
+
+fn measure_number(value: &Value) -> Option<f64> {
+    match value {
+        Value::Integer(value) => Some(*value as f64),
+        Value::Real(value) => Some(*value),
+        Value::Typed(_, value) => measure_number(value),
+        _ => None,
+    }
+}
+
+fn record_values(record: &RawRecord) -> impl Iterator<Item = &Value> {
+    record
+        .partials
+        .iter()
+        .flat_map(|partial| partial.parameters.iter())
 }
 
 fn coordinates(record: &RawRecord, index: usize, scale: f64) -> Option<Point3> {
