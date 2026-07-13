@@ -132,18 +132,25 @@ pub(crate) fn named_scalars(
                     .try_into()
                     .ok()?,
             );
+            let object_id = u32::from_le_bytes(
+                payload
+                    .get(name_offset + 43..name_offset + 47)?
+                    .try_into()
+                    .ok()?,
+            );
             let role = scalar_role(payload, name_offset);
             value
                 .is_finite()
-                .then_some((name, value_offset, value, role))
+                .then_some((name, value_offset, object_id, value, role))
         })
         .enumerate()
         .map(
-            |(ordinal, (name, offset, value, role))| FeatureInputScalar {
+            |(ordinal, (name, offset, object_id, value, role))| FeatureInputScalar {
                 id: format!("sldprt:feature-input:scalar#{lane_key}:{offset}"),
                 parent: parent.to_string(),
                 ordinal: ordinal as u32,
                 offset: offset as u64,
+                object_id,
                 name: name.id.clone(),
                 value,
                 role,

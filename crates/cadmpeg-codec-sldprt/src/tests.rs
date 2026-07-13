@@ -10728,6 +10728,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     assert_eq!(lane.scalars.len(), 1);
     assert_eq!(lane.scalars[0].name, lane.names[2].id);
     assert_eq!(lane.scalars[0].value, 0.025);
+    assert_eq!(lane.scalars[0].object_id, 1);
     assert_eq!(
         lane.scalars[0].role,
         crate::records::FeatureInputScalarRole::Driving

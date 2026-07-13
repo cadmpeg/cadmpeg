@@ -181,6 +181,8 @@ pub struct FeatureInputScalar {
     pub ordinal: u32,
     /// Byte offset of the little-endian f64 value.
     pub offset: u64,
+    /// Native object identifier carried by the scalar record.
+    pub object_id: u32,
     /// Name record attached to this scalar.
     pub name: String,
     /// Scalar value in native SI units.
