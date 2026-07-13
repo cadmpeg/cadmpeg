@@ -15890,10 +15890,10 @@ fn patch_nurbs_pcurve_record(
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     if let Some(reversed) = edit.wrapper_reversed {
-        let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x0a)
+        let mut offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x0a)
             .map_err(|error| CodecError::Malformed(error.to_string()))?;
         offsets.extend(
-            sab::payload_token_offsets(bytes, record, 8, 0x0b)
+            sab::payload_token_offsets(bytes, record, ref_width, 0x0b)
                 .map_err(|error| CodecError::Malformed(error.to_string()))?,
         );
         offsets.sort_unstable();
@@ -15906,10 +15906,10 @@ fn patch_nurbs_pcurve_record(
         bytes[offset] = if reversed { 0x0a } else { 0x0b };
     }
     if let Some(flags) = edit.native_tail_flags {
-        let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x0a)
+        let mut offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x0a)
             .map_err(|error| CodecError::Malformed(error.to_string()))?;
         offsets.extend(
-            sab::payload_token_offsets(bytes, record, 8, 0x0b)
+            sab::payload_token_offsets(bytes, record, ref_width, 0x0b)
                 .map_err(|error| CodecError::Malformed(error.to_string()))?,
         );
         offsets.sort_unstable();
@@ -15932,7 +15932,7 @@ fn patch_nurbs_pcurve_record(
         }
     }
     if let Some(range) = edit.parameter_range {
-        let offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+        let offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x06)
             .map_err(|error| CodecError::Malformed(error.to_string()))?;
         let pair = offsets
             .get(offsets.len().saturating_sub(2)..)
