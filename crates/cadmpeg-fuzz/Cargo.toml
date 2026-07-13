@@ -43,6 +43,20 @@ doc = false
 bench = false
 
 [[bin]]
+name = "f3d_writer"
+path = "fuzz_targets/f3d_writer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "f3d_roundtrip"
+path = "fuzz_targets/f3d_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sldprt_container"
 path = "fuzz_targets/sldprt_container.rs"
 test = false

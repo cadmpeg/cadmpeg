@@ -6,11 +6,12 @@ use std::path::{Path, PathBuf};
 
 use cadmpeg_ir::CadIr;
 
-const JSON_TARGETS: [&str; 4] = [
+const JSON_TARGETS: [&str; 5] = [
     "ir_from_json",
     "ir_validate",
     "ir_canonical_roundtrip",
     "step_writer",
+    "f3d_writer",
 ];
 
 fn main() {

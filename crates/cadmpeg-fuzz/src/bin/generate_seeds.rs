@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Writes structural seeds for the `f3d_container` fuzz target.
+//! Writes structural seeds for the F3D container and replay fuzz targets.
 
 use std::fs;
 use std::io::{Cursor, Write};
@@ -9,9 +9,6 @@ use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
 fn main() {
-    let seeds_dir = Path::new("seeds/f3d_container");
-    fs::create_dir_all(seeds_dir).expect("create seeds dir");
-
     let seeds = [
         ("empty_zip", empty_zip()),
         ("bare_zip_with_txt", bare_zip_with_txt()),
@@ -38,10 +35,14 @@ fn main() {
         ),
     ];
 
-    for (name, data) in seeds {
-        let path = seeds_dir.join(name);
-        fs::write(&path, &data).expect("write seed");
-        println!("wrote {} ({} bytes)", path.display(), data.len());
+    for directory in ["seeds/f3d_container", "seeds/f3d_roundtrip"] {
+        let seeds_dir = Path::new(directory);
+        fs::create_dir_all(seeds_dir).expect("create seeds dir");
+        for (name, data) in &seeds {
+            let path = seeds_dir.join(name);
+            fs::write(&path, data).expect("write seed");
+            println!("wrote {} ({} bytes)", path.display(), data.len());
+        }
     }
 }
 
