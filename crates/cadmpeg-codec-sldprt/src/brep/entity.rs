@@ -307,8 +307,64 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
     if out.is_empty() {
         out.extend(disc14_bodies(&by_attr));
     }
+    if out.is_empty() {
+        out.extend(disc20_bodies(&by_attr));
+    }
     out.sort_by_key(|record| record.attr);
     out
+}
+
+fn disc20_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
+    let regions = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x001a)
+        .collect::<Vec<_>>();
+    let faces = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x0020 && record.flo() == 1)
+        .collect::<Vec<_>>();
+    if regions.len() != 1 || faces.is_empty() {
+        return Vec::new();
+    }
+    let shells = reachable_records(by_attr, regions[0], 0x0016);
+    let [shell] = shells.as_slice() else {
+        return Vec::new();
+    };
+    let complete_lattice = faces.iter().all(|face| {
+        face.refs
+            .get(1)
+            .and_then(|attr| by_attr.get(attr))
+            .filter(|node| node.disc == 0x0024 && node.flo() == 4)
+            .filter(|node| node.refs.get(2) == Some(&face.attr))
+            .and_then(|node| node.refs.get(1).and_then(|attr| by_attr.get(attr)))
+            .is_some_and(|use_record| {
+                use_record.disc == 0x0026
+                    && use_record.flo() == 3
+                    && use_record.refs.get(2) == face.refs.get(1)
+            })
+    });
+    if !complete_lattice {
+        return Vec::new();
+    }
+    let mut refs = faces.iter().map(|face| face.attr).collect::<Vec<_>>();
+    refs.sort_unstable();
+    vec![BodyRecord {
+        attr: regions[0].attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: regions[0].offset,
+        regions: vec![RegionRecord {
+            attr: regions[0].attr,
+            offset: regions[0].offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
 }
 
 fn bind_schema_32001_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord]) {

@@ -4710,6 +4710,48 @@ fn decode_partitions_disc14_faces_by_native_shell_rings() {
 }
 
 #[test]
+fn decode_partitions_disc20_faces_by_native_single_shell_lattice() {
+    let mut body = Vec::new();
+    body.extend(entity51(2, 900, 0x001a, &[500, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 500, 0x0016, &[0, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 700, 0x0020, &[0, 710, 0, 701, 701, 0]));
+    body.extend(entity51(1, 701, 0x0020, &[0, 711, 0, 700, 700, 0]));
+    body.extend(entity51(
+        4,
+        710,
+        0x0024,
+        &[0, 720, 700, 711, 711, 0, 0, 0, 0],
+    ));
+    body.extend(entity51(
+        4,
+        711,
+        0x0024,
+        &[0, 721, 701, 710, 710, 0, 0, 0, 0],
+    ));
+    body.extend(entity51(3, 720, 0x0026, &[0, 0, 710, 721, 721, 0]));
+    body.extend(entity51(3, 721, 0x0026, &[0, 0, 711, 720, 720, 0]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    body.extend(owned_triangle(200, 701, 2.0));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(decoded.ir.model.bodies[0].id.0, "sldprt:brep:body#900");
+    assert_eq!(decoded.ir.model.regions[0].id.0, "sldprt:brep:region#900");
+    assert_eq!(decoded.ir.model.shells[0].id.0, "sldprt:brep:shell#500");
+    assert_eq!(decoded.ir.model.shells[0].faces.len(), 2);
+    assert!(!decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("No body record")));
+}
+
+#[test]
 fn semantic_writer_preserves_multiple_body_ownership() {
     let mut body = Vec::new();
     body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));

@@ -197,6 +197,7 @@ Face records use these families:
 | ------------ | ----------------------------------------------------- |
 | disc14       | `00 51`, `disc == 0x0014`, six-u16 slot prefix        |
 | disc15/flo=1 | `00 51`, `disc == 0x0015`, `flo == 1`, six-u16 prefix |
+| disc20/flo=1 | `00 51`, `disc == 0x0020`, `flo == 1`, six-u16 prefix |
 
 The bridge owner field `00 0e.ref0` joins the topology bridge to an entity-family face attribute.
 
@@ -227,6 +228,8 @@ In schema 33103, solid ownership follows the same `0x17 -> [0x19] -> 0x1b -> 0x1
 Schema-33103 canonical faces are the connected components of the disc15/flo1 adjacency graph. Disc13/flo2 face-list heads bind to bodies by the shared `slot0` cluster key. Each head seeds the component with maximum overlap in its section interval; component assignment is one-to-one. The complete component, not the interval contents, is the body's face set.
 
 Disc14 ownership uses the entity-level shell and face-use lattice. A `0x1a` region reaches each `0x16` shell. A shell reaches its `0x20` face-use through same-site entity references; `0x20.slot3` advances around a shell ring. `0x20.slot2` resolves the canonical face directly or through `0x18.slot2` and `0x1e.slot2` intermediates. The ring closes when the next face-use equals the first. A partition containing one `0x1a` region and one reachable `0x16` shell owns every disc14 face when the `0x20` lattice maps one-to-one onto the complete disc14 face set.
+
+In the disc20 face layout, a `0x1a` region reaches one `0x16` shell. Each canonical `0x20/flo1` face names a `0x24/flo4` node in slot 1. The `0x24` node back-references the face in slot 2 and names a `0x26/flo3` node in slot 1; the `0x26` node back-references the `0x24` node in slot 2. A complete reciprocal lattice assigns every disc20 face to the single shell.
 
 ---
 
