@@ -318,12 +318,14 @@ The first `var_arr` row is the named field prototype between the table header
 and schema close. It is a data row and contributes to the declared count;
 positional replay rows follow the close.
 
+The named `segtab` row before its schema close is likewise a data row. Its `type`, `dir`, `pointid`, `cntrid`, `arcorient`, `verhor`, radius, and `ext_id` fields contribute one segment to the declared table count.
+
 An arc radius is the distance from its center to an endpoint in `var_arr`. A trim-vertex identifier is distinct from a `segtab` point identifier.
 
 For `arcorient = 0`, an arc traverses clockwise from its first endpoint to its
 second endpoint about `cntrid`. In a counterclockwise angular
 parameterization, its start is the second endpoint angle and its end is the
-first endpoint angle advanced by full turns until it exceeds the start.
+first endpoint angle advanced by full turns until it exceeds the start. Its neutral curve orientation is therefore opposite the `ent_tab` start-to-end orientation.
 
 `gsec2d_ptr.dimtab_ptr` stores ordered feature dimensions. Each row contains
 `type`, `value`, `direct`, `aux_value`, and `ext_id`; type `0x0a` is an angular
@@ -467,6 +469,8 @@ The placed section is the owning sweep feature's profile input. For `protextrude
 `p_saved_result` contains evaluated section entities and does not define the authoritative solved trim topology. Saved line rows may contain `f0 f7 <ref>`, `f1 f7 <ref>`, or bare `f7 <ref>` references between their identity, attribute, and coordinate fields.
 
 A saved entity identifier is an `order_table.int_id`; joining through that row's `ext_id` binds its evaluated geometry to the corresponding `segtab` entity. A saved line with two complete section-space XY endpoints supplies that entity's line geometry when its `var_arr` endpoints are relation-backed. The saved-entity and solved-`segtab` sets are one-to-one by entity family. After explicit `order_table` joins, exactly one unmatched saved entity and one unmatched solved entity of the same family bind as the unique remaining pair; multiple unmatched pairs remain unresolved.
+
+When an `order_table` omission lies between adjacent stored `segtab` rows whose internal identifiers differ by two, the omitted row has the intervening internal identifier if a saved entity of the same family carries that identifier. For an evaluated saved line, if one `ent_tab` trim endpoint equals exactly one saved endpoint, the other saved endpoint determines the opposite trim endpoint. A line without an inline carrier is then determined by its two trim endpoints only when they satisfy its stored horizontal or vertical selector.
 
 The `segtab` positional replay stores `type`, three direction fields, two endpoint point identifiers, `cntrid`, `arcorient`, `verhor`, two radii, and `ext_id`. A raw `verhor` value of `f5` adds one field before `radius`.
 

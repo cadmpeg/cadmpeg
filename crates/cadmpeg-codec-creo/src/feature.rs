@@ -1222,13 +1222,54 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
         None
     };
     let close = find_bytes(payload, &[0xf2, psb::token::ENTITY_REF], cursor, end)?;
+    let named_values = |label: &[u8], count: usize| -> Option<(usize, Vec<Option<u32>>)> {
+        let offset = find_bytes(payload, label, cursor, close)?;
+        let mut p = offset + label.len();
+        if payload.get(p) == Some(&psb::token::ARRAY_OPEN) {
+            let (declared, next) = psb::compact_int(payload, p + 1);
+            (usize::try_from(declared).ok()? == count).then_some(())?;
+            p = next;
+        }
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            values.push(next_segment_int(payload, &mut p));
+        }
+        Some((offset, values))
+    };
+    let named_row = (|| {
+        let (offset, kind) = named_values(b"type\0", 1)?;
+        let (_, directions) = named_values(b"dir\0", 3)?;
+        let (_, point_ids) = named_values(b"pointid\0", 2)?;
+        let (_, center_id) = named_values(b"cntrid\0", 1)?;
+        let (_, arc_orientation) = named_values(b"arcorient\0", 1)?;
+        let (_, vertical_horizontal) = named_values(b"verhor\0", 1)?;
+        let (_, radius_ref) = named_values(b"radius\0", 1)?;
+        let (_, radius2_ref) = named_values(b"radius2\0", 1)?;
+        let (_, external_id) = named_values(b"ext_id\0", 1)?;
+        Some(FeatureSegment {
+            kind: match kind[0]? {
+                2 => FeatureSegmentKind::Line,
+                3 => FeatureSegmentKind::Arc,
+                _ => return None,
+            },
+            directions: [directions[0], directions[1], directions[2]],
+            point_ids: [point_ids[0]?, point_ids[1]?],
+            center_id: center_id[0],
+            arc_orientation: arc_orientation[0],
+            vertical_horizontal: vertical_horizontal[0],
+            radius_ref: radius_ref[0],
+            radius2_ref: radius2_ref[0],
+            external_id: external_id[0]?,
+            offset,
+        })
+    })();
     let (_, after_close_ref) = psb::compact_int(payload, close + 2);
     cursor = after_close_ref;
     if payload.get(cursor) == Some(&0xe2) {
         cursor += 1;
     }
     let region_end = find_bytes(payload, b"order_table", cursor, end).unwrap_or(end);
-    let mut rows = Vec::new();
+    let mut rows = named_row.into_iter().collect::<Vec<_>>();
     let first_row = cursor;
     while cursor < region_end {
         if !matches!(payload[cursor], 2 | 3)

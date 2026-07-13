@@ -984,6 +984,24 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
 }
 
 #[test]
+fn scan_includes_named_segtab_prototype_as_data() {
+    let payload = b"feat_defs_40\0segtab_ptr\0\xf8\x01\xf7\x01\xfb\xe2\
+        type\0\x02dir\0\xf8\x03\xf6\x00\xe4pointid\0\xf8\x02\x00\x01\
+        cntrid\0\xf6arcorient\0\x00verhor\0\x01radius\0\xf6radius2\0\xf6\
+        ext_id\0\x04\xf2\xf7\x01\xe2order_table\0";
+    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload.to_vec())]));
+    let segments = scan.feature_definitions[0]
+        .segments
+        .as_ref()
+        .expect("segtab");
+
+    assert_eq!(segments.rows.len(), 1);
+    assert_eq!(segments.rows[0].external_id, 4);
+    assert_eq!(segments.rows[0].point_ids, [0, 1]);
+    assert_eq!(segments.rows[0].vertical_horizontal, Some(1));
+}
+
+#[test]
 fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     let mut payload =
         b"feat_defs_40\0ent_tab\0\xe3entry_ptr(entity_entry)\0schema\xf2\xf7\x01\xe3".to_vec();

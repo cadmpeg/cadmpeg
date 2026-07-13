@@ -445,6 +445,32 @@ fn saved_section_line_geometry(
         .find(|row| row.external_id == segment.external_id)
         .map(|row| row.internal_id)
         .or_else(|| {
+            let segments = &definition.segments.as_ref()?.rows;
+            let position = segments
+                .iter()
+                .position(|candidate| candidate.external_id == segment.external_id)?;
+            let previous = segments[..position].iter().rev().find_map(|candidate| {
+                order_table
+                    .rows
+                    .iter()
+                    .find(|row| row.external_id == candidate.external_id)
+                    .map(|row| row.internal_id)
+            })?;
+            let next = segments[position + 1..].iter().find_map(|candidate| {
+                order_table
+                    .rows
+                    .iter()
+                    .find(|row| row.external_id == candidate.external_id)
+                    .map(|row| row.internal_id)
+            })?;
+            let internal_id = previous.checked_add(1)?;
+            (next == internal_id + 1
+                && saved_section.entities.iter().any(|entity| {
+                    matches!(entity, crate::feature::FeatureSavedEntity::Line(line) if line.entity_id == internal_id)
+                }))
+            .then_some(internal_id)
+        })
+        .or_else(|| {
             let trimmed = definition.trim_entities.as_ref()?;
             let segment_ids = definition
                 .segments
@@ -708,6 +734,64 @@ fn resolved_trim_vertex_coordinates(
             coordinates.insert(vertex, coordinate);
         }
     }
+    loop {
+        let mut additions = Vec::new();
+        for trim in definition
+            .trim_entities
+            .iter()
+            .flat_map(|table| &table.rows)
+        {
+            let Some(external_id) = trim_segment_id(definition, trim) else {
+                continue;
+            };
+            let Some(segment) = segments
+                .rows
+                .iter()
+                .find(|segment| segment.external_id == external_id)
+            else {
+                continue;
+            };
+            let Some(SketchGeometry::Line { start, end }) =
+                resolved_section_segment_geometry(definition, points, segment)
+            else {
+                continue;
+            };
+            let stored = [[start.u, start.v], [end.u, end.v]];
+            let known = trim
+                .vertices
+                .map(|vertex| coordinates.get(&vertex).copied());
+            let (known_point, missing_index) = match known {
+                [Some(point), None] => (point, 1),
+                [None, Some(point)] => (point, 0),
+                _ => continue,
+            };
+            let distances =
+                stored.map(|point| (point[0] - known_point[0]).hypot(point[1] - known_point[1]));
+            let scale = stored
+                .iter()
+                .flatten()
+                .map(|value| value.abs())
+                .fold(1.0, f64::max);
+            let matched = if distances[0] <= 1e-9 * scale && distances[1] > 1e-9 * scale {
+                0
+            } else if distances[1] <= 1e-9 * scale && distances[0] > 1e-9 * scale {
+                1
+            } else {
+                continue;
+            };
+            additions.push((trim.vertices[missing_index], stored[1 - matched]));
+        }
+        let mut changed = false;
+        for (vertex, coordinate) in additions {
+            if let std::collections::btree_map::Entry::Vacant(entry) = coordinates.entry(vertex) {
+                entry.insert(coordinate);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
     coordinates
 }
 
@@ -717,10 +801,6 @@ fn trimmed_section_segment_geometry(
     trim_vertices: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    let geometry = resolved_section_segment_geometry(definition, points, segment)?;
-    if !matches!(geometry, SketchGeometry::Line { .. }) {
-        return Some(geometry);
-    }
     let trim = definition
         .trim_entities
         .as_ref()?
@@ -729,6 +809,23 @@ fn trimmed_section_segment_geometry(
         .find(|row| trim_segment_id(definition, row) == Some(segment.external_id))?;
     let start = trim_vertices.get(&trim.vertices[0])?;
     let end = trim_vertices.get(&trim.vertices[1])?;
+    if let Some(geometry) = resolved_section_segment_geometry(definition, points, segment) {
+        if !matches!(geometry, SketchGeometry::Line { .. }) {
+            return Some(geometry);
+        }
+    } else {
+        let scale = start
+            .iter()
+            .chain(end)
+            .map(|value| value.abs())
+            .fold(1.0, f64::max);
+        let orientation_matches = match segment.vertical_horizontal {
+            Some(0) => (start[0] - end[0]).abs() <= 1e-9 * scale,
+            Some(1) => (start[1] - end[1]).abs() <= 1e-9 * scale,
+            _ => false,
+        };
+        orientation_matches.then_some(())?;
+    }
     Some(SketchGeometry::Line {
         start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
         end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
@@ -1090,18 +1187,27 @@ fn resolved_profile_chains(
                 break;
             };
             let (row, external_id) = rows[index];
-            let reversed = row.vertices[1] == vertex;
-            if !reversed && row.vertices[0] != vertex {
+            let row_reversed = row.vertices[1] == vertex;
+            if !row_reversed && row.vertices[0] != vertex {
                 break;
             }
+            let arc_orientation_reversed = definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.rows)
+                .find(|segment| segment.external_id == external_id)
+                .is_some_and(|segment| {
+                    segment.kind == crate::feature::FeatureSegmentKind::Arc
+                        && segment.arc_orientation == Some(0)
+                });
             profile.push(SketchEntityUse {
                 entity: SketchEntityId(format!(
                     "creo:featdefs:sketch_entity#{}:{}",
                     definition.id, external_id
                 )),
-                reversed,
+                reversed: row_reversed ^ arc_orientation_reversed,
             });
-            vertex = if reversed {
+            vertex = if row_reversed {
                 row.vertices[0]
             } else {
                 row.vertices[1]
@@ -2229,6 +2335,48 @@ mod resolved_sketch_tests {
             resolved_profile_chains(&definition, &BTreeSet::from([10_u32, 11_u32, 12_u32]))
                 .is_empty()
         );
+
+        let mut arcs = definition.clone();
+        arcs.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
+            rows: [(10, [1, 2]), (11, [2, 1])]
+                .into_iter()
+                .map(
+                    |(external_id, vertices)| crate::feature::FeatureTrimEntity {
+                        external_id,
+                        mode: None,
+                        vertices,
+                        center_vertex: Some(3),
+                        kind: crate::feature::TrimEntityKind::Arc,
+                        offset: external_id as usize,
+                    },
+                )
+                .collect(),
+            solved_external_ids: vec![10, 11],
+            offset: 5,
+        });
+        arcs.segments = Some(crate::feature::FeatureSegmentTable {
+            declared_count: 2,
+            entity_ref: None,
+            rows: [10, 11]
+                .into_iter()
+                .map(|external_id| crate::feature::FeatureSegment {
+                    kind: crate::feature::FeatureSegmentKind::Arc,
+                    directions: [None; 3],
+                    point_ids: [1, 2],
+                    center_id: Some(3),
+                    arc_orientation: Some(0),
+                    vertical_horizontal: None,
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id,
+                    offset: external_id as usize,
+                })
+                .collect(),
+            offset: 4,
+        });
+        let arc_profile = resolved_profile_chains(&arcs, &BTreeSet::from([10, 11]));
+        assert_eq!(arc_profile.len(), 1);
+        assert!(arc_profile[0].iter().all(|entity| entity.reversed));
     }
 }
 
