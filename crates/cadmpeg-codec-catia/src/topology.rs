@@ -359,8 +359,8 @@ pub fn parse_standard_endpoint_candidates(
     }
 
     reconstruct_incidence_candidates(
-        edge_rows,
-        vertex_points,
+        &edge_rows,
+        &vertex_points,
         edge_faces,
         edge_candidates,
         face_count,
@@ -368,12 +368,14 @@ pub fn parse_standard_endpoint_candidates(
 }
 
 fn reconstruct_incidence_candidates(
-    edge_rows: Vec<EdgeRow>,
-    vertex_points: Vec<[f64; 3]>,
+    edge_rows: &[EdgeRow],
+    vertex_points: &[[f64; 3]],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     face_count: usize,
 ) -> Option<StandardTopology> {
+    const MAX_ASSIGNMENTS: usize = 65_536;
+
     let mut choices = edge_candidates.to_vec();
     for candidates in &mut choices {
         for pair in candidates.iter_mut() {
@@ -382,17 +384,38 @@ fn reconstruct_incidence_candidates(
         let mut seen = HashSet::new();
         candidates.retain(|pair| seen.insert(*pair));
     }
-    let edge_points = choices
-        .iter()
-        .map(|candidates| candidates.first().copied())
-        .collect::<Option<Vec<_>>>()?;
-    reconstruct_incidence(
-        edge_rows,
-        vertex_points,
-        edge_faces,
-        &edge_points,
-        face_count,
-    )
+    let assignment_count = choices.iter().try_fold(1usize, |count, candidates| {
+        count.checked_mul(candidates.len())
+    })?;
+    if assignment_count > MAX_ASSIGNMENTS {
+        return None;
+    }
+    let mut indices = vec![0usize; choices.len()];
+    for _ in 0..assignment_count {
+        let edge_points = choices
+            .iter()
+            .zip(&indices)
+            .map(|(candidates, index)| candidates[*index])
+            .collect::<Vec<_>>();
+        if let Some(topology) = reconstruct_incidence(
+            edge_rows.to_vec(),
+            vertex_points.to_vec(),
+            edge_faces,
+            &edge_points,
+            face_count,
+        ) {
+            return Some(topology);
+        }
+
+        for edge in (0..indices.len()).rev() {
+            indices[edge] += 1;
+            if indices[edge] < choices[edge].len() {
+                break;
+            }
+            indices[edge] = 0;
+        }
+    }
+    None
 }
 
 /// Return the endpoint-port handles for the standard edge table, in physical
@@ -1316,7 +1339,7 @@ mod motif_tests {
 
     #[test]
     fn endpoint_incidence_builds_oriented_tetrahedron_cycles() {
-        let rows = (0..6)
+        let rows: Vec<_> = (0..6)
             .map(|edge| EdgeRow {
                 kind: 1,
                 handles: vec![edge * 2, edge * 2 + 1],
@@ -1349,8 +1372,8 @@ mod motif_tests {
     }
 
     #[test]
-    fn endpoint_candidate_gauge_accepts_a_face_closing_assignment() {
-        let rows = (0..6)
+    fn endpoint_candidate_search_selects_a_face_closing_assignment() {
+        let rows: Vec<_> = (0..6)
             .map(|edge| EdgeRow {
                 kind: 1,
                 handles: vec![edge * 2, edge * 2 + 1],
@@ -1364,15 +1387,16 @@ mod motif_tests {
         ];
         let edge_faces = [[0, 1], [0, 2], [0, 3], [1, 3], [1, 2], [2, 3]];
         let candidates = vec![
-            vec![[0, 1], [0, 2]],
+            vec![[0, 2], [0, 1]],
             vec![[1, 2]],
             vec![[0, 2]],
             vec![[0, 3]],
             vec![[1, 3]],
             vec![[2, 3]],
         ];
-        let topology = reconstruct_incidence_candidates(rows, points, &edge_faces, &candidates, 4)
-            .expect("unique face-closing endpoint assignment");
+        let topology =
+            reconstruct_incidence_candidates(&rows, &points, &edge_faces, &candidates, 4)
+                .expect("unique face-closing endpoint assignment");
         assert_eq!(topology.edge_vertices().expect("edge vertices")[0], [0, 1]);
     }
 
