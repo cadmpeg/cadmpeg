@@ -25,6 +25,7 @@ use std::io::{Read, Write};
 use crate::container::ContainerScan;
 
 const SKETCH_MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
+const SKETCH_POINT_TOLERANCE: f64 = 1.0e-9;
 
 pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
     scan.blocks
@@ -555,6 +556,7 @@ pub fn prepare_sketches_for_write(
         {
             return Ok(());
         }
+        validate_source_less_constraints(ir)?;
         let generated = source_less_lanes(ir)?;
         native
             .get_or_insert_with(crate::native::SldprtNative::default)
@@ -584,6 +586,71 @@ pub fn prepare_sketches_for_write(
             )
         })?,
     )
+}
+
+fn validate_source_less_constraints(
+    ir: &cadmpeg_ir::CadIr,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    for constraint in &ir.model.sketch_constraints {
+        let SketchConstraintDefinition::CoincidentLoci { loci } = &constraint.definition else {
+            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
+                "source-less SLDPRT sketch constraints support only solved endpoint coincidences"
+                    .into(),
+            ));
+        };
+        if loci.len() < 2 {
+            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "sketch constraint {} requires at least two loci",
+                constraint.id.0
+            )));
+        }
+        let sketch = ir
+            .model
+            .sketches
+            .iter()
+            .find(|sketch| sketch.id == constraint.sketch)
+            .ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "sketch constraint {} references missing sketch {}",
+                    constraint.id.0, constraint.sketch.0
+                ))
+            })?;
+        let v_axis = cross(sketch.normal, sketch.u_axis);
+        let mut expected = None;
+        for locus in loci {
+            let (entity_id, start) = match locus {
+                SketchLocus::Start(entity) => (entity, true),
+                SketchLocus::End(entity) => (entity, false),
+                _ => {
+                    return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
+                        "source-less SLDPRT sketch constraints support only solved endpoint coincidences"
+                            .into(),
+                    ));
+                }
+            };
+            let entity = ir
+                .model
+                .sketch_entities
+                .iter()
+                .find(|entity| entity.id == *entity_id && entity.sketch == sketch.id)
+                .ok_or_else(|| {
+                    cadmpeg_ir::codec::CodecError::Malformed(format!(
+                        "sketch constraint {} references entity {} outside sketch {}",
+                        constraint.id.0, entity_id.0, sketch.id.0
+                    ))
+                })?;
+            let curve = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
+            let point = if start { curve.start } else { curve.end };
+            if expected.is_some_and(|expected| !same_sketch_point(expected, point)) {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT sketch constraint {} has unsolved endpoint coordinates",
+                    constraint.id.0
+                )));
+            }
+            expected = Some(point);
+        }
+    }
+    Ok(())
 }
 
 fn source_less_lanes(
@@ -657,26 +724,45 @@ fn sketch_brep(
         .flatten()
         .map(|entity_use| entity_use.entity.clone())
         .collect::<HashSet<_>>();
-    let mut profiles = sketch.profiles.clone();
-    profiles.extend(
-        ordered_entities
-            .iter()
-            .filter(|entity| {
-                !referenced.contains(&entity.id)
-                    && !matches!(entity.geometry, SketchGeometry::Point { .. })
-            })
-            .map(|entity| {
-                vec![SketchEntityUse {
-                    entity: entity.id.clone(),
-                    reversed: false,
-                }]
-            }),
-    );
+    if let Some(entity) = ordered_entities.iter().find(|entity| {
+        !referenced.contains(&entity.id) && !matches!(entity.geometry, SketchGeometry::Point { .. })
+    }) {
+        return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT sketch writing cannot encode unprofiled curve {}",
+            entity.id.0
+        )));
+    }
+    let profiles = sketch.profiles.clone();
     let mut face_loops = Vec::new();
     let mut vertex_by_position = HashMap::<(u64, u64), VertexId>::new();
     for (profile_index, profile) in profiles.iter().enumerate() {
         if profile.is_empty() {
             continue;
+        }
+        let endpoints = profile
+            .iter()
+            .map(|entity_use| {
+                let entity = entities.get(&entity_use.entity).ok_or_else(|| {
+                    cadmpeg_ir::codec::CodecError::Malformed(format!(
+                        "sketch {} references missing entity {}",
+                        sketch.id.0, entity_use.entity.0
+                    ))
+                })?;
+                let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
+                Ok(if entity_use.reversed {
+                    (generated.end, generated.start)
+                } else {
+                    (generated.start, generated.end)
+                })
+            })
+            .collect::<Result<Vec<_>, cadmpeg_ir::codec::CodecError>>()?;
+        if endpoints.iter().enumerate().any(|(index, (_, end))| {
+            let (next_start, _) = endpoints[(index + 1) % endpoints.len()];
+            !same_sketch_point(*end, next_start)
+        }) {
+            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "source-less SLDPRT sketch profile {profile_index} is not a closed endpoint chain"
+            )));
         }
         let loop_id = LoopId(format!("{prefix}:loop:{profile_index}"));
         face_loops.push(loop_id.clone());
@@ -1014,10 +1100,15 @@ fn sketch_vertex(
     sketch: &Sketch,
     v_axis: Vector3,
 ) -> VertexId {
-    let key = (position.u.to_bits(), position.v.to_bits());
-    if let Some(id) = vertices.get(&key) {
+    if let Some((_, id)) = vertices.iter().find(|((u, v), _)| {
+        same_sketch_point(
+            Point2::new(f64::from_bits(*u), f64::from_bits(*v)),
+            position,
+        )
+    }) {
         return id.clone();
     }
+    let key = (position.u.to_bits(), position.v.to_bits());
     let ordinal = vertices.len();
     let point_id = PointId(format!("{prefix}:point:{ordinal}"));
     let vertex_id = VertexId(format!("{prefix}:vertex:{ordinal}"));
@@ -1032,6 +1123,11 @@ fn sketch_vertex(
     });
     vertices.insert(key, vertex_id.clone());
     vertex_id
+}
+
+fn same_sketch_point(left: Point2, right: Point2) -> bool {
+    (left.u - right.u).abs() <= SKETCH_POINT_TOLERANCE
+        && (left.v - right.v).abs() <= SKETCH_POINT_TOLERANCE
 }
 
 fn patch_line_profiles(

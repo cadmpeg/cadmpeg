@@ -1460,7 +1460,8 @@ fn encoder_writes_source_less_line_sketches() {
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -1493,6 +1494,18 @@ fn encoder_writes_source_less_line_sketches() {
             },
         });
     }
+    for index in 0..3 {
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: SketchConstraintId(format!("synthetic:test:constraint#coincident-{index}")),
+            sketch: sketch_id.clone(),
+            definition: SketchConstraintDefinition::CoincidentLoci {
+                loci: vec![
+                    SketchLocus::End(entity_ids[index].clone()),
+                    SketchLocus::Start(entity_ids[(index + 1) % 3].clone()),
+                ],
+            },
+        });
+    }
     ir.model.sketch_entities.push(SketchEntity {
         id: SketchEntityId("synthetic:test:sketch-entity#point".into()),
         sketch: sketch_id.clone(),
@@ -1513,7 +1526,6 @@ fn encoder_writes_source_less_line_sketches() {
         u_axis: Vector3::new(1.0, 0.0, 0.0),
         profiles: vec![entity_ids
             .iter()
-            .take(2)
             .cloned()
             .map(|entity| SketchEntityUse {
                 entity,
@@ -1628,10 +1640,15 @@ fn encoder_writes_source_less_line_sketches() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketches[0].profiles.len(), 2);
-    assert_eq!(decoded.ir.model.sketches[0].profiles[0].len(), 2);
-    assert_eq!(decoded.ir.model.sketches[0].profiles[1].len(), 1);
+    assert_eq!(decoded.ir.model.sketches[0].profiles.len(), 1);
+    assert_eq!(decoded.ir.model.sketches[0].profiles[0].len(), 3);
     assert_eq!(decoded.ir.model.sketch_entities.len(), 4);
+    assert_eq!(
+        decoded.ir.model.sketch_constraints.len(),
+        3,
+        "{:?}",
+        decoded.ir.model.sketch_constraints
+    );
     assert!(
         decoded
             .ir
@@ -1725,6 +1742,58 @@ fn encoder_writes_source_less_line_sketches() {
                 if (position.u - 7.0).abs() < 1.0e-12
                     && (position.v - 8.0).abs() < 1.0e-12
         )));
+}
+
+#[test]
+fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let sketch_id = SketchId("synthetic:test:sketch#profile".into());
+    let entity_id = SketchEntityId("synthetic:test:sketch-entity#line".into());
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: Some("Profile".into()),
+        configuration: None,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        profiles: vec![vec![SketchEntityUse {
+            entity: entity_id.clone(),
+            reversed: false,
+        }]],
+        native_ref: None,
+    });
+    ir.model.sketch_entities.push(SketchEntity {
+        id: entity_id.clone(),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        },
+    });
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
+        sketch: sketch_id,
+        definition: SketchConstraintDefinition::Horizontal { entity: entity_id },
+    });
+
+    let error = SldprtCodec.encode(&ir, &mut Vec::new()).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+    ));
+    assert!(error.to_string().contains(
+        "source-less SLDPRT sketch constraints support only solved endpoint coincidences"
+    ));
 }
 
 #[test]
