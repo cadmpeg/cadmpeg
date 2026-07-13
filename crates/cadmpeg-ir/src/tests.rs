@@ -1915,6 +1915,113 @@ fn pcurve_surface_mismatch_is_flagged() {
         "off-surface-image pcurve must be flagged, got: {:?}",
         inconsistent.findings
     );
+
+    let mut procedural = unit_cube();
+    procedural.model.pcurves.push(crate::geometry::Pcurve {
+        id: crate::ids::PcurveId("synthetic:cube:pcurve#procedural".into()),
+        geometry: crate::geometry::PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![
+                crate::math::Point2::new(0.0, 0.0),
+                crate::math::Point2::new(10.0, 5.0),
+            ],
+            weights: None,
+            periodic: false,
+        },
+        wrapper_reversed: None,
+        native_tail_flags: None,
+        parameter_range: None,
+        fit_tolerance: None,
+    });
+    let coedge = procedural
+        .model
+        .coedges
+        .iter_mut()
+        .find(|coedge| coedge.id.0.contains("bottom") && coedge.edge.0 == "synthetic:cube:edge#0")
+        .expect("bottom face uses edge #0");
+    coedge.pcurve = Some(crate::ids::PcurveId(
+        "synthetic:cube:pcurve#procedural".into(),
+    ));
+    let owner_loop = coedge.owner_loop.clone();
+    let face = procedural
+        .model
+        .loops
+        .iter()
+        .find(|lp| lp.id == owner_loop)
+        .and_then(|lp| {
+            procedural
+                .model
+                .faces
+                .iter()
+                .find(|face| face.id == lp.face)
+        })
+        .expect("coedge owner face");
+    procedural
+        .model
+        .procedural_surfaces
+        .push(ProceduralSurface {
+            id: ProceduralSurfaceId("synthetic:cube:procedural-surface#0".into()),
+            surface: face.surface.clone(),
+            definition: ProceduralSurfaceDefinition::Revolution {
+                directrix: procedural.model.curves[0].id.clone(),
+                axis_origin: Point3::new(0.0, 0.0, 0.0),
+                axis_direction: Vector3::new(0.0, 0.0, 1.0),
+                angular_interval: [0.0, std::f64::consts::TAU],
+                parameter_interval: [0.0, 1.0],
+                transposed: false,
+            },
+            cache_fit_tolerance: Some(0.01),
+        });
+    let procedural_report = validate(&procedural, Vec::new());
+    assert!(
+        !procedural_report
+            .findings
+            .iter()
+            .any(|finding| finding.check == Check::GeometricConsistency),
+        "procedural UVs must not be evaluated on the solved cache, got: {:?}",
+        procedural_report.findings
+    );
+
+    let mut negative_parameterization = unit_cube();
+    negative_parameterization
+        .model
+        .pcurves
+        .push(crate::geometry::Pcurve {
+            id: crate::ids::PcurveId("synthetic:cube:pcurve#negative".into()),
+            geometry: crate::geometry::PcurveGeometry::Nurbs {
+                degree: 1,
+                knots: vec![-10.0, -10.0, 0.0, 0.0],
+                control_points: vec![
+                    crate::math::Point2::new(10.0, 0.0),
+                    crate::math::Point2::new(0.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        });
+    let coedge = negative_parameterization
+        .model
+        .coedges
+        .iter_mut()
+        .find(|coedge| coedge.id.0.contains("bottom") && coedge.edge.0 == "synthetic:cube:edge#0")
+        .expect("bottom face uses edge #0");
+    coedge.pcurve = Some(crate::ids::PcurveId(
+        "synthetic:cube:pcurve#negative".into(),
+    ));
+    let negative = validate(&negative_parameterization, Vec::new());
+    assert!(
+        !negative
+            .findings
+            .iter()
+            .any(|finding| finding.check == Check::GeometricConsistency),
+        "opposite-sign pcurve parameterization must validate, got: {:?}",
+        negative.findings
+    );
 }
 
 #[test]

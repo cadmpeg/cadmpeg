@@ -89,9 +89,9 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
 }
 
 /// A coedge's pcurve, mapped through its face's surface, must land on the
-/// owning edge's vertex positions at the pcurve's parameter extremes. The
-/// pcurve's parameter direction is independent of the edge sense, so either
-/// endpoint assignment satisfies the check.
+/// owning edge's vertex positions over the edge's parameter interval. Pcurve
+/// parameter sign and direction are independent of edge sense, so either sign
+/// and either endpoint assignment satisfy the check.
 pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
     let surfaces = ir
         .model
@@ -99,6 +99,18 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         .iter()
         .map(|surface| (surface.id.0.as_str(), &surface.geometry))
         .collect::<HashMap<_, _>>();
+    let procedurally_parameterized_surfaces = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .filter(|surface| {
+            !matches!(
+                surface.definition,
+                crate::geometry::ProceduralSurfaceDefinition::Exact { .. }
+            )
+        })
+        .map(|surface| surface.surface.0.as_str())
+        .collect::<HashSet<_>>();
     let pcurves = ir
         .model
         .pcurves
@@ -142,6 +154,13 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         let Some(geometry) = surfaces.get(face.surface.0.as_str()) else {
             continue;
         };
+        // A procedural construction defines its own UV space. Its solved
+        // surface is a model-space cache, not the carrier of that UV
+        // parameterization, so mapping the pcurve through the cache is not a
+        // valid consistency test.
+        if procedurally_parameterized_surfaces.contains(face.surface.0.as_str()) {
+            continue;
+        }
         let Some(edge) = edges.get(coedge.edge.0.as_str()) else {
             continue;
         };
@@ -151,25 +170,30 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         ) else {
             continue;
         };
-        let Some([t0, t1]) = pcurve_parameter_extremes(&pcurve.geometry) else {
-            continue;
-        };
-        let (Some(uv0), Some(uv1)) = (
-            pcurve_uv(&pcurve.geometry, t0),
-            pcurve_uv(&pcurve.geometry, t1),
-        ) else {
-            continue;
-        };
-        let (Some(p0), Some(p1)) = (
-            surface_point(geometry, uv0.u, uv0.v),
-            surface_point(geometry, uv1.u, uv1.v),
-        ) else {
+        let Some(parameter_ranges) = pcurve_parameter_ranges(&pcurve.geometry, edge.param_range)
+        else {
             continue;
         };
         let bound = allowance(&[edge.tolerance, *start_tol, *end_tol, face.tolerance]);
-        let forward = distance(p0, *start).max(distance(p1, *end));
-        let reversed = distance(p0, *end).max(distance(p1, *start));
-        let mismatch = forward.min(reversed);
+        let Some(mismatch) = parameter_ranges
+            .into_iter()
+            .filter_map(|[t0, t1]| {
+                let (uv0, uv1) = (
+                    pcurve_uv(&pcurve.geometry, t0)?,
+                    pcurve_uv(&pcurve.geometry, t1)?,
+                );
+                let (p0, p1) = (
+                    surface_point(geometry, uv0.u, uv0.v)?,
+                    surface_point(geometry, uv1.u, uv1.v)?,
+                );
+                let forward = distance(p0, *start).max(distance(p1, *end));
+                let reversed = distance(p0, *end).max(distance(p1, *start));
+                Some(forward.min(reversed))
+            })
+            .reduce(f64::min)
+        else {
+            continue;
+        };
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
                 check: Check::GeometricConsistency,
@@ -184,12 +208,20 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
     }
 }
 
-/// The parameter extremes over which a pcurve is checked: the stored parameter
-/// range when present, otherwise the NURBS knot extremes. A line pcurve
-/// without a stored range has no intrinsic extent and is skipped.
-fn pcurve_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
-    match geometry {
-        PcurveGeometry::Nurbs { knots, .. } => Some([*knots.first()?, *knots.last()?]),
-        PcurveGeometry::Line { .. } => None,
+/// Candidate pcurve intervals for an edge. Native pcurves can parameterize the
+/// same edge with the opposite sign. A NURBS pcurve's full knot domain remains
+/// its intrinsic interval; an unbounded line without an edge interval is
+/// skipped.
+fn pcurve_parameter_ranges(
+    geometry: &PcurveGeometry,
+    edge_range: Option<[f64; 2]>,
+) -> Option<Vec<[f64; 2]>> {
+    let mut ranges = Vec::with_capacity(3);
+    if let Some([start, end]) = edge_range {
+        ranges.extend([[start, end], [-start, -end]]);
     }
+    if let PcurveGeometry::Nurbs { knots, .. } = geometry {
+        ranges.push([*knots.first()?, *knots.last()?]);
+    }
+    (!ranges.is_empty()).then_some(ranges)
 }
