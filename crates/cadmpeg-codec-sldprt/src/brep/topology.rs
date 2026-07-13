@@ -247,6 +247,9 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
     } else {
         (refs_be(buf, p + 6, 4)?, p + 14)
     };
+    if refs.first().is_none_or(|reference| *reference > 1) {
+        return None;
+    }
     let x = f64_be(buf, xyz_at)?;
     let y = f64_be(buf, xyz_at + 8)?;
     let z = f64_be(buf, xyz_at + 16)?;

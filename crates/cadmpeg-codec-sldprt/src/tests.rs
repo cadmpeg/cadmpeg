@@ -5454,6 +5454,32 @@ fn partition_point_refs_do_not_select_deltas_framing() {
 }
 
 #[test]
+fn deltas_point_index_does_not_replace_partition_coordinates() {
+    let partition = triangle_body();
+    let mut deltas = Vec::new();
+    for attr in 60u16..80 {
+        deltas.extend_from_slice(&[0x00, 0x1d]);
+        deltas.extend_from_slice(&attr.to_be_bytes());
+    }
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &deltas)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let point = result
+        .ir
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.0.ends_with("#60"))
+        .unwrap();
+    assert_eq!(point.position, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+}
+
+#[test]
 fn semantic_writer_preserves_face_appearance() {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
