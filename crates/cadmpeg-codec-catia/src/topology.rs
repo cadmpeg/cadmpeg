@@ -367,6 +367,108 @@ pub fn parse_standard_endpoint_candidates(
     )
 }
 
+struct IncidenceCandidateSearch<'a> {
+    choices: &'a [Vec<[usize; 2]>],
+    edge_faces: &'a [[usize; 2]],
+    edge_rows: &'a [EdgeRow],
+    vertex_points: &'a [[f64; 3]],
+    face_count: usize,
+    assignment: Vec<Option<[usize; 2]>>,
+    degrees: Vec<Vec<u8>>,
+    solution: Option<StandardTopology>,
+    states: usize,
+}
+
+impl IncidenceCandidateSearch<'_> {
+    fn candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
+        let mut faces = self.edge_faces[edge].to_vec();
+        faces.sort_unstable();
+        faces.dedup();
+        faces
+            .iter()
+            .all(|&face| pair.iter().all(|&point| self.degrees[face][point] < 2))
+    }
+
+    fn feasible(&self) -> bool {
+        for face in 0..self.face_count {
+            for point in 0..self.vertex_points.len() {
+                if self.degrees[face][point] != 1 {
+                    continue;
+                }
+                let can_complete = (0..self.choices.len()).any(|edge| {
+                    self.assignment[edge].is_none()
+                        && self.edge_faces[edge].contains(&face)
+                        && self.choices[edge]
+                            .iter()
+                            .any(|pair| pair.contains(&point) && self.candidate_fits(edge, *pair))
+                });
+                if !can_complete {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn search(&mut self) {
+        const MAX_STATES: usize = 65_536;
+        if self.solution.is_some() || self.states >= MAX_STATES {
+            return;
+        }
+        self.states += 1;
+        let next = (0..self.choices.len())
+            .filter(|edge| self.assignment[*edge].is_none())
+            .map(|edge| {
+                let count = self.choices[edge]
+                    .iter()
+                    .filter(|pair| self.candidate_fits(edge, **pair))
+                    .count();
+                (count, edge)
+            })
+            .min();
+        let Some((count, edge)) = next else {
+            let points = self.assignment.iter().copied().collect::<Option<Vec<_>>>();
+            self.solution = points.and_then(|points| {
+                reconstruct_incidence(
+                    self.edge_rows.to_vec(),
+                    self.vertex_points.to_vec(),
+                    self.edge_faces,
+                    &points,
+                    self.face_count,
+                )
+            });
+            return;
+        };
+        if count == 0 {
+            return;
+        }
+        for candidate in 0..self.choices[edge].len() {
+            let pair = self.choices[edge][candidate];
+            if !self.candidate_fits(edge, pair) {
+                continue;
+            }
+            let mut faces = self.edge_faces[edge].to_vec();
+            faces.sort_unstable();
+            faces.dedup();
+            for &face in &faces {
+                for &point in &pair {
+                    self.degrees[face][point] += 1;
+                }
+            }
+            self.assignment[edge] = Some(pair);
+            if self.feasible() {
+                self.search();
+            }
+            self.assignment[edge] = None;
+            for &face in &faces {
+                for &point in &pair {
+                    self.degrees[face][point] -= 1;
+                }
+            }
+        }
+    }
+}
+
 fn reconstruct_incidence_candidates(
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
@@ -374,8 +476,6 @@ fn reconstruct_incidence_candidates(
     edge_candidates: &[Vec<[usize; 2]>],
     face_count: usize,
 ) -> Option<StandardTopology> {
-    const MAX_ASSIGNMENTS: usize = 65_536;
-
     let mut choices = edge_candidates.to_vec();
     for candidates in &mut choices {
         for pair in candidates.iter_mut() {
@@ -384,38 +484,19 @@ fn reconstruct_incidence_candidates(
         let mut seen = HashSet::new();
         candidates.retain(|pair| seen.insert(*pair));
     }
-    let assignment_count = choices.iter().try_fold(1usize, |count, candidates| {
-        count.checked_mul(candidates.len())
-    })?;
-    if assignment_count > MAX_ASSIGNMENTS {
-        return None;
-    }
-    let mut indices = vec![0usize; choices.len()];
-    for _ in 0..assignment_count {
-        let edge_points = choices
-            .iter()
-            .zip(&indices)
-            .map(|(candidates, index)| candidates[*index])
-            .collect::<Vec<_>>();
-        if let Some(topology) = reconstruct_incidence(
-            edge_rows.to_vec(),
-            vertex_points.to_vec(),
-            edge_faces,
-            &edge_points,
-            face_count,
-        ) {
-            return Some(topology);
-        }
-
-        for edge in (0..indices.len()).rev() {
-            indices[edge] += 1;
-            if indices[edge] < choices[edge].len() {
-                break;
-            }
-            indices[edge] = 0;
-        }
-    }
-    None
+    let mut search = IncidenceCandidateSearch {
+        choices: &choices,
+        edge_faces,
+        edge_rows,
+        vertex_points,
+        face_count,
+        assignment: vec![None; choices.len()],
+        degrees: vec![vec![0; vertex_points.len()]; face_count],
+        solution: None,
+        states: 0,
+    };
+    search.search();
+    search.solution
 }
 
 /// Return the endpoint-port handles for the standard edge table, in physical

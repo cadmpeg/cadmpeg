@@ -2271,33 +2271,23 @@ fn attach_standard_topology(
         endpoint_candidates.push(candidates);
     }
     let edge_faces: Vec<[usize; 2]> = supports.iter().map(|support| support.faces).collect();
-    let mut endpoint_options = resolve_standard_endpoint_pairs(
+    let endpoint_options = resolve_standard_endpoint_pairs(
         ir,
         bindings,
         &surface_indices,
         &supports,
         &endpoint_candidates,
     );
-    if let Some(options) = endpoint_options.as_mut() {
+    let native_endpoint_pairs = endpoint_options.as_ref().and_then(|options| {
         let native_edges = crate::b5::edge_vertex_references(source);
         let native_ports = supports
             .iter()
             .map(|support| native_edges.get(&support.tag).copied())
             .collect::<Option<Vec<_>>>();
-        let has_spline = supports
-            .iter()
-            .any(|support| matches!(support.geometry, geometry::StandardCurveGeometry::Bspline));
-        if let Some(bound) = has_spline
-            .then_some(native_ports.as_ref())
-            .flatten()
+        native_ports
+            .as_ref()
             .and_then(|ports| topology::bind_edge_port_candidates(ports, options))
-        {
-            for (pairs, pair) in options.iter_mut().zip(bound) {
-                pairs.clear();
-                pairs.push(pair);
-            }
-        }
-    }
+    });
     let resolved_endpoint_pairs = endpoint_options
         .as_ref()
         .and_then(|options| {
@@ -2330,9 +2320,15 @@ fn attach_standard_topology(
             return false;
         };
         (topology, point_assignment)
-    } else if let Some(topology) = endpoint_options.as_ref().and_then(|options| {
-        topology::parse_standard_endpoint_candidates(brep, &edge_faces, options)
-    }) {
+    } else if let Some(topology) = native_endpoint_pairs
+        .as_ref()
+        .and_then(|pairs| topology::parse_standard_endpoints(brep, &edge_faces, pairs))
+        .or_else(|| {
+            endpoint_options.as_ref().and_then(|options| {
+                topology::parse_standard_endpoint_candidates(brep, &edge_faces, options)
+            })
+        })
+    {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else {
