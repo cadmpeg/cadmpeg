@@ -3150,7 +3150,7 @@ fn append_generated_variable_blend_side(bytes: &mut Vec<u8>, label: &str, x: f64
     t_vec(bytes, [1.0, 0.0, 0.0]);
     bytes.push(0x0b);
     bytes.extend_from_slice(&generated_curve_block());
-    t_ident(bytes, "nullbs");
+    bytes.extend_from_slice(&generated_pcurve_block());
     t_pos(bytes, [x, 2.0, 3.0]);
     t_ident(bytes, "nullbs");
     t_dbl(bytes, x + 0.5);
@@ -10820,9 +10820,15 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert_eq!(construction.render_blend, 0);
         assert_eq!(construction.post_range, [0.0, 1.0]);
         assert!(construction.post_pcurve.is_none());
+        assert!(construction.sides.iter().all(|side| side.pcurve.is_some()));
 
         let expected = construction.clone();
         let post_curve = construction.post_curve.clone();
+        let side_curves = construction
+            .sides
+            .iter()
+            .map(|side| side.curve.clone())
+            .collect::<Vec<_>>();
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
@@ -10836,6 +10842,18 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             origin: cadmpeg_ir::math::Point3::new(-2.0, 1.0, 3.0),
             direction: cadmpeg_ir::math::Vector3::new(3.0, -4.0, 2.0),
         };
+        for (ordinal, side) in side_curves.iter().enumerate() {
+            source_less
+                .model
+                .curves
+                .iter_mut()
+                .find(|curve| curve.id == *side)
+                .expect("variable-blend side curve")
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
+                direction: cadmpeg_ir::math::Vector3::new(2.0, 3.0, -4.0),
+            };
+        }
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -10861,6 +10879,19 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
                 if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
         ));
+        for side in actual.sides.iter() {
+            assert!(matches!(
+                round_trip
+                    .ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == side.curve)
+                    .map(|curve| &curve.geometry),
+                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                    if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            ));
+        }
     }
 }
 

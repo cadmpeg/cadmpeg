@@ -5620,7 +5620,41 @@ fn native_variable_blend_side(
             CodecError::Malformed(format!("variable support {} is missing", side.surface))
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
-    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    let curve = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == side.curve)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("variable side curve {} is missing", side.curve))
+        })?;
+    let curve = match (&curve.geometry, &side.pcurve) {
+        (CurveGeometry::Nurbs(curve), _) => curve.clone(),
+        (CurveGeometry::Line { .. }, Some(PcurveGeometry::Nurbs { knots, .. })) => {
+            native_interval_curve(
+                &curve.geometry,
+                [
+                    knots.first().copied().ok_or_else(|| {
+                        CodecError::Malformed("variable side pcurve has no knot domain".into())
+                    })?,
+                    knots.last().copied().ok_or_else(|| {
+                        CodecError::Malformed("variable side pcurve has no knot domain".into())
+                    })?,
+                ],
+            )?
+        }
+        (CurveGeometry::Line { .. }, _) => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D variable side line requires a bounded NURBS pcurve".into(),
+            ));
+        }
+        _ => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D variable side requires a NURBS or bounded line curve".into(),
+            ));
+        }
+    };
+    native_nurbs_curve(bytes, &curve)?;
     native_optional_pcurve(bytes, side.pcurve.as_ref())?;
     native_point(
         bytes,
