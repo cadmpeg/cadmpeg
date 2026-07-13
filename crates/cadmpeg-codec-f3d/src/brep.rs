@@ -4333,32 +4333,41 @@ fn persistent_design_links(attribute: &SourceAttribute) -> Vec<PersistentDesignL
     ) else {
         return Vec::new();
     };
-    let ids: Vec<String> = attribute.values[family + 1..]
-        .iter()
-        .filter_map(|value| match value {
-            AttributeValue::String(value)
-                if value.trim() != "generic_tag_attrib_def"
-                    && !value.is_empty()
-                    && value.bytes().all(|byte| byte.is_ascii_digit()) =>
+    let groups = attribute.values[family + 1..]
+        .windows(5)
+        .filter_map(|values| match values {
+            [
+                AttributeValue::Integer(entity_kind),
+                AttributeValue::String(design_id),
+                AttributeValue::Integer(design_reference),
+                AttributeValue::Integer(0),
+                AttributeValue::Integer(0),
+            ] if !design_id.is_empty()
+                && design_id.bytes().all(|byte| byte.is_ascii_digit()) =>
             {
-                Some(value.clone())
+                Some((*entity_kind, design_id.clone(), *design_reference))
             }
             _ => None,
         })
-        .collect();
-    let last = ids.len().saturating_sub(1);
-    ids.into_iter()
+        .collect::<Vec<_>>();
+    let last = groups.len().saturating_sub(1);
+    groups
+        .into_iter()
         .enumerate()
-        .map(|(ordinal, design_id)| PersistentDesignLink {
-            id: format!(
-                "f3d:design:persistent-design-link#{}:{ordinal}",
-                attribute_key(attribute)
-            ),
-            target: attribute.target.clone(),
-            design_id,
-            ordinal: ordinal as u32,
-            is_current: ordinal == last,
-        })
+        .map(
+            |(ordinal, (entity_kind, design_id, design_reference))| PersistentDesignLink {
+                id: format!(
+                    "f3d:design:persistent-design-link#{}:{ordinal}",
+                    attribute_key(attribute)
+                ),
+                target: attribute.target.clone(),
+                design_id,
+                entity_kind,
+                design_reference,
+                ordinal: ordinal as u32,
+                is_current: ordinal == last,
+            },
+        )
         .collect()
 }
 

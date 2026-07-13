@@ -5162,6 +5162,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "generated:persistent-design-link#0".into(),
             target: AttributeTarget::Body(body_id.clone()),
             design_id: "311".into(),
+            entity_kind: 3,
+            design_reference: 7,
             ordinal: 0,
             is_current: false,
         },
@@ -5169,6 +5171,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "generated:persistent-design-link#1".into(),
             target: AttributeTarget::Body(body_id.clone()),
             design_id: "322".into(),
+            entity_kind: 3,
+            design_reference: 8,
             ordinal: 1,
             is_current: true,
         },
@@ -5176,6 +5180,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "generated:persistent-design-link#2".into(),
             target: AttributeTarget::Face(face_id.clone()),
             design_id: "411".into(),
+            entity_kind: 2,
+            design_reference: 9,
             ordinal: 0,
             is_current: true,
         },
@@ -5183,6 +5189,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "generated:persistent-design-link#3".into(),
             target: AttributeTarget::Edge(edge_id.clone()),
             design_id: "511".into(),
+            entity_kind: 1,
+            design_reference: 10,
             ordinal: 0,
             is_current: true,
         },
@@ -5223,7 +5231,10 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     let native = f3d_native(&round_trip.ir);
     assert_eq!(native.persistent_design_links.len(), 4);
     assert_eq!(native.persistent_design_links[0].design_id, "311");
+    assert_eq!(native.persistent_design_links[0].entity_kind, 3);
+    assert_eq!(native.persistent_design_links[0].design_reference, 7);
     assert_eq!(native.persistent_design_links[1].design_id, "322");
+    assert_eq!(native.persistent_design_links[1].design_reference, 8);
     assert!(native.persistent_design_links[1].is_current);
     assert!(native.persistent_design_links.iter().any(|link| {
         link.design_id == "411" && matches!(link.target, AttributeTarget::Face(_))
@@ -14640,6 +14651,10 @@ fn decode_transfers_generated_custom_attribute() {
     assert_eq!(
         f3d_native(&result.ir).persistent_design_links[0].design_id,
         "322"
+    );
+    assert_eq!(
+        f3d_native(&result.ir).persistent_design_links[0].design_reference,
+        7
     );
     assert!(f3d_native(&result.ir).persistent_design_links[0].is_current);
     assert_eq!(f3d_native(&result.ir).creation_timestamps.len(), 1);

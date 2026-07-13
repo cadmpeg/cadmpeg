@@ -38,6 +38,10 @@ pub struct PersistentDesignLink {
     pub target: AttributeTarget,
     /// Fusion persistent design-entity id string, stable across regeneration.
     pub design_id: String,
+    /// Native entity-class discriminator: body `3`, face `2`, or edge `1`.
+    pub entity_kind: i64,
+    /// Design-stream reference paired with this persistent identifier.
+    pub design_reference: i64,
     /// Position of this id in the entity's persistent-id history, in assignment order.
     pub ordinal: u32,
     /// Whether this is the active persistent id for `target`, as opposed to a
