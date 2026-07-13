@@ -49,6 +49,7 @@
 mod geometry;
 pub mod lex;
 pub mod parse;
+mod reader;
 pub mod strings;
 mod writer;
 
@@ -1240,12 +1241,15 @@ impl Codec for StepCodec {
 
     fn decode(
         &self,
-        _reader: &mut dyn ReadSeek,
-        _options: &DecodeOptions,
+        reader: &mut dyn ReadSeek,
+        options: &DecodeOptions,
     ) -> Result<DecodeResult, CodecError> {
-        Err(CodecError::NotImplemented(
-            "STEP entity decoding is not implemented".into(),
-        ))
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes)?;
+        if self.detect(&bytes) == Confidence::No {
+            return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
+        }
+        reader::decode(&bytes, options)
     }
 }
 

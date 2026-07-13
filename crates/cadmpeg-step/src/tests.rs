@@ -4,7 +4,7 @@
 //! depends on an external STEP consumer.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::{Codec, Confidence};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
@@ -93,6 +93,33 @@ fn codec_inspects_edition3_sections_and_external_references() {
         references.attributes["external_uris"],
         "https://example.invalid/external-part"
     );
+}
+
+#[test]
+fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
+    let bytes = include_bytes!("../tests/fixtures/ap242_minimal.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode parsed STEP document");
+
+    assert_eq!(result.ir.source.as_ref().unwrap().format, "step");
+    let unknowns = result.ir.native_unknowns("step").unwrap();
+    assert_eq!(unknowns.len(), 2);
+    assert_eq!(unknowns[0].id.0, "step:EXAMPLE_RECORD:#1");
+    assert_eq!(
+        unknowns[0].data.as_deref(),
+        Some(
+            &bytes
+                [unknowns[0].offset as usize..(unknowns[0].offset + unknowns[0].byte_len) as usize]
+        )
+    );
+    assert!(unknowns[0].links.contains(&"step:#2".to_string()));
+    assert!(!result.report.geometry_transferred);
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("EXAMPLE_RECORD")));
 }
 
 fn export(ir: &CadIr) -> String {
