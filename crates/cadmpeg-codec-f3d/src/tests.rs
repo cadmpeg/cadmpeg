@@ -11052,6 +11052,14 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
             synthetic_exact_spl_sur_smbh("exact_spl_sur"),
             "exact spline surface",
         ),
+        (
+            synthetic_variable_blend_smbh("var_blend_spl_sur"),
+            "variable blend",
+        ),
+        (
+            synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"),
+            "rolling-ball blend",
+        ),
         (synthetic_skin_spl_sur_smbh(0, false), "skin surface"),
         (synthetic_net_spl_sur_smbh(), "net surface"),
         (synthetic_profile_first_sweep_smbh(), "sweep surface"),
@@ -11086,6 +11094,7 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
         (synthetic_sum_spl_sur_smbh("sum_spl_sur"), "sum"),
         (synthetic_rot_spl_sur_smbh("rot_spl_sur"), "revolution"),
         (synthetic_off_spl_sur_smbh("off_spl_sur"), "offset"),
+        (synthetic_cyl_spl_sur_smbh(), "extrusion"),
         (
             synthetic_g2_blend_spl_sur_smbh("g2_blend_spl_sur", false),
             "G2 blend",

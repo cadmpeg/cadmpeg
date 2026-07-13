@@ -6661,7 +6661,9 @@ fn encode_native_extrusion(
     );
     native_nurbs_curve(bytes, &directrix_cache)?;
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+        native_f64(bytes, cache_fit_tolerance / 10.0);
+    }
     bytes.push(0x10);
     Ok(())
 }
@@ -6990,6 +6992,9 @@ fn encode_native_variable_blend(
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
+    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+        CodecError::Malformed("variable blend requires a native cache-fit tolerance".into())
+    })?;
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "var_blend_spl_sur")?;
@@ -7050,7 +7055,7 @@ fn encode_native_variable_blend(
     native_f64(bytes, construction.shape_length / 10.0);
     native_i64(bytes, construction.shape_tail);
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    native_f64(bytes, cache_fit_tolerance / 10.0);
     for extension in construction.shape_extensions {
         native_i64(bytes, extension);
     }
@@ -7196,6 +7201,9 @@ fn encode_complete_native_rolling_ball(
     construction: &cadmpeg_ir::geometry::RollingBallConstruction,
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
+    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+        CodecError::Malformed("rolling-ball blend requires a native cache-fit tolerance".into())
+    })?;
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(
@@ -7230,7 +7238,7 @@ fn encode_complete_native_rolling_ball(
     }
     native_i64(bytes, construction.tail);
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    native_f64(bytes, cache_fit_tolerance / 10.0);
     for values in &construction.discontinuities {
         native_i64(
             bytes,
@@ -7322,7 +7330,9 @@ fn encode_native_rolling_ball(
     native_f64(bytes, end / 10.0);
     native_enum(bytes, -1);
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+        native_f64(bytes, cache_fit_tolerance / 10.0);
+    }
     bytes.push(0x10);
     Ok(())
 }
