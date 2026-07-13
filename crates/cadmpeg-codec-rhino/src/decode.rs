@@ -537,6 +537,72 @@ impl<'a> DecodeContext<'a> {
         }
     }
 
+    /// Decode semantic dimensions independently of shape carriers.
+    pub(crate) fn decode_dimensions(&mut self) {
+        if !matches!(
+            self.archive(),
+            ArchiveVersion::V5 | ArchiveVersion::V6 | ArchiveVersion::V7 | ArchiveVersion::V8
+        ) {
+            return;
+        }
+        for source_order in 0..self.scan.objects.len() {
+            let object = &self.scan.objects[source_order];
+            if !crate::dimensions::supported_class(object.class_uuid) {
+                continue;
+            }
+            let Some(scale) = self.unit_scale() else {
+                self.scan_warning(
+                    source_order,
+                    "dimension retained because document units are unavailable",
+                );
+                continue;
+            };
+            let Some(identity) = object.identity.as_ref() else {
+                self.scan_warning(
+                    source_order,
+                    "dimension retained because identity is unavailable",
+                );
+                continue;
+            };
+            let key = self.object_key(identity, source_order);
+            match crate::dimensions::decode(
+                &self.scan.data,
+                object.class_uuid,
+                object.class_data_range.clone(),
+                scale,
+                self.archive(),
+            ) {
+                Ok(dimension) => {
+                    let native_ref = Self::mint_unknown_id(source_order).to_string();
+                    let (feature, parameter) = crate::dimensions::project(
+                        &dimension,
+                        &key,
+                        (!identity.name.is_empty()).then(|| identity.name.clone()),
+                        native_ref,
+                    );
+                    let links = [feature.id.to_string(), parameter.id.0.clone()];
+                    let result = self.validate_candidate(|candidate| {
+                        candidate.model.features.push(feature);
+                        candidate.model.parameters.push(parameter);
+                    });
+                    match result {
+                        Ok(()) => {
+                            self.append_links(source_order, &links);
+                            self.mark_decoded(source_order);
+                        }
+                        Err(error) => self.scan_warning(
+                            source_order,
+                            &format!("dimension candidate rejected: {error}"),
+                        ),
+                    }
+                }
+                Err(error) => {
+                    self.scan_warning(source_order, &format!("dimension retained: {error}"));
+                }
+            }
+        }
+    }
+
     fn is_definition_member(&self, object: &ObjectDescriptor) -> bool {
         let Some(identity) = object.identity.as_ref() else {
             return false;
@@ -3621,6 +3687,7 @@ fn loss_provenance(class: &str, outcome: &ClassOutcome) -> LossProvenance {
 pub(crate) fn decode(scan: &Scan) -> DecodeResult {
     let mut context = DecodeContext::new(scan);
     context.decode_geometry();
+    context.decode_dimensions();
     crate::history::project(&scan.history, &mut context.ir);
     context.commit()
 }

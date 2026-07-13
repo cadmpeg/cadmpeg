@@ -1660,6 +1660,69 @@ ON_BoundingBox bounds
 Definition membership comes from the definition UUID array, not object
 attributes. The reference payload carries the transform and bounding box.
 
+### 18.1 Modern dimensions
+
+The linear, angular, and radial dimension class payloads use an anonymous
+version 1.0 family chunk. Its first child is an anonymous common-dimension
+chunk with major version 1 and minor version 0 or 1:
+
+```text
+anonymous common dimension version 1.minor
+  annotation
+  UTF-16 user text
+  f64 obsolete text rotation
+  bool use default text point
+  ON_2dPoint user text point
+  bool flip first arrow
+  bool flip second arrow
+  i32 arrow fit
+  UUID detail measured
+  f64 distance scale
+  if minor >= 1: i32 text fit
+family fields
+```
+
+The annotation is an anonymous chunk with major version 1 and minor versions
+0 through 4:
+
+```text
+anonymous annotation version 1.minor
+  anonymous text-content version 1.0
+  UUID dimension style
+  ON_Plane plane
+  if minor >= 1: i32 annotation type
+  if minor >= 2:
+    anonymous override version 1.1
+      bool override present
+      if present: class wrapper for the override dimension style
+  if minor >= 3: ON_2dVector horizontal direction
+  if minor >= 4: bool allow text scaling
+```
+
+Annotation versions before 3 use horizontal direction `(1,0)`. Annotation
+versions before 4 allow text scaling. The text-content body is a UTF-16 rich
+text string, obsolete plane, rectangle width `f64`, rotation `f64`, horizontal
+alignment `i32`, vertical alignment `i32`, obsolete text height `f64`, and
+wrap `bool`, in that order.
+
+Linear family fields are definition point and dimension-line point as two
+`ON_2dPoint` values. Annotation types 1 and 5 select linear dimensions. The
+measurement is `abs(definition_point.x) * distance_scale`.
+
+Angular family fields are two `ON_2dVector` directions, two `f64` extension
+offsets, and an `ON_2dPoint` dimension-line point. Annotation types 2 and 11
+select angular dimensions. The measured sweep is the counterclockwise angle
+between the directions that contains the dimension-line direction.
+
+Radial family fields are radius point and dimension-line point as two
+`ON_2dPoint` values. Annotation type 3 selects diameter and type 4 selects
+radius. The measurement is the radius-point magnitude times distance scale,
+and diameter multiplies that result by two.
+
+All points and distance-valued fields use document length conversion.
+Directions, angles, and distance scale are unscaled. Coordinates, scales, and
+computed measurements are finite; distance scale is positive.
+
 ## 19. Exact gates and invariants
 
 This section collects exact version gates, field widths, and invariants for
