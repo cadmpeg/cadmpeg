@@ -2800,7 +2800,53 @@ pub fn sync_neutral_features(
             });
         }
     }
+    synchronize_feature_content_order(native);
     Ok(())
+}
+
+fn synchronize_feature_content_order(native: &mut crate::native::SldprtNative) {
+    for history in &mut native.feature_histories {
+        let mut children = HashMap::<String, Vec<(u32, String)>>::new();
+        for feature in &history.features {
+            if let Some(parent) = &feature.tree_parent {
+                children
+                    .entry(parent.clone())
+                    .or_default()
+                    .push((feature.ordinal, feature.id.clone()));
+            }
+        }
+        for values in children.values_mut() {
+            values.sort();
+        }
+        for feature in &mut history.features {
+            let Some(children) = children.get(&feature.id) else {
+                feature
+                    .content
+                    .retain(|item| !matches!(item, FeatureContent::Feature(_)));
+                continue;
+            };
+            let mut index = 0;
+            for item in &mut feature.content {
+                if matches!(item, FeatureContent::Feature(_)) {
+                    *item = FeatureContent::Feature(
+                        children
+                            .get(index)
+                            .map_or_else(String::new, |(_, id)| id.clone()),
+                    );
+                    index += 1;
+                }
+            }
+            feature
+                .content
+                .retain(|item| !matches!(item, FeatureContent::Feature(id) if id.is_empty()));
+            feature.content.extend(
+                children
+                    .iter()
+                    .skip(index)
+                    .map(|(_, id)| FeatureContent::Feature(id.clone())),
+            );
+        }
+    }
 }
 
 fn profile_source(

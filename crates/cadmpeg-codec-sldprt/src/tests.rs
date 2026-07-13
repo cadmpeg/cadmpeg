@@ -2274,6 +2274,64 @@ fn semantic_writer_removes_deleted_history_records() {
 }
 
 #[test]
+fn semantic_writer_reorders_nested_history_records() {
+    use crate::records::FeatureContent;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Folder Name="Parent" Type="Folder" id="90">prefix<Item Name="A" Type="Custom" id="91"/>middle<Item Name="B" Type="Custom" id="92"/></Folder></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    for feature in &mut decoded.ir.model.features {
+        match feature.name.as_deref() {
+            Some("A") => feature.ordinal = 2,
+            Some("B") => feature.ordinal = 1,
+            _ => {}
+        }
+    }
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&regenerated.ir);
+    let history = &native.feature_histories[0];
+    let parent = history
+        .features
+        .iter()
+        .find(|feature| feature.name == "Parent")
+        .unwrap();
+    let child_names = parent
+        .content
+        .iter()
+        .filter_map(|item| match item {
+            FeatureContent::Feature(id) => history
+                .features
+                .iter()
+                .find(|feature| &feature.id == id)
+                .map(|feature| feature.name.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(child_names, ["B", "A"]);
+    assert!(matches!(
+        parent.content[0],
+        FeatureContent::Text(ref text) if text == "prefix"
+    ));
+    assert!(matches!(
+        parent.content[2],
+        FeatureContent::Text(ref text) if text == "middle"
+    ));
+}
+
+#[test]
 fn encoder_writes_source_less_datum_features() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::math::{Point3, Vector3};
