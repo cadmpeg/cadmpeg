@@ -309,6 +309,7 @@ fn build_geometry_ir(
     ir.model.pcurves = brep.pcurves;
     crate::history::bind_topology_selections(
         &mut ir.model.features,
+        &histories,
         &ir.model.bodies,
         &ir.model.faces,
         &ir.model.edges,
@@ -1005,6 +1006,11 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
         .retain(|appearance| face_appearances.contains(&appearance.id));
     normalized.model.tessellations.clear();
     normalized.model.attributes.clear();
+    normalized.model.features.clear();
+    normalized.model.parameters.clear();
+    normalized.model.sketches.clear();
+    normalized.model.sketch_entities.clear();
+    normalized.model.sketch_constraints.clear();
     sha256_hex(
         normalized
             .to_canonical_json()

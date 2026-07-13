@@ -444,6 +444,7 @@ pub fn bind_unique_sketch_feature(
 /// Resolve native topology selections against decoded B-rep identities.
 pub fn bind_topology_selections(
     features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[FeatureHistory],
     bodies: &[Body],
     faces: &[Face],
     edges: &[Edge],
@@ -464,6 +465,21 @@ pub fn bind_topology_selections(
             .map(|edge| (edge.id.0.as_str(), None, edge.id.clone())),
     );
     for feature in features {
+        if let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| {
+                histories
+                    .iter()
+                    .flat_map(|history| &history.features)
+                    .find(|record| record.id == native_ref)
+            })
+            .and_then(|record| record.properties.get("Scope"))
+        {
+            if let Some(outputs) = resolve_ids(scope, &body_ids) {
+                feature.outputs = outputs;
+            }
+        }
         match &mut feature.definition {
             FeatureDefinition::Extrude {
                 extent: Extent::ToFace { face },
@@ -1607,7 +1623,7 @@ pub fn prepare_features_for_write(
         (None, None) => false,
     };
     if baseline_neutral.is_none() && baseline_native.is_none() {
-        return sync_neutral_features(&ir.model.features, native);
+        return sync_neutral_features(&ir.model.features, &ir.model.bodies, native);
     }
     match (neutral_changed, native_changed) {
         (false, _) => Ok(()),
@@ -1624,7 +1640,7 @@ pub fn prepare_features_for_write(
                 ))
             }
         }
-        (true, false) => sync_neutral_features(&ir.model.features, native),
+        (true, false) => sync_neutral_features(&ir.model.features, &ir.model.bodies, native),
     }
 }
 
@@ -1923,6 +1939,7 @@ fn sync_neutral_configurations(
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
 pub fn sync_neutral_features(
     features: &[cadmpeg_ir::features::Feature],
+    bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
     if features.is_empty() {
@@ -2026,6 +2043,10 @@ pub fn sync_neutral_features(
             _ => None,
         })
         .collect::<HashMap<_, _>>();
+    let body_sources = bodies
+        .iter()
+        .map(|body| (body.id.clone(), body.id.0.clone()))
+        .collect::<HashMap<_, _>>();
 
     for feature in features {
         let mut existing = native
@@ -2033,7 +2054,7 @@ pub fn sync_neutral_features(
             .iter_mut()
             .flat_map(|history| &mut history.features)
             .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
-        let (kind, parameters, properties) = match &feature.definition {
+        let (kind, parameters, mut properties) = match &feature.definition {
             FeatureDefinition::Native {
                 kind,
                 parameters,
@@ -3306,6 +3327,24 @@ pub fn sync_neutral_features(
                 )))
             }
         };
+        if feature.outputs.is_empty() {
+            if existing.is_none() {
+                properties.remove("Scope");
+            }
+        } else {
+            let scope = feature
+                .outputs
+                .iter()
+                .map(|body| body_sources.get(body).cloned())
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} references a missing output body",
+                        feature.id
+                    ))
+                })?;
+            properties.insert("Scope".into(), scope.join(","));
+        }
         let ordinal = u32::try_from(feature.ordinal)
             .map_err(|_| CodecError::Malformed("feature ordinal exceeds u32".into()))?;
         let parent_source_id = feature

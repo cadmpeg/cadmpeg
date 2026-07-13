@@ -5501,6 +5501,71 @@ fn decode_resolves_feature_topology_selections() {
 }
 
 #[test]
+fn semantic_writer_round_trips_feature_output_scope() {
+    let mut body = Vec::new();
+    body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 501, 0x0017, &[701, 0, 0, 0, 0, 0]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    body.extend(owned_triangle(200, 701, 10.0));
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(base.ir.model.bodies.len(), 2);
+    let scope = base.ir.model.bodies[0].id.0.clone();
+    let mut source = sldprt_with_body(&body);
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        format!(
+            r#"<Keywords><Feature Name="Scoped" Type="Custom" id="1" Scope="{scope}"/></Keywords>"#
+        )
+        .as_bytes(),
+    ));
+    let source_partition = container::scan_bytes(&source)
+        .blocks
+        .iter()
+        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .unwrap()
+        .payload
+        .clone();
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        decoded.ir.model.features[0].outputs,
+        vec![decoded.ir.model.bodies[0].id.clone()]
+    );
+    decoded.ir.model.features[0].outputs = vec![decoded.ir.model.bodies[1].id.clone()];
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let written_partition = container::scan_bytes(&encoded)
+        .blocks
+        .iter()
+        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .unwrap()
+        .payload
+        .clone();
+    assert_eq!(written_partition, source_partition);
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        sldprt_native(&regenerated.ir).feature_histories[0].features[0].properties["Scope"],
+        regenerated.ir.model.bodies[1].id.0
+    );
+    assert_eq!(
+        regenerated.ir.model.features[0].outputs,
+        vec![regenerated.ir.model.bodies[1].id.clone()]
+    );
+}
+
+#[test]
 fn decode_projects_generic_extrusion_with_explicit_operation() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length};
 
