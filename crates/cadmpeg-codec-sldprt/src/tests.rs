@@ -1028,6 +1028,10 @@ fn resolved_features_payload(codes: &[u32]) -> Vec<u8> {
 }
 
 fn pmi_semantic_payload() -> Vec<u8> {
+    pmi_semantic_payload_for("D1@Sketch1")
+}
+
+fn pmi_semantic_payload_for(cad_text: &str) -> Vec<u8> {
     fn string(bytes: &mut Vec<u8>, value: &str) {
         assert!(value.len() < 32);
         bytes.push(0xa0 | value.len() as u8);
@@ -1040,7 +1044,7 @@ fn pmi_semantic_payload() -> Vec<u8> {
     string(&mut payload, "annoType");
     payload.push(1);
     string(&mut payload, "cadText");
-    string(&mut payload, "D1@Sketch1");
+    string(&mut payload, cad_text);
     string(&mut payload, "dimItems");
     payload.push(0x91);
     payload.push(0x87);
@@ -14050,6 +14054,53 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert!(!dimension.basic);
     assert!(dimension.inspection);
     assert!(!dimension.reference_only);
+}
+
+#[test]
+fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length, ProfileRef};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss" Type="Localized" id="42"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("moExtrusion_c", "Boss", 42)]),
+    ));
+    source.extend(make_block(
+        0x49,
+        "Contents/PMISemanticDataDB",
+        &pmi_semantic_payload_for("D1@Boss"),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Native(_),
+            extent: Extent::Blind {
+                length: Length(25.0)
+            },
+            op: BooleanOp::Unresolved,
+            ..
+        }
+    ));
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner == decoded.ir.model.features[0].id)
+        .expect("PMI extrusion parameter");
+    assert_eq!(parameter.name, "D1");
+    assert_eq!(parameter.expression, "25mm");
+    assert!(parameter.pmi.is_some());
 }
 
 #[test]

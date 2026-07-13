@@ -9,6 +9,54 @@ use cadmpeg_ir::Exactness;
 use crate::container::ContainerScan;
 use crate::records::PmiDimension;
 
+/// Add uniquely owner-qualified PMI dimensions to a projection copy of history.
+pub(crate) fn enrich_history_parameters(
+    histories: &mut [crate::records::FeatureHistory],
+    records: &[PmiDimension],
+) {
+    let mut owners = BTreeMap::<&str, Vec<(usize, usize)>>::new();
+    for (history_index, history) in histories.iter().enumerate() {
+        for (feature_index, feature) in history.features.iter().enumerate() {
+            owners
+                .entry(feature.name.as_str())
+                .or_default()
+                .push((history_index, feature_index));
+        }
+    }
+    let mut candidates = BTreeMap::<(usize, usize, String), Vec<String>>::new();
+    for record in records {
+        let Some((name, owner_name)) = record.cad_text.split_once('@') else {
+            continue;
+        };
+        let Some([(history_index, feature_index)]) = owners.get(owner_name).map(Vec::as_slice)
+        else {
+            continue;
+        };
+        let millimetres = record.value * 1000.0;
+        let expression = match record.subtype.as_str() {
+            "Linear" => format!("{millimetres}mm"),
+            "Diameter" => format!("<MOD-DIAM>{millimetres}mm"),
+            "Radial" => format!("R{millimetres}mm"),
+            _ => continue,
+        };
+        candidates
+            .entry((*history_index, *feature_index, name.to_string()))
+            .or_default()
+            .push(expression);
+    }
+    for ((history_index, feature_index, name), mut expressions) in candidates {
+        expressions.sort();
+        expressions.dedup();
+        let [expression] = expressions.as_slice() else {
+            continue;
+        };
+        histories[history_index].features[feature_index]
+            .parameters
+            .entry(name)
+            .or_insert_with(|| expression.clone());
+    }
+}
+
 pub(crate) fn patch_payload(
     ir: &cadmpeg_ir::CadIr,
     block_id: &str,

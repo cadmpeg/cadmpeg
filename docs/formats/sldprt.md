@@ -121,6 +121,8 @@ Dimensionless, attribute-free `Feature` history records use reserved source IDs 
 
 `moFixedRefPlnData_c` stores a constructed reference-plane frame. The record body begins with eight zero bytes. Three f64 values at body offsets `+8`, `+16`, and `+24` store origin `(y,z,x)` in metres. The normal is `(0, f64@+32, f64@+40)`. Byte `+48` is `1`. The in-plane u-axis is `(f64@+73, f64@+81, f64@+89)`. Both vectors are unit length and mutually orthogonal. The frame belongs to the immediately preceding feature object and precedes the next feature object.
 
+Each `PMISemanticDataDB` dimension uses `cadText` value `<dimension-name>@<feature-name>` to identify its owning history parameter. The binding is valid when the feature name is unique and all records for the same owner and dimension name encode the same value. `Linear`, `Diameter`, and `Radial` values are f64 metres. These values supply history dimensions when the Keywords record omits them; an explicit Keywords dimension has precedence.
+
 ---
 
 ## 3. Parasolid stream

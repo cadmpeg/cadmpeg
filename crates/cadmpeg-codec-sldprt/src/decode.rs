@@ -285,7 +285,7 @@ fn build_geometry_ir(
     crate::resolved_features::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut ir.annotations);
-    project_design_history(&mut ir, &histories, &lanes);
+    project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions);
     crate::resolved_features::bind_extrusion_operations(&mut ir.model.features, &histories, &lanes);
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
@@ -835,7 +835,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         format: "sldprt".to_string(),
         attributes,
     });
-    project_design_history(&mut ir, &histories, &lanes);
+    project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions);
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
@@ -879,10 +879,12 @@ fn project_design_history(
     ir: &mut CadIr,
     histories: &[crate::records::FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
+    pmi_dimensions: &[crate::records::PmiDimension],
 ) {
     let mut projection = histories.to_vec();
     crate::resolved_features::enrich_history_parameters(&mut projection, lanes);
     crate::resolved_features::enrich_history_reference_planes(&mut projection, lanes);
+    crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
     ir.model.features = crate::history::project_features(&projection);
     ir.model.configurations = crate::history::project_configurations(&projection);
     ir.model.parameters = crate::history::project_parameters(&projection);
