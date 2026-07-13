@@ -432,7 +432,7 @@ A compact deltas tombstone is `type:u16 BE, xmt:u16 BE, 00 01`. Outside the auth
 
 ### 9.1 `EXTREFSTREAM`
 
-An `EXTREFSTREAM` record region begins with `0x00`, followed by little-endian `(record_id, record_offset)` pairs terminated by `record_id == 0`. Each record at `record_offset` begins `01 00 00 00`, then `n:u16 BE`, `01`, four `u32 LE` ID slots, `01`, and a count-delimited persistent-handle set. The set contains `count - 1` ascending `e0 + handle:u32` entries, repeats the final handle, and ends with a closing byte equal to `count`. Locate the trailing string table by parsing `01 + count:u32 LE + count × (len:u16 LE + ASCII)` to the stream end; the nominal `16 + payload_size` boundary can fall inside a string record.
+An `EXTREFSTREAM` record region begins with `0x00`, followed by little-endian `(record_id, record_offset)` pairs terminated by `record_id == 0`. Each record at `record_offset` begins `01 00 00 00`, then `n:u16 BE`, `01`, four `u32 LE` ID slots, `01`, and a count-delimited persistent-handle set. The set contains `count - 1` ascending `e0 + handle:u32` entries, repeats the final handle, and ends with a closing byte equal to `count`. The trailing string table is `01 + count:u32 LE + count × (len:u16 LE + nonempty printable ASCII)`. The final string ends at the stream boundary. The nominal `16 + payload_size` boundary can fall inside a string record. Each string transfers with its table ordinal and absolute byte offset.
 
 ### 9.2 Stream and deltas framing
 

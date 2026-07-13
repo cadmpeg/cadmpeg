@@ -90,11 +90,19 @@ impl Container {
 
     /// Extract child-part paths from catalogued external-reference payloads.
     pub fn external_reference_paths(&self) -> Vec<String> {
+        self.external_reference_strings()
+            .into_iter()
+            .map(|(_, _, path)| path)
+            .collect()
+    }
+
+    /// Extract child-part strings with their owning entry and payload offset.
+    pub(crate) fn external_reference_strings(&self) -> Vec<(&DirEntry, usize, String)> {
         self.entries
             .iter()
             .filter(|entry| entry.name.contains("ExternalReferences"))
-            .filter_map(|entry| entry.file_span)
-            .flat_map(|(offset, size)| {
+            .filter_map(|entry| entry.file_span.map(|span| (entry, span)))
+            .flat_map(|(entry, (offset, size))| {
                 let Ok(offset) = usize::try_from(offset) else {
                     return Vec::new();
                 };
@@ -103,7 +111,13 @@ impl Container {
                 };
                 self.data
                     .get(offset..offset.saturating_add(size))
-                    .map(parse_extref_paths)
+                    .and_then(parse_extref_string_table)
+                    .map(|(_, strings)| {
+                        strings
+                            .into_iter()
+                            .map(|(relative, value)| (entry, relative, value))
+                            .collect()
+                    })
                     .unwrap_or_default()
             })
             .collect()
@@ -164,34 +178,30 @@ fn find(bytes: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-fn parse_extref_paths(payload: &[u8]) -> Vec<String> {
-    let Some(marker) = (0..payload.len().saturating_sub(4))
+pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(usize, String)>)> {
+    (0..payload.len().saturating_sub(4))
         .rev()
-        .find(|&offset| payload[offset] == 1 && u32_le(payload, offset + 1).is_some())
-    else {
-        return Vec::new();
-    };
-    let Some(count) = u32_le(payload, marker + 1).map(|value| value as usize) else {
-        return Vec::new();
-    };
-    let mut pos = marker + 5;
-    let mut out = Vec::with_capacity(count);
-    for _ in 0..count {
-        let Some(raw_length) = payload.get(pos..pos + 2) else {
-            return Vec::new();
-        };
-        let length = usize::from(u16::from_le_bytes([raw_length[0], raw_length[1]]));
-        pos += 2;
-        let Some(raw) = payload.get(pos..pos + length) else {
-            return Vec::new();
-        };
-        let Ok(path) = std::str::from_utf8(raw) else {
-            return Vec::new();
-        };
-        out.push(path.to_string());
-        pos += length;
-    }
-    out
+        .find_map(|marker| {
+            (payload[marker] == 1).then_some(())?;
+            let count = u32_le(payload, marker + 1)? as usize;
+            let mut pos = marker + 5;
+            let mut out = Vec::with_capacity(count);
+            for _ in 0..count {
+                let raw_length = payload.get(pos..pos + 2)?;
+                let length = usize::from(u16::from_le_bytes([raw_length[0], raw_length[1]]));
+                let string_offset = pos + 2;
+                pos = string_offset.checked_add(length)?;
+                let raw = payload.get(string_offset..pos)?;
+                let value = std::str::from_utf8(raw).ok()?;
+                (!value.is_empty()
+                    && value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_graphic() || byte == b' '))
+                .then_some(())?;
+                out.push((string_offset, value.to_string()));
+            }
+            (pos == payload.len()).then_some((marker, out))
+        })
 }
 
 /// A parsed SPLMSSTR container and its directory entries.

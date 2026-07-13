@@ -224,6 +224,43 @@ pub struct Configuration {
     pub source_offset: u64,
 }
 
+/// End-anchored child-part string from an NX external-reference stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalReference {
+    /// Globally unique native-record identity.
+    pub id: String,
+    /// Zero-based string-table ordinal within the stream.
+    pub ordinal: u32,
+    /// Exact serialized child-part name or path.
+    pub path: String,
+    /// Directory entry containing the external-reference stream.
+    pub source_entry: String,
+    /// Absolute file offset of the first path byte.
+    pub source_offset: u64,
+}
+
+/// Decode end-anchored external child-part string tables.
+pub fn external_references(container: &Container) -> Vec<ExternalReference> {
+    let mut ordinals = BTreeMap::<String, u32>::new();
+    container
+        .external_reference_strings()
+        .into_iter()
+        .map(|(entry, relative, path)| {
+            let ordinal = ordinals.entry(entry.name.clone()).or_default();
+            let current = *ordinal;
+            *ordinal += 1;
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            ExternalReference {
+                id: format!("nx:external-reference:{}#{current}", entry.name),
+                ordinal: current,
+                path,
+                source_entry: entry.name.clone(),
+                source_offset: entry_offset + relative as u64,
+            }
+        })
+        .collect()
+}
+
 /// Decode the explicit NX arrangement table.
 pub fn configurations(container: &Container) -> Vec<Configuration> {
     container

@@ -2388,6 +2388,7 @@ fn attach_native_object_model(
     let object_references = crate::native::object_references(&scan.container);
     let persistent_handles = crate::native::persistent_handles(&object_references);
     let configurations = crate::native::configurations(&scan.container);
+    let external_references = crate::native::external_references(&scan.container);
     let object_sections = scan.container.indexed_om_sections();
     if expressions.is_empty()
         && classes.is_empty()
@@ -2397,11 +2398,18 @@ fn attach_native_object_model(
         && object_references.is_empty()
         && persistent_handles.is_empty()
         && configurations.is_empty()
+        && external_references.is_empty()
         && object_sections.is_empty()
     {
         return Ok(());
     }
     let annotation_stream = annotations.stream("nx:container");
+    for reference in &external_references {
+        annotations
+            .note(&reference.id, annotation_stream, reference.source_offset)
+            .tag("EXTREFSTREAM_STRING");
+        annotations.exactness(&reference.id, Exactness::ByteExact);
+    }
     let mut unknowns = ir.native_unknowns("nx")?;
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
@@ -2475,6 +2483,9 @@ fn attach_native_object_model(
     }
     if !configurations.is_empty() {
         namespace.set_arena("configurations", &configurations)?;
+    }
+    if !external_references.is_empty() {
+        namespace.set_arena("external_references", &external_references)?;
     }
     Ok(())
 }

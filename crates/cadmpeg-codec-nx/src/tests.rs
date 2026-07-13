@@ -4286,6 +4286,36 @@ fn assembly_metadata_lists_external_child_paths() {
         attrs.get("external_reference.1").map(String::as_str),
         Some("nested/b.prt")
     );
+    let references = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX native namespace")
+        .arena_as::<crate::native::ExternalReference>("external_references")
+        .expect("typed external references");
+    assert_eq!(references.len(), 2);
+    assert_eq!(references[0].ordinal, 0);
+    assert_eq!(references[0].path, "child.prt");
+    assert_eq!(references[1].ordinal, 1);
+    assert_eq!(references[1].path, "nested/b.prt");
+    assert!(references[0].source_offset < references[1].source_offset);
+}
+
+#[test]
+fn external_reference_string_table_is_end_anchored() {
+    let table = b"prefix\x01\x02\x00\x00\x00\x09\x00child.prt\x0c\x00nested/b.prt";
+    let (_, strings) = crate::container::parse_extref_string_table(table).expect("string table");
+    assert_eq!(
+        strings
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>(),
+        ["child.prt", "nested/b.prt"]
+    );
+
+    let mut trailed = table.to_vec();
+    trailed.push(0);
+    assert!(crate::container::parse_extref_string_table(&trailed).is_none());
 }
 
 #[test]
