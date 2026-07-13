@@ -39,7 +39,8 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | SolidWorks `.sldprt`                       | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
 | Rhino `.3dm` (archive 50/60/70/80)         | **L3 tested**  | SubD control cages, display meshes, native extrusion and instance constructions                       |
 | CATIA V5 `.CATPart` (standard-nested band) | **L2 claimed** | conditionally connected B-rep                                                                         |
-| Siemens NX `.prt`                          | **L2 claimed** | conditional connected B-rep, external-dependency inspection                                           |
+| Siemens NX `.prt` (single active body image) | **L3 claimed** | external-dependency inspection, numeric expressions, named arrangements                             |
+| Siemens NX `.prt` (multi-partition body history) | **L2 claimed** | connected sub-body B-reps, external-dependency inspection                                      |
 | CATIA V5 `.CATPart` (other layout bands)   | **L1 claimed** |                                                                                                       |
 | Creo Parametric `.prt`                     | **L1 claimed** | derived datum planes, prototype geometry census                                                       |
 | Rhino `.3dm` (V3/V4)                       | **L1 tested**  | metadata and bounded object-record retention                                                          |
@@ -65,7 +66,7 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 - **SolidWorks `.sldprt` (L4 tested):** connected model reads, typed design records, native writes, and round trips.
 - **Rhino `.3dm` (L3 tested for archive 50/60/70/80):** curves, surfaces, meshes, connected B-rep, SubD, extrusions, and expanded instances. V3/V4 score L1; V1/V2 and archive 5 score L0. Read only.
 - **CATIA V5 `.CATPart` (L2 claimed for the standard-nested band):** exact carriers and conditionally connected topology. Other layout bands score L1. Read only.
-- **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.
+- **Siemens NX `.prt` (L3 claimed for the single active body-image band; L2 claimed for multi-partition body history):** exact carriers and connected topology. Read only.
 - **Creo Parametric `.prt` (L1 claimed):** container navigation, derived datum planes, and prototype geometry inspection. Read only.
 - **STEP AP214 (translation):** partial B-rep export with explicit loss reporting.
 
@@ -148,13 +149,13 @@ See [`formats/f3d.md`](formats/f3d.md) and [`formats/f3d-open-items.md`](formats
 
 **Kernel:** Parasolid in an SPLMSSTR container
 
-**Ladder: L2 claimed.** L3 requires complete incidence and final body composition across the band.
+**Ladder: L3 claimed for the single active body-image band; L2 claimed for multi-partition body history.** L4 requires ordered feature and sketch records with dependencies. Multi-partition history requires final body composition to reach L3.
 
 ### Read profile
 
 - **Container and versions: Partial.** The codec decodes the SPLMSSTR directory, extracts and classifies embedded Parasolid partition, deltas, and related streams, and retains primary and fixed-ID NX object-model entities at their external index boundaries.
 - **Geometry: Partial.** Points, analytic surfaces and curves, typed B-spline surfaces and curves, and supported type-133 trimmed curves transfer into IR.
-- **Topology: Partial.** The body, shell, face, loop, fin, edge, and vertex graph attaches when framing and references resolve. Non-null shell BODY and REGION references supply ownership identity when either record is omitted; shell layouts use either a FACE chain or a face anchor with FACE back-references. Solid and sheet kinds derive from edge incidence. Inline Parasolid coordinates are in part-model space and bodies have identity placement. A validated partition shell defines the current topology image; paired deltas topology records remain revision history. Supported non-topology replacements and tombstones use the last event for each exact key. Final feature-history Boolean composition remains unresolved.
+- **Topology: Partial.** The single active body-image band emits a connected body, shell, face, loop, fin, edge, and vertex graph with ownership, orientation, trimming, and incidence. Non-null shell BODY and REGION references supply ownership identity when either record is omitted; shell layouts use either a FACE chain or a face anchor with FACE back-references. Solid and sheet kinds derive from edge incidence. Inline Parasolid coordinates are in part-model space and bodies have identity placement. A validated partition shell defines the current topology image; paired deltas topology records remain revision history. Supported non-topology replacements and tombstones use the last event for each exact key. RMFastLoad object membership selects a dominant active body image. Feature-history Boolean composition remains unresolved when no dominant image exists across multiple partitions.
 - **Tessellation: None.**
 - **Design intent: Partial.** Typed numeric expressions retain object identity, name, declared millimeter or degree unit, and value. Named arrangements retain ordered configuration names and default state. Feature, sketch, constraint, and history operation semantics remain open.
 - **Product structure: Inspect.** The codec reports external part dependencies. Assembly graph instances, placements, and constraints remain open.

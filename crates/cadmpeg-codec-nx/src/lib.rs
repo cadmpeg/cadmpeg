@@ -6,7 +6,8 @@
 //! supported geometry and topology. Detection uses file content because NX and
 //! Creo share the `.prt` extension.
 //!
-//! Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! Support level: [L3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! for the single active body-image band and L2 for multi-partition body history
 //! on the cadmpeg support ladder.
 //!
 //! # Decode a part
