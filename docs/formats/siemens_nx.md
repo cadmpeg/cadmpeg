@@ -159,7 +159,7 @@ node_id:u32 BE                   0-based delta-stream ordinal
 <type signature fields>          reference slot = encoded_xmt + status:u8
 ```
 
-The status byte is `0x01` and frames each reference. The record form carries the merge operation.
+FIN omits `node_id` and begins its nine signature references immediately after `xmt`. The status byte is `0x01` and frames each reference. The record form carries the merge operation.
 
 **Tombstone:** a compact 6-byte deletion `type:u16 BE  xmt:u16  00 01`. A whole-record tombstone has this complete form. In a full record, `xmt 01` is a reference and status byte. Tombstone xmts are plain high-range `u16` values (48300+).
 

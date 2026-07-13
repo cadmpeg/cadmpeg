@@ -13,8 +13,8 @@ pub struct Record {
     pub kind: u16,
     /// Stream-local XMT identifier.
     pub xmt: u32,
-    /// Kernel node identifier.
-    pub node_id: u32,
+    /// Kernel node identifier; FIN records do not carry one.
+    pub node_id: Option<u32>,
     /// Ordered reference fields without their framing status bytes.
     pub references: Vec<u32>,
     /// POINT coordinates in Parasolid metres, when present.
@@ -72,6 +72,7 @@ enum Token {
     Tolerance,
     Sense,
     Position,
+    Vector,
 }
 
 const FACE: &[Token] = &[
@@ -119,6 +120,39 @@ const POINT: &[Token] = &[
 const LOOP: &[Token] = &[Token::Ref; 4];
 const BODY_OR_SHELL: &[Token] = &[Token::Ref; 8];
 const REGION: &[Token] = &[Token::Ref; 4];
+const FIN: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+];
+const LINE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Position,
+    Token::Vector,
+];
+const PLANE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Position,
+    Token::Vector,
+    Token::Vector,
+];
 
 /// Walk all accepted full records and compact tombstones in an inflated
 /// deltas stream.
@@ -165,7 +199,7 @@ pub fn points(stream: &[u8]) -> Vec<Point> {
             let [x, y, z] = record.position?;
             Some(Point {
                 xmt: record.xmt,
-                node_id: record.node_id,
+                node_id: record.node_id?,
                 position: Point3::new(x * 1000.0, y * 1000.0, z * 1000.0),
                 offset: record.offset,
             })
@@ -187,7 +221,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
-        if matches!(kind, 12..=16 | 18 | 19 | 29)
+        if matches!(kind, 12..=19 | 29 | 30 | 50)
             && crate::topology::Graph::parse(&record.canonical_bytes)
                 .get(kind, record.xmt)
                 .is_some()
@@ -249,8 +283,13 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
         return None;
     }
     let mut at = offset + 2 + consumed;
-    let node_id = be::u32_at(stream, at)?;
-    at += 4;
+    let node_id = if kind == 17 {
+        None
+    } else {
+        let node_id = be::u32_at(stream, at)?;
+        at += 4;
+        Some(node_id)
+    };
     let mut canonical_bytes = stream.get(offset..at)?.to_vec();
     let mut references = Vec::new();
     let mut position = None;
@@ -281,6 +320,12 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
                 let xyz = be::vec3_at(stream, at)?;
                 xyz.iter().all(|value| value.is_finite()).then_some(())?;
                 position = Some(xyz);
+                canonical_bytes.extend_from_slice(stream.get(at..at + 24)?);
+                at += 24;
+            }
+            Token::Vector => {
+                let xyz = be::vec3_at(stream, at)?;
+                xyz.iter().all(|value| value.is_finite()).then_some(())?;
                 canonical_bytes.extend_from_slice(stream.get(at..at + 24)?);
                 at += 24;
             }
@@ -326,6 +371,8 @@ fn family_name(kind: u16) -> Option<&'static str> {
         17 => "FIN",
         18 => "VERTEX",
         29 => "POINT",
+        30 => "LINE",
+        50 => "PLANE",
         12 => "BODY",
         13 => "SHELL",
         19 => "REGION",
@@ -339,8 +386,11 @@ fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
         12 | 13 => BODY_OR_SHELL,
         15 => LOOP,
         16 => EDGE,
+        17 => FIN,
         18 => VERTEX,
         29 => POINT,
+        30 => LINE,
+        50 => PLANE,
         19 => REGION,
         _ => return None,
     })

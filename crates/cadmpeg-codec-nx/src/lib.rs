@@ -44,8 +44,8 @@
 //!
 //! Read [`cadmpeg_ir::report::DecodeReport`] before using the model as a complete
 //! representation. Adjacent equal-schema partition and deltas streams apply
-//! supported full records and exact-key tombstones in source order. Full FIN
-//! delta framing and unmatched tombstone relations remain unresolved. Multiple
+//! supported full records and exact-key tombstones in source order. Unmatched
+//! tombstone relations remain unresolved. Multiple
 //! partitions are not combined through NX feature-history Booleans. Assembly
 //! files may contain only references to external child parts.
 //!

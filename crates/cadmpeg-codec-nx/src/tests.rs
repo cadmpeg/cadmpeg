@@ -679,6 +679,53 @@ fn deltas_shell_partition_stream() -> Vec<u8> {
     stream
 }
 
+fn deltas_fin_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&17u16.to_be_bytes());
+    stream.extend_from_slice(&7u16.to_be_bytes());
+    for reference in [1u16, 5, 7, 7, 10, 1, 8, 9, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'-');
+    stream
+}
+
+fn deltas_line_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&30u16.to_be_bytes());
+    stream.extend_from_slice(&9u16.to_be_bytes());
+    stream.extend_from_slice(&906u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    for value in [0.004f64, 0.005, 0.006, 0.0, 1.0, 0.0] {
+        stream.extend_from_slice(&value.to_be_bytes());
+    }
+    stream
+}
+
+fn deltas_plane_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&50u16.to_be_bytes());
+    stream.extend_from_slice(&6u16.to_be_bytes());
+    stream.extend_from_slice(&907u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    for value in [0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0] {
+        stream.extend_from_slice(&value.to_be_bytes());
+    }
+    stream
+}
+
 fn bspline_partition_stream() -> Vec<u8> {
     let mut s = Vec::new();
     s.extend_from_slice(b"PS\x00\x00XX: TRANSMIT FILE (partition)\x00SCH_TEST_1_9999\x00");
@@ -1842,6 +1889,60 @@ fn decode_replaces_partition_shell_from_status_framed_deltas() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir.model.shells.len(), 1);
     assert_eq!(result.ir.model.faces.len(), 1);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_fin_from_status_framed_deltas() {
+    let partition = topology_partition_stream();
+    let deltas = deltas_fin_partition_stream();
+    let file = prt_with_streams(&[&partition, &deltas]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.coedges.len(), 1);
+    assert_eq!(
+        result.ir.model.coedges[0].sense,
+        cadmpeg_ir::topology::Sense::Reversed
+    );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_line_from_status_framed_deltas() {
+    let partition = topology_partition_stream();
+    let deltas = deltas_line_partition_stream();
+    let file = prt_with_streams(&[&partition, &deltas]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let CurveGeometry::Line { origin, direction } = result.ir.model.curves[0].geometry else {
+        panic!("line");
+    };
+    assert_eq!(origin, cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0));
+    assert_eq!(direction, Vector3::new(0.0, 1.0, 0.0));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_plane_from_status_framed_deltas() {
+    let partition = topology_partition_stream();
+    let deltas = deltas_plane_partition_stream();
+    let file = prt_with_streams(&[&partition, &deltas]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(matches!(
+        result.ir.model.surfaces[0].geometry,
+        SurfaceGeometry::Plane { origin, normal, u_axis }
+            if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && normal == Vector3::new(0.0, 1.0, 0.0)
+                && u_axis == Vector3::new(1.0, 0.0, 0.0)
+    ));
+    assert_eq!(
+        result.ir.model.faces[0].surface,
+        result.ir.model.surfaces[0].id
+    );
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
