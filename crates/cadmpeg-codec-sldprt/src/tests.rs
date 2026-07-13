@@ -14286,6 +14286,48 @@ fn native_store_rejects_ambiguous_scalar_marker_target() {
 }
 
 #[test]
+fn decode_and_validate_compact_delete_body_selection() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Body-Delete/Keep 1" Type="Body-Delete/Keep " id="41"/></Keywords>"#,
+    ));
+    let mut payload =
+        resolved_feature_classes_with_ids(&[("moDeleteBody_c", "Body-Delete/Keep 1", 41)]);
+    payload.extend(11000u32.to_le_bytes());
+    payload.extend([0; 8]);
+    payload.extend(2u32.to_le_bytes());
+    payload.extend(287u32.to_le_bytes());
+    payload.extend(115u32.to_le_bytes());
+    payload.extend(u32::MAX.to_le_bytes());
+    payload.extend([0; 12]);
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut native = sldprt_native(&decoded.ir);
+    let [selection] = native.feature_input_lanes[0].body_selections.as_slice() else {
+        panic!("one compact body selection");
+    };
+    assert_eq!(selection.local_body_ids, [287, 115]);
+    assert!(selection.feature_ref.starts_with("sldprt:history:feature#"));
+
+    native.feature_input_lanes[0].body_selections[0].local_body_ids[0] = 288;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&mut namespace).unwrap_err();
+    assert!(
+        error.to_string().contains("body selection")
+            && error.to_string().contains("inconsistent ownership")
+    );
+}
+
+#[test]
 fn decode_extracts_pmi_semantic_dimension() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
