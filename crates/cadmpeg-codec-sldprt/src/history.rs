@@ -127,6 +127,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                             .attribute("Type")
                             .unwrap_or_else(|| node.tag_name().name())
                             .into(),
+                        input_class: None,
                         suppressed: node
                             .attribute("Suppressed")
                             .is_some_and(|value| matches!(value, "1" | "true" | "True")),
@@ -1216,12 +1217,16 @@ fn feature_family(feature: &Feature, family: &str) -> bool {
     feature.kind.eq_ignore_ascii_case(family) || feature.xml_tag.eq_ignore_ascii_case(family)
 }
 
+fn feature_input_class(feature: &Feature, class: &str) -> bool {
+    feature.input_class.as_deref() == Some(class)
+}
+
 fn is_fillet(feature: &Feature) -> bool {
-    feature_family(feature, "Fillet") || feature_family(feature, "Redondeo")
+    feature_family(feature, "Fillet") || feature_input_class(feature, "Fillet_c")
 }
 
 fn is_chamfer(feature: &Feature) -> bool {
-    feature_family(feature, "Chamfer") || feature_family(feature, "Chafl\u{00e1}n")
+    feature_family(feature, "Chamfer") || feature_input_class(feature, "Chamfer_c")
 }
 
 fn is_extrude(feature: &Feature) -> bool {
@@ -1262,7 +1267,7 @@ fn is_loft(feature: &Feature) -> bool {
 fn is_sweep(feature: &Feature) -> bool {
     feature_family(feature, "Sweep")
         || feature_family(feature, "Surface-Sweep")
-        || feature_family(feature, "Barrer")
+        || feature_input_class(feature, "moSweep_c")
 }
 
 fn is_helix(feature: &Feature) -> bool {
@@ -1830,12 +1835,18 @@ enum PatternForm {
 
 fn pattern_form(feature: &Feature) -> Option<PatternForm> {
     let parse = |form: &str| match form.to_ascii_lowercase().as_str() {
-        "linear" | "linearpattern" | "matrizl" => Some(PatternForm::Linear),
+        "linear" | "linearpattern" => Some(PatternForm::Linear),
         "circular" | "circularpattern" => Some(PatternForm::Circular),
         "crvpattern" | "curvepattern" | "curvedrivenpattern" => Some(PatternForm::CurveDriven),
         "mirror" => Some(PatternForm::Mirror),
         _ => None,
     };
+    if feature_input_class(feature, "moLPattern_c") {
+        return Some(PatternForm::Linear);
+    }
+    if feature_input_class(feature, "moCurvePattern_c") {
+        return Some(PatternForm::CurveDriven);
+    }
     if let Some(form) = parse(&feature.kind) {
         return Some(form);
     }
@@ -6263,6 +6274,7 @@ pub fn sync_neutral_features(
                 ordinal,
                 name: feature.name.clone().unwrap_or_default(),
                 kind,
+                input_class: None,
                 suppressed: feature.suppressed,
                 parameters,
                 dimension_properties: BTreeMap::new(),

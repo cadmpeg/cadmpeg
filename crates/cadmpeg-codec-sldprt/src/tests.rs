@@ -976,6 +976,20 @@ fn resolved_features_payload_with_names(codes: &[u32], names: &[&str]) -> Vec<u8
     resolved_features_payload_with_names_and_relation(codes, names, "sgPntPntDist")
 }
 
+fn resolved_feature_classes(entries: &[(&str, &str)]) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for (class, name) in entries {
+        payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
+        payload.extend_from_slice(&(class.len() as u16).to_le_bytes());
+        payload.extend_from_slice(class.as_bytes());
+        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
+        for unit in name.encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+    payload
+}
+
 fn resolved_features_payload_with_names_and_relation(
     codes: &[u32],
     names: &[&str],
@@ -7345,6 +7359,11 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
     );
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes(&[("Fillet_c", "Round"), ("Chamfer_c", "Bevel")]),
+    ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -10538,6 +10557,11 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="MatrizL1" Type="MatrizL" id="132"><Dimension Name="D1">15</Dimension><Dimension Name="D3">2.54</Dimension></Feature></Keywords>"#,
     ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes(&[("moLPattern_c", "MatrizL1")]),
+    ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -10580,6 +10604,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
         .unwrap();
     let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
     assert_eq!(native.kind, "MatrizL");
+    assert_eq!(native.input_class.as_deref(), Some("moLPattern_c"));
     assert_eq!(native.parameters["D1"], "12");
     assert_eq!(native.parameters["D3"], "3.5");
     assert!(!native.parameters.contains_key("Count"));

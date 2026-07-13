@@ -104,6 +104,9 @@ pub struct Feature {
     pub name: String,
     /// Native feature-type tag (e.g. `"Extrude"`, `"Fillet"`).
     pub kind: String,
+    /// Serialized feature-input object class owning this feature, when resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_class: Option<String>,
     /// Whether this feature is suppressed and excluded from regeneration.
     #[serde(default)]
     pub suppressed: bool,

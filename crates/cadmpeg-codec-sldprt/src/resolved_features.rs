@@ -331,9 +331,9 @@ pub(crate) fn bind_scalar_operands(
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
 ) {
-    let mut feature_name_counts = HashMap::<&str, usize>::new();
+    let mut feature_name_counts = HashMap::<String, usize>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
-        *feature_name_counts.entry(&feature.name).or_default() += 1;
+        *feature_name_counts.entry(feature.name.clone()).or_default() += 1;
     }
     for lane in lanes {
         let mut starts = histories
@@ -580,9 +580,9 @@ pub(crate) fn enrich_history_parameters(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    let mut feature_name_counts = HashMap::<&str, usize>::new();
+    let mut feature_name_counts = HashMap::<String, usize>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
-        *feature_name_counts.entry(&feature.name).or_default() += 1;
+        *feature_name_counts.entry(feature.name.clone()).or_default() += 1;
     }
 
     let mut candidates = BTreeMap::<(usize, usize, String), Vec<f64>>::new();
@@ -653,6 +653,54 @@ pub(crate) fn enrich_history_parameters(
         let feature = &mut histories[history_index].features[feature_index];
         let expression = crate::history::format_native_scalar(feature, &name, first);
         feature.parameters.entry(name).or_insert(expression);
+    }
+}
+
+/// Bind Keywords history records to their serialized feature-input object classes.
+pub(crate) fn bind_history_classes(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let mut feature_name_counts = HashMap::<String, usize>::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        *feature_name_counts.entry(feature.name.clone()).or_default() += 1;
+    }
+
+    let mut classes_by_name = HashMap::<&str, Vec<&str>>::new();
+    for lane in lanes {
+        let names_by_offset = lane
+            .names
+            .iter()
+            .map(|name| (name.offset, name))
+            .collect::<HashMap<_, _>>();
+        for class in &lane.classes {
+            let name_offset = class.offset + 6 + class.name.len() as u64;
+            let Some(name) = names_by_offset.get(&name_offset) else {
+                continue;
+            };
+            classes_by_name
+                .entry(&name.value)
+                .or_default()
+                .push(&class.name);
+        }
+    }
+
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        if feature_name_counts.get(feature.name.as_str()) != Some(&1) {
+            continue;
+        }
+        let Some(classes) = classes_by_name.get(feature.name.as_str()) else {
+            continue;
+        };
+        let Some((&first, rest)) = classes.split_first() else {
+            continue;
+        };
+        if rest.iter().all(|class| *class == first) {
+            feature.input_class = Some(first.to_string());
+        }
     }
 }
 
