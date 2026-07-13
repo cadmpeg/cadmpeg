@@ -59,43 +59,44 @@ const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
     check_representable(ir)?;
-    if let Some(payload) = planar_sheet_brep_payload(ir)? {
-        let body = ir
-            .model
-            .bodies
-            .first()
-            .expect("a writable sheet Brep has one body");
-        return write_archive(
-            ir,
-            version,
-            &[attributed_object_record(
+    let breps = brep_scopes(ir)?;
+    let mut objects = breps
+        .iter()
+        .map(|scope| {
+            let payload = planar_sheet_brep_payload(&scope.ir)?
+                .expect("a Brep scope contains one shape body");
+            attributed_object_record(
                 0x10,
                 BREP_CLASS,
                 &payload,
-                &body.id.0,
-                body.name.as_deref(),
-                body.color,
-                body.visible,
-            )?],
-            output,
-        );
-    }
-    let (topology_points, point_groups) = free_vertex_groups(ir)?;
-
-    let mut objects = ir
-        .model
-        .points
-        .iter()
-        .filter(|point| !topology_points.contains(&point.id.0))
-        .map(|point| {
-            let position = point.position;
-            let mut payload = vec![0x10];
-            payload.extend(position.x.to_le_bytes());
-            payload.extend(position.y.to_le_bytes());
-            payload.extend(position.z.to_le_bytes());
-            object_record(1, POINT_CLASS, &payload)
+                &scope.body.id.0,
+                scope.body.name.as_deref(),
+                scope.body.color,
+                scope.body.visible,
+            )
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
+    let general = general_topology_ir(ir);
+    let (mut topology_points, point_groups) = free_vertex_groups(&general)?;
+    for scope in &breps {
+        topology_points.extend(scope.points.iter().cloned());
+    }
+
+    objects.extend(
+        ir.model
+            .points
+            .iter()
+            .filter(|point| !topology_points.contains(&point.id.0))
+            .map(|point| {
+                let position = point.position;
+                let mut payload = vec![0x10];
+                payload.extend(position.x.to_le_bytes());
+                payload.extend(position.y.to_le_bytes());
+                payload.extend(position.z.to_le_bytes());
+                object_record(1, POINT_CLASS, &payload)
+            })
+            .collect::<Vec<_>>(),
+    );
     for group in point_groups {
         if group.points.len() == 1 {
             let point = group.points[0];
@@ -125,6 +126,9 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
         }
     }
     for curve in &ir.model.curves {
+        if breps.iter().any(|scope| scope.curves.contains(&curve.id.0)) {
+            continue;
+        }
         let (class, payload) = match &curve.geometry {
             CurveGeometry::Circle {
                 center,
@@ -141,6 +145,12 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
         objects.push(object_record(4, class, &payload));
     }
     for surface in &ir.model.surfaces {
+        if breps
+            .iter()
+            .any(|scope| scope.surfaces.contains(&surface.id.0))
+        {
+            continue;
+        }
         let (class, payload) = match &surface.geometry {
             SurfaceGeometry::Plane {
                 origin,
@@ -192,6 +202,232 @@ fn write_archive(
     Ok(())
 }
 
+struct BrepScope {
+    ir: CadIr,
+    body: cadmpeg_ir::topology::Body,
+    points: std::collections::BTreeSet<String>,
+    surfaces: std::collections::BTreeSet<String>,
+    curves: std::collections::BTreeSet<String>,
+    pcurves: std::collections::BTreeSet<String>,
+}
+
+fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
+    use cadmpeg_ir::topology::BodyKind;
+    use std::collections::BTreeSet;
+
+    let model = &ir.model;
+    let mut scopes = Vec::new();
+    let mut all_regions = BTreeSet::new();
+    let mut all_shells = BTreeSet::new();
+    let mut all_faces = BTreeSet::new();
+    let mut all_loops = BTreeSet::new();
+    let mut all_coedges = BTreeSet::new();
+    let mut all_edges = BTreeSet::new();
+    let mut all_vertices = BTreeSet::new();
+    let mut all_points = BTreeSet::new();
+    let mut all_surfaces = BTreeSet::new();
+    let mut all_curves = BTreeSet::new();
+    let mut all_pcurves = BTreeSet::new();
+
+    for body in model
+        .bodies
+        .iter()
+        .filter(|body| matches!(body.kind, BodyKind::Sheet | BodyKind::Solid))
+    {
+        let regions = body
+            .regions
+            .iter()
+            .map(|id| id.0.clone())
+            .collect::<BTreeSet<_>>();
+        let shells = model
+            .regions
+            .iter()
+            .filter(|region| regions.contains(&region.id.0))
+            .flat_map(|region| region.shells.iter().map(|id| id.0.clone()))
+            .collect::<BTreeSet<_>>();
+        let faces = model
+            .shells
+            .iter()
+            .filter(|shell| shells.contains(&shell.id.0))
+            .flat_map(|shell| shell.faces.iter().map(|id| id.0.clone()))
+            .collect::<BTreeSet<_>>();
+        let surfaces = model
+            .faces
+            .iter()
+            .filter(|face| faces.contains(&face.id.0))
+            .map(|face| face.surface.0.clone())
+            .collect::<BTreeSet<_>>();
+        let loops = model
+            .faces
+            .iter()
+            .filter(|face| faces.contains(&face.id.0))
+            .flat_map(|face| face.loops.iter().map(|id| id.0.clone()))
+            .collect::<BTreeSet<_>>();
+        let coedges = model
+            .loops
+            .iter()
+            .filter(|loop_| loops.contains(&loop_.id.0))
+            .flat_map(|loop_| loop_.coedges.iter().map(|id| id.0.clone()))
+            .collect::<BTreeSet<_>>();
+        let edges = model
+            .coedges
+            .iter()
+            .filter(|coedge| coedges.contains(&coedge.id.0))
+            .map(|coedge| coedge.edge.0.clone())
+            .collect::<BTreeSet<_>>();
+        let pcurves = model
+            .coedges
+            .iter()
+            .filter(|coedge| coedges.contains(&coedge.id.0))
+            .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.clone()))
+            .collect::<BTreeSet<_>>();
+        let vertices = model
+            .edges
+            .iter()
+            .filter(|edge| edges.contains(&edge.id.0))
+            .flat_map(|edge| [edge.start.0.clone(), edge.end.0.clone()])
+            .collect::<BTreeSet<_>>();
+        let curves = model
+            .edges
+            .iter()
+            .filter(|edge| edges.contains(&edge.id.0))
+            .filter_map(|edge| edge.curve.as_ref().map(|id| id.0.clone()))
+            .collect::<BTreeSet<_>>();
+        let points = model
+            .vertices
+            .iter()
+            .filter(|vertex| vertices.contains(&vertex.id.0))
+            .map(|vertex| vertex.point.0.clone())
+            .collect::<BTreeSet<_>>();
+
+        for (owned, global, kind) in [
+            (&regions, &mut all_regions, "region"),
+            (&shells, &mut all_shells, "shell"),
+            (&faces, &mut all_faces, "face"),
+            (&loops, &mut all_loops, "loop"),
+            (&coedges, &mut all_coedges, "coedge"),
+            (&edges, &mut all_edges, "edge"),
+            (&vertices, &mut all_vertices, "vertex"),
+            (&points, &mut all_points, "point"),
+            (&surfaces, &mut all_surfaces, "surface"),
+            (&curves, &mut all_curves, "curve"),
+            (&pcurves, &mut all_pcurves, "pcurve"),
+        ] {
+            if owned.iter().any(|id| !global.insert(id.clone())) {
+                return Err(CodecError::NotImplemented(format!(
+                    "{kind} carrier is shared by multiple Brep objects"
+                )));
+            }
+        }
+
+        let mut scoped = ir.clone();
+        scoped
+            .model
+            .bodies
+            .retain(|candidate| candidate.id == body.id);
+        scoped
+            .model
+            .regions
+            .retain(|entity| regions.contains(&entity.id.0));
+        scoped
+            .model
+            .shells
+            .retain(|entity| shells.contains(&entity.id.0));
+        scoped
+            .model
+            .faces
+            .retain(|entity| faces.contains(&entity.id.0));
+        scoped
+            .model
+            .loops
+            .retain(|entity| loops.contains(&entity.id.0));
+        scoped
+            .model
+            .coedges
+            .retain(|entity| coedges.contains(&entity.id.0));
+        scoped
+            .model
+            .edges
+            .retain(|entity| edges.contains(&entity.id.0));
+        scoped
+            .model
+            .vertices
+            .retain(|entity| vertices.contains(&entity.id.0));
+        scoped
+            .model
+            .points
+            .retain(|entity| points.contains(&entity.id.0));
+        scoped
+            .model
+            .surfaces
+            .retain(|entity| surfaces.contains(&entity.id.0));
+        scoped
+            .model
+            .curves
+            .retain(|entity| curves.contains(&entity.id.0));
+        scoped
+            .model
+            .pcurves
+            .retain(|entity| pcurves.contains(&entity.id.0));
+        scoped.model.tessellations.clear();
+        scopes.push(BrepScope {
+            ir: scoped,
+            body: body.clone(),
+            points,
+            surfaces,
+            curves,
+            pcurves,
+        });
+    }
+    Ok(scopes)
+}
+
+fn general_topology_ir(ir: &CadIr) -> CadIr {
+    use cadmpeg_ir::topology::BodyKind;
+    use std::collections::BTreeSet;
+
+    let mut scoped = ir.clone();
+    scoped
+        .model
+        .bodies
+        .retain(|body| body.kind == BodyKind::General);
+    let bodies = scoped
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.0.clone())
+        .collect::<BTreeSet<_>>();
+    scoped
+        .model
+        .regions
+        .retain(|region| bodies.contains(&region.body.0));
+    let regions = scoped
+        .model
+        .regions
+        .iter()
+        .map(|region| region.id.0.clone())
+        .collect::<BTreeSet<_>>();
+    scoped
+        .model
+        .shells
+        .retain(|shell| regions.contains(&shell.region.0));
+    let vertices = scoped
+        .model
+        .shells
+        .iter()
+        .flat_map(|shell| shell.free_vertices.iter().map(|id| id.0.clone()))
+        .collect::<BTreeSet<_>>();
+    scoped
+        .model
+        .vertices
+        .retain(|vertex| vertices.contains(&vertex.id.0));
+    scoped.model.faces.clear();
+    scoped.model.loops.clear();
+    scoped.model.coedges.clear();
+    scoped.model.edges.clear();
+    scoped
+}
+
 fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
     if ir.native.namespace("rhino").is_some() {
         return Err(CodecError::NotImplemented(
@@ -234,24 +470,56 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
             "point arena exceeds native counts or contains non-finite coordinates".into(),
         ));
     }
-    if model.bodies.iter().any(|body| {
-        matches!(
-            body.kind,
-            cadmpeg_ir::topology::BodyKind::Sheet | cadmpeg_ir::topology::BodyKind::Solid
-        )
-    }) {
-        planar_sheet_brep_payload(ir)?.ok_or_else(|| {
-            CodecError::NotImplemented("body topology is not a writable planar Brep".into())
+    let breps = brep_scopes(ir)?;
+    for scope in &breps {
+        planar_sheet_brep_payload(&scope.ir)?.ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "body {} topology is not a writable Brep",
+                scope.body.id.0
+            ))
         })?;
-        return Ok(());
     }
-    if !model.pcurves.is_empty() {
+    let used_pcurves = breps
+        .iter()
+        .flat_map(|scope| scope.pcurves.iter())
+        .collect::<std::collections::BTreeSet<_>>();
+    if used_pcurves.len() != model.pcurves.len() {
         return Err(CodecError::NotImplemented(
             "pcurves without writable Brep coedge ownership are not writable".into(),
         ));
     }
-    free_vertex_groups(ir)?;
+    let general = general_topology_ir(ir);
+    let scoped_count = |select: fn(&cadmpeg_ir::document::Model) -> usize| {
+        breps
+            .iter()
+            .map(|scope| select(&scope.ir.model))
+            .sum::<usize>()
+            + select(&general.model)
+    };
+    if scoped_count(|model| model.bodies.len()) != model.bodies.len()
+        || scoped_count(|model| model.regions.len()) != model.regions.len()
+        || scoped_count(|model| model.shells.len()) != model.shells.len()
+        || scoped_count(|model| model.faces.len()) != model.faces.len()
+        || scoped_count(|model| model.loops.len()) != model.loops.len()
+        || scoped_count(|model| model.coedges.len()) != model.coedges.len()
+        || scoped_count(|model| model.edges.len()) != model.edges.len()
+        || scoped_count(|model| model.vertices.len()) != model.vertices.len()
+    {
+        return Err(CodecError::NotImplemented(
+            "orphan or unsupported topology is not writable".into(),
+        ));
+    }
+    free_vertex_groups(&general)?;
     for curve in &model.curves {
+        if breps.iter().any(|scope| scope.curves.contains(&curve.id.0)) {
+            continue;
+        }
+        if curve.source_object.is_some() {
+            return Err(CodecError::NotImplemented(format!(
+                "curve {} source-object state is not writable",
+                curve.id.0
+            )));
+        }
         let CurveGeometry::Circle {
             center,
             axis,
@@ -289,6 +557,18 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
         }
     }
     for surface in &model.surfaces {
+        if breps
+            .iter()
+            .any(|scope| scope.surfaces.contains(&surface.id.0))
+        {
+            continue;
+        }
+        if surface.source_object.is_some() {
+            return Err(CodecError::NotImplemented(format!(
+                "surface {} source-object state is not writable",
+                surface.id.0
+            )));
+        }
         match &surface.geometry {
             SurfaceGeometry::Plane {
                 origin,
@@ -3805,6 +4085,112 @@ mod tests {
                 .coedges
                 .iter()
                 .all(|coedge| coedge.radial_next != coedge.id));
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+        }
+    }
+
+    #[test]
+    fn multiple_brep_objects_round_trip_in_one_archive() {
+        let mut ir = polygon_sheet(&[
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(-1.0, 0.0, 0.0),
+            Point3::new(-1.5, 1.0, 0.0),
+        ]);
+        let mut adjacent = adjacent_quad_sheet();
+        ir.model.bodies.append(&mut adjacent.model.bodies);
+        ir.model.regions.append(&mut adjacent.model.regions);
+        ir.model.shells.append(&mut adjacent.model.shells);
+        ir.model.faces.append(&mut adjacent.model.faces);
+        ir.model.loops.append(&mut adjacent.model.loops);
+        ir.model.coedges.append(&mut adjacent.model.coedges);
+        ir.model.edges.append(&mut adjacent.model.edges);
+        ir.model.vertices.append(&mut adjacent.model.vertices);
+        ir.model.points.append(&mut adjacent.model.points);
+        ir.model.surfaces.append(&mut adjacent.model.surfaces);
+        ir.model.curves.append(&mut adjacent.model.curves);
+        ir.model.pcurves.append(&mut adjacent.model.pcurves);
+        ir.finalize();
+        for version in [
+            RhinoArchiveVersion::V5,
+            RhinoArchiveVersion::V6,
+            RhinoArchiveVersion::V7,
+            RhinoArchiveVersion::V8,
+        ] {
+            let mut bytes = Vec::new();
+            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            assert_eq!(decoded.ir.model.bodies.len(), 2, "{version:?}");
+            assert_eq!(decoded.ir.model.faces.len(), 3, "{version:?}");
+            assert_eq!(decoded.ir.model.edges.len(), 10, "{version:?}");
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+        }
+    }
+
+    #[test]
+    fn brep_and_free_geometry_round_trip_in_one_archive() {
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+        use cadmpeg_ir::ids::{CurveId, SurfaceId};
+        use cadmpeg_ir::math::Vector3;
+
+        let mut ir = polygon_sheet(&[
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+        ]);
+        ir.model.points.push(Point {
+            id: PointId("cadir:model:point#free".into()),
+            position: Point3::new(5.0, 6.0, 7.0),
+        });
+        ir.model.curves.push(Curve {
+            id: CurveId("cadir:model:curve#free".into()),
+            geometry: CurveGeometry::Circle {
+                center: Point3::new(5.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId("cadir:model:surface#free".into()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 3.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        ir.finalize();
+        for version in [
+            RhinoArchiveVersion::V5,
+            RhinoArchiveVersion::V6,
+            RhinoArchiveVersion::V7,
+            RhinoArchiveVersion::V8,
+        ] {
+            let mut bytes = Vec::new();
+            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            assert_eq!(decoded.ir.model.bodies.len(), 2, "{version:?}");
+            assert!(decoded
+                .ir
+                .model
+                .points
+                .iter()
+                .any(|point| point.position == Point3::new(5.0, 6.0, 7.0)));
+            assert!(decoded
+                .ir
+                .model
+                .curves
+                .iter()
+                .any(|curve| matches!(curve.geometry, CurveGeometry::Circle { radius: 2.0, .. })));
+            assert!(decoded.ir.model.surfaces.iter().any(|surface| matches!(
+                surface.geometry,
+                SurfaceGeometry::Plane { origin, .. } if origin.z == 3.0
+            )));
             assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
         }
     }

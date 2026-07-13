@@ -51,7 +51,8 @@ triangle meshes with normals and recognized native auxiliary channels. Archive
 quantization. B-rep generation supports connected planar faces with holes,
 closed planar solids, and mixed planar and bounded nonperiodic NURBS faces with
 outer and inner loops, exact line or NURBS edges, and parameter-space trim
-curves. Unsupported
+curves. Multiple B-reps and free geometry may coexist in one generated archive.
+Unsupported
 topology, geometry, presentation state, native records, and noncanonical NURBS
 contracts are rejected before output.
 
