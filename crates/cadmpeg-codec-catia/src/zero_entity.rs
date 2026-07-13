@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted topology records in the zero-entity `a9 03` stream family.
 
-use cadmpeg_ir::le::{f64_at, u32_at};
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::le::u32_at;
 
 /// Resolved zero-entity `a9 03` stream: records, faces, loops, carrier runs,
 /// and the edge/vertex tables recovered from them ([spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
@@ -96,6 +97,8 @@ pub struct ZeroCarrierRun {
     /// `ordinal`s of the carrier's `21 xx` support records, in stream
     /// order.
     pub support_ordinals: Vec<usize>,
+    /// Complete decoded carrier geometry.
+    pub geometry: Option<SurfaceGeometry>,
 }
 
 /// A resolved `21 xx` curve-support-on-surface record, with its UV
@@ -116,7 +119,7 @@ pub struct ZeroSupport {
     /// `uv_endpoints` lifted to world-frame 3D points through the owning
     /// carrier's analytic parameterization, or `None` when `uv_endpoints`
     /// is `None` or the carrier's tag is not one of the four supported
-    /// analytic kinds ([`lift_endpoints`]).
+    /// analytic kinds ([`lift_geometry`]).
     pub lifted_endpoints: Option<[[f64; 3]; 2]>,
 }
 
@@ -350,7 +353,7 @@ pub fn parse(bytes: &[u8]) -> Option<ZeroEntityTopology> {
     if faces.is_empty() || loops.is_empty() {
         return None;
     }
-    let (carrier_runs, supports) = parse_carrier_runs(&records)?;
+    let (carrier_runs, supports) = parse_carrier_runs(&records, bytes)?;
     let physical_edges = records
         .iter()
         .filter(|record| record.tag == [0x5e, 0x1a])
@@ -542,6 +545,7 @@ fn bind_face_runs(
 
 fn parse_carrier_runs(
     records: &[ZeroEntityRecord],
+    bytes: &[u8],
 ) -> Option<(Vec<ZeroCarrierRun>, Vec<ZeroSupport>)> {
     let mut runs = Vec::new();
     let mut supports = Vec::new();
@@ -552,14 +556,15 @@ fn parse_carrier_runs(
             continue;
         }
         let carrier = position;
+        let geometry = crate::geometry::zero_entity_surface_at(bytes, records[carrier].offset);
         position += 1;
         let mut support_ordinals = Vec::new();
         while position < records.len() && records[position].tag[0] == 0x21 {
             let record = &records[position];
             let slot = token_u32(&record.bytes, 12)?;
             let uv_endpoints = support_uv_endpoints(record);
-            let lifted_endpoints =
-                uv_endpoints.and_then(|uv| lift_endpoints(&records[carrier], uv));
+            let lifted_endpoints = uv_endpoints
+                .and_then(|uv| geometry.as_ref().and_then(|value| lift_geometry(value, uv)));
             supports.push(ZeroSupport {
                 record_ordinal: record.ordinal,
                 owner_carrier_ordinal: records[carrier].ordinal,
@@ -574,127 +579,33 @@ fn parse_carrier_runs(
             runs.push(ZeroCarrierRun {
                 carrier_ordinal: records[carrier].ordinal,
                 support_ordinals,
+                geometry,
             });
         }
     }
     Some((runs, supports))
 }
 
-fn lift_endpoints(carrier: &ZeroEntityRecord, uv: [[f64; 2]; 2]) -> Option<[[f64; 3]; 2]> {
-    let payload = carrier.bytes.get(4..)?;
-    let lifted = match carrier.tag {
-        [0x27, 0x6a] => {
-            let origin = point(payload, 10)?;
-            let x = point(payload, 34)?;
-            let y = point(payload, 58)?;
-            uv.map(|[u, v]| add(origin, add(scale(x, u), scale(y, v))))
-        }
-        [0x28, 0x8a] => {
-            let origin = point(payload, 8)?;
-            let x = unit(point(payload, 33)?)?;
-            let axis = unit(cross(x, point(payload, 57)?))?;
-            let y = cross(axis, x);
-            let radius = scalar(payload, 81)?;
-            if radius <= 0.0 {
-                return None;
-            }
-            uv.map(|[u, v]| {
-                let angle = u / radius;
-                add(
-                    origin,
-                    add(
-                        scale(add(scale(x, angle.cos()), scale(y, angle.sin())), radius),
-                        scale(axis, v),
-                    ),
-                )
-            })
-        }
-        [0x29, 0xb8] => {
-            let origin = point(payload, 8)?;
-            let x = unit(point(payload, 32)?)?;
-            let y = unit(point(payload, 56)?)?;
-            let axis = unit(point(payload, 80)?)?;
-            let half_angle = std::f64::consts::FRAC_PI_2 - scalar(payload, 104)?;
-            let radius = scalar(payload, 112)?;
-            uv.map(|[u, v]| {
-                let radial = radius + v * half_angle.sin();
-                add(
-                    origin,
-                    add(
-                        scale(add(scale(x, u.cos()), scale(y, u.sin())), radial),
-                        scale(axis, v * half_angle.cos()),
-                    ),
-                )
-            })
-        }
-        [0x2b, 0xc8] => {
-            let center = point(payload, 8)?;
-            let x = unit(point(payload, 32)?)?;
-            let y = unit(point(payload, 56)?)?;
-            let axis = unit(point(payload, 80)?)?;
-            let major = scalar(payload, 104)?;
-            let minor = scalar(payload, 112)?;
-            if major <= 0.0 || minor <= 0.0 {
-                return None;
-            }
-            uv.map(|[u, v]| {
-                let theta = u / major;
-                let phi = v / minor;
-                let radial = major + minor * phi.cos();
-                add(
-                    center,
-                    add(
-                        scale(add(scale(x, theta.cos()), scale(y, theta.sin())), radial),
-                        scale(axis, minor * phi.sin()),
-                    ),
-                )
-            })
-        }
-        _ => return None,
-    };
-    lifted
-        .iter()
-        .flatten()
-        .all(|value| value.is_finite())
-        .then_some(lifted)
-}
-
-fn scalar(bytes: &[u8], offset: usize) -> Option<f64> {
-    let value = f64_at(bytes, offset)?;
-    value.is_finite().then_some(value)
-}
-
-fn point(bytes: &[u8], offset: usize) -> Option<[f64; 3]> {
-    Some([
-        scalar(bytes, offset)?,
-        scalar(bytes, offset + 8)?,
-        scalar(bytes, offset + 16)?,
-    ])
-}
-
-fn add(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
-    [left[0] + right[0], left[1] + right[1], left[2] + right[2]]
-}
-
-fn scale(value: [f64; 3], scalar: f64) -> [f64; 3] {
-    [value[0] * scalar, value[1] * scalar, value[2] * scalar]
-}
-
-fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
-    [
-        left[1] * right[2] - left[2] * right[1],
-        left[2] * right[0] - left[0] * right[2],
-        left[0] * right[1] - left[1] * right[0],
-    ]
-}
-
-fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
-    let length = value
-        .iter()
-        .map(|component| component * component)
-        .sum::<f64>()
-        .sqrt();
-    (length > f64::EPSILON).then(|| scale(value, 1.0 / length))
+fn lift_geometry(geometry: &SurfaceGeometry, uv: [[f64; 2]; 2]) -> Option<[[f64; 3]; 2]> {
+    uv.map(|[u, v]| {
+        let neutral = match geometry {
+            SurfaceGeometry::Cylinder { radius, .. } => [u / radius, v],
+            SurfaceGeometry::Cone { half_angle, .. } => [u, v * half_angle.cos()],
+            SurfaceGeometry::Torus {
+                major_radius,
+                minor_radius,
+                ..
+            } => [u / major_radius, v / minor_radius],
+            SurfaceGeometry::Plane { .. } | SurfaceGeometry::Nurbs(_) => [u, v],
+            SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Unknown { .. } => return None,
+        };
+        let point = cadmpeg_ir::eval::surface_point(geometry, neutral[0], neutral[1])?;
+        Some([point.x, point.y, point.z])
+    })
+    .into_iter()
+    .collect::<Option<Vec<_>>>()?
+    .try_into()
+    .ok()
 }
 
 fn support_uv_endpoints(record: &ZeroEntityRecord) -> Option<[[f64; 2]; 2]> {

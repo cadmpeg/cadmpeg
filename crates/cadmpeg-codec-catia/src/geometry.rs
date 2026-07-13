@@ -2897,21 +2897,26 @@ pub fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
         if end > data.len() {
             break;
         }
-        let payload = &data[p + 4..end];
-        let geometry = match (data[p + 2], data[p + 3]) {
-            (0x27, 0x6a) => zero_entity_plane(payload),
-            (0x28, 0x8a) => zero_entity_cylinder(payload),
-            (0x29, 0xb8) => zero_entity_cone(payload),
-            (0x2b, 0xc8) => zero_entity_torus(payload),
-            (0x34, 0xc8 | 0x5e) => zero_entity_nurbs_surface(data, p),
-            _ => None,
-        };
+        let geometry = zero_entity_surface_at(data, p);
         if let Some(geometry) = geometry {
             out.push(ZeroEntitySurface { pos: p, geometry });
         }
         p = end;
     }
     out
+}
+
+pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
+    let payload_end = record.checked_add(*data.get(record + 3)? as usize + 12)?;
+    let payload = data.get(record + 4..payload_end)?;
+    match (*data.get(record + 2)?, *data.get(record + 3)?) {
+        (0x27, 0x6a) => zero_entity_plane(payload),
+        (0x28, 0x8a) => zero_entity_cylinder(payload),
+        (0x29, 0xb8) => zero_entity_cone(payload),
+        (0x2b, 0xc8) => zero_entity_torus(payload),
+        (0x34, 0xc8 | 0x5e) => zero_entity_nurbs_surface(data, record),
+        _ => None,
+    }
 }
 
 /// Decode the inline zero-entity non-rational NURBS carrier.  Its pole grid
@@ -2925,7 +2930,12 @@ fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeomet
         .iter()
         .try_fold(0u32, |sum, value| sum.checked_add(*value))?
         .checked_sub(u_degree + 1)?;
-    let (v_distinct, after_v) = f64_monotonic_run(data, after_u_mults.checked_add(1)?)?;
+    let after_u_tokens = skip_u32_token_run(data, after_u_mults)?;
+    let extra_u_bytes = after_u_tokens.checked_sub(after_u_mults)?;
+    if extra_u_bytes != 0 && extra_u_bytes < 10 {
+        return None;
+    }
+    let (v_distinct, after_v) = f64_monotonic_run(data, after_u_tokens.checked_add(1)?)?;
     let (v_mults, after_v_mults) = u32_tokens(data, after_v, v_distinct.len())?;
     let v_degree = v_mults.first().copied()?.checked_sub(1)?;
     let v_count = v_mults
@@ -2940,7 +2950,7 @@ fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeomet
         return None;
     }
     let pole_count = (u_count as usize).checked_mul(v_count as usize)?;
-    let grid = after_v_mults.checked_add(3)?;
+    let grid = skip_u32_token_run(data, after_v_mults)?.checked_add(3)?;
     let mut control_points = Vec::with_capacity(pole_count);
     for pole in 0..pole_count {
         control_points.push(f64_point(data, grid.checked_add(pole.checked_mul(24)?)?)?);
@@ -2957,6 +2967,14 @@ fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeomet
         u_periodic: false,
         v_periodic: false,
     }))
+}
+
+fn skip_u32_token_run(data: &[u8], mut at: usize) -> Option<usize> {
+    while data.get(at) == Some(&0x10) {
+        u32_le(data, at + 1)?;
+        at = at.checked_add(5)?;
+    }
+    Some(at)
 }
 
 fn zero_entity_plane(payload: &[u8]) -> Option<SurfaceGeometry> {
