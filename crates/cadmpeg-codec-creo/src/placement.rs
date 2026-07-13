@@ -53,6 +53,9 @@ pub fn resolve(
 ) -> Vec<FeatureSectionTransform> {
     let mut result = Vec::new();
     for definition in definitions {
+        let Some(feature_id) = definition.owner_feature_id else {
+            continue;
+        };
         let Some(section) = &definition.section_3d else {
             continue;
         };
@@ -102,7 +105,7 @@ pub fn resolve(
             continue;
         }
         result.push(FeatureSectionTransform {
-            feature_id: definition.id,
+            feature_id,
             origin: add(
                 scale(sketch_normal, sketch_offset),
                 scale(reference.normal, reference.offset),
@@ -136,6 +139,7 @@ mod tests {
     fn resolves_perpendicular_datum_frame() {
         let definition = FeatureDefinition {
             id: 42,
+            owner_feature_id: Some(42),
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),

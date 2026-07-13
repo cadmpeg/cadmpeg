@@ -331,7 +331,7 @@ fn transfer_resolved_sketches(
         let Some(definition) = scan
             .feature_definitions
             .iter()
-            .find(|definition| definition.id == transform.feature_id)
+            .find(|definition| definition.owner_feature_id == Some(transform.feature_id))
         else {
             continue;
         };
@@ -444,7 +444,10 @@ fn transfer_feature_dimensions(
         .map(|feature| feature.id.clone())
         .collect::<BTreeSet<_>>();
     for definition in &scan.feature_definitions {
-        let owner = IrFeatureId(format!("creo:mdlstatus:feature#{}", definition.id));
+        let Some(owner_feature_id) = definition.owner_feature_id else {
+            continue;
+        };
+        let owner = IrFeatureId(format!("creo:mdlstatus:feature#{owner_feature_id}"));
         if !feature_ids.contains(&owner) {
             continue;
         }
@@ -457,7 +460,7 @@ fn transfer_feature_dimensions(
             };
             let id = ParameterId(format!(
                 "creo:featdefs:parameter#{}:{}",
-                definition.id, dimension.external_id
+                owner_feature_id, dimension.external_id
             ));
             annotate(
                 annotations,
@@ -566,6 +569,7 @@ mod resolved_sketch_tests {
     fn profile_chain_follows_trim_vertex_incidence() {
         let definition = crate::feature::FeatureDefinition {
             id: 40,
+            owner_feature_id: Some(40),
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),

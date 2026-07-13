@@ -711,6 +711,10 @@ pub struct FeatureSavedSection {
 pub struct FeatureDefinition {
     /// Numeric identifier embedded in the record name.
     pub id: u32,
+    /// Unique named `feat_id` in the bounded definition body, joining the
+    /// definition to its modeling feature. Definitions with zero or multiple
+    /// distinct values have no owner binding.
+    pub owner_feature_id: Option<u32>,
     /// Exact record bytes through the next feature definition or section end.
     pub body: Vec<u8>,
     /// Definition-space local-system and transform fields.
@@ -2436,8 +2440,23 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         let dimensions = dimension_table(payload, start, end, &cache);
         let relations = relation_table(payload, start, end);
         let saved_section = saved_section(payload, start, end, &cache);
+        let owner_ids = psb::tokens(&payload[start..end])
+            .into_iter()
+            .filter(|token| token.kind == psb::TokenKind::NamedRecord)
+            .filter_map(|token| {
+                let name_start = start + token.offset + 2;
+                let name_end = start + token.offset + token.length - 1;
+                (payload.get(name_start..name_end) == Some(b"feat_id".as_slice())).then(|| {
+                    let value_start = start + token.offset + token.length;
+                    let (value, after) = psb::compact_int(payload, value_start);
+                    (after > value_start).then_some(value)
+                })?
+            })
+            .collect::<BTreeSet<_>>();
+        let owner_feature_id = owner_ids.first().copied().filter(|_| owner_ids.len() == 1);
         result.push(FeatureDefinition {
             id,
+            owner_feature_id,
             body: payload[start..end].to_vec(),
             parameter_frames,
             outlines,
