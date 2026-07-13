@@ -208,7 +208,7 @@ Regular-motif bodies serialize vertex allocation as a walk over the ordered trim
 
 The walk is complete when its first-occurrence population equals the vertex-table count. Each edge-row endpoint port maps through this allocation. The mapping is valid only when every circle row having exactly two on-circle vertex rows maps to that same unordered pair. Face-local edge incidence then comes from the two `0x60` face references; each face decomposes into closed degree-two endpoint cycles.
 
-Each closed face cycle initially has a whole-cycle reversal gauge. Across a shell, the gauge is fixed by requiring the two coedge uses of every shared physical edge to have opposite traversal senses. The resulting Boolean parity system must be consistent across every connected face component; reversing a face reverses its coedge order, toggles every edge-use sense, and swaps each use's endpoints.
+Each closed face cycle initially has an independent whole-cycle reversal gauge, including each outer and inner boundary of a multiply connected face. Across a shell, the gauges are fixed by requiring the two coedge uses of every shared physical edge to have opposite traversal senses. The resulting Boolean parity system must be consistent across every connected boundary component; reversing a boundary reverses its coedge order, toggles every edge-use sense, and swaps each use's endpoints.
 
 ### 5.5 `0x60` curve-support / edge-incidence table
 

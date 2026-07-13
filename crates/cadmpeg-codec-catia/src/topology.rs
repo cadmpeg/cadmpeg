@@ -647,35 +647,46 @@ fn reconstruct_incidence(
 }
 
 fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
+    let boundary_nodes = faces
+        .iter()
+        .enumerate()
+        .flat_map(|(face, value)| (0..value.boundaries.len()).map(move |boundary| (face, boundary)))
+        .collect::<Vec<_>>();
+    let node_by_boundary = boundary_nodes
+        .iter()
+        .enumerate()
+        .map(|(node, boundary)| (*boundary, node))
+        .collect::<HashMap<_, _>>();
     let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
     for (face_index, face) in faces.iter().enumerate() {
-        for boundary in &face.boundaries {
+        for (boundary_index, boundary) in face.boundaries.iter().enumerate() {
+            let node = node_by_boundary[&(face_index, boundary_index)];
             for coedge in &boundary.coedges {
                 edge_uses
                     .entry(coedge.edge_row)
                     .or_default()
-                    .push((face_index, coedge.reversed));
+                    .push((node, coedge.reversed));
             }
         }
     }
-    let mut constraints = vec![Vec::<(usize, bool)>::new(); faces.len()];
+    let mut constraints = vec![Vec::<(usize, bool)>::new(); boundary_nodes.len()];
     for uses in edge_uses.values() {
-        let [(left_face, left_reversed), (right_face, right_reversed)] = uses.as_slice() else {
+        let [(left_node, left_reversed), (right_node, right_reversed)] = uses.as_slice() else {
             return None;
         };
         let parity = left_reversed == right_reversed;
-        if left_face == right_face {
+        if left_node == right_node {
             if parity {
                 return None;
             }
         } else {
-            constraints[*left_face].push((*right_face, parity));
-            constraints[*right_face].push((*left_face, parity));
+            constraints[*left_node].push((*right_node, parity));
+            constraints[*right_node].push((*left_node, parity));
         }
     }
 
-    let mut flips = vec![None; faces.len()];
-    for root in 0..faces.len() {
+    let mut flips = vec![None; boundary_nodes.len()];
+    for root in 0..boundary_nodes.len() {
         if flips[root].is_some() {
             continue;
         }
@@ -696,14 +707,13 @@ fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
             }
         }
     }
-    for (face, flip) in faces.iter_mut().zip(flips) {
+    for ((face_index, boundary_index), flip) in boundary_nodes.into_iter().zip(flips) {
         if flip? {
-            for boundary in &mut face.boundaries {
-                boundary.coedges.reverse();
-                for coedge in &mut boundary.coedges {
-                    coedge.reversed = !coedge.reversed;
-                    std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
-                }
+            let boundary = &mut faces[face_index].boundaries[boundary_index];
+            boundary.coedges.reverse();
+            for coedge in &mut boundary.coedges {
+                coedge.reversed = !coedge.reversed;
+                std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
             }
         }
     }
@@ -1398,6 +1408,71 @@ mod motif_tests {
             reconstruct_incidence_candidates(&rows, &points, &edge_faces, &candidates, 4)
                 .expect("unique face-closing endpoint assignment");
         assert_eq!(topology.edge_vertices().expect("edge vertices")[0], [0, 1]);
+    }
+
+    #[test]
+    fn radial_orientation_solves_each_face_boundary_independently() {
+        let rows = (0..18)
+            .map(|edge| EdgeRow {
+                kind: 1,
+                handles: vec![edge * 2, edge * 2 + 1],
+            })
+            .collect();
+        let points = (0..12).map(|point| [f64::from(point), 0.0, 0.0]).collect();
+        let edge_faces = [
+            [8, 2],
+            [8, 3],
+            [4, 0],
+            [7, 0],
+            [4, 1],
+            [7, 1],
+            [2, 4],
+            [3, 4],
+            [7, 6],
+            [7, 5],
+            [8, 6],
+            [8, 5],
+            [1, 0],
+            [1, 0],
+            [3, 2],
+            [3, 2],
+            [6, 5],
+            [6, 5],
+        ];
+        let edge_points = [
+            [0, 1],
+            [0, 1],
+            [2, 4],
+            [3, 5],
+            [2, 4],
+            [3, 5],
+            [6, 7],
+            [6, 7],
+            [8, 9],
+            [8, 9],
+            [10, 11],
+            [10, 11],
+            [2, 3],
+            [4, 5],
+            [0, 6],
+            [1, 7],
+            [8, 10],
+            [9, 11],
+        ];
+        let topology = reconstruct_incidence(rows, points, &edge_faces, &edge_points, 9)
+            .expect("orientable multi-boundary shell");
+        assert_eq!(topology.faces()[4].boundaries.len(), 2);
+        let mut uses = vec![Vec::new(); 18];
+        for face in topology.faces() {
+            for boundary in &face.boundaries {
+                for coedge in &boundary.coedges {
+                    uses[coedge.edge_row].push(coedge.reversed);
+                }
+            }
+        }
+        assert!(uses
+            .iter()
+            .all(|senses| senses == &[false, true] || senses == &[true, false]));
     }
 
     #[test]
