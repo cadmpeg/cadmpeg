@@ -929,6 +929,49 @@ fn resolved_features_payload(codes: &[u32]) -> Vec<u8> {
     resolved_features_payload_with_names(codes, &["Sketch1", "Boss-Extrude1", "D1"])
 }
 
+fn pmi_semantic_payload() -> Vec<u8> {
+    fn string(bytes: &mut Vec<u8>, value: &str) {
+        assert!(value.len() < 32);
+        bytes.push(0xa0 | value.len() as u8);
+        bytes.extend_from_slice(value.as_bytes());
+    }
+    let mut payload = b"unqlite".to_vec();
+    payload.extend_from_slice(&[0; 57]);
+    payload.extend_from_slice(b"01234567-89ab-cdef-0123-456789abcdef");
+    payload.push(0x87);
+    string(&mut payload, "annoType");
+    payload.push(1);
+    string(&mut payload, "cadText");
+    string(&mut payload, "D1@Sketch1");
+    string(&mut payload, "dimItems");
+    payload.push(0x91);
+    payload.push(0x87);
+    string(&mut payload, "class");
+    string(&mut payload, "DimSemData");
+    string(&mut payload, "dimSubType");
+    string(&mut payload, "Linear");
+    string(&mut payload, "isBasic");
+    payload.push(0xc3);
+    string(&mut payload, "isInspection");
+    payload.push(0xc2);
+    string(&mut payload, "isReferenceOnly");
+    payload.push(0xc3);
+    string(&mut payload, "valPrecision");
+    payload.push(3);
+    string(&mut payload, "value");
+    payload.push(0xcb);
+    payload.extend_from_slice(&25.0f64.to_be_bytes());
+    string(&mut payload, "dimText");
+    string(&mut payload, "25.000 mm");
+    string(&mut payload, "dimType");
+    payload.push(0);
+    string(&mut payload, "iDString");
+    string(&mut payload, "native-id");
+    string(&mut payload, "reserved");
+    payload.push(0xc0);
+    payload
+}
+
 fn resolved_features_payload_with_names(codes: &[u32], names: &[&str]) -> Vec<u8> {
     let mut payload = Vec::new();
     for name in ["sgPointHandle", "sgLineHandle", "sgArcHandle"] {
@@ -11241,6 +11284,37 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .native_ref
         .as_deref()
         .is_some_and(|id| id.starts_with("sldprt:feature-input:scalar#")));
+}
+
+#[test]
+fn decode_extracts_pmi_semantic_dimension() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x49,
+        "Contents/PMISemanticDataDB",
+        &pmi_semantic_payload(),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    let [dimension] = native.pmi_dimensions.as_slice() else {
+        panic!("one PMI dimension");
+    };
+    assert_eq!(dimension.guid, "01234567-89ab-cdef-0123-456789abcdef");
+    assert_eq!(dimension.cad_text, "D1@Sketch1");
+    assert_eq!(dimension.subtype, "Linear");
+    assert_eq!(dimension.value, 25.0);
+    assert_eq!(dimension.precision, 3);
+    assert_eq!(dimension.display_text.as_deref(), Some("25.000 mm"));
+    assert!(dimension.basic);
+    assert!(!dimension.inspection);
+    assert!(dimension.reference_only);
+    assert_eq!(
+        decoded.ir.annotations.provenance[&dimension.id].offset,
+        dimension.offset
+    );
 }
 
 #[test]

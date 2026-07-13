@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::records::{
     FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputReference,
-    FeatureInputScalar,
+    FeatureInputScalar, PmiDimension,
 };
 
 /// Current schema version for the SOLIDWORKS native namespace.
@@ -21,6 +21,7 @@ pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "feature_input_references",
     "feature_input_scalars",
     "features",
+    "pmi_dimensions",
     "sketch_input_entities",
 ];
 
@@ -35,6 +36,9 @@ pub struct SldprtNative {
     /// Native feature-input byte streams retained for parametric replay and rewrite.
     #[serde(default)]
     pub feature_input_lanes: Vec<FeatureInputLane>,
+    /// Semantic dimensions decoded from `PMISemanticDataDB`.
+    #[serde(default)]
+    pub pmi_dimensions: Vec<PmiDimension>,
 }
 
 impl Default for SldprtNative {
@@ -43,6 +47,7 @@ impl Default for SldprtNative {
             version: SLDPRT_NATIVE_VERSION,
             feature_histories: Vec::new(),
             feature_input_lanes: Vec::new(),
+            pmi_dimensions: Vec::new(),
         }
     }
 }
@@ -55,6 +60,7 @@ impl SldprtNative {
             version: namespace.version,
             feature_histories: namespace.arena_as("feature_histories")?,
             feature_input_lanes: namespace.arena_as("feature_input_lanes")?,
+            pmi_dimensions: namespace.arena_as("pmi_dimensions")?,
         };
         let configurations: Vec<crate::records::Configuration> =
             namespace.arena_as("configurations")?;
@@ -342,6 +348,7 @@ impl SldprtNative {
             })
             .collect::<Vec<_>>();
         namespace.set_arena("feature_histories", &histories)?;
+        namespace.set_arena("pmi_dimensions", &self.pmi_dimensions)?;
         namespace.set_arena(
             "configurations",
             &self

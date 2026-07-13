@@ -5,6 +5,36 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// One semantic product-manufacturing dimension from `PMISemanticDataDB`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PmiDimension {
+    /// Globally unique source-derived record id.
+    pub id: String,
+    /// Source block containing this record.
+    pub parent: String,
+    /// Byte offset of the `MessagePack` map within the decompressed block.
+    pub offset: u64,
+    /// `UnQLite` record key.
+    pub guid: String,
+    /// CAD dimension reference, such as `D1@Sketch4`.
+    pub cad_text: String,
+    /// Native PMI dimension subtype.
+    pub subtype: String,
+    /// Stored dimension value.
+    pub value: f64,
+    /// Display precision.
+    pub precision: i64,
+    /// Native formatted dimension text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_text: Option<String>,
+    /// Basic-dimension flag.
+    pub basic: bool,
+    /// Inspection-dimension flag.
+    pub inspection: bool,
+    /// Reference-only flag.
+    pub reference_only: bool,
+}
+
 /// A named parametric-model variant (e.g. CAD "configuration") with its own
 /// material and property overrides.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

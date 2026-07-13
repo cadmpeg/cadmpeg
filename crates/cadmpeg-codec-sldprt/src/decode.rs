@@ -283,6 +283,7 @@ fn build_geometry_ir(
     let histories = crate::history::histories(scan, &mut ir.annotations);
     let mut lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
+    let pmi_dimensions = crate::pmi::dimensions(scan, &mut ir.annotations);
     project_design_history(&mut ir, &histories, &lanes);
     let (mut sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);
@@ -300,6 +301,7 @@ fn build_geometry_ir(
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
         feature_input_lanes: lanes,
+        pmi_dimensions,
     };
     ir.model.attributes = attributes;
     ir.model.sketches = sketches;
@@ -757,7 +759,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     losses.push(LossNote {
         category: LossCategory::Material,
         severity: Severity::Warning,
-        message: "Conflicting per-face appearance carriers have unresolved override precedence; UnQLite document metadata is preserved but not typed."
+        message: "Conflicting per-face appearance carriers have unresolved override precedence."
             .to_string(),
         provenance: None,
     });
@@ -776,6 +778,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let histories = crate::history::histories(scan, &mut ir.annotations);
     let mut lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
+    let pmi_dimensions = crate::pmi::dimensions(scan, &mut ir.annotations);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);
     let model_attributes = crate::metadata::attributes(scan, &mut ir.annotations);
@@ -843,6 +846,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
         feature_input_lanes: lanes,
+        pmi_dimensions,
     };
     native.store(ir.native.namespace_mut("sldprt"))?;
     stamp_sketch_baseline(&mut ir, &native);

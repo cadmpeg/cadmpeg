@@ -74,6 +74,7 @@ mod history;
 mod metadata;
 mod native;
 pub mod parasolid;
+mod pmi;
 pub mod records;
 mod resolved_features;
 mod tessellation;

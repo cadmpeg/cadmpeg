@@ -3467,6 +3467,7 @@ pub fn sync_neutral_features(
                 features: Vec::new(),
             }],
             feature_input_lanes: Vec::new(),
+            pmi_dimensions: Vec::new(),
         });
     }
     let native = native.as_mut().expect("initialized above");
