@@ -2342,6 +2342,39 @@ fn parse_parameter_scope(
     let [(kind_at, kind)] = candidates.as_slice() else {
         return None;
     };
+    let reference_table_end = kind_at.checked_sub(4)?;
+    let mut reference_tables = Vec::new();
+    for count_at in start + 11..reference_table_end {
+        let count = usize::try_from(u32_at(bytes, count_at)?).ok()?;
+        if count == 0
+            || count_at
+                .checked_add(4)?
+                .checked_add(count.checked_mul(11)?)?
+                != reference_table_end
+        {
+            continue;
+        }
+        let first = count_at.checked_add(4)?;
+        let mut members = Vec::with_capacity(count);
+        let mut offsets = Vec::with_capacity(count);
+        for ordinal in 0..count {
+            let marker = first.checked_add(ordinal.checked_mul(11)?)?;
+            if bytes.get(marker) != Some(&1) || bytes.get(marker + 5..marker + 11)? != [0; 6] {
+                members.clear();
+                break;
+            }
+            members.push(u32_at(bytes, marker + 1)?);
+            offsets.push(u64::try_from(marker + 1).ok()?);
+        }
+        if members.len() == count {
+            reference_tables.push((count_at, members, offsets));
+        }
+    }
+    let [(reference_count_at, reference_members, reference_member_offsets)] =
+        reference_tables.as_slice()
+    else {
+        return None;
+    };
     Some(DesignParameterScope {
         id: String::new(),
         byte_offset: header.byte_offset,
@@ -2350,6 +2383,9 @@ fn parse_parameter_scope(
         frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
         kind: kind.clone(),
         kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
+        reference_count_offset: u64::try_from(*reference_count_at).ok()?,
+        reference_members: reference_members.clone(),
+        reference_member_offsets: reference_member_offsets.clone(),
         entity_id: None,
         entity_suffix: None,
         entity_reference_offset: None,
@@ -4470,6 +4506,13 @@ mod relation_tests {
         bytes.extend_from_slice(b"301");
         bytes.extend_from_slice(&12u32.to_le_bytes());
         bytes.extend_from_slice(&[0; 10]);
+        let reference_count_at = bytes.len();
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        let reference_at = bytes.len();
+        bytes.extend_from_slice(&55u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&7u32.to_le_bytes());
         lp_utf16(&mut bytes, "Sketch");
         bytes.extend_from_slice(&[0; 78]);
         let paired_at = bytes.len();
@@ -4485,6 +4528,9 @@ mod relation_tests {
 
         let scope = parse_parameter_scope(&bytes, &header).unwrap();
         assert_eq!(scope.kind, "Sketch");
+        assert_eq!(scope.reference_count_offset, reference_count_at as u64);
+        assert_eq!(scope.reference_members, [55]);
+        assert_eq!(scope.reference_member_offsets, [reference_at as u64]);
         assert_eq!(scope.frame_length, paired_at as u64);
         assert_eq!(scope.paired_class_tag, "261");
         assert_eq!(scope.paired_byte_offset, paired_at as u64);
@@ -5004,6 +5050,9 @@ mod relation_tests {
             frame_length: 200,
             kind: "Extrude".into(),
             kind_offset: 210,
+            reference_count_offset: 180,
+            reference_members: vec![44],
+            reference_member_offsets: vec![185],
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -5064,6 +5113,9 @@ mod relation_tests {
             frame_length: 200,
             kind: kind.into(),
             kind_offset: byte_offset + 100,
+            reference_count_offset: byte_offset + 80,
+            reference_members: vec![record_index + 1],
+            reference_member_offsets: vec![byte_offset + 85],
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,

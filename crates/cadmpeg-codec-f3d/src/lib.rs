@@ -223,6 +223,23 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && scope.paired_byte_offset == scope.byte_offset.saturating_add(scope.frame_length)
             && scope.kind_offset > scope.byte_offset
             && scope.kind_offset < scope.paired_byte_offset.saturating_sub(78)
+            && scope.reference_count_offset > scope.byte_offset
+            && scope.reference_count_offset < scope.kind_offset
+            && !scope.reference_members.is_empty()
+            && scope.reference_members.len() == scope.reference_member_offsets.len()
+            && scope.reference_member_offsets.first()
+                == Some(&scope.reference_count_offset.saturating_add(5))
+            && scope
+                .reference_member_offsets
+                .windows(2)
+                .all(|offsets| offsets[1] == offsets[0].saturating_add(11))
+            && scope
+                .reference_member_offsets
+                .last()
+                .is_some_and(|offset| offset.saturating_add(18) == scope.kind_offset)
+            && scope.reference_member_offsets.iter().all(|offset| {
+                *offset > scope.reference_count_offset && *offset < scope.kind_offset
+            })
             && record_indices.contains(&(native_stream, scope.record_index))
             && entity_link.unwrap_or(scope.kind != "Sketch")
             && (scope.kind != "Sketch"

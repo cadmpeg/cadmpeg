@@ -509,6 +509,12 @@ pub struct DesignParameterScope {
     pub kind: String,
     /// Byte offset of the kind's UTF-16LE code units.
     pub kind_offset: u64,
+    /// Byte offset of the ordered reference-table count.
+    pub reference_count_offset: u64,
+    /// Ordered indexed-record references carried by the scope.
+    pub reference_members: Vec<u32>,
+    /// Byte offsets parallel to `reference_members`.
+    pub reference_member_offsets: Vec<u64>,
     /// Full Design entity id of a sketch scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_id: Option<String>,
