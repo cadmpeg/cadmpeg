@@ -752,6 +752,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 Some(Token::Long(1 | 2 | -1)) => prec
                                     .ref_at(4)
                                     .and_then(|reference| by_index.get(&reference))
+                                    .filter(|record| record.head == "intcurve")
                                     .map(|intcurve| {
                                         nurbs::decode_pcurve_cache_candidates_resolving_refs(
                                             record_slice(intcurve, bytes),

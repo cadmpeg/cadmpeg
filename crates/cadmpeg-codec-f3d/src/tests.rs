@@ -730,6 +730,25 @@ fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> 
     bytes
 }
 
+fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8> {
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let pcurve = records
+        .iter()
+        .find(|record| record.head == "pcurve")
+        .expect("generated pcurve record");
+    let companion_index = pcurve.ref_at(4).expect("generated ref-form companion");
+    let companion = &records[usize::try_from(companion_index).unwrap()];
+    let head = bytes[companion.offset..companion.offset + companion.len]
+        .windows(b"intcurve".len())
+        .position(|window| window == b"intcurve")
+        .map(|offset| companion.offset + offset)
+        .expect("generated intcurve companion name");
+    bytes[head..head + name.len()].copy_from_slice(name);
+    bytes
+}
+
 fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -15372,6 +15391,7 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
         with_pcurve_discriminator(synthetic_geometry_with_pcurve_smbh(), 2),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 0),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 7),
+        with_ref_pcurve_companion_name(synthetic_geometry_with_ref_pcurve_smbh(), b"badcurve"),
     ] {
         let result = F3dCodec
             .decode(
