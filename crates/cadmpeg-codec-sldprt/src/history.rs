@@ -480,6 +480,7 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                         display,
                         value,
                         dependencies: Vec::new(),
+                        native_ref: None,
                     }
                 })
         })

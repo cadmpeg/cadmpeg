@@ -699,6 +699,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
             value: None,
             dependencies: Vec::new(),
             properties: BTreeMap::new(),
+            native_ref: None,
         });
     }
     ir.finalize();
@@ -759,6 +760,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
             value: None,
             dependencies,
             properties: BTreeMap::new(),
+            native_ref: None,
         });
     }
     let findings = validate(&ir, Vec::new()).findings;
@@ -1610,6 +1612,27 @@ fn native_topology_link_must_resolve() {
         .findings
         .iter()
         .any(|finding| finding.check == Check::NativeLinks));
+}
+
+#[test]
+fn parameter_native_ref_must_resolve() {
+    let mut ir = unit_cube();
+    let id = crate::features::ParameterId("synthetic:test:parameter#native-ref".into());
+    ir.model.parameters.push(crate::features::DesignParameter {
+        id: id.clone(),
+        owner: crate::features::FeatureId("synthetic:test:feature#missing".into()),
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "1mm".into(),
+        display: None,
+        value: None,
+        dependencies: Vec::new(),
+        properties: std::collections::BTreeMap::new(),
+        native_ref: Some("native:missing#0".into()),
+    });
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::NativeLinks && finding.entity.as_deref() == Some(id.0.as_str())
+    }));
 }
 
 #[test]

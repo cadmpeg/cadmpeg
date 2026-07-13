@@ -352,6 +352,84 @@ pub(crate) fn bind_sketch_profiles(
     }
 }
 
+/// Bind neutral parameters to uniquely owned native scalar records.
+pub(crate) fn bind_parameter_scalars(
+    parameters: &mut [cadmpeg_ir::features::DesignParameter],
+    features: &[cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let neutral_owners = features
+        .iter()
+        .filter_map(|feature| Some((&feature.id, feature.native_ref.as_deref()?)))
+        .collect::<HashMap<_, _>>();
+    let native_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let mut feature_name_counts = HashMap::<&str, usize>::new();
+    for feature in native_features.values() {
+        *feature_name_counts.entry(&feature.name).or_default() += 1;
+    }
+
+    for lane in lanes {
+        let names_by_id = lane
+            .names
+            .iter()
+            .map(|name| (name.id.as_str(), name.value.as_str()))
+            .collect::<HashMap<_, _>>();
+        let mut starts = Vec::<(u64, &crate::records::Feature)>::new();
+        for feature in native_features.values() {
+            if feature_name_counts.get(feature.name.as_str()) != Some(&1) {
+                continue;
+            }
+            let mut matches = lane.names.iter().filter(|name| name.value == feature.name);
+            let Some(name) = matches.next() else { continue };
+            if matches.next().is_none() {
+                starts.push((name.offset, feature));
+            }
+        }
+        starts.sort_by_key(|start| start.0);
+        for (index, &(start, native_feature)) in starts.iter().enumerate() {
+            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            let owner_parameters = parameters.iter_mut().filter(|parameter| {
+                neutral_owners.get(&parameter.owner).copied() == Some(native_feature.id.as_str())
+            });
+            for parameter in owner_parameters {
+                if parameter.native_ref.is_some() {
+                    continue;
+                }
+                let scalars = lane
+                    .scalars
+                    .iter()
+                    .filter(|scalar| scalar.offset > start && scalar.offset < end)
+                    .filter(|scalar| {
+                        names_by_id.get(scalar.name.as_str()).copied()
+                            == Some(parameter.name.as_str())
+                    })
+                    .collect::<Vec<_>>();
+                let driving = scalars
+                    .iter()
+                    .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
+                    .copied()
+                    .collect::<Vec<_>>();
+                let candidates = if driving.is_empty() {
+                    scalars
+                        .into_iter()
+                        .filter(|scalar| scalar.role == FeatureInputScalarRole::Native)
+                        .collect::<Vec<_>>()
+                } else {
+                    driving
+                };
+                if let [scalar] = candidates.as_slice() {
+                    parameter.native_ref = Some(scalar.id.clone());
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     payload

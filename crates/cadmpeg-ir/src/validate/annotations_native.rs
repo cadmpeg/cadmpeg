@@ -150,6 +150,18 @@ pub(super) fn check_native_links(
             }
         }
     }
+    for parameter in &ir.model.parameters {
+        if let Some(target) = &parameter.native_ref {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("native_ref `{target}` does not resolve"),
+                    entity: Some(parameter.id.0.clone()),
+                });
+            }
+        }
+    }
     for configuration in &ir.model.configurations {
         if let Some(target) = &configuration.native_ref {
             if !native_ids.contains(target.as_str()) {

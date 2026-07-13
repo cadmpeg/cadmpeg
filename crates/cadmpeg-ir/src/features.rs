@@ -104,6 +104,9 @@ pub struct DesignParameter {
     /// Source dimension properties not represented by another field.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
+    /// Identifier of the full-fidelity source parameter record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
 }
 
 /// Geometric interpretation requested by a dimension display modifier.

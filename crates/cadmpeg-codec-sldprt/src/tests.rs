@@ -3306,6 +3306,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         value: None,
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
+        native_ref: None,
     });
 
     let mut encoded = Vec::new();
@@ -10925,6 +10926,10 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
         .expect("projected D1 parameter");
     assert_eq!(parameter.expression, "25mm");
+    assert!(parameter
+        .native_ref
+        .as_deref()
+        .is_some_and(|id| id.starts_with("sldprt:feature-input:scalar#")));
 }
 
 #[test]
@@ -11000,6 +11005,10 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
         .expect("projected sketch D1 parameter");
     assert_eq!(parameter.expression, "25mm");
+    assert!(parameter
+        .native_ref
+        .as_deref()
+        .is_some_and(|id| id.starts_with("sldprt:feature-input:scalar#")));
 }
 
 #[test]

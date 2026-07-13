@@ -862,6 +862,12 @@ fn project_design_history(
     ir.model.features = crate::history::project_features(&projection);
     ir.model.configurations = crate::history::project_configurations(&projection);
     ir.model.parameters = crate::history::project_parameters(&projection);
+    crate::resolved_features::bind_parameter_scalars(
+        &mut ir.model.parameters,
+        &ir.model.features,
+        histories,
+        lanes,
+    );
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "sldprt_neutral_feature_sha256".into(),
