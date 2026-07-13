@@ -11,9 +11,9 @@ use cadmpeg_ir::features::{
     DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent, FaceMotion,
     FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole,
     FlexMode, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind,
-    ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, RuledSurfaceMode, ScaleCenter,
-    SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion, VariableRadius,
-    WrapMode,
+    ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft,
+    RibSide, RuledSurfaceMode, ScaleCenter, SketchSpace, SurfaceContinuity, SurfaceExtension,
+    SweepMode, TrimRegion, VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -780,8 +780,10 @@ pub fn bind_topology_selections(
                     resolve_profile_ref(profile, &face_ids);
                 }
             }
-            FeatureDefinition::Rib { profile, .. } => {
-                resolve_profile_ref(profile, &face_ids);
+            FeatureDefinition::Rib { construction, .. } => {
+                if let Some(profile) = &mut construction.profile {
+                    resolve_profile_ref(profile, &face_ids);
+                }
             }
             FeatureDefinition::Sweep { profile, path, .. } => {
                 if let Some(profile) = profile {
@@ -1024,9 +1026,12 @@ fn bind_definition_sketch(
         }
     };
     match definition {
-        FeatureDefinition::Extrude { profile, .. }
-        | FeatureDefinition::Rib { profile, .. }
-        | FeatureDefinition::Wrap { profile, .. } => bind_profile(profile),
+        FeatureDefinition::Extrude { profile, .. } | FeatureDefinition::Wrap { profile, .. } => {
+            bind_profile(profile)
+        }
+        FeatureDefinition::Rib { construction, .. } => {
+            construction.profile.as_mut().is_some_and(bind_profile)
+        }
         FeatureDefinition::Revolve { construction, .. } => {
             construction.profile.as_mut().is_some_and(bind_profile)
         }
@@ -1168,7 +1173,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Loft) {
         project_loft(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Rib) {
-        project_rib(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
+        project_rib(feature, native_by_source)
     } else {
         native_definition(feature)
     }
@@ -1661,35 +1666,52 @@ fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
     })
 }
 
-fn project_rib(
-    feature: &Feature,
-    native_by_source: &HashMap<&str, &str>,
-) -> Option<FeatureDefinition> {
-    let profile = feature.properties.get("Profile")?;
-    let profile = native_by_source
-        .get(profile.as_str())
-        .map_or_else(|| profile.clone(), |id| (*id).to_string());
-    let direction = parse_vector3(feature.properties.get("Direction")?)?;
-    if !valid_direction(direction) {
-        return None;
-    }
+fn project_rib(feature: &Feature, native_by_source: &HashMap<&str, &str>) -> FeatureDefinition {
+    let profile = feature.properties.get("Profile").map(|profile| {
+        ProfileRef::Native(
+            native_by_source
+                .get(profile.as_str())
+                .map_or_else(|| profile.clone(), |id| (*id).to_string()),
+        )
+    });
+    let direction = feature
+        .properties
+        .get("Direction")
+        .and_then(|value| parse_valid_direction(value));
     let draft = match feature.parameters.get("Draft") {
-        Some(value) => Some(Angle(parse_angle_rad(value)?)),
-        None => None,
+        Some(value) => parse_angle_rad(value)
+            .map(Angle)
+            .map_or(RibDraft::Unresolved, RibDraft::Angle),
+        None => RibDraft::None,
     };
-    Some(FeatureDefinition::Rib {
-        profile: ProfileRef::Native(profile),
-        direction,
-        thickness: Length(
-            feature
+    FeatureDefinition::Rib {
+        construction: RibConstruction {
+            profile,
+            direction,
+            thickness: feature
                 .parameters
                 .get("Thickness")
-                .and_then(|value| parse_positive_length_mm(value))?,
-        ),
-        both_sides: parse_bool(feature.properties.get("BothSides")?)?,
-        draft,
-        op: parse_boolean_op(feature.properties.get("Operation")?)?,
-    })
+                .and_then(|value| parse_positive_length_mm(value))
+                .map(Length),
+            side: feature
+                .properties
+                .get("BothSides")
+                .and_then(|value| parse_bool(value))
+                .map(|both_sides| {
+                    if both_sides {
+                        RibSide::Centered
+                    } else {
+                        RibSide::OneSided
+                    }
+                }),
+            draft,
+        },
+        op: feature
+            .properties
+            .get("Operation")
+            .and_then(|value| parse_boolean_op(value))
+            .unwrap_or(BooleanOp::Unresolved),
+    }
 }
 
 fn project_loft(
@@ -6055,14 +6077,7 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::Rib {
-                profile,
-                direction,
-                thickness,
-                both_sides,
-                draft,
-                op,
-            } => {
+            FeatureDefinition::Rib { construction, op } => {
                 if existing
                     .as_deref()
                     .is_some_and(|record| !feature_family(record, "Rib"))
@@ -6072,35 +6087,59 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                require_direction(*direction, &feature.id, "rib direction")?;
-                let profile_source = profile_source(profile, &record_sources, &sketch_sources)
-                    .ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "SLDPRT feature {} references a missing rib profile",
-                            feature.id
-                        ))
-                    })?;
+                if existing.is_none()
+                    && (construction.profile.is_none()
+                        || construction.direction.is_none()
+                        || construction.thickness.is_none()
+                        || construction.side.is_none()
+                        || construction.draft == RibDraft::Unresolved
+                        || *op == BooleanOp::Unresolved)
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved rib construction",
+                        feature.id
+                    )));
+                }
                 let mut parameters = existing
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                parameters.insert("Thickness".into(), format_length_mm(thickness.0));
-                match draft {
-                    Some(draft) => {
+                if let Some(thickness) = construction.thickness {
+                    parameters.insert("Thickness".into(), format_length_mm(thickness.0));
+                }
+                match construction.draft {
+                    RibDraft::Angle(draft) => {
                         parameters.insert("Draft".into(), format_angle_rad(draft.0));
                     }
-                    None => {
+                    RibDraft::None => {
                         parameters.remove("Draft");
                     }
+                    RibDraft::Unresolved => {}
                 }
                 let mut properties = feature.source_properties.clone();
-                properties.insert("Profile".into(), profile_source.clone());
-                properties.insert("Direction".into(), format_vector3(*direction));
-                properties.insert("BothSides".into(), both_sides.to_string());
-                properties.insert(
-                    "Operation".into(),
-                    resolved_boolean_op(*op, &feature.id)?.into(),
-                );
+                if let Some(profile) = &construction.profile {
+                    let profile_source = profile_source(profile, &record_sources, &sketch_sources)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "SLDPRT feature {} references a missing rib profile",
+                                feature.id
+                            ))
+                        })?;
+                    properties.insert("Profile".into(), profile_source);
+                }
+                if let Some(direction) = construction.direction {
+                    require_direction(direction, &feature.id, "rib direction")?;
+                    properties.insert("Direction".into(), format_vector3(direction));
+                }
+                if let Some(side) = construction.side {
+                    properties.insert("BothSides".into(), (side == RibSide::Centered).to_string());
+                }
+                if *op != BooleanOp::Unresolved {
+                    properties.insert(
+                        "Operation".into(),
+                        resolved_boolean_op(*op, &feature.id)?.into(),
+                    );
+                }
                 (
                     existing
                         .as_deref()

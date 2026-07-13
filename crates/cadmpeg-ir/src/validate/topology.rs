@@ -1172,17 +1172,15 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 profiles.extend(values);
                 paths.extend(guides);
             }
-            FeatureDefinition::Rib {
-                profile,
-                direction,
-                thickness,
-                draft,
-                ..
-            } => {
-                profiles.push(profile);
-                if !valid_feature_direction(*direction)
-                    || !positive_feature_length(*thickness)
-                    || draft.is_some_and(|value| !value.0.is_finite())
+            FeatureDefinition::Rib { construction, .. } => {
+                profiles.extend(&construction.profile);
+                if construction
+                    .direction
+                    .is_some_and(|value| !valid_feature_direction(value))
+                    || construction
+                        .thickness
+                        .is_some_and(|value| !positive_feature_length(value))
+                    || matches!(construction.draft, crate::features::RibDraft::Angle(value) if !value.0.is_finite())
                 {
                     feature_geometry_error(findings, feature, "rib geometry is invalid");
                 }
@@ -1866,8 +1864,11 @@ fn check_feature_sketch_references(
         let mut profiles = Vec::new();
         let mut paths = Vec::new();
         match &feature.definition {
-            FeatureDefinition::Extrude { profile, .. } | FeatureDefinition::Rib { profile, .. } => {
+            FeatureDefinition::Extrude { profile, .. } => {
                 profiles.push(profile);
+            }
+            FeatureDefinition::Rib { construction, .. } => {
+                profiles.extend(&construction.profile);
             }
             FeatureDefinition::Revolve { construction, .. } => {
                 profiles.extend(&construction.profile);

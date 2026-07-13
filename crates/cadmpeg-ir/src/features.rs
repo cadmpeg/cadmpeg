@@ -432,18 +432,8 @@ pub enum FeatureDefinition {
     },
     /// Thin rib grown from a profile.
     Rib {
-        /// Rib centerline or open profile.
-        profile: ProfileRef,
-        /// Rib growth direction.
-        direction: Vector3,
-        /// Finished rib thickness.
-        thickness: Length,
-        /// Whether thickness is split equally around the profile.
-        #[serde(default)]
-        both_sides: bool,
-        /// Draft angle applied to rib walls, when specified.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        draft: Option<Angle>,
+        /// Independently resolved construction inputs.
+        construction: RibConstruction,
         /// Boolean combination with existing bodies.
         op: BooleanOp,
     },
@@ -695,6 +685,49 @@ pub struct RevolutionAxis {
     pub origin: Point3,
     /// Unit axis direction.
     pub direction: Vector3,
+}
+
+/// Independently decoded inputs of a thin rib operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RibConstruction {
+    /// Rib centerline or open profile, when resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<ProfileRef>,
+    /// Rib growth direction, when resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<Vector3>,
+    /// Finished rib thickness, when resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thickness: Option<Length>,
+    /// Distribution of thickness around the profile, when resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<RibSide>,
+    /// Draft state applied to the rib walls.
+    #[serde(default)]
+    pub draft: RibDraft,
+}
+
+/// Distribution of rib thickness around its profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RibSide {
+    /// Thickness lies on one side of the profile.
+    OneSided,
+    /// Thickness is split equally around the profile.
+    Centered,
+}
+
+/// Draft state of a rib construction.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "angle", rename_all = "snake_case")]
+pub enum RibDraft {
+    /// Draft semantics are present but unresolved.
+    #[default]
+    Unresolved,
+    /// Rib walls have no draft.
+    None,
+    /// Rib walls use the specified draft angle.
+    Angle(Angle),
 }
 
 /// Canonical role of a non-modeling feature-tree node.

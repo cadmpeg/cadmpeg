@@ -1740,11 +1740,13 @@ fn encoder_writes_source_less_line_sketches() {
             closed: false,
         },
         FeatureDefinition::Rib {
-            profile,
-            direction: Vector3::new(0.0, 0.0, 1.0),
-            thickness: Length(2.5),
-            both_sides: true,
-            draft: Some(Angle(0.1)),
+            construction: cadmpeg_ir::features::RibConstruction {
+                profile: Some(profile),
+                direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+                thickness: Some(Length(2.5)),
+                side: Some(cadmpeg_ir::features::RibSide::Centered),
+                draft: cadmpeg_ir::features::RibDraft::Angle(Angle(0.1)),
+            },
             op: BooleanOp::Join,
         },
     ];
@@ -2685,7 +2687,20 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
             op: cadmpeg_ir::features::BooleanOp::Join,
         }
     ));
-    for index in [2, 3, 5, 6] {
+    assert!(matches!(
+        decoded.ir.model.features[6].definition,
+        FeatureDefinition::Rib {
+            construction: cadmpeg_ir::features::RibConstruction {
+                profile: Some(_),
+                direction: None,
+                thickness: Some(cadmpeg_ir::features::Length(2.0)),
+                side: Some(cadmpeg_ir::features::RibSide::OneSided),
+                draft: cadmpeg_ir::features::RibDraft::None,
+            },
+            op: cadmpeg_ir::features::BooleanOp::Join,
+        }
+    ));
+    for index in [2, 3, 5] {
         assert!(matches!(
             decoded.ir.model.features[index].definition,
             FeatureDefinition::Native { .. }
@@ -11303,8 +11318,67 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
 }
 
 #[test]
+fn semantic_writer_retains_partial_native_rib_construction() {
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, RibDraft};
+    use cadmpeg_ir::math::Vector3;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Rib Name="Unknown web" Type="Rib" id="42" Direction="0,1,0"><Dimension Name="Thickness">NaNmm</Dimension><Dimension Name="Draft">NaNrad</Dimension></Rib></Keywords>"#,
+    ));
+
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Rib {
+            construction: cadmpeg_ir::features::RibConstruction {
+                profile: None,
+                direction: Some(Vector3 {
+                    x: 0.0,
+                    y: 1.0,
+                    z: 0.0
+                }),
+                thickness: None,
+                side: None,
+                draft: RibDraft::Unresolved,
+            },
+            op: BooleanOp::Unresolved,
+        }
+    ));
+    let mut detached = decoded.ir.clone();
+    detached.model.features[0].native_ref = None;
+    let error = SldprtCodec
+        .write_preserved(&detached, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("unresolved rib construction"));
+
+    decoded.ir.model.features[0].name = Some("Renamed web".into());
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.name, "Renamed web");
+    assert_eq!(native.properties["Direction"], "0,1,0");
+    assert!(!native.properties.contains_key("Profile"));
+    assert!(!native.properties.contains_key("BothSides"));
+    assert!(!native.properties.contains_key("Operation"));
+    assert_eq!(native.parameters["Thickness"], "NaNmm");
+    assert_eq!(native.parameters["Draft"], "NaNrad");
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_rib() {
-    use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, Length, ProfileRef};
+    use cadmpeg_ir::features::{
+        Angle, BooleanOp, FeatureDefinition, Length, ProfileRef, RibDraft, RibSide,
+    };
     use cadmpeg_ir::math::Vector3;
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -11320,30 +11394,25 @@ fn semantic_writer_round_trips_typed_rib() {
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
         FeatureDefinition::Rib {
-            profile: ProfileRef::Native(profile),
-            direction: Vector3 { x: 0.0, y: 1.0, z: 0.0 },
-            thickness: Length(2.0),
-            both_sides: false,
-            draft: Some(Angle(value)),
+            construction: cadmpeg_ir::features::RibConstruction {
+                profile: Some(ProfileRef::Native(profile)),
+                direction: Some(Vector3 { x: 0.0, y: 1.0, z: 0.0 }),
+                thickness: Some(Length(2.0)),
+                side: Some(RibSide::OneSided),
+                draft: RibDraft::Angle(Angle(value)),
+            },
             op: BooleanOp::Join,
         } if profile == &profile_ref && (*value - 5f64.to_radians()).abs() < 1e-12
     ));
 
-    let FeatureDefinition::Rib {
-        direction,
-        thickness,
-        both_sides,
-        draft,
-        op,
-        ..
-    } = &mut decoded.ir.model.features[1].definition
+    let FeatureDefinition::Rib { construction, op } = &mut decoded.ir.model.features[1].definition
     else {
         panic!("typed rib");
     };
-    *direction = Vector3::new(1.0, 0.0, 0.0);
-    *thickness = Length(3.0);
-    *both_sides = true;
-    *draft = None;
+    construction.direction = Some(Vector3::new(1.0, 0.0, 0.0));
+    construction.thickness = Some(Length(3.0));
+    construction.side = Some(RibSide::Centered);
+    construction.draft = RibDraft::None;
     *op = BooleanOp::NewBody;
 
     let mut encoded = Vec::new();
@@ -12637,7 +12706,13 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
     )));
     assert!(decoded.ir.model.features.iter().any(|feature| matches!(
         &feature.definition,
-        FeatureDefinition::Rib { profile: ProfileRef::Sketch(value), .. } if value == &sketch_id
+        FeatureDefinition::Rib {
+            construction: cadmpeg_ir::features::RibConstruction {
+                profile: Some(ProfileRef::Sketch(value)),
+                ..
+            },
+            ..
+        } if value == &sketch_id
     )));
     let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);

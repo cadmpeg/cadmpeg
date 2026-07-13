@@ -2114,8 +2114,8 @@ fn spatial_sketch_cannot_own_planar_geometry() {
 fn feature_operation_geometry_is_validated() {
     use crate::features::{
         BooleanOp, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, ScaleCenter, ThickenSide,
-        VariableRadius,
+        HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, RibConstruction, RibDraft, RibSide,
+        ScaleCenter, ThickenSide, VariableRadius,
     };
 
     let definitions = vec![
@@ -2135,11 +2135,13 @@ fn feature_operation_geometry_is_validated() {
             },
         },
         FeatureDefinition::Rib {
-            profile: ProfileRef::Native("profile".into()),
-            direction: Vector3::new(0.0, 0.0, 0.0),
-            thickness: Length(0.0),
-            both_sides: false,
-            draft: None,
+            construction: RibConstruction {
+                profile: Some(ProfileRef::Native("profile".into())),
+                direction: Some(Vector3::new(0.0, 0.0, 0.0)),
+                thickness: Some(Length(0.0)),
+                side: Some(RibSide::OneSided),
+                draft: RibDraft::None,
+            },
             op: BooleanOp::Join,
         },
         FeatureDefinition::Hole {
