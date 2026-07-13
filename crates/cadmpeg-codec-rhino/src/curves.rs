@@ -38,6 +38,7 @@ const POLYCURVE: Uuid = Uuid::from_canonical([
 const NURBS_CURVE: Uuid = crate::surfaces::NURBS_CURVE;
 const NURBS_SURFACE: Uuid = crate::surfaces::NURBS_SURFACE;
 const PLANE_SURFACE: Uuid = crate::surfaces::PLANE_SURFACE;
+const CLIPPING_PLANE_SURFACE: Uuid = crate::surfaces::CLIPPING_PLANE_SURFACE;
 const REV_SURFACE: Uuid = crate::surfaces::REV_SURFACE;
 const REV_SURFACE_LEGACY: Uuid = crate::surfaces::REV_SURFACE_LEGACY;
 const SUM_SURFACE: Uuid = crate::surfaces::SUM_SURFACE;
@@ -134,6 +135,7 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
             | NURBS_CURVE
             | NURBS_SURFACE
             | PLANE_SURFACE
+            | CLIPPING_PLANE_SURFACE
             | REV_SURFACE
             | REV_SURFACE_LEGACY
             | SUM_SURFACE
@@ -174,7 +176,12 @@ fn decode_inner(
     }
     if matches!(
         class_uuid,
-        NURBS_SURFACE | PLANE_SURFACE | REV_SURFACE | REV_SURFACE_LEGACY | SUM_SURFACE
+        NURBS_SURFACE
+            | PLANE_SURFACE
+            | CLIPPING_PLANE_SURFACE
+            | REV_SURFACE
+            | REV_SURFACE_LEGACY
+            | SUM_SURFACE
     ) {
         return Ok(DecodedGeometry::Surface {
             surface: crate::surfaces::decode(data, class_uuid, range, scale, archive, depth)?,

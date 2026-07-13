@@ -1198,7 +1198,52 @@ minor >= 1:
 Version 1.0 uses domains as extents. Domains and extents are independent; the
 domain controls parameterization.
 
-### 13.4 Revolution surface
+### 13.4 Clipping-plane surface
+
+Class UUID `DBC5A584-CE3F-4170-98A8-497069CA5C36` contains an anonymous
+version 1.0 chunk. Its first child is an anonymous chunk containing a plane
+surface payload without an additional child version header. Its second child
+is the clipping-plane record:
+
+```text
+anonymous version 1.0
+  anonymous plane-surface carrier
+  clipping-plane anonymous chunk
+```
+
+The clipping-plane chunk has major version 1 and minor versions 0 through 5:
+
+```text
+ON_UUID first_viewport_id
+ON_UUID plane_id
+ON_Plane plane
+bool enabled
+if minor >= 1: ON_UuidList viewport_ids
+if minor >= 2: f64 depth
+if minor >= 4: bool depth_enabled
+if minor >= 5: ordered participation items followed by u8 zero
+```
+
+Minor 0 uses `first_viewport_id` as the viewport list. In later minors that
+field is retained for layout compatibility and `viewport_ids` is the complete
+list. Minor 2 depth uses the original distance interpretation. Minor 3 changes
+the interpretation without changing its wire type. Before minor 4, a
+nonnegative depth other than the unset positive value enables depth clipping;
+minor 4 carries the explicit flag.
+
+Minor 5 participation items are ordered and optional:
+
+| Item | Payload                                      |
+| ---: | -------------------------------------------- |
+|   10 | `i32 count`, `count` referenced object UUIDs |
+|   11 | `i32 count`, `count` referenced layer `i32`s |
+|   12 | `bool is_exclusion_list`                     |
+|   13 | `bool participation_lists_enabled`           |
+|    0 | terminator                                   |
+
+Each item can occur at most once. Present items occur in ascending item order.
+
+### 13.5 Revolution surface
 
 Packed version `2.0`; majors 1 and 2 are accepted. The presence field is a
 one-byte `char`; transpose is an `i32`:
@@ -1217,7 +1262,7 @@ if present: polymorphic ON_Curve profile
 Major 1 defaults the surface parameter interval to the angular interval. A
 present profile is a curve.
 
-### 13.5 Sum surface
+### 13.6 Sum surface
 
 Packed version `1.0`:
 

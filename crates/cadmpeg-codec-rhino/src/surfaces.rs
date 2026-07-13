@@ -7,7 +7,7 @@ use std::ops::Range;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::chunks::{checked_count_bytes, ArchiveVersion, BoundedReader};
+use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{
     decode_embedded_curve, error, exact_nurbs, unsupported, DecodedCurve, GeometryError,
     MAX_CURVE_ITEMS,
@@ -25,6 +25,9 @@ pub(crate) const NURBS_SURFACE: Uuid = Uuid::from_canonical([
 ]);
 pub(crate) const PLANE_SURFACE: Uuid = Uuid::from_canonical([
     0x4e, 0xd7, 0xd4, 0xdf, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
+pub(crate) const CLIPPING_PLANE_SURFACE: Uuid = Uuid::from_canonical([
+    0xdb, 0xc5, 0xa5, 0x84, 0xce, 0x3f, 0x41, 0x70, 0x98, 0xa8, 0x49, 0x70, 0x69, 0xca, 0x5c, 0x36,
 ]);
 pub(crate) const REV_SURFACE: Uuid = Uuid::from_canonical([
     0xa1, 0x62, 0x20, 0xd3, 0x16, 0x3b, 0x11, 0xd4, 0x80, 0x00, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
@@ -104,6 +107,8 @@ pub(crate) fn decode(
             geometry,
             derived: scale != 1.0,
         }
+    } else if class == CLIPPING_PLANE_SURFACE {
+        read_clipping_plane_surface(data, &mut reader, scale, archive)?
     } else if matches!(class, REV_SURFACE | REV_SURFACE_LEGACY) {
         read_revolution(data, &mut reader, scale, archive, depth)?
     } else if class == SUM_SURFACE {
@@ -118,6 +123,171 @@ pub(crate) fn decode(
         ));
     }
     Ok(result)
+}
+
+fn read_clipping_plane_surface(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+    archive: ArchiveVersion,
+) -> Result<DecodedSurface, GeometryError> {
+    const ANONYMOUS: u32 = 0x4000_8000;
+    let outer = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+    if outer.typecode != ANONYMOUS || outer.short || outer.next_offset != reader.end() {
+        return Err(error(
+            reader.position(),
+            "invalid clipping-plane outer chunk",
+        ));
+    }
+    let mut payload = BoundedReader::new(data, outer.body.start, outer.body.end)?;
+    if payload.i32()? != 1 || payload.i32()? != 0 {
+        return Err(unsupported(
+            outer.body.start,
+            "unsupported clipping-plane surface version",
+        ));
+    }
+    let plane_chunk = chunk_at(data, payload.position(), payload.end(), archive, false)?;
+    if plane_chunk.typecode != ANONYMOUS || plane_chunk.short {
+        return Err(error(
+            plane_chunk.header_start,
+            "invalid clipping-plane carrier chunk",
+        ));
+    }
+    let mut plane_reader = BoundedReader::new(data, plane_chunk.body.start, plane_chunk.body.end)?;
+    let geometry = read_plane_surface(&mut plane_reader, scale)?;
+    if plane_reader.remaining() != 0 {
+        return Err(error(
+            plane_reader.position(),
+            "clipping-plane carrier has trailing bytes",
+        ));
+    }
+    payload.skip(plane_chunk.next_offset - payload.position())?;
+    read_clipping_plane(data, &mut payload, archive)?;
+    if payload.remaining() != 0 {
+        return Err(error(
+            payload.position(),
+            "clipping-plane surface has trailing bytes",
+        ));
+    }
+    reader.skip(outer.next_offset - reader.position())?;
+    Ok(DecodedSurface::Typed {
+        geometry,
+        derived: scale != 1.0,
+    })
+}
+
+fn read_clipping_plane(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<(), GeometryError> {
+    const ANONYMOUS: u32 = 0x4000_8000;
+    let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+    if chunk.typecode != ANONYMOUS || chunk.short {
+        return Err(error(chunk.header_start, "invalid clipping-plane chunk"));
+    }
+    let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    if payload.i32()? != 1 {
+        return Err(unsupported(
+            chunk.body.start,
+            "unsupported clipping-plane major version",
+        ));
+    }
+    let minor = payload.i32()?;
+    if !(0..=5).contains(&minor) {
+        return Err(unsupported(
+            chunk.body.start,
+            "unsupported clipping-plane minor version",
+        ));
+    }
+    let first_viewport = Uuid::from_wire(payload.array()?);
+    let _plane_id = Uuid::from_wire(payload.array()?);
+    let native_plane = plane(&mut payload)?;
+    validate_plane(native_plane, payload.position())?;
+    let _enabled = payload.bool()?;
+    if minor == 0 {
+        let _ = first_viewport;
+    } else {
+        read_uuid_list(data, &mut payload, archive)?;
+    }
+    if minor >= 2 {
+        let depth = payload.f64()?;
+        if !depth.is_finite() {
+            return Err(error(payload.position() - 8, "invalid clipping depth"));
+        }
+    }
+    if minor >= 4 {
+        payload.bool()?;
+    }
+    if minor >= 5 {
+        read_clipping_participation(&mut payload)?;
+    }
+    if payload.remaining() != 0 {
+        return Err(error(
+            payload.position(),
+            "clipping plane has trailing bytes",
+        ));
+    }
+    reader.skip(chunk.next_offset - reader.position())?;
+    Ok(())
+}
+
+fn read_uuid_list(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<(), GeometryError> {
+    const ANONYMOUS: u32 = 0x4000_8000;
+    let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+    if chunk.typecode != ANONYMOUS || chunk.short {
+        return Err(error(chunk.header_start, "invalid clipping viewport list"));
+    }
+    let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    if payload.i32()? != 1 || payload.i32()? != 0 {
+        return Err(unsupported(
+            chunk.body.start,
+            "unsupported clipping viewport-list version",
+        ));
+    }
+    let count = checked_count(&mut payload, 16)?;
+    payload.skip(count * 16)?;
+    if payload.remaining() != 0 {
+        return Err(error(
+            payload.position(),
+            "clipping viewport list has trailing bytes",
+        ));
+    }
+    reader.skip(chunk.next_offset - reader.position())?;
+    Ok(())
+}
+
+fn read_clipping_participation(reader: &mut BoundedReader<'_>) -> Result<(), GeometryError> {
+    let mut item = reader.u8()?;
+    if item == 10 {
+        let count = checked_count(reader, 16)?;
+        reader.skip(count * 16)?;
+        item = reader.u8()?;
+    }
+    if item == 11 {
+        let count = checked_count(reader, 4)?;
+        reader.skip(count * 4)?;
+        item = reader.u8()?;
+    }
+    if item == 12 {
+        reader.bool()?;
+        item = reader.u8()?;
+    }
+    if item == 13 {
+        reader.bool()?;
+        item = reader.u8()?;
+    }
+    if item != 0 {
+        return Err(error(
+            reader.position() - 1,
+            "clipping participation item is invalid or out of order",
+        ));
+    }
+    Ok(())
 }
 
 fn read_revolution(
@@ -958,11 +1128,12 @@ fn close(a: Vector3, b: Vector3) -> bool {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::{
-        periodic_knots, read_nurbs_curve, read_nurbs_curve_2d, read_nurbs_surface,
-        read_plane_surface, reconstruct_knots, revolution_nurbs, sum_nurbs,
+        decode, periodic_knots, read_nurbs_curve, read_nurbs_curve_2d, read_nurbs_surface,
+        read_plane_surface, reconstruct_knots, revolution_nurbs, sum_nurbs, DecodedSurface,
+        CLIPPING_PLANE_SURFACE,
     };
     use crate::chunks::{ArchiveVersion, BoundedReader};
-    use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+    use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     fn push_i32(bytes: &mut Vec<u8>, value: i32) {
@@ -1141,6 +1312,83 @@ pub(crate) mod tests {
         let mut payload = body.to_vec();
         payload.extend(crc32fast::hash(body).to_le_bytes());
         long_chunk(typecode, &payload)
+    }
+
+    fn anonymous(minor: i32, body: &[u8]) -> Vec<u8> {
+        let mut payload = 1_i32.to_le_bytes().to_vec();
+        payload.extend(minor.to_le_bytes());
+        payload.extend(body);
+        crc_chunk(0x4000_8000, &payload)
+    }
+
+    fn clipping_plane_payload(item_order_valid: bool) -> Vec<u8> {
+        let carrier = crc_chunk(0x4000_8000, &plane_payload(0x11, false, false));
+        let mut clipping = [0x11; 16].to_vec();
+        clipping.extend([0x22; 16]);
+        clipping.extend(&plane_payload(0x11, false, false)[1..129]);
+        clipping.push(1);
+        let mut viewports = 1_i32.to_le_bytes().to_vec();
+        viewports.extend([0x33; 16]);
+        clipping.extend(anonymous(0, &viewports));
+        clipping.extend(2.5_f64.to_le_bytes());
+        clipping.push(1);
+        clipping.push(if item_order_valid { 10 } else { 13 });
+        if item_order_valid {
+            clipping.extend(1_i32.to_le_bytes());
+            clipping.extend([0x44; 16]);
+            clipping.push(11);
+            clipping.extend(1_i32.to_le_bytes());
+            clipping.extend(7_i32.to_le_bytes());
+            clipping.push(12);
+            clipping.push(0);
+            clipping.push(13);
+            clipping.push(1);
+        } else {
+            clipping.push(1);
+            clipping.push(10);
+            clipping.extend(0_i32.to_le_bytes());
+        }
+        clipping.push(0);
+        let clipping = anonymous(5, &clipping);
+        let mut outer = 1_i32.to_le_bytes().to_vec();
+        outer.extend(0_i32.to_le_bytes());
+        outer.extend(carrier);
+        outer.extend(clipping);
+        crc_chunk(0x4000_8000, &outer)
+    }
+
+    #[test]
+    fn clipping_plane_decodes_plane_carrier_and_all_v8_suffix_items() {
+        let bytes = clipping_plane_payload(true);
+        let decoded = decode(
+            &bytes,
+            CLIPPING_PLANE_SURFACE,
+            0..bytes.len(),
+            25.4,
+            ArchiveVersion::V8,
+            0,
+        )
+        .expect("clipping plane");
+        let DecodedSurface::Typed {
+            geometry: SurfaceGeometry::Plane { origin, .. },
+            derived,
+        } = decoded
+        else {
+            panic!("typed plane carrier");
+        };
+        assert_eq!(origin, Point3::new(25.4, 50.8, 76.19999999999999));
+        assert!(derived);
+
+        let invalid = clipping_plane_payload(false);
+        assert!(decode(
+            &invalid,
+            CLIPPING_PLANE_SURFACE,
+            0..invalid.len(),
+            1.0,
+            ArchiveVersion::V8,
+            0,
+        )
+        .is_err());
     }
 
     fn line_wrapper(scale_source: f64) -> Vec<u8> {
