@@ -57,7 +57,7 @@ impl Affine {
         Point3::new(coordinate(0), coordinate(1), coordinate(2))
     }
 
-    fn vector(self, vector: Vector3) -> Vector3 {
+    pub(super) fn vector(self, vector: Vector3) -> Vector3 {
         let values = [vector.x, vector.y, vector.z];
         let coordinate = |row: usize| {
             values

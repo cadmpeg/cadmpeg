@@ -5,14 +5,28 @@ use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
-use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{derive_reference_direction, NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_SURFACE_POLES: usize = 1_000_000;
+
+fn cross(left: Vector3, right: Vector3) -> Vector3 {
+    Vector3::new(
+        left.y * right.z - left.z * right.y,
+        left.z * right.x - left.x * right.z,
+        left.x * right.y - left.y * right.x,
+    )
+}
+
+fn normalized(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.norm();
+    (norm.is_finite() && norm > 0.0)
+        .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
+}
 
 pub(super) struct SurfaceProjection {
     pub(super) handled: BTreeSet<u32>,
@@ -37,6 +51,113 @@ pub(super) fn project(
     let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1..=1))
+    {
+        handled.insert(entry.sequence);
+        let Some(factor) = global.length_factor_mm() else {
+            losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let coefficients = [
+            record.number(1),
+            record.number(2),
+            record.number(3),
+            record.number(4),
+        ];
+        let [Some(a), Some(b), Some(c), Some(d)] = coefficients else {
+            losses.push(entity_loss(entry, "plane coefficients are not numeric"));
+            continue;
+        };
+        if coefficients
+            .into_iter()
+            .flatten()
+            .any(|value| !value.is_finite())
+        {
+            losses.push(entity_loss(entry, "plane coefficients are not finite"));
+            continue;
+        }
+        let Some(boundary) = record.integer(5) else {
+            losses.push(entity_loss(
+                entry,
+                "plane boundary pointer is not an integer",
+            ));
+            continue;
+        };
+        if (entry.form == 0 && boundary != 0)
+            || (entry.form != 0 && (boundary <= 0 || boundary % 2 == 0))
+        {
+            losses.push(entity_loss(
+                entry,
+                "plane form and boundary pointer are inconsistent",
+            ));
+            continue;
+        }
+        let local_normal = Vector3::new(a, b, c);
+        let normal_squared = a * a + b * b + c * c;
+        if !normal_squared.is_finite() || normal_squared <= 0.0 {
+            losses.push(entity_loss(entry, "plane normal is degenerate"));
+            continue;
+        }
+        let Some(local_normal_unit) = normalized(local_normal) else {
+            losses.push(entity_loss(entry, "plane normal cannot be normalized"));
+            continue;
+        };
+        let local_u = derive_reference_direction(local_normal_unit);
+        let local_v = cross(local_normal_unit, local_u);
+        let local_origin = Point3::new(
+            a * d / normal_squared * factor,
+            b * d / normal_squared * factor,
+            c * d / normal_squared * factor,
+        );
+        let transform = match resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            factor,
+            &mut BTreeSet::new(),
+        ) {
+            Ok(transform) => transform,
+            Err(message) => {
+                losses.push(entity_loss(entry, message));
+                continue;
+            }
+        };
+        let Some(u_axis) = normalized(transform.vector(local_u)) else {
+            losses.push(entity_loss(
+                entry,
+                "plane placement collapses its u direction",
+            ));
+            continue;
+        };
+        let Some(v_axis) = normalized(transform.vector(local_v)) else {
+            losses.push(entity_loss(
+                entry,
+                "plane placement collapses its v direction",
+            ));
+            continue;
+        };
+        let Some(normal) = normalized(cross(u_axis, v_axis)) else {
+            losses.push(entity_loss(entry, "plane placement collapses its normal"));
+            continue;
+        };
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId(format!("iges:model:surface#D{}", entry.sequence)),
+            geometry: SurfaceGeometry::Plane {
+                origin: transform.point(local_origin),
+                normal,
+                u_axis,
+            },
+            source_object: Some(source_object(entry)),
+        });
+        decoded.insert(entry.sequence);
+    }
 
     for entry in directory
         .iter()

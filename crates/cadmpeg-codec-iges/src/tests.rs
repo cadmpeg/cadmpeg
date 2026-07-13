@@ -281,6 +281,54 @@ fn nurbs_surface_file() -> Vec<u8> {
     bytes
 }
 
+fn plane_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["108", "1", "0", "0", "0", "0", "0", "0", "00000000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        ["108", "0", "0", "1", "0", "", "", "PLANE", "0"],
+        2,
+    ));
+    bytes.extend(parameter_card(b"108,0,0,1,2,0,0,0,2,0;", 1, 1));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
+    let result = IgesCodec
+        .decode(&mut Cursor::new(plane_file()), &DecodeOptions::default())
+        .unwrap();
+
+    let cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    } = &result.ir.model.surfaces[0].geometry
+    else {
+        panic!("expected a plane carrier");
+    };
+    assert_eq!(*origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, 2.0));
+    assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(
+        cadmpeg_ir::eval::surface_point(&result.ir.model.surfaces[0].geometry, 1.0, 3.0),
+        Some(cadmpeg_ir::math::Point3::new(1.0, 3.0, 2.0))
+    );
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn decode_projects_a_bspline_surface_with_u_major_control_order() {
     let result = IgesCodec
