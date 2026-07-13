@@ -289,7 +289,7 @@ count × Hvec              (Hvec block always starts at pre+52, pre = end of cou
 
 Hvec form depends on the stream: partition streams use **`xyz3`** (`x,y,z` meters); deltas streams use **`ext11`** (`x,y,z, p3,p4,p5,p6, tx,ty,tz, t`), with a unit tangent and native `t`. The chart parameter is meter-scale: `t_{k+1} = t_k + chord_k · f_k`, with `t_0 = base_parameter` and chords in meters. `chordal_error` defines the verification tolerance for chart-hosted carriers. Intersection charts use `(base_parameter, base_scale) = (0.0, 1.0)`. Procedural-spine charts have `chart_count == count`, sentinel `parameter_error`, and finite non-zero `base_scale`.
 
-**term_use (`0x29`)** endpoints equal the first/last seed points exactly and are hard trim endpoints (`ref[3]` = start vertex point, `ref[4]` = end vertex point, meters). Three record forms occur for `0x28`/`0x29`/`0x00cc`: direct tagged, `0xff`-escaped, and descriptor-inline (payload follows the ASCII schema keyword + a fixed field-schema tail).
+**term_use (`0x29`)** records are hard trim endpoints (`ref[3]` = start vertex point, `ref[4]` = end vertex point, meters). Each endpoint lies within the CHART_s `chordal_error` of the corresponding first or last chart point. Three record forms occur for `0x28`/`0x29`/`0x00cc`: direct tagged, `0xff`-escaped, and descriptor-inline (payload follows the ASCII schema keyword + a fixed field-schema tail).
 
 **`0x00cc` values-array** packs support UV samples by marker byte:
 

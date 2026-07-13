@@ -67,8 +67,8 @@ fn enrich(
     let chart = charts.get(&construction.references[2])?;
     let start = terms.get(&construction.references[3])?;
     let end = terms.get(&construction.references[4])?;
-    if distance(*start, *chart.points.first()?) > 1.0e-6
-        || distance(*end, *chart.points.last()?) > 1.0e-6
+    if distance(*start, *chart.points.first()?) > chart.fit_tolerance
+        || distance(*end, *chart.points.last()?) > chart.fit_tolerance
     {
         return None;
     }
