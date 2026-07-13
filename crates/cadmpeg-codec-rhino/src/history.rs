@@ -926,7 +926,54 @@ fn extended_geometry_json(
     writer_version: Option<i64>,
     scale: f64,
 ) -> Option<String> {
-    let semantic = if crate::extrusion::supported_class(value.class_id) {
+    let semantic = if crate::mesh::supported_class(value.class_id) {
+        let mut budget = crate::mesh::MeshBudget::new();
+        let mesh = crate::mesh::decode(
+            data,
+            value.class_data_range.clone(),
+            archive,
+            crate::mesh::MeshDecodeOptions {
+                writer_version,
+                association: None,
+                id: "rhino:history:embedded-mesh".to_string(),
+                scale,
+            },
+            &mut budget,
+        )
+        .ok()?;
+        serde_json::json!({
+            "kind": "mesh",
+            "vertices": mesh.tessellation.vertices,
+            "triangles": mesh.tessellation.triangles,
+            "strip_lengths": mesh.tessellation.strip_lengths,
+            "normals": mesh.tessellation.normals,
+            "channels": mesh.tessellation.channels,
+        })
+    } else if crate::subd::supported_class(value.class_id) {
+        let subd = crate::subd::decode(
+            data,
+            value.class_data_range.clone(),
+            archive,
+            scale,
+            cadmpeg_ir::ids::SubdId("rhino:history:embedded-subd".to_string()),
+        )
+        .ok()?;
+        match subd {
+            crate::subd::DecodedSubd::Empty => serde_json::json!({
+                "kind": "subd",
+                "empty": true,
+            }),
+            crate::subd::DecodedSubd::Surface {
+                surface,
+                neutral_metadata,
+                ..
+            } => serde_json::json!({
+                "kind": "subd",
+                "surface": surface,
+                "neutral_metadata": neutral_metadata,
+            }),
+        }
+    } else if crate::extrusion::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
         let extrusion = crate::extrusion::decode(
             data,
@@ -1402,6 +1449,19 @@ mod tests {
         assert_eq!(
             semantic["control_points"][7],
             serde_json::json!([70.0, 0.0, 0.0])
+        );
+
+        let empty_subd = [0_u8];
+        let geometry = EmbeddedGeometry {
+            class_id: crate::subd::ON_SUBD,
+            class_data_range: 0..1,
+        };
+        let semantic =
+            extended_geometry_json(&empty_subd, &geometry, ArchiveVersion::V8, None, 1.0)
+                .expect("empty SubD semantics");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&semantic).unwrap(),
+            serde_json::json!({"kind": "subd", "empty": true})
         );
     }
 }
