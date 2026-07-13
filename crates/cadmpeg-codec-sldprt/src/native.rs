@@ -120,6 +120,40 @@ impl SldprtNative {
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+        for history in &self.feature_histories {
+            if let Some(record) = history
+                .configurations
+                .iter()
+                .find(|record| record.parent != history.id)
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "configuration {} references {} instead of {}",
+                    record.id, record.parent, history.id
+                )));
+            }
+            if let Some(record) = history
+                .features
+                .iter()
+                .find(|record| record.parent != history.id)
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "feature {} references {} instead of {}",
+                    record.id, record.parent, history.id
+                )));
+            }
+        }
+        for lane in &self.feature_input_lanes {
+            if let Some(record) = lane
+                .sketch_entities
+                .iter()
+                .find(|record| record.parent != lane.id)
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "sketch input entity {} references {} instead of {}",
+                    record.id, record.parent, lane.id
+                )));
+            }
+        }
         namespace.version = SLDPRT_NATIVE_VERSION;
         let histories = self
             .feature_histories

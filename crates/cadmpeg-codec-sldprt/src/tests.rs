@@ -4265,6 +4265,44 @@ fn native_validation_rejects_orphan_history_records() {
 }
 
 #[test]
+fn native_store_rejects_mismatched_nested_owners_atomically() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut native = sldprt_native(&decoded.ir);
+    native.feature_histories[0].features[0].parent = "missing-history".into();
+    let before = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    let error = native
+        .store(decoded.ir.native.namespace_mut("sldprt"))
+        .unwrap_err();
+    assert!(error.to_string().contains("invalid owner"));
+    assert_eq!(decoded.ir.native.namespace("sldprt").unwrap(), &before);
+}
+
+#[test]
+fn native_validation_rejects_duplicate_sketch_marker_offsets() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_resolved_features(
+                &triangle_body(),
+                &[0, 1],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        let offset = native.feature_input_lanes[0].sketch_entities[0].offset;
+        native.feature_input_lanes[0].sketch_entities[1].offset = offset;
+    });
+    assert!(crate::validate_native(&decoded.ir)
+        .iter()
+        .any(|finding| finding.message.contains("repeats entity offset")));
+}
+
+#[test]
 fn semantic_writer_preserves_idless_feature_tree_nodes() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

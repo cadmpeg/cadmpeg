@@ -162,6 +162,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     for lane in &native.feature_input_lanes {
         let mut ordinals = std::collections::HashSet::new();
+        let mut offsets = std::collections::HashSet::new();
         for entity in &lane.sketch_entities {
             if !ordinals.insert(entity.ordinal) {
                 findings.push(Finding {
@@ -170,6 +171,17 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     message: format!(
                         "SolidWorks feature-input lane repeats entity ordinal {}",
                         entity.ordinal
+                    ),
+                    entity: Some(entity.id.clone()),
+                });
+            }
+            if !offsets.insert(entity.offset) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!(
+                        "SolidWorks feature-input lane repeats entity offset {}",
+                        entity.offset
                     ),
                     entity: Some(entity.id.clone()),
                 });
