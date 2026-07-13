@@ -1703,13 +1703,17 @@ fn project_loft(
     feature: &Feature,
     native_by_source: &HashMap<&str, &str>,
 ) -> Option<FeatureDefinition> {
-    let profiles = resolve_native_refs(feature.properties.get("Profiles")?, native_by_source)?
-        .into_iter()
-        .map(ProfileRef::Native)
-        .collect::<Vec<_>>();
-    if profiles.len() < 2 {
-        return None;
-    }
+    let profiles = feature.properties.get("Profiles").map_or_else(
+        || Some(Vec::new()),
+        |value| {
+            Some(
+                resolve_native_refs(value, native_by_source)?
+                    .into_iter()
+                    .map(ProfileRef::Native)
+                    .collect::<Vec<_>>(),
+            )
+        },
+    )?;
     let guides = feature.properties.get("Guides").map_or_else(
         || Some(Vec::new()),
         |value| resolve_native_refs(value, native_by_source),
@@ -1721,7 +1725,8 @@ fn project_loft(
             .properties
             .get("Operation")
             .and_then(|operation| parse_boolean_op(operation))
-            .or_else(|| loft_op(&feature.kind))?,
+            .or_else(|| loft_op(&feature.kind))
+            .unwrap_or(BooleanOp::Unresolved),
         closed: feature
             .properties
             .get("Closed")
@@ -5988,10 +5993,15 @@ pub fn sync_neutral_features(
                 op,
                 closed,
             } => {
-                if existing.as_deref().is_some_and(|record| !is_loft(record)) || profiles.len() < 2
-                {
+                if existing.as_deref().is_some_and(|record| !is_loft(record)) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported loft semantics",
+                        feature.id
+                    )));
+                }
+                if existing.is_none() && (profiles.len() < 2 || *op == BooleanOp::Unresolved) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved loft construction semantics",
                         feature.id
                     )));
                 }
@@ -6016,17 +6026,23 @@ pub fn sync_neutral_features(
                         ))
                     })?;
                 let mut properties = feature.source_properties.clone();
-                properties.insert("Profiles".into(), profile_sources.join(","));
-                if guide_sources.is_empty() {
+                if !profile_sources.is_empty() || existing.is_none() {
+                    properties.insert("Profiles".into(), profile_sources.join(","));
+                }
+                if guide_sources.is_empty() && existing.is_none() {
                     properties.remove("Guides");
-                } else {
+                } else if !guide_sources.is_empty() {
                     properties.insert("Guides".into(), guide_sources.join(","));
                 }
-                properties.insert(
-                    "Operation".into(),
-                    resolved_boolean_op(*op, &feature.id)?.into(),
-                );
-                properties.insert("Closed".into(), closed.to_string());
+                if *op != BooleanOp::Unresolved {
+                    properties.insert(
+                        "Operation".into(),
+                        resolved_boolean_op(*op, &feature.id)?.into(),
+                    );
+                }
+                if *closed || existing.is_none() || properties.contains_key("Closed") {
+                    properties.insert("Closed".into(), closed.to_string());
+                }
                 (
                     existing
                         .as_deref()

@@ -11002,6 +11002,51 @@ fn semantic_writer_round_trips_typed_loft() {
 }
 
 #[test]
+fn semantic_writer_retains_unresolved_native_loft_construction() {
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Loft Name="Unknown loft" Type="Custom" id="151"/></Keywords>"#,
+    ));
+
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Loft {
+            ref profiles,
+            ref guides,
+            op: BooleanOp::Unresolved,
+            closed: false,
+        } if profiles.is_empty() && guides.is_empty()
+    ));
+    decoded.ir.model.features[0].name = Some("Renamed loft".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert!(!native.properties.contains_key("Profiles"));
+    assert!(!native.properties.contains_key("Operation"));
+    assert!(!native.properties.contains_key("Closed"));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Loft {
+            op: BooleanOp::Unresolved,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_boundary_boss_as_loft() {
     use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, ProfileRef};
 
