@@ -6986,6 +6986,7 @@ fn generated_design_bulkstream() -> Vec<u8> {
     recipe_prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
     recipe_prefix[4..7].copy_from_slice(b"322");
     recipe_prefix[11..15].copy_from_slice(&123i32.to_le_bytes());
+    recipe_prefix[23..27].copy_from_slice(&16u32.to_le_bytes());
     out.extend_from_slice(&recipe_prefix);
     out.extend_from_slice(b"body_recipe_data");
     out.extend_from_slice(&(-1i64).to_le_bytes());
@@ -7000,6 +7001,7 @@ fn generated_design_bulkstream() -> Vec<u8> {
     out.extend_from_slice(&3u32.to_le_bytes());
     out.extend_from_slice(b"419");
     out.extend_from_slice(&4646u32.to_le_bytes());
+    out.extend_from_slice(b"body_recipe_data");
     out
 }
 

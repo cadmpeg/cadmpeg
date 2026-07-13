@@ -1248,6 +1248,14 @@ fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) 
             {
                 continue;
             }
+            let framed_name = offset
+                .checked_sub(4)
+                .and_then(|at| u32_at(bytes, at))
+                .and_then(|length| usize::try_from(length).ok())
+                == Some(name.len());
+            if !framed_name {
+                continue;
+            }
             let design_id_field = recipe_design_id(bytes, offset, name);
             let design_id = design_id_field.as_ref().map(|field| field.0.clone());
             let key = (kind, design_id.clone());
