@@ -47,6 +47,7 @@ pub mod ids;
 pub mod le;
 pub mod math;
 pub mod native;
+pub mod pmi;
 pub mod product;
 mod provenance;
 pub mod read;
@@ -72,6 +73,10 @@ pub use features::{
     PmiDimensionSubtype, ScaleCenter, ScaleFactors, SketchSpace,
 };
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
+pub use pmi::{
+    DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
+    PmiQuantity, PmiTarget, PmiValue,
+};
 pub use product::{OccurrenceParent, Product, ProductOccurrence};
 /// Source location attached to a [`LossNote`].
 pub use provenance::Provenance as LossProvenance;

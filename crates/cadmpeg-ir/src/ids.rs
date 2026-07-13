@@ -118,3 +118,7 @@ id_type!(
     /// Identifies a placed [`crate::product::ProductOccurrence`].
     OccurrenceId
 );
+id_type!(
+    /// Identifies a document-level [`crate::pmi::PmiAnnotation`].
+    PmiId
+);

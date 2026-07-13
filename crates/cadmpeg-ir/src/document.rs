@@ -49,6 +49,7 @@ macro_rules! arena_registry {
             attributes: SourceAttribute, "Attribute arena.", [] => |e| e.id.0.clone();
             products: crate::product::Product, "Product prototype arena.", [serde(default)] => |e| e.id.0.clone();
             occurrences: crate::product::ProductOccurrence, "Placed product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
+            pmi: crate::pmi::PmiAnnotation, "Product-manufacturing information arena.", [serde(default)] => |e| e.id.0.clone();
         }
     };
 }

@@ -147,6 +147,8 @@ pub enum Check {
     Identity,
     /// Product occurrence ownership, references, or acyclicity.
     ProductStructure,
+    /// PMI targets and annotation-to-annotation references.
+    Pmi,
     /// An arena is not sorted lexicographically by entity id.
     ArenaOrder,
     /// A referenced id does not resolve in its arena.
@@ -190,6 +192,7 @@ impl fmt::Display for Check {
             Self::Version => "version",
             Self::Identity => "identity",
             Self::ProductStructure => "product_structure",
+            Self::Pmi => "pmi",
             Self::ArenaOrder => "arena_order",
             Self::ReferentialIntegrity => "referential_integrity",
             Self::LoopClosure => "loop_closure",
