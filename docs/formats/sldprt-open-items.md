@@ -27,7 +27,7 @@ The schema-33103 sheet discriminator is unresolved. `0x1d/flo2` belongs to the f
 ## Design intent
 
 - `ResolvedFeatures` relation families other than point-point, line-line, point-line, horizontal, and vertical distances, angular relations, and circle diameter; operand-to-profile-locus ownership; and relation expressions are unresolved.
-- Sketch marker type codes `4..27` are unresolved.
+- Non-coordinate sketch marker type codes above `27` are unresolved.
 - Marker-to-profile correspondence is unresolved when the feature's coordinate sets admit no unique signed-axis transform or a reference marker's linked loci do not identify one profile entity.
 - Keywords operation families outside the typed neutral feature set are unresolved.
 - The termination carrier for compact extrusion objects with no owned `Depth` or `D1` scalar is unresolved.

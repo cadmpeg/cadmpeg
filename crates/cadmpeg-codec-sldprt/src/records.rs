@@ -487,6 +487,8 @@ pub enum SketchInputKind {
     Arc,
     /// A sketch point bound by a geometric constraint.
     ConstrainedPoint,
+    /// A non-coordinate sketch relation handle.
+    Relation(SketchRelationKind),
     /// A native code not in the known vocabulary, preserved verbatim.
     Native(u32),
 }
@@ -504,6 +506,15 @@ impl SketchInputKind {
         }
     }
 
+    /// Maps a marker code using the marker layout to separate geometry handles
+    /// from relation handles that reuse codes `1..3`.
+    pub fn from_native_code_and_layout(code: u32, coordinate_bearing: bool) -> Self {
+        if coordinate_bearing || code == 0 {
+            return Self::from_native_code(code);
+        }
+        SketchRelationKind::from_native_code(code).map_or(Self::Native(code), Self::Relation)
+    }
+
     /// Returns the native sketch-entity type code for this kind, the inverse of
     /// [`SketchInputKind::from_native_code`].
     pub fn native_code(self) -> u32 {
@@ -512,7 +523,170 @@ impl SketchInputKind {
             Self::LineOrCircle => 1,
             Self::Arc => 2,
             Self::ConstrainedPoint => 3,
+            Self::Relation(relation) => relation.native_code(),
             Self::Native(value) => value,
+        }
+    }
+}
+
+/// Relation kind carried by a non-coordinate sketch marker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchRelationKind {
+    /// Linear distance.
+    Distance,
+    /// Angular distance.
+    Angle,
+    /// Radius dimension.
+    Radius,
+    /// Horizontal entity or point alignment.
+    Horizontal,
+    /// Vertical entity or point alignment.
+    Vertical,
+    /// Tangency.
+    Tangent,
+    /// Parallelism.
+    Parallel,
+    /// Perpendicularity.
+    Perpendicular,
+    /// Point-on-entity coincidence.
+    Coincident,
+    /// Shared center.
+    Concentric,
+    /// Symmetry about a centerline.
+    Symmetric,
+    /// Midpoint incidence.
+    Midpoint,
+    /// Intersection incidence.
+    AtIntersection,
+    /// Equal length or radius.
+    Equal,
+    /// Diameter dimension.
+    Diameter,
+    /// Offset-edge relation.
+    OffsetEdge,
+    /// Fixed geometry.
+    Fixed,
+    /// Arc angle fixed at 90 degrees.
+    ArcAngle90,
+    /// Arc angle fixed at 180 degrees.
+    ArcAngle180,
+    /// Arc angle fixed at 270 degrees.
+    ArcAngle270,
+    /// Arc constrained to the top cardinal position.
+    ArcAngleTop,
+    /// Arc constrained to the bottom cardinal position.
+    ArcAngleBottom,
+    /// Arc constrained to the left cardinal position.
+    ArcAngleLeft,
+    /// Arc constrained to the right cardinal position.
+    ArcAngleRight,
+    /// Horizontal point alignment.
+    HorizontalPoints,
+    /// Vertical point alignment.
+    VerticalPoints,
+    /// Collinearity.
+    Collinear,
+}
+
+impl SketchRelationKind {
+    /// Decodes relation codes `1..27`.
+    pub fn from_native_code(code: u32) -> Option<Self> {
+        Some(match code {
+            1 => Self::Distance,
+            2 => Self::Angle,
+            3 => Self::Radius,
+            4 => Self::Horizontal,
+            5 => Self::Vertical,
+            6 => Self::Tangent,
+            7 => Self::Parallel,
+            8 => Self::Perpendicular,
+            9 => Self::Coincident,
+            10 => Self::Concentric,
+            11 => Self::Symmetric,
+            12 => Self::Midpoint,
+            13 => Self::AtIntersection,
+            14 => Self::Equal,
+            15 => Self::Diameter,
+            16 => Self::OffsetEdge,
+            17 => Self::Fixed,
+            18 => Self::ArcAngle90,
+            19 => Self::ArcAngle180,
+            20 => Self::ArcAngle270,
+            21 => Self::ArcAngleTop,
+            22 => Self::ArcAngleBottom,
+            23 => Self::ArcAngleLeft,
+            24 => Self::ArcAngleRight,
+            25 => Self::HorizontalPoints,
+            26 => Self::VerticalPoints,
+            27 => Self::Collinear,
+            _ => return None,
+        })
+    }
+
+    /// Returns the serialized relation code.
+    pub fn native_code(self) -> u32 {
+        match self {
+            Self::Distance => 1,
+            Self::Angle => 2,
+            Self::Radius => 3,
+            Self::Horizontal => 4,
+            Self::Vertical => 5,
+            Self::Tangent => 6,
+            Self::Parallel => 7,
+            Self::Perpendicular => 8,
+            Self::Coincident => 9,
+            Self::Concentric => 10,
+            Self::Symmetric => 11,
+            Self::Midpoint => 12,
+            Self::AtIntersection => 13,
+            Self::Equal => 14,
+            Self::Diameter => 15,
+            Self::OffsetEdge => 16,
+            Self::Fixed => 17,
+            Self::ArcAngle90 => 18,
+            Self::ArcAngle180 => 19,
+            Self::ArcAngle270 => 20,
+            Self::ArcAngleTop => 21,
+            Self::ArcAngleBottom => 22,
+            Self::ArcAngleLeft => 23,
+            Self::ArcAngleRight => 24,
+            Self::HorizontalPoints => 25,
+            Self::VerticalPoints => 26,
+            Self::Collinear => 27,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SketchInputKind, SketchRelationKind};
+
+    #[test]
+    fn marker_layout_disambiguates_geometry_and_relation_codes() {
+        assert_eq!(
+            SketchInputKind::from_native_code_and_layout(1, true),
+            SketchInputKind::LineOrCircle
+        );
+        assert_eq!(
+            SketchInputKind::from_native_code_and_layout(1, false),
+            SketchInputKind::Relation(SketchRelationKind::Distance)
+        );
+        assert_eq!(
+            SketchInputKind::from_native_code_and_layout(9, false),
+            SketchInputKind::Relation(SketchRelationKind::Coincident)
+        );
+        assert_eq!(
+            SketchInputKind::from_native_code_and_layout(27, false),
+            SketchInputKind::Relation(SketchRelationKind::Collinear)
+        );
+        assert_eq!(
+            SketchInputKind::from_native_code_and_layout(28, false),
+            SketchInputKind::Native(28)
+        );
+        for code in 1..=27 {
+            let relation = SketchRelationKind::from_native_code(code).unwrap();
+            assert_eq!(relation.native_code(), code);
         }
     }
 }

@@ -84,6 +84,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                         "ff_ff_1f_00_03",
                         Exactness::ByteExact,
                     );
+                    let coordinates_m = marker_coordinates(&block.payload, offset);
                     SketchInputEntity {
                         id,
                         parent: parent.clone(),
@@ -91,9 +92,12 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                         ordinal: ordinal as u32,
                         offset: offset as u64,
                         local_id: marker_local_id(&block.payload, offset),
-                        kind: SketchInputKind::from_native_code(code),
+                        kind: SketchInputKind::from_native_code_and_layout(
+                            code,
+                            coordinates_m.is_some(),
+                        ),
                         state_value: marker_state_value(&block.payload, offset),
-                        coordinates_m: marker_coordinates(&block.payload, offset),
+                        coordinates_m,
                         links: Vec::new(),
                         link_selector: None,
                     }

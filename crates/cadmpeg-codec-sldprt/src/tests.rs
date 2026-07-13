@@ -12929,10 +12929,22 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .unwrap()
     };
     assert_eq!(by_ordinal(0).kind, SketchInputKind::Point);
-    assert_eq!(by_ordinal(1).kind, SketchInputKind::LineOrCircle);
-    assert_eq!(by_ordinal(2).kind, SketchInputKind::Arc);
-    assert_eq!(by_ordinal(3).kind, SketchInputKind::ConstrainedPoint);
-    assert_eq!(by_ordinal(4).kind, SketchInputKind::Native(9));
+    assert_eq!(
+        by_ordinal(1).kind,
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Distance)
+    );
+    assert_eq!(
+        by_ordinal(2).kind,
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Angle)
+    );
+    assert_eq!(
+        by_ordinal(3).kind,
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Radius)
+    );
+    assert_eq!(
+        by_ordinal(4).kind,
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Coincident)
+    );
     update_sldprt_native(&mut decoded.ir, |native| {
         let entity = native.feature_input_lanes[0]
             .sketch_entities
@@ -12959,7 +12971,10 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let entity = &sldprt_native(&regenerated.ir).feature_input_lanes[0].sketch_entities[1];
-    assert_eq!(entity.kind, SketchInputKind::Native(5));
+    assert_eq!(
+        entity.kind,
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Vertical)
+    );
     assert_eq!(entity.state_value, Some(12.5));
     assert_eq!(
         sldprt_native(&regenerated.ir).feature_input_lanes[0]
@@ -12968,7 +12983,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .find(|entity| entity.ordinal == 1)
             .unwrap()
             .kind,
-        SketchInputKind::Native(5)
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Vertical)
     );
 }
 
