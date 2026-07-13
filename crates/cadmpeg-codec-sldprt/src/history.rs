@@ -338,7 +338,7 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
 
 /// Project every native feature dimension into the neutral parameter arena.
 pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> {
-    histories
+    let mut parameters = histories
         .iter()
         .flat_map(|history| &history.features)
         .flat_map(|feature| {
@@ -382,10 +382,43 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                     name,
                     expression: expression.clone(),
                     value,
+                    dependencies: Vec::new(),
                 }
             })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    populate_parameter_dependencies(&mut parameters);
+    parameters
+}
+
+fn populate_parameter_dependencies(parameters: &mut [DesignParameter]) {
+    let mut aliases = HashMap::<String, Option<ParameterId>>::new();
+    for parameter in parameters.iter() {
+        for alias in std::iter::once(parameter.id.0.as_str())
+            .chain(std::iter::once(parameter.name.as_str()))
+            .chain(parameter.properties.get("EquationId").map(String::as_str))
+        {
+            aliases
+                .entry(alias.to_string())
+                .and_modify(|candidate| *candidate = None)
+                .or_insert_with(|| Some(parameter.id.clone()));
+        }
+    }
+    for parameter in parameters.iter_mut() {
+        let mut seen = std::collections::HashSet::new();
+        parameter.dependencies = expression_identifiers(&parameter.expression)
+            .filter_map(|identifier| aliases.get(identifier).and_then(Clone::clone))
+            .filter(|dependency| dependency != &parameter.id && seen.insert(dependency.clone()))
+            .collect();
+    }
+}
+
+fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
+    expression
+        .split(|character: char| {
+            !(character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.' | '-'))
+        })
+        .filter(|identifier| !identifier.is_empty())
 }
 
 /// Bind a uniquely identified native sketch history node to solved sketch geometry.
@@ -1858,6 +1891,19 @@ fn sync_neutral_parameters(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
+    let mut projected_dependencies = ir.model.parameters.clone();
+    populate_parameter_dependencies(&mut projected_dependencies);
+    if ir
+        .model
+        .parameters
+        .iter()
+        .zip(&projected_dependencies)
+        .any(|(actual, projected)| actual.dependencies != projected.dependencies)
+    {
+        return Err(CodecError::Malformed(
+            "SLDPRT parameter dependencies are inconsistent with their expressions".into(),
+        ));
+    }
     let features = ir
         .model
         .features

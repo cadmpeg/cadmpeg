@@ -2974,6 +2974,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         name: "Pitch".into(),
         expression: "D1@Sketch1 * 2".into(),
         value: None,
+        dependencies: Vec::new(),
         properties: BTreeMap::new(),
     });
 
@@ -5117,6 +5118,32 @@ fn semantic_writer_preserves_evaluated_equation_values() {
     assert_eq!(parameter.value, Some(ParameterValue::Length(Length(36.0))));
     assert_eq!(parameter.properties["Value"], "36mm");
     assert_eq!(parameter.properties["EquationId"], "D1@Boss");
+}
+
+#[test]
+fn semantic_writer_projects_and_validates_parameter_dependencies() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Base" EquationId="D1@Equations">2mm</Dimension><Dimension Name="Driven" EquationId="D2@Equations">D1@Equations * 3</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.parameters.len(), 2);
+    assert_eq!(
+        decoded.ir.model.parameters[1].dependencies,
+        vec![decoded.ir.model.parameters[0].id.clone()]
+    );
+
+    decoded.ir.model.parameters[1].expression = "6mm".into();
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("dependencies are inconsistent with their expressions"));
 }
 
 #[test]

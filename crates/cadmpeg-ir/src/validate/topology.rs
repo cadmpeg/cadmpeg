@@ -713,6 +713,18 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         .iter()
         .map(|feature| feature.id.0.as_str())
         .collect::<HashSet<_>>();
+    let feature_ordinals = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (&feature.id, feature.ordinal))
+        .collect::<HashMap<_, _>>();
+    let parameters = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (&parameter.id, (&parameter.owner, parameter.ordinal)))
+        .collect::<HashMap<_, _>>();
     let mut parameter_names = HashSet::new();
     let mut parameter_ordinals = HashSet::new();
     for parameter in &ir.model.parameters {
@@ -740,6 +752,51 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 ),
                 entity: Some(parameter.id.0.clone()),
             });
+        }
+        let mut dependencies = HashSet::new();
+        for dependency in &parameter.dependencies {
+            if !dependencies.insert(dependency) {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: format!(
+                        "parameter {} repeats dependency `{}`",
+                        parameter.id.0, dependency.0
+                    ),
+                    entity: Some(parameter.id.0.clone()),
+                });
+                continue;
+            }
+            let Some((owner, ordinal)) = parameters.get(dependency) else {
+                ref_error(
+                    findings,
+                    &parameter.id.0,
+                    "parameter dependency",
+                    &dependency.0,
+                );
+                continue;
+            };
+            let precedes = if *owner == &parameter.owner {
+                *ordinal < parameter.ordinal
+            } else {
+                feature_ordinals
+                    .get(*owner)
+                    .zip(feature_ordinals.get(&parameter.owner))
+                    .is_some_and(|(dependency_owner, parameter_owner)| {
+                        dependency_owner < parameter_owner
+                    })
+            };
+            if !precedes {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!(
+                        "parameter dependency `{}` does not precede its consumer",
+                        dependency.0
+                    ),
+                    entity: Some(parameter.id.0.clone()),
+                });
+            }
         }
     }
     let sketches = ir

@@ -92,6 +92,9 @@ pub struct DesignParameter {
     /// Evaluated scalar when available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<ParameterValue>,
+    /// Parameters referenced by `expression`, in source expression order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<ParameterId>,
     /// Source dimension properties not represented by another field.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,

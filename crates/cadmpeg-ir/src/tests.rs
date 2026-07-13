@@ -668,6 +668,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
             name: name.into(),
             expression: "1mm".into(),
             value: None,
+            dependencies: Vec::new(),
             properties: BTreeMap::new(),
         });
     }
@@ -681,6 +682,59 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("repeats parameter ordinal")));
+}
+
+#[test]
+fn parameter_dependencies_must_exist_and_precede_consumers() {
+    use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
+    use std::collections::BTreeMap;
+
+    let mut ir = unit_cube();
+    let owner = FeatureId("synthetic:test:feature#dependency-owner".into());
+    ir.model.features.push(Feature {
+        id: owner.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: false,
+        parent: None,
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Native {
+            kind: "Test".into(),
+            parameters: BTreeMap::new(),
+            properties: BTreeMap::new(),
+        },
+        native_ref: None,
+    });
+    let first = ParameterId("synthetic:test:parameter#first".into());
+    let second = ParameterId("synthetic:test:parameter#second".into());
+    for (id, ordinal, dependencies) in [
+        (first.clone(), 0, vec![second.clone()]),
+        (
+            second,
+            1,
+            vec![ParameterId("synthetic:test:parameter#missing".into())],
+        ),
+    ] {
+        ir.model.parameters.push(DesignParameter {
+            id,
+            owner: owner.clone(),
+            ordinal,
+            name: format!("P{ordinal}"),
+            expression: String::new(),
+            value: None,
+            dependencies,
+            properties: BTreeMap::new(),
+        });
+    }
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("does not precede its consumer")));
+    assert!(findings.iter().any(|finding| {
+        finding
+            .message
+            .contains("parameter dependency `synthetic:test:parameter#missing`")
+    }));
 }
 
 #[test]
