@@ -264,6 +264,7 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
                     .unwrap_or(&configuration.id)
             )),
             ordinal: configuration.ordinal,
+            source_index: None,
             name: configuration.name.clone(),
             material: configuration.material.clone(),
             properties: configuration.properties.clone(),

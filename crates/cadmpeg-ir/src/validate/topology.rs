@@ -885,6 +885,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
     };
 
     let mut configuration_ordinals = HashSet::new();
+    let mut configuration_source_indices = HashSet::new();
     for configuration in &ir.model.configurations {
         if !configuration_ordinals.insert(configuration.ordinal) {
             findings.push(Finding {
@@ -896,6 +897,16 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 ),
                 entity: Some(configuration.id.0.clone()),
             });
+        }
+        if let Some(source_index) = configuration.source_index {
+            if !configuration_source_indices.insert(source_index) {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: format!("design repeats configuration source index {source_index}"),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
         }
         let mut seen = HashSet::new();
         for body in &configuration.bodies {

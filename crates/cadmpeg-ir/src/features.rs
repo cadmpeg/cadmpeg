@@ -49,6 +49,9 @@ pub struct DesignConfiguration {
     /// Position in the design configuration list.
     #[serde(default)]
     pub ordinal: u32,
+    /// Format-native configuration slot, when distinct from list order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_index: Option<u32>,
     /// Source display name.
     pub name: String,
     /// Material override, when present.

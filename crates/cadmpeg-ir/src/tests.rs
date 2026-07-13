@@ -678,6 +678,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations.push(DesignConfiguration {
         id: configuration_id.clone(),
         ordinal: 0,
+        source_index: Some(7),
         name: "Default".into(),
         material: None,
         properties: BTreeMap::new(),
@@ -706,6 +707,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("synthetic:test:configuration#1".into()),
         ordinal: 0,
+        source_index: Some(7),
         name: "Alternate".into(),
         material: None,
         properties: BTreeMap::new(),
@@ -718,6 +720,9 @@ fn configuration_body_membership_round_trips_and_validates() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("repeats configuration ordinal")));
+    assert!(report.findings.iter().any(|finding| finding
+        .message
+        .contains("repeats configuration source index")));
 }
 
 #[test]

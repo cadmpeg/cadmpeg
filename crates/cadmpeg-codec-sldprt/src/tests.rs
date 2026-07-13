@@ -2404,6 +2404,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("sldprt:model:configuration#generated:z".into()),
         ordinal: 0,
+        source_index: None,
         name: "Metric".into(),
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
@@ -2413,6 +2414,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("sldprt:model:configuration#generated:a".into()),
         ordinal: 1,
+        source_index: None,
         name: "Empty".into(),
         material: None,
         properties: BTreeMap::new(),
@@ -2535,6 +2537,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .map(|(index, body)| DesignConfiguration {
             id: ConfigurationId(format!("synthetic:test:configuration#config-{index}")),
             ordinal: index as u32,
+            source_index: None,
             name: format!("Config {index}"),
             material: None,
             properties: BTreeMap::new(),
@@ -2633,7 +2636,8 @@ fn decode_synthesizes_sparse_partition_configuration() {
         .unwrap();
     assert_eq!(decoded.ir.model.configurations.len(), 1);
     let configuration = &decoded.ir.model.configurations[0];
-    assert_eq!(configuration.ordinal, 3);
+    assert_eq!(configuration.ordinal, 0);
+    assert_eq!(configuration.source_index, Some(3));
     assert_eq!(configuration.name, "Config-3");
     assert_eq!(
         configuration.bodies,

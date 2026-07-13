@@ -851,37 +851,55 @@ fn assign_configuration_bodies(
     ir: &mut CadIr,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
 ) {
-    for (index, bodies) in configuration_bodies {
-        let Ok(ordinal) = u32::try_from(*index) else {
+    let mut partitions = configuration_bodies
+        .iter()
+        .filter_map(|(index, bodies)| {
+            u32::try_from(*index)
+                .ok()
+                .map(|index| (index, bodies.clone()))
+        })
+        .collect::<Vec<_>>();
+    partitions.sort_by_key(|(index, _)| *index);
+    let mut configurations = (0..ir.model.configurations.len()).collect::<Vec<_>>();
+    configurations.sort_by_key(|position| ir.model.configurations[*position].ordinal);
+    if configurations.len() == partitions.len() {
+        for (position, (source_index, bodies)) in configurations.into_iter().zip(partitions) {
+            let configuration = &mut ir.model.configurations[position];
+            configuration.source_index = Some(source_index);
+            configuration.bodies = bodies;
+        }
+        return;
+    }
+    for (source_index, bodies) in partitions {
+        if let Some(configuration) = ir.model.configurations.iter_mut().find(|configuration| {
+            configuration.source_index == Some(source_index)
+                || configuration.source_index.is_none() && configuration.ordinal == source_index
+        }) {
+            configuration.source_index = Some(source_index);
+            configuration.bodies = bodies;
             continue;
-        };
-        let configuration = if let Some(position) = ir
+        }
+        let ordinal = ir
             .model
             .configurations
             .iter()
-            .position(|configuration| configuration.ordinal == ordinal)
-        {
-            &mut ir.model.configurations[position]
-        } else {
-            ir.model
-                .configurations
-                .push(cadmpeg_ir::features::DesignConfiguration {
-                    id: cadmpeg_ir::features::ConfigurationId(format!(
-                        "sldprt:model:configuration#partition:{index}"
-                    )),
-                    ordinal,
-                    name: format!("Config-{index}"),
-                    material: None,
-                    properties: std::collections::BTreeMap::new(),
-                    bodies: Vec::new(),
-                    native_ref: None,
-                });
-            ir.model
-                .configurations
-                .last_mut()
-                .expect("configuration was inserted")
-        };
-        configuration.bodies.clone_from(bodies);
+            .map(|configuration| configuration.ordinal)
+            .max()
+            .map_or(0, |ordinal| ordinal.saturating_add(1));
+        ir.model
+            .configurations
+            .push(cadmpeg_ir::features::DesignConfiguration {
+                id: cadmpeg_ir::features::ConfigurationId(format!(
+                    "sldprt:model:configuration#partition:{source_index}"
+                )),
+                ordinal,
+                source_index: Some(source_index),
+                name: format!("Config-{source_index}"),
+                material: None,
+                properties: std::collections::BTreeMap::new(),
+                bodies,
+                native_ref: None,
+            });
     }
 }
 
