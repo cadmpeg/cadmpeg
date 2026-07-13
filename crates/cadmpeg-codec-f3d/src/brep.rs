@@ -4379,6 +4379,7 @@ fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> 
     Some(CreationTimestamp {
         id: format!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
         target: attribute.target.clone(),
+        record_index: attribute_key(attribute).parse().ok()?,
         unix_microseconds: *unix_microseconds,
     })
 }

@@ -7851,6 +7851,7 @@ pub fn write_semantic(
     let coedge_sense_edits =
         validate_coedge_sense_edits(&baseline.ir.model.coedges, &target.model.coedges)?;
     let history_state_edits = validate_history_state_edits(&baseline.ir, target)?;
+    let creation_timestamp_edits = validate_creation_timestamp_edits(&baseline.ir, target)?;
     let mut supported_target = baseline.ir.clone();
     supported_target
         .model
@@ -7947,6 +7948,9 @@ pub fn write_semantic(
         supported
             .asm_histories
             .clone_from(&target_native.asm_histories);
+        supported
+            .creation_timestamps
+            .clone_from(&target_native.creation_timestamps);
         supported.store(supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::semantic_hash(&supported_target) != decode::semantic_hash(target) {
@@ -8149,6 +8153,7 @@ pub fn write_semantic(
                 &pcurve_edits,
                 &procedural_curve_edits,
                 &procedural_surface_fit_edits,
+                &creation_timestamp_edits,
             )?;
             if let Some(edits) = history_state_edits.get(&name) {
                 patch_history_states(&mut bytes, edits)?;
@@ -8220,6 +8225,62 @@ pub fn write_semantic(
 type SketchPointEdit = (u64, u32, cadmpeg_ir::math::Point2);
 type PersistentReferenceEdit = (u64, u32, u64);
 type BodyMemberEdit = (u64, u64, u16);
+
+fn validate_creation_timestamp_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, f64>, CodecError> {
+    let baseline_native = f3d_native(baseline)?;
+    let target_native = f3d_native(target)?;
+    let baseline = baseline_native
+        .as_ref()
+        .map_or(&[][..], |native| native.creation_timestamps.as_slice());
+    let target = target_native
+        .as_ref()
+        .map_or(&[][..], |native| native.creation_timestamps.as_slice());
+    let by_id = baseline
+        .iter()
+        .map(|timestamp| (timestamp.id.as_str(), timestamp))
+        .collect::<BTreeMap<_, _>>();
+    if by_id
+        .keys()
+        .copied()
+        .ne(target.iter().map(|timestamp| timestamp.id.as_str()))
+    {
+        return Err(CodecError::NotImplemented(
+            "F3D timestamp regeneration requires the unchanged timestamp-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for timestamp in target {
+        let before = by_id[timestamp.id.as_str()];
+        let mut normalized = timestamp.clone();
+        normalized.unix_microseconds = before.unix_microseconds;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D timestamp edit changes structural fields: {}",
+                timestamp.id
+            )));
+        }
+        if timestamp.unix_microseconds == before.unix_microseconds {
+            continue;
+        }
+        if !timestamp.unix_microseconds.is_finite() {
+            return Err(CodecError::Malformed(format!(
+                "F3D creation timestamp {} is non-finite",
+                timestamp.id
+            )));
+        }
+        let record_index = usize::try_from(timestamp.record_index).map_err(|_| {
+            CodecError::Malformed(format!(
+                "F3D timestamp record index exceeds usize: {}",
+                timestamp.id
+            ))
+        })?;
+        edits.insert(record_index, timestamp.unix_microseconds);
+    }
+    Ok(edits)
+}
 
 enum ProceduralSurfaceEdit {
     Extrusion {
@@ -11595,6 +11656,7 @@ fn patch_geometry(
     pcurves: &BTreeMap<String, NurbsPcurveEdit>,
     procedural_curve_edits: &BTreeMap<String, ProceduralCurveEdit>,
     procedural_surface_fits: &BTreeMap<String, f64>,
+    creation_timestamps: &BTreeMap<usize, f64>,
 ) -> Result<(), CodecError> {
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
@@ -11626,6 +11688,7 @@ fn patch_geometry(
         pcurves,
         procedural_curve_edits,
         procedural_surface_fits,
+        creation_timestamps,
         header_scale,
     )
 }
@@ -11653,6 +11716,7 @@ fn patch_framed_geometry(
     pcurves: &BTreeMap<String, NurbsPcurveEdit>,
     procedural_curve_edits: &BTreeMap<String, ProceduralCurveEdit>,
     procedural_surface_fits: &BTreeMap<String, f64>,
+    creation_timestamps: &BTreeMap<usize, f64>,
     header_scale: f64,
 ) -> Result<(), CodecError> {
     let records_by_index = records
@@ -11714,6 +11778,20 @@ fn patch_framed_geometry(
         }
     }
     for record in records {
+        if let Some(timestamp) = creation_timestamps.get(&record.index) {
+            if !record.head.contains("ATTRIB_CUSTOM")
+                || !record.tokens.iter().any(
+                    |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
+                )
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D timestamp record {} has the wrong attribute family",
+                    record.index
+                )));
+            }
+            patch_double_token(bytes, record, 0, *timestamp)?;
+            continue;
+        }
         if let Some(color) = color_records.get(&record.index) {
             patch_double_token(bytes, record, 0, f64::from(color.r))?;
             patch_double_token(bytes, record, 1, f64::from(color.g))?;
@@ -13710,6 +13788,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated line edit");
@@ -13759,6 +13838,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &spheres,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -13828,6 +13908,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &tori,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -13914,6 +13995,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated cylinder edit");
@@ -13969,6 +14051,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &conics,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),

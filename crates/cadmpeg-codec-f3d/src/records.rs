@@ -52,6 +52,8 @@ pub struct CreationTimestamp {
     pub id: String,
     /// Solved B-rep entity carrying the timestamp attribute.
     pub target: AttributeTarget,
+    /// Source SAB record index of the timestamp attribute.
+    pub record_index: u32,
     /// Creation time as microseconds since the Unix epoch.
     pub unix_microseconds: f64,
 }

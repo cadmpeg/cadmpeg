@@ -5198,6 +5198,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     .map(|(ordinal, (target, unix_microseconds))| CreationTimestamp {
         id: format!("generated:creation-timestamp#{ordinal}"),
         target,
+        record_index: 0,
         unix_microseconds,
     })
     .collect();
@@ -14629,6 +14630,32 @@ fn decode_transfers_generated_custom_attribute() {
     assert_eq!(
         f3d_native(&result.ir).creation_timestamps[0].unix_microseconds,
         1_579_392_000_000_007.0
+    );
+}
+
+#[test]
+fn generated_f3d_rewrites_creation_timestamp() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_attribute_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated timestamp decode");
+    let mut edited = decoded.ir;
+    let expected = 1_704_067_200_000_009.0;
+    update_f3d_native(&mut edited, |native| {
+        assert_eq!(native.creation_timestamps[0].record_index, 20);
+        native.creation_timestamps[0].unix_microseconds = expected;
+    });
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("timestamp regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated timestamp decode");
+    assert_eq!(
+        f3d_native(&round_trip.ir).creation_timestamps[0].unix_microseconds,
+        expected
     );
 }
 
