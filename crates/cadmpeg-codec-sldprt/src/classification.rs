@@ -353,6 +353,9 @@ fn classify_xml_element(tag: &str) -> Option<FeatureClass> {
 fn classify_type_token(kind: &str) -> Option<FeatureClass> {
     Some(match kind {
         "BossExtrude" | "CutExtrude" => FeatureClass::Extrude,
+        "Helix" | "HelixSpiral" | "Helix/Spiral" => FeatureClass::Helix,
+        "Surface-Sweep" => FeatureClass::Sweep,
+        "Thicken" | "Thickness" => FeatureClass::Thicken,
         "LinearPattern" | "CircularPattern" | "CrvPattern" | "CurvePattern"
         | "CurveDrivenPattern" | "Mirror" => FeatureClass::Pattern,
         "BossLoft" | "CutLoft" | "BoundaryBoss" | "BoundaryCut" => FeatureClass::Loft,
@@ -408,6 +411,21 @@ mod tests {
             classify(&feature("Extrusion", "arbitrary", "Custom", None)),
             Some(FeatureClass::Extrude)
         );
+    }
+
+    #[test]
+    fn serialized_type_tokens_classify_generic_feature_elements() {
+        for (kind, class) in [
+            ("Helix/Spiral", FeatureClass::Helix),
+            ("Surface-Sweep", FeatureClass::Sweep),
+            ("Thicken", FeatureClass::Thicken),
+        ] {
+            assert_eq!(
+                classify(&feature("Feature", "localized display name", kind, None)),
+                Some(class),
+                "{kind}"
+            );
+        }
     }
 
     #[test]
