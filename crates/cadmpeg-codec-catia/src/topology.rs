@@ -283,7 +283,6 @@ pub fn parse_standard_motif(
             ])
         })
         .collect::<Option<_>>()?;
-    let mut anchor_count = 0usize;
     for (points, anchor) in edge_points.iter().zip(circle_anchors) {
         if let Some(mut anchor) = *anchor {
             anchor.sort_unstable();
@@ -292,11 +291,7 @@ pub fn parse_standard_motif(
             if points != anchor {
                 return None;
             }
-            anchor_count += 1;
         }
-    }
-    if anchor_count == 0 {
-        return None;
     }
     reconstruct_incidence(
         edge_rows,

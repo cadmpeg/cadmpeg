@@ -2270,6 +2270,8 @@ fn attach_standard_topology(
                     geometry::StandardCurveGeometry::Circle { center, radius } => {
                         (point_distance_squared(point.position, *center).sqrt() - *radius).abs()
                             <= 1e-3
+                            && point_on_surface(point.position, &surface0.geometry)
+                            && point_on_surface(point.position, &surface1.geometry)
                     }
                     geometry::StandardCurveGeometry::Line
                     | geometry::StandardCurveGeometry::Bspline => {
@@ -2295,10 +2297,12 @@ fn attach_standard_topology(
         .and_then(|(pairs, ports)| topology::propagate_edge_port_points(&ports, &pairs))
         .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<[usize; 2]>>>());
     let (topology, point_assignment) = if let Some(topology) = topology::parse_standard(brep) {
-        let endpoint_pairs: Option<Vec<[usize; 2]>> = endpoint_candidates
-            .iter()
-            .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
-            .collect();
+        let endpoint_pairs = resolved_endpoint_pairs.clone().or_else(|| {
+            endpoint_candidates
+                .iter()
+                .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
+                .collect::<Option<Vec<[usize; 2]>>>()
+        });
         let Some(endpoint_pairs) = endpoint_pairs else {
             return false;
         };
@@ -2316,23 +2320,10 @@ fn attach_standard_topology(
     } else {
         let circle_anchors: Vec<Option<[usize; 2]>> = supports
             .iter()
-            .map(|support| match &support.geometry {
-                geometry::StandardCurveGeometry::Circle { center, radius } => {
-                    let candidates: Vec<usize> = ir
-                        .model
-                        .points
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(index, point)| {
-                            let dx = point.position.x - center.x;
-                            let dy = point.position.y - center.y;
-                            let dz = point.position.z - center.z;
-                            ((dx.mul_add(dx, dy.mul_add(dy, dz * dz)).sqrt() - *radius).abs()
-                                <= 1e-3)
-                                .then_some(index)
-                        })
-                        .collect();
-                    <[usize; 2]>::try_from(candidates).ok()
+            .zip(&endpoint_candidates)
+            .map(|(support, candidates)| match &support.geometry {
+                geometry::StandardCurveGeometry::Circle { .. } => {
+                    <[usize; 2]>::try_from(candidates.as_slice()).ok()
                 }
                 geometry::StandardCurveGeometry::Line
                 | geometry::StandardCurveGeometry::Bspline => None,
@@ -2363,6 +2354,13 @@ fn attach_standard_topology(
     let Some(edge_vertices) = topology.edge_vertices() else {
         return false;
     };
+    if edge_vertices.iter().enumerate().any(|(edge, vertices)| {
+        let start = point_assignment[vertices[0]];
+        let end = point_assignment[vertices[1]];
+        !endpoint_candidates[edge].contains(&start) || !endpoint_candidates[edge].contains(&end)
+    }) {
+        return false;
+    }
 
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(&edge_vertices).enumerate()
     {
