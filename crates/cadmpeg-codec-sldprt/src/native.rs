@@ -539,6 +539,16 @@ impl SldprtNative {
                     record.id
                 )));
             }
+            if let Some(record) = lane.sketch_entities.iter().find(|record| {
+                record
+                    .coordinates_m
+                    .is_some_and(|values| !values.iter().all(|value| value.is_finite()))
+            }) {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "sketch input entity {} has non-finite coordinates",
+                    record.id
+                )));
+            }
         }
         namespace.version = SLDPRT_NATIVE_VERSION;
         let histories = self

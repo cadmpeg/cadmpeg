@@ -874,6 +874,41 @@ fn resolved_feature_payload(
             })?;
             state.copy_from_slice(&value.to_le_bytes());
         }
+        if let Some(coordinates) = entity.coordinates_m {
+            if !coordinates.iter().all(|value| value.is_finite()) {
+                return Err(CodecError::Malformed(
+                    "feature-input marker coordinates must be finite".into(),
+                ));
+            }
+            let native_code = entity.kind.native_code();
+            if crate::resolved_features::marker_coordinates(
+                &lane.native_payload,
+                offset,
+                native_code,
+            )
+            .is_none()
+            {
+                return Err(CodecError::NotImplemented(
+                    "feature-input marker does not carry editable coordinate fields".into(),
+                ));
+            }
+            for (relative, value) in [(66usize, coordinates[0]), (74, coordinates[1])] {
+                let start = offset.checked_add(relative).ok_or_else(|| {
+                    CodecError::Malformed("feature-input coordinate offset overflow".into())
+                })?;
+                let end = start.checked_add(8).ok_or_else(|| {
+                    CodecError::Malformed("feature-input coordinate offset overflow".into())
+                })?;
+                payload
+                    .get_mut(start..end)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "feature-input coordinate field exceeds retained payload".into(),
+                        )
+                    })?
+                    .copy_from_slice(&value.to_le_bytes());
+            }
+        }
     }
     for (name, expected) in lane.names.iter().zip(&expected_names).rev() {
         if name.value == expected.value {

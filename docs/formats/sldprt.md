@@ -83,7 +83,7 @@ PNG preview dimensions and encoding fields are in `IHDR`. BMP thumbnail width, h
 
 `Contents/Config-0-Partition` and `Contents/Config-0-Deltas` carry body B-rep records. `Contents/Config-0-ResolvedFeatures` carries feature-input sketch profiles. `Config-0-GhostPartition`, `Contents/Definition`, and `Config-0-LWDATA` are separate payload families.
 
-`ResolvedFeatures` sketch entities begin with `ff ff 1f 00 03`. A little-endian u32 at marker +17 is the entity type: `0` point, `1` curve, `2` arc, `3` constrained point. Marker +48 stores a finite little-endian f64 state value.
+`ResolvedFeatures` sketch entities begin with `ff ff 1f 00 03`. A little-endian u32 at marker +17 is the entity type: `0` point, `1` curve, `2` arc, `3` constrained point. Marker +48 stores a finite little-endian f64 state value. The coordinate-bearing variant of handle families `0..5` has the 12-byte prefix `ff ff ff ff ff ff ff ff 00 00 80 bf` at marker +5, `1e 00` at marker +64, and two finite little-endian f64 coordinate fields at marker +66 and +74, in metres. Other variants use local-reference payloads at those offsets.
 
 A sketch marker belongs to the Keywords feature object whose bound feature-name record precedes the marker and whose next bound feature-name record follows it. Marker local identifiers are scoped to that feature object.
 
