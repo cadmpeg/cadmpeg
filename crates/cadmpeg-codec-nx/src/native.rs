@@ -183,6 +183,23 @@ pub struct DataBlock {
     pub source_offset: u64,
 }
 
+/// Product/version header from one indexed NX OM store.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoreHeader {
+    /// Globally unique store-header identity.
+    pub id: String,
+    /// Zero-based indexed-section ordinal within the container.
+    pub section_ordinal: u32,
+    /// Persistent object identity when the header belongs to an ID-bounded record.
+    pub object_id: Option<u32>,
+    /// Exact printable product/version text.
+    pub version: String,
+    /// Directory entry containing the OM store.
+    pub source_entry: String,
+    /// Absolute file offset of the `04 01` marker.
+    pub source_offset: u64,
+}
+
 /// Role of one bounded block in an offset-only NX OM store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -742,6 +759,34 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
                     source_offset: entry_offset + block.offset as u64,
                 })
                 .collect()
+        })
+        .collect()
+}
+
+/// Decode one product/version header from each indexed NX OM store.
+pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .filter_map(|(section_ordinal, (entry, section))| {
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            section
+                .control
+                .iter()
+                .chain(section.records.iter())
+                .find_map(|record| {
+                    crate::om::store_version(record.bytes, record.offset).map(|version| {
+                        StoreHeader {
+                            id: format!("nx:om-store-headers:store#{section_ordinal}"),
+                            section_ordinal: section_ordinal as u32,
+                            object_id: record.object_id,
+                            version: version.value.to_string(),
+                            source_entry: entry.name.clone(),
+                            source_offset: entry_offset + version.offset as u64,
+                        }
+                    })
+                })
         })
         .collect()
 }

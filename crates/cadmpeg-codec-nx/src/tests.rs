@@ -336,6 +336,14 @@ fn om_index_accepts_length_framed_root_version_text() {
 }
 
 #[test]
+fn om_store_version_can_follow_control_prefix() {
+    let bytes = b"\xff\x00prefix\x04\x01\x0eNX 2027.3102\0tail";
+    let version = crate::om::store_version(bytes, 100).expect("store version");
+    assert_eq!(version.offset, 108);
+    assert_eq!(version.value, "NX 2027.3102");
+}
+
+#[test]
 fn om_offset_only_index_bounds_storage_blocks() {
     let bytes = offset_only_indexed_om_section();
     let sections = crate::om::indexed_sections(&bytes);
@@ -2947,7 +2955,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 11);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 12);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -2985,6 +2993,16 @@ fn decode_retains_typed_nx_numeric_expression() {
         .arena_as::<crate::native::ObjectRecord>("object_records")
         .unwrap();
     assert_eq!(object_records.len(), 2);
+    let headers = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<crate::native::StoreHeader>("store_headers")
+        .unwrap();
+    assert_eq!(headers.len(), 1);
+    assert_eq!(headers[0].version, "NX 2027.3102");
+    assert_eq!(headers[0].object_id, Some(0x101));
     assert_eq!(object_records[1].object_id, Some(0x102));
     assert_eq!(expressions[0].record.as_ref(), Some(&object_records[1].id));
     assert_eq!(object_records[1].record_ordinal, 1);

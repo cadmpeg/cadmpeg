@@ -50,6 +50,15 @@ pub struct StringValue<'a> {
     pub value: &'a str,
 }
 
+/// Self-framed NX product/version marker in an OM store root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoreVersion<'a> {
+    /// Absolute offset of the `04 01` marker.
+    pub offset: usize,
+    /// Exact printable product/version text, including the `NX ` prefix.
+    pub value: &'a str,
+}
+
 /// Tagged NX OM cross-record reference family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReferenceKind {
@@ -625,6 +634,21 @@ fn is_root_record(bytes: &[u8]) -> bool {
                 .iter()
                 .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
     }) && bytes.get(end) == Some(&0)
+}
+
+/// Decode the first self-framed NX product/version marker in `bytes`.
+pub fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_>> {
+    (0..bytes.len().saturating_sub(3)).find_map(|at| {
+        let suffix = &bytes[at..];
+        is_root_record(suffix).then(|| {
+            let length = usize::from(suffix[2]) - 2;
+            StoreVersion {
+                offset: base_offset + at,
+                value: std::str::from_utf8(&suffix[3..3 + length])
+                    .expect("validated printable NX version is UTF-8"),
+            }
+        })
+    })
 }
 
 fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinition<'_>> {

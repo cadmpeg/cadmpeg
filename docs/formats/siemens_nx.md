@@ -117,6 +117,11 @@ object identity. A block may split a string, fixed array, or field lane across
 adjacent boundaries, so marker-shaped bytes inside one block do not define an
 entity string or reference.
 
+Each indexed store contains one self-framed product/version header:
+`04 01 text_length:u8 "NX " version_text 00`. `text_length` equals the
+printable text length plus two. Store metadata may precede this
+header inside its bounded control or first data block.
+
 Class definitions before the boundary array use `declared_length:u8 + "UGS::" name bytes + trailing_code:u8`, where `declared_length` includes the trailing code. Bytes between the trailing code and the next class declaration form that declaration's registry suffix; an empty suffix is valid. An 11–14-byte suffix consists of a 2–5-byte layout prefix, an eight-byte schema fingerprint, and one terminal layout byte. Member definitions in the same indexed schema use the same framing with an `m_` name. Declaration order supplies section-local class and member identity.
 
 Class and member declaration ordinals are local to one OM section. The containing

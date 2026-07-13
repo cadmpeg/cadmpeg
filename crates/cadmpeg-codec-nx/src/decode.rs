@@ -2689,6 +2689,7 @@ fn attach_native_object_model(
     let fields = crate::native::field_definitions(&scan.container);
     let object_records = crate::native::object_records(&scan.container);
     let data_blocks = crate::native::data_blocks(&scan.container);
+    let store_headers = crate::native::store_headers(&scan.container);
     let string_values = crate::native::string_values(&scan.container);
     let object_references = crate::native::object_references(&scan.container);
     let configurations = crate::native::configurations(&scan.container);
@@ -2703,6 +2704,7 @@ fn attach_native_object_model(
         && fields.is_empty()
         && object_records.is_empty()
         && data_blocks.is_empty()
+        && store_headers.is_empty()
         && string_values.is_empty()
         && object_references.is_empty()
         && persistent_handles.is_empty()
@@ -2715,6 +2717,12 @@ fn attach_native_object_model(
         return Ok(());
     }
     let annotation_stream = annotations.stream("nx:container");
+    for header in &store_headers {
+        annotations
+            .note(&header.id, annotation_stream, header.source_offset)
+            .tag("OM_STORE_VERSION");
+        annotations.exactness(&header.id, Exactness::ByteExact);
+    }
     for reference in &external_references {
         annotations
             .note(&reference.id, annotation_stream, reference.source_offset)
@@ -2809,7 +2817,7 @@ fn attach_native_object_model(
     }
     attach_expression_parameters(ir, &expressions, annotations);
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(11);
+    namespace.version = namespace.version.max(12);
     if !expressions.is_empty() {
         namespace.set_arena("expressions", &expressions)?;
     }
@@ -2824,6 +2832,9 @@ fn attach_native_object_model(
     }
     if !data_blocks.is_empty() {
         namespace.set_arena("data_blocks", &data_blocks)?;
+    }
+    if !store_headers.is_empty() {
+        namespace.set_arena("store_headers", &store_headers)?;
     }
     if !string_values.is_empty() {
         namespace.set_arena("string_values", &string_values)?;
