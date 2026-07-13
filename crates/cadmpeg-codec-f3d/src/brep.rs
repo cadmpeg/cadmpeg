@@ -447,6 +447,43 @@ fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2]> {
     })
 }
 
+/// Candidate edge-use intervals whose endpoints lie on this pcurve carrier.
+/// Edge sense orders the two signs, but it cannot move a NURBS use outside the
+/// carrier's knot domain. The full knot domain is the final fallback.
+fn pcurve_ranges_on_domain(
+    candidate: &nurbs::NurbsPcurve,
+    edge: Option<&Record>,
+) -> Option<Vec<[f64; 2]>> {
+    let (&first, &last) = (candidate.knots.first()?, candidate.knots.last()?);
+    let tolerance = 1.0e-9 * (last - first).abs().max(1.0);
+    let mut ranges = edge
+        .and_then(edge_pcurve_parameter_ranges)
+        .into_iter()
+        .flatten()
+        .filter_map(|mut range| {
+            if range
+                .iter()
+                .all(|value| *value >= first - tolerance && *value <= last + tolerance)
+            {
+                for value in &mut range {
+                    if *value < first {
+                        *value = first;
+                    } else if *value > last {
+                        *value = last;
+                    }
+                }
+                Some(range)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    if !ranges.contains(&[first, last]) {
+        ranges.push([first, last]);
+    }
+    Some(ranges)
+}
+
 /// Select the candidate 2D block that is the face surface's parameter-space
 /// image of the coedge: its endpoints, mapped through the surface, land on the
 /// owning edge's vertex positions. On a non-NURBS surface, or when the edge's
@@ -467,18 +504,12 @@ fn select_face_pcurve(
     // authoritative exact-space carrier in this case.
     if exact_procedural_parameterization {
         let candidate = candidates.into_iter().next()?;
-        let range = edge
-            .and_then(edge_pcurve_parameter_ranges)
-            .map(|ranges| ranges[0])
-            .or_else(|| Some([*candidate.knots.first()?, *candidate.knots.last()?]))?;
+        let range = pcurve_ranges_on_domain(&candidate, edge)?[0];
         return Some((candidate, range));
     }
     let Some(SurfaceGeometry::Nurbs(surface)) = surface else {
         let candidate = candidates.into_iter().next()?;
-        let range = edge
-            .and_then(edge_pcurve_parameter_ranges)
-            .map(|ranges| ranges[0])
-            .or_else(|| Some([*candidate.knots.first()?, *candidate.knots.last()?]))?;
+        let range = pcurve_ranges_on_domain(&candidate, edge)?[0];
         return Some((candidate, range));
     };
     let vertex_pair = edge.and_then(|edge| {
@@ -489,17 +520,11 @@ fn select_face_pcurve(
     });
     let Some((start, end)) = vertex_pair else {
         let candidate = candidates.into_iter().next()?;
-        let range = edge
-            .and_then(edge_pcurve_parameter_ranges)
-            .map(|ranges| ranges[0])
-            .or_else(|| Some([*candidate.knots.first()?, *candidate.knots.last()?]))?;
+        let range = pcurve_ranges_on_domain(&candidate, edge)?[0];
         return Some((candidate, range));
     };
     let mut best: Option<(f64, nurbs::NurbsPcurve, [f64; 2])> = None;
     for candidate in candidates {
-        let (Some(&t0), Some(&t1)) = (candidate.knots.first(), candidate.knots.last()) else {
-            continue;
-        };
         let uv_at = |t: f64| {
             eval::nurbs_pcurve_uv(
                 candidate.degree,
@@ -509,11 +534,9 @@ fn select_face_pcurve(
                 t,
             )
         };
-        let mut parameter_ranges = Vec::with_capacity(2);
-        if let Some(ranges) = edge.and_then(edge_pcurve_parameter_ranges) {
-            parameter_ranges.extend(ranges);
-        }
-        parameter_ranges.push([t0, t1]);
+        let Some(parameter_ranges) = pcurve_ranges_on_domain(&candidate, edge) else {
+            continue;
+        };
         let Some((mismatch, range)) = parameter_ranges
             .into_iter()
             .filter_map(|[first, second]| {
@@ -5322,6 +5345,20 @@ mod topology_tests {
         assert_eq!(
             edge_pcurve_parameter_ranges(&edge),
             Some([[-0.55, -0.60], [0.55, 0.60]])
+        );
+        let candidate = nurbs::NurbsPcurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        assert_eq!(
+            pcurve_ranges_on_domain(&candidate, Some(&edge)),
+            Some(vec![[0.55, 0.60], [0.0, 1.0]])
         );
     }
 }
