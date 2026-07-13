@@ -37,6 +37,24 @@ struct NativeToken {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeDirection {
+    id: String,
+    source_entity: String,
+    components: Vec<Option<f64>>,
+    physically_dependent: bool,
+    has_transform: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeTransformation {
+    id: String,
+    source_entity: String,
+    form: i64,
+    coefficients: Vec<Option<f64>>,
+    parent: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -156,9 +174,44 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let directions = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 123 && entry.form == 0)
+        .map(|entry| {
+            let parameters = by_directory.get(&entry.sequence).copied();
+            NativeDirection {
+                id: format!("iges:native:direction#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                components: (1..=3)
+                    .map(|index| parameters.and_then(|record| record.number(index)))
+                    .collect(),
+                physically_dependent: entry.status.subordinate == 1,
+                has_transform: entry.transform != 0,
+            }
+        })
+        .collect::<Vec<_>>();
+    let transforms = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 124 && matches!(entry.form, 0 | 1 | 10 | 11 | 12))
+        .map(|entry| {
+            let parameters = by_directory.get(&entry.sequence).copied();
+            NativeTransformation {
+                id: format!("iges:native:transformation#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                coefficients: (1..=12)
+                    .map(|index| parameters.and_then(|record| record.number(index)))
+                    .collect(),
+                parent: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 1;
     namespace.set_arena("cards", &cards)?;
     namespace.set_arena("entities", &entities)?;
+    namespace.set_arena("directions", &directions)?;
+    namespace.set_arena("transformations", &transforms)?;
     Ok(())
 }

@@ -116,9 +116,9 @@ pub(super) fn resolve_transform(
             .get(&sequence)
             .copied()
             .ok_or_else(|| format!("transformation D{sequence} is missing"))?;
-        if entry.entity_type != 124 || entry.form != 0 {
+        if entry.entity_type != 124 || !matches!(entry.form, 0 | 1) {
             return Err(format!(
-                "transformation D{sequence} is type {} form {}, expected type 124 form 0",
+                "transformation D{sequence} is type {} form {}, expected defining type 124 form 0 or 1",
                 entry.entity_type, entry.form
             ));
         }
@@ -142,6 +142,35 @@ pub(super) fn resolve_transform(
         }
         for index in [3, 7, 11] {
             values[index] *= length_factor;
+        }
+        let columns = [
+            [values[0], values[4], values[8]],
+            [values[1], values[5], values[9]],
+            [values[2], values[6], values[10]],
+        ];
+        let column_dot = |left: usize, right: usize| {
+            (0..3)
+                .map(|row| columns[left][row] * columns[right][row])
+                .sum::<f64>()
+        };
+        if (0..3).any(|column| (column_dot(column, column) - 1.0).abs() > 1.0e-10)
+            || [(0, 1), (0, 2), (1, 2)]
+                .into_iter()
+                .any(|(left, right)| column_dot(left, right).abs() > 1.0e-10)
+        {
+            return Err(format!(
+                "transformation D{sequence} linear part is not orthonormal"
+            ));
+        }
+        let determinant = values[0] * (values[5] * values[10] - values[6] * values[9])
+            - values[1] * (values[4] * values[10] - values[6] * values[8])
+            + values[2] * (values[4] * values[9] - values[5] * values[8]);
+        let expected_determinant = if entry.form == 0 { 1.0 } else { -1.0 };
+        if (determinant - expected_determinant).abs() > 1.0e-10 {
+            return Err(format!(
+                "transformation D{sequence} determinant {determinant} disagrees with form {}",
+                entry.form
+            ));
         }
         let local = Affine {
             rows: [
@@ -213,11 +242,44 @@ pub(crate) fn project_geometry(
     handled.extend(
         directory
             .iter()
-            .filter(|entry| entry.entity_type == 124 && entry.form == 0)
+            .filter(|entry| entry.entity_type == 124 && matches!(entry.form, 0 | 1 | 10 | 11 | 12))
             .map(|entry| entry.sequence),
     );
     let mut free_vertices = Vec::new();
     let mut wire_edges = Vec::new();
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 123 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let components = [record.number(1), record.number(2), record.number(3)];
+        let [Some(x), Some(y), Some(z)] = components else {
+            losses.push(entity_loss(entry, "direction components are not numeric"));
+            continue;
+        };
+        let direction = Vector3::new(x, y, z);
+        if !direction.norm().is_finite() || direction.norm() <= 0.0 {
+            losses.push(entity_loss(entry, "direction is zero or non-finite"));
+            continue;
+        }
+        if entry.status.subordinate != 1 {
+            losses.push(entity_loss(
+                entry,
+                "Direction Entity is not marked physically dependent",
+            ));
+            continue;
+        }
+        if entry.transform != 0 {
+            losses.push(entity_loss(
+                entry,
+                "Direction Entity references a prohibited transformation",
+            ));
+        }
+    }
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 100 && entry.form == 0)
