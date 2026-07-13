@@ -1280,7 +1280,7 @@ fn ext11_charted_intersection_curve_stream() -> Vec<u8> {
         let at = index * 88;
         put_vec3(&mut entries, at, point);
         put_vec3(&mut entries, at + 56, [1.0, 0.0, 0.0]);
-        put_f64(&mut entries, at + 80, index as f64 * 0.01);
+        put_f64(&mut entries, at + 80, [2.0, 5.0][index]);
     }
     stream.splice(chart + 60..chart + 108, entries);
     stream
@@ -3885,7 +3885,7 @@ fn decode_emits_ext11_deltas_intersection_chart() {
         panic!("NURBS chart cache");
     };
     assert_eq!(nurbs.control_points[1].x, 10.0);
-    assert_eq!(nurbs.knots, vec![0.0, 0.0, 0.01, 0.01]);
+    assert_eq!(nurbs.knots, vec![2.0, 2.0, 5.0, 5.0]);
 }
 
 #[test]

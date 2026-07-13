@@ -41,6 +41,12 @@ struct Chart {
     fit_tolerance: f64,
 }
 
+#[derive(Debug, Clone)]
+struct ChartPoints {
+    points: Vec<Point3>,
+    native_parameters: Option<Vec<f64>>,
+}
+
 /// Decode type-38 and single-byte `0x5a` records whose referenced chart and
 /// endpoint witnesses form a complete solved cache.
 pub fn curves(stream: &[u8]) -> Vec<IntersectionCurve> {
@@ -195,33 +201,52 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
                 continue;
             }
             let block = preamble + 52;
-            let Some(points) = chart_points(stream, block, count) else {
+            let Some(chart_points) = chart_points(stream, block, count) else {
                 continue;
             };
-            let mut parameters = Vec::with_capacity(points.len());
-            parameters.push(base_parameter);
-            for pair in points.windows(2) {
+            let mut chord_parameters = Vec::with_capacity(chart_points.points.len());
+            chord_parameters.push(base_parameter);
+            for pair in chart_points.points.windows(2) {
                 let chord_m = distance(pair[0], pair[1]) / 1000.0;
-                parameters.push(
-                    parameters
+                chord_parameters.push(
+                    chord_parameters
                         .last()
                         .copied()
                         .expect("invariant: base parameter inserted")
                         + chord_m * base_scale,
                 );
             }
-            out.entry(xmt).or_insert(Chart {
-                points,
-                parameters,
+            let native_parameters = chart_points.native_parameters;
+            let candidate = Chart {
+                points: chart_points.points,
+                parameters: native_parameters.clone().unwrap_or(chord_parameters),
                 fit_tolerance: chordal_error * 1000.0,
-            });
+            };
+            match out.entry(xmt) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(candidate);
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry)
+                    if native_parameters.is_some()
+                        && entry.get().points.len() == candidate.points.len()
+                        && entry.get().points.iter().zip(&candidate.points).all(
+                            |(first, second)| {
+                                distance(*first, *second)
+                                    <= entry.get().fit_tolerance.max(candidate.fit_tolerance)
+                            },
+                        ) =>
+                {
+                    entry.get_mut().parameters = candidate.parameters;
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {}
+            }
             break;
         }
     }
     out
 }
 
-fn chart_points(stream: &[u8], block: usize, count: usize) -> Option<Vec<Point3>> {
+fn chart_points(stream: &[u8], block: usize, count: usize) -> Option<ChartPoints> {
     let ext = (0..count)
         .map(|index| {
             let at = block + index * 88;
@@ -232,16 +257,26 @@ fn chart_points(stream: &[u8], block: usize, count: usize) -> Option<Vec<Point3>
                 be::f64_at(stream, at + 72)?,
             ];
             let norm = tangent.iter().map(|v| v * v).sum::<f64>().sqrt();
-            ((norm - 1.0).abs() < 1.0e-9).then_some(point)
+            let parameter = be::f64_at(stream, at + 80)?;
+            ((norm - 1.0).abs() < 1.0e-9 && parameter.is_finite()).then_some((point, parameter))
         })
         .collect::<Option<Vec<_>>>();
-    if let Some(points) = ext {
-        return Some(points);
+    if let Some(entries) = ext {
+        let (points, native_parameters): (Vec<_>, Vec<_>) = entries.into_iter().unzip();
+        if native_parameters.windows(2).all(|pair| pair[0] < pair[1]) {
+            return Some(ChartPoints {
+                points,
+                native_parameters: Some(native_parameters),
+            });
+        }
     }
     let points = (0..count)
         .map(|index| point_m(stream, block + index * 24))
         .collect::<Option<Vec<_>>>()?;
-    (points.windows(2).any(|pair| pair[0] != pair[1])).then_some(points)
+    (points.windows(2).any(|pair| pair[0] != pair[1])).then_some(ChartPoints {
+        points,
+        native_parameters: None,
+    })
 }
 
 fn term_records(stream: &[u8]) -> BTreeMap<u32, Point3> {
