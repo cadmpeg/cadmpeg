@@ -734,6 +734,19 @@ fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Resu
                 visibility.id, visibility.body
             )));
         }
+        let ordinal = target
+            .model
+            .bodies
+            .iter()
+            .position(|body| body.id == visibility.body)
+            .expect("validated body-visibility target");
+        let emitted_key = source_less_body_key(target, body, ordinal)?;
+        if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key) {
+            return Err(CodecError::Malformed(format!(
+                "F3D body visibility {} uses an ASM key different from body {}",
+                visibility.id, visibility.body
+            )));
+        }
     }
     for hints in &native.transform_hints {
         if target
@@ -775,6 +788,20 @@ fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Resu
             return Err(CodecError::Malformed(format!(
                 "F3D wire metadata {} targets a shell without wire edges",
                 wire.id
+            )));
+        }
+    }
+    for sidedness in &native.face_sidedness {
+        let face = target
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id == sidedness.face)
+            .expect("validated face-sidedness target");
+        if sidedness.normalized_sense != face.sense {
+            return Err(CodecError::Malformed(format!(
+                "F3D face sidedness {} normalized sense conflicts with face {}",
+                sidedness.id, sidedness.face
             )));
         }
     }

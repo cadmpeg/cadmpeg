@@ -3745,6 +3745,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     source_less.model.bodies[0].visible = Some(false);
     source_less.model.vertices[0].tolerance = Some(0.025);
     let tangent_edge = source_less.model.edges[0].id.clone();
+    let visible_body = source_less.model.bodies[0].id.clone();
     let tolerant_vertex = source_less.model.vertices[0].id.clone();
     let owner_coedge = source_less.model.coedges[0].id.clone();
     let tolerant_coedge = source_less.model.coedges[1].id.clone();
@@ -3770,6 +3771,16 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             coedge: tolerant_coedge,
             record_index: 0,
             parameter_range: [0.25, 0.75],
+        }];
+        native.body_visibilities = vec![crate::records::BodyVisibility {
+            id: "f3d:design:body-visibility#generated".into(),
+            body: visible_body,
+            stream: "FusionAssetName[Active]/Design1/BulkStream.dat".into(),
+            byte_offset: 0,
+            asm_body_key_offset: 0,
+            asm_body_key: 42,
+            entity_suffix: 42,
+            visible: false,
         }];
     }
     let mut encoded = Vec::new();
@@ -3815,6 +3826,31 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less F3D round trip");
+
+    {
+        let mut invalid = source_less.clone();
+        f3d_native_mut(&mut invalid).face_sidedness[0].normalized_sense =
+            match source_less.model.faces[0].sense {
+                cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
+                cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
+            };
+        let error = F3dCodec
+            .encode(&invalid, &mut Vec::new())
+            .expect_err("stale normalized face sense must not be rewritten");
+        assert!(error
+            .to_string()
+            .contains("normalized sense conflicts with face"));
+    }
+    {
+        let mut invalid = source_less.clone();
+        f3d_native_mut(&mut invalid).body_visibilities[0].asm_body_key = 43;
+        let error = F3dCodec
+            .encode(&invalid, &mut Vec::new())
+            .expect_err("visibility must rejoin the emitted ASM body");
+        assert!(error
+            .to_string()
+            .contains("uses an ASM key different from body"));
+    }
 
     assert_eq!(round_trip.ir.model.bodies.len(), 1);
     assert_eq!(
