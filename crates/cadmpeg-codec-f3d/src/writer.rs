@@ -15609,64 +15609,34 @@ fn patch_three_surface_intersection_definition(
     let record_bytes = bytes.get(record.offset..end).ok_or_else(|| {
         CodecError::Malformed("three-surface intersection record is truncated".into())
     })?;
-    if !record_bytes
-        .windows(b"sss_int_cur".len())
-        .any(|window| window == b"sss_int_cur")
-    {
-        return Err(CodecError::Malformed("record is not an sss_int_cur".into()));
-    }
     let int_width = active_ref_width(bytes);
-    let token_len = 1 + int_width;
-    let mut selector_relative = None;
-    for name in ["plane", "cone", "sphere", "torus", "spline", "null_surface"] {
-        let mut marker = vec![0x0d, u8::try_from(name.len()).unwrap_or(u8::MAX)];
-        marker.extend_from_slice(name.as_bytes());
-        for (position, window) in record_bytes.windows(marker.len()).enumerate() {
-            if position >= token_len
-                && window == marker
-                && record_bytes[position - token_len] == 0x04
-            {
-                selector_relative = Some(position - token_len);
-                break;
-            }
-        }
-        if selector_relative.is_some() {
-            break;
-        }
-    }
-    let selector_relative = selector_relative.ok_or_else(|| {
-        CodecError::Malformed("three-surface intersection selector is missing".into())
-    })?;
-    let selector_offset = record.offset + selector_relative;
-    let context_count = 2usize
-        .checked_add(context.discontinuities.iter().map(Vec::len).sum::<usize>())
-        .ok_or_else(|| {
-            CodecError::Malformed("three-surface intersection context is too large".into())
-        })?;
-    let context_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .into_iter()
-        .filter(|offset| *offset < selector_offset)
-        .collect::<Vec<_>>();
-    let context_offsets = context_offsets
-        .get(context_offsets.len().saturating_sub(context_count)..)
-        .ok_or_else(|| {
-            CodecError::Malformed("three-surface intersection context is incomplete".into())
-        })?;
-    if context_offsets.len() != context_count {
+    let layout = crate::nurbs::three_surface_patch_layout(record_bytes, int_width)
+        .ok_or_else(|| CodecError::Malformed("three-surface construction is malformed".into()))?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities.iter().map(Vec::len))
+    {
         return Err(CodecError::Malformed(
             "three-surface intersection context is incomplete".into(),
         ));
     }
-    for (offset, value) in context_offsets.iter().zip(
-        context
-            .parameter_range
-            .into_iter()
-            .chain(context.discontinuities.iter().flatten().copied()),
-    ) {
-        bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+    for (offset, value) in layout
+        .parameter_range
+        .into_iter()
+        .chain(layout.discontinuities.into_iter().flatten())
+        .zip(
+            context
+                .parameter_range
+                .into_iter()
+                .chain(context.discontinuities.iter().flatten().copied()),
+        )
+    {
+        let offset = record.offset + offset;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    patch_tagged_integer_at(bytes, selector_offset, int_width, *selector)?;
+    patch_tagged_integer_at(bytes, record.offset + layout.selector, int_width, *selector)?;
     Ok(())
 }
 

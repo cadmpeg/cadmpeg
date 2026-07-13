@@ -5020,6 +5020,44 @@ fn decode_embedded_three_surface_intersection(
     })
 }
 
+/// Writable context fields in an `sss_int_cur` subtype.
+pub(crate) struct ThreeSurfacePatchLayout {
+    pub(crate) parameter_range: [usize; 2],
+    pub(crate) discontinuities: [Vec<usize>; 3],
+    pub(crate) selector: usize,
+}
+
+/// Locate three-surface intersection fields by walking all three support pairs.
+pub(crate) fn three_surface_patch_layout(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<ThreeSurfacePatchLayout> {
+    let (marker, name_len) = find_intcurve_subtype(bytes, b"sss_int_cur")?;
+    let mut position = marker + name_len + 3;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+    let parameter_range = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+    ];
+    let selector = position;
+    take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    decode_pcurve_block_with_end(bytes, position, int_width)?;
+    Some(ThreeSurfacePatchLayout {
+        parameter_range,
+        discontinuities,
+        selector,
+    })
+}
+
 fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<EmbeddedProjection> {
     let name = b"proj_int_cur";
     let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
@@ -6078,6 +6116,21 @@ mod width_tests {
         b
     }
 
+    fn pcurve_block(int_width: usize) -> Vec<u8> {
+        let mut b = NUBS_MARKER.to_vec();
+        push_int(&mut b, 0x04, 1, int_width);
+        push_int(&mut b, 0x15, 0, int_width);
+        push_int(&mut b, 0x04, 2, int_width);
+        for knot in [0.0, 1.0] {
+            push_f64(&mut b, knot);
+            push_int(&mut b, 0x04, 1, int_width);
+        }
+        for component in [0.0, 0.0, 1.0, 1.0] {
+            push_f64(&mut b, component);
+        }
+        b
+    }
+
     #[test]
     fn curve_cache_decodes_in_both_integer_widths() {
         for int_width in [4usize, 8] {
@@ -6159,6 +6212,43 @@ mod width_tests {
                 3
             );
             assert_eq!(layout.discontinuity_flag + 1, layout.direction);
+        }
+    }
+
+    #[test]
+    fn three_surface_layout_walks_both_integer_widths() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f, 0x0d, 0x0b];
+            bytes.extend_from_slice(b"sss_int_cur");
+            for _ in 0..2 {
+                bytes.extend_from_slice(&[0x0d, 0x06]);
+                bytes.extend_from_slice(b"spline");
+                bytes.extend_from_slice(&surface_block(int_width));
+            }
+            bytes.extend_from_slice(&pcurve_block(int_width));
+            bytes.extend_from_slice(&pcurve_block(int_width));
+            push_f64(&mut bytes, -2.0);
+            push_f64(&mut bytes, 3.0);
+            for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
+                push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                for value in values {
+                    push_f64(&mut bytes, *value);
+                }
+            }
+            let selector = bytes.len();
+            push_int(&mut bytes, 0x04, 7, int_width);
+            bytes.extend_from_slice(&[0x0d, 0x06]);
+            bytes.extend_from_slice(b"spline");
+            bytes.extend_from_slice(&surface_block(int_width));
+            bytes.extend_from_slice(&pcurve_block(int_width));
+
+            let layout = three_surface_patch_layout(&bytes, int_width)
+                .unwrap_or_else(|| panic!("three-surface layout at width {int_width}"));
+            assert_eq!(layout.selector, selector);
+            assert_eq!(
+                layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
+                3
+            );
         }
     }
 }
