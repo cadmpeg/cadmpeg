@@ -17,9 +17,12 @@ const ANONYMOUS: u32 = 0x4000_8000;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
 const MATERIAL_TABLE: u32 = 0x1000_0010;
 const LIGHT_TABLE: u32 = 0x1000_0012;
+const BITMAP_TABLE: u32 = 0x1000_0016;
 const GROUP_TABLE: u32 = 0x1000_0018;
+const DIMSTYLE_TABLE: u32 = 0x1000_0020;
 const HATCH_PATTERN_TABLE: u32 = 0x1000_0022;
 const LINETYPE_TABLE: u32 = 0x1000_0023;
+const TEXTURE_MAPPING_TABLE: u32 = 0x1000_0025;
 const MATERIAL: Uuid = Uuid::from_canonical([
     0x60, 0xb5, 0xdb, 0xbc, 0xe6, 0x60, 0x11, 0xd3, 0xbf, 0xe4, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
@@ -34,6 +37,15 @@ const HATCH_PATTERN: Uuid = Uuid::from_canonical([
 ]);
 const LINETYPE: Uuid = Uuid::from_canonical([
     0x26, 0xf1, 0x0a, 0x24, 0x7d, 0x13, 0x4f, 0x05, 0x8f, 0xda, 0x8e, 0x36, 0x4d, 0xaf, 0x8e, 0xa6,
+]);
+const DIMSTYLE: Uuid = Uuid::from_canonical([
+    0x67, 0xaa, 0x51, 0xa5, 0x79, 0x1d, 0x4b, 0xec, 0x8a, 0xed, 0xd2, 0x3b, 0x46, 0x2b, 0x6f, 0x87,
+]);
+const EMBEDDED_BITMAP: Uuid = Uuid::from_canonical([
+    0x77, 0x2e, 0x6f, 0xc1, 0xb1, 0x7b, 0x4f, 0xc4, 0x8f, 0x54, 0x5f, 0xda, 0x51, 0x1d, 0x76, 0xd2,
+]);
+const TEXTURE_MAPPING: Uuid = Uuid::from_canonical([
+    0x32, 0xec, 0x99, 0x7a, 0xc3, 0xbf, 0x4a, 0xe5, 0xab, 0x19, 0xfd, 0x57, 0x2b, 0x8a, 0xd5, 0x54,
 ]);
 
 #[derive(Debug)]
@@ -152,6 +164,74 @@ struct HatchPatternRecord {
     fill_type: i32,
     description: String,
     lines: Vec<HatchLineRecord>,
+}
+
+#[derive(Debug, Serialize)]
+struct DimensionStyleRecord {
+    id: String,
+    source_offset: u64,
+    archive_index: i32,
+    source_uuid: Option<String>,
+    name: String,
+    extension_line_extension_mm: f64,
+    extension_line_offset_mm: f64,
+    arrow_size_mm: f64,
+    leader_arrow_size_mm: f64,
+    center_mark_size_mm: f64,
+    text_gap_mm: f64,
+    text_height_mm: f64,
+    text_display_mode: u32,
+    angle_format: u32,
+    length_format: u32,
+    angle_resolution: i32,
+    length_resolution: i32,
+    text_style_index: i32,
+    length_factor: f64,
+    alternate_enabled: bool,
+    alternate_length_factor: f64,
+    alternate_length_format: u32,
+    alternate_length_resolution: i32,
+    prefix: String,
+    suffix: String,
+    alternate_prefix: String,
+    alternate_suffix: String,
+    dimension_line_extension_mm: f64,
+    suppress_extension_line_1: bool,
+    suppress_extension_line_2: bool,
+    parent_style_uuid: Option<String>,
+    extension_offset: u64,
+    extension_byte_len: u64,
+    extension_sha256: String,
+}
+
+#[derive(Debug, Serialize)]
+struct EmbeddedImageRecord {
+    id: String,
+    source_offset: u64,
+    source_uuid: Option<String>,
+    name: String,
+    file_path: String,
+    image_crc32: u32,
+    compression_method: i32,
+    uncompressed_byte_len: u64,
+    buffer_offset: u64,
+    buffer_byte_len: u64,
+    buffer_sha256: String,
+}
+
+#[derive(Debug, Serialize)]
+struct TextureMappingRecord {
+    id: String,
+    source_offset: u64,
+    source_uuid: Option<String>,
+    name: String,
+    mapping_type: u32,
+    projection: u32,
+    primitive_transform: [[f64; 4]; 4],
+    uvw_transform: [[f64; 4]; 4],
+    primitive_class_uuid: Option<String>,
+    texture_space: u32,
+    capped: bool,
 }
 
 fn structural(offset: usize, message: impl Into<String>) -> FramingError {
@@ -947,6 +1027,249 @@ fn parse_hatch_pattern(
     })
 }
 
+fn scaled_length(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+    label: &str,
+) -> Result<f64, FramingError> {
+    let value = read_finite(reader, label)?;
+    scaled_coordinate(value, scale)
+        .ok_or_else(|| structural(reader.position() - 8, format!("scaled {label} is invalid")))
+}
+
+fn parse_dimension_style(
+    data: &[u8],
+    range: Range<usize>,
+    archive: ArchiveVersion,
+    scale: f64,
+    source_offset: usize,
+) -> Result<DimensionStyleRecord, FramingError> {
+    let (mut reader, version) = anonymous(data, range, archive)?;
+    if version.0 != 1 || !(0..=9).contains(&version.1) {
+        return Err(structural(
+            reader.position(),
+            "dimension-style version is unsupported",
+        ));
+    }
+    let component = component(data, &mut reader, archive)?;
+    let extension_line_extension_mm =
+        scaled_length(&mut reader, scale, "extension-line extension")?;
+    let extension_line_offset_mm = scaled_length(&mut reader, scale, "extension-line offset")?;
+    let arrow_size_mm = scaled_length(&mut reader, scale, "arrow size")?;
+    let leader_arrow_size_mm = scaled_length(&mut reader, scale, "leader arrow size")?;
+    let center_mark_size_mm = scaled_length(&mut reader, scale, "center-mark size")?;
+    let text_gap_mm = scaled_length(&mut reader, scale, "text gap")?;
+    let text_height_mm = scaled_length(&mut reader, scale, "text height")?;
+    let text_display_mode = reader.u32()?;
+    let angle_format = reader.u32()?;
+    let length_format = reader.u32()?;
+    let angle_resolution = reader.i32()?;
+    let length_resolution = reader.i32()?;
+    let text_style_index = reader.i32()?;
+    let length_factor = read_finite(&mut reader, "length factor")?;
+    let alternate_enabled = reader.bool()?;
+    let alternate_length_factor = read_finite(&mut reader, "alternate length factor")?;
+    let alternate_length_format = reader.u32()?;
+    let alternate_length_resolution = reader.i32()?;
+    let prefix = utf16(&mut reader)?;
+    let suffix = utf16(&mut reader)?;
+    let alternate_prefix = utf16(&mut reader)?;
+    let alternate_suffix = utf16(&mut reader)?;
+    let dimension_line_extension_mm =
+        scaled_length(&mut reader, scale, "dimension-line extension")?;
+    let suppress_extension_line_1 = reader.bool()?;
+    let suppress_extension_line_2 = reader.bool()?;
+    let parent = uuid(&mut reader)?;
+    let extension_offset = reader.position();
+    let extension = reader.take(reader.remaining())?;
+    let key = if component.id.is_nil() {
+        format!("record-{source_offset}")
+    } else {
+        component.id.to_string()
+    };
+    Ok(DimensionStyleRecord {
+        id: format!("rhino:presentation:dimension_style#{key}"),
+        source_offset: source_offset as u64,
+        archive_index: component.index.unwrap_or(-1),
+        source_uuid: (!component.id.is_nil()).then(|| component.id.to_string()),
+        name: component.name,
+        extension_line_extension_mm,
+        extension_line_offset_mm,
+        arrow_size_mm,
+        leader_arrow_size_mm,
+        center_mark_size_mm,
+        text_gap_mm,
+        text_height_mm,
+        text_display_mode,
+        angle_format,
+        length_format,
+        angle_resolution,
+        length_resolution,
+        text_style_index,
+        length_factor,
+        alternate_enabled,
+        alternate_length_factor,
+        alternate_length_format,
+        alternate_length_resolution,
+        prefix,
+        suffix,
+        alternate_prefix,
+        alternate_suffix,
+        dimension_line_extension_mm,
+        suppress_extension_line_1,
+        suppress_extension_line_2,
+        parent_style_uuid: (!parent.is_nil()).then(|| parent.to_string()),
+        extension_offset: extension_offset as u64,
+        extension_byte_len: extension.len() as u64,
+        extension_sha256: cadmpeg_ir::hash::sha256_hex(extension),
+    })
+}
+
+fn xform(reader: &mut BoundedReader<'_>) -> Result<[[f64; 4]; 4], FramingError> {
+    let mut rows = [[0.0; 4]; 4];
+    for value in rows.iter_mut().flatten() {
+        *value = reader.f64()?;
+    }
+    rows.iter()
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(rows)
+        .ok_or_else(|| structural(reader.position() - 128, "texture transform is not finite"))
+}
+
+fn parse_embedded_image(
+    data: &[u8],
+    range: Range<usize>,
+    archive: ArchiveVersion,
+    source_offset: usize,
+) -> Result<EmbeddedImageRecord, FramingError> {
+    let mut reader = BoundedReader::new(data, range.start, range.end)?;
+    let packed = reader.u8()?;
+    if packed >> 4 != 1 || packed & 0x0f > 1 {
+        return Err(structural(
+            range.start,
+            "embedded-image version is unsupported",
+        ));
+    }
+    let file_path = utf16(&mut reader)?;
+    let image_crc32 = reader.u32()?;
+    let compression_method = reader.i32()?;
+    let buffer_offset = reader.position();
+    let uncompressed_byte_len = u64::from(reader.u32()?);
+    if uncompressed_byte_len != 0 {
+        reader.skip(4)?;
+        let method = reader.u8()?;
+        if method > 1 {
+            return Err(structural(
+                reader.position() - 1,
+                "embedded-image buffer method is unsupported",
+            ));
+        }
+        if method == 0 {
+            let size = usize::try_from(uncompressed_byte_len)
+                .map_err(|_| structural(buffer_offset, "image size overflow"))?;
+            reader.skip(size)?;
+        } else {
+            let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+            if chunk.typecode != ANONYMOUS || chunk.short {
+                return Err(structural(
+                    reader.position(),
+                    "compressed image chunk is invalid",
+                ));
+            }
+            reader.skip(chunk.next_offset - reader.position())?;
+        }
+    }
+    let buffer_end = reader.position();
+    let source_uuid = if packed & 0x0f >= 1 {
+        Some(uuid(&mut reader)?)
+    } else {
+        None
+    };
+    let name = if packed & 0x0f >= 1 {
+        utf16(&mut reader)?
+    } else {
+        String::new()
+    };
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "embedded image has trailing bytes",
+        ));
+    }
+    let source_uuid = source_uuid.filter(|id| !id.is_nil());
+    let key = source_uuid.map_or_else(|| format!("record-{source_offset}"), |id| id.to_string());
+    Ok(EmbeddedImageRecord {
+        id: format!("rhino:presentation:image#{key}"),
+        source_offset: source_offset as u64,
+        source_uuid: source_uuid.map(|id| id.to_string()),
+        name,
+        file_path,
+        image_crc32,
+        compression_method,
+        uncompressed_byte_len,
+        buffer_offset: buffer_offset as u64,
+        buffer_byte_len: (buffer_end - buffer_offset) as u64,
+        buffer_sha256: cadmpeg_ir::hash::sha256_hex(&data[buffer_offset..buffer_end]),
+    })
+}
+
+fn parse_texture_mapping(
+    data: &[u8],
+    range: Range<usize>,
+    archive: ArchiveVersion,
+    source_offset: usize,
+) -> Result<TextureMappingRecord, FramingError> {
+    let (mut reader, version) = anonymous(data, range, archive)?;
+    if version.0 != 1 || !(0..=1).contains(&version.1) {
+        return Err(structural(
+            reader.position(),
+            "texture-mapping version is unsupported",
+        ));
+    }
+    let id = uuid(&mut reader)?;
+    let mapping_type = reader.u32()?;
+    let projection = reader.u32()?;
+    let primitive_transform = xform(&mut reader)?;
+    let uvw_transform = xform(&mut reader)?;
+    let name = utf16(&mut reader)?;
+    let object = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+    let primitive_class_uuid = if object.short {
+        None
+    } else {
+        parse_class_wrapper(data, object.body.clone(), archive, &mut Vec::new())
+            .ok()
+            .map(|value| value.class_uuid.to_string())
+    };
+    reader.skip(object.next_offset - reader.position())?;
+    let texture_space = if version.1 >= 1 { reader.u32()? } else { 0 };
+    let capped = version.1 >= 1 && reader.bool()?;
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "texture mapping has trailing bytes",
+        ));
+    }
+    let key = if id.is_nil() {
+        format!("record-{source_offset}")
+    } else {
+        id.to_string()
+    };
+    Ok(TextureMappingRecord {
+        id: format!("rhino:presentation:texture_mapping#{key}"),
+        source_offset: source_offset as u64,
+        source_uuid: (!id.is_nil()).then(|| id.to_string()),
+        name,
+        mapping_type,
+        projection,
+        primitive_transform,
+        uvw_transform,
+        primitive_class_uuid,
+        texture_space,
+        capped,
+    })
+}
+
 /// Installs built-in appearance, group membership, and light semantics.
 pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let scale = scan
@@ -961,6 +1284,9 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let mut lights = Vec::new();
     let mut linetypes = Vec::new();
     let mut hatch_patterns = Vec::new();
+    let mut dimension_styles = Vec::new();
+    let mut images = Vec::new();
+    let mut texture_mappings = Vec::new();
     for table in &scan.tables {
         let table_type = table.typecode & !0x0000_8000;
         for record in &table.records {
@@ -1004,6 +1330,34 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                         record.range.start,
                     ) {
                         hatch_patterns.push(value);
+                    }
+                }
+            } else if table_type == DIMSTYLE_TABLE {
+                if let Ok(range) = class_data(&scan.data, record, scan.archive, DIMSTYLE) {
+                    if let Ok(value) = parse_dimension_style(
+                        &scan.data,
+                        range,
+                        scan.archive,
+                        scale,
+                        record.range.start,
+                    ) {
+                        dimension_styles.push(value);
+                    }
+                }
+            } else if table_type == BITMAP_TABLE {
+                if let Ok(range) = class_data(&scan.data, record, scan.archive, EMBEDDED_BITMAP) {
+                    if let Ok(value) =
+                        parse_embedded_image(&scan.data, range, scan.archive, record.range.start)
+                    {
+                        images.push(value);
+                    }
+                }
+            } else if table_type == TEXTURE_MAPPING_TABLE {
+                if let Ok(range) = class_data(&scan.data, record, scan.archive, TEXTURE_MAPPING) {
+                    if let Ok(value) =
+                        parse_texture_mapping(&scan.data, range, scan.archive, record.range.start)
+                    {
+                        texture_mappings.push(value);
                     }
                 }
             }
@@ -1055,6 +1409,15 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     namespace
         .set_arena("hatch_patterns", &hatch_patterns)
         .expect("Rhino hatch patterns serialize");
+    namespace
+        .set_arena("dimension_styles", &dimension_styles)
+        .expect("Rhino dimension styles serialize");
+    namespace
+        .set_arena("embedded_images", &images)
+        .expect("Rhino images serialize");
+    namespace
+        .set_arena("texture_mappings", &texture_mappings)
+        .expect("Rhino texture mappings serialize");
 }
 
 #[cfg(test)]
