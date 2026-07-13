@@ -10754,9 +10754,26 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         }
 
         let expected = native.clone();
+        let side_curves = native
+            .sides
+            .iter()
+            .map(|side| side.curve.clone())
+            .collect::<Vec<_>>();
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
+        for (ordinal, side) in side_curves.iter().enumerate() {
+            source_less
+                .model
+                .curves
+                .iter_mut()
+                .find(|curve| curve.id == *side)
+                .expect("rolling-ball side curve")
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 3.0, -2.0),
+                direction: cadmpeg_ir::math::Vector3::new(4.0, -1.0, 2.0),
+            };
+        }
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -10772,6 +10789,19 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             panic!("expected complete round-trip rolling-ball graph")
         };
         assert_eq!(actual.as_ref(), expected.as_ref());
+        for side in actual.sides.iter() {
+            assert!(matches!(
+                round_trip
+                    .ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == side.curve)
+                    .map(|curve| &curve.geometry),
+                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                    if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            ));
+        }
     }
 }
 

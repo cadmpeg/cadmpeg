@@ -5779,7 +5779,41 @@ fn native_rolling_ball_side(
     } else {
         native_ident(bytes, "null_surface")?;
     }
-    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    let curve = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == side.curve)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("rolling-ball side curve {} is missing", side.curve))
+        })?;
+    let curve = match (&curve.geometry, &side.pcurve) {
+        (CurveGeometry::Nurbs(curve), _) => curve.clone(),
+        (CurveGeometry::Line { .. }, Some(PcurveGeometry::Nurbs { knots, .. })) => {
+            native_interval_curve(
+                &curve.geometry,
+                [
+                    knots.first().copied().ok_or_else(|| {
+                        CodecError::Malformed("rolling-ball side pcurve has no knot domain".into())
+                    })?,
+                    knots.last().copied().ok_or_else(|| {
+                        CodecError::Malformed("rolling-ball side pcurve has no knot domain".into())
+                    })?,
+                ],
+            )?
+        }
+        (CurveGeometry::Line { .. }, _) => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D rolling-ball side line requires a bounded NURBS pcurve".into(),
+            ));
+        }
+        _ => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D rolling-ball side requires a NURBS or bounded line curve".into(),
+            ));
+        }
+    };
+    native_nurbs_curve(bytes, &curve)?;
     native_optional_pcurve(bytes, side.pcurve.as_ref())?;
     native_point(
         bytes,
