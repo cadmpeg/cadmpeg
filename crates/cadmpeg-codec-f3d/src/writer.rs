@@ -5832,6 +5832,50 @@ fn native_nurbs_curve(bytes: &mut Vec<u8>, curve: &NurbsCurve) -> Result<(), Cod
     Ok(())
 }
 
+fn native_interval_curve(
+    geometry: &CurveGeometry,
+    parameter_range: [f64; 2],
+) -> Result<NurbsCurve, CodecError> {
+    if !parameter_range.into_iter().all(f64::is_finite) || parameter_range[0] >= parameter_range[1]
+    {
+        return Err(CodecError::Malformed(
+            "source-less F3D interval curve requires a finite ordered range".into(),
+        ));
+    }
+    match geometry {
+        CurveGeometry::Nurbs(curve) => Ok(curve.clone()),
+        CurveGeometry::Line { origin, direction } => {
+            if !finite_point(*origin) || !finite_vector(*direction) || direction.norm() == 0.0 {
+                return Err(CodecError::Malformed(
+                    "source-less F3D interval line requires finite nonzero geometry".into(),
+                ));
+            }
+            let point = |parameter: f64| {
+                Point3::new(
+                    origin.x + parameter * direction.x,
+                    origin.y + parameter * direction.y,
+                    origin.z + parameter * direction.z,
+                )
+            };
+            Ok(NurbsCurve {
+                degree: 1,
+                knots: vec![
+                    parameter_range[0],
+                    parameter_range[0],
+                    parameter_range[1],
+                    parameter_range[1],
+                ],
+                control_points: vec![point(parameter_range[0]), point(parameter_range[1])],
+                weights: None,
+                periodic: false,
+            })
+        }
+        _ => Err(CodecError::NotImplemented(
+            "source-less F3D interval construction requires a NURBS or line source curve".into(),
+        )),
+    }
+}
+
 fn native_procedural_curve(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -6328,16 +6372,12 @@ fn native_procedural_curve(
             .iter()
             .find(|curve| curve.id == *source)
             .ok_or_else(|| CodecError::Malformed("vector offset source curve is missing".into()))?;
-        let CurveGeometry::Nurbs(source) = &source.geometry else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D vector offset requires a NURBS source curve".into(),
-            ));
-        };
+        let source = native_interval_curve(&source.geometry, *parameter_range)?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "offset_int_cur")?;
         bytes.push(0x0b);
-        native_nurbs_curve(bytes, source)?;
+        native_nurbs_curve(bytes, &source)?;
         native_f64(bytes, parameter_range[0]);
         native_f64(bytes, parameter_range[1]);
         native_vector(bytes, [offset.x / 10.0, offset.y / 10.0, offset.z / 10.0]);
@@ -6361,15 +6401,11 @@ fn native_procedural_curve(
             .iter()
             .find(|curve| curve.id == *source)
             .ok_or_else(|| CodecError::Malformed("subset source curve is missing".into()))?;
-        let CurveGeometry::Nurbs(source) = &source.geometry else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D subset requires a NURBS source curve".into(),
-            ));
-        };
+        let source = native_interval_curve(&source.geometry, *parameter_range)?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "subset_int_cur")?;
-        native_nurbs_curve(bytes, source)?;
+        native_nurbs_curve(bytes, &source)?;
         native_f64(bytes, parameter_range[0]);
         native_f64(bytes, parameter_range[1]);
         native_nurbs_curve(bytes, solved_cache)?;

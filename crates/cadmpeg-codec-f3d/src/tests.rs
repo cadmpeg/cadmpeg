@@ -11383,6 +11383,20 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     let mut source_less = result.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let source_id = match &source_less.model.procedural_curves[0].definition {
+        ProceduralCurveDefinition::VectorOffset { source, .. } => source.clone(),
+        _ => unreachable!(),
+    };
+    source_less
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == source_id)
+        .expect("vector-offset source carrier")
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+        origin: cadmpeg_ir::math::Point3::new(-5.0, 4.0, 2.0),
+        direction: cadmpeg_ir::math::Vector3::new(2.0, 1.0, -0.5),
+    };
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -11414,6 +11428,22 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         round_trip.ir.model.procedural_curves[0].cache_fit_tolerance,
         Some(0.008)
     );
+    assert!(matches!(
+        round_trip
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *source)
+            .map(|curve| &curve.geometry),
+        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            if curve.degree == 1
+                && curve.knots == [-2.0, -2.0, 5.0, 5.0]
+                && curve.control_points == [
+                    cadmpeg_ir::math::Point3::new(-9.0, 2.0, 3.0),
+                    cadmpeg_ir::math::Point3::new(5.0, 9.0, -0.5),
+                ]
+    ));
 }
 
 #[test]
@@ -11473,6 +11503,20 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let mut source_less = result.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let source_id = match &source_less.model.procedural_curves[0].definition {
+        ProceduralCurveDefinition::Subset { source, .. } => source.clone(),
+        _ => unreachable!(),
+    };
+    source_less
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == source_id)
+        .expect("subset source carrier")
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+        origin: cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0),
+        direction: cadmpeg_ir::math::Vector3::new(1.0, -2.0, 0.5),
+    };
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -11494,6 +11538,26 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .curves
         .iter()
         .any(|curve| curve.id == *source));
+    let source_curve = round_trip
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *source)
+        .expect("round-trip subset source");
+    assert_eq!(
+        source_curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![-1.5, -1.5, 3.5, 3.5],
+            control_points: vec![
+                cadmpeg_ir::math::Point3::new(8.5, 23.0, 29.25),
+                cadmpeg_ir::math::Point3::new(13.5, 13.0, 31.75),
+            ],
+            weights: None,
+            periodic: false,
+        })
+    );
 }
 
 #[test]
