@@ -44,6 +44,66 @@ fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
         .map_err(Into::into)
 }
 
+fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
+    let mut surface_owners = BTreeSet::new();
+    for procedural in &target.model.procedural_surfaces {
+        if !surface_owners.insert(&procedural.surface) {
+            return Err(CodecError::Malformed(format!(
+                "surface {} has multiple procedural constructions",
+                procedural.surface
+            )));
+        }
+        let surface = target
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == procedural.surface)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "procedural surface {} references missing carrier {}",
+                    procedural.id, procedural.surface
+                ))
+            })?;
+        if !matches!(
+            surface.geometry,
+            SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. }
+        ) {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural surface {} cannot retain its construction on analytic carrier {}",
+                procedural.id, surface.id
+            )));
+        }
+    }
+
+    let mut curve_owners = BTreeSet::new();
+    for procedural in &target.model.procedural_curves {
+        if !curve_owners.insert(&procedural.curve) {
+            return Err(CodecError::Malformed(format!(
+                "curve {} has multiple procedural constructions",
+                procedural.curve
+            )));
+        }
+        let curve = target
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == procedural.curve)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "procedural curve {} references missing carrier {}",
+                    procedural.id, procedural.curve
+                ))
+            })?;
+        if !matches!(curve.geometry, CurveGeometry::Nurbs(_)) {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural curve {} cannot retain its construction on non-NURBS carrier {}",
+                procedural.id, curve.id
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
 pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
@@ -53,6 +113,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             "source-less F3D generation does not support SubD surfaces".into(),
         ));
     }
+    validate_source_less_procedural_carriers(target)?;
     if let Some(native) = &native {
         validate_source_less_history_graph(target, native)?;
         validate_source_less_act(native)?;

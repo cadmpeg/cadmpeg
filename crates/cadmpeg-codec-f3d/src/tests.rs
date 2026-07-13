@@ -10632,6 +10632,67 @@ fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
 }
 
 #[test]
+fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carriers() {
+    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_cyl_spl_sur_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated procedural surface decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let surface_id = source_less.model.procedural_surfaces[0].surface.clone();
+    source_less
+        .model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == surface_id)
+        .unwrap()
+        .geometry = SurfaceGeometry::Plane {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("analytic carrier must not discard its procedural surface");
+    assert!(error
+        .to_string()
+        .contains("cannot retain its construction on analytic carrier"));
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_helix_curve_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated procedural curve decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let curve_id = source_less.model.procedural_curves[0].curve.clone();
+    source_less
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry = CurveGeometry::Line {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        direction: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("analytic carrier must not discard its procedural curve");
+    assert!(error
+        .to_string()
+        .contains("cannot retain its construction on non-NURBS carrier"));
+}
+
+#[test]
 fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{DeformableSurfaceData, ProceduralSurfaceDefinition};
     let decoded = F3dCodec
