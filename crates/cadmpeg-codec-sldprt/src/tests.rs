@@ -1044,6 +1044,8 @@ fn resolved_features_payload_with_names_and_relation(
         record[..12].fill(0);
         record[12..16].copy_from_slice(&code.to_le_bytes());
         record[43..51].copy_from_slice(&(ordinal as f64 + 1.0).to_le_bytes());
+        record[65..67].fill(0);
+        record[67..75].copy_from_slice(&(-1.0f64).to_le_bytes());
         record[83..87].copy_from_slice(&((ordinal + 1) as u32).to_le_bytes());
         payload.extend_from_slice(&record);
     }

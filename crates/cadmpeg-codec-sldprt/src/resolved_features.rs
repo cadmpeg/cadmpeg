@@ -191,7 +191,25 @@ pub(crate) fn reference_cells(scalars: &[FeatureInputScalar]) -> Vec<FeatureInpu
 }
 
 pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
-    let start = offset.checked_add(88)?;
+    let relative = if marker_local_links(payload, offset).is_some() {
+        88
+    } else if marker_coordinates(payload, offset).is_some() {
+        let search_start = offset.checked_add(SKETCH_MARKER.len())?;
+        let next = payload
+            .get(search_start..)?
+            .windows(SKETCH_MARKER.len())
+            .position(|bytes| bytes == SKETCH_MARKER)?
+            .checked_add(search_start)?;
+        match next.checked_sub(offset)? {
+            142 | 146 => 138,
+            152 | 156 => 148,
+            162 | 166 | 167 => 158,
+            _ => return None,
+        }
+    } else {
+        return None;
+    };
+    let start = offset.checked_add(relative)?;
     let end = start.checked_add(4)?;
     let id = u32::from_le_bytes(payload.get(start..end)?.try_into().ok()?);
     (id != u32::MAX).then_some(id)
@@ -224,10 +242,23 @@ mod marker_tests {
     #[test]
     fn marker_local_id_is_the_trailing_u32() {
         let mut payload = vec![0; 92];
+        payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
         payload[88..92].copy_from_slice(&37u32.to_le_bytes());
         assert_eq!(marker_local_id(&payload, 0), Some(37));
         payload[88..92].fill(0xff);
         assert_eq!(marker_local_id(&payload, 0), None);
+    }
+
+    #[test]
+    fn coordinate_marker_local_id_uses_the_variant_footer() {
+        let mut payload = vec![0; 142 + 5];
+        payload[..5].copy_from_slice(super::SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+        payload[138..142].copy_from_slice(&41u32.to_le_bytes());
+        payload[142..147].copy_from_slice(super::SKETCH_MARKER);
+        assert_eq!(marker_local_id(&payload, 0), Some(41));
     }
 
     #[test]
