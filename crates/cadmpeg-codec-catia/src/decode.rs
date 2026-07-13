@@ -2270,16 +2270,30 @@ fn attach_standard_topology(
         endpoint_candidates.push(candidates);
     }
     let edge_faces: Vec<[usize; 2]> = supports.iter().map(|support| support.faces).collect();
-    let resolved_endpoint_pairs = resolve_standard_endpoint_pairs(
+    let endpoint_options = resolve_standard_endpoint_pairs(
         ir,
         bindings,
         &surface_indices,
         &supports,
         &endpoint_candidates,
     );
-    let resolved_endpoint_pairs = resolved_endpoint_pairs
+    let resolved_endpoint_pairs = endpoint_options
+        .as_ref()
+        .and_then(|options| {
+            options
+                .iter()
+                .map(|pairs| {
+                    <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                        .ok()
+                        .map(|pair| pair[0])
+                })
+                .collect::<Option<Vec<_>>>()
+        })
         .zip(topology::standard_edge_ports(brep))
-        .and_then(|(pairs, ports)| topology::propagate_edge_port_points(&ports, &pairs))
+        .and_then(|(pairs, ports)| {
+            let pairs = pairs.into_iter().map(Some).collect::<Vec<_>>();
+            topology::propagate_edge_port_points(&ports, &pairs)
+        })
         .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<[usize; 2]>>>());
     let (topology, point_assignment) = if let Some(topology) = topology::parse_standard(brep) {
         let endpoint_pairs = resolved_endpoint_pairs.clone().or_else(|| {
@@ -2295,11 +2309,9 @@ fn attach_standard_topology(
             return false;
         };
         (topology, point_assignment)
-    } else if let Some(endpoint_pairs) = resolved_endpoint_pairs {
-        let Some(topology) = topology::parse_standard_endpoints(brep, &edge_faces, &endpoint_pairs)
-        else {
-            return false;
-        };
+    } else if let Some(topology) = endpoint_options.as_ref().and_then(|options| {
+        topology::parse_standard_endpoint_candidates(brep, &edge_faces, options)
+    }) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else {
@@ -2500,14 +2512,18 @@ fn resolve_standard_endpoint_pairs(
     surface_indices: &HashMap<SurfaceId, usize>,
     supports: &[geometry::StandardCurveSupport],
     candidates: &[Vec<usize>],
-) -> Option<Vec<Option<[usize; 2]>>> {
-    let mut resolved: Vec<Option<[usize; 2]>> = candidates
+) -> Option<Vec<Vec<[usize; 2]>>> {
+    let mut resolved: Vec<Vec<[usize; 2]>> = candidates
         .iter()
-        .map(|points| <[usize; 2]>::try_from(points.as_slice()).ok())
+        .map(|points| {
+            <[usize; 2]>::try_from(points.as_slice())
+                .map(|pair| vec![pair])
+                .unwrap_or_default()
+        })
         .collect();
     let mut line_groups = HashMap::<[usize; 2], Vec<usize>>::new();
     for (edge, support) in supports.iter().enumerate() {
-        if resolved[edge].is_none()
+        if resolved[edge].is_empty()
             && matches!(support.geometry, geometry::StandardCurveGeometry::Line)
         {
             let mut faces = support.faces;
@@ -2518,7 +2534,7 @@ fn resolve_standard_endpoint_pairs(
     for (faces, edges) in line_groups {
         let surface0 = face_surface(ir, bindings, surface_indices, faces[0])?;
         let surface1 = face_surface(ir, bindings, surface_indices, faces[1])?;
-        let direction = intersection_line_direction(&surface0.geometry, &surface1.geometry)?;
+        let direction = intersection_line_direction(&surface0.geometry, &surface1.geometry);
         let points = candidates.get(*edges.first()?)?;
         let mut pairs = Vec::new();
         for (left, &start) in points.iter().enumerate() {
@@ -2531,15 +2547,25 @@ fn resolve_standard_endpoint_pairs(
                     end_point.z - start_point.z,
                 );
                 let segment_norm = axis_dot(segment, segment).sqrt();
-                let direction_norm = axis_dot(direction, direction).sqrt();
+                let midpoint = Point3::new(
+                    (start_point.x + end_point.x) * 0.5,
+                    (start_point.y + end_point.y) * 0.5,
+                    (start_point.z + end_point.z) * 0.5,
+                );
+                let follows_direction = direction.is_none_or(|direction| {
+                    let direction_norm = axis_dot(direction, direction).sqrt();
+                    direction_norm > f64::EPSILON
+                        && axis_dot(
+                            cross_vector(segment, direction),
+                            cross_vector(segment, direction),
+                        )
+                        .sqrt()
+                            <= 1e-2 * segment_norm * direction_norm
+                });
                 if segment_norm > f64::EPSILON
-                    && direction_norm > f64::EPSILON
-                    && axis_dot(
-                        cross_vector(segment, direction),
-                        cross_vector(segment, direction),
-                    )
-                    .sqrt()
-                        <= 1e-2 * segment_norm * direction_norm
+                    && follows_direction
+                    && point_on_surface(midpoint, &surface0.geometry)
+                    && point_on_surface(midpoint, &surface1.geometry)
                 {
                     pairs.push([points[left], end_index]);
                 }
@@ -2547,14 +2573,18 @@ fn resolve_standard_endpoint_pairs(
         }
         pairs.sort_unstable();
         pairs.dedup();
-        if pairs.len() != edges.len() {
+        if pairs.len() < edges.len() {
             continue;
         }
-        for (edge, pair) in edges.into_iter().zip(pairs) {
-            resolved[edge] = Some(pair);
+        for (rank, edge) in edges.into_iter().enumerate() {
+            resolved[edge].clone_from(&pairs);
+            resolved[edge].rotate_left(rank % pairs.len());
         }
     }
-    Some(resolved)
+    resolved
+        .iter()
+        .all(|pairs| !pairs.is_empty())
+        .then_some(resolved)
 }
 
 fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) -> Option<Vector3> {

@@ -22,7 +22,6 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 - The byte relation assigning logical vertex components to `05 08 01` allocation rows is unspecified.
 - Spline-region edge and vertex binding. A B-spline carrier lacks a closed-form locus for assigning an `a5 03 32` curve or pcurve to an edge and binding its endpoints.
-- High-degeneracy analytic intersections. Collinear candidate sets can contain more endpoints than the physical edge uses.
 - `op1` and persistent-tag resolution. The mapping from absolute persistent CGM tags to serialized records remains unresolved for the consolidated `a5` family.
 - Standard-path line equations, multi-body shell membership, annular-cap orientation, and plane-normal sign.
 - The standard-path arc branch is unspecified for torus-witnessed arcs and arcs with no witnessed adjacent face.

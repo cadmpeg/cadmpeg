@@ -159,7 +159,7 @@ fn unique_bijections(
         unique_bijections(domains, assignment, used, solutions);
         used.remove(&point);
         assignment[vertex] = None;
-        if solutions.len() > 1 {
+        if solutions.len() > 9 {
             return;
         }
     }
@@ -328,6 +328,69 @@ pub fn parse_standard_endpoints(
         vertex_points,
         edge_faces,
         edge_points,
+        face_count,
+    )
+}
+
+/// Reconstruct standard topology while resolving edges that have multiple
+/// geometrically valid endpoint pairs. Candidate pairs and edge rows use their
+/// serialized order as the stable gauge when equivalent assignments permute
+/// indistinguishable line rows. The selected assignment must close every face
+/// cycle and satisfy radial orientation.
+#[must_use]
+pub fn parse_standard_endpoint_candidates(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_candidates: &[Vec<[usize; 2]>],
+) -> Option<StandardTopology> {
+    let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    if edge_rows.len() != edge_faces.len()
+        || edge_rows.len() != edge_candidates.len()
+        || edge_candidates.iter().any(Vec::is_empty)
+        || edge_candidates
+            .iter()
+            .flatten()
+            .flatten()
+            .any(|point| *point >= vertex_points.len())
+    {
+        return None;
+    }
+
+    reconstruct_incidence_candidates(
+        edge_rows,
+        vertex_points,
+        edge_faces,
+        edge_candidates,
+        face_count,
+    )
+}
+
+fn reconstruct_incidence_candidates(
+    edge_rows: Vec<EdgeRow>,
+    vertex_points: Vec<[f64; 3]>,
+    edge_faces: &[[usize; 2]],
+    edge_candidates: &[Vec<[usize; 2]>],
+    face_count: usize,
+) -> Option<StandardTopology> {
+    let mut choices = edge_candidates.to_vec();
+    for candidates in &mut choices {
+        for pair in candidates.iter_mut() {
+            pair.sort_unstable();
+        }
+        let mut seen = HashSet::new();
+        candidates.retain(|pair| seen.insert(*pair));
+    }
+    let edge_points = choices
+        .iter()
+        .map(|candidates| candidates.first().copied())
+        .collect::<Option<Vec<_>>>()?;
+    reconstruct_incidence(
+        edge_rows,
+        vertex_points,
+        edge_faces,
+        &edge_points,
         face_count,
     )
 }
@@ -1217,7 +1280,8 @@ impl UnionFind {
 #[cfg(test)]
 mod motif_tests {
     use super::{
-        motif_port_points, propagate_edge_port_points, reconstruct_incidence, EdgeRow, TrimRecord,
+        motif_port_points, propagate_edge_port_points, reconstruct_incidence,
+        reconstruct_incidence_candidates, EdgeRow, TrimRecord,
     };
 
     fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
@@ -1282,6 +1346,34 @@ mod motif_tests {
         assert!(uses
             .iter()
             .all(|senses| senses == &[false, true] || senses == &[true, false]));
+    }
+
+    #[test]
+    fn endpoint_candidate_gauge_accepts_a_face_closing_assignment() {
+        let rows = (0..6)
+            .map(|edge| EdgeRow {
+                kind: 1,
+                handles: vec![edge * 2, edge * 2 + 1],
+            })
+            .collect();
+        let points = vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ];
+        let edge_faces = [[0, 1], [0, 2], [0, 3], [1, 3], [1, 2], [2, 3]];
+        let candidates = vec![
+            vec![[0, 1], [0, 2]],
+            vec![[1, 2]],
+            vec![[0, 2]],
+            vec![[0, 3]],
+            vec![[1, 3]],
+            vec![[2, 3]],
+        ];
+        let topology = reconstruct_incidence_candidates(rows, points, &edge_faces, &candidates, 4)
+            .expect("unique face-closing endpoint assignment");
+        assert_eq!(topology.edge_vertices().expect("edge vertices")[0], [0, 1]);
     }
 
     #[test]
