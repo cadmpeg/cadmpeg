@@ -199,6 +199,11 @@ pub enum FeatureSourceContent {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "definition", rename_all = "snake_case")]
 pub enum FeatureDefinition {
+    /// Non-modeling node retained in the ordered feature tree.
+    TreeNode {
+        /// Structural or presentation role of the node.
+        role: FeatureTreeNodeRole,
+    },
     /// Constructed reference plane.
     DatumPlane {
         /// Plane origin in model space.
@@ -617,6 +622,46 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
     },
+}
+
+/// Canonical role of a non-modeling feature-tree node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureTreeNodeRole {
+    /// Annotation container.
+    Annotations,
+    /// Ambient scene light.
+    AmbientLight,
+    /// Comment container.
+    Comments,
+    /// Design-binder container.
+    DesignBinder,
+    /// Directional scene light.
+    DirectionalLight,
+    /// Equation container.
+    Equations,
+    /// Exploded-view container.
+    ExplodedViews,
+    /// Favorites container.
+    Favorites,
+    /// Generic history folder.
+    History,
+    /// Lights, cameras, and scene container.
+    LightsAndCameras,
+    /// Markup container.
+    Markups,
+    /// Material container or assignment node.
+    Materials,
+    /// Note container.
+    Notes,
+    /// Selection-set container.
+    SelectionSets,
+    /// Sensor container.
+    Sensors,
+    /// Solid-body container.
+    SolidBodies,
+    /// Surface-body container.
+    SurfaceBodies,
 }
 
 /// Coordinate space of a sketch history node.

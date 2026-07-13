@@ -8,10 +8,10 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, ConfigurationId,
     DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent, FaceMotion,
-    FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length,
-    ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, RuledSurfaceMode,
-    ScaleCenter, SketchSpace, SurfaceContinuity, SurfaceExtension, TrimRegion, VariableRadius,
-    WrapMode,
+    FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole,
+    FlexMode, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef,
+    RadiusSpec, RuledSurfaceMode, ScaleCenter, SketchSpace, SurfaceContinuity, SurfaceExtension,
+    TrimRegion, VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1032,6 +1032,9 @@ fn project_definition(
     by_source: &HashMap<&str, FeatureId>,
     native_by_source: &HashMap<&str, &str>,
 ) -> FeatureDefinition {
+    if let Some(role) = feature_tree_node_role(&feature.kind) {
+        return FeatureDefinition::TreeNode { role };
+    }
     if feature_family(feature, "Sketch") {
         return FeatureDefinition::Sketch {
             space: if feature.kind.eq_ignore_ascii_case("3DSketch") {
@@ -1139,6 +1142,53 @@ fn project_definition(
         project_rib(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else {
         native_definition(feature)
+    }
+}
+
+fn feature_tree_node_role(kind: &str) -> Option<FeatureTreeNodeRole> {
+    Some(match kind {
+        "Annotations" | "Anotaciones" => FeatureTreeNodeRole::Annotations,
+        "Ambient" | "Ambiental" => FeatureTreeNodeRole::AmbientLight,
+        "Comments" | "Comentarios" => FeatureTreeNodeRole::Comments,
+        "Design Binder" | "Cuaderno de diseño" => FeatureTreeNodeRole::DesignBinder,
+        "Directional" | "Direccional" => FeatureTreeNodeRole::DirectionalLight,
+        "Equations" | "Ecuaciones" => FeatureTreeNodeRole::Equations,
+        "Exploded Views" | "Vistas explosionadas" => FeatureTreeNodeRole::ExplodedViews,
+        "Favorites" | "Favoritos" => FeatureTreeNodeRole::Favorites,
+        "History" | "Historial" => FeatureTreeNodeRole::History,
+        "Lights and Cameras" | "Lights, Cameras and Scene" | "Luces y cámaras" => {
+            FeatureTreeNodeRole::LightsAndCameras
+        }
+        "Markups" => FeatureTreeNodeRole::Markups,
+        "SOLIDWORKS Materials" | "Materiales de SOLIDWORKS" => FeatureTreeNodeRole::Materials,
+        "Notes" | "Notas" => FeatureTreeNodeRole::Notes,
+        "Selection Sets" | "Conjuntos de selecciones" => FeatureTreeNodeRole::SelectionSets,
+        "Sensors" | "Sensores" => FeatureTreeNodeRole::Sensors,
+        "Solid Bodies" | "Sólidos" => FeatureTreeNodeRole::SolidBodies,
+        "Surface Bodies" | "Conjuntos de superficies" => FeatureTreeNodeRole::SurfaceBodies,
+        _ => return None,
+    })
+}
+
+fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
+    match role {
+        FeatureTreeNodeRole::Annotations => "Annotations",
+        FeatureTreeNodeRole::AmbientLight => "Ambient",
+        FeatureTreeNodeRole::Comments => "Comments",
+        FeatureTreeNodeRole::DesignBinder => "Design Binder",
+        FeatureTreeNodeRole::DirectionalLight => "Directional",
+        FeatureTreeNodeRole::Equations => "Equations",
+        FeatureTreeNodeRole::ExplodedViews => "Exploded Views",
+        FeatureTreeNodeRole::Favorites => "Favorites",
+        FeatureTreeNodeRole::History => "History",
+        FeatureTreeNodeRole::LightsAndCameras => "Lights and Cameras",
+        FeatureTreeNodeRole::Markups => "Markups",
+        FeatureTreeNodeRole::Materials => "SOLIDWORKS Materials",
+        FeatureTreeNodeRole::Notes => "Notes",
+        FeatureTreeNodeRole::SelectionSets => "Selection Sets",
+        FeatureTreeNodeRole::Sensors => "Sensors",
+        FeatureTreeNodeRole::SolidBodies => "Solid Bodies",
+        FeatureTreeNodeRole::SurfaceBodies => "Surface Bodies",
     }
 }
 
@@ -3453,6 +3503,28 @@ pub fn sync_neutral_features(
             .flat_map(|history| &mut history.features)
             .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
         let (kind, parameters, mut properties) = match &feature.definition {
+            FeatureDefinition::TreeNode { role } => {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| feature_tree_node_role(&record.kind) != Some(*role))
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes feature-tree node role",
+                        feature.id
+                    )));
+                }
+                (
+                    existing.as_deref().map_or_else(
+                        || feature_tree_node_kind(*role).into(),
+                        |record| record.kind.clone(),
+                    ),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    feature.source_properties.clone(),
+                )
+            }
             FeatureDefinition::Native {
                 kind,
                 parameters,
@@ -6351,6 +6423,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         return tag.clone();
     }
     let tag = match &feature.definition {
+        FeatureDefinition::TreeNode { .. } => "Feature",
         FeatureDefinition::DatumPlane { .. } => "ReferencePlane",
         FeatureDefinition::DatumOffsetPlane { .. } => "Feature",
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",

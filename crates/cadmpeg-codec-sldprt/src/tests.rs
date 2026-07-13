@@ -5303,6 +5303,71 @@ fn decode_extracts_parametric_history() {
 }
 
 #[test]
+fn decode_types_non_modeling_feature_tree_nodes() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureTreeNodeRole};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Feature Name="Annotations" Type="Annotations" id="1"/>
+            <Feature Name="Ecuaciones" Type="Ecuaciones" id="2"/>
+            <Feature Name="Bodies" Type="Solid Bodies" id="3"/>
+            <Feature Name="Light" Type="Direccional" id="4"/>
+            <Feature Name="Unknown" Type="CustomOperation" id="5"/>
+        </Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let definitions = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .map(|feature| &feature.definition)
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        definitions[0],
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::Annotations
+        }
+    ));
+    assert!(matches!(
+        definitions[1],
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::Equations
+        }
+    ));
+    assert!(matches!(
+        definitions[2],
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::SolidBodies
+        }
+    ));
+    assert!(matches!(
+        definitions[3],
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::DirectionalLight
+        }
+    ));
+    assert!(matches!(definitions[4], FeatureDefinition::Native { .. }));
+    decoded.ir.model.features[0].name = Some("Document annotations".into());
+    let mut encoded = Vec::new();
+    SldprtCodec.encode(&decoded.ir, &mut encoded).unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::Annotations
+        }
+    ));
+}
+
+#[test]
 fn keywords_root_id_does_not_create_feature_parentage() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
