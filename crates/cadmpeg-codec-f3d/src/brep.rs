@@ -3858,7 +3858,8 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             // the IR stores the forward carrier in both cases, so the
             // reversal folds into the face sense to keep the IR
             // self-consistent.
-            let mut sense = sense_at(r, 8);
+            let native_sense = sense_at(r, 8);
+            let mut sense = native_sense;
             if by_index
                 .get(&surface)
                 .is_some_and(|surf| surf.head == "spline" && record_reversed(surf))
@@ -3888,6 +3889,8 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 id: format!("f3d:asm:face-sidedness#{i}"),
                 face: FaceId(id(i)),
                 record_index: r.index as u32,
+                native_sense,
+                normalized_sense: sense,
                 containment,
             });
         }

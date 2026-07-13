@@ -111,6 +111,10 @@ pub struct FaceSidedness {
     pub face: FaceId,
     /// Source SAB record index.
     pub record_index: u32,
+    /// Sense token stored in the native face record before carrier normalization.
+    pub native_sense: cadmpeg_ir::topology::Sense,
+    /// IR sense produced when `native_sense` was decoded.
+    pub normalized_sense: cadmpeg_ir::topology::Sense,
     /// Conditional containment direction; absence denotes a single-sided face.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub containment: Option<FaceContainment>,

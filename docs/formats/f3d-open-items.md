@@ -30,6 +30,7 @@ This document records F3D semantics that the format specification does not yet d
 - The Design `MetaStream` Dimension object is a registry with no owned entity IDs. The location and byte grammar of concrete dimensional constraints and parameter expressions are unresolved.
 - Text-frame (`0x10000000000`) and text-path (`0x20000000000`) constraint bits exceed the settled u32 mask in the 101-byte sketch-relation record. The side-stream record carrying those 64-bit text-constraint masks is unresolved.
 - The class-specific fields after the fixed `*_recipe_data` null sentinel and integer prologue are unresolved; their feature-operation, profile, extent, and dependency semantics are not assigned.
+- The three Design body-bounding-box sextuples are value- and unit-defined, but the dynamic-class subrecord grammar that bounds each repetition and associates the repetition with its body is unresolved. Approximate offsets after an assignment container are not a structural decoder.
 
 ## Tolerant topology variants
 

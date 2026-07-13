@@ -971,7 +971,9 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     native_ref(&mut records, 3);
     native_ref(&mut records, -1);
     native_ref(&mut records, 6);
-    records.push(native_bool(face.sense == Sense::Reversed));
+    records.push(native_bool(
+        native_face_sense(target, face)? == Sense::Reversed,
+    ));
     native_face_sidedness(&mut records, target, face)?;
     records.push(0x11);
 
@@ -2160,7 +2162,9 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             &mut records,
             native_record_index(surface_start, surface_position)?,
         );
-        records.push(native_bool(face.sense == Sense::Reversed));
+        records.push(native_bool(
+            native_face_sense(target, face)? == Sense::Reversed,
+        ));
         native_face_sidedness(&mut records, target, face)?;
         records.push(0x11);
     }
@@ -3508,6 +3512,42 @@ fn native_face_sidedness(
         });
     }
     Ok(())
+}
+
+fn native_face_sense(
+    target: &CadIr,
+    face: &cadmpeg_ir::topology::Face,
+) -> Result<Sense, CodecError> {
+    Ok(f3d_native(target)?
+        .and_then(|native| {
+            native
+                .face_sidedness
+                .into_iter()
+                .find(|metadata| metadata.face == face.id)
+                .map(|metadata| {
+                    normalized_face_sense_to_native(
+                        face.sense,
+                        metadata.native_sense,
+                        metadata.normalized_sense,
+                    )
+                })
+        })
+        .unwrap_or(face.sense))
+}
+
+fn normalized_face_sense_to_native(
+    desired: Sense,
+    native_at_decode: Sense,
+    normalized_at_decode: Sense,
+) -> Sense {
+    if native_at_decode == normalized_at_decode {
+        desired
+    } else {
+        match desired {
+            Sense::Forward => Sense::Reversed,
+            Sense::Reversed => Sense::Forward,
+        }
+    }
 }
 
 fn native_tolerant_vertex_tail(
@@ -8000,8 +8040,7 @@ pub fn write_semantic(
             range[1] /= 10.0;
         }
     }
-    let face_sense_edits =
-        validate_face_sense_edits(&baseline.ir.model.faces, &target.model.faces)?;
+    let face_sense_edits = validate_face_sense_edits(&baseline.ir, target)?;
     let coedge_sense_edits =
         validate_coedge_sense_edits(&baseline.ir.model.coedges, &target.model.coedges)?;
     let history_state_edits = validate_history_state_edits(&baseline.ir, target)?;
@@ -11106,9 +11145,25 @@ fn validate_edge_range_edits(
 }
 
 fn validate_face_sense_edits(
-    baseline: &[Face],
-    target: &[Face],
+    baseline_ir: &CadIr,
+    target_ir: &CadIr,
 ) -> Result<BTreeMap<String, Sense>, CodecError> {
+    let baseline = &baseline_ir.model.faces;
+    let target = &target_ir.model.faces;
+    let native_senses = f3d_native(baseline_ir)?
+        .map(|native| {
+            native
+                .face_sidedness
+                .into_iter()
+                .map(|metadata| {
+                    (
+                        metadata.face,
+                        (metadata.native_sense, metadata.normalized_sense),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
     let baseline = baseline
         .iter()
         .map(|face| (face.id.as_str(), face))
@@ -11134,7 +11189,13 @@ fn validate_face_sense_edits(
             )));
         }
         if after.sense != before.sense {
-            edits.insert(id.to_owned(), after.sense);
+            let (native_before, normalized_before) = native_senses
+                .get(&before.id)
+                .copied()
+                .unwrap_or((before.sense, before.sense));
+            let native_after =
+                normalized_face_sense_to_native(after.sense, native_before, normalized_before);
+            edits.insert(id.to_owned(), native_after);
         }
     }
     Ok(edits)
@@ -14322,6 +14383,18 @@ fn patch_knot_structure(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_face_sense_edit_preserves_native_normalization_relation() {
+        assert_eq!(
+            normalized_face_sense_to_native(Sense::Reversed, Sense::Forward, Sense::Forward,),
+            Sense::Reversed
+        );
+        assert_eq!(
+            normalized_face_sense_to_native(Sense::Reversed, Sense::Reversed, Sense::Forward,),
+            Sense::Forward
+        );
+    }
 
     #[test]
     fn generated_straight_record_patches_by_token_boundaries() {
