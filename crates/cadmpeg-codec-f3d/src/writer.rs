@@ -11621,18 +11621,15 @@ fn patch_wire_topologies(
                 record.head
             )));
         }
-        let mut offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x0a)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?;
-        offsets.extend(
-            sab::payload_token_offsets(bytes, record, ref_width, 0x0b)
-                .map_err(|error| CodecError::Malformed(error.to_string()))?,
-        );
-        let [offset] = offsets.as_slice() else {
+        let offset = sab::payload_token_offset(bytes, record, ref_width, 7).ok_or_else(|| {
+            CodecError::Malformed(format!("F3D wire record {record_index} lacks side field 7"))
+        })?;
+        if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
             return Err(CodecError::Malformed(format!(
-                "F3D wire record {record_index} does not contain one side token"
+                "F3D wire record {record_index} field 7 is not a side token"
             )));
-        };
-        bytes[*offset] = match side {
+        }
+        bytes[offset] = match side {
             crate::records::WireSide::In => 0x0a,
             crate::records::WireSide::Out => 0x0b,
         };

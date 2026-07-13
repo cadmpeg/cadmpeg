@@ -828,6 +828,25 @@ mod tests {
         bytes
     }
 
+    fn generated_wire_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 4];
+        bytes.extend_from_slice(b"wire");
+        for (tag, value) in [
+            (0x0c, -1i64),
+            (0x04, -1),
+            (0x0c, -1),
+            (0x0c, -1),
+            (0x0c, 1),
+            (0x0c, 2),
+            (0x0c, -1),
+        ] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.extend_from_slice(&[0x0b, 0x11]);
+        bytes
+    }
+
     #[test]
     fn generated_payload_subtype_lookup_uses_declared_integer_width() {
         for ref_width in [4, 8] {
@@ -1090,6 +1109,17 @@ mod tests {
                     .expect("transform hint field");
                 assert!(matches!(bytes[offset], 0x0a | 0x0b));
             }
+        }
+    }
+
+    #[test]
+    fn generated_wire_has_fixed_side_field_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_wire_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated wire");
+            let offset =
+                payload_token_offset(&bytes, &records[0], ref_width, 7).expect("wire side field");
+            assert_eq!(bytes[offset], 0x0b);
         }
     }
 }
