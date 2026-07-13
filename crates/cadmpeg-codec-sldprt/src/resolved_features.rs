@@ -250,6 +250,7 @@ pub(crate) fn named_scalars(
                 FeatureInputScalar {
                     id: format!("sldprt:feature-input:scalar#{lane_key}:{offset}"),
                     parent: parent.to_string(),
+                    feature_ref: None,
                     ordinal: ordinal as u32,
                     offset: offset as u64,
                     object_id,
@@ -272,6 +273,7 @@ pub(crate) fn scalar_indices_match(
         && actual.iter().zip(expected).all(|(actual, expected)| {
             actual.id == expected.id
                 && actual.parent == expected.parent
+                && actual.feature_ref == expected.feature_ref
                 && actual.ordinal == expected.ordinal
                 && actual.offset == expected.offset
                 && actual.object_id == expected.object_id
@@ -364,6 +366,7 @@ pub(crate) fn bind_scalar_operands(
                 .iter_mut()
                 .filter(|scalar| scalar.offset > start && scalar.offset < end)
             {
+                scalar.feature_ref = Some(feature_id.to_string());
                 for operand in &mut scalar.operands {
                     if operand.kind != FeatureInputOperandKind::D6 {
                         continue;

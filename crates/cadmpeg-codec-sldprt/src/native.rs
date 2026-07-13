@@ -98,6 +98,10 @@ impl SldprtNative {
                 record.id, record.parent
             )));
         }
+        let feature_ids = features
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
         let lane_ids = native
             .feature_input_lanes
             .iter()
@@ -137,6 +141,18 @@ impl SldprtNative {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "feature-input scalar {} references {}",
                 record.id, record.parent
+            )));
+        }
+        if let Some(record) = scalars.iter().find(|record| {
+            record
+                .feature_ref
+                .as_deref()
+                .is_some_and(|feature| !feature_ids.contains(feature))
+        }) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "feature-input scalar {} references missing feature {}",
+                record.id,
+                record.feature_ref.as_deref().unwrap_or_default()
             )));
         }
         if let Some(record) = references
@@ -291,6 +307,12 @@ impl SldprtNative {
                 )));
             }
         }
+        let feature_ids = self
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .map(|feature| feature.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
         for lane in &self.feature_input_lanes {
             let name_ids = lane
                 .names
@@ -328,6 +350,18 @@ impl SldprtNative {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input scalar {} references {} instead of {}",
                     record.id, record.parent, lane.id
+                )));
+            }
+            if let Some(record) = lane.scalars.iter().find(|record| {
+                record
+                    .feature_ref
+                    .as_deref()
+                    .is_some_and(|feature| !feature_ids.contains(feature))
+            }) {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "feature-input scalar {} references missing feature {}",
+                    record.id,
+                    record.feature_ref.as_deref().unwrap_or_default()
                 )));
             }
             if let Some(record) = lane

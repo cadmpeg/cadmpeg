@@ -11212,6 +11212,17 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         .native_ref
         .as_deref()
         .is_some_and(|id| id.starts_with("sldprt:feature-input:scalar#")));
+    let native = sldprt_native(&decoded.ir);
+    let scalar = native.feature_input_lanes[0]
+        .scalars
+        .iter()
+        .find(|scalar| Some(scalar.id.as_str()) == parameter.native_ref.as_deref())
+        .expect("parameter scalar");
+    assert_eq!(scalar.feature_ref.as_deref(), feature.native_ref.as_deref());
+    assert_eq!(
+        native.feature_input_lanes[0].relation_bindings[0].scalar_ref,
+        scalar.id
+    );
 }
 
 #[test]
