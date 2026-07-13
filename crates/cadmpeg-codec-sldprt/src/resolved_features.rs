@@ -672,7 +672,6 @@ pub(crate) fn bind_history_classes(
     lanes: &[FeatureInputLane],
 ) {
     let mut classes_by_object = HashMap::<u32, Vec<&str>>::new();
-    let mut classes_by_name = HashMap::<&str, Vec<&str>>::new();
     for lane in lanes {
         let names_by_offset = lane
             .names
@@ -684,10 +683,6 @@ pub(crate) fn bind_history_classes(
             let Some(name) = names_by_offset.get(&name_offset) else {
                 continue;
             };
-            classes_by_name
-                .entry(&name.value)
-                .or_default()
-                .push(&class.name);
             if let Some(object_id) = name.object_id {
                 classes_by_object
                     .entry(object_id)
@@ -705,8 +700,7 @@ pub(crate) fn bind_history_classes(
             .source_id
             .as_deref()
             .and_then(|value| value.parse::<u32>().ok())
-            .and_then(|object_id| classes_by_object.get(&object_id))
-            .or_else(|| classes_by_name.get(feature.name.as_str()));
+            .and_then(|object_id| classes_by_object.get(&object_id));
         let Some(classes) = classes else {
             continue;
         };

@@ -976,20 +976,6 @@ fn resolved_features_payload_with_names(codes: &[u32], names: &[&str]) -> Vec<u8
     resolved_features_payload_with_names_and_relation(codes, names, "sgPntPntDist")
 }
 
-fn resolved_feature_classes(entries: &[(&str, &str)]) -> Vec<u8> {
-    let mut payload = Vec::new();
-    for (class, name) in entries {
-        payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-        payload.extend_from_slice(&(class.len() as u16).to_le_bytes());
-        payload.extend_from_slice(class.as_bytes());
-        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
-        for unit in name.encode_utf16() {
-            payload.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-    payload
-}
-
 fn resolved_feature_classes_with_ids(entries: &[(&str, &str, u32)]) -> Vec<u8> {
     let mut payload = Vec::new();
     for (class, name, object_id) in entries {
@@ -5501,10 +5487,10 @@ fn decode_types_non_modeling_feature_tree_nodes() {
     source.extend(make_block(
         0x42,
         "Contents/Config-0-ResolvedFeatures",
-        &resolved_feature_classes(&[
-            ("moDetailCabinet_c", "Annotations"),
-            ("moEqnFolder_c", "Ecuaciones"),
-            ("moSolidBodyFolder_c", "Bodies"),
+        &resolved_feature_classes_with_ids(&[
+            ("moDetailCabinet_c", "Annotations", 101),
+            ("moEqnFolder_c", "Ecuaciones", 102),
+            ("moSolidBodyFolder_c", "Bodies", 103),
         ]),
     ));
     let mut decoded = SldprtCodec
@@ -5588,6 +5574,35 @@ fn decode_binds_duplicate_feature_names_by_native_object_id() {
             role: FeatureTreeNodeRole::SolidBodies
         }
     ));
+}
+
+#[test]
+fn decode_does_not_bind_object_class_by_display_name() {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Plane" Type="Custom" id="41"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("moRefPlane_c", "Plane", 42)]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Native { .. }
+    ));
+    assert_eq!(
+        sldprt_native(&decoded.ir).feature_histories[0].features[0].input_class,
+        None
+    );
 }
 
 #[test]
@@ -7438,7 +7453,10 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
     source.extend(make_block(
         0x42,
         "Contents/Config-0-ResolvedFeatures",
-        &resolved_feature_classes(&[("Fillet_c", "Round"), ("Chamfer_c", "Bevel")]),
+        &resolved_feature_classes_with_ids(&[
+            ("Fillet_c", "Round", 10),
+            ("Chamfer_c", "Bevel", 11),
+        ]),
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -7813,7 +7831,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
     source.extend(make_block(
         0x42,
         "Contents/Config-0-ResolvedFeatures",
-        &resolved_feature_classes(&[("moThicken_c", "Wall")]),
+        &resolved_feature_classes_with_ids(&[("moThicken_c", "Wall", 15)]),
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -8744,7 +8762,7 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
     source.extend(make_block(
         0x42,
         "Contents/Config-0-ResolvedFeatures",
-        &resolved_feature_classes(&[("moRefPlane_c", "Plano2")]),
+        &resolved_feature_classes_with_ids(&[("moRefPlane_c", "Plano2", 549)]),
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -9160,7 +9178,7 @@ fn semantic_writer_round_trips_slash_named_helix() {
     source.extend(make_block(
         0x42,
         "Contents/Config-0-ResolvedFeatures",
-        &resolved_feature_classes(&[("moHelix_c", "Coil")]),
+        &resolved_feature_classes_with_ids(&[("moHelix_c", "Coil", 30)]),
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -9224,7 +9242,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
     source.extend(make_block(
         0x42,
         "Contents/Config-0-ResolvedFeatures",
-        &resolved_feature_classes(&[("moHelix_c", "Helix/Spiral1")]),
+        &resolved_feature_classes_with_ids(&[("moHelix_c", "Helix/Spiral1", 30)]),
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -10656,7 +10674,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
     source.extend(make_block(
         0x42,
         "Contents/Config-0-ResolvedFeatures",
-        &resolved_feature_classes(&[("moLPattern_c", "MatrizL1")]),
+        &resolved_feature_classes_with_ids(&[("moLPattern_c", "MatrizL1", 132)]),
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -10841,7 +10859,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
     source.extend(make_block(
         0x42,
         "Contents/Config-0-ResolvedFeatures",
-        &resolved_feature_classes(&[("moSweep_c", "Surface-Sweep1")]),
+        &resolved_feature_classes_with_ids(&[("moSweep_c", "Surface-Sweep1", 137)]),
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
