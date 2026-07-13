@@ -677,6 +677,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     let body = ir.model.bodies[0].id.clone();
     ir.model.configurations.push(DesignConfiguration {
         id: configuration_id.clone(),
+        ordinal: 0,
         name: "Default".into(),
         material: None,
         properties: BTreeMap::new(),
@@ -701,6 +702,22 @@ fn configuration_body_membership_round_trips_and_validates() {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message.contains("repeats body")
     }));
+
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId("synthetic:test:configuration#1".into()),
+        ordinal: 0,
+        name: "Alternate".into(),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: Vec::new(),
+        native_ref: None,
+    });
+    ir.finalize();
+    let report = validate(&ir, Vec::new());
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("repeats configuration ordinal")));
 }
 
 #[test]

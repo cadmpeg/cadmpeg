@@ -2402,7 +2402,8 @@ fn encoder_writes_source_less_neutral_configurations() {
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("sldprt:model:configuration#generated:0".into()),
+        id: ConfigurationId("sldprt:model:configuration#generated:z".into()),
+        ordinal: 0,
         name: "Metric".into(),
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
@@ -2410,13 +2411,15 @@ fn encoder_writes_source_less_neutral_configurations() {
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("sldprt:model:configuration#generated:1".into()),
+        id: ConfigurationId("sldprt:model:configuration#generated:a".into()),
+        ordinal: 1,
         name: "Empty".into(),
         material: None,
         properties: BTreeMap::new(),
         bodies: Vec::new(),
         native_ref: None,
     });
+    ir.finalize();
 
     let mut encoded = Vec::new();
     SldprtCodec.encode(&ir, &mut encoded).unwrap();
@@ -2531,6 +2534,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .enumerate()
         .map(|(index, body)| DesignConfiguration {
             id: ConfigurationId(format!("synthetic:test:configuration#config-{index}")),
+            ordinal: index as u32,
             name: format!("Config {index}"),
             material: None,
             properties: BTreeMap::new(),

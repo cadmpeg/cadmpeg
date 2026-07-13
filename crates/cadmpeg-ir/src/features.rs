@@ -46,6 +46,9 @@ pub struct ConfigurationId(pub String);
 pub struct DesignConfiguration {
     /// Globally unique configuration id.
     pub id: ConfigurationId,
+    /// Position in the design configuration list.
+    #[serde(default)]
+    pub ordinal: u32,
     /// Source display name.
     pub name: String,
     /// Material override, when present.

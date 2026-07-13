@@ -884,7 +884,19 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         BodySelection, EdgeSelection, Extent, FaceSelection, FeatureDefinition, PathRef, ProfileRef,
     };
 
+    let mut configuration_ordinals = HashSet::new();
     for configuration in &ir.model.configurations {
+        if !configuration_ordinals.insert(configuration.ordinal) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: format!(
+                    "design repeats configuration ordinal {}",
+                    configuration.ordinal
+                ),
+                entity: Some(configuration.id.0.clone()),
+            });
+        }
         let mut seen = HashSet::new();
         for body in &configuration.bodies {
             if !ids.bodies.contains(&body.0) {

@@ -373,9 +373,10 @@ fn configuration_partitions(
             body.id.0
         )));
     }
-    ir.model
-        .configurations
-        .iter()
+    let mut configurations = ir.model.configurations.iter().collect::<Vec<_>>();
+    configurations.sort_by_key(|configuration| configuration.ordinal);
+    configurations
+        .into_iter()
         .enumerate()
         .filter(|(_, configuration)| !configuration.bodies.is_empty())
         .map(|(index, configuration)| {

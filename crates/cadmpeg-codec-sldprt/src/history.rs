@@ -263,6 +263,7 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
                     .strip_prefix("sldprt:history:configuration#")
                     .unwrap_or(&configuration.id)
             )),
+            ordinal: configuration.ordinal,
             name: configuration.name.clone(),
             material: configuration.material.clone(),
             properties: configuration.properties.clone(),
@@ -1497,6 +1498,8 @@ fn sync_neutral_configurations(
             features: Vec::new(),
         });
     }
+    let mut configurations = configurations.iter().collect::<Vec<_>>();
+    configurations.sort_by_key(|configuration| configuration.ordinal);
     let desired_ids = configurations
         .iter()
         .map(|configuration| {
@@ -1511,14 +1514,14 @@ fn sync_neutral_configurations(
             .configurations
             .retain(|configuration| desired_ids.contains(&configuration.id));
     }
-    for (ordinal, configuration) in configurations.iter().enumerate() {
+    for configuration in configurations {
         let existing = native
             .feature_histories
             .iter_mut()
             .flat_map(|history| &mut history.configurations)
             .find(|candidate| configuration.native_ref.as_deref() == Some(candidate.id.as_str()));
         if let Some(existing) = existing {
-            existing.ordinal = ordinal as u32;
+            existing.ordinal = configuration.ordinal;
             existing.name.clone_from(&configuration.name);
             existing.material.clone_from(&configuration.material);
             existing.properties.clone_from(&configuration.properties);
@@ -1531,7 +1534,7 @@ fn sync_neutral_configurations(
                         format!("sldprt:generated:configuration#{}", configuration.id.0)
                     }),
                     parent,
-                    ordinal: ordinal as u32,
+                    ordinal: configuration.ordinal,
                     name: configuration.name.clone(),
                     material: configuration.material.clone(),
                     properties: configuration.properties.clone(),
