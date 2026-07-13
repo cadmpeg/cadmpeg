@@ -17,6 +17,7 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
+use cadmpeg_ir::report::LossCategory;
 use cadmpeg_ir::Exactness;
 
 use crate::container;
@@ -3340,6 +3341,10 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
     assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
     assert_eq!(result.ir.model.procedural_curves.len(), 1);
     assert_eq!(result.ir.model.procedural_curves[0].curve, curve.id);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.category == LossCategory::Geometry
+            && loss.message.starts_with("1 surface-intersection record(s)")
+    }));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
@@ -3777,6 +3782,10 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert!(context.sides[1].surface.is_none());
     assert_eq!(context.parameter_range, [0.0, 0.01]);
     assert!(result.ir.model.coedges[0].pcurve.is_none());
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.category == LossCategory::Geometry
+            && loss.message.contains("surface-intersection record(s)")
+    }));
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }

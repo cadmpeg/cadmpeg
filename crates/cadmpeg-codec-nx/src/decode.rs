@@ -121,6 +121,7 @@ struct Counts {
     ellipses: usize,
     nurbs_curves: usize,
     intersection_curves: usize,
+    unresolved_intersection_curves: usize,
 }
 
 impl Counts {
@@ -580,6 +581,9 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             });
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
+            if charted.is_none() {
+                counts.unresolved_intersection_curves += 1;
+            }
         }
 
         for (procedural_index, spine_xmt) in pending_blend_spines {
@@ -2292,17 +2296,21 @@ fn build_geometry_report(
         });
     }
 
-    losses.push(LossNote {
-        category: LossCategory::Geometry,
-        severity: Severity::Warning,
-        message:
-            "Surface-intersection records without a complete validated CHART_s, term-endpoint, \
-                  and support-UV witness remain opaque constructions. Each Parasolid stream is \
-                  preserved verbatim as an unknown passthrough record so their source bytes remain \
-                  available."
-                .to_string(),
-        provenance: None,
-    });
+    if counts.unresolved_intersection_curves > 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{} surface-intersection record(s) without a complete validated CHART_s and \
+                 term-endpoint witness remain opaque constructions. Support-UV values govern \
+                 optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each \
+                 Parasolid stream is preserved verbatim as an unknown passthrough record so the \
+                 unresolved source bytes remain available.",
+                counts.unresolved_intersection_curves
+            ),
+            provenance: None,
+        });
+    }
 
     if scan.count(StreamKind::Deltas) > 0 {
         losses.push(LossNote {
