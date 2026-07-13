@@ -7,8 +7,8 @@ use crate::annotations::{ExactnessNote, Provenance};
 use crate::document::Model;
 use crate::examples::unit_cube;
 use crate::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsSurface, ProceduralCurve, ProceduralCurveDefinition,
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use crate::ids::{
     CoedgeId, CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SubdId, SurfaceId, UnknownId,
@@ -1960,6 +1960,40 @@ fn analytic_surface_normals_follow_parameter_orientation() {
     };
     let normal = crate::eval::surface_normal(&sphere, 0.0, std::f64::consts::FRAC_PI_2)
         .expect("sphere normal");
+    assert!(normal.x.abs() < 1e-12);
+    assert!(normal.y.abs() < 1e-12);
+    assert!((normal.z - 1.0).abs() < 1e-12);
+}
+
+#[test]
+fn rational_nurbs_surface_normal_uses_exact_partials() {
+    let surface = NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 2,
+        v_count: 2,
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+            Point3::new(3.0, 2.0, 0.0),
+        ],
+        weights: Some(vec![1.0, 2.0, 3.0, 4.0]),
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let (tangent_u, tangent_v) = crate::eval::nurbs_surface_partials(&surface, 0.25, 0.75)
+        .expect("rational surface partials");
+    assert!(tangent_u.x > 0.0);
+    assert!(tangent_u.y.abs() > 0.0);
+    assert_eq!(tangent_u.z, 0.0);
+    assert!(tangent_v.y > 0.0);
+    assert!(tangent_v.x.abs() > 0.0);
+    assert_eq!(tangent_v.z, 0.0);
+    let normal = crate::eval::surface_normal(&SurfaceGeometry::Nurbs(surface), 0.25, 0.75)
+        .expect("rational surface normal");
     assert!(normal.x.abs() < 1e-12);
     assert!(normal.y.abs() < 1e-12);
     assert!((normal.z - 1.0).abs() < 1e-12);

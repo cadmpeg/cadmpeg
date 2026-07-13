@@ -90,6 +90,41 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> 
     values
 }
 
+/// First derivatives of the non-zero basis functions returned by
+/// [`bspline_basis`].
+fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
+    if degree == 0 {
+        return vec![0.0];
+    }
+    let lower = bspline_basis(knots, degree - 1, span, t);
+    (0..=degree)
+        .map(|offset| {
+            let index = span - degree + offset;
+            let left = if offset == 0 {
+                0.0
+            } else {
+                let denominator = knots[index + degree] - knots[index];
+                if denominator == 0.0 {
+                    0.0
+                } else {
+                    degree as f64 * lower[offset - 1] / denominator
+                }
+            };
+            let right = if offset == degree {
+                0.0
+            } else {
+                let denominator = knots[index + degree + 1] - knots[index + 1];
+                if denominator == 0.0 {
+                    0.0
+                } else {
+                    degree as f64 * lower[offset] / denominator
+                }
+            };
+            left - right
+        })
+        .collect()
+}
+
 /// Evaluate a possibly-rational B-spline curve over 3D poles.
 pub fn nurbs_curve_point(
     degree: u32,
@@ -180,6 +215,76 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
         }
     }
     (weight_sum != 0.0).then(|| Point3::new(x / weight_sum, y / weight_sum, z / weight_sum))
+}
+
+/// Evaluate the exact first parameter derivatives of a tensor-product NURBS
+/// surface. Rational carriers use the homogeneous quotient rule.
+pub fn nurbs_surface_partials(
+    surface: &NurbsSurface,
+    u_at: f64,
+    v_at: f64,
+) -> Option<(Vector3, Vector3)> {
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    if surface.control_points.len() != u_count.checked_mul(v_count)? {
+        return None;
+    }
+    let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
+    let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
+    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at);
+    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at);
+    let u_derivative = bspline_basis_derivative(&surface.u_knots, u_degree, u_span, u_at);
+    let v_derivative = bspline_basis_derivative(&surface.v_knots, v_degree, v_span, v_at);
+    let mut weighted_point = Vector3::new(0.0, 0.0, 0.0);
+    let mut weighted_u = Vector3::new(0.0, 0.0, 0.0);
+    let mut weighted_v = Vector3::new(0.0, 0.0, 0.0);
+    let mut weight = 0.0;
+    let mut weight_u = 0.0;
+    let mut weight_v = 0.0;
+    for (i, u_value) in u_basis.iter().enumerate() {
+        for (j, v_value) in v_basis.iter().enumerate() {
+            let index = (u_span - u_degree + i) * v_count + (v_span - v_degree + j);
+            let pole_weight = surface
+                .weights
+                .as_ref()
+                .and_then(|weights| weights.get(index).copied())
+                .unwrap_or(1.0);
+            let pole = surface.control_points.get(index)?;
+            let factor = u_value * v_value * pole_weight;
+            let factor_u = u_derivative[i] * v_value * pole_weight;
+            let factor_v = u_value * v_derivative[j] * pole_weight;
+            weighted_point.x += factor * pole.x;
+            weighted_point.y += factor * pole.y;
+            weighted_point.z += factor * pole.z;
+            weighted_u.x += factor_u * pole.x;
+            weighted_u.y += factor_u * pole.y;
+            weighted_u.z += factor_u * pole.z;
+            weighted_v.x += factor_v * pole.x;
+            weighted_v.y += factor_v * pole.y;
+            weighted_v.z += factor_v * pole.z;
+            weight += factor;
+            weight_u += factor_u;
+            weight_v += factor_v;
+        }
+    }
+    if !weight.is_finite() || weight == 0.0 {
+        return None;
+    }
+    let denominator = weight * weight;
+    Some((
+        Vector3::new(
+            (weighted_u.x * weight - weighted_point.x * weight_u) / denominator,
+            (weighted_u.y * weight - weighted_point.y * weight_u) / denominator,
+            (weighted_u.z * weight - weighted_point.z * weight_u) / denominator,
+        ),
+        Vector3::new(
+            (weighted_v.x * weight - weighted_point.x * weight_v) / denominator,
+            (weighted_v.y * weight - weighted_point.y * weight_v) / denominator,
+            (weighted_v.z * weight - weighted_point.z * weight_v) / denominator,
+        ),
+    ))
 }
 
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
@@ -396,19 +501,9 @@ pub fn surface_normal(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Vect
             );
             unit(cross(tangent_u, tangent_v))
         }
-        SurfaceGeometry::Nurbs(_) => {
-            let step = |parameter: f64| f64::EPSILON.sqrt() * parameter.abs().max(1.0);
-            let (du, dv) = (step(u), step(v));
-            let (u0, u1, v0, v1) = (
-                surface_point(geometry, u - du, v)?,
-                surface_point(geometry, u + du, v)?,
-                surface_point(geometry, u, v - dv)?,
-                surface_point(geometry, u, v + dv)?,
-            );
-            unit(cross(
-                Vector3::new(u1.x - u0.x, u1.y - u0.y, u1.z - u0.z),
-                Vector3::new(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z),
-            ))
+        SurfaceGeometry::Nurbs(nurbs) => {
+            let (tangent_u, tangent_v) = nurbs_surface_partials(nurbs, u, v)?;
+            unit(cross(tangent_u, tangent_v))
         }
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => None,
     }
