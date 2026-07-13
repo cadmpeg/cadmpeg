@@ -140,7 +140,7 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
                 geometry_transferred: true,
                 losses: vec![LossNote {
                     category: LossCategory::Topology,
-                    severity: Severity::Warning,
+                    severity: Severity::Blocking,
                     message: "The zero-entity B-rep graph is connected; face/shell orientation gauge and pcurve geometry for odd support families remain unresolved."
                         .to_string(),
                     provenance: None,
