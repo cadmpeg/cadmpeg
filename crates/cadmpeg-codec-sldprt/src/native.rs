@@ -551,13 +551,21 @@ impl SldprtNative {
                                 scalar.id, entity_ref
                             )));
                         };
-                        if target.feature_ref != scalar.feature_ref
-                            || target.local_id != Some(u32::from(operand.entity_index))
-                            || !crate::resolved_features::operand_accepts_marker(
-                                operand.kind,
-                                target.kind,
-                            )
-                        {
+                        let candidates = lane
+                            .sketch_entities
+                            .iter()
+                            .filter(|candidate| candidate.feature_ref == scalar.feature_ref)
+                            .filter(|candidate| {
+                                candidate.local_id == Some(u32::from(operand.entity_index))
+                            })
+                            .filter(|candidate| {
+                                crate::resolved_features::operand_accepts_marker(
+                                    operand.kind,
+                                    candidate.kind,
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                        if candidates.as_slice() != [*target] {
                             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                                 "feature-input scalar {} has inconsistent sketch marker {}",
                                 scalar.id, entity_ref

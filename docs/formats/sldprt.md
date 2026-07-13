@@ -111,7 +111,7 @@ A horizontal-points or vertical-points relation marker aligns its two distinct l
 
 A compact dimensional relation instance contains one or two adjacent scalar records with the same owning sketch, declared relation class, and ordered operand cells. A third scalar starts another instance even when its operands repeat. A scalar separated by any other scalar record starts another instance. An instance has a parameter scalar only when exactly one member has the driving role and has a display scalar only when exactly one member has the display role.
 
-The instance operand list is the first scalar record's complete ordered operand-cell list. A resolved operand marker belongs to the scalar's owning sketch feature, has a local identifier equal to the operand-cell identifier, and belongs to the marker family selected by the operand-cell tag.
+The instance operand list is the first scalar record's complete ordered operand-cell list. A resolved operand marker is the unique marker that belongs to the scalar's owning sketch feature, has a local identifier equal to the operand-cell identifier, and belongs to the marker family selected by the operand-cell tag.
 
 Operand-cell tags `d6 80`, `7b 83`, and `7c bc` address point or constrained-point handles. Tags `e1 80`, `86 83`, and `87 bc` address line-or-circle handles. Tag `fe 83` addresses a line-or-circle handle used as a circular dimension operand. The operand family disambiguates a feature-local identifier reused by geometry and relation markers.
 
