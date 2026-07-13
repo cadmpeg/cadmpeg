@@ -4648,6 +4648,17 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
+                if let ProfileRef::Unresolved(owner) = profile {
+                    let retained = existing.as_deref().is_some_and(|record| {
+                        record.id == *owner && !record.properties.contains_key("Profile")
+                    });
+                    if !retained {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} requires retained extrusion profile data",
+                            feature.id
+                        )));
+                    }
+                }
                 let implicit_profile = existing.as_deref().is_some_and(|record| {
                     !record.properties.contains_key("Profile")
                         && (matches!(profile, ProfileRef::Unresolved(owner) if owner == &record.id)

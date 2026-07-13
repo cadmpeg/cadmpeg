@@ -1713,6 +1713,43 @@ fn encoder_writes_source_less_ir() {
 }
 
 #[test]
+fn encoder_rejects_source_less_unresolved_extrusion_profile() {
+    use cadmpeg_ir::features::{
+        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#extrude".into()),
+        ordinal: 0,
+        name: Some("Extrude".into()),
+        suppressed: false,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Extrude {
+            profile: ProfileRef::Unresolved("native:missing-owner".into()),
+            direction: None,
+            extent: Extent::Blind {
+                length: Length(10.0),
+            },
+            op: BooleanOp::Join,
+            draft: None,
+        },
+        native_ref: None,
+    });
+
+    let error = SldprtCodec.encode(&ir, &mut Vec::new()).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("requires retained extrusion profile data"));
+}
+
+#[test]
 fn encoder_writes_source_less_line_sketches() {
     use cadmpeg_ir::features::{
         Angle, BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, PathRef,
