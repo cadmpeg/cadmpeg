@@ -1122,6 +1122,7 @@ pub(crate) fn bind_parameter_scalars(
 pub(crate) fn project_relation_bindings(
     constraints: &mut Vec<SketchConstraint>,
     features: &[cadmpeg_ir::features::Feature],
+    sketch_entities: &[SketchEntity],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
 ) {
@@ -1137,6 +1138,12 @@ pub(crate) fn project_relation_bindings(
             };
             Some((feature.native_ref.as_deref()?, sketch))
         })
+        .collect::<HashMap<_, _>>();
+    let loci_by_marker = profile_loci_by_marker(features, sketch_entities, lanes);
+    let markers_by_id = lanes
+        .iter()
+        .flat_map(|lane| &lane.sketch_entities)
+        .map(|marker| (marker.id.as_str(), marker))
         .collect::<HashMap<_, _>>();
     let parameters_by_scalar = parameters
         .iter()
@@ -1166,6 +1173,16 @@ pub(crate) fn project_relation_bindings(
                 FeatureInputRelationFamily::Angle => "sgAnglDim",
                 FeatureInputRelationFamily::CircleDiameter => "sgCircleDim",
             };
+            let mut entities = relation
+                .operands
+                .iter()
+                .filter_map(|operand| operand.entity_ref.as_deref())
+                .flat_map(|marker| {
+                    marker_entities(marker, &markers_by_id, &loci_by_marker).into_iter()
+                })
+                .collect::<Vec<_>>();
+            entities.sort_by(|left, right| left.0.cmp(&right.0));
+            entities.dedup();
             constraints.push(SketchConstraint {
                 id: SketchConstraintId(format!(
                     "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
@@ -1174,7 +1191,7 @@ pub(crate) fn project_relation_bindings(
                 sketch: (*sketch).clone(),
                 definition: SketchConstraintDefinition::Native {
                     native_kind: native_kind.into(),
-                    entities: Vec::new(),
+                    entities,
                     parameter,
                     operands: relation
                         .operands
@@ -1189,6 +1206,331 @@ pub(crate) fn project_relation_bindings(
                 native_ref: Some(relation.id.clone()),
             });
         }
+    }
+}
+
+fn profile_loci_by_marker(
+    features: &[cadmpeg_ir::features::Feature],
+    sketch_entities: &[SketchEntity],
+    lanes: &[FeatureInputLane],
+) -> HashMap<String, Vec<SketchLocus>> {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    const QUANTUM: f64 = 1.0e-8;
+
+    let sketches_by_feature = features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } = &feature.definition
+            else {
+                return None;
+            };
+            Some((feature.native_ref.as_deref()?, sketch))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut profile_loci = HashMap::<&SketchId, Vec<(Point2, SketchLocus)>>::new();
+    for entity in sketch_entities {
+        for (point, locus) in sketch_entity_loci(entity) {
+            profile_loci
+                .entry(&entity.sketch)
+                .or_default()
+                .push((point, locus));
+        }
+    }
+    let mut result = HashMap::new();
+    for lane in lanes {
+        let mut markers_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
+        for marker in &lane.sketch_entities {
+            let Some(feature) = marker.feature_ref.as_deref() else {
+                continue;
+            };
+            if marker.coordinates_m.is_some() && sketches_by_feature.contains_key(feature) {
+                markers_by_feature.entry(feature).or_default().push(marker);
+            }
+        }
+        for (feature, markers) in markers_by_feature {
+            let Some(sketch) = sketches_by_feature.get(feature) else {
+                continue;
+            };
+            let Some(loci) = profile_loci.get(sketch) else {
+                continue;
+            };
+            let marker_points = markers
+                .iter()
+                .filter_map(|marker| marker.coordinates_m)
+                .map(|[u, v]| quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM))
+                .collect::<HashSet<_>>();
+            let locus_points = loci
+                .iter()
+                .map(|(point, _)| quantize(*point, QUANTUM))
+                .collect::<HashSet<_>>();
+            let mut translations = HashMap::<(i64, i64), usize>::new();
+            for marker in &marker_points {
+                for locus in &locus_points {
+                    *translations
+                        .entry((locus.0 - marker.0, locus.1 - marker.1))
+                        .or_default() += 1;
+                }
+            }
+            let Some(maximum) = translations
+                .values()
+                .copied()
+                .max()
+                .filter(|count| *count >= 2)
+            else {
+                continue;
+            };
+            let mut candidates = translations
+                .into_iter()
+                .filter_map(|(translation, count)| (count == maximum).then_some(translation));
+            let Some(translation) = candidates.next() else {
+                continue;
+            };
+            if candidates.next().is_some() {
+                continue;
+            }
+            let loci_by_point = loci.iter().fold(
+                HashMap::<(i64, i64), Vec<SketchLocus>>::new(),
+                |mut by_point, (point, locus)| {
+                    by_point
+                        .entry(quantize(*point, QUANTUM))
+                        .or_default()
+                        .push(locus.clone());
+                    by_point
+                },
+            );
+            for marker in markers {
+                let Some([u, v]) = marker.coordinates_m else {
+                    continue;
+                };
+                let point = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                let translated = (point.0 + translation.0, point.1 + translation.1);
+                let Some(marker_loci) = loci_by_point.get(&translated) else {
+                    continue;
+                };
+                let mut marker_loci = marker_loci.clone();
+                marker_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+                marker_loci.dedup();
+                result.insert(marker.id.clone(), marker_loci);
+            }
+        }
+    }
+    result
+}
+
+fn quantize(point: Point2, quantum: f64) -> (i64, i64) {
+    (
+        (point.u / quantum).round() as i64,
+        (point.v / quantum).round() as i64,
+    )
+}
+
+fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLocus)> {
+    let locus = |point, locus| (point, locus);
+    match &entity.geometry {
+        SketchGeometry::Point { position } => {
+            vec![locus(*position, SketchLocus::Entity(entity.id.clone()))]
+        }
+        SketchGeometry::Line { start, end } => vec![
+            locus(*start, SketchLocus::Start(entity.id.clone())),
+            locus(*end, SketchLocus::End(entity.id.clone())),
+        ],
+        SketchGeometry::Circle { center, .. } | SketchGeometry::Ellipse { center, .. } => {
+            vec![locus(*center, SketchLocus::Center(entity.id.clone()))]
+        }
+        SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => vec![
+            locus(*center, SketchLocus::Center(entity.id.clone())),
+            locus(
+                Point2::new(
+                    center.u + radius.0 * start_angle.0.cos(),
+                    center.v + radius.0 * start_angle.0.sin(),
+                ),
+                SketchLocus::Start(entity.id.clone()),
+            ),
+            locus(
+                Point2::new(
+                    center.u + radius.0 * end_angle.0.cos(),
+                    center.v + radius.0 * end_angle.0.sin(),
+                ),
+                SketchLocus::End(entity.id.clone()),
+            ),
+        ],
+        SketchGeometry::Nurbs { control_points, .. } if !control_points.is_empty() => vec![
+            locus(control_points[0], SketchLocus::Start(entity.id.clone())),
+            locus(
+                control_points[control_points.len() - 1],
+                SketchLocus::End(entity.id.clone()),
+            ),
+        ],
+        SketchGeometry::Nurbs { .. } | SketchGeometry::Native { .. } => Vec::new(),
+    }
+}
+
+fn locus_key(locus: &SketchLocus) -> (&str, u8) {
+    match locus {
+        SketchLocus::Entity(entity) => (&entity.0, 0),
+        SketchLocus::Start(entity) => (&entity.0, 1),
+        SketchLocus::End(entity) => (&entity.0, 2),
+        SketchLocus::Center(entity) => (&entity.0, 3),
+    }
+}
+
+fn locus_entity(locus: &SketchLocus) -> SketchEntityId {
+    match locus {
+        SketchLocus::Entity(entity)
+        | SketchLocus::Start(entity)
+        | SketchLocus::End(entity)
+        | SketchLocus::Center(entity) => entity.clone(),
+    }
+}
+
+fn marker_entities(
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Vec<SketchEntityId> {
+    if let Some(loci) = loci_by_marker.get(marker_id) {
+        return loci.iter().map(locus_entity).collect();
+    }
+    let Some(marker) = markers_by_id.get(marker_id) else {
+        return Vec::new();
+    };
+    let mut linked = marker
+        .links
+        .iter()
+        .filter_map(|link| loci_by_marker.get(&link.entity_ref))
+        .map(|loci| loci.iter().map(locus_entity).collect::<HashSet<_>>())
+        .filter(|entities| !entities.is_empty());
+    let Some(mut entities) = linked.next() else {
+        return Vec::new();
+    };
+    for candidates in linked {
+        entities.retain(|entity| candidates.contains(entity));
+    }
+    entities.into_iter().collect()
+}
+
+#[cfg(test)]
+mod profile_join_tests {
+    use super::{marker_entities, profile_loci_by_marker};
+    use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+    use std::collections::{BTreeMap, HashMap};
+
+    fn marker(id: &str, coordinates_m: Option<[f64; 2]>) -> SketchInputEntity {
+        SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature-native".into()),
+            ordinal: 0,
+            offset: 0,
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: None,
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        }
+    }
+
+    #[test]
+    fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
+        let sketch = SketchId("sketch".into());
+        let first = SketchEntityId("first".into());
+        let second = SketchEntityId("second".into());
+        let entities = vec![
+            SketchEntity {
+                id: first.clone(),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(10.0, 20.0),
+                    end: Point2::new(20.0, 20.0),
+                },
+            },
+            SketchEntity {
+                id: second,
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(20.0, 20.0),
+                    end: Point2::new(20.0, 30.0),
+                },
+            },
+        ];
+        let feature = Feature {
+            id: FeatureId("feature".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: Some(sketch),
+            },
+            native_ref: Some("feature-native".into()),
+        };
+        let mut reference = marker("reference", None);
+        reference.links = vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: "marker-a".into(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: "marker-b".into(),
+            },
+        ];
+        reference.link_selector = Some(0);
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![
+                marker("marker-a", Some([0.0, 0.0])),
+                marker("marker-b", Some([0.01, 0.0])),
+                marker("marker-c", Some([0.01, 0.01])),
+                reference,
+            ],
+        };
+
+        let joins = profile_loci_by_marker(&[feature], &entities, std::slice::from_ref(&lane));
+        assert!(joins.contains_key("marker-a"));
+        assert!(joins.contains_key("marker-b"));
+        assert!(joins.contains_key("marker-c"));
+        let markers = lane
+            .sketch_entities
+            .iter()
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(marker_entities("reference", &markers, &joins), vec![first]);
     }
 }
 
