@@ -125,7 +125,7 @@ The `var_arr` coordinate lane also defines the sign pairs
 the remaining six IEEE bytes. Its negative sub-unit form `d5 <tail6>`
 reconstructs `BF <tail6> 00`.
 
-Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leading byte `40` and implicit trailing `00`; `a3 <tail6>` for the negative form paired with the section-local `46` cache; `b9`, `d3`, and `df` for negative sub-unit forms with leading byte `BF`; and `41`, `4b`, `66`, `67`, `68`, `77`, and `82..8f` for positive sub-unit forms with leading byte `3F`.
+Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leading byte `40` and implicit trailing `00`; `a3 <tail6>` for the negative form paired with the section-local `46` cache; `b9`, `d1`, `d3`, and `df` for negative sub-unit forms with leading byte `BF`; and `41`, `4b`, `66`, `67`, `68`, `77`, and `82..8f` for positive sub-unit forms with leading byte `3F`.
 
 In positional surface and curve row lanes, `71 <tail6>` is a seven-byte
 sub-unit form reconstructed as `3F <tail6> 00`. In named scalar lanes, `71`
@@ -139,7 +139,7 @@ World-coordinate tokens occupy eight bytes. Their final seven bytes hold the IEE
 
 #### Constants and cache references
 
-`0f` and `e6` encode zero; `e4` encodes one. In row and `f9` scalar lanes, `e8 00` encodes standalone `1.0`; other contexts use a different selector grammar. `18 <index>` indexes a raw section-local `46` cache. Build that cache by scanning the raw section bytes, including `46` values that occur within other token tails. In a row or `f9` body, `18 <float-opener>` encodes a standalone zero and the following byte begins a new token.
+`0d` encodes negative one, `0f` and `e6` encode zero, and `e4` encodes one. In row and `f9` scalar lanes, `e8 00` encodes standalone `1.0`; other contexts use a different selector grammar. `18 <index>` indexes a raw section-local `46` cache. Build that cache by scanning the raw section bytes, including `46` values that occur within other token tails. In a row or `f9` body, `18 <float-opener>` encodes a standalone zero and the following byte begins a new token. In a saved-line coordinate row, `18` immediately before the row close or trailing entity reference is a standalone zero.
 
 ## 3. Surface namespace: `srf_array`
 
@@ -479,6 +479,11 @@ The placed section is the owning sweep feature's profile input. For `protextrude
 `vert_tab` chains bind a solved trim-vertex identifier to two incident `segtab` external identifiers. This vertex namespace is the namespace used by `ent_tab.start_vtx` and `ent_tab.end_vtx`. A solved trim vertex is the intersection of its two defining `segtab` carriers evaluated from `var_arr` or the joined saved-section geometry; its identifier differs from a `segtab` point identifier. A neutral sketch line uses its `ent_tab` start and end intersections, not the untrimmed carrier endpoints.
 
 `p_saved_result` contains evaluated section entities and does not define the authoritative solved trim topology. Saved line rows may contain `f0 f7 <ref>`, `f1 f7 <ref>`, or bare `f7 <ref>` references between their identity, attribute, and coordinate fields.
+The line prototype can close with `f1 e3`; positional line rows follow that
+close. Within a saved-line coordinate row, `18 e5` expands to the coordinate
+triple `[0, 1, 0]`, `41` occupies eight bytes, and `74` and `75` are positive
+DICT prefixes. Entity references may also follow the sixth coordinate before
+the row-closing `e3`.
 
 A saved entity identifier is an `order_table.int_id`; joining through that row's `ext_id` binds its evaluated geometry to the corresponding `segtab` entity. A saved line with two complete section-space XY endpoints supplies that entity's line geometry when its `var_arr` endpoints are relation-backed. The saved-entity and solved-`segtab` sets are one-to-one by entity family. After explicit `order_table` joins, exactly one unmatched saved entity and one unmatched solved entity of the same family bind as the unique remaining pair; multiple unmatched pairs remain unresolved.
 

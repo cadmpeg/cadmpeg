@@ -1914,8 +1914,28 @@ fn saved_section_scalar(
     let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
         return (None, offset);
     };
+    if prefix == 0x18
+        && payload
+            .get(offset + 1)
+            .is_some_and(|next| matches!(next, 0xe3 | 0xf0 | 0xf1))
+    {
+        return (Some(0.0), offset + 1);
+    }
     if matches!(prefix, 0x90 | 0xd7) && offset + 7 <= end {
         return (None, offset + 7);
+    }
+    if prefix == 0x41 && offset + 8 <= end {
+        let mut raw = [0; 8];
+        raw[0] = 0x3f;
+        raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
+        return (Some(f64::from_be_bytes(raw)), offset + 8);
+    }
+    if matches!(prefix, 0x74 | 0x75) && offset + 7 <= end {
+        let mut raw = [0; 8];
+        raw[0] = 0x3f;
+        raw[1] = prefix.wrapping_sub(0x8b);
+        raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
+        return (Some(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0x99 && offset + 7 <= end {
         let mut raw = [0; 8];
@@ -1945,23 +1965,17 @@ fn saved_line_entities(
     };
     let mut cursor = label + b"\xe0\x00entity(line)\0".len();
     let segment_end = find_bytes(payload, b"\xe0\x00entity(", cursor, end).unwrap_or(end);
-    if payload.get(cursor) == Some(&0xe3)
-        && payload.get(cursor + 1) == Some(&psb::token::ENTITY_REF)
-    {
-        if let Ok((_, after_first)) = psb::reference_id(payload, cursor + 2) {
-            if payload.get(after_first) == Some(&0)
-                && payload.get(after_first + 1) == Some(&psb::token::ENTITY_REF)
-            {
-                if let Ok((_, after_second)) = psb::reference_id(payload, after_first + 2) {
-                    if payload.get(after_second) == Some(&0xe2) {
-                        cursor = after_second + 1;
-                    }
-                }
-            }
-        }
+    if payload.get(cursor) == Some(&0xf1) {
+        cursor = payload[cursor..segment_end]
+            .iter()
+            .position(|byte| *byte == 0xe3)
+            .map_or(segment_end, |relative| cursor + relative + 1);
     }
     let mut entities = Vec::new();
     while cursor < segment_end {
+        if payload.get(cursor) == Some(&0xe3) {
+            cursor += 1;
+        }
         if payload.get(cursor) == Some(&psb::token::NAMED_RECORD)
             || payload.get(cursor..cursor + 2) == Some(&[0xf1, 0xe1])
         {
@@ -2009,6 +2023,11 @@ fn saved_line_entities(
         cursor = next + 1;
         let mut values = Vec::with_capacity(6);
         while cursor < segment_end && values.len() < 6 {
+            if payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
+                values.extend([Some(0.0), Some(1.0), Some(0.0)]);
+                cursor += 2;
+                continue;
+            }
             if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
                     break;
@@ -2049,8 +2068,24 @@ fn saved_line_entities(
             values.push(value);
             cursor = next;
         }
+        loop {
+            let reference_start = match payload.get(cursor..cursor + 2) {
+                Some([0xf0 | 0xf1, 0xf7]) => Some(cursor + 2),
+                _ if payload.get(cursor) == Some(&psb::token::ENTITY_REF) => Some(cursor + 1),
+                _ => None,
+            };
+            let Some(reference_start) = reference_start else {
+                break;
+            };
+            let Ok((reference, next)) = psb::reference_id(payload, reference_start) else {
+                break;
+            };
+            references.push(reference);
+            cursor = next;
+        }
         if values.len() != 6 || payload.get(cursor) != Some(&0xe3) {
-            break;
+            cursor = record_offset + 1;
+            continue;
         }
         cursor += 1;
         entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
@@ -2953,7 +2988,7 @@ mod tests {
     fn saved_line_accepts_bare_entity_reference_before_coordinates() {
         let payload = b"\xe0\0entity(line)\0\x05\xe2\xf7\x2a\
             \x2f\x20\0\x2f\x20\0\x2f\x20\0\
-            \x2f\x20\0\x2f\x20\0\x2f\x20\0\xe3";
+            \x2f\x20\0\x2f\x20\0\x2f\x20\0\xf1\xf7\x2b\xe3";
         let entities =
             saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
 
@@ -2962,8 +2997,39 @@ mod tests {
             panic!("expected saved line");
         };
         assert_eq!(line.entity_id, 5);
-        assert_eq!(line.references, [42]);
+        assert_eq!(line.references, [42, 43]);
         assert_eq!(line.endpoints, [[Some(8.0); 3]; 2]);
+    }
+
+    #[test]
+    fn saved_line_expands_compact_basis_triple() {
+        let payload = b"\xe0\0entity(line)\0\x05\xe2\x18\xe5\x2f\x20\0\x2f\x20\0\x2f\x20\0\xe3";
+        let entities =
+            saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+        let FeatureSavedEntity::Line(line) = &entities[0] else {
+            panic!("expected saved line");
+        };
+        assert_eq!(
+            line.endpoints,
+            [
+                [Some(0.0), Some(1.0), Some(0.0)],
+                [Some(8.0), Some(8.0), Some(8.0)]
+            ]
+        );
+    }
+
+    #[test]
+    fn saved_section_41_form_occupies_eight_bytes() {
+        let bytes = [0x41, 0xfd, 0x6b, 0xf1, 0xa1, 0xc2, 0x1f, 0xf0];
+        let (value, next) =
+            saved_section_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
+        assert_eq!(next, bytes.len());
+        assert_eq!(
+            value,
+            Some(f64::from_be_bytes([
+                0x3f, 0xfd, 0x6b, 0xf1, 0xa1, 0xc2, 0x1f, 0xf0
+            ]))
+        );
     }
 
     #[test]

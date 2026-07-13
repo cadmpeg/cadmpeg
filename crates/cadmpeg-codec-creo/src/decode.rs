@@ -1762,13 +1762,13 @@ fn transfer_resolved_sketches(
         else {
             continue;
         };
-        let (Some(variables), Some(segments)) = (&definition.variables, &definition.segments)
-        else {
+        let Some(segments) = &definition.segments else {
             continue;
         };
-        let points = variables
-            .points
+        let points = definition
+            .variables
             .iter()
+            .flat_map(|variables| &variables.points)
             .filter_map(|point| Some((point.point_id, [point.u?, point.v?])))
             .collect::<BTreeMap<_, _>>();
         let solved = definition
