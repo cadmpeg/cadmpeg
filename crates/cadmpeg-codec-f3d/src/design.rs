@@ -403,6 +403,21 @@ pub fn project_parameter_design(
             .filter(|dependency| dependency != &parameter.id && seen.insert(dependency.clone()))
             .collect();
     }
+    let parameter_owners = parameters
+        .iter()
+        .filter_map(|parameter| Some((parameter.id.clone(), parameter.owner.clone()?)))
+        .collect::<HashMap<_, _>>();
+    for feature in &mut features {
+        let mut seen = HashSet::new();
+        feature.dependencies = parameters
+            .iter()
+            .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
+            .flat_map(|parameter| &parameter.dependencies)
+            .filter_map(|parameter| parameter_owners.get(parameter))
+            .filter(|dependency| *dependency != &feature.id && seen.insert((*dependency).clone()))
+            .cloned()
+            .collect();
+    }
     parameters.sort_by_key(|parameter| parameter.id.clone());
     (features, parameters)
 }
@@ -4644,6 +4659,75 @@ mod relation_tests {
                 .map(String::as_str),
             Some("AlongDistance")
         );
+    }
+
+    #[test]
+    fn parameter_expressions_project_feature_dependencies() {
+        let parameter = |owner_record_index, record_index, name: &str, expression: &str| {
+            let mut parameter = parse_design_parameter(&parameter_record(
+                Some(owner_record_index),
+                expression,
+                "AlongDistance",
+                Some("mm"),
+                name,
+                1.0,
+            ))
+            .expect("generated owned parameter is canonical");
+            parameter.id = format!("f3d:native:parameter#{record_index}");
+            parameter.record_index = record_index;
+            parameter
+        };
+        let owner = |record_index, scope_record_index, parameter_record_index| {
+            let mut owner = parse_parameter_owner(&parameter_owner_frame())
+                .expect("generated parameter owner is canonical");
+            owner.id = format!("f3d:native:owner#{record_index}");
+            owner.record_index = record_index;
+            owner.scope_record_index = scope_record_index;
+            owner.parameter_record_index = parameter_record_index;
+            owner.companion_record_index = parameter_record_index + 1;
+            owner
+        };
+        let scope = |record_index, byte_offset, kind: &str| DesignParameterScope {
+            id: format!("f3d:native:scope#{record_index}"),
+            byte_offset,
+            class_tag: "301".into(),
+            record_index,
+            frame_length: 200,
+            kind: kind.into(),
+            kind_offset: byte_offset + 100,
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: "261".into(),
+            paired_byte_offset: byte_offset + 200,
+        };
+        let (features, parameters) = project_parameter_design(
+            &[
+                parameter(44, 45, "Width", "10 mm"),
+                parameter(54, 55, "Depth", "Width / 2"),
+            ],
+            &[owner(44, 12, 45), owner(54, 22, 55)],
+            &[scope(12, 100, "Sketch"), scope(22, 200, "Extrude")],
+            &[],
+        );
+        let width = parameters
+            .iter()
+            .find(|parameter| parameter.name == "Width")
+            .expect("Width parameter");
+        let depth = parameters
+            .iter()
+            .find(|parameter| parameter.name == "Depth")
+            .expect("Depth parameter");
+        assert_eq!(depth.dependencies, std::slice::from_ref(&width.id));
+        let source = features
+            .iter()
+            .find(|feature| feature.id == width.owner.clone().expect("Width owner"))
+            .expect("source feature");
+        let target = features
+            .iter()
+            .find(|feature| feature.id == depth.owner.clone().expect("Depth owner"))
+            .expect("target feature");
+        assert_eq!(target.dependencies, std::slice::from_ref(&source.id));
     }
 
     #[test]
