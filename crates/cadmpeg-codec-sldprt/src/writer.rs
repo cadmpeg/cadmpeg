@@ -682,6 +682,11 @@ fn opaque_blocks(
                 return None;
             }
             let mut payload = record.data?;
+            if lower.contains("pmisemanticdatadb") {
+                if let Err(error) = crate::pmi::patch_payload(ir, &record.id.0, &mut payload) {
+                    return Some(Err(error));
+                }
+            }
             if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
                 match patch_active_configuration_xml(&payload, &active.name) {
                     Ok(Some(patched)) => payload = patched,

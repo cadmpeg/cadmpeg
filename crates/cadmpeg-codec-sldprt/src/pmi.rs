@@ -9,6 +9,131 @@ use cadmpeg_ir::Exactness;
 use crate::container::ContainerScan;
 use crate::records::PmiDimension;
 
+pub(crate) fn patch_payload(
+    ir: &cadmpeg_ir::CadIr,
+    block_id: &str,
+    payload: &mut [u8],
+) -> Result<(), cadmpeg_ir::CodecError> {
+    use cadmpeg_ir::features::{ParameterValue, PmiDimensionSubtype};
+
+    let Some(namespace) = ir.native.namespace("sldprt") else {
+        return Ok(());
+    };
+    let native = crate::native::SldprtNative::load(namespace).map_err(|error| {
+        cadmpeg_ir::CodecError::Malformed(format!("invalid SLDPRT native PMI: {error}"))
+    })?;
+    for record in native
+        .pmi_dimensions
+        .iter()
+        .filter(|record| record.parent == block_id)
+    {
+        let mut parameters = ir.model.parameters.iter().filter(|parameter| {
+            parameter.pmi.as_ref().map(|pmi| pmi.native_ref.as_str()) == Some(record.id.as_str())
+        });
+        let Some(parameter) = parameters.next() else {
+            continue;
+        };
+        if parameters.next().is_some() {
+            return Err(cadmpeg_ir::CodecError::Malformed(format!(
+                "multiple parameters reference PMI record {}",
+                record.id
+            )));
+        }
+        let semantic = parameter.pmi.as_ref().expect("filtered above");
+        let subtype = match record.subtype.as_str() {
+            "Linear" => PmiDimensionSubtype::Linear,
+            "Diameter" => PmiDimensionSubtype::Diameter,
+            "Radial" => PmiDimensionSubtype::Radial,
+            other => PmiDimensionSubtype::Native(other.to_string()),
+        };
+        if semantic.subtype != subtype {
+            return Err(cadmpeg_ir::CodecError::NotImplemented(format!(
+                "SLDPRT PMI record {} changes dimension subtype",
+                record.id
+            )));
+        }
+        let Some(ParameterValue::Length(length)) = parameter.value else {
+            return Err(cadmpeg_ir::CodecError::NotImplemented(format!(
+                "SLDPRT PMI record {} requires a length-valued parameter",
+                record.id
+            )));
+        };
+        patch_bytes(
+            payload,
+            record.value_offset,
+            &(length.0 / 1000.0).to_be_bytes(),
+            &record.id,
+        )?;
+        let precision = u8::try_from(semantic.precision)
+            .ok()
+            .filter(|value| *value < 128)
+            .ok_or_else(|| {
+                cadmpeg_ir::CodecError::NotImplemented(format!(
+                    "SLDPRT PMI record {} requires fixint precision",
+                    record.id
+                ))
+            })?;
+        patch_bytes(payload, record.precision_offset, &[precision], &record.id)?;
+        for (offset, value) in [
+            (record.basic_offset, semantic.basic),
+            (record.inspection_offset, semantic.inspection),
+            (record.reference_only_offset, semantic.reference_only),
+        ] {
+            patch_bytes(
+                payload,
+                offset,
+                &[if value { 0xc3 } else { 0xc2 }],
+                &record.id,
+            )?;
+        }
+        if semantic.display_text != record.display_text {
+            let (Some(offset), Some(text), Some(previous)) = (
+                record.display_text_offset,
+                semantic.display_text.as_deref(),
+                record.display_text.as_deref(),
+            ) else {
+                return Err(cadmpeg_ir::CodecError::NotImplemented(format!(
+                    "SLDPRT PMI record {} changes optional display text",
+                    record.id
+                )));
+            };
+            if text.len() != previous.len() {
+                return Err(cadmpeg_ir::CodecError::NotImplemented(format!(
+                    "SLDPRT PMI record {} changes display-text width",
+                    record.id
+                )));
+            }
+            patch_bytes(payload, offset, text.as_bytes(), &record.id)?;
+        }
+    }
+    Ok(())
+}
+
+fn patch_bytes(
+    payload: &mut [u8],
+    offset: u64,
+    bytes: &[u8],
+    record: &str,
+) -> Result<(), cadmpeg_ir::CodecError> {
+    let start = usize::try_from(offset).map_err(|_| {
+        cadmpeg_ir::CodecError::Malformed(format!(
+            "SLDPRT PMI record {record} exceeds address space"
+        ))
+    })?;
+    let end = start.checked_add(bytes.len()).ok_or_else(|| {
+        cadmpeg_ir::CodecError::Malformed(format!("SLDPRT PMI record {record} offset overflows"))
+    })?;
+    payload
+        .get_mut(start..end)
+        .ok_or_else(|| {
+            cadmpeg_ir::CodecError::Malformed(format!(
+                "SLDPRT PMI record {record} lies outside its block"
+            ))
+        })?
+        .copy_from_slice(bytes);
+    Ok(())
+}
+
 pub(crate) fn apply_to_parameters(
     parameters: &mut Vec<cadmpeg_ir::features::DesignParameter>,
     features: &[cadmpeg_ir::features::Feature],
@@ -145,6 +270,32 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
             let Some(value) = float_field(item, "value") else {
                 continue;
             };
+            let Some(value_marker) = field_marker(&block.payload, offset, cursor, "value") else {
+                continue;
+            };
+            if block.payload.get(value_marker) != Some(&0xcb) {
+                continue;
+            }
+            let Some(precision_offset) =
+                field_marker(&block.payload, offset, cursor, "valPrecision")
+            else {
+                continue;
+            };
+            let Some(basic_offset) = field_marker(&block.payload, offset, cursor, "isBasic") else {
+                continue;
+            };
+            let Some(inspection_offset) =
+                field_marker(&block.payload, offset, cursor, "isInspection")
+            else {
+                continue;
+            };
+            let Some(reference_only_offset) =
+                field_marker(&block.payload, offset, cursor, "isReferenceOnly")
+            else {
+                continue;
+            };
+            let display_text_offset = field_marker(&block.payload, offset, cursor, "dimText")
+                .and_then(|marker| string_data_offset(&block.payload, marker));
             let id = format!("sldprt:pmi:dimension#{guid}");
             crate::annotations::note(
                 annotations,
@@ -164,16 +315,45 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
                     .unwrap_or_default()
                     .to_string(),
                 value,
+                value_offset: (value_marker + 1) as u64,
                 precision: int_field(item, "valPrecision").unwrap_or_default(),
+                precision_offset: precision_offset as u64,
                 display_text: string_field(&outer, "dimText").map(str::to_string),
+                display_text_offset: display_text_offset.map(|offset| offset as u64),
                 basic: bool_field(item, "isBasic").unwrap_or(false),
+                basic_offset: basic_offset as u64,
                 inspection: bool_field(item, "isInspection").unwrap_or(false),
+                inspection_offset: inspection_offset as u64,
                 reference_only: bool_field(item, "isReferenceOnly").unwrap_or(false),
+                reference_only_offset: reference_only_offset as u64,
             });
         }
     }
     records.sort_by(|left, right| left.id.cmp(&right.id));
     records
+}
+
+fn field_marker(payload: &[u8], start: usize, end: usize, key: &str) -> Option<usize> {
+    if key.len() >= 32 {
+        return None;
+    }
+    let mut encoded = Vec::with_capacity(key.len() + 1);
+    encoded.push(0xa0 | key.len() as u8);
+    encoded.extend_from_slice(key.as_bytes());
+    payload
+        .get(start..end)?
+        .windows(encoded.len())
+        .position(|bytes| bytes == encoded)
+        .map(|relative| start + relative + encoded.len())
+}
+
+fn string_data_offset(payload: &[u8], marker: usize) -> Option<usize> {
+    match *payload.get(marker)? {
+        0xa0..=0xbf => marker.checked_add(1),
+        0xd9 => marker.checked_add(2),
+        0xda => marker.checked_add(3),
+        _ => None,
+    }
 }
 
 fn map_offsets(payload: &[u8]) -> impl Iterator<Item = usize> + '_ {

@@ -11301,7 +11301,7 @@ fn decode_extracts_pmi_semantic_dimension() {
         &pmi_semantic_payload(),
     ));
 
-    let decoded = SldprtCodec
+    let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let native = sldprt_native(&decoded.ir);
@@ -11344,6 +11344,42 @@ fn decode_extracts_pmi_semantic_dimension() {
     SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap();
+
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "D1")
+        .expect("editable PMI-backed parameter");
+    parameter.expression = "50mm".into();
+    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+        cadmpeg_ir::features::Length(50.0),
+    ));
+    let semantic = parameter.pmi.as_mut().expect("editable PMI semantics");
+    semantic.precision = 4;
+    semantic.display_text = Some("50.000 mm".into());
+    semantic.basic = false;
+    semantic.inspection = true;
+    semantic.reference_only = false;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&regenerated.ir);
+    let [dimension] = native.pmi_dimensions.as_slice() else {
+        panic!("one regenerated PMI dimension");
+    };
+    assert_eq!(dimension.value, 0.05);
+    assert_eq!(dimension.precision, 4);
+    assert_eq!(dimension.display_text.as_deref(), Some("50.000 mm"));
+    assert!(!dimension.basic);
+    assert!(dimension.inspection);
+    assert!(!dimension.reference_only);
 }
 
 #[test]

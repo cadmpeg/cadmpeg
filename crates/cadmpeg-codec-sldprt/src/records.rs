@@ -22,17 +22,30 @@ pub struct PmiDimension {
     pub subtype: String,
     /// Stored dimension value.
     pub value: f64,
+    /// Byte offset of the big-endian `f64` value.
+    pub value_offset: u64,
     /// Display precision.
     pub precision: i64,
+    /// Byte offset of the `MessagePack` precision value.
+    pub precision_offset: u64,
     /// Native formatted dimension text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_text: Option<String>,
+    /// Byte offset of the formatted-text bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_text_offset: Option<u64>,
     /// Basic-dimension flag.
     pub basic: bool,
+    /// Byte offset of the basic flag.
+    pub basic_offset: u64,
     /// Inspection-dimension flag.
     pub inspection: bool,
+    /// Byte offset of the inspection flag.
+    pub inspection_offset: u64,
     /// Reference-only flag.
     pub reference_only: bool,
+    /// Byte offset of the reference-only flag.
+    pub reference_only_offset: u64,
 }
 
 /// A named parametric-model variant (e.g. CAD "configuration") with its own
