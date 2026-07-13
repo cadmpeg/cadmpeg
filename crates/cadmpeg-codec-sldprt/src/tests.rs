@@ -8603,6 +8603,60 @@ fn semantic_writer_rejects_tessellation_f32_overflow() {
 }
 
 #[test]
+fn semantic_writer_expands_indexed_tessellation() {
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
+
+    let mesh = Tessellation {
+        id: "synthetic:test:indexed-tessellation".into(),
+        body: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        triangles: vec![[0, 1, 2], [0, 2, 3]],
+        strip_lengths: Vec::new(),
+        normals: vec![Vector3::new(0.0, 0.0, 1.0); 4],
+        channels: vec![TessellationChannel {
+            item_size: 1,
+            kind: 7,
+            flags: 2,
+            count: 4,
+            data: vec![10, 11, 12, 13],
+        }],
+    };
+    let expanded = crate::writer::sequential_tessellation(&mesh).unwrap();
+    assert_eq!(expanded.strip_lengths, vec![3, 3]);
+    assert_eq!(expanded.triangles, vec![[0, 1, 2], [3, 4, 5]]);
+    assert_eq!(expanded.vertices.len(), 6);
+    assert_eq!(expanded.normals.len(), 6);
+    assert_eq!(expanded.channels[0].count, 6);
+    assert_eq!(expanded.channels[0].data, vec![10, 11, 12, 10, 12, 13]);
+}
+
+#[test]
+fn semantic_writer_rejects_out_of_range_tessellation_indices() {
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::tessellation::Tessellation;
+
+    let mesh = Tessellation {
+        id: "synthetic:test:invalid-tessellation".into(),
+        body: None,
+        source_object: None,
+        vertices: vec![Point3::new(0.0, 0.0, 0.0); 3],
+        triangles: vec![[0, 1, 3]],
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        channels: Vec::new(),
+    };
+    let error = crate::writer::sequential_tessellation(&mesh).unwrap_err();
+    assert!(error.to_string().contains("index is out of bounds"));
+}
+
+#[test]
 fn compact_carrier_shapes_decode() {
     use crate::brep::{parse_carrier, CarrierGeometry};
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
