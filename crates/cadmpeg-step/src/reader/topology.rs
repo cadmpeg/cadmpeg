@@ -207,7 +207,9 @@ fn build(
     let mut used_v = BTreeSet::new();
     let mut used_e = BTreeSet::new();
     let mut radial = BTreeMap::<u64, Vec<usize>>::new();
-    for shell_step in shell_steps {
+    for shell_reference in shell_steps {
+        let (shell_step, shell_forward) =
+            resolve_shell(shell_reference, exchange, &mut built.typed)?;
         let sr = exchange.records.get(&shell_step)?;
         if !matches!(sr.simple_name(), Some("OPEN_SHELL") | Some("CLOSED_SHELL")) {
             return None;
@@ -286,11 +288,12 @@ fn build(
                 built.typed.extend([bound_step, loop_step]);
             }
             let surface = fr.parameter(2)?.reference()?;
+            let face_forward = fr.parameter(3)?.logical()? == shell_forward;
             built.faces.push(Face {
                 id: fid.clone(),
                 shell: sid.clone(),
                 surface: SurfaceId(format!("step:data:surface#{surface}")),
-                sense: if fr.parameter(3)?.logical()? {
+                sense: if face_forward {
                     Sense::Forward
                 } else {
                     Sense::Reversed
@@ -347,6 +350,28 @@ fn build(
         }
     }
     Some(built)
+}
+
+fn resolve_shell(
+    reference: u64,
+    exchange: &Exchange,
+    typed: &mut BTreeSet<u64>,
+) -> Option<(u64, bool)> {
+    let record = exchange.records.get(&reference)?;
+    if matches!(record.simple_name(), Some("OPEN_SHELL" | "CLOSED_SHELL")) {
+        return Some((reference, true));
+    }
+    if matches!(
+        record.simple_name(),
+        Some("ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL")
+    ) {
+        typed.insert(reference);
+        return Some((
+            record.parameter(1)?.reference()?,
+            record.parameter(2)?.logical()?,
+        ));
+    }
+    None
 }
 
 fn refs(value: &Value) -> Option<Vec<u64>> {

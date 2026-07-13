@@ -334,6 +334,7 @@ fn decode_builds_a_valid_connected_sheet_brep() {
         .coedges
         .iter()
         .all(|coedge| coedge.sense == Sense::Forward));
+    assert_eq!(result.ir.model.faces[0].sense, Sense::Reversed);
     assert_eq!(
         result.ir.model.faces[0].color,
         Some(cadmpeg_ir::topology::Color {
