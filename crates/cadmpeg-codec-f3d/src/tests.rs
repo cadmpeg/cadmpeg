@@ -716,6 +716,20 @@ fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
     bytes
 }
 
+fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> {
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let pcurve = records
+        .iter()
+        .find(|record| record.head == "pcurve")
+        .expect("generated pcurve record");
+    let offsets = crate::sab::payload_token_offsets(&bytes, pcurve, 8, 0x04)
+        .expect("generated pcurve integer offsets");
+    bytes[offsets[1] + 1..offsets[1] + 9].copy_from_slice(&discriminator.to_le_bytes());
+    bytes
+}
+
 fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -15350,6 +15364,28 @@ fn generated_inline_pcurve_tail_requires_four_adjacent_booleans() {
     let short = decode(synthetic_geometry_with_short_pcurve_tail_smbh());
     assert_eq!(short.native_tail_flags, None);
     assert_eq!(short.parameter_range, Some([-1.0, 2.0]));
+}
+
+#[test]
+fn generated_pcurve_geometry_dispatch_follows_discriminator() {
+    for smbh in [
+        with_pcurve_discriminator(synthetic_geometry_with_pcurve_smbh(), 2),
+        with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 0),
+    ] {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("generated mismatched pcurve decode");
+        assert!(result.ir.model.pcurves.is_empty());
+        assert!(result
+            .ir
+            .model
+            .coedges
+            .iter()
+            .all(|coedge| coedge.pcurve.is_none()));
+    }
 }
 
 #[test]

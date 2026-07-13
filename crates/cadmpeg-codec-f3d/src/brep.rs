@@ -741,25 +741,27 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             // every candidate and keep the one whose endpoints
                             // land on the edge's vertices through the face
                             // surface.
-                            let mut candidates =
-                                nurbs::decode_pcurve_cache_candidates_resolving_refs(
-                                    record_slice(prec, bytes),
-                                    bytes,
-                                    &subtype_tables,
-                                );
-                            if candidates.is_empty() {
-                                if let Some(intcurve) = prec
+                            let candidates = match prec.chunk(3) {
+                                Some(Token::Long(0)) => {
+                                    nurbs::decode_pcurve_cache_candidates_resolving_refs(
+                                        record_slice(prec, bytes),
+                                        bytes,
+                                        &subtype_tables,
+                                    )
+                                }
+                                Some(Token::Long(_)) => prec
                                     .ref_at(4)
                                     .and_then(|reference| by_index.get(&reference))
-                                {
-                                    candidates =
+                                    .map(|intcurve| {
                                         nurbs::decode_pcurve_cache_candidates_resolving_refs(
                                             record_slice(intcurve, bytes),
                                             bytes,
                                             &subtype_tables,
-                                        );
-                                }
-                            }
+                                        )
+                                    })
+                                    .unwrap_or_default(),
+                                _ => Vec::new(),
+                            };
                             let decoded = select_face_pcurve(
                                 candidates,
                                 face.ref_at(7)
