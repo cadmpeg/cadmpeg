@@ -3744,61 +3744,6 @@ fn transfer_plane_intersection_curves(
     }
 }
 
-fn transfer_plane_intersection_vertices(
-    scan: &ContainerScan,
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-) {
-    let planes = placed_planes(scan);
-    let half_edges = scan
-        .half_edges
-        .iter()
-        .map(|half_edge| (half_edge.id, half_edge))
-        .collect::<BTreeMap<_, _>>();
-    for vertex in &scan.topological_vertices {
-        let incident = vertex
-            .half_edges
-            .iter()
-            .filter_map(|half_edge| half_edges.get(half_edge))
-            .filter_map(|half_edge| planes.get(&half_edge.face_id))
-            .copied()
-            .collect::<Vec<_>>();
-        let Some(position) = solve_planes(&incident) else {
-            continue;
-        };
-        let point_id = PointId(format!("creo:visibgeom:point#{}", vertex.id));
-        let vertex_id = VertexId(format!("creo:visibgeom:vertex#{}", vertex.id));
-        if ir.model.vertices.iter().any(|item| item.id == vertex_id) {
-            continue;
-        }
-        annotate(
-            annotations,
-            &point_id,
-            "VisibGeom",
-            0,
-            "placed_plane_intersection_point",
-            Exactness::Derived,
-        );
-        annotate(
-            annotations,
-            &vertex_id,
-            "VisibGeom",
-            0,
-            "topological_vertex_orbit",
-            Exactness::Derived,
-        );
-        ir.model.points.push(Point {
-            id: point_id.clone(),
-            position: Point3::new(position[0], position[1], position[2]),
-        });
-        ir.model.vertices.push(Vertex {
-            id: vertex_id,
-            point: point_id,
-            tolerance: None,
-        });
-    }
-}
-
 /// Decode a `.prt` stream into an IR document and loss report.
 ///
 /// The stream is read from its beginning. `options.container_only` is reflected
@@ -3950,7 +3895,6 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     transfer_fc05_cap_circles(scan, &mut ir, &mut annotations);
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
     transfer_plane_intersection_curves(scan, &mut ir, &mut annotations);
-    transfer_plane_intersection_vertices(scan, &mut ir, &mut annotations);
     transfer_plane_brep(scan, &mut ir, &mut annotations);
     transfer_resolved_sketches(scan, &mut ir, &mut annotations);
     let feature_extrusion_surface_count =

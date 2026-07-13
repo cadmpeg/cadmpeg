@@ -58,8 +58,8 @@ impl ScalarCache {
 const LANE_OPENERS: &[u8] = &[
     0x0f, 0x29, 0x2d, 0x2e, 0x2f, 0x41, 0x42, 0x46, 0x47, 0x48, 0x4b, 0x66, 0x67, 0x68, 0x6a, 0x71,
     0x74, 0x77, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e,
-    0x8f, 0x90, 0x91, 0xa1, 0xa2, 0xa3, 0xaf, 0xb0, 0xb1, 0xb7, 0xb9, 0xbf, 0xd3, 0xd7, 0xdf, 0xe4,
-    0xd1, 0xe6, 0xe8,
+    0x8f, 0x90, 0x91, 0x9e, 0xa1, 0xa2, 0xa3, 0xaf, 0xb0, 0xb1, 0xb7, 0xb9, 0xbf, 0xd3, 0xd7, 0xdf,
+    0xe4, 0xd1, 0xe6, 0xe8,
 ];
 
 /// Decode one scalar in a row or `f9` scalar lane using its section cache.
@@ -73,11 +73,11 @@ pub fn decode_in_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option
             let (index, end) = compact_int(data, offset + 1);
             (end > offset + 1).then(|| cache.value(index).map(|value| (value, end)))?
         }
-        0xa3 => {
+        0x9e | 0xa3 => {
             let tail = data.get(offset + 1..offset + 7)?;
             let byte_1 = cache.paired_byte_1(tail)?;
             let mut raw = [0; 8];
-            raw[0] = 0xc0;
+            raw[0] = if data[offset] == 0x9e { 0x40 } else { 0xc0 };
             raw[1] = byte_1;
             raw[2..].copy_from_slice(tail);
             Some((f64::from_be_bytes(raw), offset + 7))
@@ -177,6 +177,20 @@ mod tests {
         assert_eq!(
             decode_in_lane(&[0xa3, 1, 2, 3, 4, 5, 6], 0, &cache),
             Some((expected, 7))
+        );
+    }
+
+    #[test]
+    fn paired_positive_lane_uses_matching_cache_exponent() {
+        let cache = ScalarCache::from_section(&[0x46, 0x13, 1, 2, 3, 4, 5, 6]);
+        let expected = f64::from_be_bytes([0x40, 0x13, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(
+            decode_in_lane(&[0x9e, 1, 2, 3, 4, 5, 6], 0, &cache),
+            Some((expected, 7))
+        );
+        assert_eq!(
+            decode_in_lane(&[0x18, 0x9e, 1, 2, 3, 4, 5, 6], 0, &cache),
+            Some((0.0, 1))
         );
     }
 
