@@ -95,6 +95,15 @@ pub struct ClassDefinition {
     /// Exact bytes between this declaration core and the next class declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub registry_suffix: Vec<u8>,
+    /// Variable-width prefix of a framed indexed-store registry suffix.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layout_prefix: Vec<u8>,
+    /// Stable eight-byte class fingerprint in a framed registry suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_fingerprint: Option<[u8; 8]>,
+    /// Terminal byte of a framed indexed-store registry suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_terminal: Option<u8>,
     /// Absolute file offset of the containing OM section base.
     pub section_offset: u64,
     /// Directory entry containing the OM section.
@@ -508,6 +517,8 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
             .expect("OM entry belongs to container");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.types.into_iter().enumerate() {
+            let (layout_prefix, schema_fingerprint, layout_terminal) =
+                class_layout_fields(definition.registry_suffix);
             definitions.insert(
                 (entry_index, definition.offset),
                 ClassDefinition {
@@ -516,6 +527,9 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
                     registry_suffix: definition.registry_suffix.to_vec(),
+                    layout_prefix,
+                    schema_fingerprint,
+                    layout_terminal,
                     section_offset: entry_offset + section.offset as u64,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -532,6 +546,8 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.types.into_iter().enumerate() {
+            let (layout_prefix, schema_fingerprint, layout_terminal) =
+                class_layout_fields(definition.registry_suffix);
             definitions
                 .entry((entry_index, definition.offset))
                 .or_insert_with(|| ClassDefinition {
@@ -540,6 +556,9 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
                     registry_suffix: definition.registry_suffix.to_vec(),
+                    layout_prefix,
+                    schema_fingerprint,
+                    layout_terminal,
                     section_offset,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -547,6 +566,20 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
         }
     }
     definitions.into_values().collect()
+}
+
+fn class_layout_fields(suffix: &[u8]) -> (Vec<u8>, Option<[u8; 8]>, Option<u8>) {
+    if !(11..=14).contains(&suffix.len()) {
+        return (Vec::new(), None, None);
+    }
+    let fingerprint_start = suffix.len() - 9;
+    (
+        suffix[..fingerprint_start].to_vec(),
+        suffix[fingerprint_start..fingerprint_start + 8]
+            .try_into()
+            .ok(),
+        suffix.last().copied(),
+    )
 }
 
 /// Decode member definitions from every framed OM section.

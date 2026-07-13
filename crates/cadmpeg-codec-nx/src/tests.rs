@@ -246,7 +246,9 @@ fn size_framed_om_section() -> Vec<u8> {
         bytes.extend_from_slice(name);
         bytes.push(code);
         if index == 0 {
-            bytes.extend_from_slice(&[0x81, 0x02, 0x03]);
+            bytes.extend_from_slice(&[
+                0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06,
+            ]);
         }
     }
     for (name, code, suffix) in [
@@ -294,7 +296,10 @@ fn om_size_frame_bounds_its_type_declarations() {
     assert_eq!(sections[0].byte_len, bytes.len());
     assert_eq!(sections[0].types.len(), 2);
     assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
-    assert_eq!(sections[0].types[0].registry_suffix, &[0x81, 0x02, 0x03]);
+    assert_eq!(
+        sections[0].types[0].registry_suffix,
+        &[0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06]
+    );
     assert_eq!(sections[0].types[1].trailing_code, 0x65);
     assert_eq!(sections[0].fields.len(), 2);
     assert_eq!(sections[0].fields[0].name, "m_target");
@@ -2942,7 +2947,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 10);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 11);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -3158,6 +3163,19 @@ fn decode_retains_length_framed_nx_field_definitions() {
     assert_eq!(fields[1].name, "m_tools");
     assert_eq!(fields[1].trailing_code, 0x81);
     assert_eq!(fields[1].source_entry, "/Root/UG_PART/UG_PART");
+    let classes = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<crate::native::ClassDefinition>("class_definitions")
+        .unwrap();
+    assert_eq!(classes[0].layout_prefix, &[0x81, 0x21]);
+    assert_eq!(
+        classes[0].schema_fingerprint,
+        Some([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef])
+    );
+    assert_eq!(classes[0].layout_terminal, Some(0x06));
 }
 
 #[test]
