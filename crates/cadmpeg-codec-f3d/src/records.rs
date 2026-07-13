@@ -197,10 +197,20 @@ pub struct DesignConfiguration {
     pub id: String,
     /// Complete ZIP entry name used for native regeneration.
     pub entry_name: String,
-    /// Whether this entry is a configuration table or a configuration rule.
-    pub is_rule: bool,
+    /// Native configuration entry family.
+    pub kind: DesignConfigurationKind,
     /// Complete decoded JSON payload, including unrecognized fields.
     pub payload: serde_json::Value,
+}
+
+/// Native Fusion design-configuration entry family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignConfigurationKind {
+    /// A `.dsgcfg` configuration table.
+    Table,
+    /// A `.dsgcfgrule` configuration rule.
+    Rule,
 }
 
 /// One GUID-owned object-table record from the Design `MetaStream`.

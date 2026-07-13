@@ -3515,6 +3515,10 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let native = f3d_native(&decoded.ir);
     assert_eq!(native.design_configurations.len(), 1);
     assert_eq!(native.design_configurations[0].entry_name, name);
+    assert_eq!(
+        native.design_configurations[0].kind,
+        crate::records::DesignConfigurationKind::Table
+    );
     assert_eq!(native.design_configurations[0].payload["active"], "wide");
     assert_eq!(
         native.design_configurations[0].payload["extension"]["future"],
@@ -3554,6 +3558,21 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         f3d_native(&round_trip.ir).design_configurations,
         native.design_configurations
     );
+
+    let rule_name = "FusionAssetName[Active]/DesignConfigurationRule.456.dsgcfgrule";
+    let rule = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_configuration(
+                &synthetic_geometry_smbh(),
+                rule_name,
+                br#"{"when":"width > 20 mm","activate":"wide"}"#,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("generated configuration-rule decode");
+    let rule = f3d_native(&rule.ir).design_configurations.remove(0);
+    assert_eq!(rule.kind, crate::records::DesignConfigurationKind::Rule);
+    assert_eq!(rule.payload["activate"], "wide");
 }
 
 #[test]

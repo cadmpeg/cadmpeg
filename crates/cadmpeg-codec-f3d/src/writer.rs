@@ -68,6 +68,20 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     archive.write_all(&smbh)?;
     if let Some(native) = &native {
         for configuration in &native.design_configurations {
+            let valid_name = match configuration.kind {
+                crate::records::DesignConfigurationKind::Table => {
+                    configuration.entry_name.ends_with(".dsgcfg")
+                }
+                crate::records::DesignConfigurationKind::Rule => {
+                    configuration.entry_name.ends_with(".dsgcfgrule")
+                }
+            };
+            if !valid_name {
+                return Err(CodecError::Malformed(format!(
+                    "F3D configuration kind conflicts with entry name: {}",
+                    configuration.entry_name
+                )));
+            }
             archive
                 .start_file(&configuration.entry_name, options)
                 .map_err(|error| {
@@ -8479,7 +8493,7 @@ fn validate_configuration_edits(
     let mut edits = BTreeMap::new();
     for (name, before) in baseline {
         let after = target[name];
-        if before.id != after.id || before.is_rule != after.is_rule {
+        if before.id != after.id || before.kind != after.kind {
             return Err(CodecError::NotImplemented(format!(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));

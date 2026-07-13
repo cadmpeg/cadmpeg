@@ -9,9 +9,9 @@ use std::collections::HashMap;
 
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
-    DesignEntityHeader, DesignObject, DesignObjectKind, DesignRecordHeader, LostEdgeReference,
-    PersistentReference, PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation,
+    DesignConfigurationKind, DesignEntityHeader, DesignObject, DesignObjectKind,
+    DesignRecordHeader, LostEdgeReference, PersistentReference, PersistentReferenceKind,
+    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -48,7 +48,11 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
             Ok(DesignConfiguration {
                 id: format!("f3d:configuration:{}", entry.name),
                 entry_name: entry.name.clone(),
-                is_rule: entry.name.ends_with(".dsgcfgrule"),
+                kind: if entry.name.ends_with(".dsgcfgrule") {
+                    DesignConfigurationKind::Rule
+                } else {
+                    DesignConfigurationKind::Table
+                },
                 payload,
             })
         })
