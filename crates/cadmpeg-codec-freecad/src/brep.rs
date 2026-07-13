@@ -59,6 +59,128 @@ pub struct TextFacts {
     pub polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
     /// Ordered display triangulations.
     pub triangulations: Vec<TextTriangulation>,
+    /// Ordered subshape-first topology records.
+    pub tshapes: Vec<TextTShape>,
+    /// Oriented root shape uses following the topology table.
+    pub roots: Vec<TextShapeUse>,
+}
+
+/// Topological shape family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextShapeKind {
+    Vertex,
+    Edge,
+    Wire,
+    Face,
+    Shell,
+    Solid,
+    CompSolid,
+    Compound,
+}
+
+/// Orientation of one shape use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextOrientation {
+    Forward,
+    Reversed,
+    Internal,
+    External,
+}
+
+/// One oriented, located use of a topology record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextShapeUse {
+    /// One-based `tshapes` index.
+    pub shape: usize,
+    /// Use orientation.
+    pub orientation: TextOrientation,
+    /// One-based location index, or zero for identity.
+    pub location: usize,
+}
+
+/// One vertex point representation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextPointRepresentation {
+    /// First curve/surface parameter.
+    pub parameter: f64,
+    /// Optional second surface parameter.
+    pub second_parameter: Option<f64>,
+    /// Representation family code 1 through 3.
+    pub kind: u8,
+    /// Referenced 3D or 2D curve index.
+    pub curve: Option<usize>,
+    /// Referenced surface index.
+    pub surface: Option<usize>,
+    /// Location index, or zero for identity.
+    pub location: usize,
+}
+
+/// One edge representation record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextEdgeRepresentation {
+    /// Representation code 1 through 7.
+    pub kind: u8,
+    /// Primary curve or polygon index.
+    pub primary: usize,
+    /// Optional secondary curve or polygon index.
+    pub secondary: Option<usize>,
+    /// Optional first surface index.
+    pub surface: Option<usize>,
+    /// Optional second surface index for regularity records.
+    pub second_surface: Option<usize>,
+    /// Primary location index, or zero for identity.
+    pub location: usize,
+    /// Optional second location index.
+    pub second_location: Option<usize>,
+    /// Optional parameter range.
+    pub parameter_range: Option<[f64; 2]>,
+    /// Optional continuity token.
+    pub continuity: Option<String>,
+    /// Optional V2 cached UV endpoints.
+    pub uv_endpoints: Option<[Point2; 2]>,
+}
+
+/// Geometry and flags specific to a topology record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TextTShapeGeometry {
+    Vertex {
+        tolerance: f64,
+        point: Point3,
+        representations: Vec<TextPointRepresentation>,
+    },
+    Edge {
+        tolerance: f64,
+        same_parameter: bool,
+        same_range: bool,
+        degenerated: bool,
+        representations: Vec<TextEdgeRepresentation>,
+    },
+    Face {
+        natural_restriction: bool,
+        tolerance: f64,
+        surface: usize,
+        location: usize,
+        triangulation: Option<usize>,
+    },
+    Empty,
+}
+
+/// One subshape-first topology record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextTShape {
+    /// One-based table index.
+    pub index: usize,
+    /// Shape family.
+    pub kind: TextShapeKind,
+    /// Family-specific geometry.
+    pub geometry: TextTShapeGeometry,
+    /// Free, modified, checked, orientable, closed, infinite, convex flags.
+    pub flags: [bool; 7],
+    /// Ordered child uses.
+    pub children: Vec<TextShapeUse>,
 }
 
 /// One standalone 3D polygon carrier.
@@ -414,6 +536,7 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
     let polygons3d = parse_polygons3d(&tokens, &section_counts)?;
     let polygons_on_triangulations = parse_polygons_on_triangulations(&tokens, &section_counts)?;
     let triangulations = parse_triangulations(&tokens, &section_counts, topology_version)?;
+    let (tshapes, roots) = parse_tshapes(&tokens, &section_counts, topology_version)?;
     Ok(TextFacts {
         topology_version,
         section_counts,
@@ -425,6 +548,8 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
         polygons3d,
         polygons_on_triangulations,
         triangulations,
+        tshapes,
+        roots,
     })
 }
 
@@ -897,6 +1022,437 @@ fn ensure_section_consumed(cursor: &TokenCursor<'_>, section: &str) -> Result<()
     }
 }
 
+fn parse_tshapes(
+    tokens: &[&str],
+    section_counts: &BTreeMap<String, usize>,
+    topology_version: u8,
+) -> Result<(Vec<TextTShape>, Vec<TextShapeUse>), CodecError> {
+    let start = tokens
+        .iter()
+        .position(|token| *token == "TShapes")
+        .ok_or_else(|| CodecError::Malformed("text B-rep has no TShapes table".into()))?
+        + 2;
+    let count = section_counts.get("TShapes").copied().unwrap_or(0);
+    let mut cursor = TokenCursor::new(&tokens[start..]);
+    let mut shapes = Vec::with_capacity(count);
+    for index in 1..=count {
+        let kind = parse_shape_kind(cursor.next("TShape kind")?)?;
+        let geometry = parse_tshape_geometry(kind, &mut cursor, section_counts, topology_version)?;
+        let flags = parse_shape_flags(cursor.next("TShape flags")?, topology_version)?;
+        let mut children = Vec::new();
+        loop {
+            if cursor.peek() == Some("*") {
+                cursor.next("TShape child terminator")?;
+                break;
+            }
+            let child = parse_shape_use(&mut cursor, count, section_counts)?;
+            if child.shape >= index {
+                return Err(CodecError::Malformed(format!(
+                    "TShape {index} references non-prior child {}",
+                    child.shape
+                )));
+            }
+            children.push(child);
+        }
+        shapes.push(TextTShape {
+            index,
+            kind,
+            geometry,
+            flags,
+            children,
+        });
+    }
+    let mut roots = Vec::new();
+    while !cursor.is_empty() {
+        if cursor.peek() == Some("*") {
+            cursor.next("root shape terminator")?;
+            break;
+        }
+        roots.push(parse_shape_use(&mut cursor, count, section_counts)?);
+    }
+    if !cursor.is_empty() {
+        return Err(CodecError::Malformed(
+            "text B-rep contains tokens after root shape terminator".into(),
+        ));
+    }
+    Ok((shapes, roots))
+}
+
+fn parse_shape_kind(token: &str) -> Result<TextShapeKind, CodecError> {
+    match token {
+        "Ve" => Ok(TextShapeKind::Vertex),
+        "Ed" => Ok(TextShapeKind::Edge),
+        "Wi" => Ok(TextShapeKind::Wire),
+        "Fa" => Ok(TextShapeKind::Face),
+        "Sh" => Ok(TextShapeKind::Shell),
+        "So" => Ok(TextShapeKind::Solid),
+        "CS" => Ok(TextShapeKind::CompSolid),
+        "Co" => Ok(TextShapeKind::Compound),
+        _ => Err(CodecError::Malformed(format!(
+            "invalid TShape kind {token:?}"
+        ))),
+    }
+}
+
+fn parse_tshape_geometry(
+    kind: TextShapeKind,
+    cursor: &mut TokenCursor<'_>,
+    counts: &BTreeMap<String, usize>,
+    topology_version: u8,
+) -> Result<TextTShapeGeometry, CodecError> {
+    match kind {
+        TextShapeKind::Vertex => parse_vertex_geometry(cursor, counts),
+        TextShapeKind::Edge => parse_edge_geometry(cursor, counts, topology_version),
+        TextShapeKind::Face => parse_face_geometry(cursor, counts),
+        TextShapeKind::Wire
+        | TextShapeKind::Shell
+        | TextShapeKind::Solid
+        | TextShapeKind::CompSolid
+        | TextShapeKind::Compound => Ok(TextTShapeGeometry::Empty),
+    }
+}
+
+fn parse_vertex_geometry(
+    cursor: &mut TokenCursor<'_>,
+    counts: &BTreeMap<String, usize>,
+) -> Result<TextTShapeGeometry, CodecError> {
+    let tolerance = cursor.real("vertex tolerance")?;
+    let point = cursor.point("vertex point")?;
+    let mut representations = Vec::new();
+    loop {
+        let parameter = cursor.real("vertex representation parameter")?;
+        let kind = cursor.integer("vertex representation kind")?;
+        if kind == 0 {
+            break;
+        }
+        if representations.len() >= 1_000_000 {
+            return Err(CodecError::Malformed(
+                "vertex representation-count limit exceeded".into(),
+            ));
+        }
+        let (second_parameter, curve, surface) = match kind {
+            1 => (
+                None,
+                Some(parse_reference(
+                    cursor,
+                    "vertex curve",
+                    counts["Curves"],
+                    false,
+                )?),
+                None,
+            ),
+            2 => (
+                None,
+                Some(parse_reference(
+                    cursor,
+                    "vertex parameter curve",
+                    counts["Curve2ds"],
+                    false,
+                )?),
+                Some(parse_reference(
+                    cursor,
+                    "vertex surface",
+                    counts["Surfaces"],
+                    false,
+                )?),
+            ),
+            3 => (
+                Some(cursor.real("vertex second surface parameter")?),
+                None,
+                Some(parse_reference(
+                    cursor,
+                    "vertex surface",
+                    counts["Surfaces"],
+                    false,
+                )?),
+            ),
+            other => {
+                return Err(CodecError::Malformed(format!(
+                    "invalid vertex representation kind {other}"
+                )))
+            }
+        };
+        let location = parse_reference(cursor, "vertex location", counts["Locations"], true)?;
+        representations.push(TextPointRepresentation {
+            parameter,
+            second_parameter,
+            kind: kind as u8,
+            curve,
+            surface,
+            location,
+        });
+    }
+    Ok(TextTShapeGeometry::Vertex {
+        tolerance,
+        point,
+        representations,
+    })
+}
+
+fn parse_edge_geometry(
+    cursor: &mut TokenCursor<'_>,
+    counts: &BTreeMap<String, usize>,
+    topology_version: u8,
+) -> Result<TextTShapeGeometry, CodecError> {
+    let tolerance = cursor.real("edge tolerance")?;
+    let same_parameter = cursor.boolean("edge same-parameter flag")?;
+    let same_range = cursor.boolean("edge same-range flag")?;
+    let degenerated = cursor.boolean("edge degenerated flag")?;
+    let mut representations = Vec::new();
+    loop {
+        let kind = cursor.integer("edge representation kind")?;
+        if kind == 0 {
+            break;
+        }
+        if representations.len() >= 1_000_000 {
+            return Err(CodecError::Malformed(
+                "edge representation-count limit exceeded".into(),
+            ));
+        }
+        representations.push(parse_edge_representation(
+            kind,
+            cursor,
+            counts,
+            topology_version,
+        )?);
+    }
+    Ok(TextTShapeGeometry::Edge {
+        tolerance,
+        same_parameter,
+        same_range,
+        degenerated,
+        representations,
+    })
+}
+
+fn parse_edge_representation(
+    kind: i64,
+    cursor: &mut TokenCursor<'_>,
+    counts: &BTreeMap<String, usize>,
+    topology_version: u8,
+) -> Result<TextEdgeRepresentation, CodecError> {
+    let mut record = TextEdgeRepresentation {
+        kind: u8::try_from(kind)
+            .map_err(|_| CodecError::Malformed("invalid edge representation kind".into()))?,
+        primary: 0,
+        secondary: None,
+        surface: None,
+        second_surface: None,
+        location: 0,
+        second_location: None,
+        parameter_range: None,
+        continuity: None,
+        uv_endpoints: None,
+    };
+    match kind {
+        1 => {
+            record.primary = parse_reference(cursor, "edge 3D curve", counts["Curves"], false)?;
+            record.location =
+                parse_reference(cursor, "edge curve location", counts["Locations"], true)?;
+            record.parameter_range = Some(parse_range(cursor, "edge curve")?);
+        }
+        2 | 3 => {
+            record.primary =
+                parse_reference(cursor, "edge parameter curve", counts["Curve2ds"], false)?;
+            if kind == 3 {
+                record.secondary = Some(parse_reference(
+                    cursor,
+                    "edge secondary parameter curve",
+                    counts["Curve2ds"],
+                    false,
+                )?);
+                record.continuity = Some(cursor.next("edge continuity")?.to_owned());
+            }
+            record.surface = Some(parse_reference(
+                cursor,
+                "edge surface",
+                counts["Surfaces"],
+                false,
+            )?);
+            record.location =
+                parse_reference(cursor, "edge surface location", counts["Locations"], true)?;
+            record.parameter_range = Some(parse_range(cursor, "edge parameter curve")?);
+            if topology_version == 2 {
+                record.uv_endpoints = Some([
+                    cursor.point2("edge first UV endpoint")?,
+                    cursor.point2("edge last UV endpoint")?,
+                ]);
+            }
+        }
+        4 => {
+            record.continuity = Some(cursor.next("edge continuity")?.to_owned());
+            record.surface = Some(parse_reference(
+                cursor,
+                "edge regularity surface",
+                counts["Surfaces"],
+                false,
+            )?);
+            record.location = parse_reference(
+                cursor,
+                "edge regularity location",
+                counts["Locations"],
+                true,
+            )?;
+            record.second_surface = Some(parse_reference(
+                cursor,
+                "edge second regularity surface",
+                counts["Surfaces"],
+                false,
+            )?);
+            record.second_location = Some(parse_reference(
+                cursor,
+                "edge second regularity location",
+                counts["Locations"],
+                true,
+            )?);
+        }
+        5 => {
+            record.primary =
+                parse_reference(cursor, "edge 3D polygon", counts["Polygon3D"], false)?;
+            record.location =
+                parse_reference(cursor, "edge polygon location", counts["Locations"], true)?;
+        }
+        6 | 7 => {
+            record.primary = parse_reference(
+                cursor,
+                "edge polygon on triangulation",
+                counts["PolygonOnTriangulations"],
+                false,
+            )?;
+            if kind == 7 {
+                record.secondary = Some(parse_reference(
+                    cursor,
+                    "edge second polygon on triangulation",
+                    counts["PolygonOnTriangulations"],
+                    false,
+                )?);
+            }
+            record.surface = Some(parse_reference(
+                cursor,
+                "edge triangulation",
+                counts["Triangulations"],
+                false,
+            )?);
+            record.location = parse_reference(
+                cursor,
+                "edge triangulation location",
+                counts["Locations"],
+                true,
+            )?;
+        }
+        other => {
+            return Err(CodecError::Malformed(format!(
+                "invalid edge representation kind {other}"
+            )))
+        }
+    }
+    Ok(record)
+}
+
+fn parse_face_geometry(
+    cursor: &mut TokenCursor<'_>,
+    counts: &BTreeMap<String, usize>,
+) -> Result<TextTShapeGeometry, CodecError> {
+    let natural_restriction = cursor.boolean("face natural-restriction flag")?;
+    let tolerance = cursor.real("face tolerance")?;
+    let surface = parse_reference(cursor, "face surface", counts["Surfaces"], true)?;
+    let location = parse_reference(cursor, "face location", counts["Locations"], true)?;
+    let triangulation = if cursor.peek() == Some("2") {
+        cursor.next("face triangulation marker")?;
+        Some(parse_reference(
+            cursor,
+            "face triangulation",
+            counts["Triangulations"],
+            false,
+        )?)
+    } else {
+        None
+    };
+    Ok(TextTShapeGeometry::Face {
+        natural_restriction,
+        tolerance,
+        surface,
+        location,
+        triangulation,
+    })
+}
+
+fn parse_shape_flags(token: &str, topology_version: u8) -> Result<[bool; 7], CodecError> {
+    if token.len() != 7 || !token.bytes().all(|byte| matches!(byte, b'0' | b'1')) {
+        return Err(CodecError::Malformed(format!(
+            "invalid TShape flags {token:?}"
+        )));
+    }
+    let mut flags = [false; 7];
+    for (index, byte) in token.bytes().enumerate() {
+        flags[index] = byte == b'1';
+    }
+    if topology_version == 1 {
+        flags[2] = false;
+    }
+    Ok(flags)
+}
+
+fn parse_shape_use(
+    cursor: &mut TokenCursor<'_>,
+    shape_count: usize,
+    counts: &BTreeMap<String, usize>,
+) -> Result<TextShapeUse, CodecError> {
+    let token = cursor.next("shape use")?;
+    let (orientation, encoded) = match token.as_bytes().first() {
+        Some(b'+') => (TextOrientation::Forward, &token[1..]),
+        Some(b'-') => (TextOrientation::Reversed, &token[1..]),
+        Some(b'i') => (TextOrientation::Internal, &token[1..]),
+        Some(b'e') => (TextOrientation::External, &token[1..]),
+        _ => {
+            return Err(CodecError::Malformed(format!(
+                "invalid shape use {token:?}"
+            )))
+        }
+    };
+    let encoded = encoded
+        .parse::<usize>()
+        .map_err(|_| CodecError::Malformed(format!("invalid shape use {token:?}")))?;
+    if encoded == 0 || encoded > shape_count {
+        return Err(CodecError::Malformed(format!(
+            "shape use index {encoded} is out of range"
+        )));
+    }
+    let shape = shape_count - encoded + 1;
+    let location = parse_reference(cursor, "shape use location", counts["Locations"], true)?;
+    Ok(TextShapeUse {
+        shape,
+        orientation,
+        location,
+    })
+}
+
+fn parse_reference(
+    cursor: &mut TokenCursor<'_>,
+    label: &str,
+    maximum: usize,
+    allow_zero: bool,
+) -> Result<usize, CodecError> {
+    let value = cursor.count(label, maximum)?;
+    if value == 0 && !allow_zero {
+        return Err(CodecError::Malformed(format!("{label} index is zero")));
+    }
+    Ok(value)
+}
+
+fn parse_range(cursor: &mut TokenCursor<'_>, label: &str) -> Result<[f64; 2], CodecError> {
+    let range = [
+        cursor.real(&format!("{label} first parameter"))?,
+        cursor.real(&format!("{label} last parameter"))?,
+    ];
+    if range[0] > range[1] {
+        return Err(CodecError::Malformed(format!(
+            "{label} parameter range is reversed"
+        )));
+    }
+    Ok(range)
+}
+
 fn parse_surfaces(
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
@@ -1328,6 +1884,10 @@ impl<'a> TokenCursor<'a> {
         self.index == self.tokens.len()
     }
 
+    fn peek(&self) -> Option<&'a str> {
+        self.tokens.get(self.index).copied()
+    }
+
     fn integer(&mut self, label: &str) -> Result<i64, CodecError> {
         self.next(label)?.parse().map_err(|_| {
             CodecError::Malformed(format!("invalid {label} in text B-rep Curves table"))
@@ -1523,5 +2083,24 @@ mod tests {
         assert_eq!(triangulation.triangles, [[1, 2, 3]]);
         assert_eq!(triangulation.uv_nodes.as_ref().map(Vec::len), Some(3));
         assert_eq!(triangulation.normals.as_ref().map(Vec::len), Some(3));
+    }
+
+    #[test]
+    fn parses_subshape_first_topology_and_reverse_references() {
+        let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 1\n1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 8\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 1 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 0 1 0 1001000 +8 0 +7 0 *\nWi 1001000 +6 0 *\nFa 0 0.001 1 0 1001000 +5 0 *\nSh 1001000 +4 0 *\nSo 1001000 +3 0 *\nCo 1001000 +2 0 *\n+1 0 *";
+        let facts = parse_text(input.as_bytes()).expect("topology table");
+        assert_eq!(facts.tshapes.len(), 8);
+        assert_eq!(facts.tshapes[2].kind, TextShapeKind::Edge);
+        assert_eq!(facts.tshapes[2].children[0].shape, 1);
+        assert_eq!(facts.tshapes[2].children[1].shape, 2);
+        let TextTShapeGeometry::Edge {
+            representations, ..
+        } = &facts.tshapes[2].geometry
+        else {
+            panic!("expected edge geometry")
+        };
+        assert_eq!(representations[0].parameter_range, Some([0.0, 1.0]));
+        assert_eq!(facts.roots.len(), 1);
+        assert_eq!(facts.roots[0].shape, 8);
     }
 }
