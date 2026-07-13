@@ -147,6 +147,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     value: dimension.value,
                     unit: match dimension.value_unit {
                         crate::feature::DimensionUnit::Radians => "radians",
+                        crate::feature::DimensionUnit::Millimeters => "millimeters",
                         crate::feature::DimensionUnit::SchemaDefined => "schema_defined",
                     },
                     direction_byte: dimension.direction_byte,
@@ -488,6 +489,7 @@ fn transfer_feature_dimensions(
             let expression = value.to_string();
             let value = match dimension.value_unit {
                 crate::feature::DimensionUnit::Radians => ParameterValue::Angle(Angle(value)),
+                crate::feature::DimensionUnit::Millimeters => ParameterValue::Length(Length(value)),
                 crate::feature::DimensionUnit::SchemaDefined => ParameterValue::Real(value),
             };
             ir.model.parameters.push(DesignParameter {

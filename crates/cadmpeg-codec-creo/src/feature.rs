@@ -560,6 +560,8 @@ pub struct FeatureSection3d {
 pub enum DimensionUnit {
     /// Type `0x0a` angle value stored in radians.
     Radians,
+    /// Linear dimension value stored in model millimeters.
+    Millimeters,
     /// Dimension type whose unit is defined by its enclosing section schema.
     SchemaDefined,
 }
@@ -1529,10 +1531,10 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
 }
 
 fn dimension_unit(dimension_type: u32) -> DimensionUnit {
-    if dimension_type == 0x0a {
-        DimensionUnit::Radians
-    } else {
-        DimensionUnit::SchemaDefined
+    match dimension_type {
+        0x0a => DimensionUnit::Radians,
+        0x01 | 0x02 | 0x04 | 0x05 => DimensionUnit::Millimeters,
+        _ => DimensionUnit::SchemaDefined,
     }
 }
 

@@ -991,6 +991,10 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(dimensions.rows[0].auxiliary_value, Some(0.0));
     assert_eq!(dimensions.rows[0].external_id, 42);
     assert_eq!(dimensions.rows[1].value, Some(3.0));
+    assert_eq!(
+        dimensions.rows[1].value_unit,
+        crate::feature::DimensionUnit::Millimeters
+    );
     assert_eq!(dimensions.rows[1].auxiliary_value, Some(0.0));
     assert_eq!(dimensions.rows[1].external_id, 43);
     assert_eq!(
