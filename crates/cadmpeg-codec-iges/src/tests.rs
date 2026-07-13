@@ -1051,6 +1051,135 @@ fn offset_plane_file(indicator_z: f64, distance: f64) -> Vec<u8> {
     bytes
 }
 
+fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (sequence, parameter_start, kind, label) in [
+        (1, 1, 116, "LOCATION"),
+        (3, 2, 123, "AXIS"),
+        (5, 3, 123, "REFDIR"),
+        (7, 4, entity_type, "SURFACE"),
+    ] {
+        let kind = kind.to_string();
+        let parameter_start = parameter_start.to_string();
+        let surface_form = form.to_string();
+        bytes.extend(directory_card(
+            [
+                &kind,
+                &parameter_start,
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                if sequence == 7 {
+                    "00000000"
+                } else {
+                    "00010000"
+                },
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [
+                &kind,
+                "0",
+                "0",
+                "1",
+                if sequence == 7 { &surface_form } else { "0" },
+                "",
+                "",
+                label,
+                "0",
+            ],
+            sequence + 1,
+        ));
+    }
+    bytes.extend(parameter_card(b"116,1,2,3,0;", 1, 1));
+    bytes.extend(parameter_card(b"123,0,0,1;", 3, 2));
+    bytes.extend(parameter_card(b"123,1,0,0;", 5, 3));
+    let parameters = match (entity_type, form) {
+        (190, 0) => "190,1,3;",
+        (190, 1) => "190,1,3,5;",
+        (192, 0) => "192,1,3,2;",
+        (192, 1) => "192,1,3,2,5;",
+        (194, 0) => "194,1,3,2,30;",
+        (194, 1) => "194,1,3,2,30,5;",
+        (196, 0) => "196,1,2;",
+        (196, 1) => "196,1,2,3,5;",
+        (198, 0) => "198,1,3,4,1;",
+        (198, 1) => "198,1,3,4,1,5;",
+        _ => unreachable!(),
+    };
+    bytes.extend(parameter_card(parameters.as_bytes(), 7, 4));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000008P0000004").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_projects_all_pointer_defined_analytic_surface_forms() {
+    for entity_type in [190, 192, 194, 196, 198] {
+        for form in [0, 1] {
+            let result = IgesCodec
+                .decode(
+                    &mut Cursor::new(pointer_defined_surface_file(entity_type, form)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            let surface = result
+                .ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id.0 == "iges:model:surface#D7")
+                .unwrap();
+            match (entity_type, &surface.geometry) {
+                (190, cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. }) => {
+                    assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
+                }
+                (192, cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { radius, .. })
+                    if *radius == 2.0 => {}
+                (
+                    194,
+                    cadmpeg_ir::geometry::SurfaceGeometry::Cone {
+                        radius, half_angle, ..
+                    },
+                ) if *radius == 2.0
+                    && (*half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-15 => {}
+                (196, cadmpeg_ir::geometry::SurfaceGeometry::Sphere { radius, .. })
+                    if *radius == 2.0 => {}
+                (
+                    198,
+                    cadmpeg_ir::geometry::SurfaceGeometry::Torus {
+                        major_radius,
+                        minor_radius,
+                        ..
+                    },
+                ) if *major_radius == 4.0 && *minor_radius == 1.0 => {}
+                _ => panic!(
+                    "unexpected type {entity_type} form {form} projection: {:?}",
+                    surface.geometry
+                ),
+            }
+            assert!(cadmpeg_ir::eval::surface_point(&surface.geometry, 0.25, 0.5).is_some());
+            assert!(
+                result.report.losses.is_empty(),
+                "{:#?}",
+                result.report.losses
+            );
+            let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+            assert!(validation.is_ok(), "{:#?}", validation.findings);
+        }
+    }
+}
+
 #[test]
 fn decode_solves_signed_analytic_offset_surfaces() {
     for (indicator_z, expected_z) in [(1.0, 2.0), (-1.0, -2.0)] {
