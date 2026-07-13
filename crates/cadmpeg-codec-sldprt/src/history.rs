@@ -1152,6 +1152,14 @@ fn project_flex(feature: &Feature) -> Option<FeatureDefinition> {
         },
         _ => return None,
     };
+    let valid = match mode {
+        FlexMode::Bending { angle } | FlexMode::Twisting { angle } => angle.0.is_finite(),
+        FlexMode::Tapering { factor } => factor.is_finite() && factor > 0.0,
+        FlexMode::Stretching { distance } => distance.0.is_finite(),
+    };
+    if !valid {
+        return None;
+    }
     Some(FeatureDefinition::Flex { axis, mode })
 }
 

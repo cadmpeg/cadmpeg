@@ -2226,6 +2226,33 @@ fn semantic_writer_round_trips_all_flex_modes() {
 }
 
 #[test]
+fn decode_retains_invalid_flex_operations_as_native() {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Flex Name="Axis" Type="Flex" id="1" Mode="Bending" Axis="0,0,0"><Dimension Name="Angle">10deg</Dimension></Flex>
+            <Flex Name="Angle" Type="Flex" id="2" Mode="Twisting" Axis="0,1,0"><Dimension Name="Angle">NaNrad</Dimension></Flex>
+            <Flex Name="Taper" Type="Flex" id="3" Mode="Tapering" Axis="0,0,1"><Dimension Name="Factor">0</Dimension></Flex>
+            <Flex Name="Stretch" Type="Flex" id="4" Mode="Stretching" Axis="1,0,0"><Dimension Name="Distance">infmm</Dimension></Flex>
+        </Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.features.len(), 4);
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+}
+
+#[test]
 fn semantic_writer_preserves_native_feature_leaf_text() {
     use crate::records::FeatureContent;
 
