@@ -2383,6 +2383,10 @@ fn decode_emits_connected_primitive_brep() {
     assert_eq!(result.ir.model.edges.len(), 1);
     assert_eq!(result.ir.model.vertices.len(), 1);
     assert_eq!(
+        result.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Sheet
+    );
+    assert_eq!(
         result.ir.model.faces[0].loops,
         vec![result.ir.model.loops[0].id.clone()]
     );

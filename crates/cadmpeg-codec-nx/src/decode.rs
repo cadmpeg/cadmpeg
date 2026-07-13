@@ -606,6 +606,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         &body_node_ids,
         &scan.container.rmfastload_object_ids(),
     );
+    classify_body_kinds(&mut ir);
     finalize_point_topology(&mut ir, &mut annotations);
     let referenced_pcurves: BTreeSet<_> = ir
         .model
@@ -954,6 +955,80 @@ fn finalize_point_topology(ir: &mut CadIr, annotations: &mut AnnotationBuilder) 
         color: None,
         visible: None,
     });
+}
+
+fn classify_body_kinds(ir: &mut CadIr) {
+    let region_bodies: BTreeMap<_, _> = ir
+        .model
+        .regions
+        .iter()
+        .map(|region| (region.id.clone(), region.body.clone()))
+        .collect();
+    let shell_bodies: BTreeMap<_, _> = ir
+        .model
+        .shells
+        .iter()
+        .filter_map(|shell| {
+            region_bodies
+                .get(&shell.region)
+                .cloned()
+                .map(|body| (shell.id.clone(), body))
+        })
+        .collect();
+    let face_bodies: BTreeMap<_, _> = ir
+        .model
+        .faces
+        .iter()
+        .filter_map(|face| {
+            shell_bodies
+                .get(&face.shell)
+                .cloned()
+                .map(|body| (face.id.clone(), body))
+        })
+        .collect();
+    let loop_bodies: BTreeMap<_, _> = ir
+        .model
+        .loops
+        .iter()
+        .filter_map(|loop_| {
+            face_bodies
+                .get(&loop_.face)
+                .cloned()
+                .map(|body| (loop_.id.clone(), body))
+        })
+        .collect();
+    let coedge_bodies: BTreeMap<_, _> = ir
+        .model
+        .coedges
+        .iter()
+        .filter_map(|coedge| {
+            loop_bodies
+                .get(&coedge.owner_loop)
+                .cloned()
+                .map(|body| (coedge.id.clone(), body))
+        })
+        .collect();
+    let mut edge_uses = BTreeMap::<BodyId, BTreeMap<EdgeId, usize>>::new();
+    for coedge in &ir.model.coedges {
+        let Some(body) = coedge_bodies.get(&coedge.id) else {
+            continue;
+        };
+        *edge_uses
+            .entry(body.clone())
+            .or_default()
+            .entry(coedge.edge.clone())
+            .or_default() += 1;
+    }
+    for body in &mut ir.model.bodies {
+        body.kind = if edge_uses
+            .get(&body.id)
+            .is_some_and(|uses| !uses.is_empty() && uses.values().all(|use_count| *use_count == 2))
+        {
+            BodyKind::Solid
+        } else {
+            BodyKind::Sheet
+        };
+    }
 }
 
 fn linear_knots(parameters: &[f64]) -> Vec<f64> {
