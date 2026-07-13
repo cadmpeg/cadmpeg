@@ -283,7 +283,7 @@ The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partn
 
 ### 6.3 Point records and coordinate authority
 
-A `point` record carries a model-space `POSITION`. `vertex.chunk[5]` references the point record. NURBS control grids independently carry their model-space poles.
+A BinaryFile8 `point` record is 60 bytes: the 8-byte record head, three 9-byte entity-base fields, and one 25-byte model-space `POSITION`. The record terminates immediately after the position and carries no trailing reference-count integer. `vertex.chunk[5]` references the point record. NURBS control grids independently carry their model-space poles.
 
 ### 6.4 Sense semantics
 

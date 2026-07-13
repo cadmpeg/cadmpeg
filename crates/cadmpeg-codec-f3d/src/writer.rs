@@ -1380,7 +1380,6 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 point.position.z / 10.0,
             ],
         );
-        native_i64(&mut records, 1);
         records.push(0x11);
     }
     native_history_tail(&mut records, target)?;
@@ -3483,7 +3482,6 @@ fn encode_source_less_edges_vertices_points(
                 point.position.z / 10.0,
             ],
         );
-        native_i64(records, 1);
         records.push(0x11);
     }
     Ok(())

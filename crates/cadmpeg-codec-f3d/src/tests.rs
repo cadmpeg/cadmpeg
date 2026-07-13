@@ -385,7 +385,6 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
         t_long(&mut r, -1); // history
         t_ref(&mut r, -1); // null
         t_pos(&mut r, p);
-        t_long(&mut r, 1); // reference count
         t_end(&mut r);
     }
 
@@ -3732,6 +3731,26 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .read_to_end(&mut properties)
         .expect("generated properties bytes");
     assert_eq!(properties, 0u32.to_le_bytes());
+    let mut smbh = Vec::new();
+    archive
+        .by_name("FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh")
+        .expect("generated BREP stream")
+        .read_to_end(&mut smbh)
+        .expect("generated BREP bytes");
+    let record_start = smbh
+        .windows(b"\x0d\x09asmheader".len())
+        .position(|window| window == b"\x0d\x09asmheader")
+        .expect("generated ASM record table");
+    let records = crate::sab::frame(&smbh, record_start, smbh.len(), 8)
+        .expect("generated ASM records must frame");
+    let point_records = records
+        .iter()
+        .filter(|record| record.head == "point")
+        .collect::<Vec<_>>();
+    assert_eq!(point_records.len(), 3);
+    assert!(point_records
+        .iter()
+        .all(|record| record.len == 60 && record.tokens.len() == 4));
     drop(archive);
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
