@@ -122,11 +122,24 @@ pub fn decode(
                 &native.sketch_points,
                 &native.sketch_curve_identities,
             )?;
+            native.design_dimension_null_locus_pairs =
+                crate::design::decode_dimension_null_locus_pairs(
+                    &scan,
+                    &native.design_parameters,
+                    &native.design_parameter_owners,
+                    &native.design_parameter_companions,
+                    &native.design_sketch_placements,
+                    &native.design_dimension_locus_pairs,
+                    &native.design_dimension_locus_groups,
+                    &native.sketch_points,
+                    &native.sketch_curve_identities,
+                )?;
             crate::design::bind_dimension_loci(
                 &native.design_sketch_placements,
                 &native.design_parameter_owners,
                 &native.design_dimension_locus_pairs,
                 &native.design_dimension_locus_groups,
+                &native.design_dimension_null_locus_pairs,
                 &mut native.sketch_points,
                 &mut native.sketch_curve_identities,
             )?;
@@ -160,6 +173,7 @@ pub fn decode(
                     &native.design_parameter_owners,
                     &native.design_dimension_locus_pairs,
                     &native.design_dimension_locus_groups,
+                    &native.design_dimension_null_locus_pairs,
                     &native.sketch_points,
                     &native.sketch_curve_identities,
                     &ir.model.sketch_entities,
@@ -269,11 +283,23 @@ pub fn decode(
         &native.sketch_points,
         &native.sketch_curve_identities,
     )?;
+    native.design_dimension_null_locus_pairs = crate::design::decode_dimension_null_locus_pairs(
+        &scan,
+        &native.design_parameters,
+        &native.design_parameter_owners,
+        &native.design_parameter_companions,
+        &native.design_sketch_placements,
+        &native.design_dimension_locus_pairs,
+        &native.design_dimension_locus_groups,
+        &native.sketch_points,
+        &native.sketch_curve_identities,
+    )?;
     crate::design::bind_dimension_loci(
         &native.design_sketch_placements,
         &native.design_parameter_owners,
         &native.design_dimension_locus_pairs,
         &native.design_dimension_locus_groups,
+        &native.design_dimension_null_locus_pairs,
         &mut native.sketch_points,
         &mut native.sketch_curve_identities,
     )?;
@@ -306,6 +332,7 @@ pub fn decode(
             &native.design_parameter_owners,
             &native.design_dimension_locus_pairs,
             &native.design_dimension_locus_groups,
+            &native.design_dimension_null_locus_pairs,
             &native.sketch_points,
             &native.sketch_curve_identities,
             &ir.model.sketch_entities,
@@ -431,6 +458,17 @@ fn populate_annotations(
         }
         for entity in &native.design_dimension_locus_groups {
             note(&entity.id, "design_dimension_locus_group");
+            if let Some(projected) = ir
+                .model
+                .sketch_constraints
+                .iter()
+                .find(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
+            {
+                note(&projected.id.0, "sketch_constraint");
+            }
+        }
+        for entity in &native.design_dimension_null_locus_pairs {
+            note(&entity.id, "design_dimension_null_locus_pair");
             if let Some(projected) = ir
                 .model
                 .sketch_constraints

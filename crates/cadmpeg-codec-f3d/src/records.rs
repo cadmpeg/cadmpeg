@@ -399,6 +399,41 @@ pub struct DesignDimensionLocusPair {
     pub paired_byte_offset: u64,
 }
 
+/// Dimension frame with one null locus and one typed sketch-geometry locus.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignDimensionNullLocusPair {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Companion record containing this frame.
+    pub companion_record_index: u32,
+    /// Byte offset of the primary indexed record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: String,
+    /// Shared logical record identity.
+    pub record_index: u32,
+    /// Byte length from the primary header to the paired header.
+    pub frame_length: u64,
+    /// Byte offset of the fixed zero record reference.
+    pub null_reference_offset: u64,
+    /// Role code attached to the null record reference.
+    pub null_role: u32,
+    /// Byte offset of `null_role`.
+    pub null_role_offset: u64,
+    /// Typed sketch-geometry record.
+    pub geometry_record_index: u32,
+    /// Byte offset of `geometry_record_index`.
+    pub geometry_reference_offset: u64,
+    /// Role code attached to the typed geometry record.
+    pub geometry_role: u32,
+    /// Byte offset of `geometry_role`.
+    pub geometry_role_offset: u64,
+    /// Per-file dynamic class tag of the paired header.
+    pub paired_class_tag: String,
+    /// Byte offset of the paired indexed record header.
+    pub paired_byte_offset: u64,
+}
+
 /// One typed geometry locus and its dimension-role code.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignDimensionLocus {

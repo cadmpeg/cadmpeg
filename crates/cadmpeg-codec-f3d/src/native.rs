@@ -8,12 +8,13 @@ use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
     CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignEntityHeader, DesignMaterialAssignment, DesignObject,
-    DesignParameter, DesignParameterCompanion, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchPlacement, EdgeContinuity, EdgeOwnership, FaceSidedness,
-    LostEdgeReference, MeshSurfaceSentinel, PersistentDesignLink, PersistentReference,
-    PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
-    TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
+    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEntityHeader,
+    DesignMaterialAssignment, DesignObject, DesignParameter, DesignParameterCompanion,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference, MeshSurfaceSentinel,
+    PersistentDesignLink, PersistentReference, PersistentSubentityTag, SketchCurveIdentity,
+    SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters, TolerantVertexTail,
+    TransformHints, VertexOwnership, WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -36,6 +37,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_configurations",
     "design_dimension_locus_groups",
     "design_dimension_locus_pairs",
+    "design_dimension_null_locus_pairs",
     "design_entity_headers",
     "design_material_assignments",
     "design_objects",
@@ -75,6 +77,7 @@ macro_rules! f3d_arenas {
             design_objects: DesignObject;
             design_dimension_locus_groups: DesignDimensionLocusGroup;
             design_dimension_locus_pairs: DesignDimensionLocusPair;
+            design_dimension_null_locus_pairs: DesignDimensionNullLocusPair;
             design_parameter_companions: DesignParameterCompanion;
             design_parameter_owners: DesignParameterOwner;
             design_parameter_scopes: DesignParameterScope;
@@ -181,6 +184,9 @@ pub struct F3dNative {
     /// Counted typed loci recovered from dimensional companion graphs.
     #[serde(default)]
     pub design_dimension_locus_groups: Vec<DesignDimensionLocusGroup>,
+    /// Null-plus-typed loci recovered from dimensional companion graphs.
+    #[serde(default)]
+    pub design_dimension_null_locus_pairs: Vec<DesignDimensionNullLocusPair>,
     /// Fixed prefixes of indexed records paired with parameter owners.
     #[serde(default)]
     pub design_parameter_companions: Vec<DesignParameterCompanion>,
@@ -285,6 +291,7 @@ impl Default for F3dNative {
             design_objects: Vec::new(),
             design_dimension_locus_pairs: Vec::new(),
             design_dimension_locus_groups: Vec::new(),
+            design_dimension_null_locus_pairs: Vec::new(),
             design_parameter_companions: Vec::new(),
             design_parameter_owners: Vec::new(),
             design_parameter_scopes: Vec::new(),

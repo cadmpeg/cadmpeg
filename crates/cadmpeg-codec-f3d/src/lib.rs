@@ -507,6 +507,63 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let mut null_locus_pair_indices = HashSet::new();
+    let mut null_locus_pair_companions = HashSet::new();
+    for pair in &native.design_dimension_null_locus_pairs {
+        let native_stream = design_stream(&pair.id);
+        let unique_index = null_locus_pair_indices.insert((native_stream, pair.record_index));
+        let unique_companion =
+            null_locus_pair_companions.insert((native_stream, pair.companion_record_index));
+        let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
+        let companion_contains_frame = companion.is_some_and(|companion| {
+            pair.byte_offset >= companion.byte_offset.saturating_add(58)
+                && !native.design_parameter_owners.iter().any(|owner| {
+                    design_stream(&owner.id) == native_stream
+                        && owner.byte_offset > companion.byte_offset
+                        && owner.byte_offset <= pair.byte_offset
+                })
+        });
+        let dimension_companion = companion.is_some_and(|companion| {
+            owners_by_index
+                .get(&(native_stream, companion.owner_record_index))
+                .and_then(|owner| {
+                    parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                })
+                .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
+        });
+        let companion_has_typed_frame = locus_pair_companions
+            .contains(&(native_stream, pair.companion_record_index))
+            || locus_group_companions.contains(&(native_stream, pair.companion_record_index));
+        let valid = pair.class_tag.len() == 3
+            && pair.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && pair.paired_class_tag.len() == 3
+            && pair
+                .paired_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && companion_contains_frame
+            && dimension_companion
+            && !companion_has_typed_frame
+            && pair.frame_length > 54
+            && pair.paired_byte_offset == pair.byte_offset.saturating_add(pair.frame_length)
+            && pair.null_reference_offset == pair.byte_offset.saturating_add(25)
+            && pair.null_role_offset == pair.byte_offset.saturating_add(35)
+            && pair.geometry_reference_offset == pair.byte_offset.saturating_add(40)
+            && pair.geometry_role_offset == pair.byte_offset.saturating_add(50)
+            && sketch_geometry_indices.contains(&(native_stream, pair.geometry_record_index))
+            && unique_index
+            && unique_companion;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message:
+                    "Fusion Design null-locus dimension pair has an invalid frame or geometry link"
+                        .into(),
+                entity: Some(pair.id.clone()),
+            });
+        }
+    }
     for parameter in &native.design_parameters {
         let native_stream = design_stream(&parameter.id);
         let unique_index = parameter_indices.insert((native_stream, parameter.record_index));
@@ -770,6 +827,32 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     entity: Some(group.id.clone()),
                 });
             }
+        }
+    }
+    for pair in &native.design_dimension_null_locus_pairs {
+        let native_stream = design_stream(&pair.id);
+        let owner = companions_by_index
+            .get(&(native_stream, pair.companion_record_index))
+            .and_then(|companion| {
+                owners_by_index.get(&(native_stream, companion.owner_record_index))
+            })
+            .and_then(|parameter_owner| {
+                placements_by_scope.get(&(native_stream, parameter_owner.scope_record_index))
+            })
+            .and_then(|placement| u32::try_from(placement.entity_suffix).ok());
+        let Some(owner) = owner else {
+            continue;
+        };
+        if relation_owners
+            .insert((native_stream, pair.geometry_record_index), owner)
+            .is_some_and(|existing| existing != owner)
+        {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion sketch member belongs to multiple sketch owners".into(),
+                entity: Some(pair.id.clone()),
+            });
         }
     }
     for (id, record_index, owner_reference) in native

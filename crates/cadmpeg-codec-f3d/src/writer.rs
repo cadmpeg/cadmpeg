@@ -1150,6 +1150,7 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         || !native.design_parameter_companions.is_empty()
         || !native.design_dimension_locus_pairs.is_empty()
         || !native.design_dimension_locus_groups.is_empty()
+        || !native.design_dimension_null_locus_pairs.is_empty()
         || !native.design_parameter_owners.is_empty()
         || !native.design_parameter_scopes.is_empty()
         || !native.design_sketch_placements.is_empty()
