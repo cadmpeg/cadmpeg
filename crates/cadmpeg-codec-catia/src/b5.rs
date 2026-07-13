@@ -768,29 +768,30 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     }
     let mut position = 1;
     let surface = reference(&record.payload, &mut position)?;
-    if record.payload.get(position) != Some(&0x01) {
-        return None;
-    }
+    let mode = *record.payload.get(position)?;
     position += 1;
-    if record.payload.len() != position.checked_add(48)? {
-        return None;
-    }
-    let mut values = [0.0; 6];
-    for value in &mut values {
-        *value = f64::from_le_bytes(
-            record
-                .payload
-                .get(position..position + 8)?
-                .try_into()
-                .ok()?,
-        );
-        if !value.is_finite() {
-            return None;
+    let (start, end, control_points) = match mode {
+        0x01 if record.payload.len() == position.checked_add(48)? => {
+            let [u, v, du, dv, start, end] = line_values::<6>(&record.payload, position)?;
+            if du.abs().max(dv.abs()) <= f64::EPSILON {
+                return None;
+            }
+            (
+                start,
+                end,
+                vec![
+                    [u + start * du, v + start * dv],
+                    [u + end * du, v + end * dv],
+                ],
+            )
         }
-        position += 8;
-    }
-    let [u, v, du, dv, start, end] = values;
-    if start >= end || du.abs().max(dv.abs()) <= f64::EPSILON {
+        0x05 if record.payload.len() == position.checked_add(24)? => {
+            let [constant, start, end] = line_values::<3>(&record.payload, position)?;
+            (start, end, vec![[constant, start], [constant, end]])
+        }
+        _ => return None,
+    };
+    if start >= end {
         return None;
     }
     Some(B5Pcurve {
@@ -799,12 +800,21 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         degree: 1,
         distinct_knots: vec![start, end],
         multiplicities: vec![2, 2],
-        control_points: vec![
-            [u + start * du, v + start * dv],
-            [u + end * du, v + end * dv],
-        ],
+        control_points,
         lifted_endpoints: None,
     })
+}
+
+fn line_values<const N: usize>(payload: &[u8], mut position: usize) -> Option<[f64; N]> {
+    let mut values = [0.0; N];
+    for value in &mut values {
+        *value = f64::from_le_bytes(payload.get(position..position + 8)?.try_into().ok()?);
+        if !value.is_finite() {
+            return None;
+        }
+        position += 8;
+    }
+    Some(values)
 }
 
 fn compact(bytes: &[u8], position: &mut usize) -> Option<u32> {
