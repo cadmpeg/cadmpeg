@@ -457,6 +457,8 @@ DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]`
 A `0x99` DICT prefix maps to IEEE prefix `40 0E` in positive reads and `C0 0E` in the mirrored saved-section lane.
 In the saved-section scalar lane, `dd` maps to IEEE prefix `40 0c`; its six
 payload bytes are the remaining IEEE bytes.
+The same lane maps `cc`, `d0`, `de`, and `df` to IEEE prefixes `bf f9`,
+`bf fe`, `c0 10`, and `c0 11`, respectively.
 
 In plane `local_sys` rows, `18 e5` encodes `[0, 1, 0]`. `18 10`, `18 e4`, `18 e6`, and bare `10` encode standalone zero values under their row-specific token rules.
 
