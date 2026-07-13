@@ -1704,8 +1704,8 @@ fn typed_marker_relation_definition(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
-        Coincident, Collinear, Concentric, Equal, Fixed, Horizontal, HorizontalPoints, Midpoint,
-        Parallel, Perpendicular, Tangent, Vertical, VerticalPoints,
+        AtIntersection, Coincident, Collinear, Concentric, Equal, Fixed, Horizontal,
+        HorizontalPoints, Midpoint, Parallel, Perpendicular, Tangent, Vertical, VerticalPoints,
     };
     let SketchInputKind::Relation(kind) = marker.kind else {
         return None;
@@ -1790,8 +1790,49 @@ fn typed_marker_relation_definition(
             let (point, entity) = linked_midpoint_operands(marker, markers_by_id, loci_by_marker)?;
             SketchConstraintDefinition::Midpoint { point, entity }
         }
+        AtIntersection => {
+            let (point, first, second) =
+                linked_intersection_operands(marker, markers_by_id, loci_by_marker)?;
+            SketchConstraintDefinition::AtIntersection {
+                point,
+                first,
+                second,
+            }
+        }
         _ => return None,
     })
+}
+
+fn linked_intersection_operands(
+    marker: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<(SketchLocus, SketchEntityId, SketchEntityId)> {
+    if marker.links.len() != 3 {
+        return None;
+    }
+    let mut point = None;
+    let mut entities = Vec::new();
+    for link in &marker.links {
+        let linked_marker = markers_by_id.get(link.entity_ref.as_str())?;
+        let locus = unique_locus(loci_by_marker.get(&link.entity_ref)?)?;
+        match linked_marker.kind {
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint if point.is_none() => {
+                point = Some(locus)
+            }
+            SketchInputKind::LineOrCircle | SketchInputKind::Arc => {
+                let entity = locus_entity(&locus);
+                if !entities.contains(&entity) {
+                    entities.push(entity);
+                }
+            }
+            _ => return None,
+        }
+    }
+    let [first, second] = entities.as_slice() else {
+        return None;
+    };
+    Some((point?, first.clone(), second.clone()))
 }
 
 fn linked_midpoint_operands(
@@ -2491,6 +2532,72 @@ mod profile_join_tests {
                 point: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
                 entity: SketchEntityId("second".into()),
             })
+        );
+        let point_marker = marker("intersection-point", None);
+        let mut first_curve = marker("intersection-first", None);
+        first_curve.kind = SketchInputKind::LineOrCircle;
+        let mut second_curve = marker("intersection-second", None);
+        second_curve.kind = SketchInputKind::Arc;
+        let mut intersection = marker("intersection", None);
+        intersection.kind = SketchInputKind::Relation(SketchRelationKind::AtIntersection);
+        intersection.links = vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: point_marker.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: first_curve.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 3,
+                entity_ref: second_curve.id.clone(),
+            },
+        ];
+        let mut intersection_loci = midpoint_loci.clone();
+        intersection_loci.insert(
+            point_marker.id.clone(),
+            vec![cadmpeg_ir::sketches::SketchLocus::Start(first.clone())],
+        );
+        intersection_loci.insert(
+            first_curve.id.clone(),
+            vec![cadmpeg_ir::sketches::SketchLocus::Entity(first.clone())],
+        );
+        intersection_loci.insert(
+            second_curve.id.clone(),
+            vec![cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId(
+                "second".into(),
+            ))],
+        );
+        markers.insert(point_marker.id.as_str(), &point_marker);
+        markers.insert(first_curve.id.as_str(), &first_curve);
+        markers.insert(second_curve.id.as_str(), &second_curve);
+        assert_eq!(
+            typed_marker_relation_definition(&intersection, &markers, &intersection_loci),
+            Some(SketchConstraintDefinition::AtIntersection {
+                point: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
+                first: first.clone(),
+                second: SketchEntityId("second".into()),
+            })
+        );
+        intersection_loci.insert(
+            second_curve.id.clone(),
+            vec![cadmpeg_ir::sketches::SketchLocus::Entity(first.clone())],
+        );
+        assert_eq!(
+            typed_marker_relation_definition(&intersection, &markers, &intersection_loci),
+            None
+        );
+        intersection_loci.insert(
+            second_curve.id.clone(),
+            vec![cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId(
+                "second".into(),
+            ))],
+        );
+        intersection.links.pop();
+        assert_eq!(
+            typed_marker_relation_definition(&intersection, &markers, &intersection_loci),
+            None
         );
         let relation = FeatureInputRelationInstance {
             id: "relation".into(),

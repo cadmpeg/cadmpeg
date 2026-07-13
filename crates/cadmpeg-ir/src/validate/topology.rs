@@ -1132,6 +1132,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             Definition::Midpoint { point, entity } => {
                 (vec![locus_entity(point).clone(), entity.clone()], None)
             }
+            Definition::AtIntersection {
+                point,
+                first,
+                second,
+            } => (
+                vec![locus_entity(point).clone(), first.clone(), second.clone()],
+                None,
+            ),
             Definition::Symmetric {
                 first,
                 second,

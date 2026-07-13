@@ -347,6 +347,11 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             point: SketchLocus::End(entity.clone()),
             entity: entity.clone(),
         },
+        SketchConstraintDefinition::AtIntersection {
+            point: SketchLocus::End(entity.clone()),
+            first: entity.clone(),
+            second: entity.clone(),
+        },
         SketchConstraintDefinition::HorizontalPoints {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
