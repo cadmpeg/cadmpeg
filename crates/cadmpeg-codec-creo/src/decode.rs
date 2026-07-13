@@ -15,7 +15,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    Angle, DesignParameter, Feature, FeatureDefinition as IrFeatureDefinition,
+    FeatureId as IrFeatureId, ParameterId, ParameterValue,
 };
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::hash::sha256_hex;
@@ -275,6 +276,76 @@ fn transfer_resolved_sketches(
             profiles: Vec::new(),
             native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
         });
+    }
+}
+
+fn transfer_feature_dimensions(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) {
+    let feature_ids = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.clone())
+        .collect::<BTreeSet<_>>();
+    for definition in &scan.feature_definitions {
+        let owner = IrFeatureId(format!("creo:mdlstatus:feature#{}", definition.id));
+        if !feature_ids.contains(&owner) {
+            continue;
+        }
+        let Some(table) = &definition.dimensions else {
+            continue;
+        };
+        for (ordinal, dimension) in table.rows.iter().enumerate() {
+            let Some(value) = dimension.value else {
+                continue;
+            };
+            let id = ParameterId(format!(
+                "creo:featdefs:parameter#{}:{}",
+                definition.id, dimension.external_id
+            ));
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                dimension.offset as u64,
+                "section_dimension",
+                Exactness::Derived,
+            );
+            let mut properties = BTreeMap::from([
+                (
+                    "dimension_type".to_string(),
+                    dimension.dimension_type.to_string(),
+                ),
+                (
+                    "direction_byte".to_string(),
+                    dimension.direction_byte.to_string(),
+                ),
+            ]);
+            if let Some(auxiliary) = dimension.auxiliary_value {
+                properties.insert("auxiliary_value".to_string(), auxiliary.to_string());
+            }
+            let expression = value.to_string();
+            let value = match dimension.value_unit {
+                crate::feature::DimensionUnit::Radians => ParameterValue::Angle(Angle(value)),
+                crate::feature::DimensionUnit::SchemaDefined => ParameterValue::Real(value),
+            };
+            ir.model.parameters.push(DesignParameter {
+                id,
+                owner: owner.clone(),
+                ordinal: ordinal as u32,
+                name: format!("d{}", dimension.external_id),
+                expression,
+                display: None,
+                value: Some(value),
+                dependencies: Vec::new(),
+                properties,
+                pmi: None,
+                native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+            });
+        }
     }
 }
 
@@ -1223,6 +1294,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             native_ref: None,
         });
     }
+    transfer_feature_dimensions(scan, &mut ir, &mut annotations);
     let sketches = sketch_records(scan);
     if !sketches.is_empty() {
         for sketch in &sketches {

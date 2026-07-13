@@ -944,6 +944,38 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
 }
 
 #[test]
+fn decode_transfers_feature_dimensions_as_owned_parameters() {
+    let payload = b"feat_defs_40\0\xe0\x00gsec2d_ptr\0\
+        dimtab_ptr\0\xf8\x01\xf7\x81\x02\xfb\xe2\
+        \xe0\x01type\0\x0a\xe0\x01value\0\xe4\
+        \xe0\x01direct\0\x01\xe0\x01aux_value\0\x0f\
+        \xe0\x01ext_id\0\x2a\xe0\x00relat_ptr\0"
+        .to_vec();
+    let data = build_prt(
+        "c",
+        &[
+            ("FeatDefs", payload),
+            ("MdlStatus", b"Extrude id 40\0".to_vec()),
+        ],
+    );
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+
+    assert_eq!(result.ir.model.parameters.len(), 1);
+    let parameter = &result.ir.model.parameters[0];
+    assert_eq!(parameter.owner.as_str(), "creo:mdlstatus:feature#40");
+    assert_eq!(parameter.name, "d42");
+    assert_eq!(parameter.expression, "1");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Angle(
+            cadmpeg_ir::features::Angle(1.0)
+        ))
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn scan_decodes_counted_featdefs_constraint_relations() {
     let payload = b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x04\xf7\x6a\xfb\xe2\
         \xe0\x01id\0\xe0\x01used\0\xe0\x01type\0\xf1\xf7\x6a\xe2\

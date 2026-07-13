@@ -296,6 +296,11 @@ ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, 
 
 An arc radius is the distance from its center to an endpoint in `var_arr`. A trim-vertex identifier is distinct from a `segtab` point identifier.
 
+`gsec2d_ptr.dimtab_ptr` stores ordered feature dimensions. Each row contains
+`type`, `value`, `direct`, `aux_value`, and `ext_id`; type `0x0a` is an angular
+dimension whose `value` is in radians. `ext_id` is the dimension identity
+within the owning feature definition.
+
 A `segtab` line whose two endpoint identifiers each have complete type-1 and
 type-2 `var_arr` values is the bounded segment between those two `[u, v]`
 points. It is construction geometry when its `ext_id` is absent from
