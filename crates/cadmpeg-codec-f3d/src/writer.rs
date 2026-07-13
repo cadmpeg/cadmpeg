@@ -14957,38 +14957,25 @@ fn patch_vector_offset_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("vector-offset record is truncated".into()))?;
-    if !record_bytes
-        .windows(b"offset_int_cur".len())
-        .any(|window| window == b"offset_int_cur")
-    {
-        return Err(CodecError::Malformed(format!(
-            "procedural curve record {} is not a vector offset",
-            record.index
-        )));
-    }
-    let source = crate::nurbs::first_curve_patch_layout(record_bytes).ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "vector-offset record {} has no source curve",
-            record.index
-        ))
-    })?;
-    for (ordinal, value) in parameter_range.iter().copied().enumerate() {
-        let tag = record.offset + source.end + ordinal * 9;
-        if bytes.get(tag) != Some(&0x06) {
-            return Err(CodecError::Malformed(format!(
-                "vector-offset record {} has no parameter range",
+    let layout = crate::nurbs::vector_offset_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "vector-offset record {} lacks writable construction fields",
                 record.index
-            )));
-        }
-        bytes[tag + 1..tag + 9].copy_from_slice(&value.to_le_bytes());
+            ))
+        })?;
+    for (offset, value) in layout.parameter_range.into_iter().zip(*parameter_range) {
+        let at = record.offset + offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
-    patch_vec3_token(
-        bytes,
-        record,
-        0x14,
-        0,
-        [offset.x / 10.0, offset.y / 10.0, offset.z / 10.0],
-    )
+    for (component, value) in [offset.x / 10.0, offset.y / 10.0, offset.z / 10.0]
+        .into_iter()
+        .enumerate()
+    {
+        let at = record.offset + layout.offset + component * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    Ok(())
 }
 
 fn patch_subset_definition(

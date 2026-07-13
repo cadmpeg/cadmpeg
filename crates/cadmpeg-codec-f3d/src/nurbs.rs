@@ -4822,6 +4822,40 @@ pub(crate) struct HelixPatchLayout {
     pub(crate) axis: usize,
 }
 
+/// Writable fields following the source cache in an `offset_int_cur` subtype.
+pub(crate) struct VectorOffsetPatchLayout {
+    pub(crate) parameter_range: [usize; 2],
+    pub(crate) offset: usize,
+}
+
+/// Locate vector-offset fields by consuming the wrapper flag and source curve.
+pub(crate) fn vector_offset_patch_layout(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<VectorOffsetPatchLayout> {
+    let name = b"offset_int_cur";
+    let marker = bytes.windows(name.len() + 3).position(|window| {
+        window[0] == 0x0f
+            && matches!(window[1], 0x0d | 0x0e)
+            && usize::from(window[2]) == name.len()
+            && &window[3..] == name
+    })?;
+    subtype_span(bytes, marker, int_width)?;
+    let mut position = marker + name.len() + 3;
+    take_bool(bytes, &mut position)?;
+    position = decode_curve_block(bytes, position, int_width)?.end;
+    let parameter_range = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    let offset = position + 1;
+    take_native_vec3(bytes, &mut position, 0x14)?;
+    Some(VectorOffsetPatchLayout {
+        parameter_range,
+        offset,
+    })
+}
+
 /// Locate helix fields by consuming the subtype prefix grammar.
 pub(crate) fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<HelixPatchLayout> {
     let name = b"helix_int_cur";
@@ -6734,6 +6768,39 @@ mod width_tests {
             assert_eq!(
                 f64::from_le_bytes(bytes[layout.axis..layout.axis + 8].try_into().unwrap()),
                 16.0
+            );
+        }
+    }
+
+    #[test]
+    fn vector_offset_layout_ignores_outer_vectors_at_both_widths() {
+        for int_width in [4usize, 8] {
+            let mut bytes = Vec::new();
+            push_f64(&mut bytes, 99.0);
+            push_vector(&mut bytes, [90.0, 91.0, 92.0]);
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "offset_int_cur");
+            bytes.push(0x0b);
+            bytes.extend_from_slice(&curve_block(int_width));
+            push_f64(&mut bytes, -2.0);
+            push_f64(&mut bytes, 5.0);
+            push_vector(&mut bytes, [0.5, -1.0, 2.0]);
+            push_string(&mut bytes, "source");
+            push_int(&mut bytes, 0x04, 7, int_width);
+            push_string(&mut bytes, "offset");
+            push_int(&mut bytes, 0x04, 9, int_width);
+            bytes.extend_from_slice(&curve_block(int_width));
+            bytes.push(0x10);
+
+            let layout = vector_offset_patch_layout(&bytes, int_width)
+                .unwrap_or_else(|| panic!("vector-offset layout at width {int_width}"));
+            let range = layout
+                .parameter_range
+                .map(|offset| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()));
+            assert_eq!(range, [-2.0, 5.0]);
+            assert_eq!(
+                f64::from_le_bytes(bytes[layout.offset..layout.offset + 8].try_into().unwrap()),
+                0.5
             );
         }
     }
