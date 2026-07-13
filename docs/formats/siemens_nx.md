@@ -215,7 +215,7 @@ A **body-shape SHELL** requires the invariant fields `attributes`, `next_shell`,
 | Entity   | Rule                                                                  |
 | -------- | --------------------------------------------------------------------- |
 | vertices | FIN-referenced VERTEX nodes; coordinates from same-stream POINT nodes |
-| edges    | one per EDGE node; native endpoint incidence is `EDGE.fin → FIN.vertex` and `FIN.other_fin → FIN.vertex`, with null `other_fin` falling back to `FIN.forward_fin → FIN.vertex`; canonical start/end order follows increasing curve parameter; the curve resolves through `EDGE.curve` |
+| edges    | one per EDGE node; native endpoint incidence is `EDGE.fin → FIN.vertex` and `FIN.other_fin → FIN.vertex`, with null `other_fin` falling back to `FIN.forward_fin → FIN.vertex`; canonical start/end order follows increasing curve parameter; the carrier resolves through non-null `EDGE.curve`, otherwise through the owning `FIN.curve` |
 | loops    | walked from `FACE.loop` through the null-terminated LOOP chain; each FIN ring closes at its first FIN with reciprocal forward/backward links; non-null partner FINs reciprocally reference one another and carry the same EDGE |
 | faces    | one per FACE node, with resolved surface when available               |
 | bodies   | one per validated body-shape SHELL                                    |
@@ -227,7 +227,24 @@ emitted FACE or EDGE references it. Fixed-record scanner candidates outside the
 resolved body closure do not create free unknown carriers.
 An edge's two serialized trim limits are an unordered interval. Canonical start/end order follows evaluation at the ascending limits. A periodic interval is then normalized by reducing its start modulo `2π` and preserving its nonnegative sweep; a seam-crossing interval therefore ends above `2π`.
 
-An EDGE may carry null curve reference `1` with a finite tolerance. This is a tolerant intersection edge: its carrier is the intersection relation between the two distinct surfaces reached through its radial FIN pair, bounded by the EDGE vertices, within the serialized edge tolerance. Transfer represents the relation as a procedural intersection carrier with the two face surfaces; it does not synthesize a line between the vertices. A null-curve edge without exactly two distinct adjacent support surfaces remains carrierless.
+An EDGE may carry null curve reference `1` with a finite tolerance. With a null
+owning `FIN.curve`, this is a tolerant intersection edge: its carrier is the
+intersection relation between the two distinct surfaces reached through its
+radial FIN pair, bounded by the EDGE vertices, within the serialized edge
+tolerance. Transfer represents the relation as a procedural intersection
+carrier with the two face surfaces; it does not synthesize a line between the
+vertices. A null EDGE and FIN curve without exactly two distinct adjacent
+support surfaces remains carrierless.
+A null `EDGE.curve` may instead have a non-null owning `FIN.curve`. The FIN
+reference is the carrier path. When it resolves through
+`TRIMMED_CURVE → SP_CURVE` whose original 3D curve is null, the SP_CURVE's
+surface and pcurve define a procedural parametric surface curve. Its finite
+domain is the trim interval, or the solved NURBS pcurve knot domain when the FIN
+references the SP_CURVE directly.
+A FIN pcurve attaches to a coedge only when evaluation through that face's
+surface reaches both edge vertices within the larger of the edge, vertex, and
+pcurve fit tolerances. A pcurve carried on a different support remains part of
+the procedural curve construction but is not attached to that face.
 A body is solid when every assembled EDGE has exactly two FIN uses in that body. A body with faces and any edge-use count other than two is a sheet body.
 
 BODY, REGION, and SHELL records contain no placement reference. POINT coordinates and the origins and axes stored by curve and surface carriers are part-model coordinates. An inline Parasolid body's part placement is therefore the identity transform.

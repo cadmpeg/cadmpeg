@@ -13,8 +13,8 @@ use flate2::Compression;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralSurfaceDefinition,
-    SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::report::LossCategory;
@@ -915,6 +915,11 @@ fn decode_retains_native_carrierless_edge() {
         .position(|window| window == [0, 16])
         .expect("edge record");
     put_ref(&mut stream, edge + 24, 1);
+    let fin = stream
+        .windows(2)
+        .position(|window| window == [0, 17])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 18, 1);
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
@@ -3406,6 +3411,44 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
         result.ir.model.edges[0].curve.as_ref(),
         Some(&result.ir.model.curves[0].id)
     );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
+    let mut stream = pcurve_topology_partition_stream();
+    let edge = stream
+        .windows(4)
+        .position(|window| window == [0, 16, 0, 8])
+        .expect("edge record");
+    put_ref(&mut stream, edge + 24, 1);
+    let surface_curve = stream
+        .windows(4)
+        .position(|window| window == [0, 137, 0, 25])
+        .expect("surface curve");
+    put_ref(&mut stream, surface_curve + 23, 1);
+
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let carrier = result.ir.model.edges[0]
+        .curve
+        .as_ref()
+        .and_then(|id| result.ir.model.curves.iter().find(|curve| &curve.id == id))
+        .expect("lifted carrier");
+    assert!(matches!(carrier.geometry, CurveGeometry::Procedural { .. }));
+    let ProceduralCurveDefinition::SurfaceCurve {
+        family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric,
+        context,
+    } = &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("parametric surface curve");
+    };
+    assert_eq!(
+        context.sides[0].surface,
+        Some(result.ir.model.faces[0].surface.clone())
+    );
+    assert!(context.sides[0].pcurve.is_some());
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 

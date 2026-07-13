@@ -23,7 +23,7 @@ use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
     IntcurveSupportSide, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -164,6 +164,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         let mut surfaces_by_xmt = BTreeMap::new();
         let mut curves_by_xmt = BTreeMap::new();
         let mut pcurves_by_xmt = BTreeMap::new();
+        let mut pcurve_supports_by_xmt = BTreeMap::new();
         let mut trim_ranges = BTreeMap::new();
         let mut pending_blend_supports = Vec::new();
         let mut pending_blend_spines = Vec::new();
@@ -601,8 +602,10 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         }
 
         let trimmed_curves = crate::topology::trimmed_curves(semantic);
+        let mut normalized_pcurves = BTreeSet::new();
+        let surface_curves = crate::topology::surface_curves(semantic);
         loop {
-            let mapped = curves_by_xmt.len() + pcurves_by_xmt.len();
+            let mapped = curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len();
             for trim in &trimmed_curves {
                 if let Some(basis) = curves_by_xmt.get(&trim.basis).cloned() {
                     let parameters = canonical_trim_range(&ir, &basis, trim.parameters);
@@ -616,16 +619,12 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                         carrier.parameter_range = Some(trim.parameters);
                     }
                     pcurves_by_xmt.insert(trim.xmt, pcurve);
+                    if let Some(support) = pcurve_supports_by_xmt.get(&trim.basis).cloned() {
+                        pcurve_supports_by_xmt.insert(trim.xmt, support);
+                    }
+                    trim_ranges.insert(trim.xmt, trim.parameters);
                 }
             }
-            if curves_by_xmt.len() + pcurves_by_xmt.len() == mapped {
-                break;
-            }
-        }
-        let mut normalized_pcurves = BTreeSet::new();
-        let surface_curves = crate::topology::surface_curves(semantic);
-        loop {
-            let mapped = curves_by_xmt.len() + pcurves_by_xmt.len();
             for surface_curve in &surface_curves {
                 if let Some(pcurve) = pcurves_by_xmt.get(&surface_curve.pcurve).cloned() {
                     if normalized_pcurves.insert(pcurve.clone()) {
@@ -649,12 +648,15 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                         carrier.fit_tolerance = Some(surface_curve.tolerance * 1000.0);
                     }
                     pcurves_by_xmt.insert(surface_curve.xmt, pcurve);
+                    if let Some(support) = surfaces_by_xmt.get(&surface_curve.surface).cloned() {
+                        pcurve_supports_by_xmt.insert(surface_curve.xmt, support);
+                    }
                 }
                 if let Some(original) = curves_by_xmt.get(&surface_curve.original).cloned() {
                     curves_by_xmt.insert(surface_curve.xmt, original);
                 }
             }
-            if curves_by_xmt.len() + pcurves_by_xmt.len() == mapped {
+            if curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len() == mapped {
                 break;
             }
         }
@@ -677,6 +679,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             &surfaces_by_xmt,
             &curves_by_xmt,
             &pcurves_by_xmt,
+            &pcurve_supports_by_xmt,
             &trim_ranges,
             source_stream,
             &mut annotations,
@@ -1399,7 +1402,7 @@ fn normalize_pcurve_parameters(pcurve: &mut PcurveGeometry, surface: &SurfaceGeo
 }
 
 // The parameters are the per-stream lookup tables produced by the decode pass;
-// bundling them into a struct would only rename the same eight things.
+// bundling them into a struct would only rename the same lookup tables.
 #[allow(clippy::too_many_arguments)]
 fn emit_topology(
     ir: &mut CadIr,
@@ -1409,6 +1412,7 @@ fn emit_topology(
     surfaces: &BTreeMap<u32, SurfaceId>,
     curves: &BTreeMap<u32, CurveId>,
     pcurves: &BTreeMap<u32, PcurveId>,
+    pcurve_supports: &BTreeMap<u32, SurfaceId>,
     trim_ranges: &BTreeMap<u32, [f64; 2]>,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
@@ -1579,9 +1583,76 @@ fn emit_topology(
         let Some(fin_fields) = fin.fin_fields() else {
             continue;
         };
-        let curve_xmt = Some(fields.curve);
+        let curve_xmt = [fields.curve, fin_fields.curve_xmt]
+            .into_iter()
+            .find(|xmt| *xmt > 1);
         let mut curve = curve_xmt.and_then(|xmt| curves.get(&xmt)).cloned();
         let mut param_range = curve_xmt.and_then(|xmt| trim_ranges.get(&xmt)).copied();
+        if curve.is_none() {
+            let lifted = curve_xmt
+                .and_then(|xmt| pcurves.get(&xmt))
+                .and_then(|pcurve_id| {
+                    let pcurve = ir
+                        .model
+                        .pcurves
+                        .iter()
+                        .find(|pcurve| &pcurve.id == pcurve_id)?;
+                    let surface = pcurve_supports.get(&curve_xmt?)?.clone();
+                    let parameter_range = pcurve
+                        .parameter_range
+                        .or(param_range)
+                        .or_else(|| pcurve_parameter_range(&pcurve.geometry))?;
+                    let parameter_range = ordered_parameter_range(parameter_range)?;
+                    Some((
+                        surface,
+                        pcurve.geometry.clone(),
+                        parameter_range,
+                        pcurve.fit_tolerance,
+                    ))
+                });
+            if let Some((surface, pcurve, parameter_range, fit_tolerance)) = lifted {
+                let carrier = CurveId(format!("{prefix}:edge-parametric-curve#{}", node.xmt));
+                let construction = ProceduralCurveId(format!(
+                    "{prefix}:edge-parametric-construction#{}",
+                    node.xmt
+                ));
+                annotations
+                    .note(&carrier, source_stream, node.pos as u64)
+                    .tag("PARAMETRIC_SURFACE_CURVE");
+                annotations.derived(&carrier, "geometry");
+                ir.model.curves.push(Curve {
+                    id: carrier.clone(),
+                    geometry: CurveGeometry::Procedural {
+                        construction: construction.clone(),
+                    },
+                    source_object: None,
+                });
+                ir.model.procedural_curves.push(ProceduralCurve {
+                    id: construction,
+                    curve: carrier.clone(),
+                    definition: ProceduralCurveDefinition::SurfaceCurve {
+                        family: SurfaceCurveFamily::Parametric,
+                        context: IntcurveSupportContext {
+                            sides: [
+                                IntcurveSupportSide {
+                                    surface: Some(surface),
+                                    pcurve: Some(pcurve),
+                                },
+                                IntcurveSupportSide {
+                                    surface: None,
+                                    pcurve: None,
+                                },
+                            ],
+                            parameter_range,
+                            discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                        },
+                    },
+                    cache_fit_tolerance: fit_tolerance,
+                });
+                curve = Some(carrier);
+                param_range = None;
+            }
+        }
         let start = vertices.get(&fin_fields.vertex).cloned().or_else(|| {
             (fin_fields.vertex == 1
                 && fin_fields.forward == fin.xmt
@@ -1797,7 +1868,32 @@ fn emit_topology(
             .expect("validated FIN ring resolves backward link");
         let partner = fin_ids.get(&fields.other).cloned();
         let radial_next = partner.clone().unwrap_or_else(|| id.clone());
-        let mut pcurve = pcurves.get(&fields.curve_xmt).cloned();
+        let support = graph
+            .get(15, fields.loop_xmt)
+            .and_then(Node::loop_fields)
+            .and_then(|loop_| graph.get(14, loop_.face))
+            .and_then(Node::face_fields)
+            .and_then(|face| surfaces.get(&face.surface))
+            .cloned();
+        let mut pcurve = pcurves.get(&fields.curve_xmt).cloned().filter(|id| {
+            let Some((carrier, support)) = ir
+                .model
+                .pcurves
+                .iter()
+                .find(|carrier| &carrier.id == id)
+                .zip(support.as_ref())
+            else {
+                return false;
+            };
+            pcurve_matches_edge_range(
+                ir,
+                &edge,
+                support,
+                &carrier.geometry,
+                carrier.parameter_range,
+                carrier.fit_tolerance,
+            )
+        });
         if pcurve.is_none() {
             let carrier = ir
                 .model
@@ -1805,13 +1901,6 @@ fn emit_topology(
                 .iter()
                 .find(|candidate| candidate.id == edge)
                 .and_then(|edge| edge.curve.clone());
-            let support = graph
-                .get(15, fields.loop_xmt)
-                .and_then(Node::loop_fields)
-                .and_then(|loop_| graph.get(14, loop_.face))
-                .and_then(Node::face_fields)
-                .and_then(|face| surfaces.get(&face.surface))
-                .cloned();
             if let Some((_support, geometry, parameter_range, fit_tolerance)) = carrier
                 .zip(support)
                 .and_then(|key| {
@@ -1885,6 +1974,23 @@ fn emit_topology(
     ir.model.vertices.retain(|vertex| {
         !vertex.id.0.starts_with(&prefix) || retained_vertices.contains(&vertex.id)
     });
+}
+
+fn pcurve_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    let PcurveGeometry::Nurbs { knots, .. } = geometry else {
+        return None;
+    };
+    ordered_parameter_range([*knots.first()?, *knots.last()?])
+}
+
+fn ordered_parameter_range(mut range: [f64; 2]) -> Option<[f64; 2]> {
+    if !range.iter().all(|value| value.is_finite()) || range[0] == range[1] {
+        return None;
+    }
+    if range[0] > range[1] {
+        range.swap(0, 1);
+    }
+    Some(range)
 }
 
 pub(crate) fn attach_tolerant_edge_intersections(
@@ -1994,6 +2100,17 @@ pub(crate) fn pcurve_matches_edge(
     geometry: &PcurveGeometry,
     fit_tolerance: Option<f64>,
 ) -> bool {
+    pcurve_matches_edge_range(ir, edge_id, surface_id, geometry, None, fit_tolerance)
+}
+
+fn pcurve_matches_edge_range(
+    ir: &CadIr,
+    edge_id: &EdgeId,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    parameter_range: Option<[f64; 2]>,
+    fit_tolerance: Option<f64>,
+) -> bool {
     let Some(edge) = ir.model.edges.iter().find(|edge| &edge.id == edge_id) else {
         return false;
     };
@@ -2003,10 +2120,7 @@ pub(crate) fn pcurve_matches_edge(
         .iter()
         .find(|surface| &surface.id == surface_id)
         .and_then(|surface| {
-            let [t0, t1] = match geometry {
-                PcurveGeometry::Nurbs { knots, .. } => [*knots.first()?, *knots.last()?],
-                PcurveGeometry::Line { .. } => return None,
-            };
+            let [t0, t1] = parameter_range.or_else(|| pcurve_parameter_range(geometry))?;
             let uv = [pcurve_uv(geometry, t0)?, pcurve_uv(geometry, t1)?];
             Some([
                 surface_point(&surface.geometry, uv[0].u, uv[0].v)?,
