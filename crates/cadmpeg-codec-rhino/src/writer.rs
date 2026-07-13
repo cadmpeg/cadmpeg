@@ -7,6 +7,7 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
+use sha2::{Digest, Sha256};
 
 use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
 
@@ -17,6 +18,7 @@ const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
 const TCODE_UNITS_AND_TOLERANCES: u32 = 0x2000_8031;
 const TCODE_OBJECT_RECORD: u32 = 0x2000_8070;
 const TCODE_OBJECT_RECORD_TYPE: u32 = 0x0200_0071;
+const TCODE_OBJECT_RECORD_ATTRIBUTES: u32 = 0x0200_8072;
 const TCODE_OBJECT_RECORD_END: u32 = 0x0200_007f;
 const TCODE_CLASS_WRAPPER: u32 = 0x0002_7ffa;
 const TCODE_CLASS_UUID: u32 = 0x0002_fffb;
@@ -58,10 +60,23 @@ const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
     check_representable(ir)?;
     if let Some(payload) = planar_sheet_brep_payload(ir)? {
+        let body = ir
+            .model
+            .bodies
+            .first()
+            .expect("a writable sheet Brep has one body");
         return write_archive(
             ir,
             version,
-            vec![object_record(0x10, BREP_CLASS, &payload)],
+            vec![attributed_object_record(
+                0x10,
+                BREP_CLASS,
+                &payload,
+                &body.id.0,
+                body.name.as_deref(),
+                body.color,
+                body.visible,
+            )?],
             output,
         );
     }
@@ -81,20 +96,32 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             object_record(1, POINT_CLASS, &payload)
         })
         .collect::<Vec<_>>();
-    for points in point_groups {
-        if points.len() == 1 {
-            let point = points[0];
+    for group in point_groups {
+        if group.points.len() == 1 {
+            let point = group.points[0];
             let mut payload = vec![0x10];
             payload.extend(point.x.to_le_bytes());
             payload.extend(point.y.to_le_bytes());
             payload.extend(point.z.to_le_bytes());
-            objects.push(object_record(1, POINT_CLASS, &payload));
+            objects.push(attributed_object_record(
+                1,
+                POINT_CLASS,
+                &payload,
+                &group.identity,
+                group.name.as_deref(),
+                group.color,
+                group.visible,
+            )?);
         } else {
-            objects.push(object_record(
+            objects.push(attributed_object_record(
                 2,
                 POINT_CLOUD_CLASS,
-                &point_cloud_payload(&points),
-            ));
+                &point_cloud_payload(&group.points),
+                &group.identity,
+                group.name.as_deref(),
+                group.color,
+                group.visible,
+            )?);
         }
     }
     for curve in &ir.model.curves {
@@ -310,16 +337,12 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
             "planar sheet writing currently requires one polygonal face with disjoint loops".into(),
         ));
     }
-    if body.regions.len() != 1
-        || body.transform.is_some()
-        || body.name.is_some()
-        || body.color.is_some()
-        || body.visible.is_some()
-    {
+    if body.regions.len() != 1 || body.transform.is_some() {
         return Err(CodecError::NotImplemented(
-            "planar sheet body display state or placement is not writable".into(),
+            "planar sheet body placement is not writable".into(),
         ));
     }
+    check_object_attributes(&body.id.0, body.name.as_deref(), body.color)?;
     let region = &model.regions[0];
     let shell = &model.shells[0];
     let face = &model.faces[0];
@@ -856,10 +879,15 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
     Ok(())
 }
 
-type PointGroups = (
-    std::collections::BTreeSet<String>,
-    Vec<Vec<cadmpeg_ir::math::Point3>>,
-);
+struct PointGroup {
+    points: Vec<cadmpeg_ir::math::Point3>,
+    identity: String,
+    name: Option<String>,
+    color: Option<cadmpeg_ir::topology::Color>,
+    visible: Option<bool>,
+}
+
+type PointGroups = (std::collections::BTreeSet<String>, Vec<PointGroup>);
 
 fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
     use cadmpeg_ir::topology::BodyKind;
@@ -871,18 +899,13 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
     let mut points = std::collections::BTreeSet::new();
     let mut groups = Vec::with_capacity(model.bodies.len());
     for body in &model.bodies {
-        if body.kind != BodyKind::General
-            || body.regions.len() != 1
-            || body.transform.is_some()
-            || body.name.is_some()
-            || body.color.is_some()
-            || body.visible.is_some()
-        {
+        if body.kind != BodyKind::General || body.regions.len() != 1 || body.transform.is_some() {
             return Err(CodecError::NotImplemented(format!(
-                "body {} is not a plain free-vertex body",
+                "body {} is not a free-vertex body without placement",
                 body.id.0
             )));
         }
+        check_object_attributes(&body.id.0, body.name.as_deref(), body.color)?;
         let region = model
             .regions
             .iter()
@@ -945,7 +968,13 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
             }
             group.push(point.position);
         }
-        groups.push(group);
+        groups.push(PointGroup {
+            points: group,
+            identity: body.id.0.clone(),
+            name: body.name.clone(),
+            color: body.color,
+            visible: body.visible,
+        });
     }
     if regions.len() != model.regions.len()
         || shells.len() != model.shells.len()
@@ -1449,6 +1478,33 @@ fn mesh_buffer(data: &[u8]) -> Vec<u8> {
 }
 
 fn object_record(object_type: i64, class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
+    framed_object_record(object_type, class_uuid, payload, None)
+}
+
+fn attributed_object_record(
+    object_type: i64,
+    class_uuid: [u8; 16],
+    payload: &[u8],
+    identity: &str,
+    name: Option<&str>,
+    color: Option<cadmpeg_ir::topology::Color>,
+    visible: Option<bool>,
+) -> Result<Vec<u8>, CodecError> {
+    check_object_attributes(identity, name, color)?;
+    Ok(framed_object_record(
+        object_type,
+        class_uuid,
+        payload,
+        Some(object_attributes_payload(identity, name, color, visible)),
+    ))
+}
+
+fn framed_object_record(
+    object_type: i64,
+    class_uuid: [u8; 16],
+    payload: &[u8],
+    attributes: Option<Vec<u8>>,
+) -> Vec<u8> {
     let object_type = short_chunk(TCODE_OBJECT_RECORD_TYPE, object_type);
     let mut uuid_body = class_uuid.to_vec();
     uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
@@ -1457,10 +1513,79 @@ fn object_record(object_type: i64, class_uuid: [u8; 16], payload: &[u8]) -> Vec<
     let class_end = short_chunk(TCODE_CLASS_END, 0);
     let class = long_chunk(TCODE_CLASS_WRAPPER, &[uuid, class_data, class_end].concat());
     let object_end = short_chunk(TCODE_OBJECT_RECORD_END, 0);
-    crc_chunk(
-        TCODE_OBJECT_RECORD,
-        &[object_type, class, object_end].concat(),
-    )
+    let mut body = [object_type, class].concat();
+    if let Some(attributes) = attributes {
+        body.extend(crc_chunk(TCODE_OBJECT_RECORD_ATTRIBUTES, &attributes));
+    }
+    body.extend(object_end);
+    crc_chunk(TCODE_OBJECT_RECORD, &body)
+}
+
+fn check_object_attributes(
+    identity: &str,
+    name: Option<&str>,
+    color: Option<cadmpeg_ir::topology::Color>,
+) -> Result<(), CodecError> {
+    if identity.is_empty() || name.is_some_and(|value| value.contains('\0')) {
+        return Err(CodecError::Malformed(format!(
+            "object {identity} has an invalid identity or name"
+        )));
+    }
+    if color.is_some_and(|value| {
+        [value.r, value.g, value.b, value.a]
+            .into_iter()
+            .any(|channel| !channel.is_finite() || !(0.0..=1.0).contains(&channel))
+    }) {
+        return Err(CodecError::Malformed(format!(
+            "object {identity} has an invalid color"
+        )));
+    }
+    Ok(())
+}
+
+fn object_attributes_payload(
+    identity: &str,
+    name: Option<&str>,
+    color: Option<cadmpeg_ir::topology::Color>,
+    visible: Option<bool>,
+) -> Vec<u8> {
+    let digest = Sha256::digest(identity.as_bytes());
+    let mut payload = vec![0x20];
+    payload.extend(&digest[..16]);
+    payload.extend((-1_i32).to_le_bytes());
+    if let Some(name) = name {
+        payload.push(1);
+        payload.extend(utf16(name));
+    }
+    if let Some(color) = color {
+        payload.push(6);
+        payload.extend([
+            unit_color_channel(color.r),
+            unit_color_channel(color.g),
+            unit_color_channel(color.b),
+            unit_color_channel(1.0 - color.a),
+        ]);
+        payload.extend([13, 1]);
+    }
+    if let Some(visible) = visible {
+        payload.extend([11, u8::from(visible)]);
+    }
+    payload.push(0);
+    payload
+}
+
+fn unit_color_channel(value: f32) -> u8 {
+    (value * 255.0).round() as u8
+}
+
+fn utf16(value: &str) -> Vec<u8> {
+    let mut units = value.encode_utf16().collect::<Vec<_>>();
+    units.push(0);
+    let mut bytes = (units.len() as u32).to_le_bytes().to_vec();
+    for unit in units {
+        bytes.extend(unit.to_le_bytes());
+    }
+    bytes
 }
 
 #[cfg(test)]
@@ -1791,9 +1916,14 @@ mod tests {
             kind: cadmpeg_ir::topology::BodyKind::General,
             regions: vec![region_id.clone()],
             transform: None,
-            name: None,
-            color: None,
-            visible: None,
+            name: Some("survey points".into()),
+            color: Some(cadmpeg_ir::topology::Color {
+                r: 1.0,
+                g: 0.0,
+                b: 128.0 / 255.0,
+                a: 1.0,
+            }),
+            visible: Some(false),
         });
         ir.model.regions.push(cadmpeg_ir::topology::Region {
             id: region_id.clone(),
@@ -1828,6 +1958,12 @@ mod tests {
         assert_eq!(decoded.ir.model.bodies.len(), 1);
         assert_eq!(decoded.ir.model.vertices.len(), 2);
         assert_eq!(decoded.ir.model.points.len(), 2);
+        assert_eq!(
+            decoded.ir.model.bodies[0].name.as_deref(),
+            Some("survey points")
+        );
+        assert_eq!(decoded.ir.model.bodies[0].color, ir.model.bodies[0].color);
+        assert_eq!(decoded.ir.model.bodies[0].visible, Some(false));
     }
 
     #[test]
@@ -1900,6 +2036,39 @@ mod tests {
             Point3::new(0.0, 2.0, 0.0),
         ]);
         assert_planar_sheet_round_trip(&ir, 1, 4);
+    }
+
+    #[test]
+    fn planar_sheet_round_trips_object_attributes() {
+        let mut ir = polygon_sheet(&[
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+        ]);
+        ir.model.bodies[0].name = Some("named sheet".into());
+        ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
+            r: 64.0 / 255.0,
+            g: 128.0 / 255.0,
+            b: 1.0,
+            a: 192.0 / 255.0,
+        });
+        ir.model.bodies[0].visible = Some(false);
+        for version in [
+            RhinoArchiveVersion::V5,
+            RhinoArchiveVersion::V6,
+            RhinoArchiveVersion::V7,
+            RhinoArchiveVersion::V8,
+        ] {
+            let mut bytes = Vec::new();
+            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            let body = &decoded.ir.model.bodies[0];
+            assert_eq!(body.name.as_deref(), Some("named sheet"), "{version:?}");
+            assert_eq!(body.color, ir.model.bodies[0].color, "{version:?}");
+            assert_eq!(body.visible, Some(false), "{version:?}");
+        }
     }
 
     #[test]
