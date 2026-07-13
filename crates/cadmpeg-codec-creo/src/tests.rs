@@ -962,13 +962,15 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
 #[test]
 fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     let mut payload = b"feat_defs_40\0\xe0\x00gsec2d_ptr\0\
-        dimtab_ptr\0\xf8\x02\xf7\x81\x02\xfb\xe2\
+        dimtab_ptr\0\xf8\x03\xf7\x81\x02\xfb\xe2\
         \xe0\x01type\0\x0a\xe0\x01value\0\xe4\
         \xe0\x01direct\0\x01\xe0\x01aux_value\0\x0f\
         \xe0\x01ext_id\0\x2a"
         .to_vec();
     payload.extend_from_slice(b"\xf3\xf7\x81\x02\xe2");
     payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
+    payload.extend_from_slice(b"\xf3\xf7\x81\x02\xe2");
+    payload.extend_from_slice(&[10, 0x60, 0xc8, 0x1e, 0x15, 0xd4, 0xaf, 0x9f, 0, 0x18, 44]);
     payload.extend_from_slice(b"\xe0\x00relat_ptr\0");
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
 
@@ -976,9 +978,9 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
         .dimensions
         .as_ref()
         .expect("dimtab");
-    assert_eq!(dimensions.declared_count, 2);
+    assert_eq!(dimensions.declared_count, 3);
     assert_eq!(dimensions.entity_ref, Some(258));
-    assert_eq!(dimensions.rows.len(), 2);
+    assert_eq!(dimensions.rows.len(), 3);
     assert_eq!(dimensions.rows[0].dimension_type, 10);
     assert_eq!(dimensions.rows[0].value, Some(1.0));
     assert_eq!(
@@ -991,6 +993,13 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(dimensions.rows[1].value, Some(3.0));
     assert_eq!(dimensions.rows[1].auxiliary_value, Some(0.0));
     assert_eq!(dimensions.rows[1].external_id, 43);
+    assert_eq!(
+        dimensions.rows[2].value,
+        Some(f64::from_be_bytes([
+            0x3f, 0xd5, 0xc8, 0x1e, 0x15, 0xd4, 0xaf, 0x9f
+        ]))
+    );
+    assert_eq!(dimensions.rows[2].external_id, 44);
 }
 
 #[test]

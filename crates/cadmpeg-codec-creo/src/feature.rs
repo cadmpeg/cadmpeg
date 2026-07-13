@@ -915,25 +915,29 @@ fn decode_parameter_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<(f64, usize)> {
+    const DICT_PREFIXES: &[u8] = &[
+        0x5e, 0x60, 0x68, 0x6f, 0x71, 0x74, 0x81, 0x85, 0x8b, 0x90, 0x91, 0x99, 0xa1, 0xa2, 0xb7,
+    ];
+    let prefix = *payload.get(offset)?;
+    if DICT_PREFIXES.contains(&prefix) && offset + 7 <= end {
+        let (first, second) = if prefix == 0xb7 {
+            (0x3f, 0xe4)
+        } else {
+            let second = prefix.wrapping_sub(0x8b);
+            (if second >= 0x80 { 0x3f } else { 0x40 }, second)
+        };
+        let mut raw = [0; 8];
+        raw[0] = first;
+        raw[1] = second;
+        raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
+        return Some((f64::from_be_bytes(raw), offset + 7));
+    }
     if let Some((value, next)) =
         scalar::decode_in_lane(payload, offset, cache).filter(|(_, next)| *next <= end)
     {
         return Some((value, next));
     }
-    let (first, second) = match payload.get(offset)? {
-        0x74 => (0x3f, 0xe9),
-        0x81 => (0x3f, 0xf6),
-        0xb7 => (0x3f, 0xe4),
-        _ => return None,
-    };
-    let tail = payload
-        .get(offset + 1..offset + 7)
-        .filter(|_| offset + 7 <= end)?;
-    let mut raw = [0; 8];
-    raw[0] = first;
-    raw[1] = second;
-    raw[2..].copy_from_slice(tail);
-    Some((f64::from_be_bytes(raw), offset + 7))
+    None
 }
 
 fn decode_variable_scalar(

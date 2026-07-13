@@ -114,7 +114,7 @@ Examples: `2f 43 00 = 38.0`, `2f 20 00 = 8.0`, `48 22 00 = -9.0`, `29 eb 33 = 0.
 
 ```text
 byte1 = (prefix - 0x8B) & 0xFF
-byte0 = 0x3F when byte1 >= 0xE0, otherwise 0x40
+byte0 = 0x3F when byte1 >= 0x80, otherwise 0x40
 ```
 
 Known prefixes include `71→3F E6`, `74→3F E9`, `81→3F F6`, `8b→40 00`, `90→40 05`, `91→40 06`, `a1→40 16`, `a2→40 17`, and `b7→3F E4`. In the `var_arr` coordinate lane, `d7` is the sign counterpart of `90` and maps to `C0 05 <tail6>`.
