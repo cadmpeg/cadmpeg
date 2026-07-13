@@ -211,6 +211,10 @@ planes has the exact model-space carrier given by their intersection line. Its
 direction is the normalized cross product of the plane normals; its origin is
 the minimum-norm point satisfying both plane equations.
 
+A topological vertex orbit with three linearly independent placed incident
+planes is their unique intersection point. Additional incident placed planes
+must contain the same point; otherwise the orbit has no placed vertex.
+
 ## 4. Curve namespace: `crv_array`
 
 `crv_array` provides edge identifiers, half-edge topology, type bytes, and pcurve records.
