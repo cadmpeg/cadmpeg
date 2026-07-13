@@ -1768,7 +1768,13 @@ fn project_shell(feature: &Feature) -> Option<FeatureDefinition> {
     let thickness = feature
         .parameters
         .get("Thickness")
-        .and_then(|value| parse_positive_length_mm(value))?;
+        .and_then(|value| parse_positive_length_mm(value))
+        .or_else(|| {
+            feature
+                .parameters
+                .get("D1")
+                .and_then(|value| parse_positive_dimension_length_mm(value))
+        })?;
     let outward = parse_bool(feature.properties.get("Outward")?)?;
     Some(FeatureDefinition::Shell {
         removed_faces: feature
@@ -1787,7 +1793,13 @@ fn project_thicken(feature: &Feature) -> Option<FeatureDefinition> {
     let thickness = feature
         .parameters
         .get("Thickness")
-        .and_then(|value| parse_positive_length_mm(value))?;
+        .and_then(|value| parse_positive_length_mm(value))
+        .or_else(|| {
+            feature
+                .parameters
+                .get("D1")
+                .and_then(|value| parse_positive_dimension_length_mm(value))
+        })?;
     let both_sides = feature
         .properties
         .get("BothSides")
@@ -4129,7 +4141,22 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                parameters.insert("Thickness".into(), format_length_mm(thickness.0));
+                let thickness_key =
+                    if parameters.contains_key("D1") && !parameters.contains_key("Thickness") {
+                        "D1"
+                    } else {
+                        "Thickness"
+                    };
+                parameters.insert(
+                    thickness_key.into(),
+                    format_length_like(
+                        thickness.0,
+                        existing
+                            .as_deref()
+                            .and_then(|record| record.parameters.get(thickness_key))
+                            .map(String::as_str),
+                    ),
+                );
                 let mut properties = feature.source_properties.clone();
                 if let Some(selection) = selection {
                     write_native_selection(
@@ -4177,7 +4204,22 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                parameters.insert("Thickness".into(), format_length_mm(thickness.0));
+                let thickness_key =
+                    if parameters.contains_key("D1") && !parameters.contains_key("Thickness") {
+                        "D1"
+                    } else {
+                        "Thickness"
+                    };
+                parameters.insert(
+                    thickness_key.into(),
+                    format_length_like(
+                        thickness.0,
+                        existing
+                            .as_deref()
+                            .and_then(|record| record.parameters.get(thickness_key))
+                            .map(String::as_str),
+                    ),
+                );
                 let mut properties = feature.source_properties.clone();
                 if let Some(selection) = selection {
                     write_native_selection(
@@ -4187,14 +4229,14 @@ pub fn sync_neutral_features(
                         existing.as_deref().map_or("", |record| record.id.as_str()),
                     );
                 }
-                properties.insert(
-                    "BothSides".into(),
-                    matches!(side, ThickenSide::Both).to_string(),
-                );
-                properties.insert(
-                    "Reverse".into(),
-                    matches!(side, ThickenSide::Reverse).to_string(),
-                );
+                let both_sides = matches!(side, ThickenSide::Both);
+                if both_sides || properties.contains_key("BothSides") {
+                    properties.insert("BothSides".into(), both_sides.to_string());
+                }
+                let reverse = matches!(side, ThickenSide::Reverse);
+                if reverse || properties.contains_key("Reverse") {
+                    properties.insert("Reverse".into(), reverse.to_string());
+                }
                 (
                     existing
                         .as_deref()

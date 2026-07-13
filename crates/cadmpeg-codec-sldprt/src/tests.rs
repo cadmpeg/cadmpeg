@@ -6639,6 +6639,56 @@ fn semantic_writer_round_trips_typed_thicken() {
 }
 
 #[test]
+fn semantic_writer_round_trips_positional_thicken_dimension() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Wall" Type="Thicken" id="15"><Dimension Name="D1">6</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Thicken {
+            faces: FaceSelection::Unresolved,
+            thickness: Length(6.0),
+            side: ThickenSide::Forward,
+        }
+    ));
+
+    let FeatureDefinition::Thicken { thickness, .. } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed positional thicken");
+    };
+    *thickness = Length(8.5);
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.parameters["D1"], "8.5");
+    assert!(!native.parameters.contains_key("Thickness"));
+    assert!(!native.properties.contains_key("BothSides"));
+    assert!(!native.properties.contains_key("Reverse"));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Thicken {
+            thickness: Length(8.5),
+            side: ThickenSide::Forward,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_scale() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, ScaleCenter};
     use cadmpeg_ir::math::{Point3, Vector3};
