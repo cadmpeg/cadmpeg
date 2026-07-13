@@ -73,6 +73,21 @@ pub struct CurveExpressionAssignment {
     pub offset: usize,
 }
 
+/// Exact cylindrical helix parameters from a `crv_fr_eqn` program.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CurveExpressionHelix {
+    /// Constant cylindrical radius in model millimeters.
+    pub radius: f64,
+    /// Signed axial rise from `t = 0` through `t = 1`.
+    pub height: f64,
+    /// Positive angular travel in revolutions.
+    pub revolutions: f64,
+    /// Angular position at `t = 0`, in radians.
+    pub start_angle: f64,
+    /// Whether angular travel decreases as `t` increases.
+    pub clockwise: bool,
+}
+
 /// A curve row with a uniquely delimited topology suffix.
 ///
 /// `faces` and `next_edges` preserve the two native sides in order.
@@ -550,6 +565,67 @@ fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Opti
     let value = parser.expression()?;
     parser.whitespace();
     (parser.cursor == parser.source.len() && value.is_finite()).then_some(value)
+}
+
+fn evaluate_program(
+    record: &CurveExpressionRecord,
+    parameter: f64,
+) -> Option<BTreeMap<String, f64>> {
+    let mut values = BTreeMap::from([("t".to_string(), parameter)]);
+    for assignment in &record.assignments {
+        let value = evaluate_expression(&assignment.expression, &values)?;
+        values.insert(assignment.name.clone(), value);
+    }
+    Some(values)
+}
+
+/// Recognize an exact cylindrical helix program expressed by the conventional
+/// Creo outputs `r`, `theta` (degrees), and `z` over `t` in `[0, 1]`.
+pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressionHelix> {
+    let start = evaluate_program(record, 0.0)?;
+    let middle = evaluate_program(record, 0.5)?;
+    let end = evaluate_program(record, 1.0)?;
+    let sample = |values: &BTreeMap<String, f64>, name: &str| values.get(name).copied();
+    let (radius_start, radius_middle, radius_end) = (
+        sample(&start, "r")?,
+        sample(&middle, "r")?,
+        sample(&end, "r")?,
+    );
+    let (theta_start, theta_middle, theta_end) = (
+        sample(&start, "theta")?,
+        sample(&middle, "theta")?,
+        sample(&end, "theta")?,
+    );
+    let (z_start, z_middle, z_end) = (
+        sample(&start, "z")?,
+        sample(&middle, "z")?,
+        sample(&end, "z")?,
+    );
+    let scale = radius_start
+        .abs()
+        .max(theta_start.abs())
+        .max(theta_end.abs())
+        .max(z_start.abs())
+        .max(z_end.abs())
+        .max(1.0);
+    let tolerance = 1e-12 * scale;
+    if radius_start <= 0.0
+        || (radius_middle - radius_start).abs() > tolerance
+        || (radius_end - radius_start).abs() > tolerance
+        || (theta_middle - theta_start.midpoint(theta_end)).abs() > tolerance
+        || (z_middle - z_start.midpoint(z_end)).abs() > tolerance
+    {
+        return None;
+    }
+    let angular_travel = theta_end - theta_start;
+    let revolutions = angular_travel.abs() / 360.0;
+    (revolutions > 0.0).then_some(CurveExpressionHelix {
+        radius: radius_start,
+        height: z_end - z_start,
+        revolutions,
+        start_angle: theta_start.to_radians(),
+        clockwise: angular_travel < 0.0,
+    })
 }
 
 /// Decode positional `crv_array` rows whose terminal

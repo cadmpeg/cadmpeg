@@ -238,6 +238,27 @@ fn transfer_curve_expression_features(
             "curve_expression_feature",
             Exactness::Derived,
         );
+        let definition = crate::curve::expression_helix(record).map_or_else(
+            || IrFeatureDefinition::Native {
+                kind: "CurveFromEquation".to_string(),
+                parameters: BTreeMap::from([
+                    ("entity_id".to_string(), record.entity_id.to_string()),
+                    (
+                        "assignment_count".to_string(),
+                        record.assignments.len().to_string(),
+                    ),
+                ]),
+                properties: BTreeMap::new(),
+            },
+            |helix| IrFeatureDefinition::HelixNativeAxis {
+                axis_native_ref: curve_expression_record_id(record),
+                radius: Length(helix.radius),
+                height: Length(helix.height),
+                revolutions: helix.revolutions,
+                start_angle: Angle(helix.start_angle),
+                clockwise: helix.clockwise,
+            },
+        );
         ir.model.features.push(Feature {
             id: feature_id,
             ordinal,
@@ -257,17 +278,7 @@ fn transfer_curve_expression_features(
             ),
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: IrFeatureDefinition::Native {
-                kind: "CurveFromEquation".to_string(),
-                parameters: BTreeMap::from([
-                    ("entity_id".to_string(), record.entity_id.to_string()),
-                    (
-                        "assignment_count".to_string(),
-                        record.assignments.len().to_string(),
-                    ),
-                ]),
-                properties: BTreeMap::new(),
-            },
+            definition,
             native_ref: Some(curve_expression_record_id(record)),
         });
     }

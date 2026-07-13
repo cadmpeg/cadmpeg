@@ -1290,8 +1290,14 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert_eq!(result.ir.model.features.len(), 1);
     assert!(matches!(
         &result.ir.model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
-            if kind == "CurveFromEquation"
+        cadmpeg_ir::features::FeatureDefinition::HelixNativeAxis {
+            radius: cadmpeg_ir::features::Length(5.0),
+            height: cadmpeg_ir::features::Length(71.0),
+            revolutions: 1.0,
+            start_angle: cadmpeg_ir::features::Angle(0.0),
+            clockwise: false,
+            ..
+        }
     ));
     assert_eq!(result.ir.model.parameters.len(), 4);
     assert_eq!(result.ir.model.parameters[0].name, "r");
