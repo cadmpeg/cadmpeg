@@ -393,7 +393,7 @@ A printable OM string value is framed as `66 32 03, declared_len:u8, text[declar
 
 **Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cross-stream bridge (RMFastLoad ↔ UG_PART OM ↔ EXTREFSTREAM). A second family is a four-byte big-endian word whose high nibble is `0xC` and low 28 bits are the reference value. Both tokens remain within one externally bounded record and occur as `(e0-handle, c-ref)` pairs.
 
-**Same-section record references.** A counted reference run is `01, count:u8, (count - 1) × (90, record_ordinal:u16 BE)`, with `count >= 2`. Every ordinal addresses an entity record in the same external entity-index directory. The complete run lies within one bounded record; any out-of-range ordinal invalidates the run atomically. Token order is operand order.
+**Same-section record references.** A counted reference run is `01, count:u8, (count - 1) × (90, record_ordinal:u16 BE)`, with `count >= 2`. Every ordinal addresses an entity record in the same external entity-index directory. The containing record depends on the addressed records; the addressed records have the containing record as a dependent. The complete run lies within one bounded record; any out-of-range ordinal invalidates the run atomically. Token order is operand order, and inverse dependent order follows containing-record ordinal.
 
 ### 7.2 Partition and deltas merge
 

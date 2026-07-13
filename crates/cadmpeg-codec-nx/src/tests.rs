@@ -2745,6 +2745,14 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(object_records[1].record_ordinal, 1);
     assert_eq!(object_records[1].byte_len, om_records[1].byte_len);
     assert_eq!(object_records[1].sha256, om_records[1].sha256);
+    assert_eq!(
+        object_records[1].dependencies,
+        vec![object_records[0].id.clone()]
+    );
+    assert_eq!(
+        object_records[0].dependents,
+        vec![object_records[1].id.clone()]
+    );
     let strings = result
         .ir
         .native

@@ -126,6 +126,12 @@ pub struct ObjectRecord {
     pub byte_len: u64,
     /// SHA-256 of the exact serialized record bytes.
     pub sha256: String,
+    /// Ordered distinct same-section records referenced by this record.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<String>,
+    /// Ordered distinct same-section records that reference this record.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependents: Vec<String>,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the record start.
@@ -351,19 +357,52 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
+            let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
+            for (source, _, _, reference) in section.references() {
+                if reference.kind != crate::om::ReferenceKind::RecordOrdinal16 {
+                    continue;
+                }
+                let target = reference.value as usize;
+                let outgoing = dependencies.entry(source).or_default();
+                if !outgoing.contains(&target) {
+                    outgoing.push(target);
+                }
+                let incoming = dependents.entry(target).or_default();
+                if !incoming.contains(&source) {
+                    incoming.push(source);
+                }
+            }
             section
                 .records
                 .into_iter()
                 .enumerate()
-                .map(move |(record_ordinal, record)| ObjectRecord {
-                    id: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
-                    object_id: record.object_id,
-                    section_ordinal: section_ordinal as u32,
-                    record_ordinal: record_ordinal as u32,
-                    byte_len: record.bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
-                    source_entry: entry.name.clone(),
-                    source_offset: entry_offset + record.offset as u64,
+                .map(move |(record_ordinal, record)| {
+                    let record_id = |ordinal| {
+                        format!("nx:om-record-directory-{section_ordinal}:entry#{ordinal}")
+                    };
+                    ObjectRecord {
+                        id: record_id(record_ordinal),
+                        object_id: record.object_id,
+                        section_ordinal: section_ordinal as u32,
+                        record_ordinal: record_ordinal as u32,
+                        byte_len: record.bytes.len() as u64,
+                        sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
+                        dependencies: dependencies
+                            .get(&record_ordinal)
+                            .into_iter()
+                            .flatten()
+                            .map(|ordinal| record_id(*ordinal))
+                            .collect(),
+                        dependents: dependents
+                            .get(&record_ordinal)
+                            .into_iter()
+                            .flatten()
+                            .map(|ordinal| record_id(*ordinal))
+                            .collect(),
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + record.offset as u64,
+                    }
                 })
         })
         .collect()
