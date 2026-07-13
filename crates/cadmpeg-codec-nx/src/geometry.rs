@@ -15,8 +15,8 @@ use cadmpeg_ir::be::{f64_at as read_f64, vec3_at as read_vec3};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-/// Candidate byte shifts applied to a record's fixed payload offsets, covering a
-/// record whose leading pointer slots each consumed the 4-byte large-index form.
+/// Candidate byte shifts from expanded leading references. Envelope escapes are
+/// resolved by the fixed-record graph, where their independent shift is known.
 const SHIFTS: [usize; 6] = [0, 2, 4, 6, 8, 10];
 
 /// A decoded analytic surface and its source offset.
@@ -177,6 +177,34 @@ fn decode_curve(stream: &[u8], p: usize, kind: u8) -> Option<CurveGeometry> {
         }
     }
     None
+}
+
+/// Decode a graph-owned analytic surface at its resolved logical-field shift.
+pub(crate) fn decode_surface_record(
+    record: &[u8],
+    kind: u8,
+    shift: usize,
+) -> Option<SurfaceGeometry> {
+    let b = shift;
+    match kind {
+        0x32 => plane(record, b),
+        0x33 => cylinder(record, b),
+        0x34 => cone(record, b),
+        0x35 => sphere(record, b),
+        0x36 => torus(record, b),
+        _ => None,
+    }
+}
+
+/// Decode a graph-owned analytic curve at its resolved logical-field shift.
+pub(crate) fn decode_curve_record(record: &[u8], kind: u8, shift: usize) -> Option<CurveGeometry> {
+    let b = shift;
+    match kind {
+        0x1e => line(record, b),
+        0x1f => circle(record, b),
+        0x20 => ellipse(record, b),
+        _ => None,
+    }
 }
 
 // --- Surface decoders (offsets from the common header, [§5.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#51-ownership-graph) / [§6.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#61-analytic-curves-and-surfaces)) ---

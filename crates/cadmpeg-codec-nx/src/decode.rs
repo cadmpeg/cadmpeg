@@ -238,6 +238,37 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 surfaces_by_xmt.insert(node.xmt, id);
             }
         }
+        for node in (50..=54).flat_map(|kind| graph.of_kind(kind)) {
+            if surfaces_by_xmt.contains_key(&node.xmt) {
+                continue;
+            }
+            let Some(geometry) = node.surface_geometry() else {
+                continue;
+            };
+            match &geometry {
+                SurfaceGeometry::Plane { .. } => counts.planes += 1,
+                SurfaceGeometry::Cylinder { .. } => counts.cylinders += 1,
+                SurfaceGeometry::Cone { .. } => counts.cones += 1,
+                SurfaceGeometry::Sphere { .. } => counts.spheres += 1,
+                SurfaceGeometry::Torus { .. } => counts.tori += 1,
+                _ => unreachable!("fixed analytic surface family"),
+            }
+            let id = SurfaceId(format!("nx:s{si}:graph-surf#{}", node.xmt));
+            annotate_node(
+                &mut annotations,
+                &id,
+                source_stream,
+                node,
+                surface_tag(&geometry),
+            );
+            annotations.derived(&id, "geometry");
+            ir.model.surfaces.push(Surface {
+                id: id.clone(),
+                geometry,
+                source_object: None,
+            });
+            surfaces_by_xmt.insert(node.xmt, id);
+        }
 
         for (fi, surf) in crate::nurbs::surfaces(semantic).into_iter().enumerate() {
             counts.nurbs_surfaces += 1;
@@ -387,6 +418,35 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             if let Some(node) = graph.at_pos(crv.pos) {
                 curves_by_xmt.insert(node.xmt, id);
             }
+        }
+        for node in (30..=32).flat_map(|kind| graph.of_kind(kind)) {
+            if curves_by_xmt.contains_key(&node.xmt) {
+                continue;
+            }
+            let Some(geometry) = node.curve_geometry() else {
+                continue;
+            };
+            match &geometry {
+                CurveGeometry::Line { .. } => counts.lines += 1,
+                CurveGeometry::Circle { .. } => counts.circles += 1,
+                CurveGeometry::Ellipse { .. } => counts.ellipses += 1,
+                _ => unreachable!("fixed analytic curve family"),
+            }
+            let id = CurveId(format!("nx:s{si}:graph-crv#{}", node.xmt));
+            annotate_node(
+                &mut annotations,
+                &id,
+                source_stream,
+                node,
+                curve_tag(&geometry),
+            );
+            annotations.derived(&id, "geometry");
+            ir.model.curves.push(Curve {
+                id: id.clone(),
+                geometry,
+                source_object: None,
+            });
+            curves_by_xmt.insert(node.xmt, id);
         }
 
         for (ci, crv) in crate::nurbs::curves(semantic).into_iter().enumerate() {

@@ -2182,6 +2182,18 @@ fn topology_with_fully_extended_geometry_headers() -> Vec<u8> {
     stream
 }
 
+fn topology_with_escaped_geometry_envelopes() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    for marker in [[0, 50, 0, 6], [0, 30, 0, 9]] {
+        let record = stream
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("geometry record");
+        stream.insert(record + 2, 0xff);
+    }
+    stream
+}
+
 fn offset_surface_with_fully_extended_common_header() -> Vec<u8> {
     let mut stream = offset_surface_topology_partition_stream();
     let record = stream
@@ -4025,6 +4037,24 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
         result.ir.model.curves[0].geometry,
         CurveGeometry::Line { .. }
     ));
+}
+
+#[test]
+fn decode_tracks_geometry_envelope_escape_shift() {
+    let mut cur = Cursor::new(prt_with_partition(
+        &topology_with_escaped_geometry_envelopes(),
+    ));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(matches!(
+        result.ir.model.surfaces[0].geometry,
+        SurfaceGeometry::Plane { .. }
+    ));
+    assert!(matches!(
+        result.ir.model.curves[0].geometry,
+        CurveGeometry::Line { .. }
+    ));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]

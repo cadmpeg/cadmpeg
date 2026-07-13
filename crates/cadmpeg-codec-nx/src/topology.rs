@@ -294,6 +294,18 @@ impl Node {
             })
             .then(|| Point3::new(xyz[0] * 1000.0, xyz[1] * 1000.0, xyz[2] * 1000.0))
     }
+
+    /// Decode this graph-owned fixed analytic surface carrier.
+    pub fn surface_geometry(&self) -> Option<cadmpeg_ir::geometry::SurfaceGeometry> {
+        matches!(self.kind, 50..=54).then_some(())?;
+        crate::geometry::decode_surface_record(&self.bytes, self.kind, self.shift)
+    }
+
+    /// Decode this graph-owned fixed analytic curve carrier.
+    pub fn curve_geometry(&self) -> Option<cadmpeg_ir::geometry::CurveGeometry> {
+        matches!(self.kind, 30..=32).then_some(())?;
+        crate::geometry::decode_curve_record(&self.bytes, self.kind, self.shift)
+    }
 }
 
 /// An index of supported records keyed by `(node type, XMT identifier)`.
