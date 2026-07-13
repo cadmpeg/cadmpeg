@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::eval::curve_point;
 use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -517,8 +518,11 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
 
         for trim in crate::topology::trimmed_curves(semantic) {
             if let Some(basis) = curves_by_xmt.get(&trim.basis).cloned() {
+                let parameters = canonical_trim_range(&ir, &basis, trim.parameters);
                 curves_by_xmt.insert(trim.xmt, basis);
-                trim_ranges.insert(trim.xmt, trim.parameters);
+                if let Some(parameters) = parameters {
+                    trim_ranges.insert(trim.xmt, parameters);
+                }
             }
             if let Some(pcurve) = pcurves_by_xmt.get(&trim.basis).cloned() {
                 if let Some(carrier) = ir.model.pcurves.iter_mut().find(|p| p.id == pcurve) {
@@ -613,6 +617,15 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         &scan.container.rmfastload_object_ids(),
     );
     attach_free_topology(&mut ir, &mut annotations);
+    let referenced_pcurves: BTreeSet<_> = ir
+        .model
+        .coedges
+        .iter()
+        .filter_map(|coedge| coedge.pcurve.clone())
+        .collect();
+    ir.model
+        .pcurves
+        .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
     ir.annotations = annotations.build();
     retain_live_annotations(&mut ir);
     let report = build_geometry_report(scan, &counts, !ir.model.faces.is_empty());
@@ -1113,13 +1126,15 @@ fn emit_topology(
         let Some((_, vertex)) = points.get(&fields.point) else {
             continue;
         };
-        if let Some(decoded_vertex) = ir
-            .model
-            .vertices
-            .iter_mut()
-            .find(|candidate| candidate.id == *vertex)
-        {
-            decoded_vertex.tolerance = decoded_tolerance(fields.tolerance);
+        let tolerance = decoded_tolerance(fields.tolerance);
+        if let (Some(decoded_vertex), Some(tolerance)) = (
+            ir.model
+                .vertices
+                .iter_mut()
+                .find(|candidate| candidate.id == *vertex),
+            tolerance,
+        ) {
+            decoded_vertex.tolerance = Some(tolerance);
         }
         annotate_node(annotations, vertex, source_stream, node, "VERTEX");
         if decoded_tolerance(fields.tolerance).is_some() {
@@ -1152,18 +1167,49 @@ fn emit_topology(
             .cloned()
             .unwrap_or_else(|| start.clone());
         let curve_xmt = Some(fields.curve);
-        let curve = curve_xmt.and_then(|xmt| curves.get(&xmt)).cloned();
+        let mut curve = curve_xmt.and_then(|xmt| curves.get(&xmt)).cloned();
+        let mut param_range = curve_xmt.and_then(|xmt| trim_ranges.get(&xmt)).copied();
         let id = EdgeId(format!("{prefix}:edge#{}", node.xmt));
         annotate_node(annotations, &id, source_stream, node, "EDGE");
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations.derived(&id, "tolerance");
+        }
+        if let (Some(carrier), Some(range)) = (&curve, param_range) {
+            match orient_edge_range(
+                &ir,
+                carrier,
+                range,
+                &start,
+                &end,
+                decoded_tolerance(fields.tolerance),
+            ) {
+                Some(oriented) => param_range = Some(oriented),
+                None => {
+                    let unresolved = CurveId(format!("{prefix}:edge-curve#unknown-{}", node.xmt));
+                    annotations
+                        .note(&unresolved, source_stream, node.pos as u64)
+                        .tag("UNRESOLVED_EDGE_CURVE");
+                    annotations.exactness(&unresolved, Exactness::Unknown);
+                    ir.model.curves.push(Curve {
+                        id: unresolved.clone(),
+                        geometry: CurveGeometry::Unknown {
+                            record: Some(UnknownId(format!(
+                                "nx:container:parasolid#{stream_index}"
+                            ))),
+                        },
+                        source_object: None,
+                    });
+                    curve = Some(unresolved);
+                    param_range = None;
+                }
+            }
         }
         ir.model.edges.push(Edge {
             id: id.clone(),
             curve,
             start,
             end,
-            param_range: curve_xmt.and_then(|xmt| trim_ranges.get(&xmt)).copied(),
+            param_range,
             tolerance: decoded_tolerance(fields.tolerance),
         });
         edges.insert(node.xmt, id);
@@ -1394,8 +1440,82 @@ fn curve_tag(geometry: &CurveGeometry) -> &'static str {
 fn decoded_tolerance(value: f64) -> Option<f64> {
     match value {
         MISSING_TOLERANCE => None,
-        value if value.is_finite() && value.abs() < 1.0e3 => Some(value * 1000.0),
+        value if value.is_finite() && value > 0.0 && value < 1.0e3 => Some(value * 1000.0),
         _ => None,
+    }
+}
+
+fn canonical_trim_range(ir: &CadIr, basis: &CurveId, raw: [f64; 2]) -> Option<[f64; 2]> {
+    let curve = ir.model.curves.iter().find(|curve| curve.id == *basis)?;
+    match &curve.geometry {
+        CurveGeometry::Line { .. } => Some([raw[0] * 1000.0, raw[1] * 1000.0]),
+        CurveGeometry::Nurbs(nurbs) => {
+            let domain = [*nurbs.knots.first()?, *nurbs.knots.last()?];
+            let epsilon = 1.0e-6 * (1.0 + domain[0].abs().max(domain[1].abs()));
+            if raw
+                .iter()
+                .any(|value| *value < domain[0] - epsilon || *value > domain[1] + epsilon)
+            {
+                None
+            } else {
+                Some([
+                    raw[0].clamp(domain[0], domain[1]),
+                    raw[1].clamp(domain[0], domain[1]),
+                ])
+            }
+        }
+        _ => Some(raw),
+    }
+}
+
+fn orient_edge_range(
+    ir: &CadIr,
+    curve: &CurveId,
+    range: [f64; 2],
+    start: &VertexId,
+    end: &VertexId,
+    edge_tolerance: Option<f64>,
+) -> Option<[f64; 2]> {
+    let geometry = &ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| candidate.id == *curve)?
+        .geometry;
+    let at = [
+        curve_point(geometry, range[0])?,
+        curve_point(geometry, range[1])?,
+    ];
+    let vertex_position = |vertex: &VertexId| {
+        let vertex = ir
+            .model
+            .vertices
+            .iter()
+            .find(|candidate| candidate.id == *vertex)?;
+        let point = ir
+            .model
+            .points
+            .iter()
+            .find(|candidate| candidate.id == vertex.point)?;
+        Some((point.position, vertex.tolerance))
+    };
+    let (start_position, start_tolerance) = vertex_position(start)?;
+    let (end_position, end_tolerance) = vertex_position(end)?;
+    let allowance = [edge_tolerance, start_tolerance, end_tolerance]
+        .into_iter()
+        .flatten()
+        .fold(0.01_f64, f64::max);
+    let distance = |a: cadmpeg_ir::math::Point3, b: cadmpeg_ir::math::Point3| {
+        ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
+    };
+    if distance(at[0], start_position) <= allowance && distance(at[1], end_position) <= allowance {
+        Some(range)
+    } else if distance(at[1], start_position) <= allowance
+        && distance(at[0], end_position) <= allowance
+    {
+        Some([range[1], range[0]])
+    } else {
+        None
     }
 }
 

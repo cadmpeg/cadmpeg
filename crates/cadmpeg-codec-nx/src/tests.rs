@@ -1508,8 +1508,8 @@ fn trimmed_topology_partition_stream() -> Vec<u8> {
     put_ref(&mut trim, 2, 12);
     trim[18] = b'+';
     put_ref(&mut trim, 19, 9);
-    put_f64(&mut trim, 69, 0.25);
-    put_f64(&mut trim, 77, 0.75);
+    put_f64(&mut trim, 69, 0.000_25);
+    put_f64(&mut trim, 77, 0.000_75);
     // The closed edge's single vertex sits at the trim range's midpoint on the
     // basis line so both trimmed endpoints fall inside the edge's stored
     // 0.3 mm tolerance; the point record is the topology stream's last
@@ -1517,6 +1517,13 @@ fn trimmed_topology_partition_stream() -> Vec<u8> {
     let point_vec = stream.len() - 40 + 16;
     put_vec3(&mut stream, point_vec, [0.000_5, 0.0, 0.0]);
     stream.extend(trim);
+    stream
+}
+
+fn mismatched_trimmed_topology_partition_stream() -> Vec<u8> {
+    let mut stream = trimmed_topology_partition_stream();
+    let point_vec = stream.len() - 85 - 40 + 16;
+    put_vec3(&mut stream, point_vec, [0.000_5, 0.01, 0.0]);
     stream
 }
 
@@ -2272,7 +2279,7 @@ fn decode_tracks_fully_extended_compact_geometry_headers() {
     fully_extend_common_header(&mut trimmed, [0, 133, 0, 12]);
     let trims = crate::topology::trimmed_curves(&trimmed);
     assert_eq!(trims.len(), 1);
-    assert_eq!(trims[0].parameters, [0.25, 0.75]);
+    assert_eq!(trims[0].parameters, [0.000_25, 0.000_75]);
 
     let mut bspline = bspline_partition_stream();
     fully_extend_common_header(&mut bspline, [0, 124, 0, 10]);
@@ -3035,6 +3042,23 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
     let edge = result.ir.model.edges.first().expect("edge");
     assert_eq!(edge.curve.as_ref(), Some(&result.ir.model.curves[0].id));
     assert_eq!(edge.param_range, Some([0.25, 0.75]));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_does_not_assert_a_trim_basis_that_misses_edge_vertices() {
+    let mut cur = Cursor::new(prt_with_partition(
+        &mismatched_trimmed_topology_partition_stream(),
+    ));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let edge = result.ir.model.edges.first().expect("edge");
+    let carrier = edge
+        .curve
+        .as_ref()
+        .and_then(|id| result.ir.model.curves.iter().find(|curve| curve.id == *id))
+        .expect("edge carrier");
+    assert!(matches!(carrier.geometry, CurveGeometry::Unknown { .. }));
+    assert_eq!(edge.param_range, None);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
