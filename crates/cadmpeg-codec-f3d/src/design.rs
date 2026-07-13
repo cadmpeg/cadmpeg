@@ -232,8 +232,9 @@ pub fn project_parameter_design(
     Vec<cadmpeg_ir::features::DesignParameter>,
 ) {
     use cadmpeg_ir::features::{
-        Angle, DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
-        Length, ParameterId, ParameterValue, SketchSpace,
+        Angle, ChamferForm, ChamferSpec, DesignParameter as NeutralParameter, DimensionDisplay,
+        EdgeSelection, Feature, FeatureDefinition, Length, ParameterId, ParameterValue, RadiusForm,
+        RadiusSpec, SketchSpace,
     };
     use std::collections::BTreeMap;
 
@@ -276,13 +277,7 @@ pub fn project_parameter_design(
                             native_stream(&parameter.id) == Some(native_scope)
                                 && parameter.record_index == owner.parameter_record_index
                         })
-                        .map(|parameter| {
-                            (
-                                owner.local_ordinal,
-                                parameter.name.clone(),
-                                parameter.expression.clone(),
-                            )
-                        })
+                        .map(|parameter| (owner.local_ordinal, parameter))
                 })
                 .collect::<Vec<_>>();
             let definition = if scope.kind == "Sketch" {
@@ -292,12 +287,80 @@ pub fn project_parameter_design(
                         .get(&(native_scope, scope.record_index))
                         .cloned(),
                 }
+            } else if scope.kind == "Fillet" {
+                let radii = parameters
+                    .iter()
+                    .filter_map(|(_, parameter)| {
+                        (parameter.source_kind == "Radius")
+                            .then(|| design_length(parameter))
+                            .flatten()
+                    })
+                    .collect::<Vec<_>>();
+                FeatureDefinition::Fillet {
+                    edges: EdgeSelection::Native(scope.id.clone()),
+                    radius: match radii.as_slice() {
+                        [radius] if radius.0 > 0.0 => RadiusSpec::Constant { radius: *radius },
+                        [_] => RadiusSpec::Unresolved {
+                            form: Some(RadiusForm::Constant),
+                        },
+                        _ => RadiusSpec::Unresolved { form: None },
+                    },
+                }
+            } else if scope.kind == "Chamfer" {
+                let has_parameter = |source_kind: &str| {
+                    parameters
+                        .iter()
+                        .any(|(_, parameter)| parameter.source_kind == source_kind)
+                };
+                let parameter = |source_kind: &str| {
+                    let mut matches = parameters
+                        .iter()
+                        .map(|(_, parameter)| *parameter)
+                        .filter(|parameter| parameter.source_kind == source_kind);
+                    let parameter = matches.next()?;
+                    matches.next().is_none().then_some(parameter)
+                };
+                let distance = parameter("Distance").and_then(design_length);
+                let first = parameter("Distance 1").and_then(design_length);
+                let second = parameter("Distance 2").and_then(design_length);
+                let angle = parameter("Angle").and_then(design_angle);
+                let (spec, form) =
+                    if has_parameter("Distance 1") || has_parameter("Distance 2") {
+                        (
+                            first
+                                .zip(second)
+                                .map(|(first, second)| ChamferSpec::TwoDistances { first, second }),
+                            Some(ChamferForm::TwoDistances),
+                        )
+                    } else if has_parameter("Angle") {
+                        (
+                            distance.zip(angle).map(|(distance, angle)| {
+                                ChamferSpec::DistanceAngle { distance, angle }
+                            }),
+                            Some(ChamferForm::DistanceAngle),
+                        )
+                    } else if has_parameter("Distance") {
+                        (
+                            distance.map(|distance| ChamferSpec::Distance { distance }),
+                            Some(ChamferForm::Distance),
+                        )
+                    } else {
+                        (None, None)
+                    };
+                FeatureDefinition::Chamfer {
+                    edges: EdgeSelection::Native(scope.id.clone()),
+                    spec: spec
+                        .filter(valid_chamfer_spec)
+                        .unwrap_or(ChamferSpec::Unresolved { form }),
+                }
             } else {
                 FeatureDefinition::Native {
                     kind: scope.kind.clone(),
                     parameters: parameters
                         .iter()
-                        .map(|(_, name, expression)| (name.clone(), expression.clone()))
+                        .map(|(_, parameter)| {
+                            (parameter.name.clone(), parameter.expression.clone())
+                        })
                         .collect(),
                     properties: BTreeMap::new(),
                 }
@@ -420,6 +483,30 @@ pub fn project_parameter_design(
     }
     parameters.sort_by_key(|parameter| parameter.id.clone());
     (features, parameters)
+}
+
+fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Length> {
+    (parameter.unit.as_deref() == Some("mm") && parameter.evaluated_value.is_finite()).then_some(
+        cadmpeg_ir::features::Length(parameter.evaluated_value * 10.0),
+    )
+}
+
+fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Angle> {
+    (parameter.unit.as_deref() == Some("deg") && parameter.evaluated_value.is_finite())
+        .then_some(cadmpeg_ir::features::Angle(parameter.evaluated_value))
+}
+
+fn valid_chamfer_spec(spec: &cadmpeg_ir::features::ChamferSpec) -> bool {
+    use cadmpeg_ir::features::ChamferSpec;
+
+    match spec {
+        ChamferSpec::Distance { distance } => distance.0 > 0.0,
+        ChamferSpec::TwoDistances { first, second } => first.0 > 0.0 && second.0 > 0.0,
+        ChamferSpec::DistanceAngle { distance, angle } => {
+            distance.0 > 0.0 && angle.0 > 0.0 && angle.0 < std::f64::consts::PI
+        }
+        ChamferSpec::Unresolved { .. } => false,
+    }
 }
 
 fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::FeatureId {
@@ -5077,6 +5164,97 @@ mod relation_tests {
                 .map(String::as_str),
             Some("AlongDistance")
         );
+    }
+
+    #[test]
+    fn edge_treatments_project_typed_dimensions_and_native_selections() {
+        use cadmpeg_ir::features::{ChamferSpec, EdgeSelection, RadiusSpec};
+
+        let parameter = |owner_record_index,
+                         record_index,
+                         source_kind: &str,
+                         name: &str,
+                         expression: &str,
+                         value| {
+            let mut parameter = parse_design_parameter(&parameter_record(
+                Some(owner_record_index),
+                expression,
+                source_kind,
+                Some("mm"),
+                name,
+                value,
+            ))
+            .expect("generated feature parameter is canonical");
+            parameter.id = format!("f3d:native:parameter#{record_index}");
+            parameter.record_index = record_index;
+            parameter
+        };
+        let owner = |record_index, scope_record_index, parameter_record_index, local_ordinal| {
+            let mut owner = parse_parameter_owner(&parameter_owner_frame())
+                .expect("generated parameter owner is canonical");
+            owner.id = format!("f3d:native:owner#{record_index}");
+            owner.record_index = record_index;
+            owner.scope_record_index = scope_record_index;
+            owner.parameter_record_index = parameter_record_index;
+            owner.companion_record_index = parameter_record_index + 1;
+            owner.local_ordinal = local_ordinal;
+            owner
+        };
+        let scope = |record_index, byte_offset, kind: &str| DesignParameterScope {
+            id: format!("f3d:native:scope#{record_index}"),
+            byte_offset,
+            class_tag: "301".into(),
+            record_index,
+            frame_length: 200,
+            kind: kind.into(),
+            kind_offset: byte_offset + 100,
+            reference_count_offset: byte_offset + 80,
+            reference_members: vec![record_index + 1],
+            reference_member_offsets: vec![byte_offset + 85],
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: "261".into(),
+            paired_byte_offset: byte_offset + 200,
+        };
+        let scopes = [scope(12, 100, "Fillet"), scope(22, 400, "Chamfer")];
+        let (features, _) = project_parameter_design(
+            &[
+                parameter(44, 45, "Radius", "d1", "5 mm", 0.5),
+                parameter(54, 55, "Distance 1", "d2", "1 mm", 0.1),
+                parameter(64, 65, "Distance 2", "d3", "2 mm", 0.2),
+            ],
+            &[
+                owner(44, 12, 45, 0),
+                owner(54, 22, 55, 0),
+                owner(64, 22, 65, 1),
+            ],
+            &scopes,
+            &[],
+        );
+
+        let fillet = features
+            .iter()
+            .find(|feature| feature.source_tag.as_deref() == Some("Fillet"))
+            .expect("typed fillet");
+        assert!(matches!(
+            &fillet.definition,
+            FeatureDefinition::Fillet {
+                edges: EdgeSelection::Native(selection),
+                radius: RadiusSpec::Constant { radius },
+            } if selection == &scopes[0].id && radius.0 == 5.0
+        ));
+        let chamfer = features
+            .iter()
+            .find(|feature| feature.source_tag.as_deref() == Some("Chamfer"))
+            .expect("typed chamfer");
+        assert!(matches!(
+            &chamfer.definition,
+            FeatureDefinition::Chamfer {
+                edges: EdgeSelection::Native(selection),
+                spec: ChamferSpec::TwoDistances { first, second },
+            } if selection == &scopes[1].id && first.0 == 1.0 && second.0 == 2.0
+        ));
     }
 
     #[test]
