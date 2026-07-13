@@ -1095,6 +1095,11 @@ fn sldprt_with_body_and_envelope(body: &[u8]) -> Vec<u8> {
     for value in [0.001f64, 0.002, 0.003, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
+    payload.extend_from_slice(b"moTransRefPlaneData_c");
+    payload.extend_from_slice(&[0xff; 8]);
+    for value in [0.01f64, 0.02, 0.03, 0.1, 0.2, 1.0, 0.0, -1.0, 0.5] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
     payload.extend_from_slice(b"moPart_c");
     let mut part = [0u8; 13];
     part[0..4].copy_from_slice(&42u32.to_le_bytes());
@@ -8398,6 +8403,22 @@ fn decode_extracts_document_envelope() {
     };
     assert_eq!(origin, &[1.0, 2.0, 3.0]);
     assert_eq!(frame[2], 1.0);
+    let transformed = result
+        .ir
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "transformed_reference_plane")
+        .expect("transformed reference plane");
+    assert_eq!(
+        transformed.values,
+        vec![
+            AttributeValue::Vector(vec![10.0, 20.0, 30.0]),
+            AttributeValue::Vector(vec![100.0, 200.0]),
+            AttributeValue::Vector(vec![1.0, 0.0, -1.0]),
+            AttributeValue::Float(500.0),
+        ]
+    );
     let part = result
         .ir
         .model

@@ -33,10 +33,54 @@ pub fn attributes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<So
         );
         scan_part(block, &mut out, annotations);
         scan_configuration_manager(block, &mut out, annotations);
+        scan_transformed_reference_plane(block, &mut out, annotations);
         scan_units_xml(block, &mut out, annotations);
         scan_length_user_units(block, &mut out, annotations);
     }
     out
+}
+
+fn scan_transformed_reference_plane(
+    block: &crate::container::Block,
+    out: &mut Vec<SourceAttribute>,
+    annotations: &mut Annotations,
+) {
+    const TOKEN: &[u8] = b"moTransRefPlaneData_c";
+    for offset in block
+        .payload
+        .windows(TOKEN.len())
+        .enumerate()
+        .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
+    {
+        let body = offset + TOKEN.len();
+        let Some((start, values)) = (0..64).find_map(|skip| {
+            let start = body + skip;
+            let values = (0..9)
+                .map(|index| f64_le(&block.payload, start + index * 8))
+                .collect::<Option<Vec<_>>>()?;
+            (values
+                .iter()
+                .all(|value| value.is_finite() && value.abs() < 1_000.0)
+                && values[3] > 1.0e-5
+                && values[4] > 1.0e-5)
+                .then_some((start, values))
+        }) else {
+            continue;
+        };
+        out.push(attribute(
+            block,
+            start,
+            "transformed_reference_plane",
+            TOKEN,
+            vec![
+                AttributeValue::Vector(values[..3].iter().map(|value| value * 1000.0).collect()),
+                AttributeValue::Vector(values[3..5].iter().map(|value| value * 1000.0).collect()),
+                AttributeValue::Vector(values[5..8].to_vec()),
+                AttributeValue::Float(values[8] * 1000.0),
+            ],
+            annotations,
+        ));
+    }
 }
 
 fn scan_length_user_units(

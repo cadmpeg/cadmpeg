@@ -837,6 +837,44 @@ fn metadata_payloads(
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
             }
+            "transformed_reference_plane" => {
+                let [AttributeValue::Vector(center), AttributeValue::Vector(extents), AttributeValue::Vector(auxiliary), AttributeValue::Float(diagonal)] =
+                    attribute.values.as_slice()
+                else {
+                    return Err(CodecError::Malformed(
+                        "invalid transformed reference plane".into(),
+                    ));
+                };
+                if center.len() != 3 || extents.len() != 2 || auxiliary.len() != 3 {
+                    return Err(CodecError::Malformed(
+                        "invalid transformed reference plane".into(),
+                    ));
+                }
+                objects.extend_from_slice(b"moTransRefPlaneData_c");
+                for value in center
+                    .iter()
+                    .chain(extents)
+                    .chain(std::iter::once(diagonal))
+                {
+                    if !value.is_finite() {
+                        return Err(CodecError::Malformed(
+                            "invalid transformed reference plane".into(),
+                        ));
+                    }
+                }
+                if auxiliary.iter().any(|value| !value.is_finite()) {
+                    return Err(CodecError::Malformed(
+                        "invalid transformed reference plane".into(),
+                    ));
+                }
+                for value in center.iter().chain(extents) {
+                    objects.extend_from_slice(&(value * length_scale).to_le_bytes());
+                }
+                for value in auxiliary {
+                    objects.extend_from_slice(&value.to_le_bytes());
+                }
+                objects.extend_from_slice(&(diagonal * length_scale).to_le_bytes());
+            }
             "part_record" => {
                 let [AttributeValue::Integer(id), AttributeValue::Integer(version)] =
                     attribute.values.as_slice()
