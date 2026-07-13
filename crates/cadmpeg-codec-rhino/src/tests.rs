@@ -2457,6 +2457,7 @@ fn static_definition(id: [u8; 16], members: &[[u8; 16]]) -> super::instances::In
         linked_depth: 0,
         linked_appearance: 0,
         file_reference_range: None,
+        file_reference: None,
         reference_settings_range: None,
     }
 }
@@ -2579,6 +2580,17 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
     assert_eq!(
         result.ir.native_unknowns("rhino").unwrap()[2].links.len(),
         1
+    );
+    let native = result.ir.native.namespace("rhino").unwrap();
+    assert_eq!(native.arenas["product_definitions"].len(), 1);
+    assert_eq!(native.arenas["product_occurrences"].len(), 2);
+    assert_eq!(
+        native.arenas["product_occurrences"][0].fields["definition_uuid"],
+        Uuid::from_wire(definition_id).to_string()
+    );
+    assert_eq!(
+        native.arenas["product_occurrences"][0].fields["transform_units"],
+        "millimeter"
     );
     assert!(result
         .report

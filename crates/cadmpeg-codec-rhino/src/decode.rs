@@ -1759,6 +1759,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> DecodeResult {
+        crate::product::install(self.scan, &mut self.ir);
         crate::accounting::install(self.scan, &mut self.ir);
         self.ir
             .set_native_unknowns("rhino", &self.unknowns)
