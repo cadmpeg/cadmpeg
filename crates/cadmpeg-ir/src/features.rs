@@ -233,6 +233,19 @@ pub enum FeatureDefinition {
         /// Inclusive upper parameter bound.
         end: f64,
     },
+    /// Curve produced by projecting a source path onto target faces.
+    ProjectedCurve {
+        /// Sketch or model-space path being projected.
+        source: PathRef,
+        /// Faces receiving the projected curve.
+        target_faces: FaceSelection,
+        /// Explicit projection direction; absent for target-normal projection.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
+        /// Whether projection proceeds in both directions.
+        #[serde(default)]
+        bidirectional: bool,
+    },
     /// Circular helix or planar spiral constructed around an axis.
     Helix {
         /// Point on the construction axis at the curve start.

@@ -8240,6 +8240,77 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
 }
 
 #[test]
+fn semantic_writer_round_trips_projected_curve() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef};
+    use cadmpeg_ir::math::Vector3;
+
+    let base_bytes = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(base_bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let edge = base.ir.model.edges[0].id.0.clone();
+    let face = base.ir.model.faces[0].id.0.clone();
+    let xml = format!(
+        r#"<Keywords><ProjectedCurve Name="Projection" Type="ProjectionCurve" id="40" Source="{edge}" TargetFaces="{face}" Direction="0,0,1" Bidirectional="false" Simplify="true"/></Keywords>"#
+    );
+    let mut source = base_bytes;
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let edge_id = decoded.ir.model.edges[0].id.clone();
+    let face_id = decoded.ir.model.faces[0].id.clone();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::ProjectedCurve {
+            source: PathRef::Edges(edges),
+            target_faces: FaceSelection::Resolved { faces, native },
+            direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            bidirectional: false,
+        } if edges == &[edge_id.clone()] && faces == &[face_id.clone()] && native == &face
+    ));
+
+    let FeatureDefinition::ProjectedCurve {
+        source,
+        target_faces,
+        direction,
+        bidirectional,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed projected curve");
+    };
+    *source = PathRef::Edges(vec![edge_id.clone()]);
+    *target_faces = FaceSelection::Faces(vec![face_id.clone()]);
+    *direction = None;
+    *bidirectional = true;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.properties["Source"], edge_id.0);
+    assert_eq!(native.properties["TargetFaces"], face_id.0);
+    assert_eq!(native.properties["Bidirectional"], "true");
+    assert_eq!(native.properties["Simplify"], "true");
+    assert!(!native.properties.contains_key("Direction"));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::ProjectedCurve {
+            direction: None,
+            bidirectional: true,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 

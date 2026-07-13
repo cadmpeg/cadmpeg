@@ -2073,6 +2073,12 @@ fn feature_operation_geometry_is_validated() {
             start: 1.0,
             end: 0.0,
         },
+        FeatureDefinition::ProjectedCurve {
+            source: crate::features::PathRef::Native("source".into()),
+            target_faces: FaceSelection::Unresolved,
+            direction: Some(Vector3::new(0.0, 0.0, 0.0)),
+            bidirectional: false,
+        },
         FeatureDefinition::Helix {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_direction: Vector3::new(0.0, 0.0, 0.0),
@@ -2118,6 +2124,7 @@ fn feature_operation_geometry_is_validated() {
         "scale transform is invalid",
         "coordinate-system frame is invalid",
         "equation curve is invalid",
+        "projection direction is invalid",
         "helix geometry is invalid",
         "wrap depth is invalid",
         "body motion is invalid",

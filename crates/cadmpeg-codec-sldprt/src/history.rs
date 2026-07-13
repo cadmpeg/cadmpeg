@@ -788,6 +788,14 @@ pub fn bind_topology_selections(
                 resolve_profile_ref(profile, &face_ids);
                 resolve_face_selection(face, &face_ids);
             }
+            FeatureDefinition::ProjectedCurve {
+                source,
+                target_faces,
+                ..
+            } => {
+                resolve_path_ref(source, &edge_ids, &curve_ids);
+                resolve_face_selection(target_faces, &face_ids);
+            }
             _ => {}
         }
     }
@@ -913,6 +921,7 @@ fn bind_definition_sketch(
         | FeatureDefinition::Wrap { profile, .. } => bind_profile(profile),
         FeatureDefinition::Sweep { profile, path, .. } => bind_profile(profile) | bind_path(path),
         FeatureDefinition::TrimSurface { tool, .. } => bind_path(tool),
+        FeatureDefinition::ProjectedCurve { source, .. } => bind_path(source),
         FeatureDefinition::Loft {
             profiles, guides, ..
         } => {
@@ -955,6 +964,10 @@ fn project_definition(
     }
     if feature_family(feature, "EquationDrivenCurve") || feature_family(feature, "EquationCurve") {
         return project_equation_curve(feature).unwrap_or_else(|| native_definition(feature));
+    }
+    if feature_family(feature, "ProjectedCurve") || feature_family(feature, "ProjectionCurve") {
+        return project_projected_curve(feature, native_by_source)
+            .unwrap_or_else(|| native_definition(feature));
     }
     if feature_family(feature, "Helix") || feature_family(feature, "HelixSpiral") {
         return project_helix(feature).unwrap_or_else(|| native_definition(feature));
@@ -1199,6 +1212,30 @@ fn project_equation_curve(feature: &Feature) -> Option<FeatureDefinition> {
             start,
             end,
         })
+}
+
+fn project_projected_curve(
+    feature: &Feature,
+    native_by_source: &HashMap<&str, &str>,
+) -> Option<FeatureDefinition> {
+    let source = feature.properties.get("Source")?;
+    let source = native_by_source
+        .get(source.as_str())
+        .map_or_else(|| source.clone(), |id| (*id).to_string());
+    let direction = match feature.properties.get("Direction") {
+        Some(value) => Some(parse_valid_direction(value)?),
+        None => None,
+    };
+    Some(FeatureDefinition::ProjectedCurve {
+        source: PathRef::Native(source),
+        target_faces: FaceSelection::Native(feature.properties.get("TargetFaces")?.clone()),
+        direction,
+        bidirectional: feature
+            .properties
+            .get("Bidirectional")
+            .and_then(|value| parse_bool(value))
+            .unwrap_or(false),
+    })
 }
 
 fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
@@ -3373,6 +3410,58 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::ProjectedCurve {
+                source,
+                target_faces,
+                direction,
+                bidirectional,
+            } => {
+                let source =
+                    path_source(source, &record_sources, &sketch_sources).ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing projection source",
+                            feature.id
+                        ))
+                    })?;
+                let target_faces = face_selection_value(target_faces).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no projection target faces",
+                        feature.id
+                    ))
+                })?;
+                if existing.as_deref().is_some_and(|record| {
+                    !feature_family(record, "ProjectedCurve")
+                        && !feature_family(record, "ProjectionCurve")
+                }) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Source".into(), source);
+                properties.insert("TargetFaces".into(), target_faces);
+                properties.insert("Bidirectional".into(), bidirectional.to_string());
+                match direction {
+                    Some(direction) => {
+                        require_direction(*direction, &feature.id, "projection direction")?;
+                        properties.insert("Direction".into(), format_vector3(*direction));
+                    }
+                    None => {
+                        properties.remove("Direction");
+                    }
+                }
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "ProjectedCurve".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
+            }
             FeatureDefinition::Helix {
                 axis_origin,
                 axis_direction,
@@ -5409,6 +5498,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::DatumPoint { .. } => "ReferencePoint",
         FeatureDefinition::DatumCoordinateSystem { .. } => "CoordinateSystem",
         FeatureDefinition::EquationCurve { .. } => "EquationDrivenCurve",
+        FeatureDefinition::ProjectedCurve { .. } => "ProjectedCurve",
         FeatureDefinition::Helix { .. } => "Helix",
         FeatureDefinition::Wrap { .. } => "Wrap",
         FeatureDefinition::Sketch { .. } => "Sketch",
