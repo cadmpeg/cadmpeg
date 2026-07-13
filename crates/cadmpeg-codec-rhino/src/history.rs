@@ -906,10 +906,130 @@ fn object_reference_properties(
     }
 }
 
+fn cage_json(cage: &crate::cage::Cage) -> serde_json::Value {
+    serde_json::json!({
+        "kind": "nurbs_cage",
+        "dimension": cage.dimension,
+        "rational": cage.rational,
+        "orders": cage.orders,
+        "counts": cage.counts,
+        "knots": cage.knots,
+        "control_points": cage.control_points,
+        "weights": cage.weights,
+    })
+}
+
+fn extended_geometry_json(
+    data: &[u8],
+    value: &EmbeddedGeometry,
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
+    scale: f64,
+) -> Option<String> {
+    let semantic = if crate::extrusion::supported_class(value.class_id) {
+        let mut budget = crate::mesh::MeshBudget::new();
+        let extrusion = crate::extrusion::decode(
+            data,
+            value.class_data_range.clone(),
+            archive,
+            writer_version,
+            scale,
+            &mut budget,
+        )
+        .ok()?;
+        let boundaries = extrusion
+            .boundaries
+            .iter()
+            .map(|boundary| {
+                serde_json::json!({
+                    "start_curve": boundary.start_curve.geometry,
+                    "start_nurbs": boundary.start_nurbs,
+                    "end_nurbs": boundary.end_nurbs,
+                    "start_pcurve": {
+                        "degree": boundary.start_pcurve.degree,
+                        "knots": boundary.start_pcurve.knots,
+                        "control_points": boundary.start_pcurve.control_points,
+                        "weights": boundary.start_pcurve.weights,
+                        "periodic": boundary.start_pcurve.periodic,
+                    },
+                    "end_pcurve": {
+                        "degree": boundary.end_pcurve.degree,
+                        "knots": boundary.end_pcurve.knots,
+                        "control_points": boundary.end_pcurve.control_points,
+                        "weights": boundary.end_pcurve.weights,
+                        "periodic": boundary.end_pcurve.periodic,
+                    },
+                })
+            })
+            .collect::<Vec<_>>();
+        serde_json::json!({
+            "kind": "extrusion",
+            "boundaries": boundaries,
+            "laterals": extrusion.laterals,
+            "direction": extrusion.direction,
+            "cap_origins": extrusion.cap_origins,
+            "cap_normals": extrusion.cap_normals,
+            "cap_u_axes": extrusion.cap_u_axes,
+            "caps": extrusion.caps,
+        })
+    } else if value.class_id == crate::cage::CLASS {
+        cage_json(&crate::cage::decode(data, value.class_data_range.clone(), scale, archive).ok()?)
+    } else if value.class_id == crate::morph::CLASS {
+        let morph =
+            crate::morph::decode(data, value.class_data_range.clone(), scale, archive).ok()?;
+        let control = match &morph.control {
+            crate::morph::Control::Curve { start, end } => serde_json::json!({
+                "kind": "curve",
+                "start": start,
+                "end": end,
+            }),
+            crate::morph::Control::Surface { start, end } => serde_json::json!({
+                "kind": "surface",
+                "start": start,
+                "end": end,
+            }),
+            crate::morph::Control::Cage {
+                start_transform,
+                end,
+            } => serde_json::json!({
+                "kind": "cage",
+                "start_transform": start_transform,
+                "end": cage_json(end),
+            }),
+        };
+        let localizers = morph
+            .localizers
+            .iter()
+            .map(|localizer| {
+                serde_json::json!({
+                    "kind": localizer.kind,
+                    "point": localizer.point,
+                    "vector": localizer.vector,
+                    "interval": localizer.interval,
+                    "curve": localizer.curve,
+                    "surface": localizer.surface,
+                })
+            })
+            .collect::<Vec<_>>();
+        serde_json::json!({
+            "kind": "morph_control",
+            "control": control,
+            "captive_ids": morph.captive_ids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "localizers": localizers,
+            "tolerance": morph.tolerance,
+            "quick_preview": morph.quick_preview,
+            "preserve_structure": morph.preserve_structure,
+        })
+    } else {
+        return None;
+    };
+    serde_json::to_string(&semantic).ok()
+}
+
 fn structured_value_properties(
     key: &str,
     value: &Value,
-    geometry_context: Option<(&[u8], ArchiveVersion, f64)>,
+    geometry_context: Option<(&[u8], ArchiveVersion, Option<i64>, f64)>,
     properties: &mut BTreeMap<String, String>,
 ) {
     match value {
@@ -926,7 +1046,7 @@ fn structured_value_properties(
                     format!("{key}.{index}.class_id"),
                     value.class_id.to_string(),
                 );
-                if let Some((data, archive, scale)) = geometry_context {
+                if let Some((data, archive, writer_version, scale)) = geometry_context {
                     if let Ok(decoded) = crate::curves::decode(
                         data,
                         value.class_id,
@@ -956,6 +1076,10 @@ fn structured_value_properties(
                         if let Ok(semantic) = semantic {
                             properties.insert(format!("{key}.{index}.geometry"), semantic);
                         }
+                    } else if let Some(semantic) =
+                        extended_geometry_json(data, value, archive, writer_version, scale)
+                    {
+                        properties.insert(format!("{key}.{index}.geometry"), semantic);
                     }
                 }
             }
@@ -1024,7 +1148,7 @@ fn structured_value_properties(
 /// Projects source history into ordered neutral native operations.
 pub(crate) fn project(
     records: &[HistoryRecord],
-    geometry_context: Option<(&[u8], ArchiveVersion, f64)>,
+    geometry_context: Option<(&[u8], ArchiveVersion, Option<i64>, f64)>,
     ir: &mut cadmpeg_ir::document::CadIr,
 ) {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
@@ -1202,7 +1326,7 @@ mod tests {
         structured_value_properties(
             "value_7",
             &parsed.value,
-            Some((&geometry_value, ArchiveVersion::V8, 2.0)),
+            Some((&geometry_value, ArchiveVersion::V8, None, 2.0)),
             &mut properties,
         );
         assert_eq!(
@@ -1245,5 +1369,39 @@ mod tests {
                 && values[0].subd_id == subd_id
                 && values[0].edge_ids == [11, 12]
                 && values[0].orientations == [0, 1]));
+    }
+
+    #[test]
+    fn embedded_cage_projects_exact_construction_semantics() {
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(0_i32.to_le_bytes());
+        body.extend(3_i32.to_le_bytes());
+        body.extend(0_i32.to_le_bytes());
+        for _ in 0..6 {
+            body.extend(2_i32.to_le_bytes());
+        }
+        for axis in 0..3 {
+            body.extend(0.0_f64.to_le_bytes());
+            body.extend((axis as f64 + 1.0).to_le_bytes());
+        }
+        for index in 0..8 {
+            for coordinate in [index as f64, 0.0, 0.0] {
+                body.extend(coordinate.to_le_bytes());
+            }
+        }
+        let bytes = crate::archive_test_support::crc_chunk(ANONYMOUS, &body);
+        let geometry = EmbeddedGeometry {
+            class_id: crate::cage::CLASS,
+            class_data_range: 0..bytes.len(),
+        };
+        let semantic = extended_geometry_json(&bytes, &geometry, ArchiveVersion::V8, None, 10.0)
+            .expect("cage semantics");
+        let semantic: serde_json::Value = serde_json::from_str(&semantic).unwrap();
+        assert_eq!(semantic["kind"], "nurbs_cage");
+        assert_eq!(semantic["orders"], serde_json::json!([2, 2, 2]));
+        assert_eq!(
+            semantic["control_points"][7],
+            serde_json::json!([70.0, 0.0, 0.0])
+        );
     }
 }

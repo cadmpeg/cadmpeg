@@ -4359,9 +4359,14 @@ pub(crate) fn decode(scan: &Scan) -> DecodeResult {
     let mut context = DecodeContext::new(scan);
     context.decode_geometry();
     context.decode_dimensions();
-    let geometry_context = context
-        .unit_scale()
-        .map(|scale| (scan.data.as_slice(), scan.archive, scale));
+    let geometry_context = context.unit_scale().map(|scale| {
+        (
+            scan.data.as_slice(),
+            scan.archive,
+            scan.metadata.properties.writer_version,
+            scale,
+        )
+    });
     crate::history::project(&scan.history, geometry_context, &mut context.ir);
     context.commit()
 }
